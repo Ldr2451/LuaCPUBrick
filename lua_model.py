@@ -2,19 +2,36 @@
 
 Same ISA the Wirescript port uses. Differential-tested against real Lua 5.4.
 
-SUBSET (Tiny): numbers (double only), booleans, nil, strings (literals +
-concatenation only), globals + locals, if/while/break/do, functions
-(named/anonymous, recursion, 0/1 return values), print/type/tostring/
-setvec/setcol/clock, numeric inputs in0..in3, string inputs in4..in5,
-vector input as invecx/y/z, color input as incolr/g/b/a, 8 string outputs
-via print plus outVec/outCol via setvec/setcol.
-NO: integers-as-type (one number type), tables, for, methods, varargs,
-metatables, coroutines, string coercion in arithmetic, closures/upvalues
-(inner functions see globals + own params/locals only), long strings,
-hex numerals, bitwise ops, pcall/error.
+SUBSET (Tiny): numbers (double only), booleans, nil, strings, tables,
+functions (named/anonymous, recursion, 0/1 return values), globals +
+locals, if/while/break/do, print/type/tostring/setvec/setcol/clock/
+inarr/outarr, numeric inputs in0..in3, string inputs in4..in5, vector
+input as invecx/y/z, color input as incolr/g/b/a, float array input
+inArr, one multiline log output fed by print plus out0..out3 (float),
+out4..out5 (string), outArr (float array), outVec/outCol.
+NO: integers-as-type (one number type; `#` yields an integral float),
+for, methods, varargs, metatables, coroutines, string coercion in
+arithmetic, closures/upvalues (inner functions see globals + own
+params/locals only), long strings, hex numerals, bitwise ops,
+pcall/error, pairs/ipairs, the table library, t:method() calls.
 Division/modulo by zero yield 0 (Brickadia gate behavior, unlike IEEE754
 inf/nan -- covered by model-only tests, not the oracle). Negative-base
 fractional powers yield 0 similarly.
+Tables hold integer numbers, strings, booleans, functions and tables as
+keys (non-integer number keys are a runtime error on write, read as nil
+on read; nil keys are a runtime error). `#t` follows the array border.
+Multiple assignment stores right to left (like PUC Lua). Mixed
+name+field targets in one statement are rejected (gate limitation).
+print appends tab-separated args + newline to the log (last 32 lines,
+each capped at 64 chars). inarr(i) reads the float input array 1-based
+(out of range -> nil); outarr(i, v) writes the 64-slot float output
+array (out of range -> runtime error; non-numbers except nil -> runtime
+error; nil writes 0.0). out0..out3 accept numbers/booleans/nil (nil ->
+0.0, anything else -> runtime error); out4..out5 accept anything
+(nil -> ""). Reading a missing table key gives nil; assigning nil
+deletes the key. tostring of a table is "table" (real Lua prints an
+address). Indexing a non-table, `#` of a non-table/string, and calling a
+non-function are runtime errors. Compile errors carry "line N:".
 """
 
 import math
@@ -25,7 +42,7 @@ import tempfile
 import os
 
 MAX_INSTR = 512
-MAX_REGS = 32
+MAX_REGS = 64
 MAX_FUNCS = 32
 MAX_GLOBALS = 64
 MAX_CALLS = 32
@@ -70,7 +87,25 @@ def fmt_val(v):
         return lua_fstr(v[1])
     if t == "str":
         return v[2]
+    if t == "table":
+        return "table"
     return "function: F"
+
+
+# Print log: one line per print call (args tab-separated + newline),
+# last LOG_LINES lines kept, each line capped at LOG_WIDTH chars.
+LOG_LINES = 32
+LOG_WIDTH = 64
+
+
+def log_append(lines, args):
+    line = "\t".join(fmt_val(a) for a in args) + "\n"
+    if len(line) > LOG_WIDTH:
+        line = line[:LOG_WIDTH - 1] + "\n"
+    lines.append(line)
+    if len(lines) > LOG_LINES:
+        del lines[0]
+    return "".join(lines)
 
 # ---------------------------------------------------------------- lexer
 KEYWORDS = {"and", "break", "do", "else", "elseif", "end", "false",
@@ -141,7 +176,7 @@ def lex(src):
                 if j >= n:
                     fail("unterminated string")
                 d = src[j]
-                if d == "\n":
+                if d == "\n" or d == "\r":
                     fail("unterminated string")
                 if d == q:
                     break
@@ -199,6 +234,8 @@ def lex(src):
             continue
         fail(f"unexpected character {c!r}")
     toks.append(Tok("EOF", None, "", n, n, line))
+    if len(toks) > 1025:
+        raise LangError("line 1: too many tokens (max 1024)")
     return toks
 
 # ---------------------------------------------------------------- bytecode
@@ -480,10 +517,31 @@ class Parser:
             self.next()
             r = self.expr()
             self.expect("SYM", ")")
-            if not (self.at("SYM", "(") or self.peek().kind == "STR"):
+            if not (self.at("SYM", "(") or self.peek().kind == "STR" or
+                    self.at("SYM", "[") or self.at("SYM", ".")):
                 self.err("not a call statement")
             while self.at("SYM", "(") or self.peek().kind == "STR":
-                r = self.finish_local_call(r, silent)
+                r = self.finish_local_call(r, False)
+            while self.at("SYM", "[") or self.at("SYM", "."):
+                k = self.parse_index_key(silent)
+                if self.at_postfix_cont():
+                    res = self.alloc()
+                    if not silent:
+                        self.c.emit(GETFIELD, res, r, k)
+                    self.free(r)
+                    self.free(k)
+                    r = res
+                    while self.at("SYM", "(") or self.peek().kind == "STR":
+                        r = self.finish_local_call(r, False)
+                else:
+                    self.expect("SYM", "=")
+                    v = self.expr()
+                    if not silent:
+                        self.c.emit(SETFIELD, r, k, v)
+                    self.free(r)
+                    self.free(k)
+                    self.free(v)
+                    return
             return
         self.err(f"unexpected {t}")
 
@@ -647,29 +705,117 @@ class Parser:
         else:
             self.loopStack.pop()
 
-    def stmt_name(self, silent):
-        name = self.expect("NAME").v
+    def parse_index_key(self, silent):
+        """Parse one `[k]` / `.name` step; returns the key register."""
+        if self.at("SYM", "["):
+            self.next()
+            k = self.expr()
+            self.expect("SYM", "]")
+            return k
+        self.next()
+        nm = self.expect("NAME").v
+        k = self.alloc()
+        if not silent:
+            self.c.emit(LOADSTR, k, self.c.const_str(nm))
+        return k
+
+    def at_postfix_cont(self):
+        return (self.at("SYM", "[") or self.at("SYM", ".") or
+                self.at("SYM", "(") or self.peek().kind == "STR")
+
+    def parse_target(self, silent):
+        """One assignment target: ("name", n) | ("field", base, key) |
+        ("call", None). A trailing index with no continuation is kept as
+        a field store; anything else on the chain reads via GETFIELD."""
+        t = self.expect("NAME")
+        lr = self.find_local(t.v)
+        saw_call = False
         if self.at("SYM", "(") or self.peek().kind == "STR":
-            self.finish_call(name, silent)
+            if lr is None:
+                base = self.finish_call(t.v, silent)
+            elif isinstance(lr, tuple):
+                base = self.finish_self_call(lr[1], silent)
+            else:
+                base = self.finish_local_call(lr, silent)
+            saw_call = True
+        elif lr is None:
+            base = self.alloc()
+            if not silent:
+                self.c.emit(LOADGLOBAL, base, self.c.gindex(t.v))
+        elif isinstance(lr, tuple):
+            base = self.alloc()
+            if not silent:
+                self.c.emit(LOADFUNC, base, lr[1])
+        else:
+            base = lr
+            if not (self.at("SYM", "[") or self.at("SYM", ".") or
+                    self.at("SYM", "(") or self.peek().kind == "STR"):
+                return ("name", t.v)
+        saw_call = saw_call or self.at("SYM", "(") or \
+            self.peek().kind == "STR"
+        while True:
+            if self.at("SYM", "[") or self.at("SYM", "."):
+                k = self.parse_index_key(silent)
+                if self.at_postfix_cont():
+                    res = self.alloc()
+                    if not silent:
+                        self.c.emit(GETFIELD, res, base, k)
+                    self.free(base)
+                    self.free(k)
+                    base = res
+                    saw_call = self.at("SYM", "(") or \
+                        self.peek().kind == "STR"
+                    continue
+                if saw_call:
+                    self.err("cannot assign to this expression")
+                return ("field", base, k)
+            if self.at("SYM", "(") or self.peek().kind == "STR":
+                base = self.finish_local_call(base, silent)
+                saw_call = True
+                continue
+            break
+        if saw_call:
+            if self.at("SYM", "=") or self.at("SYM", ","):
+                self.err("cannot assign to this expression")
+            return ("call", None)
+        return ("name", t.v)
+
+    def stmt_name(self, silent):
+        first = self.parse_target(silent)
+        if first[0] == "call":
             return
-        names = [name]
+        targets = [first]
         while self.at("SYM", ","):
             self.next()
-            names.append(self.expect("NAME").v)
+            tg = self.parse_target(silent)
+            if tg[0] == "call":
+                self.err("cannot assign to this expression")
+            targets.append(tg)
         self.expect("SYM", "=")
         vals = self.expr_list()
-        if not silent:
-            tmps = []
+        if silent:
             for e in vals:
-                r = self.alloc()
-                self.c.emit(MOV, r, e)
                 self.free(e)
-                tmps.append(r)
-            while len(tmps) < len(names):
-                r = self.alloc()
-                self.c.emit(LOADNIL, r)
-                tmps.append(r)
-            for n, r in zip(names, tmps):
+            return
+        if any(t[0] == "field" for t in targets) and \
+                any(t[0] == "name" for t in targets):
+            self.err("assignment targets must all be table fields")
+        tmps = []
+        for e in vals:
+            r = self.alloc()
+            self.c.emit(MOV, r, e)
+            self.free(e)
+            tmps.append(r)
+        while len(tmps) < len(targets):
+            r = self.alloc()
+            self.c.emit(LOADNIL, r)
+            tmps.append(r)
+        # Real Lua stores right to left (so `a, a = 1, 2` leaves 1).
+        for i in range(len(targets) - 1, -1, -1):
+            kind = targets[i][0]
+            r = tmps[i]
+            if kind == "name":
+                n = targets[i][1]
                 lr = self.find_local(n)
                 if isinstance(lr, tuple):
                     self.c.emit(MOV, lr[2], r)
@@ -678,10 +824,9 @@ class Parser:
                 else:
                     self.c.emit(STOREGLOBAL, self.c.gindex(n), r)
                 self.dirty_self(n)
-                self.free(r)
-        else:
-            for e in vals:
-                self.free(e)
+            else:
+                self.c.emit(SETFIELD, targets[i][1], targets[i][2], r)
+            self.free(r)
 
     def expr_list(self):
         es = [self.expr()]
@@ -916,6 +1061,13 @@ class Parser:
             self.c.emit(NOT, res, q)
             self.free(q)
             return res
+        if self.at("SYM", "#"):
+            self.next()
+            q = self.parse_unary()
+            res = self.alloc()
+            self.c.emit(LEN, res, q, 0)
+            self.free(q)
+            return res
         if self.at("SYM", "-"):
             self.next()
             q = self.parse_unary()
@@ -965,27 +1117,113 @@ class Parser:
             lr = self.find_local(t.v)
             if self.at("SYM", "(") or self.peek().kind == "STR":
                 if lr is None:
-                    return self.finish_call(t.v, False)
+                    return self.postfix(self.finish_call(t.v, False))
                 if isinstance(lr, tuple):
-                    return self.finish_self_call(lr[1], False)
-                return self.finish_local_call(lr, False)
+                    return self.postfix(
+                        self.finish_self_call(lr[1], False))
+                return self.postfix(self.finish_local_call(lr, False))
             if lr is None:
                 r = self.alloc()
                 self.c.emit(LOADGLOBAL, r, self.c.gindex(t.v))
-                return r
+                return self.postfix(r)
             if isinstance(lr, tuple):
                 r = self.alloc()
                 self.c.emit(LOADFUNC, r, lr[1])
-                return r
-            return lr
+                return self.postfix(r)
+            return self.postfix(lr)
         if t.kind == "SYM" and t.v == "(":
             self.next()
             r = self.expr()
             self.expect("SYM", ")")
             while self.at("SYM", "(") or self.peek().kind == "STR":
                 r = self.finish_local_call(r, False)
-            return r
+            return self.postfix(r)
+        if t.kind == "SYM" and t.v == "{":
+            return self.parse_ctor()
         self.err(f"unexpected {t} in expression")
+
+    def postfix(self, r):
+        """Index (.name / [key]) and call chains after a primary."""
+        while True:
+            if self.at("SYM", "["):
+                self.next()
+                k = self.expr()
+                self.expect("SYM", "]")
+                res = self.alloc()
+                self.c.emit(GETFIELD, res, r, k)
+                self.free(r)
+                self.free(k)
+                r = res
+            elif self.at("SYM", "."):
+                self.next()
+                nm = self.expect("NAME").v
+                kr = self.alloc()
+                self.c.emit(LOADSTR, kr, self.c.const_str(nm))
+                res = self.alloc()
+                self.c.emit(GETFIELD, res, r, kr)
+                self.free(r)
+                self.free(kr)
+                r = res
+            elif self.at("SYM", "(") or self.peek().kind == "STR":
+                r = self.finish_local_call(r, False)
+            else:
+                return r
+
+    def parse_ctor(self):
+        self.expect("SYM", "{")
+        tr = self.alloc()
+        self.c.emit(NEWTABLE, tr, 0, 0)
+        idx = 0
+        if not self.at("SYM", "}"):
+            while True:
+                if self.at("SYM", "["):
+                    self.next()
+                    k = self.expr()
+                    self.expect("SYM", "]")
+                    self.expect("SYM", "=")
+                    v = self.expr()
+                    self.c.emit(SETFIELD, tr, k, v)
+                    self.free(k)
+                    self.free(v)
+                elif self.peek().kind == "NAME":
+                    t2 = self.t[self.pos + 1] if self.pos + 1 < len(
+                        self.t) else None
+                    if t2 is not None and t2.kind == "SYM" and \
+                            t2.v == "=":
+                        nm = self.next().v
+                        self.next()
+                        kr = self.alloc()
+                        self.c.emit(LOADSTR, kr, self.c.const_str(nm))
+                        v = self.expr()
+                        self.c.emit(SETFIELD, tr, kr, v)
+                        self.free(kr)
+                        self.free(v)
+                    else:
+                        idx += 1
+                        v = self.expr()
+                        kr = self.alloc()
+                        self.c.emit(LOADNUM, kr,
+                                    self.c.const_num(float(idx)))
+                        self.c.emit(SETFIELD, tr, kr, v)
+                        self.free(kr)
+                        self.free(v)
+                else:
+                    idx += 1
+                    v = self.expr()
+                    kr = self.alloc()
+                    self.c.emit(LOADNUM, kr,
+                                self.c.const_num(float(idx)))
+                    self.c.emit(SETFIELD, tr, kr, v)
+                    self.free(kr)
+                    self.free(v)
+                if self.at("SYM", ",") or self.at("SYM", ";"):
+                    self.next()
+                    if self.at("SYM", "}"):
+                        break
+                    continue
+                break
+        self.expect("SYM", "}")
+        return tr
 
 # ---------------------------------------------------------------- VM
 class RuntimeError_(Exception):
@@ -1011,11 +1249,12 @@ class VM:
             s = comp.gslot[name]
             self.gtag[s] = 4
             self.gnum[s] = float(fid)
-        for k in range(6):
+        for k in range(4):
             self.gtag[comp.gslot[f"out{k}"]] = 1
+        for k in range(4, 6):
+            self.gtag[comp.gslot[f"out{k}"]] = 2
         self.outVec = [0.0, 0.0, 0.0]
         self.outCol = [0.0, 0.0, 0.0, 0.0]
-        self.outGlobals = [0.0] * 6
         self.inArr = []
         self.outArr = [0.0] * 64
         self.log = ""
@@ -1032,9 +1271,8 @@ class VM:
         self.halted = False
         self.failed = False
         self.err = ""
-        self.out = [""] * N_OUT
-        self.nprint = 0
-        self.calls = []
+        self.logLines = []
+        self.log = ""
         self.retCount = -1
         self.result = NIL
         self.steps = 0
@@ -1081,6 +1319,8 @@ class VM:
             return ("str", 0.0, self.str[i])
         if t == 3:
             return ("bool", self.num[i], "")
+        if t == 5:
+            return ("table", self.num[i], "")
         return ("func", self.num[i], "")
 
     def W(self, r, v):
@@ -1097,6 +1337,9 @@ class VM:
         elif t == "bool":
             self.tag[i] = 3
             self.num[i] = v[1]
+        elif t == "table":
+            self.tag[i] = 5
+            self.num[i] = v[1]
         else:
             self.tag[i] = 4
             self.num[i] = v[1]
@@ -1111,6 +1354,8 @@ class VM:
             return ("str", 0.0, self.gstr[gi])
         if t == 3:
             return ("bool", self.gnum[gi], "")
+        if t == 5:
+            return ("table", self.gnum[gi], "")
         return ("func", self.gnum[gi], "")
 
     def S(self, gi, v):
@@ -1126,14 +1371,25 @@ class VM:
         elif t == "bool":
             self.gtag[gi] = 3
             self.gnum[gi] = v[1]
+        elif t == "table":
+            self.gtag[gi] = 5
+            self.gnum[gi] = v[1]
         else:
             self.gtag[gi] = 4
             self.gnum[gi] = v[1]
 
-    def slot_print(self, s):
-        slot = self.nprint if self.nprint < N_OUT else N_OUT - 1
-        self.out[slot] = s
-        self.nprint += 1
+    def out_snapshot(self):
+        """Mirror of the gate's Clock-tick sync: numeric outs read as
+        numbers (nil -> 0.0), string outs Lua-formatted (nil -> "")."""
+        floats = []
+        for k in range(4):
+            s = self.c.gslot[f"out{k}"]
+            floats.append(0.0 if self.gtag[s] == 0 else self.gnum[s])
+        strings = []
+        for k in range(4, 6):
+            s = self.c.gslot[f"out{k}"]
+            strings.append("" if self.gtag[s] == 0 else fmt_val(self.G(s)))
+        return floats + strings
 
     def numarg(self, v, what):
         if v[0] == "num":
@@ -1144,10 +1400,7 @@ class VM:
 
     def call_builtin(self, fid, args):
         if fid == 0:
-            vals = [fmt_val(a) for a in args]
-            self.calls.append(vals)
-            for s in vals:
-                self.slot_print(s)
+            self.log = log_append(self.logLines, args)
             return NIL
         if fid in (1, 2):
             if not args:
@@ -1155,7 +1408,8 @@ class VM:
             if fid == 1:
                 t = args[0][0]
                 return Vstr({"nil": "nil", "num": "number", "str": "string",
-                             "bool": "boolean", "func": "function"}[t])
+                             "bool": "boolean", "func": "function",
+                             "table": "table"}[t])
             return Vstr(fmt_val(args[0]))
         if fid == 3:
             self.outVec = [self.numarg(args[k] if k < len(args) else NIL,
@@ -1169,6 +1423,27 @@ class VM:
             if args:
                 raise RuntimeError_("wrong number of arguments to 'clock'")
             return Vnum(self.steps * 0.025)
+        if fid == 6:
+            v = args[0] if args else NIL
+            if v[0] == "num" and v[1] == int(v[1]) and \
+                    1 <= int(v[1]) <= len(self.inArr):
+                return Vnum(self.inArr[int(v[1]) - 1])
+            return NIL
+        if fid == 7:
+            iv = args[0] if len(args) > 0 else NIL
+            vv = args[1] if len(args) > 1 else NIL
+            if iv[0] != "num" or iv[1] != int(iv[1]) or \
+                    not 1 <= int(iv[1]) <= len(self.outArr):
+                raise RuntimeError_("array index out of range")
+            if vv[0] == "num":
+                self.outArr[int(iv[1]) - 1] = vv[1]
+            elif vv[0] == "nil":
+                self.outArr[int(iv[1]) - 1] = 0.0
+            elif vv[0] == "bool":
+                self.outArr[int(iv[1]) - 1] = vv[1]
+            else:
+                raise RuntimeError_("array element must be a number")
+            return NIL
         raise RuntimeError_("unknown builtin")
 
     def num2(self, op, a, b):
@@ -1199,7 +1474,13 @@ class VM:
             elif op == LOADGLOBAL:
                 self.W(a, self.G(b))
             elif op == STOREGLOBAL:
-                self.S(a, self.R(b))
+                v = self.R(b)
+                self.S(a, v)
+                for k in range(4):
+                    if a == self.c.gslot[f"out{k}"] and \
+                            v[0] not in ("num", "nil", "bool"):
+                        raise RuntimeError_(
+                            "cannot convert " + v[0] + " to number")
             elif op == MOV:
                 self.W(a, self.R(b))
             elif op in (ADD, SUB, MUL, DIV, MOD, POW):
@@ -1252,6 +1533,8 @@ class VM:
                         res = l[1] == r[1]
                     elif l[0] == "func":
                         res = l[1] == r[1]
+                    elif l[0] == "table":
+                        res = l[1] == r[1]
                     else:
                         res = True
                 elif l[0] == "num" and r[0] == "num":
@@ -1283,12 +1566,9 @@ class VM:
                 else:
                     nargs = b
                 args = [self.R(a + 1 + k) for k in range(nargs)]
-                if fid <= 5:
+                if fid <= 7:
                     if fid == 0:
-                        vals = [fmt_val(x) for x in args]
-                        self.calls.append(vals)
-                        for s in vals:
-                            self.slot_print(s)
+                        self.log = log_append(self.logLines, args)
                         self.W(a, NIL)
                         self.retCount = 0
                     else:
@@ -1310,8 +1590,9 @@ class VM:
                             av = args[k]
                             self.tag[nbase + k] = {
                                 "nil": 0, "num": 1, "str": 2,
-                                "bool": 3, "func": 4}[av[0]]
-                            if av[0] in ("num", "bool", "func"):
+                                "bool": 3, "func": 4, "table": 5}[av[0]]
+                            if av[0] in ("num", "bool", "func",
+                                           "table"):
                                 self.num[nbase + k] = av[1]
                             elif av[0] == "str":
                                 self.str[nbase + k] = av[2]
@@ -1364,6 +1645,86 @@ class VM:
                 return True
             elif op == LOADFUNC:
                 self.W(a, Vfunc(b))
+            elif op == NEWTABLE:
+                if self.tcount >= MAX_TABLES:
+                    raise RuntimeError_("too many tables")
+                tid = self.tcount
+                self.tcount += 1
+                self.tlen[tid] = 0
+                self.W(a, Vtable(tid))
+            elif op == GETFIELD:
+                base = self.R(b)
+                if base[0] != "table":
+                    raise RuntimeError_(
+                        "attempt to index a non-table value")
+                key = self.R(c_)
+                if key[0] == "nil" or (
+                        key[0] == "num" and key[1] != math.floor(key[1])):
+                    self.W(a, NIL)
+                else:
+                    kt = {"num": 1, "str": 2, "bool": 3, "func": 4,
+                          "table": 5}[key[0]]
+                    kn = key[1] if key[0] in ("num", "bool", "func",
+                                              "table") else 0.0
+                    ks = key[2] if key[0] == "str" else ""
+                    slot = self.tmap.get(tkey(int(base[1]), kt, kn, ks))
+                    if slot is None:
+                        self.W(a, NIL)
+                    else:
+                        self.W(a, self.tv[slot])
+            elif op == SETFIELD:
+                base = self.R(a)
+                if base[0] != "table":
+                    raise RuntimeError_(
+                        "attempt to index a non-table value")
+                key = self.R(b)
+                val = self.R(c_)
+                if key[0] == "nil":
+                    raise RuntimeError_("table index is nil")
+                if key[0] == "num" and key[1] != math.floor(key[1]):
+                    raise RuntimeError_(
+                        "non-integer number keys are not supported")
+                kt = {"num": 1, "str": 2, "bool": 3, "func": 4,
+                      "table": 5}[key[0]]
+                kn = key[1] if key[0] in ("num", "bool", "func",
+                                          "table") else 0.0
+                ks = key[2] if key[0] == "str" else ""
+                tid = int(base[1])
+                kk = tkey(tid, kt, kn, ks)
+                slot = self.tmap.get(kk)
+                if val[0] == "nil":
+                    if slot is not None:
+                        del self.tmap[kk]
+                        self.tfree.append(slot)
+                        if kt == 1 and int(key[1]) == self.tlen.get(tid, 0):
+                            self.tlen[tid] = int(key[1]) - 1
+                else:
+                    if slot is None:
+                        if self.tfree:
+                            slot = self.tfree.pop()
+                        else:
+                            slot = self.theap
+                            self.theap += 1
+                        if slot >= MAX_HEAP:
+                            raise RuntimeError_("out of table memory")
+                        self.tmap[kk] = slot
+                        if kt == 1 and int(key[1]) == \
+                                self.tlen.get(tid, 0) + 1:
+                            self.tlen[tid] = int(key[1])
+                            while tkey(tid, 1, float(
+                                    self.tlen[tid] + 1), "") in self.tmap:
+                                self.tlen[tid] += 1
+                    if slot >= len(self.tv):
+                        self.tv.extend([NIL] * (slot + 1 - len(self.tv)))
+                    self.tv[slot] = val
+            elif op == LEN:
+                v = self.R(b)
+                if v[0] == "table":
+                    self.W(a, Vnum(float(self.tlen.get(int(v[1]), 0))))
+                elif v[0] == "str":
+                    self.W(a, Vnum(float(len(v[2]))))
+                else:
+                    raise RuntimeError_("attempt to get length")
             else:
                 raise RuntimeError_(f"bad opcode {op}")
         except RuntimeError_ as ex:
@@ -1401,8 +1762,22 @@ def compile_src(src):
     comp.emit(HALT)
     return comp
 
+def oracle_log(calls):
+    """Rebuild the print log from oracle-captured print calls, applying
+    the same line cap/width the chip enforces."""
+    lines = []
+    for call in calls:
+        line = "\t".join(call) + "\n"
+        if len(line) > LOG_WIDTH:
+            line = line[:LOG_WIDTH - 1] + "\n"
+        lines.append(line)
+        if len(lines) > LOG_LINES:
+            del lines[0]
+    return "".join(lines)
+
+
 def run_model(src, inputs=None, sinputs=None, vec=None, col=None,
-              budget=None):
+              inarr=None, budget=None):
     try:
         comp = compile_src(src)
     except LangError as ex:
@@ -1418,12 +1793,15 @@ def run_model(src, inputs=None, sinputs=None, vec=None, col=None,
         vm.set_vec(*vec)
     if col:
         vm.set_col(*col)
+    if inarr is not None:
+        vm.inArr = [float(v) for v in inarr]
     vm.run(budget)
-    return {"ok": True, "calls": vm.calls, "out": list(vm.out),
-            "nprint": vm.nprint, "failed": vm.failed, "err": vm.err,
+    return {"ok": True, "log": vm.log, "failed": vm.failed, "err": vm.err,
             "result": fmt_val(vm.result), "steps": vm.steps,
             "ninstr": len(comp.op), "outVec": list(vm.outVec),
-            "outCol": list(vm.outCol)}
+            "outCol": list(vm.outCol),
+            "outGlobals": vm.out_snapshot(),
+            "outArr": list(vm.outArr)}
 
 # ---------------------------------------------------------------- oracle
 LUA_BIN = (shutil.which("lua") or
@@ -1568,11 +1946,11 @@ TESTS = [
     ("fmt-div3", "print(1/3)", None, "run"),
     ("fmt-big", "print(2^100, 1e20)", None, "run"),
     ("fmt-div0", "print(1/0, -1/0)", None, "modelio",
-     {"expect": {"calls": [["0.0", "0.0"]]}}),
+     {"expect": {"log": "0.0\t0.0\n"}}),
     ("fmt-nan0", "print(0/0)", None, "modelio",
-     {"expect": {"calls": [["0.0"]]}}),
+     {"expect": {"log": "0.0\n"}}),
     ("fmt-mod0", "print(5%0)", None, "modelio",
-     {"expect": {"calls": [["0.0"]]}}),
+     {"expect": {"log": "0.0\n"}}),
     ("fmt-intmil", "print(1000000)", None, "run"),
     ("lit-boolnil", "print(true, false, nil)", None, "run"),
     ("print-empty", "print()", None, "run"),
@@ -1636,7 +2014,7 @@ TESTS = [
      {"sinputs": {4: "foo", 5: "bar"}}),
     ("io-clock", "local a = clock() local b = clock() "
      "print(type(a), b > a)", None, "modelio",
-     {"expect": {"calls": [["number", "true"]]}}),
+     {"expect": {"log": "number\ttrue\n"}}),
     ("func-basic", "function add(a, b) return a+b end print(add(2, 3))",
      None, "run"),
     ("func-missing", "function f(a, b) print(a, b) end f(1)", None, "run"),
@@ -1725,6 +2103,134 @@ TESTS = [
     ("run-negstr", "print('before') print(-'x')", None, "haltfail"),
     ("upvalue-read", "local x = 5 function f() return x end print(f())",
      None, "modelonly"),
+    # regression: the original progOk bug (hello world must compile)
+    ("hello", "print(\"Hello, World!\")", None, "run"),
+    ("fmt-int", "print(7)", None, "run"),
+    ("str-lt-next", "x = 5 if 'a' < 'b' then print(x+1) end print(x+2)",
+     None, "run"),
+    ("str-le-next", "x = 5 if 'a' <= 'a' then print(x+1) end print(x+2)",
+     None, "run"),
+    # tables
+    ("tab-empty", "t = {} print(type(t), #t)", None, "run",
+     {"floatints": True}),
+    ("tab-array", "t = {10, 20, 30} print(t[1], t[2], t[3], #t)", None,
+     "run", {"floatints": True}),
+    ("tab-hash", "t = {x = 1, y = 2} print(t.x, t['y'])", None, "run"),
+    ("tab-mixed", "t = {1, 'a', x = true} print(t[1], t[2], t.x, #t)",
+     None, "run", {"floatints": True}),
+    ("tab-trailing", "t = {1, 2,} u = {3; 4;} print(#t, u[2])", None,
+     "run", {"floatints": True}),
+    ("tab-nested", "t = {{1, 2}, {3}} print(t[1][2], t[2][1])", None,
+     "run", {"floatints": True}),
+    ("tab-index-expr", "t = {[1+1] = 'x', [10] = 'y'} print(t[2], t[10])",
+     None, "run"),
+    ("tab-ctor-bracket", "t = {[10]='x', [1+1]='y'} print(t[10], t[2])",
+     None, "run"),
+    ("tab-append", "t = {} t[#t+1] = 'a' t[#t+1] = 'b' "
+     "print(#t, t[1], t[2])", None, "run", {"floatints": True}),
+    ("tab-del", "t = {1,2,3} t[2] = nil print(t[1], t[2], t[3], #t)",
+     None, "run", {"floatints": True}),
+    ("tab-len-str", "print(#'hello', #{1,2,3})", None, "run",
+     {"floatints": True}),
+    ("tab-eq", "a = {} print(a == a, a == {})", None, "run"),
+    ("tab-eq-copy", "a = {} b = a print(a == b, a ~= b)", None, "run"),
+    ("tab-func", "t = {f = function(x) return x*2 end} print(t.f(21))",
+     None, "run"),
+    ("tab-in-func", "function s(t) return t[1]+t[2] end print(s({3,4}))",
+     None, "run"),
+    ("tab-mutate", "function add(t, v) t[#t+1] = v end t = {} add(t, 9) "
+     "print(t[1])", None, "run"),
+    ("tab-bool-key", "t = {} t[true] = 1 print(t[true], t[false])", None,
+     "run", {"floatints": True}),
+    ("tab-strnum", "t = {} t[1] = 'a' t['1'] = 'b' print(t[1], t['1'])",
+     None, "run"),
+    ("tab-swap-fields", "t = {1, 2} t[1], t[2] = t[2], t[1] "
+     "print(t[1], t[2])", None, "run"),
+    ("tab-dup-field-rtl", "t = {} t[1], t[1] = 1, 2 print(t[1])", None,
+     "run", {"floatints": True}),
+    ("tab-key-func", "t = {} k = {} t[k] = 1 print(t[k])", None, "run"),
+    ("tab-nested-assign", "t = {a = {b = 1}} t.a.b = 2 print(t.a.b)",
+     None, "run"),
+    ("tab-chain-store", "t = {a = {}} t.a[1] = 'x' print(t.a[1])", None,
+     "run", {"floatints": True}),
+    ("tab-paren-index", "print(({5, 6})[2])", None, "run"),
+    ("tab-tostring", "print(type({}), tostring({1}))", None, "modelio",
+     {"expect": {"log": "table\ttable\n"}}),
+    ("tab-missing", "t = {} print(t.nope, t[99])", None, "run"),
+    ("tab-speckeys", "t = {} t['a#b'] = 1 t['a$b'] = 2 "
+     "t['k@v'] = 3 t['x:y'] = 4 "
+     "print(t['a#b'], t['a$b'], t['k@v'], t['x:y'])", None, "run"),
+    ("tab-getnil-diff", "t = {} print(t[nil])", None, "modelio",
+     {"expect": {"log": "nil\n"}}),
+    ("tab-set-nonint", "t = {} t[1.5] = 1", None, "modelhalt",
+     {"expect": {"err": "non-integer number keys"}}),
+    ("tab-set-nil-key", "t = {} t[nil] = 1", None, "haltfail"),
+    ("tab-idx-nontable", "x = 5 print(x[1])", None, "haltfail"),
+    ("tab-len-nontable", "print(#5)", None, "haltfail"),
+    ("tab-toomany", "t = {} i = 0 while i < 65 do t[#t+1] = {} "
+     "i = i+1 end", None, "modelhalt",
+     {"expect": {"err": "too many tables"}}),
+    ("tab-oom", "t = {} i = 0 while i < 513 do t[#t+1] = i i = i+1 end",
+     None, "modelhalt", {"expect": {"err": "out of table memory"}}),
+    ("tab-bubble", "t = {5, 3, 8, 1, 9, 2, 7, 4} i = 1 "
+     "while i <= 8 do j = 1 "
+     "while j <= 8 - i do "
+     "if t[j] > t[j+1] then t[j], t[j+1] = t[j+1], t[j] end "
+     "j = j + 1 end i = i + 1 end "
+     "print(t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8])", None,
+     "run", {"floatints": True}),
+    # right-to-left duplicate stores (real Lua order)
+    ("assign-dup", "a, a = 1, 2 print(a)", None, "run"),
+    ("assign-dup3", "a, b, a = 1, 2, 3 print(a, b)", None, "run"),
+    ("assign-duplocal", "local a, a = 1, 2 print(a)", None, "run"),
+    ("assign-mixed-reject", "a, t.x = 1, 2", None, "modelonly"),
+    # log cap behavior
+    ("log-many", "i = 1 while i <= 40 do print(i) i = i + 1 end", None,
+     "run"),
+    ("log-wide", "print('" + "y" * 100 + "')", None, "modelio",
+     {"expect": {"log": "y" * 63 + "\n"}}),
+    # array ports
+    ("arr-read", "print(inarr(1), inarr(2), inarr(3))", None, "modelio",
+     {"inarr": [1.5, 2.5], "expect": {"log": "1.5\t2.5\tnil\n"}}),
+    ("arr-write", "outarr(1, 9) outarr(2, inarr(1))", None, "modelio",
+     {"inarr": [5.0],
+      "expect": {"outArr": [9.0, 5.0] + [0.0] * 62, "log": ""}}),
+    ("arr-oob-read", "print(inarr(0), inarr(-1), inarr(1.5), inarr('x'))",
+     None, "modelio",
+     {"inarr": [7.0], "expect": {"log": "nil\tnil\tnil\tnil\n"}}),
+    ("arr-oob-write", "outarr(0, 1)", None, "modelhalt",
+     {"expect": {"err": "array index out of range"}}),
+    ("arr-oob-write2", "outarr(65, 1)", None, "modelhalt",
+     {"expect": {"err": "array index out of range"}}),
+    ("arr-badval", "outarr(1, 'x')", None, "modelhalt",
+     {"expect": {"err": "array element must be a number"}}),
+    ("arr-badval2", "outarr(1, {})", None, "modelhalt",
+     {"expect": {"err": "array element must be a number"}}),
+    ("arr-nil-write", "outarr(1, nil)", None, "modelio",
+     {"expect": {"outArr": [0.0] * 64}}),
+    ("arr-missing", "print(inarr())", None, "modelio",
+     {"expect": {"log": "nil\n"}}),
+    # writable output globals
+    ("out-nums", "out0 = 1 out1 = 2.5 out2 = true out3 = nil", None,
+     "modelio",
+     {"expect": {"outGlobals": [1.0, 2.5, 1.0, 0.0, "", ""]}}),
+    ("out-strs", "out4 = 'hi' out5 = 3", None, "modelio",
+     {"expect": {"outGlobals": [0.0, 0.0, 0.0, 0.0, "hi", "3.0"]}}),
+    ("out-readback", "out0 = 5 print(out0 + 1)", None, "run"),
+    ("out-badnum", "out0 = 'x'", None, "modelhalt",
+     {"expect": {"err": "cannot convert"}}),
+    ("out-badnum2", "out1 = {}", None, "modelhalt",
+     {"expect": {"err": "cannot convert"}}),
+    ("out-nil-str", "out4 = nil print(out4 == nil)", None, "run"),
+    # line numbers on compile failure
+    ("errline-stmt", "print(1)\nprint(2)\nend\n", None, "synfail",
+     {"errline": 3}),
+    ("errline-expr", "local x = 1\nprint(x + )\n", None, "synfail",
+     {"errline": 2}),
+    ("errline-lex", "print('a')\nprint('b)\n", None, "synfail",
+     {"errline": 2}),
+    ("errline-deep", "a = 1\nb = 2\nc = 3\nd = 4\nif then end\n", None,
+     "synfail", {"errline": 5}),
 ]
 
 
@@ -1743,15 +2249,36 @@ def build_overcap():
         for k in range(40)) + "\n"
 
 
+INT_LIKE = re.compile(r"^-?\d+$")
+
+
+def norm_calls(calls, floatints=False):
+    out = []
+    for call in calls:
+        row = []
+        for v in call:
+            v = norm_val(v)
+            # `#` and friends yield integral floats in Tiny (one number
+            # type); real Lua yields ints. Rewrite per test opt-in.
+            if floatints and INT_LIKE.match(v):
+                v += ".0"
+            row.append(v)
+        out.append(row)
+    return out
+
+
 def check_one(name, src, inputs, mode, kw=None):
     kw = kw or {}
     if src == "STRESS":
         src = build_stress()
     if src == "OVERCAP":
         src = build_overcap()
-    rkw = {k: v for k, v in kw.items() if k != "expect"}
-    m = run_model(src, inputs, **rkw)
-    o = oracle_run(src, inputs, **rkw)
+    rkw = {k: v for k, v in kw.items()
+           if k not in ("expect", "errline", "floatints")}
+    mkw = dict(rkw)
+    okw = {k: v for k, v in rkw.items() if k != "inarr"}
+    m = run_model(src, inputs, **mkw)
+    o = oracle_run(src, inputs, **okw)
     if not o.get("avail"):
         return ("SKIP", f"{name}: lua binary not available")
     if mode == "run":
@@ -1763,10 +2290,12 @@ def check_one(name, src, inputs, mode, kw=None):
             return ("FAIL", f"{name}: lua rc={o['rc']}: {o['stderr']}")
         if o["calls"] is None:
             return ("FAIL", f"{name}: oracle framing broken: {o['stderr']}")
-        mv = [[norm_val(v) for v in call] for call in m["calls"]]
-        if mv != o["calls"]:
+        want = oracle_log(norm_calls(o["calls"],
+                                       kw.get("floatints", False)))
+        if m["log"] != want:
             return ("FAIL",
-                    f"{name}: value mismatch\n  model={mv}\n  lua  ={o['calls']}")
+                    f"{name}: log mismatch\n  model={m['log']!r}\n"
+                    f"  lua  ={want!r}")
         return ("PASS", f"{name} steps={m['steps']} instr={m['ninstr']}")
     if mode == "modelio":
         exp = kw.get("expect", {}) if kw else {}
@@ -1774,24 +2303,49 @@ def check_one(name, src, inputs, mode, kw=None):
             return ("FAIL", f"{name}: model rejected: {m.get('err')}")
         if m["failed"]:
             return ("FAIL", f"{name}: model runtime fail: {m['err']}")
-        for key in ("calls", "outVec", "outCol"):
+        for key in ("log", "outVec", "outCol", "outGlobals", "outArr",
+                    "result"):
             if key in exp:
-                got = [[norm_val(v) for v in call] for call in m[key]] \
-                    if key == "calls" else m[key]
+                got = m[key]
                 if got != exp[key]:
                     return ("FAIL", f"{name}: {key} mismatch "
-                                    f"got={got} want={exp[key]}")
+                                    f"got={got!r} want={exp[key]!r}")
         return ("PASS", name)
     if mode == "modelonly":
         if m["ok"]:
             return ("FAIL", f"{name}: model accepted, want reject "
                             "(documented Tiny exclusion)")
         return ("PASS", name)
+    if mode == "modelhalt":
+        # Model compiles but must halt at runtime (gate limits or
+        # documented divergences); oracle may succeed.
+        exp = kw.get("expect", {}) if kw else {}
+        if not m["ok"]:
+            return ("FAIL", f"{name}: model rejected, want runtime halt: "
+                            f"{m.get('err')}")
+        if not m["failed"]:
+            return ("FAIL", f"{name}: model did not halt-fail")
+        for key in ("log", "outGlobals", "outArr", "err"):
+            if key in exp:
+                got = m[key]
+                if key == "err":
+                    if exp[key] not in got:
+                        return ("FAIL", f"{name}: err missing "
+                                        f"{exp[key]!r}: got {got!r}")
+                elif got != exp[key]:
+                    return ("FAIL", f"{name}: {key} mismatch "
+                                    f"got={got!r} want={exp[key]!r}")
+        return ("PASS", name)
     if mode == "synfail":
         if m["ok"]:
             return ("FAIL", f"{name}: model accepted, want reject")
         if o["rc"] == 0:
             return ("FAIL", f"{name}: lua accepted, want reject")
+        if "errline" in kw:
+            want = f"line {kw['errline']}:"
+            if want not in m.get("err", ""):
+                return ("FAIL", f"{name}: err missing {want!r}: "
+                                f"got {m.get('err')!r}")
         return ("PASS", name)
     if mode == "haltfail":
         if not m["ok"]:
@@ -1802,10 +2356,12 @@ def check_one(name, src, inputs, mode, kw=None):
             return ("FAIL", f"{name}: lua accepted, want error")
         if o["calls"] is None:
             return ("FAIL", f"{name}: oracle framing broken: {o['stderr']}")
-        mv = [[norm_val(v) for v in call] for call in m["calls"]]
-        if mv != o["calls"]:
+        want = oracle_log(norm_calls(o["calls"],
+                                       kw.get("floatints", False)))
+        if m["log"] != want:
             return ("FAIL",
-                    f"{name}: partial mismatch\n  model={mv}\n  lua  ={o['calls']}")
+                    f"{name}: partial mismatch\n  model={m['log']!r}\n"
+                    f"  lua  ={want!r}")
         return ("PASS", name)
     return ("FAIL", f"{name}: bad mode")
 
