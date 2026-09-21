@@ -436,6 +436,15 @@ class Parser:
                 return
         if t.kind == "NAME":
             return self.stmt_name(silent)
+        if t.kind == "SYM" and t.v == "(":
+            self.next()
+            r = self.expr()
+            self.expect("SYM", ")")
+            if not (self.at("SYM", "(") or self.peek().kind == "STR"):
+                raise LangError("not a call statement")
+            while self.at("SYM", "(") or self.peek().kind == "STR":
+                r = self.finish_local_call(r, silent)
+            return
         raise LangError(f"unexpected {t}")
 
     def stmt_local(self, silent):
@@ -931,6 +940,8 @@ class Parser:
             self.next()
             r = self.expr()
             self.expect("SYM", ")")
+            while self.at("SYM", "(") or self.peek().kind == "STR":
+                r = self.finish_local_call(r, False)
             return r
         raise LangError(f"unexpected {t} in expression")
 
@@ -1607,6 +1618,9 @@ TESTS = [
     ("print-shadow", "print = 5 print(print)", None, "haltfail"),
     ("str-call-sugar", "print 'hi'", None, "run"),
     ("sugar-chain", "function f() return print end f()'hi'", None, "run"),
+    ("group-chain", "function f() return print end (f())('hi')", None,
+     "run"),
+    ("anon-call", "print((function() return 41 end)())", None, "run"),
     ("semi", "local a = 1; print(a);;", None, "run"),
     ("nest-call", "print(tostring(type(1)))", None, "run"),
     ("deep-expr", "print(1+2*3-4/2%3^2)", None, "run"),

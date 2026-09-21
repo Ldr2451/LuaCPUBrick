@@ -621,6 +621,7 @@ var selfClean: bool[]
 var selfFid: int[]
 var valStk: int[]
 var valCall: bool[]
+var valPrefix: bool[]
 var opKind: int[]
 var opPrec: int[]
 var opA: int[]
@@ -637,6 +638,7 @@ var lkDone: bool = false
 var lkRaw: bool = false
 var blkLen: int[]
 var blkNext: int[]
+var opBase: int[]
 
 // ---------------------------------------------------------------- expression machine state
 // Shunting-yard, direct-emit. expectOperand tracks prefix/infix position.
@@ -657,6 +659,7 @@ var pendSub: int = 0
 var pendAux: int = 0
 var closeMode: int = 0
 var exprDone: bool = false
+var closeTrig: int = 0
 var opC: int[]
 
 mod curKind() -> int {
@@ -687,9 +690,10 @@ mod curStr() -> string {
   return tt[cpos]
 }
 
-mod pushVal(r: int, isCall: bool) {
+mod pushVal(r: int, isCall: bool, isPrefix: bool) {
   valStk.push(r)
   valCall.push(isCall)
+  valPrefix.push(isPrefix)
 }
 
 mod popVal() -> int {
@@ -699,6 +703,7 @@ mod popVal() -> int {
     return 0
   }
   valCall.pop()
+  valPrefix.pop()
   return valStk.pop()
 }
 
@@ -716,9 +721,22 @@ mod topFlag() -> bool {
   return valCall[valCall.length() - 1]
 }
 
+mod topPrefix() -> bool {
+  if valPrefix.length() == 0 {
+    return false
+  }
+  return valPrefix[valPrefix.length() - 1]
+}
+
 mod setTopFlag(v: bool) {
   if valCall.length() > 0 {
     valCall[valCall.length() - 1] = v
+  }
+}
+
+mod setTopPrefix(v: bool) {
+  if valPrefix.length() > 0 {
+    valPrefix[valPrefix.length() - 1] = v
   }
 }
 
@@ -809,6 +827,7 @@ mod parseInit() {
   locDepth.clear()
   valStk.clear()
   valCall.clear()
+  valPrefix.clear()
   opKind.clear()
   opPrec.clear()
   opA.clear()
@@ -837,6 +856,7 @@ mod parseInit() {
   selfClean.clear()
   selfFid.clear()
   funcEntryLoc.clear()
+  opBase.clear()
   cfNext.resize(33, 0)
   cfMax.resize(33, 0)
   cfBase.resize(33, 0)
@@ -845,6 +865,7 @@ mod parseInit() {
   selfClean.resize(33, true)
   selfFid.resize(33, -1)
   funcEntryLoc.resize(33, 0)
+  opBase.resize(33, 0)
   gslotNext = 0
   fnDepth = 0
   locLen = 0
@@ -869,6 +890,7 @@ mod parseInit() {
   exprDone = false
   pendKind = -1
   mainFid = 0
+  closeTrig = 0
   gDeclare("in0")
   gDeclare("in1")
   gDeclare("in2")
@@ -906,6 +928,13 @@ mod regAlloc() -> int {
   return r
 }
 
+// Account for call argument slots (fr+1..), which bypass regAlloc.
+mod bumpMax(n: int) {
+  if n > cfMax[fnDepth] {
+    cfMax[fnDepth] = n
+  }
+}
+
 mod dirtySelf(name: string) {
   if selfName[fnDepth] == name {
     selfClean[fnDepth] = false
@@ -914,14 +943,19 @@ mod dirtySelf(name: string) {
 
 mod locDeclare(name: string) -> int {
   let r = regAlloc()
-  locName.push(name)
-  locReg.push(r)
-  locDepth.push(fnDepth)
+  if locLen < locName.length() {
+    locName[locLen] = name
+    locReg[locLen] = r
+    locDepth[locLen] = fnDepth
+  } else {
+    locName.push(name)
+    locReg.push(r)
+    locDepth.push(fnDepth)
+  }
   locLen = locLen + 1
   if r > cfMaxLoc[fnDepth] {
     cfMaxLoc[fnDepth] = r
   }
-  dirtySelf(name)
   return r
 }
 
@@ -1439,7 +1473,7 @@ mod applyPop() {
     if (fl & 4) != 0 {
       bEmit(15, res, res, 0)
     }
-    pushVal(res, false)
+    pushVal(res, false, false)
   } else if k == 1 {
     let vv = popVal()
     let isNot = opA[opA.length() - 1] == 1
@@ -1454,7 +1488,7 @@ mod applyPop() {
     } else {
       bEmit(14, res, vv, 0)
     }
-    pushVal(res, false)
+    pushVal(res, false, false)
   } else if k == 4 || k == 5 {
     let rr = popVal()
     let R = opA[opA.length() - 1]
@@ -1466,7 +1500,7 @@ mod applyPop() {
     opC.pop()
     bEmit(7, R, rr, 0)
     bPatch(pp, bop.length())
-    pushVal(R, false)
+    pushVal(R, false, false)
   } else {
     perr = true
     perrMsg = "bad pop"
@@ -1510,19 +1544,19 @@ mod andOrArrive(isOr: bool) {
 // Push the pending operator frame once precedence pops have drained.
 mod pushPending() {
   if pendKind == 0 {
-    pushOp(0, pendPrec, pendSub, pendAux, 0)
+    pushOp(0, pendPrec, pendSub, pendAux, valStk.length())
   } else {
     let ll = popVal()
     let R = regAlloc()
     bEmit(7, R, ll, 0)
     if pendKind == 5 {
       let pp = bEmit(22, 0, R, 0)
-      pushOp(5, pendPrec, R, pp, 0)
+      pushOp(5, pendPrec, R, pp, valStk.length() + 1)
     } else {
       let pp = bEmit(21, 0, R, 0)
-      pushOp(4, pendPrec, R, pp, 0)
+      pushOp(4, pendPrec, R, pp, valStk.length() + 1)
     }
-    pushVal(R, false)
+    pushVal(R, false, false)
   }
   pendKind = -1
 }
@@ -1543,11 +1577,12 @@ mod exprPushName(callParen: bool, callSugar: bool) {  let name = curStr()
       bEmit(3, ar, cStr(curStrAhead()), 0)
       bEmit(7, fr + 1, ar, 0)
       bEmit(23, fr, 1, 0)
-      pushVal(fr, true)
+      bumpMax(fr + 3)
+      pushVal(fr, true, true)
       cpos = cpos + 2
       expectOperand = false
     } else {
-      pushVal(fr, false)
+      pushVal(fr, false, true)
       cpos = cpos + 1
       expectOperand = false
     }
@@ -1566,11 +1601,12 @@ mod exprPushName(callParen: bool, callSugar: bool) {  let name = curStr()
       bEmit(3, ar, cStr(curStrAhead()), 0)
       bEmit(7, fr + 1, ar, 0)
       bEmit(23, fr, 1, 0)
-      pushVal(fr, true)
+      bumpMax(fr + 3)
+      pushVal(fr, true, true)
       cpos = cpos + 2
       expectOperand = false
     } else {
-      pushVal(lr, false)
+      pushVal(lr, false, true)
       cpos = cpos + 1
       expectOperand = false
     }
@@ -1589,13 +1625,14 @@ mod exprPushName(callParen: bool, callSugar: bool) {  let name = curStr()
       bEmit(3, ar, cStr(curStrAhead()), 0)
       bEmit(7, fr + 1, ar, 0)
       bEmit(23, fr, 1, 0)
-      pushVal(fr, true)
+      bumpMax(fr + 3)
+      pushVal(fr, true, true)
       cpos = cpos + 2
       expectOperand = false
     } else {
       let r = regAlloc()
       bEmit(5, r, slot, 0)
-      pushVal(r, false)
+      pushVal(r, false, true)
       cpos = cpos + 1
       expectOperand = false
     }
@@ -1640,6 +1677,7 @@ mod pushCtl(kind: int, a: int, b: int, c: int, d: int, e: int, f: int) {
   ctlD.push(d)
   ctlE.push(e)
   ctlF.push(f)
+  ctlG.push(0)
 }
 
 mod funcHeadAnon(fr: int) {
@@ -1649,6 +1687,7 @@ mod funcHeadAnon(fr: int) {
   tmpSStk.push("")
   ctlLoop = -1
   fnDepth = fnDepth + 1
+  opBase[fnDepth] = opKind.length()
   funcDepthInit(false)
   if curKind() == 5 && curSub() == 14 {
     cpos = cpos + 1
@@ -1668,31 +1707,31 @@ mod exprPrefix() {
   if k == 1 {
     let r = regAlloc()
     bEmit(2, r, cNum(curNum()), 0)
-    pushVal(r, false)
+    pushVal(r, false, false)
     cpos = cpos + 1
     expectOperand = false
   } else if k == 2 {
     let r = regAlloc()
     bEmit(3, r, cStr(curStr()), 0)
-    pushVal(r, false)
+    pushVal(r, false, false)
     cpos = cpos + 1
     expectOperand = false
   } else if k == 4 && s == 16 {
     let r = regAlloc()
     bEmit(4, r, 1, 0)
-    pushVal(r, false)
+    pushVal(r, false, false)
     cpos = cpos + 1
     expectOperand = false
   } else if k == 4 && s == 7 {
     let r = regAlloc()
     bEmit(4, r, 0, 0)
-    pushVal(r, false)
+    pushVal(r, false, false)
     cpos = cpos + 1
     expectOperand = false
   } else if k == 4 && s == 11 {
     let r = regAlloc()
     bEmit(1, r, 0, 0)
-    pushVal(r, false)
+    pushVal(r, false, false)
     cpos = cpos + 1
     expectOperand = false
   } else if k == 3 {
@@ -1708,10 +1747,10 @@ mod exprPrefix() {
     closeMode = 1
     popMode = 2
   } else if k == 5 && s == 2 {
-    pushOp(1, 6, 0, 0, 0)
+    pushOp(1, 6, 0, 0, valStk.length())
     cpos = cpos + 1
   } else if k == 4 && s == 12 {
-    pushOp(1, 6, 1, 0, 0)
+    pushOp(1, 6, 1, 0, valStk.length())
     cpos = cpos + 1
   } else if k == 4 && s == 8 {
     // anonymous function: suspend the expression, compile the body
@@ -1765,6 +1804,11 @@ mod exprInfix() {
     cpos = cpos + 1
     expectOperand = true
   } else if k == 2 {
+    if !topPrefix() {
+      perr = true
+      perrMsg = "string call needs a prefix"
+      return
+    }
     let fnr = popVal()
     let fr = regAlloc()
     bEmit(7, fr, fnr, 0)
@@ -1772,23 +1816,27 @@ mod exprInfix() {
     bEmit(3, ar, cStr(curStr()), 0)
     bEmit(7, fr + 1, ar, 0)
     bEmit(23, fr, 1, 0)
-    pushVal(fr, true)
+    bumpMax(fr + 3)
+    pushVal(fr, true, true)
     cpos = cpos + 1
     expectOperand = false
   } else if k == 5 && s == 15 {
     closeMode = 1
     popMode = 2
   } else if k == 5 && s == 16 {
+    // ',' : arg boundary inside calls, else unit terminator (multi-value
+    // RHS and juxtaposed statements are sequenced by the next level)
     closeMode = 2
+    closeTrig = 1
     popMode = 2
-  } else if k == 6 || (k == 5 && s == 17) || (k == 4 && (s == 4 || s == 5 || s == 6)) || (k == 5 && s == 13) || (k == 4 && (s == 3 || s == 15)) {
+  } else if k == 6 || (k == 5 && s == 17) || (k == 4 && (s == 6 || s == 4 || s == 5)) || (k == 5 && s == 13) || (k == 4 && (s == 3 || s == 15)) {
     closeMode = 3
     popMode = 2
-  } else if k == 3 && opKind.length() == 0 && topFlag() {
-    // juxtaposed call statement, e.g. print('a') print('b'): a bare NAME
-    // after a complete call result ends the unit (Lua: statements need no
-    // separator, and only calls are valid expression statements)
-    closeMode = 3
+  } else if k == 3 || (k == 4 && (s == 10 || s == 8 || s == 9 || s == 17 || s == 3 || s == 2 || s == 14)) {
+    // NAME or statement-start keyword: drain, then terminate the unit;
+    // validity (call-statement vs stored value) is checked by doCont
+    closeMode = 2
+    closeTrig = 0
     popMode = 2
   } else {
     perr = true
@@ -1813,6 +1861,7 @@ mod closeAction() {
       if valStk.length() == depth {
         if nargs == 0 {
           bEmit(23, fr, 0, 0)
+          bumpMax(fr + 2)
         } else {
           perr = true
           perrMsg = "trailing comma"
@@ -1822,8 +1871,9 @@ mod closeAction() {
         let arg = popVal()
         bEmit(7, fr + 1 + nargs, arg, 0)
         bEmit(23, fr, nargs + 1, if wasCall then 1 else 0)
+        bumpMax(fr + nargs + 3)
       }
-      pushVal(fr, true)
+      pushVal(fr, true, true)
       cpos = cpos + 1
       expectOperand = false
       closeMode = 0
@@ -1839,6 +1889,7 @@ mod closeAction() {
         perrMsg = "empty parentheses"
       } else {
         setTopFlag(false)
+        setTopPrefix(true)
       }
       cpos = cpos + 1
       expectOperand = false
@@ -1848,9 +1899,10 @@ mod closeAction() {
       perrMsg = "unbalanced )"
     }
   } else if closeMode == 2 {
-    // ',' arg boundary: top must be a call marker with a fresh arg
+    // ',' arg boundary (with call marker) or plain unit terminator.
+    // Terminated units are validated by doCont / the statement level.
     let mk = opTopKind()
-    if mk == 2 {
+    if closeTrig == 1 && mk == 2 {
       let fr = opA[opA.length() - 1]
       let nargs = opB[opB.length() - 1]
       let depth = opC[opC.length() - 1]
@@ -1865,13 +1917,22 @@ mod closeAction() {
       cpos = cpos + 1
       expectOperand = true
       closeMode = 0
-    } else {
+    } else if opKind.length() != 0 {
       perr = true
-      perrMsg = "unexpected ,"
+      perrMsg = "misplaced separator"
+    } else if valStk.length() == 0 {
+      perr = true
+      perrMsg = "missing expression"
+    } else {
+      presIsCall = topFlag()
+      presReg = popVal()
+      exprDone = true
+      closeMode = 0
     }
   } else if closeMode == 3 {
     // expression terminator: drain must be complete, no markers left
-    if opKind.length() != 0 {
+    // above this function's entry depth (outer suspended frames are fine)
+    if opKind.length() > opBase[fnDepth] {
       perr = true
       perrMsg = "unbalanced ("
     } else if valStk.length() == 0 {
@@ -1891,8 +1952,11 @@ mod exprMicro() {
     if popMode != 0 {
       let tk0 = opTopKind()
       var poppable = false
+      var popValid = true
       if tk0 == 0 || tk0 == 1 || tk0 == 4 || tk0 == 5 {
-        if popMode == 2 {
+        if valStk.length() <= opC[opC.length() - 1] {
+          popValid = false
+        } else if popMode == 2 {
           poppable = true
         } else {
           let tp = opPrec[opPrec.length() - 1]
@@ -1903,7 +1967,10 @@ mod exprMicro() {
           }
         }
       }
-      if poppable {
+      if !popValid {
+        perr = true
+        perrMsg = "missing operand"
+      } else if poppable {
         applyPop()
       } else {
         popMode = 0
@@ -1959,6 +2026,7 @@ mod popCtl() {
   ctlD.pop()
   ctlE.pop()
   ctlF.pop()
+  ctlG.pop()
 }
 
 mod ctlTop() -> int {
@@ -2005,6 +2073,8 @@ mod doCont() {
       perrMsg = "not a call statement"
     }
     regSync()
+    inExpr = false
+    contKind = 0
   } else if contKind == 2 {
     if curKind() != 4 || curSub() != 15 {
       perr = true
@@ -2015,6 +2085,8 @@ mod doCont() {
       pushCtl(1, fp, -1, 0, 0, 0, 0)
       blkEnter()
     }
+    inExpr = false
+    contKind = 0
   } else if contKind == 3 {
     if curKind() != 4 || curSub() != 15 {
       perr = true
@@ -2025,6 +2097,8 @@ mod doCont() {
       ctlA[ctlA.length() - 1] = fp
       blkEnter()
     }
+    inExpr = false
+    contKind = 0
   } else if contKind == 4 {
     if curKind() != 4 || curSub() != 3 {
       perr = true
@@ -2036,6 +2110,8 @@ mod doCont() {
       ctlLoop = ctlKind.length() - 1
       blkEnter()
     }
+    inExpr = false
+    contKind = 0
   } else if contKind == 5 {
     if curKind() == 5 && curSub() == 16 {
       perr = true
@@ -2045,6 +2121,8 @@ mod doCont() {
     } else {
       bEmit(24, presReg, 0, 0)
     }
+    inExpr = false
+    contKind = 0
   } else if contKind == 6 {
     tmpRegs.push(presReg)
     if curKind() == 5 && curSub() == 16 {
@@ -2053,6 +2131,8 @@ mod doCont() {
     } else {
       tmpA = 0
       stState = 12
+      inExpr = false
+      contKind = 0
     }
   } else if contKind == 7 {
     tmpRegs.push(presReg)
@@ -2062,10 +2142,14 @@ mod doCont() {
     } else {
       tmpA = 0
       stState = 13
+      inExpr = false
+      contKind = 0
     }
+  } else {
+    inExpr = false
+    contKind = 0
   }
-  inExpr = false
-  contKind = 0
+  exprDone = false
 }
 
 // One gathered local/assign target per micro-step is overkill; stores run
@@ -2077,6 +2161,7 @@ mod doStoreStep() {
     } else {
       let nm = tmpNames[tmpA]
       let r = locDeclare(nm)
+      dirtySelf(nm)
       if tmpA < tmpRegs.length() {
         bEmit(7, r, tmpRegs[tmpA], 0)
       } else {
@@ -2132,6 +2217,7 @@ mod funcHead(islocal: bool, resume: int, fr: int) {
   tmpSStk.push(tmpS)
   ctlLoop = -1
   fnDepth = fnDepth + 1
+  opBase[fnDepth] = opKind.length()
   funcDepthInit(islocal)
   if curKind() == 5 && curSub() == 14 {
     cpos = cpos + 1
@@ -2146,6 +2232,7 @@ mod funcHead(islocal: bool, resume: int, fr: int) {
 mod funcParams() {
   if curKind() == 3 {
     locDeclare(curStr())
+    dirtySelf(curStr())
     cpos = cpos + 1
     if curKind() == 5 && curSub() == 16 {
       cpos = cpos + 1
@@ -2187,7 +2274,8 @@ mod stmtNameList(isLocal: bool) {
     } else if curKind() == 5 && curSub() == 13 {
       cpos = cpos + 1
       startUnit(if isLocal then 6 else 7)
-    } else if isLocal && atStmtEnd() {
+    } else if isLocal {
+      // no values: nil-fill; the next token is validated by dispatch
       tmpA = 0
       stState = 12
     } else {
@@ -2271,9 +2359,10 @@ mod doBlockClose() {
       tmpS = tmpSStk.pop().Value
       popCtl()
       if resume == 1 {
-        pushVal(extra, true)
+        pushVal(extra, true, true)
         expectOperand = false
         inExpr = true
+        exprDone = false
         contKind = savedCont
         stState = savedSt
       } else if extra == 1 {
@@ -2356,12 +2445,10 @@ mod stmtDispatch() {
       } else if curKind() == 5 && curSub() == 13 {
         cpos = cpos + 1
         startUnit(6)
-      } else if atStmtEnd() {
+      } else {
+        // no values: nil-fill; the next token is validated by dispatch
         tmpA = 0
         stState = 12
-      } else {
-        perr = true
-        perrMsg = "expected , = or end of statement"
       }
     } else {
       perr = true
