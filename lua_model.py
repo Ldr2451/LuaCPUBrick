@@ -12,6 +12,9 @@ NO: integers-as-type (one number type), tables, for, methods, varargs,
 metatables, coroutines, string coercion in arithmetic, closures/upvalues
 (inner functions see globals + own params/locals only), long strings,
 hex numerals, bitwise ops, pcall/error.
+Division/modulo by zero yield 0 (Brickadia gate behavior, unlike IEEE754
+inf/nan -- covered by model-only tests, not the oracle). Negative-base
+fractional powers yield 0 similarly.
 """
 
 import math
@@ -499,6 +502,8 @@ class Parser:
                 self.next()
                 params.append(self.expect("NAME").v)
         self.expect("SYM", ")")
+        if len(params) > 8:
+            raise LangError("too many parameters (max 8 in-gate)")
         fi = FuncInfo(selfname or "anon", -1, len(params))
         if len(self.c.funcs) >= MAX_FUNCS:
             raise LangError("too many functions")
@@ -1160,18 +1165,15 @@ class VM:
                 elif op == MUL:
                     r = x * y
                 elif op == DIV:
-                    if y == 0.0:
-                        r = (math.inf if x > 0 else
-                             -math.inf if x < 0 else math.nan)
-                    else:
-                        r = x / y
+                    # Brickadia gates yield 0 for division by zero
+                    r = 0.0 if y == 0.0 else x / y
                 elif op == MOD:
-                    r = math.nan if y == 0.0 else x - math.floor(x / y) * y
+                    r = 0.0 if y == 0.0 else x - math.floor(x / y) * y
                 else:
                     try:
                         r = math.pow(x, y)
                     except ValueError:
-                        r = math.nan
+                        r = 0.0
                 self.W(a, Vnum(r))
             elif op == UNM:
                 v = self.R(b)
@@ -1507,8 +1509,12 @@ TESTS = [
     ("fmt-add", "print(0.1+0.2)", None, "run"),
     ("fmt-div3", "print(1/3)", None, "run"),
     ("fmt-big", "print(2^100, 1e20)", None, "run"),
-    ("fmt-inf", "print(1/0, -1/0)", None, "run"),
-    ("fmt-nan", "print(0/0)", None, "run"),
+    ("fmt-div0", "print(1/0, -1/0)", None, "modelio",
+     {"expect": {"calls": [["0.0", "0.0"]]}}),
+    ("fmt-nan0", "print(0/0)", None, "modelio",
+     {"expect": {"calls": [["0.0"]]}}),
+    ("fmt-mod0", "print(5%0)", None, "modelio",
+     {"expect": {"calls": [["0.0"]]}}),
     ("fmt-intmil", "print(1000000)", None, "run"),
     ("lit-boolnil", "print(true, false, nil)", None, "run"),
     ("print-empty", "print()", None, "run"),

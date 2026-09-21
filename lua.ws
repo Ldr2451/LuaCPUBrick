@@ -56,6 +56,8 @@
 ///   compare    ==/~~= work on all types (no coercion); < > <= >= on
 ///              numbers, or lexicographically on strings; arithmetic never
 ///              coerces strings (attempt to add 'x' halts, like Lua errors)
+///   divzero    x/0, x%0 and 0/0 yield 0 (Brickadia gate behavior, unlike
+///              Lua inf/nan; covered by model-only tests, not the oracle)
 ///   missing    tables, for, methods, goto, bitwise ops, coroutines,
 ///              metatables, modules, pcall/error, closures/upvalues,
 ///              multiple return values, # length operator
@@ -113,7 +115,7 @@
 @right out err: string = errV.Value
 @right out progOk: bool = progOkV.Value
 @right out progLen: int = progLenV.Value
-@right out halted: bool = haltV.Value
+@right out halted: bool = vmHalted.Value
 @right out busy: bool = busyV.Value
 
 // ---------------------------------------------------------------- tunables
@@ -143,7 +145,6 @@ var resultV: string = ""
 var errV: string = ""
 var progOkV: bool = false
 var progLenV: int = 0
-var haltV: bool = true
 var busyV: bool = false
 
 // ---------------------------------------------------------------- value helpers
@@ -156,7 +157,9 @@ mod truthyOf(tag: int, num: float) -> bool {
 }
 
 mod fmtNum(v: float) -> string {
-  return if v == floor(v) && abs(v) < 1e15 then ("" .. (v & 0)) .. ".0"
+  return if v != v then "nan"
+    else if v != 0.0 && 2.0 * v == v then if v > 0.0 then "inf" else "-inf"
+    else if v == floor(v) && abs(v) < 1e15 then ("" .. (v & 0)) .. ".0"
     else "" .. v
 }
 
@@ -2240,6 +2243,10 @@ mod funcParams() {
       cpos = cpos + 1
       fParams[tmpB] = cfNext[fnDepth]
       cfBase[fnDepth] = cfNext[fnDepth]
+      if cfNext[fnDepth] > 8 {
+        perr = true
+        perrMsg = "too many parameters (max 8 in-gate)"
+      }
       if selfName[fnDepth] != "" {
         locDeclare(selfName[fnDepth])
       }
@@ -2253,6 +2260,10 @@ mod funcParams() {
     cpos = cpos + 1
     fParams[tmpB] = cfNext[fnDepth]
     cfBase[fnDepth] = cfNext[fnDepth]
+    if cfNext[fnDepth] > 8 {
+      perr = true
+      perrMsg = "too many parameters (max 8 in-gate)"
+    }
     if selfName[fnDepth] != "" {
       locDeclare(selfName[fnDepth])
     }
@@ -2540,6 +2551,842 @@ mod parseStep() {
     } else {
       stmtDispatch()
     }
+  }
+}
+
+// ---------------------------------------------------------------- VM state
+// Flat register file (pre-sized; frames share it by base offsets) and
+// parallel frame stacks. Value tags match fmtVal: 0 nil, 1 num, 2 str,
+// 3 bool, 4 func.
+
+var vtag: int[]
+var vnum: float[]
+var vstr: string[]
+var fFunc: int[]
+var fBase: int[]
+var fRetA: int[]
+var fRetBase: int[]
+var fRetPC: int[]
+var gtag: int[]
+var gnum: float[]
+var gstr: string[]
+var vmPc: int = 0
+var vmBase: int = 0
+var vmHalted: bool = true
+var vmFailed: bool = false
+var retCountV: int = -1
+var cmpActive: bool = false
+var cmpAA: int = 0
+var cmpBB: int = 0
+var cmpDst: int = 0
+var cmpI: int = 0
+var cmpOp: int = 0
+var latch0: float = 0.0
+var latch1: float = 0.0
+var latch2: float = 0.0
+var latch3: float = 0.0
+var latchS4: string = ""
+var latchS5: string = ""
+var latchVX: float = 0.0
+var latchVY: float = 0.0
+var latchVZ: float = 0.0
+var latchCR: float = 0.0
+var latchCG: float = 0.0
+var latchCB: float = 0.0
+var latchCA: float = 0.0
+
+mod vTag(r: int) -> int {
+  return vtag[vmBase + r]
+}
+
+mod vNum(r: int) -> float {
+  return vnum[vmBase + r]
+}
+
+mod vStr(r: int) -> string {
+  return vstr[vmBase + r]
+}
+
+mod vSet(r: int, tag: int, num: float, s: string) {
+  vtag[vmBase + r] = tag
+  vnum[vmBase + r] = num
+  vstr[vmBase + r] = s
+}
+
+mod vSetNum(r: int, v: float) {
+  vtag[vmBase + r] = 1
+  vnum[vmBase + r] = v
+}
+
+mod gTag(gi: int) -> int {
+  return gtag[gi]
+}
+
+mod gNum(gi: int) -> float {
+  return gnum[gi]
+}
+
+mod gStr(gi: int) -> string {
+  return gstr[gi]
+}
+
+mod gSet(gi: int, tag: int, num: float, s: string) {
+  gtag[gi] = tag
+  gnum[gi] = num
+  gstr[gi] = s
+}
+
+mod vmReset() {
+  vtag.clear()
+  vnum.clear()
+  vstr.clear()
+  vtag.resize(1024, 0)
+  vnum.resize(1024, 0.0)
+  vstr.resize(1024, "")
+  fFunc.clear()
+  fBase.clear()
+  fRetA.clear()
+  fRetBase.clear()
+  fRetPC.clear()
+  gtag.clear()
+  gnum.clear()
+  gstr.clear()
+  gtag.resize(64, 0)
+  gnum.resize(64, 0.0)
+  gstr.resize(64, "")
+  gSet(0, 1, latch0, "")
+  gSet(1, 1, latch1, "")
+  gSet(2, 1, latch2, "")
+  gSet(3, 1, latch3, "")
+  gSet(4, 2, 0.0, latchS4)
+  gSet(5, 2, 0.0, latchS5)
+  gSet(6, 1, latchVX, "")
+  gSet(7, 1, latchVY, "")
+  gSet(8, 1, latchVZ, "")
+  gSet(9, 1, latchCR, "")
+  gSet(10, 1, latchCG, "")
+  gSet(11, 1, latchCB, "")
+  gSet(12, 1, latchCA, "")
+  gSet(13, 4, 0.0, "")
+  gSet(14, 4, 1.0, "")
+  gSet(15, 4, 2.0, "")
+  gSet(16, 4, 3.0, "")
+  gSet(17, 4, 4.0, "")
+  gSet(18, 4, 5.0, "")
+  vmPc = 0
+  vmBase = 0
+  vmHalted = progLenV == 0
+  vmFailed = false
+  retCountV = -1
+  cmpActive = false
+  o0 = ""
+  o1 = ""
+  o2 = ""
+  o3 = ""
+  o4 = ""
+  o5 = ""
+  o6 = ""
+  o7 = ""
+  outVecV = Vec(0.0, 0.0, 0.0)
+  outColV = Color(0.0, 0.0, 0.0, 0.0)
+  nPrintV = 0
+  resultV = ""
+  errV = ""
+  fFunc.push(mainFid)
+  fBase.push(0)
+  fRetA.push(-1)
+  fRetBase.push(0)
+  fRetPC.push(-1)
+}
+
+mod vmFail(msg: string) {
+  vmFailed = true
+  errV = msg
+  vmHalted = true
+}
+
+mod numArg(t: int, v: float) -> float {
+  if t != 1 && t != 0 {
+    vmFail("bad argument (number expected)")
+  }
+  return if t == 1 then v else 0.0
+}
+
+mod toInt(v: float) -> int {
+  return v & 0
+}
+
+mod printSlot(idx: int, tag: int, num: float, s: string) {
+  let txt = fmtVal(tag, num, s)
+  if idx == 0 {
+    o0 = txt
+  } else if idx == 1 {
+    o1 = txt
+  } else if idx == 2 {
+    o2 = txt
+  } else if idx == 3 {
+    o3 = txt
+  } else if idx == 4 {
+    o4 = txt
+  } else if idx == 5 {
+    o5 = txt
+  } else if idx == 6 {
+    o6 = txt
+  } else {
+    o7 = txt
+  }
+}
+
+mod vmNum2(op: int, b: int, c: int) -> bool {
+  if vTag(b) != 1 || vTag(c) != 1 {
+    vmFail("attempt to perform arithmetic")
+    return false
+  }
+  return true
+}
+
+mod cmpFinish(v: bool) {
+  vtag[cmpDst] = 3
+  if v {
+    vnum[cmpDst] = 1.0
+  } else {
+    vnum[cmpDst] = 0.0
+  }
+  cmpActive = false
+  vmPc = vmPc + 1
+  if vmPc >= bop.length() {
+    vmHalted = true
+  }
+}
+
+// One codepoint per call; prefix rules match Lua, order is by codepoint
+// (identical to byte order for ASCII).
+mod cmpStep() {
+  let sa = vstr[cmpAA]
+  let sb = vstr[cmpBB]
+  let la = sa.Length()
+  let lb = sb.Length()
+  if cmpI >= la && cmpI >= lb {
+    cmpFinish(cmpOp == 1)
+  } else if cmpI >= la {
+    cmpFinish(true)
+  } else if cmpI >= lb {
+    cmpFinish(false)
+  } else {
+    let ca = sa.Substring(cmpI, 1).ToCharCode().Codepoint
+    let cb = sb.Substring(cmpI, 1).ToCharCode().Codepoint
+    if ca != cb {
+      cmpFinish(ca < cb)
+    } else {
+      cmpI = cmpI + 1
+    }
+  }
+}
+
+// One VM instruction. Mirrors lua_model.VM.step (same ISA/semantics).
+mod vmStep() {
+  if cmpActive {
+    cmpStep()
+  } else if !vmHalted {
+    let op = bop[vmPc]
+    let a = bpa[vmPc]
+    let b = bpb[vmPc]
+    let c = bpc[vmPc]
+    var advanced = false
+    if op == 0 {
+      vmHalted = true
+      advanced = true
+    } else if op == 1 {
+      vSet(a, 0, 0.0, "")
+    } else if op == 2 {
+      vSetNum(a, constNum[b])
+    } else if op == 3 {
+      vSet(a, 2, 0.0, constStr[b])
+    } else if op == 4 {
+      if b == 0 {
+        vSet(a, 3, 0.0, "")
+      } else {
+        vSet(a, 3, 1.0, "")
+      }
+    } else if op == 5 {
+      vSet(a, gTag(b), gNum(b), gStr(b))
+    } else if op == 6 {
+      gSet(a, vTag(b), vNum(b), vStr(b))
+    } else if op == 7 {
+      vSet(a, vTag(b), vNum(b), vStr(b))
+    } else if op >= 8 && op <= 13 {
+      if vmNum2(op, b, c) {
+        let x = vNum(b)
+        let y = vNum(c)
+        if op == 8 {
+          vSetNum(a, x + y)
+        } else if op == 9 {
+          vSetNum(a, x - y)
+        } else if op == 10 {
+          vSetNum(a, x * y)
+        } else if op == 11 {
+          if y == 0.0 {
+            vSetNum(a, 0.0)
+          } else {
+            vSetNum(a, x / y)
+          }
+        } else if op == 12 {
+          if y == 0.0 {
+            vSetNum(a, 0.0)
+          } else {
+            vSetNum(a, x - floor(x / y) * y)
+          }
+        } else {
+          vSetNum(a, x ** y)
+        }
+      }
+    } else if op == 14 {
+      if vTag(b) != 1 {
+        vmFail("attempt to negate")
+      } else {
+        vSetNum(a, 0.0 - vNum(b))
+      }
+    } else if op == 15 {
+      if truthyOf(vTag(b), vNum(b)) {
+        vSet(a, 3, 0.0, "")
+      } else {
+        vSet(a, 3, 1.0, "")
+      }
+    } else if op == 16 {
+      if (vTag(b) == 1 || vTag(b) == 2) && (vTag(c) == 1 || vTag(c) == 2) {
+        let ls = if vTag(b) == 2 then vStr(b) else fmtNum(vNum(b))
+        let rs = if vTag(c) == 2 then vStr(c) else fmtNum(vNum(c))
+        vSet(a, 2, 0.0, ls .. rs)
+      } else {
+        vmFail("attempt to concatenate")
+      }
+    } else if op == 17 || op == 18 || op == 19 {
+      let lt = vTag(b)
+      let rt = vTag(c)
+      if op == 17 {
+        if lt != rt {
+          vSet(a, 3, 0.0, "")
+        } else if lt == 1 {
+          vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
+        } else if lt == 2 {
+          vSet(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0, "")
+        } else if lt == 3 {
+          vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
+        } else if lt == 4 {
+          vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
+        } else {
+          vSet(a, 3, 1.0, "")
+        }
+      } else if lt == 1 && rt == 1 {
+        if op == 18 {
+          vSet(a, 3, if vNum(b) < vNum(c) then 1.0 else 0.0, "")
+        } else {
+          vSet(a, 3, if vNum(b) <= vNum(c) then 1.0 else 0.0, "")
+        }
+      } else if lt == 2 && rt == 2 {
+        // lexicographic string order cannot use the MathCompare gate
+        // (numbers only), so compare one codepoint per vmStep instead
+        cmpActive = true
+        cmpAA = vmBase + b
+        cmpBB = vmBase + c
+        cmpDst = vmBase + a
+        cmpI = 0
+        cmpOp = if op == 19 then 1 else 0
+      } else {
+        vmFail("attempt to compare")
+      }
+    } else if op == 20 {
+      vmPc = a
+      advanced = true
+    } else if op == 21 {
+      if !truthyOf(vTag(b), vNum(b)) {
+        vmPc = a
+        advanced = true
+      }
+    } else if op == 22 {
+      if truthyOf(vTag(b), vNum(b)) {
+        vmPc = a
+        advanced = true
+      }
+    } else if op == 23 {
+      if vTag(a) != 4 {
+        vmFail("attempt to call")
+      } else {
+        let fid = toInt(vNum(a))
+        let multitail = if c == 1 then true else false
+        let nargs = if multitail then (b - 1) + (if retCountV == 1 then 1 else 0) else b
+        if fid == 0 {
+          if nargs > 16 {
+            vmFail("too many print args (max 16)")
+          } else {
+            if 0 < nargs {
+              printSlot(if nPrintV > 7 then 7 else nPrintV, vTag(a + 1), vNum(a + 1), vStr(a + 1))
+            }
+            if 1 < nargs {
+              printSlot(if nPrintV + 1 > 7 then 7 else nPrintV + 1, vTag(a + 2), vNum(a + 2), vStr(a + 2))
+            }
+            if 2 < nargs {
+              printSlot(if nPrintV + 2 > 7 then 7 else nPrintV + 2, vTag(a + 3), vNum(a + 3), vStr(a + 3))
+            }
+            if 3 < nargs {
+              printSlot(if nPrintV + 3 > 7 then 7 else nPrintV + 3, vTag(a + 4), vNum(a + 4), vStr(a + 4))
+            }
+            if 4 < nargs {
+              printSlot(if nPrintV + 4 > 7 then 7 else nPrintV + 4, vTag(a + 5), vNum(a + 5), vStr(a + 5))
+            }
+            if 5 < nargs {
+              printSlot(if nPrintV + 5 > 7 then 7 else nPrintV + 5, vTag(a + 6), vNum(a + 6), vStr(a + 6))
+            }
+            if 6 < nargs {
+              printSlot(if nPrintV + 6 > 7 then 7 else nPrintV + 6, vTag(a + 7), vNum(a + 7), vStr(a + 7))
+            }
+            if 7 < nargs {
+              printSlot(if nPrintV + 7 > 7 then 7 else nPrintV + 7, vTag(a + 8), vNum(a + 8), vStr(a + 8))
+            }
+            if 8 < nargs {
+              printSlot(7, vTag(a + 9), vNum(a + 9), vStr(a + 9))
+            }
+            if 9 < nargs {
+              printSlot(7, vTag(a + 10), vNum(a + 10), vStr(a + 10))
+            }
+            if 10 < nargs {
+              printSlot(7, vTag(a + 11), vNum(a + 11), vStr(a + 11))
+            }
+            if 11 < nargs {
+              printSlot(7, vTag(a + 12), vNum(a + 12), vStr(a + 12))
+            }
+            if 12 < nargs {
+              printSlot(7, vTag(a + 13), vNum(a + 13), vStr(a + 13))
+            }
+            if 13 < nargs {
+              printSlot(7, vTag(a + 14), vNum(a + 14), vStr(a + 14))
+            }
+            if 14 < nargs {
+              printSlot(7, vTag(a + 15), vNum(a + 15), vStr(a + 15))
+            }
+            if 15 < nargs {
+              printSlot(7, vTag(a + 16), vNum(a + 16), vStr(a + 16))
+            }
+            nPrintV = nPrintV + nargs
+            vSet(a, 0, 0.0, "")
+            retCountV = 0
+          }
+        } else if fid == 1 || fid == 2 {
+          if nargs == 0 {
+            vmFail("wrong number of arguments")
+          } else if fid == 1 {
+            let t = vTag(a + 1)
+            vSet(a, 2, 0.0, if t == 0 then "nil" else if t == 1 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else "function")
+            retCountV = 1
+          } else {
+            vSet(a, 2, 0.0, fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)))
+            retCountV = 1
+          }
+        } else if fid == 3 {
+          let x = numArg(if 0 < nargs then vTag(a + 1) else 0, if 0 < nargs then vNum(a + 1) else 0.0)
+          let y = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
+          let z = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
+          outVecV = Vec(x, y, z)
+          vSet(a, 0, 0.0, "")
+          retCountV = 0
+        } else if fid == 4 {
+          let r = numArg(if 0 < nargs then vTag(a + 1) else 0, if 0 < nargs then vNum(a + 1) else 0.0)
+          let g = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
+          let bl = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
+          let al = numArg(if 3 < nargs then vTag(a + 4) else 0, if 3 < nargs then vNum(a + 4) else 0.0)
+          outColV = Color(r, g, bl, al)
+          vSet(a, 0, 0.0, "")
+          retCountV = 0
+        } else if fid == 5 {
+          if nargs != 0 {
+            vmFail("wrong number of arguments to clock")
+          } else {
+            vSetNum(a, ServerUptime())
+            retCountV = 1
+          }
+        } else {
+          if fFunc.length() >= MAX_CALLS {
+            vmFail("call depth exceeded")
+          } else {
+            let nbase = vmBase + a
+            let np = fParams[fid]
+            if np > 8 {
+              vmFail("too many parameters")
+            } else {
+              if 0 < np && 0 < nargs {
+                vtag[nbase + 0] = vtag[vmBase + a + 1]
+                vnum[nbase + 0] = vnum[vmBase + a + 1]
+                vstr[nbase + 0] = vstr[vmBase + a + 1]
+              } else if 0 < np {
+                vtag[nbase + 0] = 0
+              }
+              if 1 < np && 1 < nargs {
+                vtag[nbase + 1] = vtag[vmBase + a + 2]
+                vnum[nbase + 1] = vnum[vmBase + a + 2]
+                vstr[nbase + 1] = vstr[vmBase + a + 2]
+              } else if 1 < np {
+                vtag[nbase + 1] = 0
+              }
+              if 2 < np && 2 < nargs {
+                vtag[nbase + 2] = vtag[vmBase + a + 3]
+                vnum[nbase + 2] = vnum[vmBase + a + 3]
+                vstr[nbase + 2] = vstr[vmBase + a + 3]
+              } else if 2 < np {
+                vtag[nbase + 2] = 0
+              }
+              if 3 < np && 3 < nargs {
+                vtag[nbase + 3] = vtag[vmBase + a + 4]
+                vnum[nbase + 3] = vnum[vmBase + a + 4]
+                vstr[nbase + 3] = vstr[vmBase + a + 4]
+              } else if 3 < np {
+                vtag[nbase + 3] = 0
+              }
+              if 4 < np && 4 < nargs {
+                vtag[nbase + 4] = vtag[vmBase + a + 5]
+                vnum[nbase + 4] = vnum[vmBase + a + 5]
+                vstr[nbase + 4] = vstr[vmBase + a + 5]
+              } else if 4 < np {
+                vtag[nbase + 4] = 0
+              }
+              if 5 < np && 5 < nargs {
+                vtag[nbase + 5] = vtag[vmBase + a + 6]
+                vnum[nbase + 5] = vnum[vmBase + a + 6]
+                vstr[nbase + 5] = vstr[vmBase + a + 6]
+              } else if 5 < np {
+                vtag[nbase + 5] = 0
+              }
+              if 6 < np && 6 < nargs {
+                vtag[nbase + 6] = vtag[vmBase + a + 7]
+                vnum[nbase + 6] = vnum[vmBase + a + 7]
+                vstr[nbase + 6] = vstr[vmBase + a + 7]
+              } else if 6 < np {
+                vtag[nbase + 6] = 0
+              }
+              if 7 < np && 7 < nargs {
+                vtag[nbase + 7] = vtag[vmBase + a + 8]
+                vnum[nbase + 7] = vnum[vmBase + a + 8]
+                vstr[nbase + 7] = vstr[vmBase + a + 8]
+              } else if 7 < np {
+                vtag[nbase + 7] = 0
+              }
+              fFunc.push(fid)
+              fBase.push(nbase)
+              fRetA.push(a)
+              fRetBase.push(vmBase)
+              fRetPC.push(vmPc + 1)
+              vmBase = nbase
+              vmPc = fStart[fid]
+              advanced = true
+            }
+          }
+        }
+      }
+    } else if op == 24 {
+      let rv = vTag(a)
+      let rn = vNum(a)
+      let rs = vStr(a)
+      let ra = fRetA[fRetA.length() - 1]
+      let rb = fRetBase[fRetBase.length() - 1]
+      let rpc = fRetPC[fRetPC.length() - 1]
+      fFunc.pop()
+      fBase.pop()
+      fRetA.pop()
+      fRetBase.pop()
+      fRetPC.pop()
+      if fFunc.length() == 0 {
+        resultV = fmtVal(rv, rn, rs)
+        vmHalted = true
+      } else {
+        vmBase = rb
+        vSet(ra, rv, rn, rs)
+        vmPc = rpc
+        retCountV = 1
+      }
+      advanced = true
+    } else if op == 26 {
+      let ra = fRetA[fRetA.length() - 1]
+      let rb = fRetBase[fRetBase.length() - 1]
+      let rpc = fRetPC[fRetPC.length() - 1]
+      fFunc.pop()
+      fBase.pop()
+      fRetA.pop()
+      fRetBase.pop()
+      fRetPC.pop()
+      if fFunc.length() == 0 {
+        resultV = ""
+        vmHalted = true
+      } else {
+        vmBase = rb
+        vSet(ra, 0, 0.0, "")
+        vmPc = rpc
+        retCountV = 0
+      }
+      advanced = true
+    } else if op == 27 {
+      if retCountV == -1 {
+        retCountV = 1
+      }
+      let rv = vTag(a)
+      let rn = vNum(a)
+      let rs = vStr(a)
+      let ra = fRetA[fRetA.length() - 1]
+      let rb = fRetBase[fRetBase.length() - 1]
+      let rpc = fRetPC[fRetPC.length() - 1]
+      fFunc.pop()
+      fBase.pop()
+      fRetA.pop()
+      fRetBase.pop()
+      fRetPC.pop()
+      if fFunc.length() == 0 {
+        if retCountV == 1 {
+          resultV = fmtVal(rv, rn, rs)
+        } else {
+          resultV = ""
+        }
+        vmHalted = true
+      } else {
+        if retCountV == 1 {
+          vmBase = rb
+          vSet(ra, rv, rn, rs)
+        } else {
+          vmBase = rb
+        }
+        vmPc = rpc
+      }
+      advanced = true
+    } else if op == 25 {
+      vSet(a, 4, b, "")
+    }
+    if !advanced && !vmHalted {
+      vmPc = vmPc + 1
+      if vmPc >= bop.length() {
+        vmHalted = true
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------- jobs + events
+
+let sched: exec
+let goParse: exec
+let goParse2: exec
+
+var jobBusy: bool = false
+var wantParse: bool = false
+
+mod parseJobStart() {
+  parseInit()
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
+  mainFid = newFunc()
+  fStart[mainFid] = 0
+  fParams[mainFid] = 0
+}
+
+// Lex one chunk per call; the driver loops these across ticks.
+mod lexChunk() {
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+  lexStep()
+}
+
+mod parseChunk() {
+  parseStep()
+  parseStep()
+  parseStep()
+  parseStep()
+  parseStep()
+  parseStep()
+  parseStep()
+  parseStep()
+  parseStep()
+  parseStep()
+  parseStep()
+  parseStep()
+}
+
+mod vmBurst() {
+  vmStep()
+  vmStep()
+  vmStep()
+  vmStep()
+}
+
+on Change(program) {
+  wantParse = true
+  emit sched
+}
+
+on run {
+  wantParse = true
+  emit sched
+}
+
+on ReadBrickGrid() {
+  wantParse = true
+  emit sched
+}
+
+on sched {
+  if !jobBusy {
+    if wantParse {
+      wantParse = false
+      jobBusy = true
+      emit goParse
+    }
+  }
+}
+
+on goParse {
+  parseJobStart()
+  lsrc = program
+  llen = program.Length()
+  lpos = 0
+  lstage = 0
+  lidBuf = ""
+  let loop: exec
+  buffer emit loop
+  await loop
+  lexChunk()
+  if lstage != 99 && !lerr {
+    buffer emit loop
+  } else {
+    if lerr {
+      progOkV = false
+      progLenV = 0
+      vmHalted = true
+      jobBusy = false
+    } else {
+      emit goParse2
+    }
+  }
+}
+
+on goParse2 {
+  let loop: exec
+  buffer emit loop
+  await loop
+  parseChunk()
+  if !pDone && !perr {
+    buffer emit loop
+  } else {
+    progOkV = !perr && pDone
+    progLenV = if progOkV then bop.length() else 0
+    jobBusy = false
+    vmReset()
+  }
+}
+
+on Change(in0) {
+  latch0 = in0
+  if progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Change(in1) {
+  latch1 = in1
+  if progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Change(in2) {
+  latch2 = in2
+  if progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Change(in3) {
+  latch3 = in3
+  if progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Change(in4) {
+  latchS4 = in4
+  if progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Change(in5) {
+  latchS5 = in5
+  if progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Change(inVec) {
+  latchVX = inVec.x
+  latchVY = inVec.y
+  latchVZ = inVec.z
+  if progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Change(inCol) {
+  latchCR = inCol.r
+  latchCG = inCol.g
+  latchCB = inCol.b
+  latchCA = inCol.a
+  if progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Clock(interval = 0.1) {
+  if progOkV && !vmHalted && !jobBusy {
+    vmBurst()
   }
 }
 
