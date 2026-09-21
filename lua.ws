@@ -1,151 +1,171 @@
-/// Tiny Lua: numbers, strings, booleans, nil, globals+locals, tables-free.
+/// Tiny Lua: numbers, strings, booleans, nil, functions, tables, globals + locals.
 ///
-/// Wire a Lua program into `program` (a string variable gate). It is lexed,
-/// parsed to flat bytecode, then run on a register VM: 4 instructions per
-/// Clock pulse. Types like the program string, restart with `run`, feed
-/// numbers into in0..in3, strings into in4..in5, a vector into inVec and a
-/// color into inCol, read printed values from out0..out7.
+/// Wire a Lua program into `program` (a string variable gate) and drive `run` high.
+/// The program is lexed, parsed to flat bytecode, then executed on a register VM.
+/// Numbers go in through inNum0..inNum3, strings through inStr0..inStr1, a vector through inVec,
+/// a color through inCol and a float array through inArr. Printed values accumulate
+/// in the log; outNum0..outNum3, outStr0..outStr1, outArr, outVec and outCol
+/// are writable from Lua.
 ///
 /// Ports
-///   in  program: string   Lua source, newlines and all.
-///   in  run: exec         re-parse and restart (also runs on chip load and
-///                         whenever `program` changes; input changes re-run
-///                         the parsed program automatically, formula-gate style)
-///   in  in0..in3: float  sticky numeric inputs, readable as globals in0..in3
-///   in  in4..in5: string sticky string inputs, readable as globals in4..in5
-///   in  inVec: vector    unified vector input; Lua reads invecx/y/z
-///   in  inCol: color     unified color input; Lua reads incolr/g/b/a
-///   out out0..out7: string  print slots in order (overflow overwrites out7)
-///   out outVec: vector  written by setvec(x, y, z)
-///   out outCol: color   written by setcol(r, g, b, a)
-///   out nPrint: int     number of printed values
-///   out result: string  top-level return value, "" when none
-///   out err: string     runtime error text, "" when none
-///   out progOk: bool    false when the program did not compile
-///   out progLen: int    compiled instruction count
-///   out halted: bool    true when the VM stopped (end, return or error)
-///   out busy: bool      true while lexing, parsing or stepping
+///   in  program: string   Lua source, newlines and all. Changing it re-parses.
+///   in  run: bool         level input. High: the program executes. Low: execution
+///                         stops immediately (outputs keep their values). A rising
+///                         edge restarts the program from the top. Left unwired it
+///                         is low, so nothing runs: wire a constant true to auto-run.
+///   in  inNum0..inNum3: float   sticky numeric inputs, readable as globals inNum0..inNum3
+///   in  inStr0..inStr1: string  sticky string inputs, readable as globals inStr0..inStr1
+///   in  inVec: vector     Lua reads invecx / invecy / invecz
+///   in  inCol: color      Lua reads incolr / incolg / incolb / incola
+///   in  inArr: float[]    Lua reads it 1-based via inarr(i); out-of-range reads nil
+///   out log: string       print output: one line per call (args tab-separated plus
+///                         a newline); the last 32 lines are kept, each capped at
+///                         64 chars; cleared on restart
+///   out outNum0..outNum3: float  writable numeric globals (nil writes 0.0;
+///                         writing a string/table/function is a runtime error)
+///   out outStr0..outStr1: string  writable globals, Lua-formatted (nil writes "")
+///   out outArr: float[] 64 slots, written 1-based via outarr(i, v) (nil writes 0.0)
+///   out outVec: vector    written by setvec(x, y, z)
+///   out outCol: color     written by setcol(r, g, b, a)
+///   out result: string    top-level return value, "" when none
+///   out err: string       runtime error text, "" when none; compile failures read
+///                         "line N: message"
+///   out progOk: bool      false when the program did not compile
+///   out busy: bool        true while lexing, parsing, or executing with run high
+///   A change on any scalar input while `run` is high restarts the program with the new
+///   value. inArr is read live by inarr() (no restart needed). Changing an input while
+///   `run` is low leaves the outputs alone.
 ///
-/// Tiny subset (everything else is a compile error, progOk = false)
-///   types      numbers (one double type), strings, booleans, nil, functions
-///   vars       globals (inputs + print/type/tostring/setvec/setcol/clock
-///              built in) and locals; shadowing works; upvalues do NOT
-///              (loud error)
-///   stmts      local (single or multi), assignment (single or parallel),
-///              if/then/elseif/else/end, while/do/end, break, do/end,
-///              function f()/local function f(), return (single value),
-///              calls (incl. f"str" sugar and f()() chains)
-///   exprs      + - * / % ^ (power, right assoc) -x, .. (concat, right assoc,
-///              binds looser than + -), < > <= >= == ~= (non-associative,
-///              like Lua), and or (return operands, short-circuit), not
-///   calls      missing args become nil, extras dropped; bare `return` and
-///              falling off the end yield ZERO values (print(f()) prints
-///              nothing); `return a, b` is rejected (single value only)
-///   builtins   print(...) -> out slots; type(v), tostring(v);
-///              setvec(x, y, z) -> outVec (missing/nil args are 0);
-///              setcol(r, g, b, a) -> outCol; clock() -> seconds
-///              (virtual steps/40 in the model, ServerUptime in-game)
-///   print      values go to out0..out7 in order; print() writes an empty call
-///   numbers    decimal floats (0.5 .5 5. 1e3 1E-3); NO hex, NO 5..3 (both
-///              rejected, like Lua); integer-looking literals are floats,
-///              so print(3) shows 3.0 (documented PUC-Lua difference)
-///   strings    "..." '...' with \n \r \t \\ \" \' \<newline>, \z,
-///              \ddd \xXX for printable ASCII (32..126) only; \a \b \f \v
-///              and non-printable escapes are a compile error in-gate
-///              (the Python model accepts them; use direct characters)
-///   compare    ==/~~= work on all types (no coercion); < > <= >= on
-///              numbers, or lexicographically on strings; arithmetic never
-///              coerces strings (attempt to add 'x' halts, like Lua errors)
-///   divzero    x/0, x%0 and 0/0 yield 0 (Brickadia gate behavior, unlike
-///              Lua inf/nan; covered by model-only tests, not the oracle)
-///   missing    tables, for, methods, goto, bitwise ops, coroutines,
-///              metatables, modules, pcall/error, closures/upvalues,
-///              multiple return values, # length operator
+/// Language subset (anything else is a compile error and sets progOk = false)
+///   types      numbers (one double type), strings, booleans, nil, functions, tables
+///   vars       globals (the inputs, the writable outputs, plus print, type, tostring,
+///              setvec, setcol, clock, inarr, outarr) and locals; shadowing works;
+///              upvalues do NOT (loud compile error), so a function cannot call a local
+///              function or read a local defined outside it
+///   stmts      local (single or multi), assignment (single or parallel, to names or
+///              table fields; stores run right to left like PUC Lua), if / elseif / else,
+///              while, break, do / end, function f() and local function f(), return
+///              (single value), calls (including f"str" and chained f()())
+///   exprs      + - * / % ^ (power, right assoc), unary -, # (length of a table or string),
+///              .. (concat), < > <= >= == ~= (non-associative, like Lua), and, or, not
+///   tables     constructors {}, {1, 2, 3}, {x = 1, y = 2}, {[k] = v}, mixed, with , or ;
+///              separators and a trailing separator; t[k], t.name, t[k] = v, t.name = v,
+///              nesting (m[i][j], t.a.b), t[i], t[j] = t[j], t[i]; #t; assigning nil
+///              deletes a key. Tables are references and compare by identity. Keys may be
+///              integers, strings, booleans, tables or functions. Functions can be stored
+///              in fields and called as t.f(x).
+///              NOT supported: non-integer number keys (a runtime error on write, nil on
+///              read), pairs / ipairs / next, for loops, the table library, metatables,
+///              t:method() calls, mixing plain names and table fields in one statement.
+///              #t returns a border like Lua: it follows t[#t + 1] = v appends and fills
+///              in out-of-order assignments. Reading a missing key gives nil.
+///   calls      missing args become nil, extras dropped; bare `return` and falling off
+///              the end yield ZERO values (print(f()) prints nothing); `return a, b` is
+///              rejected (single value only)
+///   builtins   print(...) -> log; type(v), tostring(v) (a table prints as "table");
+///              setvec(x, y, z) -> outVec; setcol(r, g, b, a) -> outCol;
+///              inarr(i) -> inArr[i] (1-based, out-of-range reads nil);
+///              outarr(i, v) -> outArr[i] = v (1-based, out-of-range is an error);
+///              clock() -> seconds (ServerUptime)
+///   numbers    0.5 .5 5. 1e3 1E-3; no hex. Integer-looking values are doubles, so
+///              print(3) shows 3.0 and 'x' .. 1 gives "x1.0" (documented Lua difference);
+///              #t is an integral float too, so it prints like 3.0
+///   strings    "..." and '...' with \n \r \t \\ \" \' \<newline>, \z, \ddd and \xXX
+///              for printable ASCII (32..126); other escapes are a compile error
+///   compare    == and ~= work on all types without coercion (tables by identity);
+///              < > <= >= work on numbers or lexicographically on strings;
+///              arithmetic never coerces strings
+///   divzero    x/0, x%0 and 0/0 yield 0 (Brickadia gate behavior, unlike Lua inf/nan)
+///   missing    for, methods, goto, bitwise operators, coroutines, metatables, modules,
+///              pcall / error, closures / upvalues, multiple return values
 ///
-/// Notable PUC-Lua differences (all covered by differential tests)
-///   one number type (5.4 int/float distinction not modeled; tests force
-///   floats on the oracle side), no string coercion in arithmetic,
-///   runtime errors halt with err set (there is no pcall to catch them),
-///   in-game number printing uses the engine conversion for non-integers
-///   (integral floats always render like Lua: 3 becomes 3.0).
+/// Other differences from PUC-Lua 5.4
+///   Runtime errors halt with err set (there is no pcall). tostring of a table is
+///   "table" (PUC prints an address). t[nil] reads nil (PUC errors). outNum0..outNum3
+///   only take numbers/booleans/nil and outArr only numbers (PUC tables take anything;
+///   fixed-size float storage is a gate limitation). The log keeps the last 32 lines
+///   at 64 chars each (about 2 KB).
 ///
-/// Limits (compile errors past them, progOk = false)
-///   512 bytecode instructions, 32 registers per function, 32 functions,
-///   64 globals (19 pre-registered), 256 numeric + 256 string constants,
-///   16 call arguments, 32 nested calls.
-///   Long programs: parsing is chunked across ticks (64 chars/tick), the VM
-///   steps 16 instructions per 0.1s pulse; step counts are reported by the
-///   Python model so in-game time ~= steps/160 seconds.
+/// Limits (compile error past them, progOk = false)
+///   1024 tokens, 512 bytecode instructions, 64 registers per function, 32 functions,
+///   64 globals (27 pre-registered), 256 numeric and 256 string constants, 16 call
+///   arguments, 32 nested calls. At run time: 64 tables and 512 table entries in total.
 ///
-/// Timing knobs: LEX_PER_TICK below, the Clock interval on the step handler,
-/// and the unrolled vmStep() calls per pulse (16 = one STEPS_PER_TICK unit).
+/// Speed and gate count
+///   Everything is unrolled per tick, so gates buy speed. Approximate cost of one extra
+///   copy: vmStep 2.5k gates, parseStep 6k, lexStep 1k.
+///   Execution   vmBurst() = 4 vmStep() calls, fired by the Clock at STEP_INTERVAL
+///               (0.01 s, so at most once per tick): up to about 240 VM instructions per
+///               second at 60 ticks per second. Whether the game really fires the Clock
+///               that fast has not been measured; time a loop with clock() to check.
+///               Rough sizes: an 8 element bubble sort is ~740 instructions, 16 elements
+///               ~2600, 32 elements ~9400.
+///   Parsing     lexChunk() = 4 characters per tick, parseChunk() = 2 parser steps per
+///               tick. A few hundred characters take a few seconds. Add or remove calls in
+///               lexChunk / parseChunk / vmBurst to trade gates for speed.
 ///
-/// Python reference model: lua_model.py (106/106 differential tests green
-/// vs real Lua 5.4). ISA shared with the model: opcodes 0..27, parallel
-/// op/pa/pb/pc tables, JMPF/JMPT carry target in pa and test reg in pb,
-/// CALL carries arg count in pb and multi-tail bit in pc.
+/// Verification: differential tests against real Lua 5.4 (about 160 programs, plus roughly
+/// 550 random programs, all matching apart from the documented differences), and handler
+/// tests for `run`. It has not been run inside Brickadia.
 
 @layout("cube")
 
 // ---------------------------------------------------------------- ports
 
 @left in program: string
-@left in run: exec
-@left in in0: float
-@left in in1: float
-@left in in2: float
-@left in in3: float
-@left in in4: string
-@left in in5: string
+@left in run: bool
+@left in inNum0: float
+@left in inNum1: float
+@left in inNum2: float
+@left in inNum3: float
+@left in inStr0: string
+@left in inStr1: string
 @left in inVec: vector
 @left in inCol: color
+@left in inArr: float[]
 
-@right out out0: string = o0.Value
-@right out out1: string = o1.Value
-@right out out2: string = o2.Value
-@right out out3: string = o3.Value
-@right out out4: string = o4.Value
-@right out out5: string = o5.Value
-@right out out6: string = o6.Value
-@right out out7: string = o7.Value
+@right out log: string = logV.Value
+@right out outNum0: float = oF0.Value
+@right out outNum1: float = oF1.Value
+@right out outNum2: float = oF2.Value
+@right out outNum3: float = oF3.Value
+@right out outStr0: string = oS4.Value
+@right out outStr1: string = oS5.Value
+@right out outArr: float[] = outArrV
 @right out outVec: vector = outVecV.Value
 @right out outCol: color = outColV.Value
-@right out nPrint: int = nPrintV.Value
 @right out result: string = resultV.Value
 @right out err: string = errV.Value
 @right out progOk: bool = progOkV.Value
-@right out progLen: int = progLenV.Value
-@right out halted: bool = vmHalted.Value
-@right out busy: bool = busyV.Value
+@right out busy: bool = jobBusy || (run && progOkV && !vmHalted)
 
 // ---------------------------------------------------------------- tunables
 
-const LEX_PER_TICK = 64
-const STEPS_PER_TICK = 16
+const STEP_INTERVAL = 0.01
 const MAX_INSTR = 512
-const MAX_REGS = 32
+const MAX_REGS = 64
 const MAX_FUNCS = 32
 const MAX_GLOBALS = 64
 const MAX_CALLS = 32
+const MAX_TABLES = 64
+const MAX_HEAP = 512
 
 // ---------------------------------------------------------------- state: outputs + status
 
-var o0: string = ""
-var o1: string = ""
-var o2: string = ""
-var o3: string = ""
-var o4: string = ""
-var o5: string = ""
-var o6: string = ""
-var o7: string = ""
+var logV: string = ""
+var logLines: string[]
+var oF0: float = 0.0
+var oF1: float = 0.0
+var oF2: float = 0.0
+var oF3: float = 0.0
+var oS4: string = ""
+var oS5: string = ""
+var outArrV: float[]
 var outVecV: vector = Vec(0.0, 0.0, 0.0)
 var outColV: color = Color(0.0, 0.0, 0.0, 0.0)
-var nPrintV: int = 0
 var resultV: string = ""
 var errV: string = ""
 var progOkV: bool = false
-var progLenV: int = 0
-var busyV: bool = false
 
 // ---------------------------------------------------------------- value helpers
 // value tags: 0 nil, 1 number, 2 string, 3 boolean, 4 function
@@ -159,7 +179,7 @@ mod truthyOf(tag: int, num: float) -> bool {
 mod fmtNum(v: float) -> string {
   return if v != v then "nan"
     else if v != 0.0 && 2.0 * v == v then if v > 0.0 then "inf" else "-inf"
-    else if v == floor(v) && abs(v) < 1e15 then ("" .. (v & 0)) .. ".0"
+    else if v == floor(v) && abs(v) < 1e15 then ("" .. (v | 0)) .. ".0"
     else "" .. v
 }
 
@@ -168,6 +188,7 @@ mod fmtVal(tag: int, num: float, s: string) -> string {
     else if tag == 3 then if num == 0.0 then "false" else "true"
     else if tag == 2 then s
     else if tag == 4 then "function"
+    else if tag == 5 then "table"
     else fmtNum(num)
 }
 
@@ -184,7 +205,10 @@ var lsrc: string = ""
 var llen: int = 0
 var lpos: int = 0
 var lstage: int = 0
+var lline: int = 1
 var lerr: bool = false
+var lerrLine: int = 1
+var lerrMsg: string = ""
 var lstrDelim: string = ""
 var lnumInt: float = 0.0
 var lnumFrac: float = 0.0
@@ -202,18 +226,25 @@ var tk: int[]
 var ts: int[]
 var tn: float[]
 var tt: string[]
+var tl: int[]
+
+mod lexFail(msg: string) {
+  lerr = true
+  lerrMsg = msg
+  lerrLine = lline
+}
 
 // printable ASCII table for \ddd / \xXX escapes (32..126 only)
 const PRINTABLES = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
 mod emitTok(kind: int, sub: int, num: float, text: string) {
   tk.push(kind)
-  tk.push(kind)
   ts.push(sub)
   tn.push(num)
   tt.push(text)
+  tl.push(lline)
   if tk.length() > 1024 {
-    lerr = true
+    lexFail("too many tokens (max 1024)")
   }
 }
 
@@ -262,7 +293,7 @@ mod emitEscByte(v: int) {
   if v >= 32 && v <= 126 {
     lidBuf = lidBuf .. PRINTABLES.Substring(v - 32, 1)
   } else {
-    lerr = true
+    lexFail("bad escape")
   }
 }
 
@@ -280,6 +311,9 @@ mod lexStep() {
       if lpos >= llen {
         lstage = 99
       } else if cp == 10 || cp == 13 {
+        if cp == 10 {
+          lline = lline + 1
+        }
         lstage = 0
         lpos = lpos + 1
       } else {
@@ -294,7 +328,7 @@ mod lexStep() {
           emitNum()
           lstage = 99
         } else {
-          lerr = true
+          lexFail("malformed number")
         }
       } else if lstage == 6 {
         resolveKw()
@@ -302,10 +336,13 @@ mod lexStep() {
       } else if lstage == 0 {
         lstage = 99
       } else {
-        lerr = true
+        lexFail("unterminated string")
       }
     } else if lstage == 0 {
       if cp == 32 || cp == 9 || cp == 10 || cp == 13 {
+        if cp == 10 {
+          lline = lline + 1
+        }
         lpos = lpos + 1
       } else if isDigit {
         lnumInt = cp - 48.0
@@ -330,13 +367,14 @@ mod lexStep() {
           lpos = lpos + 1
         } else if cp2 == 46 {
           if cp3 == 46 {
-            lerr = true
+            lexFail("varargs '...' not supported")
           } else {
             emitTok(5, 18, 0.0, "")
             lpos = lpos + 2
           }
         } else {
-          lerr = true
+          emitTok(5, 23, 0.0, "")
+          lpos = lpos + 1
         }
       } else if cp == 34 || cp == 39 {
         lstrDelim = ch
@@ -399,7 +437,7 @@ mod lexStep() {
           emitTok(5, 12, 0.0, "")
           lpos = lpos + 2
         } else {
-          lerr = true
+          lexFail("unexpected character")
         }
       } else if cp == 40 {
         emitTok(5, 14, 0.0, "")
@@ -413,8 +451,23 @@ mod lexStep() {
       } else if cp == 59 {
         emitTok(5, 17, 0.0, "")
         lpos = lpos + 1
+      } else if cp == 123 {
+        emitTok(5, 19, 0.0, "")
+        lpos = lpos + 1
+      } else if cp == 125 {
+        emitTok(5, 20, 0.0, "")
+        lpos = lpos + 1
+      } else if cp == 91 {
+        emitTok(5, 21, 0.0, "")
+        lpos = lpos + 1
+      } else if cp == 93 {
+        emitTok(5, 22, 0.0, "")
+        lpos = lpos + 1
+      } else if cp == 35 {
+        emitTok(5, 24, 0.0, "")
+        lpos = lpos + 1
       } else {
-        lerr = true
+        lexFail("unexpected character")
       }
     } else if lstage == 1 {
       // number integer part
@@ -427,10 +480,11 @@ mod lexStep() {
           lstage = 2
           lpos = lpos + 1
         } else if cp2 == 46 {
-          lerr = true
+          lexFail("malformed number (like Lua '5..3')")
         } else {
           emitNum()
           lstage = 0
+          lpos = lpos + 1
         }
       } else if cp == 101 || cp == 69 {
         if (cp2 >= 48 && cp2 <= 57) || ((cp2 == 43 || cp2 == 45) && cp3 >= 48 && cp3 <= 57) {
@@ -476,7 +530,7 @@ mod lexStep() {
         emitNum()
         lstage = 0
       } else {
-        lerr = true
+        lexFail("malformed number")
       }
     } else if lstage == 4 {
       // string body
@@ -489,7 +543,7 @@ mod lexStep() {
         lstage = 5
         lpos = lpos + 1
       } else if cp == 10 || cp == 13 {
-        lerr = true
+        lexFail("unterminated string")
       } else {
         lidBuf = lidBuf .. ch
         lpos = lpos + 1
@@ -511,12 +565,15 @@ mod lexStep() {
       } else if cp == 97 || cp == 98 || cp == 102 || cp == 118 {
         // Lua \a \b \f \v are control chars the gate cannot spell:
         // use decimal escapes of printable chars instead (or avoid them)
-        lerr = true
+        lexFail("bad escape")
       } else if cp == 92 || cp == 34 || cp == 39 {
         lidBuf = lidBuf .. ch
         lstage = 4
         lpos = lpos + 1
       } else if cp == 10 || cp == 13 {
+        if cp == 10 {
+          lline = lline + 1
+        }
         lidBuf = lidBuf .. "\n"
         lstage = 4
         lpos = lpos + 1
@@ -534,7 +591,7 @@ mod lexStep() {
         lstage = 9
         lpos = lpos + 1
       } else {
-        lerr = true
+        lexFail("bad escape")
       }
     } else if lstage == 6 {
       // name / keyword
@@ -567,11 +624,14 @@ mod lexStep() {
         lstage = 4
         lpos = lpos + 1
       } else {
-        lerr = true
+        lexFail("bad hex escape")
       }
     } else if lstage == 9 {
       // \z skip whitespace
       if cp == 32 || cp == 9 || cp == 10 || cp == 13 {
+        if cp == 10 {
+          lline = lline + 1
+        }
         lpos = lpos + 1
       } else {
         lstage = 4
@@ -664,33 +724,25 @@ var closeMode: int = 0
 var exprDone: bool = false
 var closeTrig: int = 0
 var opC: int[]
+var openCtor: int = 0
+var ctorStk: int[]
+var itBase: int[]
+var itKey: int[]
 
 mod curKind() -> int {
-  if cpos >= tk.length() {
-    return 6
-  }
-  return tk[cpos]
+  return if cpos >= tk.length() then 6 else tk[cpos]
 }
 
 mod curSub() -> int {
-  if cpos >= tk.length() {
-    return 0
-  }
-  return ts[cpos]
+  return if cpos >= tk.length() then 0 else ts[cpos]
 }
 
 mod curNum() -> float {
-  if cpos >= tk.length() {
-    return 0.0
-  }
-  return tn[cpos]
+  return if cpos >= tk.length() then 0.0 else tn[cpos]
 }
 
 mod curStr() -> string {
-  if cpos >= tk.length() {
-    return ""
-  }
-  return tt[cpos]
+  return if cpos >= tk.length() then "" else tt[cpos]
 }
 
 mod pushVal(r: int, isCall: bool, isPrefix: bool) {
@@ -703,7 +755,6 @@ mod popVal() -> int {
   if valStk.length() == 0 {
     perr = true
     perrMsg = "operand stack underflow"
-    return 0
   }
   valCall.pop()
   valPrefix.pop()
@@ -711,24 +762,17 @@ mod popVal() -> int {
 }
 
 mod popFlag() -> bool {
-  if valCall.length() == 0 {
-    return false
-  }
-  return valCall.pop()
+  let had = valCall.length() > 0
+  let v = valCall.pop().Value
+  return had && v
 }
 
 mod topFlag() -> bool {
-  if valCall.length() == 0 {
-    return false
-  }
-  return valCall[valCall.length() - 1]
+  return if valCall.length() == 0 then false else valCall[valCall.length() - 1]
 }
 
 mod topPrefix() -> bool {
-  if valPrefix.length() == 0 {
-    return false
-  }
-  return valPrefix[valPrefix.length() - 1]
+  return if valPrefix.length() == 0 then false else valPrefix[valPrefix.length() - 1]
 }
 
 mod setTopFlag(v: bool) {
@@ -759,62 +803,69 @@ mod bEmit(op: int, a: int, b: int, c: int) -> int {
   return bop.length() - 1
 }
 
+var lastPatchTarget: int = -1
+
 mod bPatch(pos: int, target: int) {
   bpa[pos] = target
+  lastPatchTarget = target
 }
 
 mod cNum(v: float) -> int {
   let r = constNum.find(v)
-  if r.Found {
-    return r.Index
+  if !r.Found {
+    if constNum.length() >= 256 {
+      perr = true
+      perrMsg = "too many numeric constants"
+    } else {
+      constNum.push(v)
+    }
   }
-  if constNum.length() >= 256 {
-    perr = true
-    perrMsg = "too many numeric constants"
-    return 0
-  }
-  constNum.push(v)
-  return constNum.length() - 1
+  return if r.Found then r.Index else constNum.length() - 1
 }
 
 mod cStr(s: string) -> int {
   let r = constStr.find(s)
-  if r.Found {
-    return r.Index
+  if !r.Found {
+    if constStr.length() >= 256 {
+      perr = true
+      perrMsg = "too many string constants"
+    } else {
+      constStr.push(s)
+    }
   }
-  if constStr.length() >= 256 {
-    perr = true
-    perrMsg = "too many string constants"
-    return 0
-  }
-  constStr.push(s)
-  return constStr.length() - 1
+  return if r.Found then r.Index else constStr.length() - 1
 }
 
 mod gDeclare(name: string) -> int {
   let r = gmap.get(name)
-  if r.Found {
-    return r.Value
+  if !r.Found {
+    if gslotNext >= MAX_GLOBALS {
+      perr = true
+      perrMsg = "too many globals"
+    } else {
+      gmap.set(name, gslotNext)
+      gslotNext = gslotNext + 1
+    }
   }
-  if gslotNext >= MAX_GLOBALS {
-    perr = true
-    perrMsg = "too many globals"
-    return 0
-  }
-  gmap.set(name, gslotNext)
-  gslotNext = gslotNext + 1
-  return gslotNext - 1
+  return if r.Found then r.Value else gslotNext - 1
 }
 
 mod gLookup(name: string) -> int {
   let r = gmap.get(name)
-  if r.Found {
-    return r.Value
-  }
-  return -1
+  return if r.Found then r.Value else -1
 }
 
 mod parseInit() {
+  tk.clear()
+  ts.clear()
+  tn.clear()
+  tt.clear()
+  tl.clear()
+  lerr = false
+  lerrMsg = ""
+  lerrLine = 1
+  lline = 1
+  lastPatchTarget = -1
   bop.clear()
   bpa.clear()
   bpb.clear()
@@ -836,6 +887,10 @@ mod parseInit() {
   opA.clear()
   opB.clear()
   opC.clear()
+  ctorStk.clear()
+  itBase.clear()
+  itKey.clear()
+  openCtor = 0
   ctlKind.clear()
   ctlA.clear()
   ctlB.clear()
@@ -870,6 +925,12 @@ mod parseInit() {
   funcEntryLoc.resize(33, 0)
   opBase.resize(33, 0)
   gslotNext = 0
+  gDeclare("outNum0")
+  gDeclare("outNum1")
+  gDeclare("outNum2")
+  gDeclare("outNum3")
+  gDeclare("outStr0")
+  gDeclare("outStr1")
   fnDepth = 0
   locLen = 0
   cpos = 0
@@ -894,12 +955,12 @@ mod parseInit() {
   pendKind = -1
   mainFid = 0
   closeTrig = 0
-  gDeclare("in0")
-  gDeclare("in1")
-  gDeclare("in2")
-  gDeclare("in3")
-  gDeclare("in4")
-  gDeclare("in5")
+  gDeclare("inNum0")
+  gDeclare("inNum1")
+  gDeclare("inNum2")
+  gDeclare("inNum3")
+  gDeclare("inStr0")
+  gDeclare("inStr1")
   gDeclare("invecx")
   gDeclare("invecy")
   gDeclare("invecz")
@@ -913,6 +974,8 @@ mod parseInit() {
   gDeclare("setvec")
   gDeclare("setcol")
   gDeclare("clock")
+  gDeclare("inarr")
+  gDeclare("outarr")
 }
 
 // ---------------------------------------------------------------- registers + scope
@@ -922,13 +985,18 @@ mod regAlloc() -> int {
   if r >= MAX_REGS {
     perr = true
     perrMsg = "too many registers"
-    return 0
   }
   cfNext[fnDepth] = r + 1
   if r + 1 > cfMax[fnDepth] {
     cfMax[fnDepth] = r + 1
   }
   return r
+}
+
+mod regFree(r: int) {
+  if r > cfMaxLoc[fnDepth] && r == cfNext[fnDepth] - 1 {
+    cfNext[fnDepth] = r
+  }
 }
 
 // Account for call argument slots (fr+1..), which bypass regAlloc.
@@ -944,8 +1012,7 @@ mod dirtySelf(name: string) {
   }
 }
 
-mod locDeclare(name: string) -> int {
-  let r = regAlloc()
+mod locBind(name: string, r: int) {
   if locLen < locName.length() {
     locName[locLen] = name
     locReg[locLen] = r
@@ -959,6 +1026,11 @@ mod locDeclare(name: string) -> int {
   if r > cfMaxLoc[fnDepth] {
     cfMaxLoc[fnDepth] = r
   }
+}
+
+mod locDeclare(name: string) -> int {
+  let r = regAlloc()
+  locBind(name, r)
   return r
 }
 
@@ -1420,10 +1492,7 @@ mod pushOp(kind: int, prec: int, a: int, b: int, c: int) {
 }
 
 mod opTopKind() -> int {
-  if opKind.length() == 0 {
-    return -1
-  }
-  return opKind[opKind.length() - 1]
+  return if opKind.length() == 0 then -1 else opKind[opKind.length() - 1]
 }
 
 mod popIsLeft(k: int) -> bool {
@@ -1433,26 +1502,17 @@ mod popIsLeft(k: int) -> bool {
 }
 
 mod nextKind() -> int {
-  if cpos + 1 >= tk.length() {
-    return 6
-  }
-  return tk[cpos + 1]
+  return if cpos + 1 >= tk.length() then 6 else tk[cpos + 1]
 }
 
 mod nextSub() -> int {
-  if cpos + 1 >= tk.length() {
-    return 0
-  }
-  return ts[cpos + 1]
+  return if cpos + 1 >= tk.length() then 0 else ts[cpos + 1]
 }
 
 // Apply one pending operator pop. Only binop/unary/and/or frames pop;
 // call and group markers stop all pops.
 mod curStrAhead() -> string {
-  if cpos + 1 >= tk.length() {
-    return ""
-  }
-  return tt[cpos + 1]
+  return if cpos + 1 >= tk.length() then "" else tt[cpos + 1]
 }
 
 // One expression token in operand position.
@@ -1468,6 +1528,8 @@ mod applyPop() {
     opA.pop()
     opB.pop()
     opC.pop()
+    regFree(rr)
+    regFree(ll)
     let res = regAlloc()
     let sw = (fl & 2) != 0
     let L = if sw then rr else ll
@@ -1480,20 +1542,25 @@ mod applyPop() {
   } else if k == 1 {
     let vv = popVal()
     let isNot = opA[opA.length() - 1] == 1
+    let isLen = opA[opA.length() - 1] == 2
     opKind.pop()
     opPrec.pop()
     opA.pop()
     opB.pop()
     opC.pop()
+    regFree(vv)
     let res = regAlloc()
     if isNot {
       bEmit(15, res, vv, 0)
+    } else if isLen {
+      bEmit(31, res, vv, 0)
     } else {
       bEmit(14, res, vv, 0)
     }
     pushVal(res, false, false)
   } else if k == 4 || k == 5 {
     let rr = popVal()
+    regFree(rr)
     let R = opA[opA.length() - 1]
     let pp = opB[opB.length() - 1]
     opKind.pop()
@@ -1508,6 +1575,24 @@ mod applyPop() {
     perr = true
     perrMsg = "bad pop"
   }
+}
+
+// Finish one constructor element: the value sits on valStk above the frame.
+mod finishCtorElem() {
+  let v = popVal()
+  let tr = opA[opA.length() - 1]
+  let kr = opB[opB.length() - 1]
+  if kr == -1 {
+    let idx = opPrec[opPrec.length() - 1] + 1
+    opPrec[opPrec.length() - 1] = idx
+    let kk = regAlloc()
+    bEmit(2, kk, cNum(idx + 0.0), 0)
+    bEmit(30, tr, kk, v)
+  } else {
+    bEmit(30, tr, kr, v)
+    opB[opB.length() - 1] = -1
+  }
+  cfNext[fnDepth] = tr + 1
 }
 
 // Record a binary operator arrival: pops run first, the frame is pushed
@@ -1566,79 +1651,48 @@ mod pushPending() {
 
 // ---------------------------------------------------------------- codegen helpers
 
-mod exprPushName(callParen: bool, callSugar: bool) {  let name = curStr()
+mod exprPushName(callParen: bool, callSugar: bool) {
+  let name = curStr()
   locFind(name)
-  if lkKind == 2 {
+  if callParen || callSugar {
+    // the callee goes into a fresh call-frame register
     let fr = regAlloc()
-    bEmit(25, fr, lkFid, 0)
-    if callParen {
-      pushOp(2, -1, fr, 0, valStk.length())
-      cpos = cpos + 2
-      expectOperand = true
-    } else if callSugar {
-      let ar = regAlloc()
-      bEmit(3, ar, cStr(curStrAhead()), 0)
-      bEmit(7, fr + 1, ar, 0)
-      bEmit(23, fr, 1, 0)
-      bumpMax(fr + 3)
-      pushVal(fr, true, true)
-      cpos = cpos + 2
-      expectOperand = false
+    if lkKind == 2 {
+      bEmit(25, fr, lkFid, 0)
+    } else if lkKind == 1 {
+      bEmit(7, fr, lkReg, 0)
     } else {
-      pushVal(fr, false, true)
-      cpos = cpos + 1
-      expectOperand = false
+      bEmit(5, fr, gDeclare(name), 0)
     }
-  } else if lkKind == 1 {
-    let lr = lkReg
     if callParen {
-      let fr = regAlloc()
-      bEmit(7, fr, lr, 0)
       pushOp(2, -1, fr, 0, valStk.length())
       cpos = cpos + 2
       expectOperand = true
-    } else if callSugar {
-      let fr = regAlloc()
-      bEmit(7, fr, lr, 0)
+    } else {
       let ar = regAlloc()
       bEmit(3, ar, cStr(curStrAhead()), 0)
       bEmit(7, fr + 1, ar, 0)
       bEmit(23, fr, 1, 0)
       bumpMax(fr + 3)
+      cfNext[fnDepth] = fr + 1
       pushVal(fr, true, true)
       cpos = cpos + 2
-      expectOperand = false
-    } else {
-      pushVal(lr, false, true)
-      cpos = cpos + 1
       expectOperand = false
     }
   } else {
-    let slot = gDeclare(name)
-    if callParen {
-      let fr = regAlloc()
-      bEmit(5, fr, slot, 0)
-      pushOp(2, -1, fr, 0, valStk.length())
-      cpos = cpos + 2
-      expectOperand = true
-    } else if callSugar {
-      let fr = regAlloc()
-      bEmit(5, fr, slot, 0)
-      let ar = regAlloc()
-      bEmit(3, ar, cStr(curStrAhead()), 0)
-      bEmit(7, fr + 1, ar, 0)
-      bEmit(23, fr, 1, 0)
-      bumpMax(fr + 3)
-      pushVal(fr, true, true)
-      cpos = cpos + 2
-      expectOperand = false
+    if lkKind == 1 {
+      pushVal(lkReg, false, true)
     } else {
       let r = regAlloc()
-      bEmit(5, r, slot, 0)
+      if lkKind == 2 {
+        bEmit(25, r, lkFid, 0)
+      } else {
+        bEmit(5, r, gDeclare(name), 0)
+      }
       pushVal(r, false, true)
-      cpos = cpos + 1
-      expectOperand = false
     }
+    cpos = cpos + 1
+    expectOperand = false
   }
 }
 
@@ -1646,12 +1700,12 @@ mod newFunc() -> int {
   fStart.push(-1)
   fParams.push(0)
   fRegs.push(-1)
-  if fStart.length() > MAX_FUNCS {
+  let bad = fStart.length() > MAX_FUNCS
+  if bad {
     perr = true
     perrMsg = "too many functions"
-    return 0
   }
-  return fStart.length() - 1
+  return if bad then 0 else fStart.length() - 1
 }
 
 mod funcDepthInit(islocal: bool) {
@@ -1688,6 +1742,8 @@ mod funcHeadAnon(fr: int) {
   pushCtl(3, tmpB, skip, 1, ctlLoop, fr, contKind)
   ctlG[ctlG.length() - 1] = stState
   tmpSStk.push("")
+  ctorStk.push(openCtor)
+  openCtor = 0
   ctlLoop = -1
   fnDepth = fnDepth + 1
   opBase[fnDepth] = opKind.length()
@@ -1737,6 +1793,12 @@ mod exprPrefix() {
     pushVal(r, false, false)
     cpos = cpos + 1
     expectOperand = false
+  } else if k == 3 && opTopKind() == 6 && opB[opB.length() - 1] == -1 && valStk.length() == opC[opC.length() - 1] && nextKind() == 5 && nextSub() == 13 {
+    // name = value inside a table constructor
+    let kr = regAlloc()
+    bEmit(3, kr, cStr(curStr()), 0)
+    opB[opB.length() - 1] = kr
+    cpos = cpos + 2
   } else if k == 3 {
     let callParen = nextKind() == 5 && nextSub() == 14
     let callSugar = nextKind() == 2
@@ -1745,6 +1807,19 @@ mod exprPrefix() {
     pushOp(3, -1, valStk.length(), 0, 0)
     cpos = cpos + 1
     expectOperand = true
+  } else if k == 5 && s == 19 {
+    let tr = regAlloc()
+    bEmit(28, tr, 0, 0)
+    pushOp(6, 0, tr, -1, valStk.length())
+    openCtor = openCtor + 1
+    cpos = cpos + 1
+    expectOperand = true
+  } else if k == 5 && s == 20 {
+    closeMode = 4
+    popMode = 2
+  } else if k == 5 && s == 24 {
+    pushOp(1, 6, 2, 0, valStk.length())
+    cpos = cpos + 1
   } else if k == 5 && s == 15 {
     // ')' in prefix (empty call/group, trailing comma, or drain first)
     closeMode = 1
@@ -1764,6 +1839,12 @@ mod exprPrefix() {
     bEmit(25, fr, fid, 0)
     cpos = cpos + 1
     funcHeadAnon(fr)
+  } else if k == 5 && s == 21 && opTopKind() == 6 && opB[opB.length() - 1] == -1 && valStk.length() == opC[opC.length() - 1] {
+    // [k] = v key inside a table constructor: parse the key expression,
+    // the ']' close below stores it as this element's pending key
+    pushOp(7, -1, 0, 0, valStk.length())
+    cpos = cpos + 1
+    expectOperand = true
   } else {
     perr = true
     perrMsg = "unexpected token in expression"
@@ -1801,6 +1882,7 @@ mod exprInfix() {
     expectOperand = true
   } else if k == 5 && s == 14 {
     let fnr = popVal()
+    regFree(fnr)
     let fr = regAlloc()
     bEmit(7, fr, fnr, 0)
     pushOp(2, -1, fr, 0, valStk.length())
@@ -1813,6 +1895,7 @@ mod exprInfix() {
       return
     }
     let fnr = popVal()
+    regFree(fnr)
     let fr = regAlloc()
     bEmit(7, fr, fnr, 0)
     let ar = regAlloc()
@@ -1820,6 +1903,7 @@ mod exprInfix() {
     bEmit(7, fr + 1, ar, 0)
     bEmit(23, fr, 1, 0)
     bumpMax(fr + 3)
+    cfNext[fnDepth] = fr + 1
     pushVal(fr, true, true)
     cpos = cpos + 1
     expectOperand = false
@@ -1832,6 +1916,40 @@ mod exprInfix() {
     closeMode = 2
     closeTrig = 1
     popMode = 2
+  } else if k == 5 && s == 17 && openCtor > 0 {
+    closeMode = 2
+    closeTrig = 1
+    popMode = 2
+  } else if k == 5 && s == 21 {
+    if topPrefix() {
+      pushOp(7, -1, 0, 0, valStk.length())
+      cpos = cpos + 1
+      expectOperand = true
+    } else {
+      perr = true
+      perrMsg = "unexpected ["
+    }
+  } else if k == 5 && s == 22 {
+    closeMode = 5
+    popMode = 2
+  } else if k == 5 && s == 20 {
+    closeMode = 4
+    popMode = 2
+  } else if k == 5 && s == 23 {
+    if topPrefix() && nextKind() == 3 {
+      let base = popVal()
+      let kr = regAlloc()
+      bEmit(3, kr, cStr(curStrAhead()), 0)
+      regFree(kr)
+      regFree(base)
+      let res = regAlloc()
+      bEmit(29, res, base, kr)
+      pushVal(res, false, true)
+      cpos = cpos + 2
+    } else {
+      perr = true
+      perrMsg = "bad field access"
+    }
   } else if k == 6 || (k == 5 && s == 17) || (k == 4 && (s == 6 || s == 4 || s == 5)) || (k == 5 && s == 13) || (k == 4 && (s == 3 || s == 15)) {
     closeMode = 3
     popMode = 2
@@ -1865,6 +1983,7 @@ mod closeAction() {
         if nargs == 0 {
           bEmit(23, fr, 0, 0)
           bumpMax(fr + 2)
+          cfNext[fnDepth] = fr + 1
         } else {
           perr = true
           perrMsg = "trailing comma"
@@ -1873,8 +1992,10 @@ mod closeAction() {
         let wasCall = topFlag()
         let arg = popVal()
         bEmit(7, fr + 1 + nargs, arg, 0)
+        cfNext[fnDepth] = fr + nargs + 2
         bEmit(23, fr, nargs + 1, if wasCall then 1 else 0)
         bumpMax(fr + nargs + 3)
+        cfNext[fnDepth] = fr + 1
       }
       pushVal(fr, true, true)
       cpos = cpos + 1
@@ -1915,7 +2036,18 @@ mod closeAction() {
       } else {
         let arg = popVal()
         bEmit(7, fr + 1 + nargs, arg, 0)
+        cfNext[fnDepth] = fr + nargs + 2
         opB[opB.length() - 1] = nargs + 1
+      }
+      cpos = cpos + 1
+      expectOperand = true
+      closeMode = 0
+    } else if closeTrig == 1 && mk == 6 {
+      if valStk.length() == opC[opC.length() - 1] {
+        perr = true
+        perrMsg = "expected table element"
+      } else {
+        finishCtorElem()
       }
       cpos = cpos + 1
       expectOperand = true
@@ -1946,6 +2078,80 @@ mod closeAction() {
       presReg = popVal()
       exprDone = true
       closeMode = 0
+    }
+  } else if closeMode == 4 {
+    // '}' close: finish the last element, then leave the table as the value
+    if opTopKind() == 6 {
+      if valStk.length() > opC[opC.length() - 1] {
+        finishCtorElem()
+      } else if opB[opB.length() - 1] != -1 {
+        perr = true
+        perrMsg = "expected value after ="
+      }
+      let tr = opA[opA.length() - 1]
+      opKind.pop()
+      opPrec.pop()
+      opA.pop()
+      opB.pop()
+      opC.pop()
+      pushVal(tr, false, false)
+      openCtor = openCtor - 1
+      cpos = cpos + 1
+      expectOperand = false
+      closeMode = 0
+    } else {
+      perr = true
+      perrMsg = "unbalanced }"
+    }
+  } else if closeMode == 5 {
+    // ']' close: base and key are on valStk, or (directly under a table
+    // constructor with no pending key) just the [k] = v key
+    if opTopKind() == 7 {
+      let depth = opC[opC.length() - 1]
+      let belowCtor = opKind.length() >= 2 && opKind[opKind.length() - 2] == 6
+      let ctorKey = belowCtor && opB[opB.length() - 2] == -1 && valStk.length() == opC[opC.length() - 2] + 1
+      if ctorKey {
+        let key = popVal()
+        opKind.pop()
+        opPrec.pop()
+        opA.pop()
+        opB.pop()
+        opC.pop()
+        opB[opB.length() - 1] = key
+        cpos = cpos + 1
+        if curKind() == 5 && curSub() == 13 {
+          cpos = cpos + 1
+          expectOperand = true
+        } else {
+          perr = true
+          perrMsg = "expected = after [key]"
+        }
+        closeMode = 0
+      } else {
+        opKind.pop()
+        opPrec.pop()
+        opA.pop()
+        opB.pop()
+        opC.pop()
+        if valStk.length() != depth + 1 {
+          perr = true
+          perrMsg = "bad index expression"
+        } else {
+          let key = popVal()
+          let base = popVal()
+          regFree(key)
+          regFree(base)
+          let res = regAlloc()
+          bEmit(29, res, base, key)
+          pushVal(res, false, true)
+        }
+        cpos = cpos + 1
+        expectOperand = false
+        closeMode = 0
+      }
+    } else {
+      perr = true
+      perrMsg = "unbalanced ]"
     }
   }
 }
@@ -2033,10 +2239,7 @@ mod popCtl() {
 }
 
 mod ctlTop() -> int {
-  if ctlKind.length() == 0 {
-    return -1
-  }
-  return ctlKind[ctlKind.length() - 1]
+  return if ctlKind.length() == 0 then -1 else ctlKind[ctlKind.length() - 1]
 }
 
 // Append a patch position to a control frame's patch list (kept in B/C).
@@ -2137,13 +2340,71 @@ mod doCont() {
       inExpr = false
       contKind = 0
     }
-  } else if contKind == 7 {
+  } else if contKind == 8 {
+    // left-hand side unit of `t[k] = v` / `t.k = v`, or a call statement like t.f(x)
+    if curKind() == 5 && (curSub() == 13 || curSub() == 16) {
+      let li = bop.length() - 1
+      if li >= 0 && bop[li] == 29 && bpa[li] == presReg && !presIsCall {
+        let hiA = if bpb[li] > bpc[li] then bpb[li] else bpc[li]
+        let hi = (if hiA > bpa[li] then hiA else bpa[li]) + 1
+        if hi > cfNext[fnDepth] {
+          cfNext[fnDepth] = hi
+        }
+        itBase.push(bpb[li])
+        itKey.push(bpc[li])
+        bop.pop()
+        bpa.pop()
+        bpb.pop()
+        bpc.pop()
+        if curSub() == 16 {
+          cpos = cpos + 1
+          if curKind() == 3 && nextKind() == 5 && (nextSub() == 21 || nextSub() == 23) {
+            startUnit(8)
+          } else {
+            perr = true
+            perrMsg = "assignment targets must all be table fields"
+          }
+        } else {
+          cpos = cpos + 1
+          startUnit(9)
+        }
+      } else {
+        perr = true
+        perrMsg = "cannot assign to this expression"
+      }
+    } else if presIsCall {
+      inExpr = false
+      contKind = 0
+    } else {
+      perr = true
+      perrMsg = "not a call statement"
+    }
+  } else if contKind == 9 {
     tmpRegs.push(presReg)
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(9)
+    } else {
+      // stores run right to left (like PUC Lua), so the last target wins
+      tmpA = itBase.length() - 1
+      stState = 15
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 7 {
+    if tmpNames.length() > 1 {
+      let z = regAlloc()
+      bEmit(7, z, presReg, 0)
+      tmpRegs.push(z)
+    } else {
+      tmpRegs.push(presReg)
+    }
     if curKind() == 5 && curSub() == 16 {
       cpos = cpos + 1
       startUnit(7)
     } else {
-      tmpA = 0
+      // stores run right to left (like PUC Lua), so the last target wins
+      tmpA = tmpNames.length() - 1
       stState = 13
       inExpr = false
       contKind = 0
@@ -2163,17 +2424,36 @@ mod doStoreStep() {
       stState = 0
     } else {
       let nm = tmpNames[tmpA]
-      let r = locDeclare(nm)
-      dirtySelf(nm)
-      if tmpA < tmpRegs.length() {
-        bEmit(7, r, tmpRegs[tmpA], 0)
+      let vr = if tmpA < tmpRegs.length() then tmpRegs[tmpA] else -1
+      if vr > cfMaxLoc[fnDepth] && vr >= cfBase[fnDepth] {
+        locBind(nm, vr)
       } else {
-        bEmit(1, r, 0, 0)
+        let r = locDeclare(nm)
+        if vr >= 0 {
+          bEmit(7, r, vr, 0)
+        } else {
+          bEmit(1, r, 0, 0)
+        }
       }
+      dirtySelf(nm)
       tmpA = tmpA + 1
     }
+  } else if stState == 15 {
+    if tmpA < 0 {
+      stState = 0
+    } else {
+      var vr = -1
+      if tmpA < tmpRegs.length() {
+        vr = tmpRegs[tmpA]
+      } else {
+        vr = regAlloc()
+        bEmit(1, vr, 0, 0)
+      }
+      bEmit(30, itBase[tmpA], itKey[tmpA], vr)
+      tmpA = tmpA - 1
+    }
   } else if stState == 13 {
-    if tmpA >= tmpNames.length() {
+    if tmpA < 0 {
       stState = 0
     } else if tmpA < tmpRegs.length() {
       tmpB = tmpRegs[tmpA]
@@ -2190,7 +2470,15 @@ mod doStoreStep() {
     locFind(nm)
     lkRaw = false
     if lkKind == 1 {
-      bEmit(7, lkReg, tmpB, 0)
+      // fold the store into the instruction that produced the value
+      let li = bop.length() - 1
+      let op0 = if li >= 0 then bop[li] else -1
+      let canFold = li >= 0 && bpa[li] == tmpB && tmpB > cfMaxLoc[fnDepth] && lastPatchTarget != bop.length() && op0 != 23 && op0 != 20 && op0 != 21 && op0 != 22 && op0 != 24 && op0 != 26 && op0 != 27 && op0 != 6 && op0 != 30
+      if canFold {
+        bpa[li] = lkReg
+      } else {
+        bEmit(7, lkReg, tmpB, 0)
+      }
       dirtySelf(nm)
     } else if lkKind == 0 {
       bEmit(6, gDeclare(nm), tmpB, 0)
@@ -2198,7 +2486,7 @@ mod doStoreStep() {
       perr = true
       perrMsg = "bad store"
     }
-    tmpA = tmpA + 1
+    tmpA = tmpA - 1
     stState = 13
   }
 }
@@ -2218,6 +2506,8 @@ mod funcHead(islocal: bool, resume: int, fr: int) {
   }
   ctlG[ctlG.length() - 1] = stState
   tmpSStk.push(tmpS)
+  ctorStk.push(openCtor)
+  openCtor = 0
   ctlLoop = -1
   fnDepth = fnDepth + 1
   opBase[fnDepth] = opKind.length()
@@ -2304,7 +2594,7 @@ mod stmtProgress() {
     stmtNameList(true)
   } else if stState == 11 {
     stmtNameList(false)
-  } else if stState == 12 || stState == 13 || stState == 14 {
+  } else if stState == 12 || stState == 13 || stState == 14 || stState == 15 {
     doStoreStep()
   } else if stState == 20 {
     funcParams()
@@ -2368,6 +2658,7 @@ mod doBlockClose() {
       bPatch(skip, bop.length())
       ctlLoop = ctlD[n]
       tmpS = tmpSStk.pop().Value
+      openCtor = ctorStk.pop().Value
       popCtl()
       if resume == 1 {
         pushVal(extra, true, true)
@@ -2493,7 +2784,8 @@ mod stmtDispatch() {
       perrMsg = "break outside loop"
     } else {
       let pos = bEmit(20, 0, 0, 0)
-      lstAppendC(pos)
+      plNext[pos] = ctlC[ctlLoop]
+      ctlC[ctlLoop] = pos
     }
   } else if k == 4 && s == 14 {
     cpos = cpos + 1
@@ -2509,6 +2801,11 @@ mod stmtDispatch() {
       startUnit(1)
     } else if nk == 2 {
       startUnit(1)
+    } else if nk == 5 && (ns == 21 || ns == 23) {
+      itBase.clear()
+      itKey.clear()
+      tmpRegs.clear()
+      startUnit(8)
     } else if nk == 5 && (ns == 13 || ns == 16) {
       tmpNames.clear()
       tmpRegs.clear()
@@ -2581,12 +2878,22 @@ var cmpBB: int = 0
 var cmpDst: int = 0
 var cmpI: int = 0
 var cmpOp: int = 0
-var latch0: float = 0.0
-var latch1: float = 0.0
-var latch2: float = 0.0
-var latch3: float = 0.0
-var latchS4: string = ""
-var latchS5: string = ""
+var tmap: Map<string, int>
+var tvTag: int[]
+var tvNum: float[]
+var tvStr: string[]
+var tLen: int[]
+var tFree: int[]
+var tHeap: int = 0
+var tCount: int = 0
+var lenChase: bool = false
+var lenTid: int = 0
+var latchN0: float = 0.0
+var latchN1: float = 0.0
+var latchN2: float = 0.0
+var latchN3: float = 0.0
+var latchS0: string = ""
+var latchS1: string = ""
 var latchVX: float = 0.0
 var latchVY: float = 0.0
 var latchVZ: float = 0.0
@@ -2636,13 +2943,33 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
   gstr[gi] = s
 }
 
+// Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
+// 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
+// (inputs filled from the latches), 19..26 builtins (print, type, tostring,
+// setvec, setcol, clock, inarr, outarr) as functions with ids 0..7.
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+
 mod vmReset() {
+  tmap.clear()
+  tvTag.clear()
+  tvNum.clear()
+  tvStr.clear()
+  tvTag.resize(MAX_HEAP, 0)
+  tvNum.resize(MAX_HEAP, 0.0)
+  tvStr.resize(MAX_HEAP, "")
+  tLen.clear()
+  tLen.resize(MAX_TABLES, 0)
+  tFree.clear()
+  tHeap = 0
+  tCount = 0
+  lenChase = false
   vtag.clear()
   vnum.clear()
   vstr.clear()
-  vtag.resize(1024, 0)
-  vnum.resize(1024, 0.0)
-  vstr.resize(1024, "")
+  vtag.resize(2048, 0)
+  vnum.resize(2048, 0.0)
+  vstr.resize(2048, "")
   fFunc.clear()
   fBase.clear()
   fRetA.clear()
@@ -2654,42 +2981,41 @@ mod vmReset() {
   gtag.resize(64, 0)
   gnum.resize(64, 0.0)
   gstr.resize(64, "")
-  gSet(0, 1, latch0, "")
-  gSet(1, 1, latch1, "")
-  gSet(2, 1, latch2, "")
-  gSet(3, 1, latch3, "")
-  gSet(4, 2, 0.0, latchS4)
-  gSet(5, 2, 0.0, latchS5)
-  gSet(6, 1, latchVX, "")
-  gSet(7, 1, latchVY, "")
-  gSet(8, 1, latchVZ, "")
-  gSet(9, 1, latchCR, "")
-  gSet(10, 1, latchCG, "")
-  gSet(11, 1, latchCB, "")
-  gSet(12, 1, latchCA, "")
-  gSet(13, 4, 0.0, "")
-  gSet(14, 4, 1.0, "")
-  gSet(15, 4, 2.0, "")
-  gSet(16, 4, 3.0, "")
-  gSet(17, 4, 4.0, "")
-  gSet(18, 4, 5.0, "")
+  gtag.copyFrom(GTAG_INIT)
+  gnum.copyFrom(GNUM_INIT)
+  gtag.resize(64, 0)
+  gnum.resize(64, 0.0)
+  gnum[6] = latchN0
+  gnum[7] = latchN1
+  gnum[8] = latchN2
+  gnum[9] = latchN3
+  gstr[10] = latchS0
+  gstr[11] = latchS1
+  gnum[12] = latchVX
+  gnum[13] = latchVY
+  gnum[14] = latchVZ
+  gnum[15] = latchCR
+  gnum[16] = latchCG
+  gnum[17] = latchCB
+  gnum[18] = latchCA
   vmPc = 0
   vmBase = 0
-  vmHalted = progLenV == 0
+  vmHalted = bop.length() == 0
   vmFailed = false
   retCountV = -1
   cmpActive = false
-  o0 = ""
-  o1 = ""
-  o2 = ""
-  o3 = ""
-  o4 = ""
-  o5 = ""
-  o6 = ""
-  o7 = ""
+  logV = ""
+  logLines.clear()
+  oF0 = 0.0
+  oF1 = 0.0
+  oF2 = 0.0
+  oF3 = 0.0
+  oS4 = ""
+  oS5 = ""
+  outArrV.clear()
+  outArrV.resize(64, 0.0)
   outVecV = Vec(0.0, 0.0, 0.0)
   outColV = Color(0.0, 0.0, 0.0, 0.0)
-  nPrintV = 0
   resultV = ""
   errV = ""
   fFunc.push(mainFid)
@@ -2713,36 +3039,41 @@ mod numArg(t: int, v: float) -> float {
 }
 
 mod toInt(v: float) -> int {
-  return v & 0
+  return v | 0
 }
 
-mod printSlot(idx: int, tag: int, num: float, s: string) {
-  let txt = fmtVal(tag, num, s)
-  if idx == 0 {
-    o0 = txt
-  } else if idx == 1 {
-    o1 = txt
-  } else if idx == 2 {
-    o2 = txt
-  } else if idx == 3 {
-    o3 = txt
-  } else if idx == 4 {
-    o4 = txt
-  } else if idx == 5 {
-    o5 = txt
-  } else if idx == 6 {
-    o6 = txt
-  } else {
-    o7 = txt
+// One print call: one tab-separated line plus a newline. The log keeps the
+// last 32 lines (each capped at 64 chars, about 2 KB); logV mirrors the
+// joined lines so the port stays a plain string read.
+mod logPush(line: string) {
+  let kept = if line.Length() > 64 then line.Substring(0, 63) .. "\n" else line
+  logLines.push(kept)
+  logV = logV .. kept
+  if logLines.length() > 32 {
+    let drop = logLines[0]
+    logV = logV.Substring(drop.Length(), logV.Length() - drop.Length())
+    logLines.remove(0)
   }
+}
+
+// Writable output globals live in gtag/gnum/gstr (slots 0..5); the ports
+// mirror them once per tick. Numeric outs read as numbers (nil -> 0.0),
+// string outs Lua-formatted (nil -> "").
+mod syncOuts() {
+  oF0 = if gtag[0] == 0 then 0.0 else gnum[0]
+  oF1 = if gtag[1] == 0 then 0.0 else gnum[1]
+  oF2 = if gtag[2] == 0 then 0.0 else gnum[2]
+  oF3 = if gtag[3] == 0 then 0.0 else gnum[3]
+  oS4 = if gtag[4] == 0 then "" else fmtVal(gtag[4], gnum[4], gstr[4])
+  oS5 = if gtag[5] == 0 then "" else fmtVal(gtag[5], gnum[5], gstr[5])
 }
 
 mod vmNum2(op: int, b: int, c: int) -> bool {
-  if vTag(b) != 1 || vTag(c) != 1 {
+  let ok = vTag(b) == 1 && vTag(c) == 1
+  if !ok {
     vmFail("attempt to perform arithmetic")
-    return false
   }
-  return true
+  return ok
 }
 
 mod cmpFinish(v: bool) {
@@ -2784,8 +3115,26 @@ mod cmpStep() {
 }
 
 // One VM instruction. Mirrors lua_model.VM.step (same ISA/semantics).
+// Composite map key for table `tid`: kt is the key's value tag.
+mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
+  return if kt == 1 then tid .. "#" .. (kn | 0)
+    else if kt == 2 then tid .. "$" .. ks
+    else tid .. "@" .. kt .. ":" .. (kn | 0)
+}
+
+// After t[len+1] was filled, keep extending the border while t[len+1] exists.
+mod lenStep() {
+  if tmap.has(lenTid .. "#" .. (tLen[lenTid] + 1)) {
+    tLen[lenTid] = tLen[lenTid] + 1
+  } else {
+    lenChase = false
+  }
+}
+
 mod vmStep() {
-  if cmpActive {
+  if lenChase {
+    lenStep()
+  } else if cmpActive {
     cmpStep()
   } else if !vmHalted {
     let op = bop[vmPc]
@@ -2811,7 +3160,12 @@ mod vmStep() {
     } else if op == 5 {
       vSet(a, gTag(b), gNum(b), gStr(b))
     } else if op == 6 {
-      gSet(a, vTag(b), vNum(b), vStr(b))
+      // outNum0..outNum3 are numeric ports: numbers/booleans/nil only
+      if a <= 3 && vTag(b) != 1 && vTag(b) != 0 && vTag(b) != 3 {
+        vmFail("cannot convert to number (outNum0..outNum3 take numbers)")
+      } else {
+        gSet(a, vTag(b), vNum(b), vStr(b))
+      }
     } else if op == 7 {
       vSet(a, vTag(b), vNum(b), vStr(b))
     } else if op >= 8 && op <= 13 {
@@ -2872,7 +3226,7 @@ mod vmStep() {
           vSet(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0, "")
         } else if lt == 3 {
           vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
-        } else if lt == 4 {
+        } else if lt == 4 || lt == 5 {
           vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
         } else {
           vSet(a, 3, 1.0, "")
@@ -2892,6 +3246,7 @@ mod vmStep() {
         cmpDst = vmBase + a
         cmpI = 0
         cmpOp = if op == 19 then 1 else 0
+        advanced = true
       } else {
         vmFail("attempt to compare")
       }
@@ -2919,55 +3274,8 @@ mod vmStep() {
           if nargs > 16 {
             vmFail("too many print args (max 16)")
           } else {
-            if 0 < nargs {
-              printSlot(if nPrintV > 7 then 7 else nPrintV, vTag(a + 1), vNum(a + 1), vStr(a + 1))
-            }
-            if 1 < nargs {
-              printSlot(if nPrintV + 1 > 7 then 7 else nPrintV + 1, vTag(a + 2), vNum(a + 2), vStr(a + 2))
-            }
-            if 2 < nargs {
-              printSlot(if nPrintV + 2 > 7 then 7 else nPrintV + 2, vTag(a + 3), vNum(a + 3), vStr(a + 3))
-            }
-            if 3 < nargs {
-              printSlot(if nPrintV + 3 > 7 then 7 else nPrintV + 3, vTag(a + 4), vNum(a + 4), vStr(a + 4))
-            }
-            if 4 < nargs {
-              printSlot(if nPrintV + 4 > 7 then 7 else nPrintV + 4, vTag(a + 5), vNum(a + 5), vStr(a + 5))
-            }
-            if 5 < nargs {
-              printSlot(if nPrintV + 5 > 7 then 7 else nPrintV + 5, vTag(a + 6), vNum(a + 6), vStr(a + 6))
-            }
-            if 6 < nargs {
-              printSlot(if nPrintV + 6 > 7 then 7 else nPrintV + 6, vTag(a + 7), vNum(a + 7), vStr(a + 7))
-            }
-            if 7 < nargs {
-              printSlot(if nPrintV + 7 > 7 then 7 else nPrintV + 7, vTag(a + 8), vNum(a + 8), vStr(a + 8))
-            }
-            if 8 < nargs {
-              printSlot(7, vTag(a + 9), vNum(a + 9), vStr(a + 9))
-            }
-            if 9 < nargs {
-              printSlot(7, vTag(a + 10), vNum(a + 10), vStr(a + 10))
-            }
-            if 10 < nargs {
-              printSlot(7, vTag(a + 11), vNum(a + 11), vStr(a + 11))
-            }
-            if 11 < nargs {
-              printSlot(7, vTag(a + 12), vNum(a + 12), vStr(a + 12))
-            }
-            if 12 < nargs {
-              printSlot(7, vTag(a + 13), vNum(a + 13), vStr(a + 13))
-            }
-            if 13 < nargs {
-              printSlot(7, vTag(a + 14), vNum(a + 14), vStr(a + 14))
-            }
-            if 14 < nargs {
-              printSlot(7, vTag(a + 15), vNum(a + 15), vStr(a + 15))
-            }
-            if 15 < nargs {
-              printSlot(7, vTag(a + 16), vNum(a + 16), vStr(a + 16))
-            }
-            nPrintV = nPrintV + nargs
+            // one pure expression (no variable traffic): guarded segments
+            logPush((if 0 < nargs then fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)) else "") .. (if 1 < nargs then "\t" .. fmtVal(vTag(a + 2), vNum(a + 2), vStr(a + 2)) else "") .. (if 2 < nargs then "\t" .. fmtVal(vTag(a + 3), vNum(a + 3), vStr(a + 3)) else "") .. (if 3 < nargs then "\t" .. fmtVal(vTag(a + 4), vNum(a + 4), vStr(a + 4)) else "") .. (if 4 < nargs then "\t" .. fmtVal(vTag(a + 5), vNum(a + 5), vStr(a + 5)) else "") .. (if 5 < nargs then "\t" .. fmtVal(vTag(a + 6), vNum(a + 6), vStr(a + 6)) else "") .. (if 6 < nargs then "\t" .. fmtVal(vTag(a + 7), vNum(a + 7), vStr(a + 7)) else "") .. (if 7 < nargs then "\t" .. fmtVal(vTag(a + 8), vNum(a + 8), vStr(a + 8)) else "") .. (if 8 < nargs then "\t" .. fmtVal(vTag(a + 9), vNum(a + 9), vStr(a + 9)) else "") .. (if 9 < nargs then "\t" .. fmtVal(vTag(a + 10), vNum(a + 10), vStr(a + 10)) else "") .. (if 10 < nargs then "\t" .. fmtVal(vTag(a + 11), vNum(a + 11), vStr(a + 11)) else "") .. (if 11 < nargs then "\t" .. fmtVal(vTag(a + 12), vNum(a + 12), vStr(a + 12)) else "") .. (if 12 < nargs then "\t" .. fmtVal(vTag(a + 13), vNum(a + 13), vStr(a + 13)) else "") .. (if 13 < nargs then "\t" .. fmtVal(vTag(a + 14), vNum(a + 14), vStr(a + 14)) else "") .. (if 14 < nargs then "\t" .. fmtVal(vTag(a + 15), vNum(a + 15), vStr(a + 15)) else "") .. (if 15 < nargs then "\t" .. fmtVal(vTag(a + 16), vNum(a + 16), vStr(a + 16)) else "") .. "\n")
             vSet(a, 0, 0.0, "")
             retCountV = 0
           }
@@ -2976,7 +3284,7 @@ mod vmStep() {
             vmFail("wrong number of arguments")
           } else if fid == 1 {
             let t = vTag(a + 1)
-            vSet(a, 2, 0.0, if t == 0 then "nil" else if t == 1 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else "function")
+            vSet(a, 2, 0.0, if t == 0 then "nil" else if t == 1 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else "table")
             retCountV = 1
           } else {
             vSet(a, 2, 0.0, fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)))
@@ -3003,6 +3311,29 @@ mod vmStep() {
           } else {
             vSetNum(a, ServerUptime())
             retCountV = 1
+          }
+        } else if fid == 6 {
+          let it = if 0 < nargs then vTag(a + 1) else 0
+          let iv = if 0 < nargs then vNum(a + 1) else 0.0
+          if it == 1 && iv == floor(iv) && iv >= 1.0 && iv <= inArr.length() {
+            vSetNum(a, inArr[toInt(iv) - 1])
+          } else {
+            vSet(a, 0, 0.0, "")
+          }
+          retCountV = 1
+        } else if fid == 7 {
+          let it = if 0 < nargs then vTag(a + 1) else 0
+          let iv = if 0 < nargs then vNum(a + 1) else 0.0
+          let vt = if 1 < nargs then vTag(a + 2) else 0
+          let vv = if 1 < nargs then vNum(a + 2) else 0.0
+          if it != 1 || iv != floor(iv) || iv < 1.0 || iv > outArrV.length() {
+            vmFail("array index out of range")
+          } else if vt == 1 || vt == 0 || vt == 3 {
+            outArrV[toInt(iv) - 1] = if vt == 0 then 0.0 else vv
+            vSet(a, 0, 0.0, "")
+            retCountV = 0
+          } else {
+            vmFail("array element must be a number")
           }
         } else {
           if fFunc.length() >= MAX_CALLS {
@@ -3156,6 +3487,88 @@ mod vmStep() {
       advanced = true
     } else if op == 25 {
       vSet(a, 4, b, "")
+    } else if op == 28 {
+      if tCount >= MAX_TABLES {
+        vmFail("too many tables")
+      } else {
+        tLen[tCount] = 0
+        vSet(a, 5, tCount + 0.0, "")
+        tCount = tCount + 1
+      }
+    } else if op == 29 {
+      let kt = vTag(c)
+      if vTag(b) != 5 {
+        vmFail("attempt to index a non-table value")
+      } else if kt == 0 || (kt == 1 && vNum(c) != floor(vNum(c))) {
+        vSet(a, 0, 0.0, "")
+      } else {
+        let r = tmap.get(tkey(toInt(vNum(b)), kt, vNum(c), vStr(c)))
+        if r.Found {
+          vSet(a, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
+        } else {
+          vSet(a, 0, 0.0, "")
+        }
+      }
+    } else if op == 30 {
+      let kt = vTag(b)
+      let vt = vTag(c)
+      if vTag(a) != 5 {
+        vmFail("attempt to index a non-table value")
+      } else if kt == 0 {
+        vmFail("table index is nil")
+      } else if kt == 1 && vNum(b) != floor(vNum(b)) {
+        vmFail("non-integer number keys are not supported")
+      } else {
+        let tid = toInt(vNum(a))
+        let key = tkey(tid, kt, vNum(b), vStr(b))
+        let r = tmap.get(key)
+        let kint = toInt(vNum(b))
+        if vt == 0 {
+          if r.Found {
+            tmap.remove(key)
+            tFree.push(r.Value)
+            if kt == 1 && kint == tLen[tid] {
+              tLen[tid] = kint - 1
+            }
+          }
+        } else {
+          var sl = 0
+          if r.Found {
+            sl = r.Value
+          } else if tFree.length() > 0 {
+            sl = tFree.pop().Value
+          } else {
+            sl = tHeap
+            tHeap = tHeap + 1
+          }
+          if sl >= MAX_HEAP {
+            vmFail("out of table memory")
+          } else {
+            tvTag[sl] = vt
+            tvNum[sl] = vNum(c)
+            tvStr[sl] = vStr(c)
+            if !r.Found {
+              tmap.set(key, sl)
+              if kt == 1 && kint == tLen[tid] + 1 {
+                tLen[tid] = kint
+                if tmap.has(tid .. "#" .. (kint + 1)) {
+                  lenChase = true
+                  lenTid = tid
+                }
+              }
+            }
+          }
+        }
+      }
+    } else if op == 31 {
+      let bt = vTag(b)
+      if bt == 5 {
+        vSetNum(a, tLen[toInt(vNum(b))])
+      } else if bt == 2 {
+        vSetNum(a, vStr(b).Length())
+      } else {
+        vmFail("attempt to get length")
+      }
     }
     if !advanced && !vmHalted {
       vmPc = vmPc + 1
@@ -3206,47 +3619,9 @@ mod lexChunk() {
   lexStep()
   lexStep()
   lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
 }
 
 mod parseChunk() {
-  parseStep()
-  parseStep()
-  parseStep()
-  parseStep()
-  parseStep()
-  parseStep()
-  parseStep()
-  parseStep()
-  parseStep()
-  parseStep()
   parseStep()
   parseStep()
 }
@@ -3263,9 +3638,10 @@ on Change(program) {
   emit sched
 }
 
-on run {
-  wantParse = true
-  emit sched
+on Change(run) {
+  if run && progOkV && !jobBusy {
+    vmReset()
+  }
 }
 
 on ReadBrickGrid() {
@@ -3299,7 +3675,7 @@ on goParse {
   } else {
     if lerr {
       progOkV = false
-      progLenV = 0
+      errV = "line " .. lerrLine .. ": " .. lerrMsg
       vmHalted = true
       jobBusy = false
     } else {
@@ -3317,50 +3693,56 @@ on goParse2 {
     buffer emit loop
   } else {
     progOkV = !perr && pDone
-    progLenV = if progOkV then bop.length() else 0
     jobBusy = false
     vmReset()
+    if perr {
+      // vmReset clears errV, so report the failure after it; cpos sits at
+      // (or just past) the offending token in nearly every perr path
+      let epos = if cpos >= tl.length() then tl.length() - 1 else cpos
+      let eline = if epos < 0 then lline else tl[epos]
+      errV = "line " .. eline .. ": " .. perrMsg
+    }
   }
 }
 
-on Change(in0) {
-  latch0 = in0
-  if progOkV && !jobBusy {
+on Change(inNum0) {
+  latchN0 = inNum0
+  if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
-on Change(in1) {
-  latch1 = in1
-  if progOkV && !jobBusy {
+on Change(inNum1) {
+  latchN1 = inNum1
+  if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
-on Change(in2) {
-  latch2 = in2
-  if progOkV && !jobBusy {
+on Change(inNum2) {
+  latchN2 = inNum2
+  if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
-on Change(in3) {
-  latch3 = in3
-  if progOkV && !jobBusy {
+on Change(inNum3) {
+  latchN3 = inNum3
+  if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
-on Change(in4) {
-  latchS4 = in4
-  if progOkV && !jobBusy {
+on Change(inStr0) {
+  latchS0 = inStr0
+  if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
-on Change(in5) {
-  latchS5 = in5
-  if progOkV && !jobBusy {
+on Change(inStr1) {
+  latchS1 = inStr1
+  if run && progOkV && !jobBusy {
     vmReset()
   }
 }
@@ -3369,7 +3751,7 @@ on Change(inVec) {
   latchVX = inVec.x
   latchVY = inVec.y
   latchVZ = inVec.z
-  if progOkV && !jobBusy {
+  if run && progOkV && !jobBusy {
     vmReset()
   }
 }
@@ -3379,15 +3761,56 @@ on Change(inCol) {
   latchCG = inCol.g
   latchCB = inCol.b
   latchCA = inCol.a
-  if progOkV && !jobBusy {
+  if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
-on Clock(interval = 0.1) {
-  if progOkV && !vmHalted && !jobBusy {
+on Clock(interval = STEP_INTERVAL) {
+  if run && progOkV && !vmHalted && !jobBusy {
     vmBurst()
   }
+  syncOuts()
 }
 
 // Drain one patch-list entry per call; pdThen 1 restores the loop link.
+
+// ---------------------------------------------------------------- changelog (fixes to the original)
+// 1. emitTok pushed `kind` into tk twice, so tk was out of step with ts/tn/tt and every
+//    program failed to parse ("not a call statement"). Removed the duplicate push.
+// 2. parseInit never cleared tk/ts/tn/tt or lerr, so a second parse (chip load, then
+//    Change(program)) appended to the old tokens, and one lexer error stuck forever.
+// 3. `v & 0` is always 0. toInt() (function ids, so only print worked) and fmtNum
+//    (print(7) showed 0.0) now use `v | 0`, which truncates the float to an int.
+// 4. String < and <= advanced the pc twice (once in vmStep, once in cmpFinish), which skipped
+//    the next instruction. Now sets `advanced = true` like the other branches.
+// 5. `break` appended to the top control frame (the enclosing `if`), not the loop, so it was
+//    never patched and jumped to pc 0. It now joins ctlC[ctlLoop].
+// 6. Parallel assignment (a, b = b, a) stored into a before reading a on the right. Values are
+//    now copied to temporaries first when there is more than one target.
+// 7. `5.` lexed as an error although the header lists it as accepted.
+// 8. Tables: constructors, t[k] / t.k reads and writes, nested tables, parallel assignment
+//    to fields, # on tables and strings, table equality, type() and tostring(). Opcodes 28..31
+//    (NEWT, GETI, SETI, LEN); entries live in a Map keyed by table id + key, with a free list.
+// 9. `run` is now a bool level: low stops execution, a rising edge restarts, input changes
+//    only restart while it is high.
+// 10. Registers: 64 per function (register file 2048), temporaries are reused and freed after
+//    operators, indexing, call arguments and constructor elements, `local x = expr` adopts the
+//    value's register, and `x = expr` folds its store into the producing instruction.
+// 11. Gate count: lexer unrolled 4x (was 32x), parser 2x (was 12x), helper mods rewritten in
+//    single-expression form, exprPushName de-duplicated, builtin globals initialised from
+//    constant arrays. Step Clock 0.1 s -> 0.01 s.
+// 12. busy and halted merged into one busy port (pure expression over the parse job,
+//    run, progOk and the halt flag); progLen and nPrint ports dropped.
+// 13. print feeds one multiline log port (one tab-separated line per call, last 32 lines
+//    at 64 chars each, cleared on restart) instead of 8 slots; the 16-way slot dispatch
+//    is gone, lines stream through a small array plus a string mirror.
+// 14. outNum0..outNum3 are writable numeric globals, outStr0..outStr1 writable string
+//    globals (mirrored to their ports once per tick); inarr/outarr bridge 1-based
+//    float arrays.
+// 18. Number/string ports renamed by type: inNum0..inNum3, inStr0..inStr1,
+//    outNum0..outNum3, outStr0..outStr1.
+// 15. Compile failures report "line N: message" in err (token lines ride a parallel array,
+//    lexer errors carry their own line).
+// 16. Duplicate targets in one assignment store right to left (a, a = 1, 2 leaves 1).
+// 17. Table constructors accept [k] = v with any key expression.

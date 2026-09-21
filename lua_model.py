@@ -5,10 +5,10 @@ Same ISA the Wirescript port uses. Differential-tested against real Lua 5.4.
 SUBSET (Tiny): numbers (double only), booleans, nil, strings, tables,
 functions (named/anonymous, recursion, 0/1 return values), globals +
 locals, if/while/break/do, print/type/tostring/setvec/setcol/clock/
-inarr/outarr, numeric inputs in0..in3, string inputs in4..in5, vector
+inarr/outarr, numeric inputs inNum0..inNum3, string inputs inStr0..inStr1, vector
 input as invecx/y/z, color input as incolr/g/b/a, float array input
-inArr, one multiline log output fed by print plus out0..out3 (float),
-out4..out5 (string), outArr (float array), outVec/outCol.
+inArr, one multiline log output fed by print plus outNum0..outNum3 (float),
+outStr0..outStr1 (string), outArr (float array), outVec/outCol.
 NO: integers-as-type (one number type; `#` yields an integral float),
 for, methods, varargs, metatables, coroutines, string coercion in
 arithmetic, closures/upvalues (inner functions see globals + own
@@ -26,8 +26,8 @@ print appends tab-separated args + newline to the log (last 32 lines,
 each capped at 64 chars). inarr(i) reads the float input array 1-based
 (out of range -> nil); outarr(i, v) writes the 64-slot float output
 array (out of range -> runtime error; non-numbers except nil -> runtime
-error; nil writes 0.0). out0..out3 accept numbers/booleans/nil (nil ->
-0.0, anything else -> runtime error); out4..out5 accept anything
+error; nil writes 0.0). outNum0..outNum3 accept numbers/booleans/nil (nil ->
+0.0, anything else -> runtime error); outStr0..outStr1 accept anything
 (nil -> ""). Reading a missing table key gives nil; assigning nil
 deletes the key. tostring of a table is "table" (real Lua prints an
 address). Indexing a non-table, `#` of a non-table/string, and calling a
@@ -279,12 +279,14 @@ class Compiler:
                       FuncInfo("setcol", -1, -1), FuncInfo("clock", -1, -1),
                       FuncInfo("inarr", -1, -1), FuncInfo("outarr", -1, -1)]
         self.gslot = {}
-        for k in range(6):
-            self.gslot[f"out{k}"] = len(self.gslot)
         for k in range(4):
-            self.gslot[f"in{k}"] = len(self.gslot)
-        self.gslot["in4"] = len(self.gslot)
-        self.gslot["in5"] = len(self.gslot)
+            self.gslot[f"outNum{k}"] = len(self.gslot)
+        for k in range(2):
+            self.gslot[f"outStr{k}"] = len(self.gslot)
+        for k in range(4):
+            self.gslot[f"inNum{k}"] = len(self.gslot)
+        self.gslot["inStr0"] = len(self.gslot)
+        self.gslot["inStr1"] = len(self.gslot)
         for c in ("x", "y", "z"):
             self.gslot[f"invec{c}"] = len(self.gslot)
         for c in ("r", "g", "b", "a"):
@@ -386,7 +388,7 @@ class Parser:
 
     def free(self, r):
         f = self.frames[-1]
-        if r == f.nextReg - 1:
+        if r == f.nextReg - 1 and r not in f.locals.values():
             f.nextReg -= 1
 
     def alloc_local(self, name):
@@ -561,11 +563,15 @@ class Parser:
             self.next()
             vals = self.expr_list()
         regs = []
+        locregs = set(self.frames[-1].locals.values())
         for e in vals:
-            r = self.alloc()
-            if not silent:
-                self.c.emit(MOV, r, e)
-            self.free(e)
+            if e == self.frames[-1].nextReg - 1 and e not in locregs:
+                r = e
+            else:
+                r = self.alloc()
+                if not silent:
+                    self.c.emit(MOV, r, e)
+                self.free(e)
             regs.append(r)
         while len(regs) < len(names):
             r = self.alloc()
@@ -801,10 +807,14 @@ class Parser:
                 any(t[0] == "name" for t in targets):
             self.err("assignment targets must all be table fields")
         tmps = []
+        locregs = set(self.frames[-1].locals.values())
         for e in vals:
-            r = self.alloc()
-            self.c.emit(MOV, r, e)
-            self.free(e)
+            if e == self.frames[-1].nextReg - 1 and e not in locregs:
+                r = e
+            else:
+                r = self.alloc()
+                self.c.emit(MOV, r, e)
+                self.free(e)
             tmps.append(r)
         while len(tmps) < len(targets):
             r = self.alloc()
@@ -913,9 +923,25 @@ class Parser:
         return fr
 
     def call_args(self, silent, fr):
-        """Parse one arg list; returns pc of the CALL emit (or None)."""
-        argregs = []
+        """Parse one arg list; returns pc of the CALL emit (or None).
+
+        Each argument moves straight into its frame slot before the next
+        one parses (temps stay above the frame), so later marshaling can
+        never clobber an unevaluated argument temp."""
+        f = self.frames[-1]
+        nargs = 0
         multitail = False
+
+        def place(e):
+            if not silent:
+                if fr + 1 + nargs >= MAX_REGS:
+                    self.err("too many registers")
+                self.c.emit(MOV, fr + 1 + nargs, e)
+            self.free(e)
+            nn = fr + 2 + nargs
+            if nn > f.nextReg:
+                f.nextReg = nn
+
         if self.at("SYM", "("):
             self.next()
             if not self.at("SYM", ")"):
@@ -924,7 +950,10 @@ class Parser:
                     last_bare = (j is not None and j < len(self.t) and
                                  self.t[j].kind == "SYM" and
                                  self.t[j].v == ")")
-                    argregs.append(self.expr())
+                    place(self.expr())
+                    nargs += 1
+                    if nargs > 16:
+                        self.err("too many arguments")
                     if self.at("SYM", ","):
                         self.next()
                         continue
@@ -936,20 +965,12 @@ class Parser:
             r = self.alloc()
             if not silent:
                 self.c.emit(LOADSTR, r, self.c.const_str(t.v))
-            argregs = [r]
+            place(r)
+            nargs = 1
         if silent:
-            for e in argregs:
-                self.free(e)
             return None
-        if len(argregs) > 16:
-            self.err("too many arguments")
-        f = self.frames[-1]
-        if fr + 1 + len(argregs) > MAX_REGS:
-            self.err("too many registers")
-        for i, e in enumerate(argregs):
-            self.c.emit(MOV, fr + 1 + i, e)
-        pos = self.c.emit(CALL, fr, len(argregs), 1 if multitail else 0)
-        f.maxReg = max(f.maxReg, fr + 1 + len(argregs))
+        pos = self.c.emit(CALL, fr, nargs, 1 if multitail else 0)
+        f.maxReg = max(f.maxReg, fr + 1 + nargs)
         f.nextReg = fr + 1
         return pos
 
@@ -997,8 +1018,11 @@ class Parser:
             if self.peek().kind == "SYM" and self.peek().v in (
                     "<", ">", "<=", ">=", "==", "~="):
                 self.err("chained comparison (like Lua)")
-            res = self.alloc()
             op = t.v
+            # free first so top-of-stack temps cascade back for reuse
+            self.free(r)
+            self.free(l)
+            res = self.alloc()
             if op == "<":
                 self.c.emit(LT, res, l, r)
             elif op == ">":
@@ -1012,8 +1036,6 @@ class Parser:
             else:
                 self.c.emit(EQ, res, l, r)
                 self.c.emit(NOT, res, res)
-            self.free(l)
-            self.free(r)
             return res
         return l
 
@@ -1022,10 +1044,10 @@ class Parser:
         if self.at("SYM", ".."):
             self.next()
             r = self.parse_concat()
+            self.free(r)
+            self.free(l)
             res = self.alloc()
             self.c.emit(CONCAT, res, l, r)
-            self.free(l)
-            self.free(r)
             return res
         return l
 
@@ -1034,10 +1056,10 @@ class Parser:
         while self.peek().kind == "SYM" and self.peek().v in ("+", "-"):
             op = self.next().v
             r = self.parse_mul()
+            self.free(r)
+            self.free(l)
             res = self.alloc()
             self.c.emit(ADD if op == "+" else SUB, res, l, r)
-            self.free(l)
-            self.free(r)
             l = res
         return l
 
@@ -1046,10 +1068,10 @@ class Parser:
         while self.peek().kind == "SYM" and self.peek().v in ("*", "/", "%"):
             op = self.next().v
             r = self.parse_unary()
+            self.free(r)
+            self.free(l)
             res = self.alloc()
             self.c.emit({"*": MUL, "/": DIV, "%": MOD}[op], res, l, r)
-            self.free(l)
-            self.free(r)
             l = res
         return l
 
@@ -1057,23 +1079,23 @@ class Parser:
         if self.at("KW", "not"):
             self.next()
             q = self.parse_unary()
+            self.free(q)
             res = self.alloc()
             self.c.emit(NOT, res, q)
-            self.free(q)
             return res
         if self.at("SYM", "#"):
             self.next()
             q = self.parse_unary()
+            self.free(q)
             res = self.alloc()
             self.c.emit(LEN, res, q, 0)
-            self.free(q)
             return res
         if self.at("SYM", "-"):
             self.next()
             q = self.parse_unary()
+            self.free(q)
             res = self.alloc()
             self.c.emit(UNM, res, q)
-            self.free(q)
             return res
         return self.parse_power()
 
@@ -1082,10 +1104,10 @@ class Parser:
         if self.at("SYM", "^"):
             self.next()
             e = self.parse_unary()
+            self.free(e)
+            self.free(b)
             res = self.alloc()
             self.c.emit(POW, res, b, e)
-            self.free(b)
-            self.free(e)
             return res
         return b
 
@@ -1149,20 +1171,20 @@ class Parser:
                 self.next()
                 k = self.expr()
                 self.expect("SYM", "]")
+                self.free(k)
+                self.free(r)
                 res = self.alloc()
                 self.c.emit(GETFIELD, res, r, k)
-                self.free(r)
-                self.free(k)
                 r = res
             elif self.at("SYM", "."):
                 self.next()
                 nm = self.expect("NAME").v
                 kr = self.alloc()
                 self.c.emit(LOADSTR, kr, self.c.const_str(nm))
+                self.free(kr)
+                self.free(r)
                 res = self.alloc()
                 self.c.emit(GETFIELD, res, r, kr)
-                self.free(r)
-                self.free(kr)
                 r = res
             elif self.at("SYM", "(") or self.peek().kind == "STR":
                 r = self.finish_local_call(r, False)
@@ -1237,8 +1259,8 @@ class VM:
         self.gnum = [0.0] * n
         self.gstr = [""] * n
         for k in range(4):
-            self.gtag[comp.gslot[f"in{k}"]] = 1
-        for name in ("in4", "in5"):
+            self.gtag[comp.gslot[f"inNum{k}"]] = 1
+        for name in ("inStr0", "inStr1"):
             self.gtag[comp.gslot[name]] = 2
         for name in ("invecx", "invecy", "invecz", "incolr", "incolg",
                      "incolb", "incola"):
@@ -1250,9 +1272,9 @@ class VM:
             self.gtag[s] = 4
             self.gnum[s] = float(fid)
         for k in range(4):
-            self.gtag[comp.gslot[f"out{k}"]] = 1
-        for k in range(4, 6):
-            self.gtag[comp.gslot[f"out{k}"]] = 2
+            self.gtag[comp.gslot[f"outNum{k}"]] = 1
+        for k in range(2):
+            self.gtag[comp.gslot[f"outStr{k}"]] = 2
         self.outVec = [0.0, 0.0, 0.0]
         self.outCol = [0.0, 0.0, 0.0, 0.0]
         self.inArr = []
@@ -1285,13 +1307,15 @@ class VM:
 
     def set_input(self, ch, v):
         if ch >= 4:
-            raise IndexError("numeric inputs are in0..in3")
-        s = self.c.gslot[f"in{ch}"]
+            raise IndexError("numeric inputs are inNum0..inNum3")
+        s = self.c.gslot[f"inNum{ch}"]
         self.gtag[s] = 1
         self.gnum[s] = float(v)
 
     def set_sinput(self, ch, s):
-        slot = self.c.gslot[f"in{ch}"]
+        if ch >= 2:
+            raise IndexError("string inputs are inStr0..inStr1")
+        slot = self.c.gslot[f"inStr{ch}"]
         self.gtag[slot] = 2
         self.gstr[slot] = s
 
@@ -1383,11 +1407,11 @@ class VM:
         numbers (nil -> 0.0), string outs Lua-formatted (nil -> "")."""
         floats = []
         for k in range(4):
-            s = self.c.gslot[f"out{k}"]
+            s = self.c.gslot[f"outNum{k}"]
             floats.append(0.0 if self.gtag[s] == 0 else self.gnum[s])
         strings = []
-        for k in range(4, 6):
-            s = self.c.gslot[f"out{k}"]
+        for k in range(2):
+            s = self.c.gslot[f"outStr{k}"]
             strings.append("" if self.gtag[s] == 0 else fmt_val(self.G(s)))
         return floats + strings
 
@@ -1477,7 +1501,7 @@ class VM:
                 v = self.R(b)
                 self.S(a, v)
                 for k in range(4):
-                    if a == self.c.gslot[f"out{k}"] and \
+                    if a == self.c.gslot[f"outNum{k}"] and \
                             v[0] not in ("num", "nil", "bool"):
                         raise RuntimeError_(
                             "cannot convert " + v[0] + " to number")
@@ -1862,10 +1886,10 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     pre = []
     for k in range(4):
         v = float(inputs[k]) if inputs and k < len(inputs) else 0.0
-        pre.append(f"in{k} = {lua_num_lit(v)}")
-    for k in (4, 5):
+        pre.append(f"inNum{k} = {lua_num_lit(v)}")
+    for k in (0, 1):
         s = sinputs.get(k, "") if sinputs else ""
-        pre.append(f"in{k} = {lua_str_lit(s)}")
+        pre.append(f"inStr{k} = {lua_str_lit(s)}")
     vv = vec or (0.0, 0.0, 0.0)
     for name, v in zip(("invecx", "invecy", "invecz"), vv):
         pre.append(f"{name} = {lua_num_lit(float(v))}")
@@ -1937,6 +1961,31 @@ def lua_num_lit(v):
 # mode 'run'     : must succeed both sides, values identical
 #      'synfail' : both sides must reject
 #      'haltfail': both sides must fail; printed-so-far identical
+DEMO_SRC = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "demo.lua"), encoding="utf-8").read()
+DEMO_KW = {"inarr": [10.0, 20.0, 30.0],
+           "sinputs": {0: "foo", 1: "bar"},
+           "vec": (1.0, 2.0, 3.0), "col": (0.5, 0.25, 0.125, 1.0)}
+DEMO_LOG = ("arith\t2.25\t7.0\n"
+            "str\tfoo-bar!\t8.0\n"
+            "cmp\tfalse\ta\nb\n"
+            "logic\t2.0\tdflt\n"
+            "logic2\tfalse\tnil\tfunction\n"
+            "tab\t3.0\t2.25\tfoo\n"
+            "tab2\t1.0\tyes\t7.0\n"
+            "tab3\ttrue\ttrue\n"
+            "func\t120.0\t42.0\n"
+            "func2\t14.0\t10.0\n"
+            "shadow\tinner\n"
+            "sugared\n"
+            "grade\tB\n"
+            "flow\t55.0\t2.0\t1.0\tsecond\n"
+            "inputs\t6.0\t1.875\t10.0\n"
+            "inputs2\t30.0\tnil\tnil\n"
+            "outs\t7.0\t79.0\n"
+            "outs2\tfoo-bar!|foo\t21.75/table\n"
+            "\n"
+            "check\t55.0\tfoo-bar!\t2.25\n")
 TESTS = [
     ("lit-num", "print(3)", None, "run"),
     ("lit-float", "print(3.5)", None, "run"),
@@ -1991,27 +2040,27 @@ TESTS = [
     ("assign-swap", "a, b = 10, 20 a, b = b, a print(a, b)", None, "run"),
     ("assign-short", "a, b, c = 1 print(a, b, c)", None, "run"),
     ("global-write", "g = 41 g = g+1 print(g)", None, "run"),
-    ("inputs-sum", "print(in0+in1+in2+in3)",
+    ("inputs-sum", "print(inNum0+inNum1+inNum2+inNum3)",
      [1, 2, 3, 4], "run"),
-    ("inputs-each", "print(in0, in1, in2, in3, in4, in5, invecx, invecy, "
+    ("inputs-each", "print(inNum0, inNum1, inNum2, inNum3, inStr0, inStr1, invecx, invecy, "
      "invecz, incolr, incolg, incolb, incola)",
      [8, 7, 6, 5], "run",
-     {"sinputs": {4: "a", 5: "b"}, "vec": (1, 2, 3),
+     {"sinputs": {0: "a", 1: "b"}, "vec": (1, 2, 3),
       "col": (0.5, 0.25, 0.125, 1)}),
-    ("inputs-expr", "print(in0*2, in4 .. '!', in3%in1)",
-     [10, 3, 0, 7], "run", {"sinputs": {4: "hey"}}),
+    ("inputs-expr", "print(inNum0*2, inStr0 .. '!', inNum3%inNum1)",
+     [10, 3, 0, 7], "run", {"sinputs": {0: "hey"}}),
     ("inputs-vec", "print(invecx+invecy+invecz)", None, "run",
      {"vec": (1.5, 2.5, 3.0)}),
     ("inputs-col", "print(incolr, incolg, incolb, incola)", None, "run",
      {"col": (1, 0.5, 0.25, 1)}),
     ("io-setvec", "setvec(1, 2, 3)", None, "modelio",
      {"expect": {"outVec": [1.0, 2.0, 3.0]}}),
-    ("io-setvec-partial", "setvec(in0)", [9], "modelio",
+    ("io-setvec-partial", "setvec(inNum0)", [9], "modelio",
      {"expect": {"outVec": [9.0, 0.0, 0.0]}}),
     ("io-setcol", "setcol(1, 0.5, 0.25, 1)", None, "modelio",
      {"expect": {"outCol": [1.0, 0.5, 0.25, 1.0]}}),
-    ("io-strings", "print(in4 .. in5)", None, "run",
-     {"sinputs": {4: "foo", 5: "bar"}}),
+    ("io-strings", "print(inStr0 .. inStr1)", None, "run",
+     {"sinputs": {0: "foo", 1: "bar"}}),
     ("io-clock", "local a = clock() local b = clock() "
      "print(type(a), b > a)", None, "modelio",
      {"expect": {"log": "number\ttrue\n"}}),
@@ -2103,6 +2152,18 @@ TESTS = [
     ("run-negstr", "print('before') print(-'x')", None, "haltfail"),
     ("upvalue-read", "local x = 5 function f() return x end print(f())",
      None, "modelonly"),
+    ("callarg-temp", "local s = 'abcdef' print('x', s, #s, s .. '!')",
+     None, "run", {"floatints": True}),
+    ("callarg-binop", "local a = 6 local b = 7 print(a + b, a * b, -a)",
+     None, "run"),
+    ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
+     {"expect": {"log": DEMO_LOG,
+                 "outGlobals": [7.0, 79.0, 61.875, 11.0,
+                                "foo-bar!|foo", "21.75/table"],
+                 "outArr": [55.0, 6.0] + [0.0] * 61 + [-1.0],
+                 "outVec": [2.0, 4.0, 6.0],
+                 "outCol": [0.5, 0.25, 0.125, 1.0],
+                 "result": "done-55.0"}}),
     # regression: the original progOk bug (hello world must compile)
     ("hello", "print(\"Hello, World!\")", None, "run"),
     ("fmt-int", "print(7)", None, "run"),
@@ -2211,17 +2272,17 @@ TESTS = [
     ("arr-missing", "print(inarr())", None, "modelio",
      {"expect": {"log": "nil\n"}}),
     # writable output globals
-    ("out-nums", "out0 = 1 out1 = 2.5 out2 = true out3 = nil", None,
+    ("out-nums", "outNum0 = 1 outNum1 = 2.5 outNum2 = true outNum3 = nil", None,
      "modelio",
      {"expect": {"outGlobals": [1.0, 2.5, 1.0, 0.0, "", ""]}}),
-    ("out-strs", "out4 = 'hi' out5 = 3", None, "modelio",
+    ("out-strs", "outStr0 = 'hi' outStr1 = 3", None, "modelio",
      {"expect": {"outGlobals": [0.0, 0.0, 0.0, 0.0, "hi", "3.0"]}}),
-    ("out-readback", "out0 = 5 print(out0 + 1)", None, "run"),
-    ("out-badnum", "out0 = 'x'", None, "modelhalt",
+    ("out-readback", "outNum0 = 5 print(outNum0 + 1)", None, "run"),
+    ("out-badnum", "outNum0 = 'x'", None, "modelhalt",
      {"expect": {"err": "cannot convert"}}),
-    ("out-badnum2", "out1 = {}", None, "modelhalt",
+    ("out-badnum2", "outNum1 = {}", None, "modelhalt",
      {"expect": {"err": "cannot convert"}}),
-    ("out-nil-str", "out4 = nil print(out4 == nil)", None, "run"),
+    ("out-nil-str", "outStr0 = nil print(outStr0 == nil)", None, "run"),
     # line numbers on compile failure
     ("errline-stmt", "print(1)\nprint(2)\nend\n", None, "synfail",
      {"errline": 3}),
@@ -2249,6 +2310,9 @@ def build_overcap():
         for k in range(40)) + "\n"
 
 
+
+
+
 INT_LIKE = re.compile(r"^-?\d+$")
 
 
@@ -2273,6 +2337,10 @@ def check_one(name, src, inputs, mode, kw=None):
         src = build_stress()
     if src == "OVERCAP":
         src = build_overcap()
+    if src == "DEMO":
+        src = DEMO_SRC
+        for k, v in DEMO_KW.items():
+            kw.setdefault(k, v)
     rkw = {k: v for k, v in kw.items()
            if k not in ("expect", "errline", "floatints")}
     mkw = dict(rkw)
