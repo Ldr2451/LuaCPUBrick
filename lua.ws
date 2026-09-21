@@ -104,9 +104,12 @@
 ///               tick. A few hundred characters take a few seconds. Add or remove calls in
 ///               lexChunk / parseChunk / vmBurst to trade gates for speed.
 ///
-/// Verification: differential tests against real Lua 5.4 (about 160 programs, plus roughly
-/// 550 random programs, all matching apart from the documented differences), and handler
-/// tests for `run`. It has not been run inside Brickadia.
+/// Verification: differential tests against real Lua 5.4 (about 190 hand-written programs
+/// plus a 200-seed random differential fuzz, all matching apart from the documented
+/// differences), structural model<->chip consistency checks (builtin ids, global slots,
+/// limits, ports, opcode and keyword coverage, re-parse/restart clearing), and simulated
+/// handler tests for run, the log, inarr/outarr, outNum/outStr and error reporting.
+/// It has not been run inside Brickadia.
 
 @layout("cube")
 
@@ -3590,6 +3593,13 @@ var wantParse: bool = false
 
 mod parseJobStart() {
   parseInit()
+  // one reserved slot per builtin (ids 0..7); user functions start after them
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
   fStart.push(-1)
   fParams.push(-1)
   fRegs.push(-1)
@@ -3814,3 +3824,7 @@ on Clock(interval = STEP_INTERVAL) {
 //    lexer errors carry their own line).
 // 16. Duplicate targets in one assignment store right to left (a, a = 1, 2 leaves 1).
 // 17. Table constructors accept [k] = v with any key expression.
+// 19. Function ids 6 and 7 were taken by inarr/outarr but parseJobStart still reserved only six
+//    builtin slots, so the first two user functions (and the main chunk) collided with them:
+//    any program defining a function printed nothing or failed with "array index out of range".
+//    It now reserves eight slots.

@@ -1882,7 +1882,7 @@ def lua_str_lit(s):
 
 
 def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
-               timeout=15):
+               inarr=None, timeout=15):
     pre = []
     for k in range(4):
         v = float(inputs[k]) if inputs and k < len(inputs) else 0.0
@@ -1890,6 +1890,14 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     for k in (0, 1):
         s = sinputs.get(k, "") if sinputs else ""
         pre.append(f"inStr{k} = {lua_str_lit(s)}")
+    arr = [float(v) for v in inarr] if inarr else []
+    pre.append("ARR = {" + ", ".join(lua_num_lit(v) for v in arr) + "}")
+    pre.append("inarr = function(i)")
+    pre.append("  if type(i) == 'number' and i == math.floor(i)")
+    pre.append("      and i >= 1 and i <= #ARR then return ARR[i] end")
+    pre.append("  return nil")
+    pre.append("end")
+    pre.append("outarr = function() end")
     vv = vec or (0.0, 0.0, 0.0)
     for name, v in zip(("invecx", "invecy", "invecz"), vv):
         pre.append(f"{name} = {lua_num_lit(float(v))}")
@@ -2156,6 +2164,16 @@ TESTS = [
      None, "run", {"floatints": True}),
     ("callarg-binop", "local a = 6 local b = 7 print(a + b, a * b, -a)",
      None, "run"),
+    ("func-twice", "function a() return 1 end function b() return 2 end "
+     "print(a(), b(), a() + b())", None, "run"),
+    ("func-inarr", "function g() return inarr(1) + inarr(2) end "
+     "print(g(), g())", None, "modelio",
+     {"inarr": [3.0, 4.0], "expect": {"log": "7.0\t7.0\n"}}),
+    ("func-outarr", "function w(v) outarr(1, v * 2) end w(5) w(6)",
+     None, "modelio",
+     {"expect": {"outArr": [12.0] + [0.0] * 63, "log": ""}}),
+    ("func-main-first", "print('start') function h(x) return x + 1 end "
+     "print(h(41))", None, "run"),
     ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
      {"expect": {"log": DEMO_LOG,
                  "outGlobals": [7.0, 79.0, 61.875, 11.0,
@@ -2324,6 +2342,8 @@ def norm_calls(calls, floatints=False):
             v = norm_val(v)
             # `#` and friends yield integral floats in Tiny (one number
             # type); real Lua yields ints. Rewrite per test opt-in.
+            # Only safe when the program prints no int-looking strings
+            # (they are indistinguishable and would corrupt to "N.0").
             if floatints and INT_LIKE.match(v):
                 v += ".0"
             row.append(v)
@@ -2343,10 +2363,8 @@ def check_one(name, src, inputs, mode, kw=None):
             kw.setdefault(k, v)
     rkw = {k: v for k, v in kw.items()
            if k not in ("expect", "errline", "floatints")}
-    mkw = dict(rkw)
-    okw = {k: v for k, v in rkw.items() if k != "inarr"}
-    m = run_model(src, inputs, **mkw)
-    o = oracle_run(src, inputs, **okw)
+    m = run_model(src, inputs, **rkw)
+    o = oracle_run(src, inputs, **rkw)
     if not o.get("avail"):
         return ("SKIP", f"{name}: lua binary not available")
     if mode == "run":
