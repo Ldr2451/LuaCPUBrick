@@ -1,1 +1,2 @@
-﻿printf '__pycache__/\n'
+﻿__pycache__/
+*.pyc
