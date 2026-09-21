@@ -73,12 +73,12 @@
 ///   512 bytecode instructions, 32 registers per function, 32 functions,
 ///   64 globals (19 pre-registered), 256 numeric + 256 string constants,
 ///   16 call arguments, 32 nested calls.
-///   Long programs: parsing is chunked across ticks (32 chars/tick), the VM
-///   steps 4 instructions per 0.1s pulse; step counts are reported by the
-///   Python model so in-game time ~= steps/40 seconds.
+///   Long programs: parsing is chunked across ticks (64 chars/tick), the VM
+///   steps 16 instructions per 0.1s pulse; step counts are reported by the
+///   Python model so in-game time ~= steps/160 seconds.
 ///
 /// Timing knobs: LEX_PER_TICK below, the Clock interval on the step handler,
-/// and the unrolled vmStep() calls per pulse (4 = one STEPS_PER_TICK unit).
+/// and the unrolled vmStep() calls per pulse (16 = one STEPS_PER_TICK unit).
 ///
 /// Python reference model: lua_model.py (106/106 differential tests green
 /// vs real Lua 5.4). ISA shared with the model: opcodes 0..27, parallel
@@ -120,8 +120,8 @@
 
 // ---------------------------------------------------------------- tunables
 
-const LEX_PER_TICK = 32
-const STEPS_PER_TICK = 4
+const LEX_PER_TICK = 64
+const STEPS_PER_TICK = 16
 const MAX_INSTR = 512
 const MAX_REGS = 32
 const MAX_FUNCS = 32

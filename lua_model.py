@@ -85,18 +85,26 @@ class LangError(Exception):
     pass
 
 class Tok:
-    __slots__ = ("kind", "v", "raw", "a", "b")
-    def __init__(self, kind, v=None, raw="", a=0, b=0):
+    __slots__ = ("kind", "v", "raw", "a", "b", "line")
+    def __init__(self, kind, v=None, raw="", a=0, b=0, line=1):
         self.kind, self.v, self.raw, self.a, self.b = kind, v, raw, a, b
+        self.line = line
     def __repr__(self):
         return f"Tok({self.kind},{self.v!r})"
 
 def lex(src):
     toks = []
     i, n = 0, len(src)
+    line = 1
+
+    def fail(msg):
+        raise LangError(f"line {line}: {msg}")
+
     while i < n:
         c = src[i]
         if c in " \t\n\r":
+            if c == "\n":
+                line += 1
             i += 1
             continue
         if c == "-" and i + 1 < n and src[i + 1] == "-":
@@ -109,7 +117,7 @@ def lex(src):
                 j += 1
             if j < n and src[j] == ".":
                 if j + 1 < n and src[j + 1] == ".":
-                    raise LangError("malformed number (like Lua '5..3')")
+                    fail("malformed number (like Lua '5..3')")
                 j += 1
                 while j < n and src[j].isdigit():
                     j += 1
@@ -122,7 +130,7 @@ def lex(src):
                         k += 1
                     j = k
             raw = src[i:j]
-            toks.append(Tok("NUM", float(raw), raw, i, j))
+            toks.append(Tok("NUM", float(raw), raw, i, j, line))
             i = j
             continue
         if c == '"' or c == "'":
@@ -131,16 +139,16 @@ def lex(src):
             out = []
             while True:
                 if j >= n:
-                    raise LangError("unterminated string")
+                    fail("unterminated string")
                 d = src[j]
                 if d == "\n":
-                    raise LangError("unterminated string")
+                    fail("unterminated string")
                 if d == q:
                     break
                 if d == "\\":
                     j += 1
                     if j >= n:
-                        raise LangError("unterminated string")
+                        fail("unterminated string")
                     e = src[j]
                     if e in SIMPLE_ESC:
                         out.append(SIMPLE_ESC[e])
@@ -154,7 +162,7 @@ def lex(src):
                         hx = src[j + 1:j + 3]
                         if len(hx) != 2 or not all(
                                 ch in "0123456789abcdefABCDEF" for ch in hx):
-                            raise LangError("bad hex escape")
+                            fail("bad hex escape")
                         out.append(chr(int(hx, 16)))
                         j += 2
                     elif e == "z":
@@ -163,11 +171,11 @@ def lex(src):
                             j += 1
                         j -= 1
                     else:
-                        raise LangError(f"bad escape \\{e}")
+                        fail(f"bad escape \\{e}")
                 else:
                     out.append(d)
                 j += 1
-            toks.append(Tok("STR", "".join(out), src[i:j + 1], i, j + 1))
+            toks.append(Tok("STR", "".join(out), src[i:j + 1], i, j + 1, line))
             i = j + 1
             continue
         if c.isalpha() or c == "_":
@@ -175,28 +183,48 @@ def lex(src):
             while j < n and (src[j].isalnum() or src[j] == "_"):
                 j += 1
             w = src[i:j]
-            toks.append(Tok("KW" if w in KEYWORDS else "NAME", w, w, i, j))
+            toks.append(Tok("KW" if w in KEYWORDS else "NAME", w, w, i, j, line))
             i = j
             continue
         two = src[i:i + 2]
         if two in ("==", "~=", "<=", ">=", ".."):
-            toks.append(Tok("SYM", two, two, i, i + 2))
+            toks.append(Tok("SYM", two, two, i, i + 2, line))
             i += 2
             continue
         if c == "." and src[i + 1:i + 3] == "..":
-            raise LangError("varargs '...' not supported")
-        if c in "+-*/%^<>=(),;":
-            toks.append(Tok("SYM", c, c, i, i + 1))
+            fail("varargs '...' not supported")
+        if c in "+-*/%^<>=(),;{}[].#":
+            toks.append(Tok("SYM", c, c, i, i + 1, line))
             i += 1
             continue
-        raise LangError(f"unexpected character {c!r}")
-    toks.append(Tok("EOF", None, "", n, n))
+        fail(f"unexpected character {c!r}")
+    toks.append(Tok("EOF", None, "", n, n, line))
     return toks
 
 # ---------------------------------------------------------------- bytecode
 (HALT, LOADNIL, LOADNUM, LOADSTR, LOADBOOL, LOADGLOBAL, STOREGLOBAL, MOV,
  ADD, SUB, MUL, DIV, MOD, POW, UNM, NOT, CONCAT, EQ, LT, LE, JMP, JMPF,
- JMPT, CALL, RETURN, LOADFUNC, RETURN0, RETURNV) = range(28)
+ JMPT, CALL, RETURN, LOADFUNC, RETURN0, RETURNV, NEWTABLE, GETFIELD,
+ SETFIELD, LEN) = range(32)
+
+MAX_TABLES = 64
+MAX_HEAP = 512
+
+BUILTINS = (("print", 0), ("type", 1), ("tostring", 2), ("setvec", 3),
+            ("setcol", 4), ("clock", 5), ("inarr", 6), ("outarr", 7))
+
+
+def Vtable(tid):
+    return ("table", float(tid), "")
+
+
+def tkey(tid, kt, kn, ks):
+    """Composite table key, mirroring the gate's tkey() exactly."""
+    if kt == 1:
+        return f"{tid}#{int(kn)}"
+    if kt == 2:
+        return f"{tid}${ks}"
+    return f"{tid}@{kt}:{int(kn)}"
 
 class FuncInfo:
     def __init__(self, name, start, nparams):
@@ -211,8 +239,11 @@ class Compiler:
         self.constNum, self.constStr = [], []
         self.funcs = [FuncInfo("print", -1, -1), FuncInfo("type", -1, -1),
                       FuncInfo("tostring", -1, -1), FuncInfo("setvec", -1, -1),
-                      FuncInfo("setcol", -1, -1), FuncInfo("clock", -1, -1)]
+                      FuncInfo("setcol", -1, -1), FuncInfo("clock", -1, -1),
+                      FuncInfo("inarr", -1, -1), FuncInfo("outarr", -1, -1)]
         self.gslot = {}
+        for k in range(6):
+            self.gslot[f"out{k}"] = len(self.gslot)
         for k in range(4):
             self.gslot[f"in{k}"] = len(self.gslot)
         self.gslot["in4"] = len(self.gslot)
@@ -227,6 +258,8 @@ class Compiler:
         self.gslot["setvec"] = len(self.gslot)
         self.gslot["setcol"] = len(self.gslot)
         self.gslot["clock"] = len(self.gslot)
+        self.gslot["inarr"] = len(self.gslot)
+        self.gslot["outarr"] = len(self.gslot)
         self.mainFunc = 0
 
     def emit(self, op, a=0, b=0, c=0):
@@ -292,7 +325,7 @@ class Parser:
     def expect(self, kind, v=None):
         t = self.next()
         if t.kind != kind or (v is not None and t.v != v):
-            raise LangError(f"expected {v or kind}, got {t}")
+            raise LangError(f"line {t.line}: expected {v or kind}, got {t}")
         return t
 
     def at(self, kind, v=None):
@@ -308,7 +341,7 @@ class Parser:
     def alloc(self):
         f = self.frames[-1]
         if f.nextReg >= MAX_REGS:
-            raise LangError("too many registers")
+            self.err("too many registers")
         r = f.nextReg
         f.nextReg += 1
         f.maxReg = max(f.maxReg, f.nextReg)
@@ -345,13 +378,17 @@ class Parser:
             return f.locals[name]
         for g in self.frames[-2::-1]:
             if name in g.locals or g.selfname == name:
-                raise LangError("upvalues/closures not supported in Tiny")
+                self.err("upvalues/closures not supported in Tiny")
         return None
 
     def dirty_self(self, name):
         f = self.frames[-1]
         if f.selfname == name:
             f.self_clean = False
+
+    def err(self, msg):
+        t = self.peek()
+        raise LangError(f"line {t.line}: {msg}")
 
     def sync_regs(self):
         """Temps are dead at statement boundaries; reclaim them."""
@@ -412,7 +449,7 @@ class Parser:
             if w == "break":
                 self.next()
                 if not self.loopStack:
-                    raise LangError("break outside loop")
+                    self.err("break outside loop")
                 if not silent:
                     self.loopStack[-1].append(self.c.emit(JMP, 0))
                 return
@@ -427,7 +464,7 @@ class Parser:
                              self.at_end_token(self.t[j]))
                     r = self.expr()
                     if self.at("SYM", ","):
-                        raise LangError(
+                        self.err(
                             "multiple return values not supported")
                     if not silent:
                         if multi:
@@ -444,11 +481,11 @@ class Parser:
             r = self.expr()
             self.expect("SYM", ")")
             if not (self.at("SYM", "(") or self.peek().kind == "STR"):
-                raise LangError("not a call statement")
+                self.err("not a call statement")
             while self.at("SYM", "(") or self.peek().kind == "STR":
                 r = self.finish_local_call(r, silent)
             return
-        raise LangError(f"unexpected {t}")
+        self.err(f"unexpected {t}")
 
     def stmt_local(self, silent):
         self.expect("KW", "local")
@@ -503,10 +540,10 @@ class Parser:
                 params.append(self.expect("NAME").v)
         self.expect("SYM", ")")
         if len(params) > 8:
-            raise LangError("too many parameters (max 8 in-gate)")
+            self.err("too many parameters (max 8 in-gate)")
         fi = FuncInfo(selfname or "anon", -1, len(params))
         if len(self.c.funcs) >= MAX_FUNCS:
-            raise LangError("too many functions")
+            self.err("too many functions")
         fid = len(self.c.funcs)
         self.c.funcs.append(fi)
         fr = None
@@ -760,10 +797,10 @@ class Parser:
                 self.free(e)
             return None
         if len(argregs) > 16:
-            raise LangError("too many arguments")
+            self.err("too many arguments")
         f = self.frames[-1]
         if fr + 1 + len(argregs) > MAX_REGS:
-            raise LangError("too many registers")
+            self.err("too many registers")
         for i, e in enumerate(argregs):
             self.c.emit(MOV, fr + 1 + i, e)
         pos = self.c.emit(CALL, fr, len(argregs), 1 if multitail else 0)
@@ -814,7 +851,7 @@ class Parser:
             r = self.parse_concat()
             if self.peek().kind == "SYM" and self.peek().v in (
                     "<", ">", "<=", ">=", "==", "~="):
-                raise LangError("chained comparison (like Lua)")
+                self.err("chained comparison (like Lua)")
             res = self.alloc()
             op = t.v
             if op == "<":
@@ -948,7 +985,7 @@ class Parser:
             while self.at("SYM", "(") or self.peek().kind == "STR":
                 r = self.finish_local_call(r, False)
             return r
-        raise LangError(f"unexpected {t} in expression")
+        self.err(f"unexpected {t} in expression")
 
 # ---------------------------------------------------------------- VM
 class RuntimeError_(Exception):
@@ -969,12 +1006,25 @@ class VM:
                      "incolb", "incola"):
             self.gtag[comp.gslot[name]] = 1
         for name, fid in (("print", 0), ("type", 1), ("tostring", 2),
-                          ("setvec", 3), ("setcol", 4), ("clock", 5)):
+                          ("setvec", 3), ("setcol", 4), ("clock", 5),
+                          ("inarr", 6), ("outarr", 7)):
             s = comp.gslot[name]
             self.gtag[s] = 4
             self.gnum[s] = float(fid)
+        for k in range(6):
+            self.gtag[comp.gslot[f"out{k}"]] = 1
         self.outVec = [0.0, 0.0, 0.0]
         self.outCol = [0.0, 0.0, 0.0, 0.0]
+        self.outGlobals = [0.0] * 6
+        self.inArr = []
+        self.outArr = [0.0] * 64
+        self.log = ""
+        self.tmap = {}
+        self.tv = []
+        self.tfree = []
+        self.theap = 0
+        self.tlen = {}
+        self.tcount = 0
         self.tag, self.num, self.str = [], [], []
         self.frames = []  # (funcId, base, retSlot, retBase, retPC)
         self.pc = 0
@@ -1339,7 +1389,15 @@ class VM:
 def compile_src(src):
     comp = Compiler()
     toks = lex(src)
-    Parser(comp, toks).parse_chunk()
+    p = Parser(comp, toks)
+    try:
+        p.parse_chunk()
+    except LangError as ex:
+        msg = str(ex)
+        if not msg.startswith("line "):
+            tok = toks[min(p.pos, len(toks) - 1)]
+            msg = f"line {tok.line}: {msg}"
+        raise LangError(msg)
     comp.emit(HALT)
     return comp
 
