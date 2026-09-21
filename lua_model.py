@@ -52,6 +52,16 @@ N_OUT = 8
 def Vnum(x):
     return ("num", float(x), "")
 
+def Vint(x):
+    return ("int", int(x), "")
+
+M64 = (1 << 64) - 1
+
+def wrap64(x):
+    """Two's-complement 64-bit wrap, matching Lua integer semantics."""
+    x &= M64
+    return x - (1 << 64) if x >= (1 << 63) else x
+
 def Vstr(s):
     return ("str", 0.0, s)
 
@@ -85,6 +95,8 @@ def fmt_val(v):
         return "true" if v[1] != 0.0 else "false"
     if t == "num":
         return lua_fstr(v[1])
+    if t == "int":
+        return str(v[1])
     if t == "str":
         return v[2]
     if t == "table":
@@ -146,14 +158,26 @@ def lex(src):
             while i < n and src[i] != "\n":
                 i += 1
             continue
+        if c == "0" and i + 1 < n and src[i + 1] in "xX":
+            j = i + 2
+            while j < n and src[j] in "0123456789abcdefABCDEF":
+                j += 1
+            if j == i + 2:
+                fail("malformed number (like Lua '0x')")
+            raw = src[i:j]
+            toks.append(Tok("NUM", wrap64(int(raw, 16)), raw, i, j, line))
+            i = j
+            continue
         if c.isdigit() or (c == "." and i + 1 < n and src[i + 1].isdigit()):
             j = i
             while j < n and src[j].isdigit():
                 j += 1
+            isint = True
             if j < n and src[j] == ".":
                 if j + 1 < n and src[j + 1] == ".":
                     fail("malformed number (like Lua '5..3')")
                 j += 1
+                isint = False
                 while j < n and src[j].isdigit():
                     j += 1
             if j < n and src[j] in "eE":
@@ -164,8 +188,15 @@ def lex(src):
                     while k < n and src[k].isdigit():
                         k += 1
                     j = k
+                    isint = False
             raw = src[i:j]
-            toks.append(Tok("NUM", float(raw), raw, i, j, line))
+            if isint:
+                v = int(raw)
+                # overlarge decimal literals fall back to float, like Lua
+                tokv = v if v < (1 << 63) else float(raw)
+            else:
+                tokv = float(raw)
+            toks.append(Tok("NUM", tokv, raw, i, j, line))
             i = j
             continue
         if c == '"' or c == "'":
@@ -299,6 +330,8 @@ class Compiler:
         self.gslot["clock"] = len(self.gslot)
         self.gslot["inarr"] = len(self.gslot)
         self.gslot["outarr"] = len(self.gslot)
+        self.gslot["inInt0"] = len(self.gslot)
+        self.gslot["outInt0"] = len(self.gslot)
         self.mainFunc = 0
 
     def emit(self, op, a=0, b=0, c=0):
@@ -313,12 +346,14 @@ class Compiler:
     def patch(self, pos, target):
         self.pa[pos] = target
 
-    def const_num(self, v):
-        if v not in self.constNum:
-            if len(self.constNum) >= 256:
-                raise LangError("too many numeric constants")
-            self.constNum.append(v)
-        return self.constNum.index(v)
+    def const_num(self, v, isint=False):
+        for i, x in enumerate(self.constNum):
+            if type(x) is type(v) and x == v:
+                return i
+        if len(self.constNum) >= 256:
+            raise LangError("too many numeric constants")
+        self.constNum.append(v)
+        return len(self.constNum) - 1
 
     def const_str(self, s):
         if s not in self.constStr:
@@ -1116,7 +1151,8 @@ class Parser:
         if t.kind == "NUM":
             self.next()
             r = self.alloc()
-            self.c.emit(LOADNUM, r, self.c.const_num(t.v))
+            isint = type(t.v) is int
+            self.c.emit(LOADNUM, r, self.c.const_num(t.v), 1 if isint else 0)
             return r
         if t.kind == "STR":
             self.next()
@@ -1225,7 +1261,7 @@ class Parser:
                         v = self.expr()
                         kr = self.alloc()
                         self.c.emit(LOADNUM, kr,
-                                    self.c.const_num(float(idx)))
+                                    self.c.const_num(idx), 1)
                         self.c.emit(SETFIELD, tr, kr, v)
                         self.free(kr)
                         self.free(v)
@@ -1234,7 +1270,7 @@ class Parser:
                     v = self.expr()
                     kr = self.alloc()
                     self.c.emit(LOADNUM, kr,
-                                self.c.const_num(float(idx)))
+                                self.c.const_num(idx), 1)
                     self.c.emit(SETFIELD, tr, kr, v)
                     self.free(kr)
                     self.free(v)
@@ -1312,6 +1348,11 @@ class VM:
         self.gtag[s] = 1
         self.gnum[s] = float(v)
 
+    def set_iinput(self, v):
+        s = self.c.gslot["inInt0"]
+        self.gtag[s] = 6
+        self.gnum[s] = int(v)
+
     def set_sinput(self, ch, s):
         if ch >= 2:
             raise IndexError("string inputs are inStr0..inStr1")
@@ -1345,6 +1386,8 @@ class VM:
             return ("bool", self.num[i], "")
         if t == 5:
             return ("table", self.num[i], "")
+        if t == 6:
+            return ("int", self.num[i], "")
         return ("func", self.num[i], "")
 
     def W(self, r, v):
@@ -1364,6 +1407,9 @@ class VM:
         elif t == "table":
             self.tag[i] = 5
             self.num[i] = v[1]
+        elif t == "int":
+            self.tag[i] = 6
+            self.num[i] = v[1]
         else:
             self.tag[i] = 4
             self.num[i] = v[1]
@@ -1380,6 +1426,8 @@ class VM:
             return ("bool", self.gnum[gi], "")
         if t == 5:
             return ("table", self.gnum[gi], "")
+        if t == 6:
+            return ("int", self.gnum[gi], "")
         return ("func", self.gnum[gi], "")
 
     def S(self, gi, v):
@@ -1398,6 +1446,9 @@ class VM:
         elif t == "table":
             self.gtag[gi] = 5
             self.gnum[gi] = v[1]
+        elif t == "int":
+            self.gtag[gi] = 6
+            self.gnum[gi] = v[1]
         else:
             self.gtag[gi] = 4
             self.gnum[gi] = v[1]
@@ -1413,10 +1464,12 @@ class VM:
         for k in range(2):
             s = self.c.gslot[f"outStr{k}"]
             strings.append("" if self.gtag[s] == 0 else fmt_val(self.G(s)))
-        return floats + strings
+        s = self.c.gslot["outInt0"]
+        ints = 0 if self.gtag[s] == 0 else int(self.gnum[s])
+        return floats + strings + [ints]
 
     def numarg(self, v, what):
-        if v[0] == "num":
+        if v[0] in ("num", "int"):
             return v[1]
         if v[0] == "nil":
             return 0.0
@@ -1431,7 +1484,8 @@ class VM:
                 raise RuntimeError_("wrong number of arguments")
             if fid == 1:
                 t = args[0][0]
-                return Vstr({"nil": "nil", "num": "number", "str": "string",
+                return Vstr({"nil": "nil", "num": "number", "int": "number",
+                             "str": "string",
                              "bool": "boolean", "func": "function",
                              "table": "table"}[t])
             return Vstr(fmt_val(args[0]))
@@ -1449,17 +1503,17 @@ class VM:
             return Vnum(self.steps * 0.025)
         if fid == 6:
             v = args[0] if args else NIL
-            if v[0] == "num" and v[1] == int(v[1]) and \
+            if v[0] in ("num", "int") and v[1] == int(v[1]) and \
                     1 <= int(v[1]) <= len(self.inArr):
                 return Vnum(self.inArr[int(v[1]) - 1])
             return NIL
         if fid == 7:
             iv = args[0] if len(args) > 0 else NIL
             vv = args[1] if len(args) > 1 else NIL
-            if iv[0] != "num" or iv[1] != int(iv[1]) or \
+            if iv[0] not in ("num", "int") or iv[1] != int(iv[1]) or \
                     not 1 <= int(iv[1]) <= len(self.outArr):
                 raise RuntimeError_("array index out of range")
-            if vv[0] == "num":
+            if vv[0] in ("num", "int"):
                 self.outArr[int(iv[1]) - 1] = vv[1]
             elif vv[0] == "nil":
                 self.outArr[int(iv[1]) - 1] = 0.0
@@ -1490,7 +1544,7 @@ class VM:
             if op == LOADNIL:
                 self.W(a, NIL)
             elif op == LOADNUM:
-                self.W(a, Vnum(c.constNum[b]))
+                self.W(a, Vint(c.constNum[b]) if c_ else Vnum(c.constNum[b]))
             elif op == LOADSTR:
                 self.W(a, Vstr(c.constStr[b]))
             elif op == LOADBOOL:
@@ -1499,57 +1553,89 @@ class VM:
                 self.W(a, self.G(b))
             elif op == STOREGLOBAL:
                 v = self.R(b)
+                if a == self.c.gslot["outInt0"]:
+                    if v[0] == "int":
+                        pass
+                    elif v[0] == "num" and v[1] == math.floor(v[1]):
+                        v = ("int", int(v[1]), "")
+                    elif v[0] == "bool":
+                        v = ("int", int(v[1]), "")
+                    elif v[0] == "nil":
+                        pass
+                    else:
+                        raise RuntimeError_(
+                            "cannot convert " + v[0] + " to integer")
                 self.S(a, v)
                 for k in range(4):
                     if a == self.c.gslot[f"outNum{k}"] and \
-                            v[0] not in ("num", "nil", "bool"):
+                            v[0] not in ("num", "int", "nil", "bool"):
                         raise RuntimeError_(
                             "cannot convert " + v[0] + " to number")
             elif op == MOV:
                 self.W(a, self.R(b))
             elif op in (ADD, SUB, MUL, DIV, MOD, POW):
-                x, y = self.num2("arith", self.R(b), self.R(c_))
+                l, r_ = self.R(b), self.R(c_)
+                if l[0] not in ("num", "int") or r_[0] not in ("num", "int"):
+                    raise RuntimeError_(
+                        f"attempt to perform 'arith' on {l[0]} and {r_[0]}")
+                ii = l[0] == "int" and r_[0] == "int"
+                x, y = l[1], r_[1]
                 if op == ADD:
-                    r = x + y
+                    self.W(a, Vint(wrap64(int(x) + int(y))) if ii
+                           else Vnum(x + y))
                 elif op == SUB:
-                    r = x - y
-                if op == ADD:
-                    r = x + y
-                elif op == SUB:
-                    r = x - y
+                    self.W(a, Vint(wrap64(int(x) - int(y))) if ii
+                           else Vnum(x - y))
                 elif op == MUL:
-                    r = x * y
+                    self.W(a, Vint(wrap64(int(x) * int(y))) if ii
+                           else Vnum(x * y))
                 elif op == DIV:
                     # Brickadia gates yield 0 for division by zero
-                    r = 0.0 if y == 0.0 else x / y
+                    self.W(a, Vnum(0.0 if y == 0.0 else x / y))
                 elif op == MOD:
-                    r = 0.0 if y == 0.0 else x - math.floor(x / y) * y
+                    if y == 0.0 or y == 0:
+                        self.W(a, Vint(0) if ii else Vnum(0.0))
+                    elif ii:
+                        self.W(a, Vint(int(x) % int(y)))
+                    else:
+                        self.W(a, Vnum(x - math.floor(x / y) * y))
                 else:
                     try:
-                        r = math.pow(x, y)
+                        self.W(a, Vnum(math.pow(x, y)))
                     except ValueError:
-                        r = 0.0
-                self.W(a, Vnum(r))
+                        self.W(a, Vnum(0.0))
             elif op == UNM:
                 v = self.R(b)
-                if v[0] != "num":
+                if v[0] == "int":
+                    r = -v[1]
+                    # unary minus overflows to float at INT64_MIN, like Lua
+                    self.W(a, Vint(r) if -(1 << 63) <= r < (1 << 63)
+                           else Vnum(float(r)))
+                elif v[0] == "num":
+                    self.W(a, Vnum(-v[1]))
+                else:
                     raise RuntimeError_("attempt to negate a " + v[0])
-                self.W(a, Vnum(-v[1]))
             elif op == NOT:
                 self.W(a, Vbool(not truthy(self.R(b))))
             elif op == CONCAT:
                 l, r = self.R(b), self.R(c_)
-                if l[0] not in ("num", "str") or r[0] not in ("num", "str"):
+                if l[0] not in ("num", "int", "str") or \
+                        r[0] not in ("num", "int", "str"):
                     raise RuntimeError_("attempt to concatenate")
-                ls = fmt_val(l) if l[0] == "str" else lua_fstr(l[1])
-                rs = fmt_val(r) if r[0] == "str" else lua_fstr(r[1])
-                self.W(a, Vstr(ls + rs))
+                self.W(a, Vstr(fmt_val(l) + fmt_val(r)))
             elif op in (EQ, LT, LE):
                 l, r = self.R(b), self.R(c_)
                 if op == EQ:
-                    if l[0] != r[0]:
+                    if l[0] in ("num", "int") and r[0] in ("num", "int"):
+                        if (l[0] == "int") != (r[0] == "int"):
+                            res = float(l[1]) == float(r[1])
+                        else:
+                            res = l[1] == r[1]
+                    elif l[0] != r[0]:
                         res = False
                     elif l[0] == "num":
+                        res = l[1] == r[1]
+                    elif l[0] == "int":
                         res = l[1] == r[1]
                     elif l[0] == "str":
                         res = l[2] == r[2]
@@ -1561,8 +1647,12 @@ class VM:
                         res = l[1] == r[1]
                     else:
                         res = True
-                elif l[0] == "num" and r[0] == "num":
-                    res = (l[1] < r[1]) if op == LT else (l[1] <= r[1])
+                elif l[0] in ("num", "int") and r[0] in ("num", "int"):
+                    if (l[0] == "int") != (r[0] == "int"):
+                        a_, b_ = float(l[1]), float(r[1])
+                    else:
+                        a_, b_ = l[1], r[1]
+                    res = (a_ < b_) if op == LT else (a_ <= b_)
                 elif l[0] == "str" and r[0] == "str":
                     res = (l[2] < r[2]) if op == LT else (l[2] <= r[2])
                 else:
@@ -1614,9 +1704,10 @@ class VM:
                             av = args[k]
                             self.tag[nbase + k] = {
                                 "nil": 0, "num": 1, "str": 2,
-                                "bool": 3, "func": 4, "table": 5}[av[0]]
+                                "bool": 3, "func": 4, "table": 5,
+                                "int": 6}[av[0]]
                             if av[0] in ("num", "bool", "func",
-                                           "table"):
+                                           "table", "int"):
                                 self.num[nbase + k] = av[1]
                             elif av[0] == "str":
                                 self.str[nbase + k] = av[2]
@@ -1686,10 +1777,12 @@ class VM:
                         key[0] == "num" and key[1] != math.floor(key[1])):
                     self.W(a, NIL)
                 else:
-                    kt = {"num": 1, "str": 2, "bool": 3, "func": 4,
-                          "table": 5}[key[0]]
-                    kn = key[1] if key[0] in ("num", "bool", "func",
-                                              "table") else 0.0
+                    kk = ("int", int(key[1])) \
+                        if key[0] in ("num", "int") else key
+                    kt = {"int": 1, "num": 1, "str": 2, "bool": 3,
+                          "func": 4, "table": 5}[kk[0]]
+                    kn = kk[1] if kk[0] in ("int", "num", "bool", "func",
+                                            "table") else 0.0
                     ks = key[2] if key[0] == "str" else ""
                     slot = self.tmap.get(tkey(int(base[1]), kt, kn, ks))
                     if slot is None:
@@ -1708,10 +1801,12 @@ class VM:
                 if key[0] == "num" and key[1] != math.floor(key[1]):
                     raise RuntimeError_(
                         "non-integer number keys are not supported")
-                kt = {"num": 1, "str": 2, "bool": 3, "func": 4,
-                      "table": 5}[key[0]]
-                kn = key[1] if key[0] in ("num", "bool", "func",
-                                          "table") else 0.0
+                kk = ("int", int(key[1])) \
+                    if key[0] in ("num", "int") else key
+                kt = {"int": 1, "num": 1, "str": 2, "bool": 3,
+                      "func": 4, "table": 5}[kk[0]]
+                kn = kk[1] if kk[0] in ("int", "num", "bool", "func",
+                                        "table") else 0.0
                 ks = key[2] if key[0] == "str" else ""
                 tid = int(base[1])
                 kk = tkey(tid, kt, kn, ks)
@@ -1744,9 +1839,9 @@ class VM:
             elif op == LEN:
                 v = self.R(b)
                 if v[0] == "table":
-                    self.W(a, Vnum(float(self.tlen.get(int(v[1]), 0))))
+                    self.W(a, Vint(self.tlen.get(int(v[1]), 0)))
                 elif v[0] == "str":
-                    self.W(a, Vnum(float(len(v[2]))))
+                    self.W(a, Vint(len(v[2])))
                 else:
                     raise RuntimeError_("attempt to get length")
             else:
@@ -1801,7 +1896,7 @@ def oracle_log(calls):
 
 
 def run_model(src, inputs=None, sinputs=None, vec=None, col=None,
-              inarr=None, budget=None):
+              inarr=None, budget=None, inint=None):
     try:
         comp = compile_src(src)
     except LangError as ex:
@@ -1810,6 +1905,8 @@ def run_model(src, inputs=None, sinputs=None, vec=None, col=None,
     for k in range(4):
         if inputs and k < len(inputs):
             vm.set_input(k, inputs[k])
+    if inint is not None:
+        vm.set_iinput(inint)
     if sinputs:
         for ch, s in sinputs.items():
             vm.set_sinput(ch, s)
@@ -1831,26 +1928,6 @@ def run_model(src, inputs=None, sinputs=None, vec=None, col=None,
 LUA_BIN = (shutil.which("lua") or
            r"C:\Users\Alessandro\AppData\Local\Programs\Lua\bin\lua.exe")
 FUNC_NORM = re.compile(r"function: 0x[0-9a-fA-F]+")
-
-def force_float(src):
-    """Rewrite integer literals as (N+0.0) so Lua 5.4 uses float semantics."""
-    try:
-        toks = lex(src)
-    except LangError:
-        return src
-    out = []
-    pos = 0
-    for t in toks:
-        if t.kind == "EOF":
-            break
-        out.append(src[pos:t.a])
-        if t.kind == "NUM" and re.fullmatch(r"\d+", t.raw):
-            out.append(f"({t.raw}+0.0)")
-        else:
-            out.append(src[t.a:t.b])
-        pos = t.b
-    out.append(src[pos:])
-    return "".join(out)
 
 NAN_NORM = re.compile(r"^-?nan(\(ind\))?$")
 
@@ -1882,11 +1959,12 @@ def lua_str_lit(s):
 
 
 def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
-               inarr=None, timeout=15):
+               inarr=None, timeout=15, inint=None):
     pre = []
     for k in range(4):
         v = float(inputs[k]) if inputs and k < len(inputs) else 0.0
         pre.append(f"inNum{k} = {lua_num_lit(v)}")
+    pre.append(f"inInt0 = {int(inint) if inint is not None else 0}")
     for k in (0, 1):
         s = sinputs.get(k, "") if sinputs else ""
         pre.append(f"inStr{k} = {lua_str_lit(s)}")
@@ -1914,7 +1992,7 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     pre.append("  end")
     pre.append("  io.write('\\2')")
     pre.append("end")
-    prog = "\n".join(pre) + "\n" + force_float(src)
+    prog = "\n".join(pre) + "\n" + src
     with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False) as f:
         f.write(prog)
         path = f.name
@@ -1975,30 +2053,38 @@ DEMO_KW = {"inarr": [10.0, 20.0, 30.0],
            "sinputs": {0: "foo", 1: "bar"},
            "vec": (1.0, 2.0, 3.0), "col": (0.5, 0.25, 0.125, 1.0)}
 DEMO_LOG = ("arith\t2.25\t7.0\n"
-            "str\tfoo-bar!\t8.0\n"
+            "str\tfoo-bar!\t8\n"
             "cmp\tfalse\ta\nb\n"
-            "logic\t2.0\tdflt\n"
+            "logic\t2\tdflt\n"
             "logic2\tfalse\tnil\tfunction\n"
-            "tab\t3.0\t2.25\tfoo\n"
+            "tab\t3\t2.25\tfoo\n"
             "tab2\t1.0\tyes\t7.0\n"
             "tab3\ttrue\ttrue\n"
-            "func\t120.0\t42.0\n"
-            "func2\t14.0\t10.0\n"
+            "func\t120\t42\n"
+            "func2\t14\t10\n"
             "shadow\tinner\n"
             "sugared\n"
             "grade\tB\n"
-            "flow\t55.0\t2.0\t1.0\tsecond\n"
+            "flow\t55\t2\t1\tsecond\n"
             "inputs\t6.0\t1.875\t10.0\n"
             "inputs2\t30.0\tnil\tnil\n"
-            "outs\t7.0\t79.0\n"
+            "outs\t7\t79\n"
             "outs2\tfoo-bar!|foo\t21.75/table\n"
             "\n"
-            "check\t55.0\tfoo-bar!\t2.25\n")
+            "check\t55\tfoo-bar!\t2.25\n")
 TESTS = [
     ("lit-num", "print(3)", None, "run"),
     ("lit-float", "print(3.5)", None, "run"),
     ("lit-exp", "print(1e3, 1.5e-2)", None, "run"),
     ("lit-dot", "print(.5, 5.)", None, "run"),
+    ("lit-hex", "print(0xff, 0X10, 0xFFFFFFFFFFFFFFFF)", None, "run"),
+    ("int-arith", "print(7+8, 7-8, 7*8, -7, 2+2.0, 7/2)", None, "run"),
+    ("int-mod", "print(7%3, -7%3, 7%-3, 7.5%2)", None, "run"),
+    ("int-eq", "print(1 == 1.0, 1 < 1.5, 2 > 1.9, 0 == false)", None, "run"),
+    ("int-wrap", "print(9223372036854775807+1, -(-9223372036854775808))",
+     None, "run"),
+    ("int-type", "print(type(3), type(3.0), type(3 .. ''))", None, "run"),
+    ("int-key", "t = {} t[1] = 'a' print(t[1.0])", None, "run"),
     ("fmt-add", "print(0.1+0.2)", None, "run"),
     ("fmt-div3", "print(1/3)", None, "run"),
     ("fmt-big", "print(2^100, 1e20)", None, "run"),
@@ -2007,7 +2093,7 @@ TESTS = [
     ("fmt-nan0", "print(0/0)", None, "modelio",
      {"expect": {"log": "0.0\n"}}),
     ("fmt-mod0", "print(5%0)", None, "modelio",
-     {"expect": {"log": "0.0\n"}}),
+     {"expect": {"log": "0\n"}}),
     ("fmt-intmil", "print(1000000)", None, "run"),
     ("lit-boolnil", "print(true, false, nil)", None, "run"),
     ("print-empty", "print()", None, "run"),
@@ -2161,7 +2247,7 @@ TESTS = [
     ("upvalue-read", "local x = 5 function f() return x end print(f())",
      None, "modelonly"),
     ("callarg-temp", "local s = 'abcdef' print('x', s, #s, s .. '!')",
-     None, "run", {"floatints": True}),
+     None, "run"),
     ("callarg-binop", "local a = 6 local b = 7 print(a + b, a * b, -a)",
      None, "run"),
     ("func-twice", "function a() return 1 end function b() return 2 end "
@@ -2177,11 +2263,11 @@ TESTS = [
     ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
      {"expect": {"log": DEMO_LOG,
                  "outGlobals": [7.0, 79.0, 61.875, 11.0,
-                                "foo-bar!|foo", "21.75/table"],
+                                "foo-bar!|foo", "21.75/table", 0],
                  "outArr": [55.0, 6.0] + [0.0] * 61 + [-1.0],
                  "outVec": [2.0, 4.0, 6.0],
                  "outCol": [0.5, 0.25, 0.125, 1.0],
-                 "result": "done-55.0"}}),
+                 "result": "done-55"}}),
     # regression: the original progOk bug (hello world must compile)
     ("hello", "print(\"Hello, World!\")", None, "run"),
     ("fmt-int", "print(7)", None, "run"),
@@ -2190,27 +2276,25 @@ TESTS = [
     ("str-le-next", "x = 5 if 'a' <= 'a' then print(x+1) end print(x+2)",
      None, "run"),
     # tables
-    ("tab-empty", "t = {} print(type(t), #t)", None, "run",
-     {"floatints": True}),
+     ("tab-empty", "t = {} print(type(t), #t)", None, "run"),
     ("tab-array", "t = {10, 20, 30} print(t[1], t[2], t[3], #t)", None,
-     "run", {"floatints": True}),
+     "run"),
     ("tab-hash", "t = {x = 1, y = 2} print(t.x, t['y'])", None, "run"),
     ("tab-mixed", "t = {1, 'a', x = true} print(t[1], t[2], t.x, #t)",
-     None, "run", {"floatints": True}),
+     None, "run"),
     ("tab-trailing", "t = {1, 2,} u = {3; 4;} print(#t, u[2])", None,
-     "run", {"floatints": True}),
+     "run"),
     ("tab-nested", "t = {{1, 2}, {3}} print(t[1][2], t[2][1])", None,
-     "run", {"floatints": True}),
+     "run"),
     ("tab-index-expr", "t = {[1+1] = 'x', [10] = 'y'} print(t[2], t[10])",
      None, "run"),
     ("tab-ctor-bracket", "t = {[10]='x', [1+1]='y'} print(t[10], t[2])",
      None, "run"),
     ("tab-append", "t = {} t[#t+1] = 'a' t[#t+1] = 'b' "
-     "print(#t, t[1], t[2])", None, "run", {"floatints": True}),
+     "print(#t, t[1], t[2])", None, "run"),
     ("tab-del", "t = {1,2,3} t[2] = nil print(t[1], t[2], t[3], #t)",
-     None, "run", {"floatints": True}),
-    ("tab-len-str", "print(#'hello', #{1,2,3})", None, "run",
-     {"floatints": True}),
+     None, "run"),
+     ("tab-len-str", "print(#'hello', #{1,2,3})", None, "run"),
     ("tab-eq", "a = {} print(a == a, a == {})", None, "run"),
     ("tab-eq-copy", "a = {} b = a print(a == b, a ~= b)", None, "run"),
     ("tab-func", "t = {f = function(x) return x*2 end} print(t.f(21))",
@@ -2220,18 +2304,18 @@ TESTS = [
     ("tab-mutate", "function add(t, v) t[#t+1] = v end t = {} add(t, 9) "
      "print(t[1])", None, "run"),
     ("tab-bool-key", "t = {} t[true] = 1 print(t[true], t[false])", None,
-     "run", {"floatints": True}),
+     "run"),
     ("tab-strnum", "t = {} t[1] = 'a' t['1'] = 'b' print(t[1], t['1'])",
      None, "run"),
     ("tab-swap-fields", "t = {1, 2} t[1], t[2] = t[2], t[1] "
      "print(t[1], t[2])", None, "run"),
     ("tab-dup-field-rtl", "t = {} t[1], t[1] = 1, 2 print(t[1])", None,
-     "run", {"floatints": True}),
+     "run"),
     ("tab-key-func", "t = {} k = {} t[k] = 1 print(t[k])", None, "run"),
     ("tab-nested-assign", "t = {a = {b = 1}} t.a.b = 2 print(t.a.b)",
      None, "run"),
     ("tab-chain-store", "t = {a = {}} t.a[1] = 'x' print(t.a[1])", None,
-     "run", {"floatints": True}),
+     "run"),
     ("tab-paren-index", "print(({5, 6})[2])", None, "run"),
     ("tab-tostring", "print(type({}), tostring({1}))", None, "modelio",
      {"expect": {"log": "table\ttable\n"}}),
@@ -2257,7 +2341,7 @@ TESTS = [
      "if t[j] > t[j+1] then t[j], t[j+1] = t[j+1], t[j] end "
      "j = j + 1 end i = i + 1 end "
      "print(t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8])", None,
-     "run", {"floatints": True}),
+     "run"),
     # right-to-left duplicate stores (real Lua order)
     ("assign-dup", "a, a = 1, 2 print(a)", None, "run"),
     ("assign-dup3", "a, b, a = 1, 2, 3 print(a, b)", None, "run"),
@@ -2292,9 +2376,18 @@ TESTS = [
     # writable output globals
     ("out-nums", "outNum0 = 1 outNum1 = 2.5 outNum2 = true outNum3 = nil", None,
      "modelio",
-     {"expect": {"outGlobals": [1.0, 2.5, 1.0, 0.0, "", ""]}}),
+     {"expect": {"outGlobals": [1.0, 2.5, 1.0, 0.0, "", "", 0]}}),
     ("out-strs", "outStr0 = 'hi' outStr1 = 3", None, "modelio",
-     {"expect": {"outGlobals": [0.0, 0.0, 0.0, 0.0, "hi", "3.0"]}}),
+     {"expect": {"outGlobals": [0.0, 0.0, 0.0, 0.0, "hi", "3", 0]}}),
+    ("io-int", "outInt0 = inInt0 * 2 + 1 print(outInt0)", None, "modelio",
+     {"inint": 5,
+      "expect": {"log": "11\n",
+                 "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 11]}}),
+    ("io-int-coerce", "outInt0 = 7.0 print(outInt0, type(outInt0))", None,
+     "modelio", {"expect": {"log": "7\tnumber\n"}}),
+    ("io-int-bad", "outInt0 = 7.5", None, "modelhalt",
+     {"expect": {"err": "cannot convert"}}),
+    ("inputs-int", "print(inInt0 + 1)", None, "run", {"inint": 41}),
     ("out-readback", "outNum0 = 5 print(outNum0 + 1)", None, "run"),
     ("out-badnum", "outNum0 = 'x'", None, "modelhalt",
      {"expect": {"err": "cannot convert"}}),
@@ -2331,24 +2424,8 @@ def build_overcap():
 
 
 
-INT_LIKE = re.compile(r"^-?\d+$")
-
-
-def norm_calls(calls, floatints=False):
-    out = []
-    for call in calls:
-        row = []
-        for v in call:
-            v = norm_val(v)
-            # `#` and friends yield integral floats in Tiny (one number
-            # type); real Lua yields ints. Rewrite per test opt-in.
-            # Only safe when the program prints no int-looking strings
-            # (they are indistinguishable and would corrupt to "N.0").
-            if floatints and INT_LIKE.match(v):
-                v += ".0"
-            row.append(v)
-        out.append(row)
-    return out
+def norm_calls(calls):
+    return [[norm_val(v) for v in call] for call in calls]
 
 
 def check_one(name, src, inputs, mode, kw=None):
@@ -2362,7 +2439,7 @@ def check_one(name, src, inputs, mode, kw=None):
         for k, v in DEMO_KW.items():
             kw.setdefault(k, v)
     rkw = {k: v for k, v in kw.items()
-           if k not in ("expect", "errline", "floatints")}
+           if k not in ("expect", "errline")}
     m = run_model(src, inputs, **rkw)
     o = oracle_run(src, inputs, **rkw)
     if not o.get("avail"):
@@ -2376,8 +2453,7 @@ def check_one(name, src, inputs, mode, kw=None):
             return ("FAIL", f"{name}: lua rc={o['rc']}: {o['stderr']}")
         if o["calls"] is None:
             return ("FAIL", f"{name}: oracle framing broken: {o['stderr']}")
-        want = oracle_log(norm_calls(o["calls"],
-                                       kw.get("floatints", False)))
+        want = oracle_log(norm_calls(o["calls"]))
         if m["log"] != want:
             return ("FAIL",
                     f"{name}: log mismatch\n  model={m['log']!r}\n"
@@ -2442,8 +2518,7 @@ def check_one(name, src, inputs, mode, kw=None):
             return ("FAIL", f"{name}: lua accepted, want error")
         if o["calls"] is None:
             return ("FAIL", f"{name}: oracle framing broken: {o['stderr']}")
-        want = oracle_log(norm_calls(o["calls"],
-                                       kw.get("floatints", False)))
+        want = oracle_log(norm_calls(o["calls"]))
         if m["log"] != want:
             return ("FAIL",
                     f"{name}: partial mismatch\n  model={m['log']!r}\n"

@@ -137,6 +137,12 @@ class Sim:
         self.input_ids: list[int] = []
         self.inputs: dict[str, Any] = {}
         self._eval_stack: set[int] = set()
+        self._loglines_id: int | None = None
+        for _nid, _nd in self.nodes.items():
+            if "ArrayVar" in _nd.cls and _extract(
+                    _nd.props.get("_label", ("raw", ""))) == "logLines":
+                self._loglines_id = _nid
+                break
         self._pure_ids: set[int] = set(
             nid for nid, nd in self.nodes.items()
             if ("Expr_" in nd.cls and "ChangeDetector" not in nd.cls)
@@ -719,7 +725,7 @@ class Sim:
         v = self._in_val(nid, "Value", None)
         if v is not None:
             arr.append(v)
-            if aid == 27:
+            if aid == self._loglines_id:
                 s = v if isinstance(v, str) else str(v)
                 if len(s) > _LOG_WIDTH:
                     s = s[:_LOG_WIDTH - 1] + "\n"

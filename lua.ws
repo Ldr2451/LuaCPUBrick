@@ -67,9 +67,10 @@
 ///              inarr(i) -> inArr[i] (1-based, out-of-range reads nil);
 ///              outarr(i, v) -> outArr[i] = v (1-based, out-of-range is an error);
 ///              clock() -> seconds (ServerUptime)
-///   numbers    0.5 .5 5. 1e3 1E-3; no hex. Integer-looking values are doubles, so
-///              print(3) shows 3.0 and 'x' .. 1 gives "x1.0" (documented Lua difference);
-///              #t is an integral float too, so it prints like 3.0
+///   numbers    integers (exact on-chip inside +/-2^53; Lua wraps 64-bit
+///              beyond that) and floats: 0.5 .5 5. 1e3 1E-3, hex ints 0xFF.
+///              / and ^ always return floats. Ints print bare (3), floats
+///              print Lua-style (3.0); 'x' .. 1 gives "x1", #t prints like 3
 ///   strings    "..." and '...' with \n \r \t \\ \" \' \<newline>, \z, \ddd and \xXX
 ///              for printable ASCII (32..126); other escapes are a compile error
 ///   compare    == and ~= work on all types without coercion (tables by identity);
@@ -126,12 +127,14 @@
 @left in inVec: vector
 @left in inCol: color
 @left in inArr: float[]
+@left in inInt0: int
 
 @right out log: string = logV.Value
 @right out outNum0: float = oF0.Value
 @right out outNum1: float = oF1.Value
 @right out outNum2: float = oF2.Value
 @right out outNum3: float = oF3.Value
+@right out outInt0: int = oI0.Value
 @right out outStr0: string = oS4.Value
 @right out outStr1: string = oS5.Value
 @right out outArr: float[] = outArrV
@@ -161,6 +164,7 @@ var oF0: float = 0.0
 var oF1: float = 0.0
 var oF2: float = 0.0
 var oF3: float = 0.0
+var oI0: int = 0
 var oS4: string = ""
 var oS5: string = ""
 var outArrV: float[]
@@ -171,7 +175,7 @@ var errV: string = ""
 var progOkV: bool = false
 
 // ---------------------------------------------------------------- value helpers
-// value tags: 0 nil, 1 number, 2 string, 3 boolean, 4 function
+// value tags: 0 nil, 1 number, 2 string, 3 boolean, 4 function, 5 table, 6 integer
 
 mod truthyOf(tag: int, num: float) -> bool {
   return if tag == 0 then false
@@ -192,6 +196,7 @@ mod fmtVal(tag: int, num: float, s: string) -> string {
     else if tag == 2 then s
     else if tag == 4 then "function"
     else if tag == 5 then "table"
+    else if tag == 6 then "" .. (num | 0)
     else fmtNum(num)
 }
 
@@ -217,6 +222,8 @@ var lnumInt: float = 0.0
 var lnumFrac: float = 0.0
 var lnumDiv: float = 1.0
 var lnumDot: bool = false
+var lnumIsInt: bool = false
+var lnumHexN: int = 0
 var lnumExp: int = 0
 var lnumExpNeg: bool = false
 var lnumExpSeen: bool = false
@@ -254,7 +261,9 @@ mod emitTok(kind: int, sub: int, num: float, text: string) {
 mod emitNum() {
   let mant = lnumInt + lnumFrac / lnumDiv
   let ev = if lnumExpNeg then -lnumExp else lnumExp
-  emitTok(1, 0, mant * (10.0 ** ev), "")
+  let isInt = lnumIsInt && !lnumDot && !lnumExpSeen
+  let v = if isInt then lnumInt else mant * (10.0 ** ev)
+  emitTok(1, if isInt then 1 else 0, v, "")
 }
 
 mod resolveKw() {
@@ -323,9 +332,11 @@ mod lexStep() {
         lpos = lpos + 1
       }
     } else if lpos >= llen {
-      if lstage == 1 || lstage == 2 {
+      if lstage == 1 || lstage == 2 || (lstage == 11 && lnumHexN > 0) {
         emitNum()
         lstage = 99
+      } else if lstage == 11 {
+        lexFail("malformed number")
       } else if lstage == 3 {
         if lnumExpSeen {
           emitNum()
@@ -348,15 +359,31 @@ mod lexStep() {
         }
         lpos = lpos + 1
       } else if isDigit {
-        lnumInt = cp - 48.0
-        lnumFrac = 0.0
-        lnumDiv = 1.0
-        lnumDot = false
-        lnumExp = 0
-        lnumExpNeg = false
-        lnumExpSeen = false
-        lstage = 1
-        lpos = lpos + 1
+        if cp == 48 && (cp2 == 120 || cp2 == 88) {
+          lnumInt = 0.0
+          lnumFrac = 0.0
+          lnumDiv = 1.0
+          lnumDot = false
+          lnumExp = 0
+          lnumExpNeg = false
+          lnumExpSeen = false
+          lnumIsInt = true
+          lnumHexN = 0
+          lstage = 11
+          lpos = lpos + 2
+        } else {
+          lnumInt = cp - 48.0
+          lnumFrac = 0.0
+          lnumDiv = 1.0
+          lnumDot = false
+          lnumExp = 0
+          lnumExpNeg = false
+          lnumExpSeen = false
+          lnumIsInt = true
+          lnumHexN = 0
+          lstage = 1
+          lpos = lpos + 1
+        }
       } else if cp == 46 {
         if cp2 >= 48 && cp2 <= 57 {
           lnumInt = 0.0
@@ -534,6 +561,19 @@ mod lexStep() {
         lstage = 0
       } else {
         lexFail("malformed number")
+      }
+    } else if lstage == 11 {
+      // hex integer digits (0x prefix already consumed)
+      let hv = hexVal(cp)
+      if hv >= 0 {
+        lnumInt = lnumInt * 16.0 + (hv + 0.0)
+        lnumHexN = lnumHexN + 1
+        lpos = lpos + 1
+      } else if lnumHexN == 0 {
+        lexFail("malformed number")
+      } else {
+        emitNum()
+        lstage = 0
       }
     } else if lstage == 4 {
       // string body
@@ -979,6 +1019,8 @@ mod parseInit() {
   gDeclare("clock")
   gDeclare("inarr")
   gDeclare("outarr")
+  gDeclare("inInt0")
+  gDeclare("outInt0")
 }
 
 // ---------------------------------------------------------------- registers + scope
@@ -1589,7 +1631,7 @@ mod finishCtorElem() {
     let idx = opPrec[opPrec.length() - 1] + 1
     opPrec[opPrec.length() - 1] = idx
     let kk = regAlloc()
-    bEmit(2, kk, cNum(idx + 0.0), 0)
+    bEmit(2, kk, cNum(idx + 0.0), 1)
     bEmit(30, tr, kk, v)
   } else {
     bEmit(30, tr, kr, v)
@@ -1768,7 +1810,7 @@ mod exprPrefix() {
   let s = curSub()
   if k == 1 {
     let r = regAlloc()
-    bEmit(2, r, cNum(curNum()), 0)
+    bEmit(2, r, cNum(curNum()), s)
     pushVal(r, false, false)
     cpos = cpos + 1
     expectOperand = false
@@ -2904,6 +2946,7 @@ var latchCR: float = 0.0
 var latchCG: float = 0.0
 var latchCB: float = 0.0
 var latchCA: float = 0.0
+var latchI0: int = 0
 
 mod vTag(r: int) -> int {
   return vtag[vmBase + r]
@@ -2950,8 +2993,8 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
 // (inputs filled from the latches), 19..26 builtins (print, type, tostring,
 // setvec, setcol, clock, inarr, outarr) as functions with ids 0..7.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -3001,6 +3044,7 @@ mod vmReset() {
   gnum[16] = latchCG
   gnum[17] = latchCB
   gnum[18] = latchCA
+  gnum[27] = latchI0 + 0.0
   vmPc = 0
   vmBase = 0
   vmHalted = bop.length() == 0
@@ -3013,6 +3057,7 @@ mod vmReset() {
   oF1 = 0.0
   oF2 = 0.0
   oF3 = 0.0
+  oI0 = 0
   oS4 = ""
   oS5 = ""
   outArrV.clear()
@@ -3035,10 +3080,10 @@ mod vmFail(msg: string) {
 }
 
 mod numArg(t: int, v: float) -> float {
-  if t != 1 && t != 0 {
+  if t != 1 && t != 6 && t != 0 {
     vmFail("bad argument (number expected)")
   }
-  return if t == 1 then v else 0.0
+  return if t == 0 then 0.0 else v
 }
 
 mod toInt(v: float) -> int {
@@ -3067,16 +3112,29 @@ mod syncOuts() {
   oF1 = if gtag[1] == 0 then 0.0 else gnum[1]
   oF2 = if gtag[2] == 0 then 0.0 else gnum[2]
   oF3 = if gtag[3] == 0 then 0.0 else gnum[3]
+  oI0 = if gtag[28] == 0 then 0 else toInt(gnum[28])
   oS4 = if gtag[4] == 0 then "" else fmtVal(gtag[4], gnum[4], gstr[4])
   oS5 = if gtag[5] == 0 then "" else fmtVal(gtag[5], gnum[5], gstr[5])
 }
 
 mod vmNum2(op: int, b: int, c: int) -> bool {
-  let ok = vTag(b) == 1 && vTag(c) == 1
+  let bt = vTag(b)
+  let ct = vTag(c)
+  let ok = (bt == 1 || bt == 6) && (ct == 1 || ct == 6)
   if !ok {
     vmFail("attempt to perform arithmetic")
   }
   return ok
+}
+
+// Store an integer-valued float with the int tag when exactly
+// representable (chip ints are precise inside +/-2^53); otherwise float.
+mod vSetInt(a: int, v: float) {
+  if v == floor(v) && abs(v) <= 9007199254740992.0 {
+    vSet(a, 6, v, "")
+  } else {
+    vSetNum(a, v)
+  }
 }
 
 mod cmpFinish(v: bool) {
@@ -3120,9 +3178,14 @@ mod cmpStep() {
 // One VM instruction. Mirrors lua_model.VM.step (same ISA/semantics).
 // Composite map key for table `tid`: kt is the key's value tag.
 mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
-  return if kt == 1 then tid .. "#" .. (kn | 0)
+  return if kt == 1 || kt == 6 then tid .. "#" .. (kn | 0)
     else if kt == 2 then tid .. "$" .. ks
     else tid .. "@" .. kt .. ":" .. (kn | 0)
+}
+
+// Normalize integral floats to the int tag so 1 and 1.0 share one key.
+mod keyTag(t: int, v: float) -> int {
+  return if t == 1 && v == floor(v) then 6 else t
 }
 
 // After t[len+1] was filled, keep extending the border while t[len+1] exists.
@@ -3151,7 +3214,11 @@ mod vmStep() {
     } else if op == 1 {
       vSet(a, 0, 0.0, "")
     } else if op == 2 {
-      vSetNum(a, constNum[b])
+      if c == 1 {
+        vSet(a, 6, constNum[b], "")
+      } else {
+        vSetNum(a, constNum[b])
+      }
     } else if op == 3 {
       vSet(a, 2, 0.0, constStr[b])
     } else if op == 4 {
@@ -3164,8 +3231,21 @@ mod vmStep() {
       vSet(a, gTag(b), gNum(b), gStr(b))
     } else if op == 6 {
       // outNum0..outNum3 are numeric ports: numbers/booleans/nil only
-      if a <= 3 && vTag(b) != 1 && vTag(b) != 0 && vTag(b) != 3 {
+      if a <= 3 && vTag(b) != 1 && vTag(b) != 6 && vTag(b) != 0 && vTag(b) != 3 {
         vmFail("cannot convert to number (outNum0..outNum3 take numbers)")
+      } else if a == 28 {
+        // outInt0 takes integers (integral floats convert, like outNum)
+        if vTag(b) == 6 {
+          gSet(a, 6, vNum(b), "")
+        } else if vTag(b) == 1 && vNum(b) == floor(vNum(b)) {
+          gSet(a, 6, vNum(b), "")
+        } else if vTag(b) == 3 {
+          gSet(a, 6, vNum(b), "")
+        } else if vTag(b) == 0 {
+          gSet(a, 0, 0.0, "")
+        } else {
+          vmFail("cannot convert to integer (outInt0 takes integers)")
+        }
       } else {
         gSet(a, vTag(b), vNum(b), vStr(b))
       }
@@ -3175,12 +3255,25 @@ mod vmStep() {
       if vmNum2(op, b, c) {
         let x = vNum(b)
         let y = vNum(c)
+        let ii = vTag(b) == 6 && vTag(c) == 6
         if op == 8 {
-          vSetNum(a, x + y)
+          if ii {
+            vSetInt(a, x + y)
+          } else {
+            vSetNum(a, x + y)
+          }
         } else if op == 9 {
-          vSetNum(a, x - y)
+          if ii {
+            vSetInt(a, x - y)
+          } else {
+            vSetNum(a, x - y)
+          }
         } else if op == 10 {
-          vSetNum(a, x * y)
+          if ii {
+            vSetInt(a, x * y)
+          } else {
+            vSetNum(a, x * y)
+          }
         } else if op == 11 {
           if y == 0.0 {
             vSetNum(a, 0.0)
@@ -3189,16 +3282,32 @@ mod vmStep() {
           }
         } else if op == 12 {
           if y == 0.0 {
-            vSetNum(a, 0.0)
+            if ii {
+              vSet(a, 6, 0.0, "")
+            } else {
+              vSetNum(a, 0.0)
+            }
           } else {
-            vSetNum(a, x - floor(x / y) * y)
+            // floored quotient: the floor gate truncates toward zero,
+            // so adjust negative non-integral quotients down by one
+            let q = x / y
+            let t = q | 0
+            let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+            let flf = fl + 0.0
+            if ii {
+              vSetInt(a, x - flf * y)
+            } else {
+              vSetNum(a, x - flf * y)
+            }
           }
         } else {
           vSetNum(a, x ** y)
         }
       }
     } else if op == 14 {
-      if vTag(b) != 1 {
+      if vTag(b) == 6 {
+        vSetInt(a, 0.0 - vNum(b))
+      } else if vTag(b) != 1 {
         vmFail("attempt to negate")
       } else {
         vSetNum(a, 0.0 - vNum(b))
@@ -3210,9 +3319,11 @@ mod vmStep() {
         vSet(a, 3, 1.0, "")
       }
     } else if op == 16 {
-      if (vTag(b) == 1 || vTag(b) == 2) && (vTag(c) == 1 || vTag(c) == 2) {
-        let ls = if vTag(b) == 2 then vStr(b) else fmtNum(vNum(b))
-        let rs = if vTag(c) == 2 then vStr(c) else fmtNum(vNum(c))
+      let lct = vTag(b)
+      let rct = vTag(c)
+      if (lct == 1 || lct == 6 || lct == 2) && (rct == 1 || rct == 6 || rct == 2) {
+        let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. (vNum(b) | 0) else fmtNum(vNum(b))
+        let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. (vNum(c) | 0) else fmtNum(vNum(c))
         vSet(a, 2, 0.0, ls .. rs)
       } else {
         vmFail("attempt to concatenate")
@@ -3220,8 +3331,12 @@ mod vmStep() {
     } else if op == 17 || op == 18 || op == 19 {
       let lt = vTag(b)
       let rt = vTag(c)
+      let ln = lt == 1 || lt == 6
+      let rn = rt == 1 || rt == 6
       if op == 17 {
-        if lt != rt {
+        if ln && rn {
+          vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
+        } else if lt != rt {
           vSet(a, 3, 0.0, "")
         } else if lt == 1 {
           vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
@@ -3234,7 +3349,7 @@ mod vmStep() {
         } else {
           vSet(a, 3, 1.0, "")
         }
-      } else if lt == 1 && rt == 1 {
+      } else if ln && rn {
         if op == 18 {
           vSet(a, 3, if vNum(b) < vNum(c) then 1.0 else 0.0, "")
         } else {
@@ -3287,7 +3402,7 @@ mod vmStep() {
             vmFail("wrong number of arguments")
           } else if fid == 1 {
             let t = vTag(a + 1)
-            vSet(a, 2, 0.0, if t == 0 then "nil" else if t == 1 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else "table")
+            vSet(a, 2, 0.0, if t == 0 then "nil" else if t == 1 || t == 6 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else "table")
             retCountV = 1
           } else {
             vSet(a, 2, 0.0, fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)))
@@ -3318,7 +3433,7 @@ mod vmStep() {
         } else if fid == 6 {
           let it = if 0 < nargs then vTag(a + 1) else 0
           let iv = if 0 < nargs then vNum(a + 1) else 0.0
-          if it == 1 && iv == floor(iv) && iv >= 1.0 && iv <= inArr.length() {
+          if (it == 1 || it == 6) && iv == floor(iv) && iv >= 1.0 && iv <= inArr.length() {
             vSetNum(a, inArr[toInt(iv) - 1])
           } else {
             vSet(a, 0, 0.0, "")
@@ -3329,9 +3444,9 @@ mod vmStep() {
           let iv = if 0 < nargs then vNum(a + 1) else 0.0
           let vt = if 1 < nargs then vTag(a + 2) else 0
           let vv = if 1 < nargs then vNum(a + 2) else 0.0
-          if it != 1 || iv != floor(iv) || iv < 1.0 || iv > outArrV.length() {
+          if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > outArrV.length() {
             vmFail("array index out of range")
-          } else if vt == 1 || vt == 0 || vt == 3 {
+          } else if vt == 1 || vt == 6 || vt == 0 || vt == 3 {
             outArrV[toInt(iv) - 1] = if vt == 0 then 0.0 else vv
             vSet(a, 0, 0.0, "")
             retCountV = 0
@@ -3499,7 +3614,7 @@ mod vmStep() {
         tCount = tCount + 1
       }
     } else if op == 29 {
-      let kt = vTag(c)
+      let kt = keyTag(vTag(c), vNum(c))
       if vTag(b) != 5 {
         vmFail("attempt to index a non-table value")
       } else if kt == 0 || (kt == 1 && vNum(c) != floor(vNum(c))) {
@@ -3513,7 +3628,7 @@ mod vmStep() {
         }
       }
     } else if op == 30 {
-      let kt = vTag(b)
+      let kt = keyTag(vTag(b), vNum(b))
       let vt = vTag(c)
       if vTag(a) != 5 {
         vmFail("attempt to index a non-table value")
@@ -3530,7 +3645,7 @@ mod vmStep() {
           if r.Found {
             tmap.remove(key)
             tFree.push(r.Value)
-            if kt == 1 && kint == tLen[tid] {
+            if kt == 6 && kint == tLen[tid] {
               tLen[tid] = kint - 1
             }
           }
@@ -3552,7 +3667,7 @@ mod vmStep() {
             tvStr[sl] = vStr(c)
             if !r.Found {
               tmap.set(key, sl)
-              if kt == 1 && kint == tLen[tid] + 1 {
+              if kt == 6 && kint == tLen[tid] + 1 {
                 tLen[tid] = kint
                 if tmap.has(tid .. "#" .. (kint + 1)) {
                   lenChase = true
@@ -3566,9 +3681,9 @@ mod vmStep() {
     } else if op == 31 {
       let bt = vTag(b)
       if bt == 5 {
-        vSetNum(a, tLen[toInt(vNum(b))])
+        vSet(a, 6, tLen[toInt(vNum(b))] + 0.0, "")
       } else if bt == 2 {
-        vSetNum(a, vStr(b).Length())
+        vSet(a, 6, vStr(b).Length() + 0.0, "")
       } else {
         vmFail("attempt to get length")
       }
@@ -3738,6 +3853,13 @@ on Change(inNum2) {
 
 on Change(inNum3) {
   latchN3 = inNum3
+  if run && progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Change(inInt0) {
+  latchI0 = inInt0
   if run && progOkV && !jobBusy {
     vmReset()
   }

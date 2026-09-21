@@ -118,4 +118,4 @@ return "done-" .. sum
 -- outStr0 = "foo-bar!|foo", outStr1 = "21.75/table"
 -- outArr[1] = 55.0, outArr[2] = 6.0, outArr[64] = -1.0, rest 0.0
 -- outVec = (2, 4, 6), outCol = (0.5, 0.25, 0.125, 1)
--- result = "done-55.0", err = "", progOk = true, busy = false (when done)
+-- result = "done-55", err = "", progOk = true, busy = false (when done)
