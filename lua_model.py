@@ -129,8 +129,8 @@ def log_append(lines, args):
 
 # ---------------------------------------------------------------- lexer
 KEYWORDS = {"and", "break", "do", "else", "elseif", "end", "false",
-            "function", "if", "local", "nil", "not", "or", "return",
-            "then", "true", "while"}
+             "for", "function", "if", "in", "local", "nil", "not", "or",
+             "repeat", "return", "then", "true", "until", "while"}
 
 SIMPLE_ESC = {"a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r",
               "t": "\t", "v": "\v", "\\": "\\", '"': '"', "'": "'",
@@ -261,13 +261,13 @@ def lex(src):
             i = j
             continue
         two = src[i:i + 2]
-        if two in ("==", "~=", "<=", ">=", ".."):
+        if two in ("==", "~=", "<=", ">=", "..", "<<", ">>", "//"):
             toks.append(Tok("SYM", two, two, i, i + 2, line))
             i += 2
             continue
         if c == "." and src[i + 1:i + 3] == "..":
             fail("varargs '...' not supported")
-        if c in "+-*/%^<>=(),;{}[].#":
+        if c in "+-*/%^<>=(),;{}[].#&|~":
             toks.append(Tok("SYM", c, c, i, i + 1, line))
             i += 1
             continue
@@ -281,7 +281,9 @@ def lex(src):
 (HALT, LOADNIL, LOADNUM, LOADSTR, LOADBOOL, LOADGLOBAL, STOREGLOBAL, MOV,
  ADD, SUB, MUL, DIV, MOD, POW, UNM, NOT, CONCAT, EQ, LT, LE, JMP, JMPF,
  JMPT, CALL, RETURN, LOADFUNC, RETURN0, RETURNV, NEWTABLE, GETFIELD,
- SETFIELD, LEN) = range(32)
+ SETFIELD, LEN, FORPREP, FORLOOP, IDIV, BAND, BOR, BXOR, BNOT, SHL, SHR) = range(41)
+
+N_OPS = 41
 
 MAX_TABLES = 64
 MAX_HEAP = 512
@@ -394,6 +396,7 @@ class Parser:
         self.pos = 0
         self.frames = [Frame()]
         self.loopStack = []
+        self.for_ctrl_vars = set()
         self.hasReturn = False
 
     def peek(self):
@@ -522,6 +525,10 @@ class Parser:
                 return self.stmt_if(silent)
             if w == "while":
                 return self.stmt_while(silent)
+            if w == "for":
+                return self.stmt_for(silent)
+            if w == "repeat":
+                return self.stmt_repeat(silent)
             if w == "do":
                 self.next()
                 h = self.scoped_block({"end"})
@@ -754,6 +761,56 @@ class Parser:
         else:
             self.loopStack.pop()
 
+    def stmt_for(self, silent=False):
+        self.next()  # consume "for"
+        name = self.expect("NAME").v
+        self.expect("SYM", "=")
+        init_reg = self.expr()
+        self.expect("SYM", ",")
+        limit_reg = self.expr()
+        if self.at("SYM", ","):
+            self.next()
+            step_reg = self.expr()
+        else:
+            step_reg = None
+        self.expect("KW", "do")
+        ctrl_reg = self.alloc_local(name)
+        self.for_ctrl_vars.add(name)
+        if not silent:
+            if init_reg != ctrl_reg:
+                self.c.emit(MOV, ctrl_reg, init_reg)
+                self.free(init_reg)
+            if step_reg is None:
+                step_reg = self.alloc()
+                self.c.emit(LOADNUM, step_reg, self.c.const_num(1.0), 1)
+            self.c.emit(FORPREP, ctrl_reg, limit_reg, step_reg)
+            jmp_pos = self.c.emit(JMP, 0)
+            body_start = len(self.c.op)
+            self.loopStack.append([])
+            h = self.scoped_block({"end"})
+            self.expect("KW", "end")
+            self.for_ctrl_vars.discard(name)
+            self.c.emit(FORLOOP, body_start, limit_reg, step_reg)
+            for_after = len(self.c.op)
+            self.c.patch(jmp_pos, for_after)
+        else:
+            self.loopStack.append([])
+            self.scoped_block({"end"})
+            self.expect("KW", "end")
+            self.for_ctrl_vars.discard(name)
+            self.loopStack.pop()
+
+    def stmt_repeat(self, silent=False):
+        self.next()  # consume "repeat"
+        self.loopStack.append([])
+        body_start = len(self.c.op) if not silent else 0
+        h = self.scoped_block({"until"})
+        self.expect("KW", "until")
+        r = self.expr()
+        if not silent:
+            self.c.emit(JMPF, body_start, r)
+        self.loopStack.pop()
+
     def parse_index_key(self, silent):
         """Parse one `[k]` / `.name` step; returns the key register."""
         if self.at("SYM", "["):
@@ -833,6 +890,8 @@ class Parser:
         first = self.parse_target(silent)
         if first[0] == "call":
             return
+        if first[0] == "name" and first[1] in self.for_ctrl_vars:
+            self.err("cannot assign to for loop control variable")
         targets = [first]
         while self.at("SYM", ","):
             self.next()
@@ -1052,12 +1111,12 @@ class Parser:
         return l
 
     def parse_cmp(self):
-        l = self.parse_concat()
+        l = self.parse_bit_or()
         t = self.peek()
         if t.kind == "SYM" and t.v in (
                 "<", ">", "<=", ">=", "==", "~="):
             self.next()
-            r = self.parse_concat()
+            r = self.parse_bit_or()
             if self.peek().kind == "SYM" and self.peek().v in (
                     "<", ">", "<=", ">=", "==", "~="):
                 self.err("chained comparison (like Lua)")
@@ -1108,13 +1167,61 @@ class Parser:
 
     def parse_mul(self):
         l = self.parse_unary()
-        while self.peek().kind == "SYM" and self.peek().v in ("*", "/", "%"):
+        while self.peek().kind == "SYM" and self.peek().v in ("*", "/", "%", "//"):
             op = self.next().v
             r = self.parse_unary()
             self.free(r)
             self.free(l)
             res = self.alloc()
-            self.c.emit({"*": MUL, "/": DIV, "%": MOD}[op], res, l, r)
+            self.c.emit({"*": MUL, "/": DIV, "%": MOD, "//": IDIV}[op], res, l, r)
+            l = res
+        return l
+
+    def parse_bit_or(self):
+        l = self.parse_bit_xor()
+        while self.at("SYM", "|"):
+            self.next()
+            r = self.parse_bit_xor()
+            self.free(r)
+            self.free(l)
+            res = self.alloc()
+            self.c.emit(BOR, res, l, r)
+            l = res
+        return l
+
+    def parse_bit_xor(self):
+        l = self.parse_bit_and()
+        while self.at("SYM", "~"):
+            self.next()
+            r = self.parse_bit_and()
+            self.free(r)
+            self.free(l)
+            res = self.alloc()
+            self.c.emit(BXOR, res, l, r)
+            l = res
+        return l
+
+    def parse_shl(self):
+        l = self.parse_concat()
+        while self.at("SYM", "<<") or self.at("SYM", ">>"):
+            op = self.next().v
+            r = self.parse_concat()
+            self.free(r)
+            self.free(l)
+            res = self.alloc()
+            self.c.emit(SHL if op == "<<" else SHR, res, l, r)
+            l = res
+        return l
+
+    def parse_bit_and(self):
+        l = self.parse_shl()
+        while self.at("SYM", "&"):
+            self.next()
+            r = self.parse_shl()
+            self.free(r)
+            self.free(l)
+            res = self.alloc()
+            self.c.emit(BAND, res, l, r)
             l = res
         return l
 
@@ -1139,6 +1246,13 @@ class Parser:
             self.free(q)
             res = self.alloc()
             self.c.emit(UNM, res, q)
+            return res
+        if self.at("SYM", "~"):
+            self.next()
+            q = self.parse_unary()
+            self.free(q)
+            res = self.alloc()
+            self.c.emit(BNOT, res, q)
             return res
         return self.parse_power()
 
@@ -1342,6 +1456,7 @@ class VM:
         self.retCount = -1
         self.result = NIL
         self.steps = 0
+        self.for_stack = []
         main = comp.mainFunc
         self.frames.append((main, 0, -1, 0, -1))
         need = comp.funcs[main].nregs
@@ -1482,6 +1597,13 @@ class VM:
         if v[0] == "nil":
             return 0.0
         raise RuntimeError_(f"bad argument to '{what}' (number expected)")
+
+    def int_val(self, v):
+        if v[0] == "int":
+            return v[1]
+        if v[0] == "num" and v[1] == math.floor(v[1]):
+            return int(v[1])
+        raise RuntimeError_("number has no integer representation")
 
     def call_builtin(self, fid, args):
         if fid == 0:
@@ -1865,6 +1987,88 @@ class VM:
                     self.W(a, Vint(len(v[2])))
                 else:
                     raise RuntimeError_("attempt to get length")
+            elif op == FORPREP:
+                ctrl = self.R(a)
+                limit = self.R(b)
+                step = self.R(c_)
+                if step[1] == 0:
+                    raise RuntimeError_("'for' step is zero")
+                all_int = ctrl[0] == "int" and limit[0] == "int" and step[0] == "int"
+                self.for_stack.append((a, b, c_))
+                if all_int:
+                    ci = ctrl[1]
+                    li = limit[1]
+                    si = step[1]
+                else:
+                    ci = float(ctrl[1])
+                    li = float(limit[1])
+                    si = float(step[1])
+                    self.W(a, Vnum(ci))
+                if (si > 0 and ci <= li) or (si < 0 and ci >= li):
+                    self.pc = self.pc + 2
+                else:
+                    self.pc = self.pc + 1
+                return True
+            elif op == FORLOOP:
+                if not self.for_stack:
+                    raise RuntimeError_("for loop without for")
+                ctrl_reg, limit_reg, step_reg = self.for_stack[-1]
+                ctrl_val = self.R(ctrl_reg)
+                limit_val = self.R(limit_reg)
+                step_val = self.R(step_reg)
+                all_int = ctrl_val[0] == "int" and limit_val[0] == "int" and step_val[0] == "int"
+                if all_int:
+                    ci = wrap64(ctrl_val[1] + step_val[1])
+                    li = limit_val[1]
+                    si = step_val[1]
+                    self.W(ctrl_reg, Vint(ci))
+                    if (si > 0 and ci <= li) or (si < 0 and ci >= li):
+                        self.pc = a
+                        return True
+                    else:
+                        self.for_stack.pop()
+                else:
+                    nc = float(ctrl_val[1]) + float(step_val[1])
+                    nl = float(limit_val[1])
+                    ns = float(step_val[1])
+                    self.W(ctrl_reg, Vnum(nc))
+                    if (ns > 0 and nc <= nl) or (ns < 0 and nc >= nl):
+                        self.pc = a
+                        return True
+                    else:
+                        self.for_stack.pop()
+            elif op == IDIV:
+                l, r_ = self.R(b), self.R(c_)
+                if l[0] not in ("num", "int") or r_[0] not in ("num", "int"):
+                    raise RuntimeError_("attempt to perform floor division")
+                x, y = l[1], r_[1]
+                if y == 0:
+                    if l[0] == "int" and r_[0] == "int":
+                        self.W(a, Vint(0))
+                    else:
+                        self.W(a, Vnum(0.0))
+                elif l[0] == "int" and r_[0] == "int":
+                    self.W(a, Vint(int(x) // int(y)))
+                else:
+                    self.W(a, Vnum(math.floor(x / y)))
+            elif op == BAND:
+                l, r_ = self.R(b), self.R(c_)
+                self.W(a, Vint(self.int_val(l) & self.int_val(r_)))
+            elif op == BOR:
+                l, r_ = self.R(b), self.R(c_)
+                self.W(a, Vint(self.int_val(l) | self.int_val(r_)))
+            elif op == BXOR:
+                l, r_ = self.R(b), self.R(c_)
+                self.W(a, Vint(self.int_val(l) ^ self.int_val(r_)))
+            elif op == BNOT:
+                v = self.R(b)
+                self.W(a, Vint(~self.int_val(v)))
+            elif op == SHL:
+                l, r_ = self.R(b), self.R(c_)
+                self.W(a, Vint(wrap64(self.int_val(l) << (self.int_val(r_) & 63))))
+            elif op == SHR:
+                l, r_ = self.R(b), self.R(c_)
+                self.W(a, Vint((self.int_val(l) & M64) >> (self.int_val(r_) & 63)))
             else:
                 raise RuntimeError_(f"bad opcode {op}")
         except RuntimeError_ as ex:
@@ -2445,6 +2649,37 @@ TESTS = [
      {"errline": 2}),
     ("errline-deep", "a = 1\nb = 2\nc = 3\nd = 4\nif then end\n", None,
      "synfail", {"errline": 5}),
+    # numeric for loops
+    ("for-int", "for i=1,3 do print(i) end", None, "run"),
+    ("for-int-eq", "for i=1,1 do print(i) end", None, "run"),
+    ("for-int-empty", "for i=3,1 do print(i) end", None, "run"),
+    ("for-int-sum", "local s=0 for i=1,3 do s=s+i end print(s)",
+     None, "run"),
+    ("for-int-step", "for i=1,3,2 do print(i) end", None, "run"),
+    ("for-float", "for i=1.0,2.0 do print(i) end", None, "run"),
+    ("for-float-step", "for i=1,2.5,0.5 do print(i) end", None, "run"),
+    ("for-zero-step", "for i=1,3,0 do print(i) end", None, "haltfail"),
+    # repeat-until
+    ("repeat-basic", "local i=0 repeat i=i+1 until i>=3 print(i)",
+     None, "run"),
+    ("repeat-count", "local s=0 repeat s=s+1 until s>=3 print(s)",
+     None, "run"),
+    ("repeat-true", "repeat print('a') until true", None, "run"),
+    ("repeat-first", "repeat until true; print('done')", None, "run"),
+    # floor division
+    ("idiv-int", "print(7//2)", None, "run"),
+    ("idiv-neg", "print(-7//2)", None, "run"),
+    ("idiv-float", "print(7.5//2)", None, "run"),
+    ("idiv-neg-float", "print(-7.5//2)", None, "run"),
+    # bitwise
+    ("bit-and", "print(5&3)", None, "run"),
+    ("bit-or", "print(5|3)", None, "run"),
+    ("bit-xor", "print(5~3)", None, "run"),
+    ("bit-not", "print(~0xFF)", None, "run"),
+    ("bit-shl", "print(1<<3)", None, "run"),
+    ("bit-shr", "print(16>>2)", None, "run"),
+    ("bit-mix", "print(5+~3)", None, "run"),
+    ("bit-prec", "print(1&2|4)", None, "run"),
 ]
 
 
