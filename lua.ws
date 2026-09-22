@@ -202,9 +202,9 @@ mod fmtVal(tag: int, num: float, s: string) -> string {
 
 // ---------------------------------------------------------------- lexer state
 // token kinds: 1 NUM, 2 STR, 3 NAME, 4 KW, 5 SYM, 6 EOF
-// KW ids: and1 break2 do3 else4 elseif5 end6 false7 function8 if9 local10
-//   nil11 not12 or13 return14 then15 true16 while17
-// SYM ids: +1 -2 *3 /4 %5 ^6 <7 >8 <=9 >=10 ==11 ~=12 =13 (14 )15 ,16 ;17 ..18
+ // KW ids: and1 break2 do3 else4 elseif5 end6 false7 function8 if9 local10
+//   nil11 not12 or13 return14 then15 true16 while17 for18 in19 repeat20 until21
+// SYM ids: +1 -2 *3 /4 %5 ^6 <7 >8 <=9 >=10 ==11 ~=12 =13 (14 )15 ,16 ;17 ..18 &25 |26 ~27 <<28 >>29 //30
 // Lexer stages: 0 dispatch, 1 number int, 2 number frac, 3 number exp,
 //   4 string body, 5 escape, 6 name, 7 decimal escape, 8 hex escape,
 //   9 z-skip, 10 comment, 99 done.
@@ -284,6 +284,10 @@ mod resolveKw() {
     else if n == "return" then 14
     else if n == "then" then 15
     else if n == "true" then 16
+    else if n == "for" then 18
+    else if n == "in" then 19
+    else if n == "repeat" then 20
+    else if n == "until" then 21
     else if n == "while" then 17
     else 0
   if id == 0 {
@@ -930,6 +934,7 @@ mod parseInit() {
   opA.clear()
   opB.clear()
   opC.clear()
+  forCtrl.clear()
   ctorStk.clear()
   itBase.clear()
   itKey.clear()
@@ -2947,6 +2952,8 @@ var latchCG: float = 0.0
 var latchCB: float = 0.0
 var latchCA: float = 0.0
 var latchI0: int = 0
+var forDepth: int = 0
+var forCtrl: int[]
 
 mod vTag(r: int) -> int {
   return vtag[vmBase + r]
@@ -3016,6 +3023,7 @@ mod vmReset() {
   vtag.resize(2048, 0)
   vnum.resize(2048, 0.0)
   vstr.resize(2048, "")
+  forCtrl.resize(16, 0)
   fFunc.clear()
   fBase.clear()
   fRetA.clear()
@@ -3687,6 +3695,99 @@ mod vmStep() {
       } else {
         vmFail("attempt to get length")
       }
+    } else if op == 32 {
+      let stp = vNum(c)
+      if stp == 0.0 { vmFail("'for' step is zero") }
+      forCtrl[forDepth] = a
+      forDepth = forDepth + 1
+      let ctrl = vNum(a)
+      let lim = vNum(b)
+      if (stp > 0.0 && ctrl <= lim) || (stp < 0.0 && ctrl >= lim) {
+        vmPc = vmPc + 2
+        advanced = true
+      } else {
+        advanced = false
+      }
+    } else if op == 33 {
+      forDepth = forDepth - 1
+      let ctrl_reg = forCtrl[forDepth]
+      let ctrl = vNum(ctrl_reg)
+      let lim = vNum(b)
+      let stp = vNum(c)
+      let newCtrl = ctrl + stp
+      if vTag(ctrl_reg) == 6 {
+        vSetInt(ctrl_reg, newCtrl)
+      } else {
+        vSetNum(ctrl_reg, newCtrl)
+      }
+      if (stp > 0.0 && newCtrl <= lim) || (stp < 0.0 && newCtrl >= lim) {
+        vmPc = a
+        advanced = true
+      }
+    } else if op == 34 {
+      let lt = vTag(b)
+      let rt = vTag(c)
+      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform floor division") }
+      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform floor division") }
+      let x = vNum(b)
+      let y = vNum(c)
+      if y == 0.0 {
+        if lt == 6 { vSetInt(a, 0) } else { vSetNum(a, 0.0) }
+      } else if lt == 6 && rt == 6 {
+        let q = x / y
+        let t = q | 0
+        let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+        vSetInt(a, fl)
+      } else {
+        let q = x / y
+        let t = q | 0
+        let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+        vSetNum(a, fl)
+      }
+    } else if op == 35 {
+      let lt = vTag(b)
+      let rt = vTag(c)
+      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
+      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      let na = 0.0 - vNum(b) - 1.0
+      let nb = 0.0 - vNum(c) - 1.0
+      let nob = na | nb
+      vSetInt(a, -(nob) - 1.0)
+    } else if op == 36 {
+      let lt = vTag(b)
+      let rt = vTag(c)
+      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
+      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      vSetInt(a, vNum(b) | vNum(c))
+    } else if op == 37 {
+      let lt = vTag(b)
+      let rt = vTag(c)
+      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
+      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      let na = 0.0 - vNum(b) - 1.0
+      let nb = 0.0 - vNum(c) - 1.0
+      let nob = na | nb
+      let band = -(nob) - 1.0
+      vSetInt(a, vNum(b) + vNum(c) - 2.0 * band)
+    } else if op == 38 {
+      let vt = vTag(b)
+      if vt != 6 && !(vt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
+      vSetInt(a, -(vNum(b)) - 1.0)
+    } else if op == 39 {
+      let lt = vTag(b)
+      let rt = vTag(c)
+      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
+      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      vSetInt(a, vNum(b) * (2.0 ** vNum(c)))
+    } else if op == 40 {
+      let lt = vTag(b)
+      let rt = vTag(c)
+      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
+      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      let quotient = vNum(b) / vNum(c)
+      let tr = quotient | 0
+      let fl = if quotient < 0.0 && quotient != tr + 0.0 then tr - 1 else tr
+      vSetInt(a, fl)
     }
     if !advanced && !vmHalted {
       vmPc = vmPc + 1
