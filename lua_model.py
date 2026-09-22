@@ -76,13 +76,21 @@ NIL = ("nil", 0.0, "")
 def truthy(v):
     return not (v[0] == "nil" or (v[0] == "bool" and v[1] == 0.0))
 
+_EXP3 = re.compile(r"e([+-])(\d+)$")
+
 def lua_fstr(v):
-    """Format a float exactly like Lua 5.4 tostring (%.14g + '.0' rule)."""
+    """Format a float like Lua 5.5 tostring (shortest round-trip + '.0')."""
     if math.isnan(v):
         return "-nan"
     if math.isinf(v):
         return "inf" if v > 0 else "-inf"
     s = format(v, ".14g")
+    try:
+        if float(s) != v:
+            s = format(v, ".17g")
+    except (ValueError, OverflowError):
+        s = format(v, ".17g")
+    s = _EXP3.sub(lambda m: "e%s%s" % (m.group(1), m.group(2).zfill(3)), s)
     if "." not in s and "e" not in s and "E" not in s and "n" not in s:
         s += ".0"
     return s
@@ -1839,7 +1847,20 @@ class VM:
             elif op == LEN:
                 v = self.R(b)
                 if v[0] == "table":
-                    self.W(a, Vint(self.tlen.get(int(v[1]), 0)))
+                    tid = int(v[1])
+                    hi = 0
+                    for k in self.tmap:
+                        if k.startswith(str(tid) + "#"):
+                            try:
+                                ki = int(k.split("#")[1])
+                                if ki > hi:
+                                    hi = ki
+                            except ValueError:
+                                pass
+                    i = 1
+                    while i <= hi + 1 and tkey(tid, 1, float(i), "") in self.tmap:
+                        i += 1
+                    self.W(a, Vint(i - 1))
                 elif v[0] == "str":
                     self.W(a, Vint(len(v[2])))
                 else:
@@ -1925,8 +1946,27 @@ def run_model(src, inputs=None, sinputs=None, vec=None, col=None,
             "outArr": list(vm.outArr)}
 
 # ---------------------------------------------------------------- oracle
-LUA_BIN = (shutil.which("lua") or
-           r"C:\Users\Alessandro\AppData\Local\Programs\Lua\bin\lua.exe")
+def _find_oracle():
+    """Locate a Lua 5.5 oracle binary; None when unavailable (tests SKIP)."""
+    cands = [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""),
+                     "Programs", "Lua55", "bin", "lua55.exe"),
+        shutil.which("lua55"),
+    ]
+    for c in cands:
+        if not c or not os.path.isfile(c):
+            continue
+        try:
+            p = subprocess.run([c, "-v"], capture_output=True, text=True,
+                               timeout=10)
+            if "5.5" in (p.stdout + p.stderr):
+                return c
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return None
+
+
+LUA_BIN = _find_oracle()
 FUNC_NORM = re.compile(r"function: 0x[0-9a-fA-F]+")
 
 NAN_NORM = re.compile(r"^-?nan(\(ind\))?$")
@@ -1960,6 +2000,8 @@ def lua_str_lit(s):
 
 def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
                inarr=None, timeout=15, inint=None):
+    if LUA_BIN is None:
+        return {"avail": False}
     pre = []
     for k in range(4):
         v = float(inputs[k]) if inputs and k < len(inputs) else 0.0
