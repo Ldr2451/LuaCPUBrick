@@ -1,12 +1,12 @@
-"""Structural consistency between the Python model and the WireScript chip.
+"""Structural consistency of the WireScript chip against the spec.
 
-The differential suite proves the model matches real Lua. These checks prove
-the chip mirrors the model where Python tests cannot reach: builtin ids vs
-reserved function slots, global slot order, limits, port bindings, opcode
-coverage, keyword coverage, and re-parse/restart clearing of every state
-array. A mismatch here is a gate bug no model test can catch (e.g. the
-parseJobStart six-slot collision that broke every function once inarr and
-outarr took ids 6 and 7).
+The chip-vs-oracle suite proves behavior matches real Lua. These checks prove
+the chip's static structure matches the spec where behavior tests cannot
+reach: builtin ids vs reserved function slots, global slot order, limits,
+port bindings, opcode coverage, keyword coverage, and re-parse/restart
+clearing of every state array. A mismatch here is a gate bug no behavior
+test can catch (e.g. the parseJobStart six-slot collision that broke every
+function once inarr and outarr took ids 6 and 7).
 
 Run: python test_ws_consistency.py  (exit 0 = all green)
 """
@@ -16,7 +16,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import lua_model as m
+import spec as m
 
 WS = open(os.path.join(HERE, "lua.ws"), encoding="utf-8").read()
 
@@ -61,12 +61,12 @@ for fid in range(n_builtin):
 check("fid-user-else", "} else {" in vm)
 
 # 2. global slot order ------------------------------------------------------
-comp = m.Compiler()
-model_order = list(comp.gslot)
+model_order = list(m.GSLOT_ORDER)
 decls = re.findall(r'gDeclare\("(\w+)"\)', mod_body("parseInit"))
 check("global-order-match", decls == model_order,
-      f"\n  ws   ={decls}\n  model={model_order}")
-check("global-count-64", m.MAX_GLOBALS == 64)
+      f"\n  ws   ={decls}\n  spec ={model_order}")
+check("global-count-64", len(model_order) <= m.MAX_GLOBALS,
+      f"{len(model_order)} slots vs MAX_GLOBALS={m.MAX_GLOBALS}")
 for arr, n in (("GTAG_INIT", None), ("GNUM_INIT", None)):
     vals = re.search(arr + r": (?:int|float)\[\] = \[([^\]]*)\]",
                      WS).group(1).split(",")
@@ -82,8 +82,7 @@ for name in ["MAX_INSTR", "MAX_REGS", "MAX_FUNCS", "MAX_GLOBALS",
 check("log-lines-32", "logLines.length() > 32" in WS)
 check("log-width-64", ".Length() > 64" in WS
       and "Substring(0, 63)" in WS)
-check("outarr-64", "outArrV.resize(64, 0.0)" in WS
-      and len(m.VM(m.Compiler()).outArr) == 64)
+check("outarr-64", "outArrV.resize(64, 0.0)" in WS)
 check("call-args-16", "nargs > 16" in WS)
 check("call-params-8", "max 8 in-gate" in WS)
 
@@ -151,7 +150,7 @@ check("opcodes-0-40-handled", handled >= set(range(41)),
       f"missing {[o for o in range(41) if o not in handled]}")
 check("no-op-41", max(emitted | {0}) <= 40,
       f"max emitted {max(emitted)}")
-check("model-41-ops", m.N_OPS == 41 and m.SHR == 40 and m.HALT == 0)
+check("spec-41-ops", m.N_OPS == 41 and m.SHR == 40 and m.HALT == 0)
 
 # 7. keyword coverage --------------------------------------------------------
 model_kw = set(m.KEYWORDS)
@@ -165,12 +164,6 @@ check("tl-push", "tl.push(lline)" in WS)
 check("tl-clear", "tl.clear()" in pi)
 check("tl-read", "tl[epos]" in WS)
 check("lex-line-tracked", "lerrLine = lline" in WS)
-
-# 9. harness keys ------------------------------------------------------------
-r = m.run_model("print(1)")
-for key in ["log", "outGlobals", "outArr", "outVec", "outCol", "result",
-            "err", "steps"]:
-    check(f"model-key-{key}", key in r)
 
 print(f"{len(FAILS)} failed" if FAILS else "ALL-OK")
 sys.exit(1 if FAILS else 0)

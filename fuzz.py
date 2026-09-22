@@ -1,16 +1,19 @@
-"""Seeded differential fuzzer for Tiny Lua: random valid programs, model vs
+"""Seeded differential fuzzer for Tiny Lua: random valid programs, chip vs
 real Lua oracle. Only generates programs both sides must accept with
 identical logs (documented divergences are excluded by construction).
 
 Usage: python fuzz.py [count=200] [seed0=1]
 Exit 0 when every seed agrees, 1 with the failing program otherwise.
 """
+import concurrent.futures as cf
+import os
 import random
 import sys
 
-sys.path.insert(0, __import__("os").path.dirname(
-    __import__("os").path.abspath(__file__)))
-import lua_model as m
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(HERE, "tests"))
+from test_chip_suite import run_case
 
 INPUTS = [2.5, -1.0, 0.5, 8.0]
 SINPUTS = {0: "ab", 1: "c d"}
@@ -240,53 +243,25 @@ def one(seed):
 def main():
     count = int(sys.argv[1]) if len(sys.argv) > 1 else 200
     seed0 = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-    fails = 0
-    for k in range(count):
-        seed = seed0 + k
-        src = one(seed)
-        try:
-            mres = m.run_model(src, inputs=INPUTS, sinputs=SINPUTS,
-                               vec=VEC, col=COL, inarr=INARR,
-                               budget=200000)
-        except Exception as ex:  # noqa: BLE001 - harness must not die
-            print(f"FAIL seed {seed}: model raised {ex!r}\n{src}")
-            fails += 1
-            continue
-        if not mres["ok"]:
-            print(f"SKIP seed {seed}: model rejected: {mres['err']}")
-            continue
-        try:
-            orc = m.oracle_run(src, inputs=INPUTS, sinputs=SINPUTS,
-                               vec=VEC, col=COL, inarr=INARR, timeout=10)
-        except Exception as ex:  # noqa: BLE001 - incl. TimeoutExpired
-            if mres["failed"] or mres.get("steps", 0) >= 200000:
-                print(f"SKIP seed {seed}: both sides non-terminating "
-                      f"({type(ex).__name__})")
-                continue
-            print(f"FAIL seed {seed}: model finished, oracle "
-                  f"{type(ex).__name__}\n{src}")
-            fails += 1
-            continue
-        if orc.get("calls") is None:
-            print(f"SKIP seed {seed}: oracle framing broken")
-            continue
-        partial = mres["failed"] or orc.get("rc") != 0
-        if mres["failed"] != (orc.get("rc") != 0):
-            print(f"FAIL seed {seed}: halt mismatch model={mres['failed']} "
-                  f"rc={orc.get('rc')}\n{src}\n  merr={mres['err']!r}\n"
-                  f"  lerr={orc.get('stderr')!r}")
-            fails += 1
-            continue
-        if partial and orc.get("rc") == 0:
-            print(f"FAIL seed {seed}: model halted, oracle clean\n{src}")
-            fails += 1
-            continue
-        want = m.oracle_log(m.norm_calls(orc["calls"]))
-        if mres["log"] != want:
-            print(f"FAIL seed {seed}:\n{src}\n  model={mres['log']!r}\n"
-                  f"  lua  ={want!r}")
-            fails += 1
-    print(f"{count - fails}/{count} agree")
+    kw = {"sinputs": SINPUTS, "vec": VEC, "col": COL, "inarr": INARR}
+    jobs = [("fuzz-%d" % (seed0 + k), one(seed0 + k)) for k in range(count)]
+    fails = skips = 0
+    with cf.ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {ex.submit(run_case, name, src, INPUTS, "run", dict(kw)): name
+                for name, src in jobs}
+        for f in cf.as_completed(futs):
+            name, good, detail, dt = f.result()
+            if good is None:
+                print(f"SKIP {name}: {detail}", flush=True)
+                skips += 1
+            elif good:
+                pass
+            else:
+                src = dict(jobs)[name]
+                print(f"FAIL {name} ({dt:.1f}s): {detail}\n{src}",
+                      flush=True)
+                fails += 1
+    print(f"{count - fails - skips}/{count} agree ({skips} skipped)")
     return 1 if fails else 0
 
 

@@ -2,7 +2,7 @@
 
 Parses `wirescript compile --dump-ir-full` output and simulates
 the exec-chain model tick by tick, producing log/out ports/globals
-comparable to lua_model.run_model output.
+comparable to the Lua 5.5 oracle.
 """
 from __future__ import annotations
 
@@ -731,8 +731,9 @@ class Sim:
                     s = s[:_LOG_WIDTH - 1] + "\n"
                 self.log += s
                 lines = self.log.split("\n")
-                if len(lines) > _LOG_LINES:
-                    self.log = "\n".join(lines[-_LOG_LINES:])
+                # trailing "" after the final newline is not a line
+                if len(lines) > _LOG_LINES + 1:
+                    self.log = "\n".join(lines[-(_LOG_LINES + 1):])
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
