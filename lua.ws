@@ -434,8 +434,13 @@ mod lexStep() {
         emitTok(5, 3, 0.0, "")
         lpos = lpos + 1
       } else if cp == 47 {
-        emitTok(5, 4, 0.0, "")
-        lpos = lpos + 1
+        if cp2 == 47 {
+          emitTok(5, 30, 0.0, "")
+          lpos = lpos + 2
+        } else {
+          emitTok(5, 4, 0.0, "")
+          lpos = lpos + 1
+        }
       } else if cp == 37 {
         emitTok(5, 5, 0.0, "")
         lpos = lpos + 1
@@ -443,7 +448,10 @@ mod lexStep() {
         emitTok(5, 6, 0.0, "")
         lpos = lpos + 1
       } else if cp == 60 {
-        if cp2 == 61 {
+        if cp2 == 60 {
+          emitTok(5, 28, 0.0, "")
+          lpos = lpos + 2
+        } else if cp2 == 61 {
           emitTok(5, 9, 0.0, "")
           lpos = lpos + 2
         } else {
@@ -451,7 +459,10 @@ mod lexStep() {
           lpos = lpos + 1
         }
       } else if cp == 62 {
-        if cp2 == 61 {
+        if cp2 == 62 {
+          emitTok(5, 29, 0.0, "")
+          lpos = lpos + 2
+        } else if cp2 == 61 {
           emitTok(5, 10, 0.0, "")
           lpos = lpos + 2
         } else {
@@ -470,8 +481,11 @@ mod lexStep() {
         if cp2 == 61 {
           emitTok(5, 12, 0.0, "")
           lpos = lpos + 2
+        } else if cp2 == 126 {
+          lexFail("deprecated '~~', use '~'")
         } else {
-          lexFail("unexpected character")
+          emitTok(5, 27, 0.0, "")
+          lpos = lpos + 1
         }
       } else if cp == 40 {
         emitTok(5, 14, 0.0, "")
@@ -484,6 +498,12 @@ mod lexStep() {
         lpos = lpos + 1
       } else if cp == 59 {
         emitTok(5, 17, 0.0, "")
+        lpos = lpos + 1
+      } else if cp == 38 {
+        emitTok(5, 25, 0.0, "")
+        lpos = lpos + 1
+      } else if cp == 124 {
+        emitTok(5, 26, 0.0, "")
         lpos = lpos + 1
       } else if cp == 123 {
         emitTok(5, 19, 0.0, "")
@@ -515,7 +535,13 @@ mod lexStep() {
           lpos = lpos + 1
         } else if cp2 == 46 {
           lexFail("malformed number (like Lua '5..3')")
+        } else if cp2 == 101 || cp2 == 69 {
+          lnumDot = true
+          lstage = 3
+          lpos = lpos + 2
         } else {
+          // trailing dot with no fraction (like Lua '5.'): float
+          lnumDot = true
           emitNum()
           lstage = 0
           lpos = lpos + 1
@@ -688,7 +714,7 @@ mod lexStep() {
 }
 
 // ---------------------------------------------------------------- parser/codegen state
-// Bytecode: parallel bop/bpa/bpb/bpc (opcodes 0..27 shared with lua_model.py;
+// Bytecode: parallel bop/bpa/bpb/bpc (opcodes in spec.py;
 // JMPF/JMPT carry target in pa and test reg in pb; CALL carries nargs in pb
 // and multi-tail bit in pc). Functions: fStart/fParams/fRegs. Constants:
 // constNum/constStr. Globals: gmap name->slot plus gslotNext. Compile frames
@@ -951,6 +977,7 @@ mod parseInit() {
   plNext.resize(512, -1)
   tmpNames.clear()
   tmpRegs.clear()
+  forNames.clear()
   tmpSStk.clear()
   blkLen.clear()
   blkNext.clear()
@@ -991,6 +1018,10 @@ mod parseInit() {
   tmpB = 0
   tmpC = 0
   tmpS = ""
+  forName = ""
+  forInit = -1
+  forLimit = -1
+  forStep = -1
   ctlLoop = -1
   lkRaw = false
   pdHead = -1
@@ -1591,8 +1622,10 @@ mod applyPop() {
     pushVal(res, false, false)
   } else if k == 1 {
     let vv = popVal()
-    let isNot = opA[opA.length() - 1] == 1
-    let isLen = opA[opA.length() - 1] == 2
+    let pendOpA = opA[opA.length() - 1]
+    let isNot = pendOpA == 1
+    let isLen = pendOpA == 2
+    let isBnot = pendOpA == 38
     opKind.pop()
     opPrec.pop()
     opA.pop()
@@ -1604,6 +1637,8 @@ mod applyPop() {
       bEmit(15, res, vv, 0)
     } else if isLen {
       bEmit(31, res, vv, 0)
+    } else if isBnot {
+      bEmit(38, res, vv, 0)
     } else {
       bEmit(14, res, vv, 0)
     }
@@ -1880,6 +1915,10 @@ mod exprPrefix() {
   } else if k == 4 && s == 12 {
     pushOp(1, 6, 1, 0, valStk.length())
     cpos = cpos + 1
+  } else if k == 5 && s == 27 {
+    pushOp(1, 6, 38, 0, valStk.length())
+    cpos = cpos + 1
+    expectOperand = true
   } else if k == 4 && s == 8 {
     // anonymous function: suspend the expression, compile the body
     tmpS = ""
@@ -1920,6 +1959,30 @@ mod exprInfix() {
     let opc = if s == 7 || s == 8 then 18 else if s == 9 || s == 10 then 19 else 17
     let fl = if s == 8 || s == 10 then 3 else if s == 12 then 4 else if s == 7 || s == 9 then 1 else 0
     binArrive(opc, 2, fl)
+    cpos = cpos + 1
+    expectOperand = true
+  } else if k == 5 && s == 30 {
+    binArrive(34, 5, 1)
+    cpos = cpos + 1
+    expectOperand = true
+  } else if k == 5 && s == 28 {
+    binArrive(39, 6, 1)
+    cpos = cpos + 1
+    expectOperand = true
+  } else if k == 5 && s == 29 {
+    binArrive(40, 6, 1)
+    cpos = cpos + 1
+    expectOperand = true
+  } else if k == 5 && s == 25 {
+    binArrive(35, 5, 1)
+    cpos = cpos + 1
+    expectOperand = true
+  } else if k == 5 && s == 27 {
+    binArrive(37, 4, 1)
+    cpos = cpos + 1
+    expectOperand = true
+  } else if k == 5 && s == 26 {
+    binArrive(36, 3, 1)
     cpos = cpos + 1
     expectOperand = true
   } else if k == 4 && s == 1 {
@@ -2000,10 +2063,10 @@ mod exprInfix() {
       perr = true
       perrMsg = "bad field access"
     }
-  } else if k == 6 || (k == 5 && s == 17) || (k == 4 && (s == 6 || s == 4 || s == 5)) || (k == 5 && s == 13) || (k == 4 && (s == 3 || s == 15)) {
+  } else if k == 6 || (k == 5 && s == 17) || (k == 4 && (s == 6 || s == 4 || s == 5 || s == 21)) || (k == 5 && s == 13) || (k == 4 && (s == 3 || s == 15)) {
     closeMode = 3
     popMode = 2
-  } else if k == 3 || (k == 4 && (s == 10 || s == 8 || s == 9 || s == 17 || s == 3 || s == 2 || s == 14)) {
+  } else if k == 3 || (k == 4 && (s == 10 || s == 8 || s == 9 || s == 17 || s == 18 || s == 20 || s == 3 || s == 2 || s == 14)) {
     // NAME or statement-start keyword: drain, then terminate the unit;
     // validity (call-statement vs stored value) is checked by doCont
     closeMode = 2
@@ -2252,10 +2315,13 @@ mod exprMicro() {
 // ---------------------------------------------------------------- statement machine state
 // parseStep runs one micro-step: expression micro-ops while inExpr, else one
 // statement action. contKind resumes after a unit: 1 expr-stmt, 2 if-cond,
-// 3 elif-cond, 4 while-cond, 5 return, 6 local-values, 7 assign-values.
+// 3 elif-cond, 4 while-cond, 5 return, 6 local-values, 7 assign-values,
+// 10 for-init, 11 for-limit, 12 for-step, 13 repeat-until-cond.
 // stState tracks multi-step constructs. Control frames: 1 if (A=fpos,
 // B=ends), 2 while (A=top, B=false, C=breaks, D=savedLoop), 3 func
-// (A=fid, B=skip, C=resume, D=savedLoop, E=extra), 4 do.
+// (A=fid, B=skip, C=resume, D=savedLoop, E=extra), 4 do,
+// 5 for (A=body, B=entry-jmp, C=breaks, D=savedLoop, E=limit, F=step),
+// 6 repeat (A=body-top, C=breaks, D=savedLoop).
 
 var inExpr: bool = false
 var contKind: int = 0
@@ -2264,6 +2330,11 @@ var tmpA: int = 0
 var tmpB: int = 0
 var tmpC: int = 0
 var tmpS: string = ""
+var forName: string = ""
+var forInit: int = -1
+var forLimit: int = -1
+var forStep: int = -1
+var forNames: string[]
 var tmpNames: string[]
 var tmpRegs: int[]
 var ctlD: int[]
@@ -2311,14 +2382,47 @@ mod startUnit(cont: int) {
   exprDone = false
 }
 
+// Emit a numeric-for header after `do`: bind the control var (locals parsed
+// in the header still see outer scope), default a missing step to 1,
+// then FORPREP + entry JMP and open the body block (ctl kind 5).
+mod forDoHead() {
+  cpos = cpos + 1
+  blkEnter()
+  let ctrl = locDeclare(forName)
+  dirtySelf(forName)
+  if forInit != ctrl {
+    bEmit(7, ctrl, forInit, 0)
+    regFree(forInit)
+  }
+  if forStep == -1 {
+    forStep = regAlloc()
+    bEmit(2, forStep, cNum(1.0), 1)
+  }
+  // limit/step stay live across the whole body but are never locals;
+  // pin them under maxLoc so regSync cannot hand them to body temps.
+  if forLimit > cfMaxLoc[fnDepth] {
+    cfMaxLoc[fnDepth] = forLimit
+  }
+  if forStep > cfMaxLoc[fnDepth] {
+    cfMaxLoc[fnDepth] = forStep
+  }
+  bEmit(32, ctrl, forLimit, forStep)
+  let jp = bEmit(20, 0, 0, 0)
+  let bs = bop.length()
+  pushCtl(5, bs, jp, -1, ctlLoop, forLimit, forStep)
+  ctlLoop = ctlKind.length() - 1
+  forNames.push(forName)
+}
+
 // Post-unit continuations: 1 expr-stmt, 2 if-cond, 3 elif-cond,
-// 4 while-cond, 5 return, 6 local-values, 7 assign-values.
+// 4 while-cond, 5 return, 6 local-values, 7 assign-values,
+// 10 for-init, 11 for-limit, 12 for-step, 13 repeat-until-cond.
 mod atStmtEnd() -> bool {
   let k = curKind()
   let s = curSub()
   return if k == 6 then true
     else if k == 5 && s == 17 then true
-    else if k == 4 && (s == 6 || s == 4 || s == 5) then true
+    else if k == 4 && (s == 6 || s == 4 || s == 5 || s == 21) then true
     else false
 }
 
@@ -2459,6 +2563,62 @@ mod doCont() {
       inExpr = false
       contKind = 0
     }
+  } else if contKind == 10 {
+    // for-init value done: expect ',' then parse the limit
+    forInit = presReg
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(11)
+    } else {
+      perr = true
+      perrMsg = "expected , in for"
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 11 {
+    // for-limit value done: ',' + step, or 'do' with default step
+    forLimit = presReg
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(12)
+    } else if curKind() == 4 && curSub() == 3 {
+      forStep = -1
+      forDoHead()
+      inExpr = false
+      contKind = 0
+    } else {
+      perr = true
+      perrMsg = "expected , or do in for"
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 12 {
+    // for-step value done: expect 'do'
+    forStep = presReg
+    if curKind() == 4 && curSub() == 3 {
+      forDoHead()
+    } else {
+      perr = true
+      perrMsg = "expected do in for"
+    }
+    inExpr = false
+    contKind = 0
+  } else if contKind == 13 {
+    // repeat-until condition done: jump back while falsy, then leave scope
+    let n = ctlKind.length() - 1
+    if n < 0 || ctlKind[n] != 6 {
+      perr = true
+      perrMsg = "until without repeat"
+    } else {
+      bEmit(21, ctlA[n], presReg, 0)
+      blkExit()
+      tmpC = ctlD[n]
+      pdHead = ctlC[n]
+      pdThen = 1
+      popCtl()
+    }
+    inExpr = false
+    contKind = 0
   } else {
     inExpr = false
     contKind = 0
@@ -2516,6 +2676,10 @@ mod doStoreStep() {
     }
   } else if stState == 14 {
     let nm = tmpNames[tmpA]
+    if forNames.find(nm).Found {
+      perr = true
+      perrMsg = "cannot assign to for loop control variable"
+    } else {
     lkRaw = true
     locFind(nm)
     lkRaw = false
@@ -2538,6 +2702,7 @@ mod doStoreStep() {
     }
     tmpA = tmpA - 1
     stState = 13
+    }
   }
 }
 
@@ -2694,6 +2859,15 @@ mod doBlockClose() {
       pdHead = ctlC[n]
       pdThen = 1
       popCtl()
+    } else if kind == 5 {
+      blkExit()
+      tmpC = ctlD[n]
+      bEmit(33, ctlA[n], ctlE[n], ctlF[n])
+      bPatch(ctlB[n], bop.length())
+      pdHead = ctlC[n]
+      pdThen = 1
+      popCtl()
+      forNames.pop()
     } else if kind == 3 {
       let fid = ctlA[n]
       let skip = ctlB[n]
@@ -2823,6 +2997,30 @@ mod stmtDispatch() {
     cpos = cpos + 1
     tmpA = bop.length()
     startUnit(4)
+  } else if k == 4 && s == 18 {
+    cpos = cpos + 1
+    if curKind() == 3 {
+      forName = curStr()
+      forInit = -1
+      forLimit = -1
+      forStep = -1
+      cpos = cpos + 1
+      if curKind() == 5 && curSub() == 13 {
+        cpos = cpos + 1
+        startUnit(10)
+      } else {
+        perr = true
+        perrMsg = "expected = in for"
+      }
+    } else {
+      perr = true
+      perrMsg = "expected name after for"
+    }
+  } else if k == 4 && s == 20 {
+    cpos = cpos + 1
+    pushCtl(6, bop.length(), -1, -1, ctlLoop, 0, 0)
+    ctlLoop = ctlKind.length() - 1
+    blkEnter()
   } else if k == 4 && s == 3 {
     cpos = cpos + 1
     blkEnter()
@@ -2876,6 +3074,14 @@ mod stmtDispatch() {
     startUnit(1)
   } else if k == 2 {
     startUnit(1)
+  } else if k == 4 && s == 21 {
+    if ctlTop() != 6 {
+      perr = true
+      perrMsg = "until without repeat"
+    } else {
+      cpos = cpos + 1
+      startUnit(13)
+    }
   } else if k == 4 && (s == 6 || s == 4 || s == 5) {
     doBlockClose()
   } else {
@@ -3024,6 +3230,7 @@ mod vmReset() {
   vnum.resize(2048, 0.0)
   vstr.resize(2048, "")
   forCtrl.resize(16, 0)
+  forDepth = 0
   fFunc.clear()
   fBase.clear()
   fRetA.clear()
@@ -3183,7 +3390,7 @@ mod cmpStep() {
   }
 }
 
-// One VM instruction. Mirrors lua_model.VM.step (same ISA/semantics).
+// One VM instruction (ISA in spec.py).
 // Composite map key for table `tid`: kt is the key's value tag.
 mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
   return if kt == 1 || kt == 6 then tid .. "#" .. (kn | 0)
@@ -3698,6 +3905,9 @@ mod vmStep() {
     } else if op == 32 {
       let stp = vNum(c)
       if stp == 0.0 { vmFail("'for' step is zero") }
+      if vTag(a) == 6 && (vTag(b) != 6 || vTag(c) != 6) {
+        vSetNum(a, vNum(a))
+      }
       forCtrl[forDepth] = a
       forDepth = forDepth + 1
       let ctrl = vNum(a)
@@ -3709,8 +3919,7 @@ mod vmStep() {
         advanced = false
       }
     } else if op == 33 {
-      forDepth = forDepth - 1
-      let ctrl_reg = forCtrl[forDepth]
+      let ctrl_reg = forCtrl[forDepth - 1]
       let ctrl = vNum(ctrl_reg)
       let lim = vNum(b)
       let stp = vNum(c)
@@ -3723,6 +3932,8 @@ mod vmStep() {
       if (stp > 0.0 && newCtrl <= lim) || (stp < 0.0 && newCtrl >= lim) {
         vmPc = a
         advanced = true
+      } else {
+        forDepth = forDepth - 1
       }
     } else if op == 34 {
       let lt = vTag(b)
@@ -3784,10 +3995,7 @@ mod vmStep() {
       let rt = vTag(c)
       if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
       if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
-      let quotient = vNum(b) / vNum(c)
-      let tr = quotient | 0
-      let fl = if quotient < 0.0 && quotient != tr + 0.0 then tr - 1 else tr
-      vSetInt(a, fl)
+      vSetInt(a, floor(vNum(b) / (2.0 ** vNum(c))))
     }
     if !advanced && !vmHalted {
       vmPc = vmPc + 1
@@ -3901,7 +4109,7 @@ on goParse {
   } else {
     if lerr {
       progOkV = false
-      errV = "line " .. lerrLine .. ": " .. lerrMsg
+      errV = "line " .. (lerrLine | 0) .. ": " .. lerrMsg
       vmHalted = true
       jobBusy = false
     } else {
@@ -3926,7 +4134,7 @@ on goParse2 {
       // (or just past) the offending token in nearly every perr path
       let epos = if cpos >= tl.length() then tl.length() - 1 else cpos
       let eline = if epos < 0 then lline else tl[epos]
-      errV = "line " .. eline .. ": " .. perrMsg
+      errV = "line " .. (eline | 0) .. ": " .. perrMsg
     }
   }
 }

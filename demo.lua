@@ -4,7 +4,7 @@
 --          inCol=(0.5,0.25,0.125,1) inArr=[10,20,30]
 -- Every line below exercises a feature; the ports at the end depend on all
 -- of them, so any mismatch means something broke. Expected values are in
--- the DEMO_EXPECT comment block at the bottom (computed by lua_model.py).
+-- the DEMO_EXPECT comment block at the bottom (verified against Lua 5.5).
 
 -- arithmetic, precedence, unary minus, power, modulo, concat
 local a = (inNum0 + inNum1 * inNum2 - inNum3 / 2) % 4
