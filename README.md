@@ -1,12 +1,12 @@
-# tinylua
+# Lua 5.5 on a Brickadia chip
 
-A Lua 5.5 interpreter that runs as a Brickadia WireScript chip (`lua.ws`), with
-a tick-level simulator for it and a test suite that compares the chip against the
-real `lua5.5` binary.
+`lua.ws` is a Lua 5.5 interpreter built as a Brickadia WireScript chip: a lexer, a
+compiler, a register VM and the standard library, all in one net. `irrun/`
+simulates it a tick at a time, and `tests/` compares the chip against the real
+`lua5.5` binary, which is the only authority on what the chip should do.
 
 ```
-lua.ws          the chip: lexer, compiler and VM for the Lua subset
-lua_full.ws     an older, larger reference chip (kept for comparison only)
+lua.ws          the chip: lexer, compiler, VM and library
 demo.lua        a small program to try in-game
 irrun/          the simulator: IR loader, tick sim, gate catalogue
 tests/          the suite and the oracle-diff checks
@@ -16,14 +16,23 @@ tools/          development tools (see below)
 ## Running the tests
 
 ```sh
+python -u tools/preflight.py                  # fast net: static checks + parser battery
 python -u tests/test_chip_suite.py            # every case, chip vs Lua 5.5
 python -u tests/test_chip_suite.py iter-      # only cases matching a filter
 python -u tests/test_consistency.py           # static structure vs tests/spec.py
+python -u tests/syntax_check.py               # parser stress, oracle diff
 python -u tests/iter_check.py                 # iteration library, oracle diff
 python -u tests/multi_check.py                # multiple returns, oracle diff
 python -u tests/vararg_check.py               # varargs/select, oracle diff
 python -u tools/fuzz.py 200                   # random programs, oracle diff
 ```
+
+`tools/preflight.py` is what to run after every edit to the chip. The parser
+keeps its scratch state in globals, so a change tends to break the constructs
+*around* it rather than the new feature; the preflight catches that in about
+half a minute instead of the suite's half a minute of guessing. It is not a
+substitute for the suite -- it checks shapes, not results -- so run the suite
+before committing.
 
 Every script prints its elapsed time. The suite needs a Lua 5.5 binary: it looks
 at `$LUA55`, then `lua5.5`/`lua55` on `PATH`, then the usual install locations,
@@ -37,6 +46,7 @@ Useful environment variables:
 | `WIRESCRIPT` | path to the `wirescript` compiler |
 | `CHIP_BATCH` | cases per suite worker process (default 12, `1` = one per process) |
 | `PROBE_TICKS` | tick budget for `tools/check.py` |
+| `TRACE_TICKS` | tick budget for the two trace tools |
 
 ## Tools
 
@@ -49,16 +59,15 @@ Iterating (each builds the chip once, ~6s, then runs many programs):
 | `tools/dump_vm.py --tokens "prog"` | dump the token stream and the prepended library source |
 | `tools/trace_pc.py "prog" "0,1,2"` | step the VM, printing pc, frame and chosen registers |
 | `tools/trace_exec.py "prog"` | which chip nodes execute, in order |
+| `tools/profile_sim.py "prog"` | where a run spends its ticks |
 
 Checks on the chip itself:
 
 | script | what it does |
 | --- | --- |
-| `tools/unsup.py` | compiler `_Unsupported` placeholders (a silent miscompile) |
-| `tools/unhandled.py` | gate classes the simulator has no handler for |
-| `tools/globals.py` | the global slot table after a reset |
+| `tools/audit.py` | one build, then: compiler `_Unsupported` placeholders (a silent miscompile), gate classes the simulator has no handler for, and the node/wire count |
+| `tools/globals.py "prog"` | the global slot table after a run |
 | `tools/slots.py` | builtin ids and the global init arrays, from the source |
-| `tools/gatecount.py lua.ws` | IR node/wire counts, as a gate-size proxy |
 | `tools/irdiff.py old.ws new.ws` | what a change costs in IR nodes, by kind |
 | `tools/gate_ports.py` | gate port catalogue the simulator implements |
 | `tools/fuzz.py` | seeded differential fuzzer against the oracle |

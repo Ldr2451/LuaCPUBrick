@@ -1,4 +1,4 @@
-"""Tick-based IR simulator for tinylua/lua.ws.
+"""Tick-based IR simulator for lua.ws.
 
 Parses `wirescript compile --dump-ir-full` output and simulates
 the exec-chain model tick by tick, producing log/out ports/globals

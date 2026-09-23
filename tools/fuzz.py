@@ -1,4 +1,4 @@
-"""Seeded differential fuzzer for Tiny Lua: random valid programs, chip vs
+"""Seeded differential fuzzer for the chip: random valid programs, chip vs
 real Lua oracle. Only generates programs both sides must accept with
 identical logs (documented divergences are excluded by construction).
 

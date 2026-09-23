@@ -248,6 +248,25 @@ TESTS = [
     ("str-rev", "print(string.reverse('abc'), string.reverse(''))", None,
      "run"),
     ("str-empty-sub", "print('[' .. string.sub('abc', 9) .. ']')", None, "run"),
+    # method syntax: a call on a string reaches the string library the way
+    # PUC's string metatable does, and on a table it is obj.m(obj, args)
+    ("str-method", "local s = 'hello' print(s:upper(), s:sub(2, 3), s:len(), "
+     "s:byte(1), s:rep(2), s:reverse())", None, "run"),
+    ("str-method-lit", "print(('ab'):upper(), ('ab'):rep(3), ('abc'):sub(2))",
+     None, "run"),
+    ("meth-call", "M = {} M.g = function(self, a, b) return a * b end "
+     "print(M:g(3, 4), M.g(M, 3, 4))", None, "run"),
+    ("meth-def", "M = {} function M:f(x) return x + 1 end "
+     "function M:g(a, b) return a - b end print(M:f(1), M:g(9, 4), M.f(M, 1))",
+     None, "run"),
+    ("meth-self", "M = {n = 1} function M:add(x) self.n = self.n + x return "
+     "self.n end print(M:add(4), M:add(1), M.n)", None, "run"),
+    ("meth-nested", "M = {} function M:outer() local t = 0 function M:inner(v) "
+     "return v * 2 end return M end print(M:outer())", None, "run"),
+    ("meth-recv-expr", "M = {f = function(self, x) return x end} "
+     "print(({f = M.f}):f(1), M.f(M, 2))", None, "run"),
+    ("meth-two-calls", "local s = 'ab' print(s:upper(), s:upper(), s:len())",
+     None, "run"),
     # math library
     ("math-floor", "print(math.floor(2.7), math.floor(-2.7), math.ceil(2.1), "
      "math.ceil(-2.1))", None, "run"),

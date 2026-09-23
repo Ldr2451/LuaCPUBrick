@@ -1,6 +1,6 @@
-"""Tiny Lua IR-level simulator.
+"""Lua-on-WireScript IR-level simulator.
 
-Reads `wirescript compile --dump-ir-full` output for tinylua/lua.ws,
+Reads `wirescript compile --dump-ir-full` output for lua.ws,
 simulates the exec-chain model every clock tick, and produces the
 same observable outputs (out ports, log) that the Python model does.
 

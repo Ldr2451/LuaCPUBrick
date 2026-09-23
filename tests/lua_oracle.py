@@ -1,9 +1,10 @@
-"""Lua 5.5 oracle bridge: run a Tiny Lua program under real Lua with
+"""Lua 5.5 oracle bridge: run a program under real Lua with
 print-capture framing, so chip output can be compared against ground truth.
 
-Extracted verbatim from the retired Python model; the framing normalizes
-function addresses and NaNs. `oracle_log` rebuilds the print log applying
-the same line cap/width the chip enforces.
+The oracle is the only authority on what the chip should do; a difference is a
+bug in the chip until proven otherwise. The framing normalizes function
+addresses and NaNs. `oracle_log` rebuilds the print log applying the same
+line cap/width the chip enforces.
 """
 import math
 import os
@@ -50,13 +51,17 @@ def _find_oracle():
 
 
 LUA_BIN = _find_oracle()
-FUNC_NORM = re.compile(r"function: 0x[0-9a-fA-F]+")
+# PUC prints an address after a function, table, thread or userdata; the chip
+# prints the type name.  Folding both to the type name means a case may print one
+# directly instead of wrapping every one of them in type() to dodge the
+# comparison.  The 0x is optional: this build's tostring omits it.
+ADDR_NORM = re.compile(r"\b(function|table|thread|userdata): (?:0x)?[0-9a-fA-F]+")
 
 NAN_NORM = re.compile(r"^-?nan(\(ind\))?$")
 
 
 def norm_val(v):
-    v = FUNC_NORM.sub("function: F", v)
+    v = ADDR_NORM.sub(r"\1", v)
     if NAN_NORM.match(v):
         return "-nan"
     return v

@@ -1,4 +1,4 @@
-"""Canonical Tiny Lua spec constants.
+"""Canonical spec constants for the chip.
 
 Single source of truth for the chip's limits and for the shape of the language
 it implements.  The chip is WireScript and cannot import this, so the values are

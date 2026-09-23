@@ -1,4 +1,5 @@
-/// Tiny Lua: numbers, strings, booleans, nil, functions, tables, globals + locals.
+/// Lua 5.5 in WireScript: a parser, a register VM, and the standard library,
+/// on one chip.
 ///
 /// Wire a Lua program into `program` (a string variable gate) and drive `run` high.
 /// The program is lexed, parsed to flat bytecode, then executed on a register VM.
@@ -36,56 +37,64 @@
 ///   value. inArr is read live by inarr() (no restart needed). Changing an input while
 ///   `run` is low leaves the outputs alone.
 ///
-/// Language subset (anything else is a compile error and sets progOk = false)
+/// Language (what is here)
 ///   types      numbers (one double type), strings, booleans, nil, functions, tables
-///   vars       globals (the inputs, the writable outputs, plus print, type, tostring,
-///              setvec, setcol, clock, inarr, outarr) and locals; shadowing works;
-///              upvalues do NOT (loud compile error), so a function cannot call a local
-///              function or read a local defined outside it
+///   vars       globals (the inputs, the writable outputs, the library tables) and
+///              locals; shadowing works
 ///   stmts      local (single or multi), assignment (single or parallel, to names or
 ///              table fields; stores run right to left like PUC Lua), if / elseif / else,
-///              while, break, do / end, function f() and local function f(), return
-///              (single value), calls (including f"str" and chained f()())
-///   exprs      + - * / % ^ (power, right assoc), unary -, # (length of a table or string),
-///              .. (concat), < > <= >= == ~= (non-associative, like Lua), and, or, not
-///   tables     constructors {}, {1, 2, 3}, {x = 1, y = 2}, {[k] = v}, mixed, with , or ;
-///              separators and a trailing separator; t[k], t.name, t[k] = v, t.name = v,
-///              nesting (m[i][j], t.a.b), t[i], t[j] = t[j], t[i]; #t; assigning nil
-///              deletes a key. Tables are references and compare by identity. Keys may be
-///              integers, strings, booleans, tables or functions. Functions can be stored
-///              in fields and called as t.f(x).
-///              NOT supported: non-integer number keys (a runtime error on write, nil on
-///              read), pairs / ipairs / next, for loops, the table library, metatables,
-///              t:method() calls, mixing plain names and table fields in one statement.
-///              #t returns a border like Lua: it follows t[#t + 1] = v appends and fills
-///              in out-of-order assignments. Reading a missing key gives nil.
-///   calls      missing args become nil, extras dropped; bare `return` and falling off
-///              the end yield ZERO values (print(f()) prints nothing); `return a, b` is
-///              rejected (single value only)
-///   builtins   print(...) -> log; type(v), tostring(v) (a table prints as "table");
-///              setvec(x, y, z) -> outVec; setcol(r, g, b, a) -> outCol;
-///              inarr(i) -> inArr[i] (1-based, out-of-range reads nil);
-///              outarr(i, v) -> outArr[i] = v (1-based, out-of-range is an error);
-///              clock() -> seconds (ServerUptime)
-///   numbers    integers (exact on-chip inside +/-2^53; Lua wraps 64-bit
-///              beyond that) and floats: 0.5 .5 5. 1e3 1E-3, hex ints 0xFF.
-///              / and ^ always return floats. Ints print bare (3), floats
-///              print Lua-style (3.0); 'x' .. 1 gives "x1", #t prints like 3
+///              while, repeat, numeric for, generic for, break, do / end,
+///              function f(), function M.f(), function M:f(), local function f(),
+///              return (any number of values), calls, f"str", f{...}, chained f()()
+///   exprs      + - * / % ^ (power, right assoc), unary -, # (length of a table or
+///              string), .. (concat), < > <= >= == ~= (non-associative, like Lua),
+///              and, or, not
+///   tables     constructors {}, {1, 2, 3}, {x = 1, y = 2}, {[k] = v}, mixed, with ,
+///              or ; separators and a trailing separator; t[k], t.name, t[k] = v,
+///              t.name = v, nesting (m[i][j], t.a.b), t[i], t[j] = t[j], t[i]; #t;
+///              assigning nil deletes a key. Tables are references and compare by
+///              identity. Keys may be integers, strings, booleans, tables or functions.
+///              #t returns a border like Lua: it follows t[#t + 1] = v appends and
+///              fills in out-of-order assignments. Reading a missing key gives nil.
+///   functions  stored in fields and called as t.f(x) or t:f(x); function M.f() and
+///              function M:f() define them; multiple returns, varargs (...) and
+///              select; a call in the last slot of an argument list, return, table
+///              constructor or assignment expands all of its results
+///   library    the source of pairs, ipairs, next, select, string.*, math.* and
+///              table.* is Lua text prepended to the program when the program mentions
+///              it, so it is ordinary Lua running on this chip; the only gates are
+///              what Lua cannot express (string byte/char/upper/lower/sub, the math
+///              functions, table.unpack, next)
+///   numbers    integers (exact on-chip inside +/-2^53; Lua wraps 64-bit beyond that)
+///              and floats: 0.5 .5 5. 1e3 1E-3, hex ints 0xFF. / and ^ always return
+///              floats. Ints print bare (3), floats print Lua-style (3.0); 'x' .. 1
+///              gives "x1", #t prints like 3
 ///   strings    "..." and '...' with \n \r \t \\ \" \' \<newline>, \z, \ddd and \xXX
 ///              for printable ASCII (32..126); other escapes are a compile error
 ///   compare    == and ~= work on all types without coercion (tables by identity);
 ///              < > <= >= work on numbers or lexicographically on strings;
 ///              arithmetic never coerces strings
 ///   divzero    x/0, x%0 and 0/0 yield 0 (Brickadia gate behavior, unlike Lua inf/nan)
-///   missing    for, methods, goto, bitwise operators, coroutines, metatables, modules,
-///              pcall / error, closures / upvalues, multiple return values
 ///
-/// Other differences from PUC-Lua 5.4
-///   Runtime errors halt with err set (there is no pcall). tostring of a table is
-///   "table" (PUC prints an address). t[nil] reads nil (PUC errors). outNum0..outNum3
-///   only take numbers/booleans/nil and outArr only numbers (PUC tables take anything;
-///   fixed-size float storage is a gate limitation). The log keeps the last 32 lines
-///   at 64 chars each (about 2 KB).
+/// Not implemented yet (each is a loud error, never a wrong answer)
+///   closures / upvalues      a function cannot read a local of an enclosing scope,
+///                             so it cannot call a local function of one
+///   metatables               no setmetatable, no __index, no operator metamethods
+///   string patterns          no find, match, gmatch, gsub, string.format
+///   error handling           no error, assert, pcall, xpcall: a runtime error
+///                             halts with err set
+///   goto and labels          a compile error
+///   coroutines, modules, bitwise operators
+///   integers as a type       one number type: math.type reports "integer" for a
+///                             whole number, 1 == 1.0, and 64-bit wraparound is
+///                             absent beyond 2^53
+///   non-integer number keys  a runtime error on write, nil on read
+///
+/// Other differences from PUC-Lua 5.5
+///   tostring of a table is "table" (PUC prints an address). t[nil] reads nil (PUC
+///   errors). outNum0..outNum3 only take numbers/booleans/nil and outArr only
+///   numbers (PUC tables take anything; fixed-size float storage is a gate
+///   limitation). The log keeps the last 32 lines at 64 chars each (about 2 KB).
 ///
 /// Limits (compile error past them, progOk = false)
 ///   1024 tokens, 512 bytecode instructions, 64 registers per function, 32 functions,
@@ -853,6 +862,11 @@ var selfFid: int[]
 // is the function being compiled variadic?  `...` outside one is an error, and
 // the VM keeps the same flag per function id in fVar
 var fnVar: bool[]
+// `function M:f(...)` compiles as `M.f = function(M, ...)`: the receiver name
+// is not written, so the parameter list has to be told to declare it first.
+// Per depth, because a function head and its parameter list are parsed at
+// different times and a global would not survive a nested head.
+var fnSelfArg: bool[]
 var valStk: int[]
 var valCall: bool[]
 var valPrefix: bool[]
@@ -1116,9 +1130,12 @@ mod parseInit() {
   selfClean.resize(33, true)
   fnVar.clear()
   fnVar.resize(33, false)
+  fnSelfArg.clear()
+  fnSelfArg.resize(33, false)
   selfFid.resize(33, -1)
   funcEntryLoc.resize(33, 0)
   opBase.resize(33, 0)
+  fnKey.clear()
   gslotNext = 0
   gDeclare("outNum0")
   gDeclare("outNum1")
@@ -1364,7 +1381,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix0]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1377,7 +1394,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix1]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1390,7 +1407,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix2]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1403,7 +1420,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix3]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1416,7 +1433,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix4]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1429,7 +1446,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix5]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1442,7 +1459,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix6]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1455,7 +1472,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix7]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1468,7 +1485,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix8]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1481,7 +1498,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix9]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1494,7 +1511,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix10]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1507,7 +1524,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix11]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1520,7 +1537,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix12]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1533,7 +1550,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix13]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1546,7 +1563,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix14]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1559,7 +1576,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix15]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1572,7 +1589,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix16]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1585,7 +1602,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix17]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1598,7 +1615,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix18]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1611,7 +1628,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix19]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1624,7 +1641,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix20]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1637,7 +1654,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix21]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1650,7 +1667,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix22]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1663,7 +1680,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix23]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1676,7 +1693,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix24]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1689,7 +1706,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix25]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1702,7 +1719,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix26]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1715,7 +1732,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix27]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1728,7 +1745,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix28]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1741,7 +1758,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix29]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1754,7 +1771,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix30]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -1767,7 +1784,7 @@ mod locFind(name: string) {
         lkReg = locReg[ix31]
       } else {
         perr = true
-        perrMsg = "upvalues/closures not supported in Tiny"
+        perrMsg = "upvalues/closures are not supported"
       }
       lkDone = true
     }
@@ -2064,6 +2081,7 @@ mod funcDepthInit(islocal: bool) {
     selfName[fnDepth] = ""
   }
   funcEntryLoc[fnDepth] = locLen
+  fnSelfArg[fnDepth] = false
 }
 
 // Shared function head: fid already created in tmpB, name in tmpS.
@@ -2344,6 +2362,34 @@ mod exprInfix() {
       perr = true
       perrMsg = "bad field access"
     }
+  } else if k == 5 && s == 31 {
+    // obj:m(args) is obj.m(obj, args): the receiver is already evaluated, so
+    // it goes into the call's first argument slot and the arguments follow it
+    if !topPrefix() || nextKind() != 3 {
+      perr = true
+      perrMsg = "bad method call"
+      return
+    }
+    let recv = popVal()
+    let kr = regAlloc()
+    bEmit(3, kr, cStr(curStrAhead()), 0)
+    cpos = cpos + 2
+    if !(curKind() == 5 && curSub() == 14) {
+      perr = true
+      perrMsg = "expected ( after method name"
+      return
+    }
+    let fr = regAlloc()
+    bEmit(29, fr, recv, kr)
+    bEmit(7, fr + 1, recv, 0)
+    regFree(kr)
+    // The receiver sits in the first argument slot, so that slot is live from
+    // here: claim it before parsing the arguments, or an argument expression
+    // gets the slot as a temporary and overwrites the receiver.
+    bumpMax(fr + 2)
+    pushOp(9, -1, fr, 1, valStk.length())
+    cpos = cpos + 1
+    expectOperand = true
   } else if k == 6 || (k == 5 && s == 17) || (k == 4 && (s == 6 || s == 4 || s == 5 || s == 21)) || (k == 5 && s == 13) || (k == 4 && (s == 3 || s == 15)) {
     closeMode = 3
     popMode = 2
@@ -2364,8 +2410,12 @@ mod closeAction() {
   if closeMode == 1 {
     // ')' close: top must be a call or group marker
     let mk = opTopKind()
-    if mk == 2 {
+    if mk == 2 || mk == 9 {
+      // kind 9 is a method call: obj:m(a) is obj.m(obj, a), so the receiver
+      // already sits in the first argument slot and nargs counts from there
+      let isMethod = mk == 9
       let fr = opA[opA.length() - 1]
+      // a method call starts its count at one: the receiver is argument one
       let nargs = opB[opB.length() - 1]
       let depth = opC[opC.length() - 1]
       opKind.pop()
@@ -2374,10 +2424,16 @@ mod closeAction() {
       opB.pop()
       opC.pop()
       if valStk.length() == depth {
-        if nargs == 0 {
+        if nargs == 0 && !isMethod {
           let p = bEmit(23, fr, 0, 0)
           lastCallPos = p
           bumpMax(fr + 2)
+          rewindTo(fr + 1)
+        } else if isMethod && nargs == 1 {
+          // obj:m() with no arguments: the receiver is already the first one
+          let p = bEmit(23, fr, 1, 0)
+          lastCallPos = p
+          bumpMax(fr + 3)
           rewindTo(fr + 1)
         } else {
           perr = true
@@ -2427,7 +2483,7 @@ mod closeAction() {
     // ',' arg boundary (with call marker) or plain unit terminator.
     // Terminated units are validated by doCont / the statement level.
     let mk = opTopKind()
-    if closeTrig == 1 && mk == 2 {
+    if closeTrig == 1 && (mk == 2 || mk == 9) {
       let fr = opA[opA.length() - 1]
       let nargs = opB[opB.length() - 1]
       let depth = opC[opC.length() - 1]
@@ -2643,6 +2699,8 @@ var ctlLoop: int = -1
 var pdHead: int = -1
 var pdThen: int = 0
 var tmpSStk: string[]
+// field name of a `function M.f()` definition, popped when its body closes
+var fnKey: string[]
 var funcEntryLoc: int[]
 var pDone: bool = false
 
@@ -3205,7 +3263,8 @@ mod funcHead(islocal: bool, resume: int, fr: int) {
   } else if islocal {
     pushCtl(3, fid, skip, 0, ctlLoop, 1, 0)
   } else {
-    pushCtl(3, fid, skip, 0, ctlLoop, 0, 0)
+    // fr is 0 for a plain global function, or table-register+1 for `function M.f`
+    pushCtl(3, fid, skip, 0, ctlLoop, fr, 0)
   }
   ctlG[ctlG.length() - 1] = stState
   tmpSStk.push(tmpS)
@@ -3227,6 +3286,12 @@ mod funcHead(islocal: bool, resume: int, fr: int) {
 // stState 20: parameter list.  `...` may appear last and makes the function
 // variadic: extra arguments land in the vararg stack (fVar marks the fid).
 mod funcParams() {
+  // `function M:f(a)` puts M in the first parameter slot, so `self` has to be
+  // the first local or every parameter shifts by one
+  if fnSelfArg[fnDepth] {
+    fnSelfArg[fnDepth] = false
+    locDeclare("self")
+  }
   if curKind() == 5 && curSub() == 32 {
     cpos = cpos + 1
     fVar[tmpB] = true
@@ -3434,6 +3499,19 @@ mod doBlockClose() {
       } else if extra == 1 {
         let outer = locDeclare(tmpS)
         bEmit(25, outer, fid, 0)
+      } else if extra >= 2 {
+        // function M.f(): the table register is extra-2, the field name the
+        // one the header pushed
+        let fr = regAlloc()
+        bEmit(25, fr, fid, 0)
+        // fnKey holds the field NAME, so it still needs interning: passing the
+        // name itself loaded whichever string const came first, which is how
+        // `function M.f` worked only until the program had another string
+        let nm = cStr(fnKey.pop().Value)
+        let kr = regAlloc()
+        bEmit(3, kr, nm, 0)
+        bEmit(30, extra - 2, kr, fr)
+        bumpMax(fr + 2)
       } else {
         let fr = regAlloc()
         bEmit(25, fr, fid, 0)
@@ -3525,7 +3603,28 @@ mod stmtDispatch() {
     if curKind() == 3 {
       tmpS = curStr()
       cpos = cpos + 1
-      funcHead(false, 0, 0)
+      if curKind() == 5 && (curSub() == 23 || curSub() == 31) && nextKind() == 3 {
+        // function M.f(...) is M.f = function(...): keep the table in a
+        // register and store the function into the field when the body ends.
+        // With ':' the field name is a method, so the receiver is parameter one.
+        let isMethod = curSub() == 31
+        let tr = regAlloc()
+        locFind(tmpS)
+        if lkKind == 1 {
+          bEmit(7, tr, lkReg, 0)
+        } else {
+          bEmit(5, tr, gDeclare(tmpS), 0)
+        }
+        let field = curStrAhead()
+        fnKey.push(field)
+        cpos = cpos + 2
+        funcHead(false, 0, tr + 2)
+        if isMethod {
+          fnSelfArg[fnDepth] = true
+        }
+      } else {
+        funcHead(false, 0, 0)
+      }
     } else {
       perr = true
       perrMsg = "expected name after function"
@@ -4987,7 +5086,24 @@ mod vmStep() {
       }
     } else if op == 29 {
       let kt = keyTag(vTag(c), vNum(c))
-      if vTag(b) != 5 {
+      if vTag(b) == 2 {
+        // Indexing a string reaches the string library, the way PUC Lua's
+        // string metatable does.  This is what makes s:upper() work without
+        // metatables.  The table is looked up here rather than cached: the
+        // library creates it while the program runs, so a cached id would be
+        // resolved before it exists.
+        let sr = gmap.get("string")
+        if kt == 2 && sr.Found && gtag[sr.Value] == 5 {
+          let r = tmap.get(tkey(toInt(gnum[sr.Value]), kt, vNum(c), vStr(c)))
+          if r.Found {
+            vSet(a, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
+          } else {
+            vSet(a, 0, 0.0, "")
+          }
+        } else {
+          vSet(a, 0, 0.0, "")
+        }
+      } else if vTag(b) != 5 {
         vmFail("attempt to index a non-table value")
       } else if kt == 0 || (kt == 1 && vNum(c) != floor(vNum(c))) {
         vSet(a, 0, 0.0, "")
@@ -5201,23 +5317,37 @@ mod srcUses(p: string, name: string) -> bool {
   return p.Find(name, true, 0) >= 0
 }
 
+// Library selection keys on the FIELD name, not on how the program spells it:
+// `s:upper()` never writes "string.upper", so matching the dotted form alone
+// left the string table unbuilt and the method call nil.  A colon is the
+// method-call signal; a match inside a string or comment only costs a piece
+// that goes unused.
+mod srcUsesField(p: string, name: string) -> bool {
+  let dotted = "string." .. name
+  let colon = ":" .. name
+  return srcUses(p, dotted) || srcUses(p, colon)
+}
+
 mod libIter(p: string) -> string {
   return if srcUses(p, "ipairs") || srcUses(p, "pairs") then LIB_iter else ""
 }
 
 mod libStrIndex(p: string) -> string {
   return if srcUses(p, "string.len") || srcUses(p, "string.sub")
-      || srcUses(p, "string.byte") || srcUses(p, "string.char")
+      || srcUsesField(p, "len") || srcUsesField(p, "sub")
+      || srcUsesField(p, "byte") || srcUsesField(p, "char")
       then LIB_str_index else ""
 }
 
 mod libStrCase(p: string) -> string {
   return if srcUses(p, "string.upper") || srcUses(p, "string.lower")
+      || srcUsesField(p, "upper") || srcUsesField(p, "lower")
       then LIB_str_case else ""
 }
 
 mod libStrMisc(p: string) -> string {
   return if srcUses(p, "string.rep") || srcUses(p, "string.reverse")
+      || srcUsesField(p, "rep") || srcUsesField(p, "reverse")
       then LIB_str_misc else ""
 }
 
@@ -5231,6 +5361,9 @@ mod libMathInt(p: string) -> string {
   return if srcUses(p, "math.floor") || srcUses(p, "math.ceil")
       || srcUses(p, "math.tointeger") || srcUses(p, "math.type")
       || srcUses(p, "math.abs") || srcUses(p, "math.sqrt")
+      || srcUsesField(p, "floor") || srcUsesField(p, "ceil")
+      || srcUsesField(p, "abs") || srcUsesField(p, "sqrt")
+      || srcUsesField(p, "tointeger") || srcUsesField(p, "type")
       then LIB_math_int else ""
 }
 
@@ -5238,22 +5371,29 @@ mod libMathTrig(p: string) -> string {
   return if srcUses(p, "math.sin") || srcUses(p, "math.cos")
       || srcUses(p, "math.tan") || srcUses(p, "math.asin")
       || srcUses(p, "math.acos") || srcUses(p, "math.atan")
+      || srcUsesField(p, "sin") || srcUsesField(p, "cos")
+      || srcUsesField(p, "tan") || srcUsesField(p, "asin")
+      || srcUsesField(p, "acos") || srcUsesField(p, "atan")
       then LIB_math_trig else ""
 }
 
 mod libMathExp(p: string) -> string {
   return if srcUses(p, "math.exp") || srcUses(p, "math.log")
+      || srcUsesField(p, "exp") || srcUsesField(p, "log")
       then LIB_math_exp else ""
 }
 
 mod libMathMisc(p: string) -> string {
   return if srcUses(p, "math.max") || srcUses(p, "math.min")
       || srcUses(p, "math.fmod") || srcUses(p, "math.modf")
+      || srcUsesField(p, "max") || srcUsesField(p, "min")
+      || srcUsesField(p, "fmod") || srcUsesField(p, "modf")
       then LIB_math_misc else ""
 }
 
 mod libTabIns(p: string) -> string {
   return if srcUses(p, "table.insert") || srcUses(p, "table.remove")
+      || srcUses(p, ":insert") || srcUses(p, ":remove")
       then LIB_tab_ins else ""
 }
 

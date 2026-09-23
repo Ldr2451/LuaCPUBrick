@@ -1,11 +1,8 @@
 import sys, os
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'irrun'))
-from irdump import dump_source
-from irsims import Sim, Wire, ChipRunner
+from chipdiff import report
 from timing import Elapsed
-import lua_oracle as OR
 
 CASES = [
     'function f() return 1, 2 end print(f())',
@@ -32,33 +29,6 @@ CASES = [
     'function f() return 1, 2 end print(select and 1 or 2)',
 ]
 
-_RUNNER = None
-
-def chip(src, ticks=6000):
-    global _RUNNER
-    if _RUNNER is None:
-        _RUNNER = ChipRunner(os.path.join(os.path.dirname(HERE), 'lua.ws'))
-    r = _RUNNER.run(src, ticks)
-    return r.get('log', ''), r.get('outGlobals', {})
-
-ok = fail = 0
 with Elapsed('multi_check'):
-    for src in CASES:
-        o = OR.oracle_run(src)
-        if not o.get("avail"):
-            want = "<oracle unavailable>"
-        elif o.get("calls") is None:
-            want = f"<oracle: {o.get('stderr')}>"
-        else:
-            want = OR.oracle_log(o["calls"])
-        try:
-            got, og = chip(src)
-            err = og.get('err', '')
-        except Exception as e:
-            got, err = f"<sim error: {e}>", ''
-        good = got == want
-        ok += good
-        fail += not good
-        print(f"{'OK ' if good else 'FAIL'} chip={got!r} lua={want!r} "
-              f"err={err!r} :: {src}", flush=True)
-print(f"\nOK={ok} FAIL={fail}")
+    FAILS = report(CASES, 'multi_check')
+sys.exit(1 if FAILS else 0)

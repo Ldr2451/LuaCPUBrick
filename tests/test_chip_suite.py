@@ -3,9 +3,9 @@ compiled chip (tick sim, timeout-bounded worker subprocess) and against the
 real Lua 5.5 oracle. No Python model in the loop.
 
 Usage:
-  python -u tinylua/tests/test_chip_suite.py [filter]  # cases whose name contains filter
-  python -u tinylua/tests/test_chip_suite.py --list    # list case names
-  Append --ws=PATH to test a different chip source instead of tinylua/lua.ws.
+  python -u tests/test_chip_suite.py [filter]  # cases whose name contains filter
+  python -u tests/test_chip_suite.py --list    # list case names
+  Append --ws=PATH to test a different chip source instead of lua.ws.
 
 Every case runs unless a filter narrows it down.  Cases are grouped into
 batches (CHIP_BATCH, default 12) and each batch runs in one worker process, so
