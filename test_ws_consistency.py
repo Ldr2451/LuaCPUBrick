@@ -146,11 +146,12 @@ handled = set(int(x) for x in re.findall(r"op == (\d+)", vm))
 if re.search(r"op >= 8 && op <= 13", vm):
     handled |= set(range(8, 14))
 emitted = set(int(x) for x in re.findall(r"bEmit\((\d+)", WS))
-check("opcodes-0-42-handled", handled >= set(range(43)),
-      f"missing {[o for o in range(43) if o not in handled]}")
-check("no-op-43", max(emitted | {0}) <= 42,
+check("opcodes-0-44-handled", handled >= set(range(45)),
+      f"missing {[o for o in range(45) if o not in handled]}")
+check("no-op-45", max(emitted | {0}) <= 44,
       f"max emitted {max(emitted)}")
-check("spec-43-ops", m.N_OPS == 43 and m.HALT == 0 and m.RETURNM == 42 and m.CALLM == 41)
+check("spec-45-ops", m.N_OPS == 45 and m.HALT == 0 and m.RETURNM == 42
+      and m.CALLM == 41 and m.ADJUST == 43 and m.TAPPEND == 44)
 
 # 7. keyword coverage --------------------------------------------------------
 model_kw = set(m.KEYWORDS)

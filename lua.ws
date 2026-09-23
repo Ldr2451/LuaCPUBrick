@@ -155,6 +155,9 @@ const MAX_GLOBALS = 64
 const MAX_CALLS = 32
 const MAX_TABLES = 64
 const MAX_HEAP = 512
+// most values one call/return/statement can carry (matches MAX_INSTR-style
+// unrolling in retAdjust and the return paths)
+const MAXVALS = 16
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -926,6 +929,76 @@ mod bEmit(op: int, a: int, b: int, c: int) -> int {
 }
 
 var lastPatchTarget: int = -1
+// Position of the most recently emitted CALL whose result count is still
+// undecided.  Lua only expands a call's results when the call sits in the LAST
+// argument position of an enclosing call (or feeds a fixed-arity target list),
+// and that is not known when the call itself closes: `f()` ends before the
+// enclosing `print(...)` does.  So record the call, then patch its C operand to
+// 1 once we learn it was in tail position.
+var lastCallPos: int = -1
+// Position of the CALL that produced the value currently in presReg, or -1 if
+// that value is not a call.  It outlives lastCallPos (which only tracks the
+// most recent emission) so the consumers of a finished value — `return f()`,
+// a target list, a constructor's last element — can still mark the call as
+// returning all of its results.
+var presCallPos: int = -1
+
+mod patchAt(pos: int) {
+  if pos >= 0 && pos < bpc.length() {
+    // bit 1 (value 2): this call returns all of its results
+    bpc[pos] = bpc[pos] + 2
+    // an expanding call may write up to MAXVALS result registers starting at
+    // its base, so the allocator must step over that whole area; otherwise a
+    // later regAlloc (an ADJUST scratch, the next expression) lands on a live
+    // result register
+    let fr = bpa[pos]
+    if cfNext[fnDepth] < fr + MAXVALS {
+      cfNext[fnDepth] = fr + MAXVALS
+      bumpMax(fr + MAXVALS)
+    }
+  }
+}
+
+mod patchMultiTail() {
+  patchAt(lastCallPos)
+  lastCallPos = -1
+}
+
+// A call in the LAST value position of a target list expands into the targets
+// that list still has unfilled: `local a, b = f()` binds b to f's second value
+// (nil when f returned only one).  Mark the call to return everything, then
+// normalise however many values came back into `extra` consecutive registers so
+// the ordinary store machinery can treat them like any other value registers.
+mod expandTailCall() {
+  let extra = tmpNames.length() - tmpRegs.length()
+  if presIsCall && 0 < extra && !perr {
+    if extra > 16 {
+      extra = 16
+    }
+    let callBase = presReg
+    patchAt(presCallPos)
+    let sc = regAlloc()
+    // the first value already sits in tmpRegs; the extras start one past it
+    bEmit(43, callBase + 1, sc, extra)
+    bumpMax(sc + extra)
+    if 1 <= extra { tmpRegs.push(sc) }
+    if 2 <= extra { tmpRegs.push(sc + 1) }
+    if 3 <= extra { tmpRegs.push(sc + 2) }
+    if 4 <= extra { tmpRegs.push(sc + 3) }
+    if 5 <= extra { tmpRegs.push(sc + 4) }
+    if 6 <= extra { tmpRegs.push(sc + 5) }
+    if 7 <= extra { tmpRegs.push(sc + 6) }
+    if 8 <= extra { tmpRegs.push(sc + 7) }
+    if 9 <= extra { tmpRegs.push(sc + 8) }
+    if 10 <= extra { tmpRegs.push(sc + 9) }
+    if 11 <= extra { tmpRegs.push(sc + 10) }
+    if 12 <= extra { tmpRegs.push(sc + 11) }
+    if 13 <= extra { tmpRegs.push(sc + 12) }
+    if 14 <= extra { tmpRegs.push(sc + 13) }
+    if 15 <= extra { tmpRegs.push(sc + 14) }
+    if 16 <= extra { tmpRegs.push(sc + 15) }
+  }
+}
 
 mod bPatch(pos: int, target: int) {
   bpa[pos] = target
@@ -988,6 +1061,8 @@ mod parseInit() {
   lerrLine = 1
   lline = 1
   lastPatchTarget = -1
+  lastCallPos = -1
+  presCallPos = -1
   bop.clear()
   bpa.clear()
   bpb.clear()
@@ -1712,20 +1787,30 @@ mod applyPop() {
 }
 
 // Finish one constructor element: the value sits on valStk above the frame.
-mod finishCtorElem() {
+// isLast marks the element closed by '}' — a call there expands, so its results
+// all land in the table (Lua expands a call only in the final list position).
+mod finishCtorElem(isLast: bool) {
+  let wasCall = topFlag()
   let v = popVal()
   let tr = opA[opA.length() - 1]
   let kr = opB[opB.length() - 1]
   if kr == -1 {
-    let idx = opPrec[opPrec.length() - 1] + 1
-    opPrec[opPrec.length() - 1] = idx
-    let kk = regAlloc()
-    bEmit(2, kk, cNum(idx + 0.0), 1)
-    bEmit(30, tr, kk, v)
+    if isLast && wasCall {
+      patchAt(lastCallPos)
+      bEmit(44, tr, v, MAXVALS)
+      opPrec[opPrec.length() - 1] = opPrec[opPrec.length() - 1] + MAXVALS
+    } else {
+      let idx = opPrec[opPrec.length() - 1] + 1
+      opPrec[opPrec.length() - 1] = idx
+      let kk = regAlloc()
+      bEmit(2, kk, cNum(idx + 0.0), 1)
+      bEmit(30, tr, kk, v)
+    }
   } else {
     bEmit(30, tr, kr, v)
     opB[opB.length() - 1] = -1
   }
+  lastCallPos = -1
   cfNext[fnDepth] = tr + 1
 }
 
@@ -2143,7 +2228,8 @@ mod closeAction() {
       opC.pop()
       if valStk.length() == depth {
         if nargs == 0 {
-          bEmit(23, fr, 0, if topFlag() then 1 else 0)
+          let p = bEmit(23, fr, 0, 0)
+          lastCallPos = p
           bumpMax(fr + 2)
           cfNext[fnDepth] = fr + 1
         } else {
@@ -2155,7 +2241,13 @@ mod closeAction() {
         let arg = popVal()
         bEmit(7, fr + 1 + nargs, arg, 0)
         cfNext[fnDepth] = fr + nargs + 2
-        bEmit(23, fr, nargs + 1, if wasCall then 1 else 0)
+        // this argument is the last one of the call being closed, so a call
+        // used as that argument expands all of its results
+        if wasCall {
+          patchMultiTail()
+        }
+        let p = bEmit(23, fr, nargs + 1, if wasCall then 1 else 0)
+        lastCallPos = p
         bumpMax(fr + nargs + 3)
         cfNext[fnDepth] = fr + 1
       }
@@ -2200,6 +2292,9 @@ mod closeAction() {
         bEmit(7, fr + 1 + nargs, arg, 0)
         cfNext[fnDepth] = fr + nargs + 2
         opB[opB.length() - 1] = nargs + 1
+        // another argument follows, so a call just consumed here is not in
+        // tail position and yields exactly one value
+        lastCallPos = -1
       }
       cpos = cpos + 1
       expectOperand = true
@@ -2209,7 +2304,7 @@ mod closeAction() {
         perr = true
         perrMsg = "expected table element"
       } else {
-        finishCtorElem()
+        finishCtorElem(false)
       }
       cpos = cpos + 1
       expectOperand = true
@@ -2222,6 +2317,7 @@ mod closeAction() {
       perrMsg = "missing expression"
     } else {
       presIsCall = topFlag()
+      presCallPos = if presIsCall then lastCallPos else -1
       presReg = popVal()
       exprDone = true
       closeMode = 0
@@ -2237,7 +2333,9 @@ mod closeAction() {
       perrMsg = "missing expression"
     } else {
       presIsCall = topFlag()
+      presCallPos = if presIsCall then lastCallPos else -1
       presReg = popVal()
+      lastCallPos = -1
       exprDone = true
       closeMode = 0
     }
@@ -2245,7 +2343,7 @@ mod closeAction() {
     // '}' close: finish the last element, then leave the table as the value
     if opTopKind() == 6 {
       if valStk.length() > opC[opC.length() - 1] {
-        finishCtorElem()
+        finishCtorElem(true)
       } else if opB[opB.length() - 1] != -1 {
         perr = true
         perrMsg = "expected value after ="
@@ -2528,6 +2626,8 @@ mod doCont() {
       tmpRegs.push(presReg)
       startUnit(14)
     } else if presIsCall {
+      // `return f()` forwards all of f's values, so let the call expand
+      patchAt(presCallPos)
       bEmit(27, presReg, 0, 0)
       inExpr = false
       contKind = 0
@@ -2608,12 +2708,10 @@ mod doCont() {
           bEmit(7, br + 1, tmpRegs[1], 0)
         }
         bEmit(7, br, tmpRegs[0], 0)
+        bEmit(42, br, n, 0)
+        inExpr = false
+        contKind = 0
       }
-      if !perr {
-        bEmit(42, br, tmpRegs.length(), 0)
-      }
-      inExpr = false
-      contKind = 0
     }
   } else if contKind == 6 {
     tmpRegs.push(presReg)
@@ -2621,6 +2719,7 @@ mod doCont() {
       cpos = cpos + 1
       startUnit(6)
     } else {
+      expandTailCall()
       tmpA = 0
       stState = 12
       inExpr = false
@@ -2678,7 +2777,10 @@ mod doCont() {
       contKind = 0
     }
   } else if contKind == 7 {
-    if tmpNames.length() > 1 {
+    if tmpNames.length() > 1 && !presIsCall {
+      // right-to-left stores can overwrite a value register, so keep a copy.
+      // A call needs no copy: expandTailCall relocates the extra results into
+      // fresh registers before any store runs.
       let z = regAlloc()
       bEmit(7, z, presReg, 0)
       tmpRegs.push(z)
@@ -2689,6 +2791,7 @@ mod doCont() {
       cpos = cpos + 1
       startUnit(7)
     } else {
+      expandTailCall()
       // stores run right to left (like PUC Lua), so the last target wins
       tmpA = tmpNames.length() - 1
       stState = 13
@@ -3252,6 +3355,7 @@ var fBase: int[]
 var fRetA: int[]
 var fRetBase: int[]
 var fRetPC: int[]
+var fRetN: int[]
 var gtag: int[]
 var gnum: float[]
 var gstr: string[]
@@ -3305,23 +3409,27 @@ mod vStr(r: int) -> string {
   return vstr[vmBase + r]
 }
 
+// Move a call's results across the frame boundary: copy k values from the
+// callee's frame (absolute src) into the caller's (absolute dst), then nil-fill
+// up to n so a fixed-arity caller sees nil for values the callee did not return.
+// k values are the ones actually produced; n is what the caller asked for.
 mod retAdjust(src: int, dst: int, k: int, n: int) {
-  if 1 <= k { vSet(dst, vTag(src), vNum(src), vStr(src)) }
-  if 2 <= k { vSet(dst+1, vTag(src+1), vNum(src+1), vStr(src+1)) }
-  if 3 <= k { vSet(dst+2, vTag(src+2), vNum(src+2), vStr(src+2)) }
-  if 4 <= k { vSet(dst+3, vTag(src+3), vNum(src+3), vStr(src+3)) }
-  if 5 <= k { vSet(dst+4, vTag(src+4), vNum(src+4), vStr(src+4)) }
-  if 6 <= k { vSet(dst+5, vTag(src+5), vNum(src+5), vStr(src+5)) }
-  if 7 <= k { vSet(dst+6, vTag(src+6), vNum(src+6), vStr(src+6)) }
-  if 8 <= k { vSet(dst+7, vTag(src+7), vNum(src+7), vStr(src+7)) }
-  if 9 <= k { vSet(dst+8, vTag(src+8), vNum(src+8), vStr(src+8)) }
-  if 10 <= k { vSet(dst+9, vTag(src+9), vNum(src+9), vStr(src+9)) }
-  if 11 <= k { vSet(dst+10, vTag(src+10), vNum(src+10), vStr(src+10)) }
-  if 12 <= k { vSet(dst+11, vTag(src+11), vNum(src+11), vStr(src+11)) }
-  if 13 <= k { vSet(dst+12, vTag(src+12), vNum(src+12), vStr(src+12)) }
-  if 14 <= k { vSet(dst+13, vTag(src+13), vNum(src+13), vStr(src+13)) }
-  if 15 <= k { vSet(dst+14, vTag(src+14), vNum(src+14), vStr(src+14)) }
-  if 16 <= k { vSet(dst+15, vTag(src+15), vNum(src+15), vStr(src+15)) }
+  if 1 <= k { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] } else if 1 <= n { vtag[dst] = 0 vnum[dst] = 0.0 vstr[dst] = "" }
+  if 2 <= k { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] } else if 2 <= n { vtag[dst+1] = 0 vnum[dst+1] = 0.0 vstr[dst+1] = "" }
+  if 3 <= k { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] } else if 3 <= n { vtag[dst+2] = 0 vnum[dst+2] = 0.0 vstr[dst+2] = "" }
+  if 4 <= k { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] } else if 4 <= n { vtag[dst+3] = 0 vnum[dst+3] = 0.0 vstr[dst+3] = "" }
+  if 5 <= k { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] } else if 5 <= n { vtag[dst+4] = 0 vnum[dst+4] = 0.0 vstr[dst+4] = "" }
+  if 6 <= k { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] } else if 6 <= n { vtag[dst+5] = 0 vnum[dst+5] = 0.0 vstr[dst+5] = "" }
+  if 7 <= k { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] } else if 7 <= n { vtag[dst+6] = 0 vnum[dst+6] = 0.0 vstr[dst+6] = "" }
+  if 8 <= k { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] } else if 8 <= n { vtag[dst+7] = 0 vnum[dst+7] = 0.0 vstr[dst+7] = "" }
+  if 9 <= k { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] } else if 9 <= n { vtag[dst+8] = 0 vnum[dst+8] = 0.0 vstr[dst+8] = "" }
+  if 10 <= k { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] } else if 10 <= n { vtag[dst+9] = 0 vnum[dst+9] = 0.0 vstr[dst+9] = "" }
+  if 11 <= k { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] } else if 11 <= n { vtag[dst+10] = 0 vnum[dst+10] = 0.0 vstr[dst+10] = "" }
+  if 12 <= k { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] } else if 12 <= n { vtag[dst+11] = 0 vnum[dst+11] = 0.0 vstr[dst+11] = "" }
+  if 13 <= k { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] } else if 13 <= n { vtag[dst+12] = 0 vnum[dst+12] = 0.0 vstr[dst+12] = "" }
+  if 14 <= k { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] } else if 14 <= n { vtag[dst+13] = 0 vnum[dst+13] = 0.0 vstr[dst+13] = "" }
+  if 15 <= k { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] } else if 15 <= n { vtag[dst+14] = 0 vnum[dst+14] = 0.0 vstr[dst+14] = "" }
+  if 16 <= k { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] } else if 16 <= n { vtag[dst+15] = 0 vnum[dst+15] = 0.0 vstr[dst+15] = "" }
 }
 
 mod vSet(r: int, tag: int, num: float, s: string) {
@@ -3387,6 +3495,7 @@ mod vmReset() {
   fRetA.clear()
   fRetBase.clear()
   fRetPC.clear()
+  fRetN.clear()
   gtag.clear()
   gnum.clear()
   gstr.clear()
@@ -3437,6 +3546,7 @@ mod vmReset() {
   fRetA.push(-1)
   fRetBase.push(0)
   fRetPC.push(-1)
+  fRetN.push(-1)
 }
 
 mod vmFail(msg: string) {
@@ -3561,6 +3671,51 @@ mod lenStep() {
   } else {
     lenChase = false
   }
+}
+
+// One table store from raw values; false means the store failed (error already
+// raised).  Shared by SETFIELD and by TAPPEND's unrolled ladder.
+mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: string) -> bool {
+  let key = tkey(tid, kt, kn, ks)
+  let r = tmap.get(key)
+  let kint = toInt(kn)
+  if vt == 0 {
+    if r.Found {
+      tmap.remove(key)
+      tFree.push(r.Value)
+      if kt == 6 && kint == tLen[tid] {
+        tLen[tid] = kint - 1
+      }
+    }
+  } else {
+    var sl = 0
+    if r.Found {
+      sl = r.Value
+    } else if tFree.length() > 0 {
+      sl = tFree.pop().Value
+    } else {
+      sl = tHeap
+      tHeap = tHeap + 1
+    }
+    if sl >= MAX_HEAP {
+      vmFail("out of table memory")
+      return false
+    }
+    tvTag[sl] = vt
+    tvNum[sl] = vn
+    tvStr[sl] = vs
+    if !r.Found {
+      tmap.set(key, sl)
+      if kt == 6 && kint == tLen[tid] + 1 {
+        tLen[tid] = kint
+        if tmap.has(tid .. "#" .. (kint + 1)) {
+          lenChase = true
+          lenTid = tid
+        }
+      }
+    }
+  }
+  return true
 }
 
 mod vmStep() {
@@ -3747,13 +3902,22 @@ mod vmStep() {
         vmPc = a
         advanced = true
       }
-    } else if op == 23 {
+    } else if op == 23 || op == 41 {
       if vTag(a) != 4 {
         vmFail("attempt to call")
       } else {
         let fid = toInt(vNum(a))
-        let multitail = if c == 1 then true else false
-        let nargs = if multitail then (b - 1) + (if retCountV == 1 then 1 else 0) else b
+        // C operand bits: 1 = my last argument is an expanding call (so the
+        // arg count is one short and the tail's own count is added at run
+        // time); 2 = I return all of my results, not just one.  Both can be
+        // set (3) when a call is both the tail of an enclosing call and itself
+        // expanded into a target list.
+        let mtArg = if c == 1 || c == 3 then true else false
+        let mtSelf = if c == 2 || c == 3 || op == 41 then true else false
+        // a tail argument's call already ran and reported how many values it
+        // produced; the enclosing call counts those in place of its last arg
+        let tailN = if mtArg then (if 0 <= retCountV then retCountV else 0) else 0
+        let nargs = if mtArg && 0 < b then (b - 1) + tailN else b
         if fid == 0 {
           if nargs > 16 {
             vmFail("too many print args (max 16)")
@@ -3889,22 +4053,13 @@ mod vmStep() {
               fRetA.push(a)
               fRetBase.push(vmBase)
               fRetPC.push(vmPc + 1)
+              fRetN.push(if mtSelf then -2 else 1)
               vmBase = nbase
               vmPc = fStart[fid]
               advanced = true
             }
           }
         }
-      }
-    } else if op == 41 {
-      let fid = toInt(vNum(a))
-      let mt = c == 1
-      let nargs = if mt then (b - 1) + (if retCountV == 1 then 1 else 0) else b
-      if fid <= 7 {
-        if nargs > 16 { vmFail("too many args") } else { vmFail("not implemented") }
-      } else {
-        userCall(a, fid, nargs, -1)
-        advanced = true
       }
     } else if op == 24 {
       let rv = vTag(a)
@@ -3918,6 +4073,7 @@ mod vmStep() {
       fRetA.pop()
       fRetBase.pop()
       fRetPC.pop()
+      fRetN.pop()
       if fFunc.length() == 0 {
         resultV = fmtVal(rv, rn, rs)
         vmHalted = true
@@ -3937,6 +4093,7 @@ mod vmStep() {
       fRetA.pop()
       fRetBase.pop()
       fRetPC.pop()
+      fRetN.pop()
       if fFunc.length() == 0 {
         resultV = ""
         vmHalted = true
@@ -3951,6 +4108,9 @@ mod vmStep() {
       if retCountV == -1 {
         retCountV = 1
       }
+      // a tail `return f()` forwards every value f produced, bounded by what
+      // this frame's own caller asked for
+      let want = fRetN[fRetN.length() - 1]
       let rv = vTag(a)
       let rn = vNum(a)
       let rs = vStr(a)
@@ -3962,23 +4122,41 @@ mod vmStep() {
       fRetA.pop()
       fRetBase.pop()
       fRetPC.pop()
+      fRetN.pop()
+      let have = if 0 <= retCountV then retCountV else 0
+      let n = if want == -2 then have else 1
+      let k = if have < n then have else n
       if fFunc.length() == 0 {
-        if retCountV == 1 {
+        if 1 <= k {
           resultV = fmtVal(rv, rn, rs)
         } else {
           resultV = ""
         }
         vmHalted = true
       } else {
-        if retCountV == 1 {
+        if want == -2 {
+          // forward every value the call produced (absolute indices, so this
+          // runs before the frame switch below)
+          retAdjust(vmBase + a, rb + ra, k, n)
+        } else if 1 <= k {
           vmBase = rb
           vSet(ra, rv, rn, rs)
         } else {
           vmBase = rb
+          vSet(ra, 0, 0.0, "")
         }
+        vmBase = rb
         vmPc = rpc
+        retCountV = n
       }
       advanced = true
+    } else if op == 43 {
+      // ADJUST a=src b=dst c=max: normalise the rest of the last call's results
+      // into c consecutive registers.  `a` already points past the first value
+      // (the caller consumed it), so only retCountV-1 values remain to copy.
+      let avail = if 0 < retCountV then retCountV - 1 else 0
+      let n = if avail < c then avail else c
+      retAdjust(vmBase + a, vmBase + b, n, c)
     } else if op == 42 {
       let cnt = b
       if 16 < cnt {
@@ -3987,22 +4165,23 @@ mod vmStep() {
         let ra = fRetA[fRetA.length() - 1]
         let rb = fRetBase[fRetBase.length() - 1]
         let rpc = fRetPC[fRetPC.length() - 1]
+        let want = fRetN[fRetN.length() - 1]
         fFunc.pop()
         fBase.pop()
         fRetA.pop()
         fRetBase.pop()
         fRetPC.pop()
-        let w = fRetN.pop().Value
-        let n = if w == -2 then cnt else if w == -1 then 1 else w
+        fRetN.pop()
+        let n = if want == -2 then cnt else 1
         let k = if cnt < n then cnt else n
         if fFunc.length() == 0 {
           resultV = if 1 <= k then fmtVal(vTag(a), vNum(a), vStr(a)) else ""
           vmHalted = true
         } else {
-          retAdjust(rb + ra, vmBase + a, k, n)
+          retAdjust(vmBase + a, rb + ra, k, n)
           vmBase = rb
           vmPc = rpc
-          retCountV = if w == -2 then cnt else n
+          retCountV = n
         }
       }
       advanced = true
@@ -4032,7 +4211,6 @@ mod vmStep() {
       }
     } else if op == 30 {
       let kt = keyTag(vTag(b), vNum(b))
-      let vt = vTag(c)
       if vTag(a) != 5 {
         vmFail("attempt to index a non-table value")
       } else if kt == 0 {
@@ -4040,46 +4218,35 @@ mod vmStep() {
       } else if kt == 1 && vNum(b) != floor(vNum(b)) {
         vmFail("non-integer number keys are not supported")
       } else {
+        tblSetKey(toInt(vNum(a)), kt, vNum(b), vStr(b), vTag(c), vNum(c), vStr(c))
+      }
+    } else if op == 44 {
+      // TAPPEND a=table b=src c=max: append up to `max` of the last call's
+      // results (registers b..) to the table at consecutive integer keys.  Used
+      // for a call in the last positional slot of a table constructor.
+      if vTag(a) != 5 {
+        vmFail("attempt to index a non-table value")
+      } else {
         let tid = toInt(vNum(a))
-        let key = tkey(tid, kt, vNum(b), vStr(b))
-        let r = tmap.get(key)
-        let kint = toInt(vNum(b))
-        if vt == 0 {
-          if r.Found {
-            tmap.remove(key)
-            tFree.push(r.Value)
-            if kt == 6 && kint == tLen[tid] {
-              tLen[tid] = kint - 1
-            }
-          }
-        } else {
-          var sl = 0
-          if r.Found {
-            sl = r.Value
-          } else if tFree.length() > 0 {
-            sl = tFree.pop().Value
-          } else {
-            sl = tHeap
-            tHeap = tHeap + 1
-          }
-          if sl >= MAX_HEAP {
-            vmFail("out of table memory")
-          } else {
-            tvTag[sl] = vt
-            tvNum[sl] = vNum(c)
-            tvStr[sl] = vStr(c)
-            if !r.Found {
-              tmap.set(key, sl)
-              if kt == 6 && kint == tLen[tid] + 1 {
-                tLen[tid] = kint
-                if tmap.has(tid .. "#" .. (kint + 1)) {
-                  lenChase = true
-                  lenTid = tid
-                }
-              }
-            }
-          }
-        }
+        let start = tLen[tid]
+        let have = if 0 <= retCountV then retCountV else 0
+        let n = if have < c then have else c
+        if 1 <= n { tblSetKey(tid, 6, start + 1.0, "", vTag(b), vNum(b), vStr(b)) }
+        if 2 <= n { tblSetKey(tid, 6, start + 2.0, "", vTag(b+1), vNum(b+1), vStr(b+1)) }
+        if 3 <= n { tblSetKey(tid, 6, start + 3.0, "", vTag(b+2), vNum(b+2), vStr(b+2)) }
+        if 4 <= n { tblSetKey(tid, 6, start + 4.0, "", vTag(b+3), vNum(b+3), vStr(b+3)) }
+        if 5 <= n { tblSetKey(tid, 6, start + 5.0, "", vTag(b+4), vNum(b+4), vStr(b+4)) }
+        if 6 <= n { tblSetKey(tid, 6, start + 6.0, "", vTag(b+5), vNum(b+5), vStr(b+5)) }
+        if 7 <= n { tblSetKey(tid, 6, start + 7.0, "", vTag(b+6), vNum(b+6), vStr(b+6)) }
+        if 8 <= n { tblSetKey(tid, 6, start + 8.0, "", vTag(b+7), vNum(b+7), vStr(b+7)) }
+        if 9 <= n { tblSetKey(tid, 6, start + 9.0, "", vTag(b+8), vNum(b+8), vStr(b+8)) }
+        if 10 <= n { tblSetKey(tid, 6, start + 10.0, "", vTag(b+9), vNum(b+9), vStr(b+9)) }
+        if 11 <= n { tblSetKey(tid, 6, start + 11.0, "", vTag(b+10), vNum(b+10), vStr(b+10)) }
+        if 12 <= n { tblSetKey(tid, 6, start + 12.0, "", vTag(b+11), vNum(b+11), vStr(b+11)) }
+        if 13 <= n { tblSetKey(tid, 6, start + 13.0, "", vTag(b+12), vNum(b+12), vStr(b+12)) }
+        if 14 <= n { tblSetKey(tid, 6, start + 14.0, "", vTag(b+13), vNum(b+13), vStr(b+13)) }
+        if 15 <= n { tblSetKey(tid, 6, start + 15.0, "", vTag(b+14), vNum(b+14), vStr(b+14)) }
+        if 16 <= n { tblSetKey(tid, 6, start + 16.0, "", vTag(b+15), vNum(b+15), vStr(b+15)) }
       }
     } else if op == 31 {
       let bt = vTag(b)

@@ -15,6 +15,7 @@ from typing import Any, Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from irgraph import Graph
 from irdump import dump_source, Node
+import gates as GATES
 
 MAX_TICKS = 5000
 _LOG_LINES = 32
@@ -140,6 +141,18 @@ class Sim:
         self._eval_stack: set[int] = set()
         self._unimpl_warned: set[str] = set()
         self._loglines_id: int | None = None
+        # A compiler `_Unsupported` placeholder is a silent miscompile: it reads
+        # 0 on hardware, so running it produces confidently wrong results (it
+        # once shifted every bytecode operand by one array).  Fail loudly here,
+        # naming the binding, instead of simulating a circuit nobody intended.
+        ph = GATES.placeholder_nodes(self.nodes)
+        if ph:
+            where = ", ".join(f"nid={n}" + (f" ({b})" if b else "") for n, _c, b in ph[:8])
+            raise RuntimeError(
+                "wirescript lowered %d _Unsupported placeholder(s) (%s...): the "
+                "program has a compile error or an expression the compiler "
+                "cannot lower. Fix the source instead of running this."
+                % (len(ph), where))
         for _nid, _nd in self.nodes.items():
             if "ArrayVar" in _nd.cls and _extract(
                     _nd.props.get("_label", ("raw", ""))) == "logLines":
@@ -152,6 +165,9 @@ class Sim:
         )
         self._dirty: set[int] = set(self._pure_ids)
         self.clock_ids: list[int] = []
+        self.tick_delta: int = 1
+        self._queue_carry: dict[int, dict] = {}
+        self._timer_state: dict[int, list] = {}
         for nid, nd in self.nodes.items():
             if nd.cls == "BrickComponentType_Clock":
                 self.clock_ids.append(nid)
@@ -169,10 +185,13 @@ class Sim:
                 if w.src_id not in self.input_ids:
                     self.input_ids.append(w.src_id)
 
-    def run(self, max_ticks: int = MAX_TICKS):
+    def run(self, max_ticks: int = MAX_TICKS, on_tick=None):
         from collections import deque
+        prev = self.tick
         for tick in range(max_ticks):
             self.tick = tick
+            self.tick_delta = max(1, tick - prev)
+            prev = tick
             self.tick_done: set[tuple[int, str]] = set()
             # NOTE: inputs are edge-triggered (like hardware): they fire once
             # from the initial queue. Re-firing them every tick would reset
@@ -230,6 +249,8 @@ class Sim:
                 if guard > 500000:
                     break
             self._deferred = {k: v for k, v in self._deferred.items() if k > tick}
+            if on_tick is not None:
+                on_tick(self, tick)
         return self.capture()
 
     def _run_value_fixpoint(self):
@@ -324,12 +345,16 @@ class Sim:
             if not src:
                 continue
             if "WireGraphPseudo_ArrayVar" in src.cls:
+                # Return the live list, not a copy: gates that only read it
+                # (SourceRef of append/slice/copyFrom) never mutate, and copying
+                # a 512-instruction bytecode array on every read dominated sim
+                # time.  Consumers that write use _arr_list() instead.
                 if w.src_id in self.arrays:
-                    return list(self.arrays[w.src_id])
+                    return self.arrays[w.src_id]
                 return self._default_for(src, w.src_port)
             if "WireGraphPseudo_MapVar" in src.cls:
                 if w.src_id in self.maps:
-                    return dict(self.maps[w.src_id])
+                    return self.maps[w.src_id]
                 return self._default_for(src, w.src_port)
             if "WireGraphPseudo_Var" in src.cls:
                 return self.vars.get(w.src_id, self._default_for(src, w.src_port))
@@ -573,6 +598,154 @@ class Sim:
             self._do_map_has(nid, nq)
         elif "WireGraph_Exec_MapVar_Remove" in cls:
             self._do_map_remove(nid, nq)
+        elif "WireGraph_Exec_ArrayVar_Insert" in cls:
+            self._do_arr_insert(nid, nq)
+        elif "WireGraph_Exec_ArrayVar_Fill" in cls:
+            self._do_arr_fill(nid, nq)
+        elif "WireGraph_Exec_ArrayVar_Reverse" in cls:
+            self._do_arr_reverse(nid, nq)
+        elif "WireGraph_Exec_ArrayVar_Shuffle" in cls:
+            self._do_arr_shuffle(nid, nq)
+        elif "WireGraph_Exec_ArrayVar_Sort" in cls:
+            self._do_arr_sort(nid, nq)
+        elif "WireGraph_Exec_ArrayVar_SortMultiple" in cls:
+            self._do_arr_sort_multiple(nid, nq)
+        elif "WireGraph_Exec_ArrayVar_Sum" in cls:
+            self._do_arr_reduce(nid, nq, "sum")
+        elif "WireGraph_Exec_ArrayVar_Average" in cls:
+            self._do_arr_reduce(nid, nq, "average")
+        elif "WireGraph_Exec_ArrayVar_Max" in cls:
+            self._do_arr_reduce(nid, nq, "max")
+        elif "WireGraph_Exec_ArrayVar_Min" in cls:
+            self._do_arr_reduce(nid, nq, "min")
+        elif "WireGraph_Exec_ArrayVar_Swap" in cls:
+            self._do_arr_swap(nid, nq)
+        elif "WireGraph_Exec_MapVar_GetValues" in cls:
+            self._do_map_values(nid, nq)
+        elif "WireGraph_Expr_String_EndsWith" in cls:
+            self._do_endswith(nid, nq)
+        elif "WireGraph_Expr_String_ToLower" in cls:
+            self._out_val(nid, "Output", _as_str(self._in_val(nid, "Input", "")).lower())
+        elif "WireGraph_Expr_String_ToUpper" in cls:
+            self._out_val(nid, "Output", _as_str(self._in_val(nid, "Input", "")).upper())
+        elif "WireGraph_Expr_String_FormatText" in cls:
+            self._do_formattext(nid, nq)
+        elif "Expr_MathModuloFloored" in cls:
+            self._do_modulo(nid, nq, True)
+        elif "Expr_MathModulo" in cls:
+            self._do_modulo(nid, nq, False)
+        elif "Expr_MathClamp" in cls:
+            v = _as_float(self._in_val(nid, "Input", 0))
+            lo = _as_float(self._in_val(nid, "Min", 0))
+            hi = _as_float(self._in_val(nid, "Max", 0))
+            self._out_val(nid, "Output", max(lo, min(hi, v)))
+        elif "Expr_MathMax" in cls:
+            self._out_val(nid, "Output", max(_as_float(self._in_val(nid, "InputA", 0)),
+                                             _as_float(self._in_val(nid, "InputB", 0))))
+        elif "Expr_MathMin" in cls:
+            self._out_val(nid, "Output", min(_as_float(self._in_val(nid, "InputA", 0)),
+                                             _as_float(self._in_val(nid, "InputB", 0))))
+        elif "Expr_MathLn" in cls:
+            x = _as_float(self._in_val(nid, "Input", 1))
+            self._out_val(nid, "Output", math.log(x) if x > 0 else 0.0)
+        elif "Expr_MathLogBase" in cls:
+            x = _as_float(self._in_val(nid, "Input", 1))
+            b = _as_float(self._in_val(nid, "Base", 10))
+            self._out_val(nid, "Output", math.log(x, b) if x > 0 and b > 0 and b != 1 else 0.0)
+        elif "Expr_MathSign" in cls or "Expr_MathSgn" in cls:
+            x = _as_float(self._in_val(nid, "Input", 0))
+            self._out_val(nid, "Output", 0.0 if x == 0 else (1.0 if x > 0 else -1.0))
+        elif "Expr_MathAtan" in cls:
+            self._do_unary(nid, nq, math.atan)
+        elif "Expr_MathSinh" in cls:
+            self._do_unary(nid, nq, math.sinh)
+        elif "Expr_MathCosh" in cls:
+            self._do_unary(nid, nq, math.cosh)
+        elif "Expr_MathTanh" in cls:
+            self._do_unary(nid, nq, math.tanh)
+        elif "Expr_MathAsinh" in cls:
+            self._do_unary(nid, nq, math.asinh)
+        elif "Expr_MathAcosh" in cls:
+            self._do_unary(nid, nq, lambda v: math.acosh(v) if v >= 1 else 0.0)
+        elif "Expr_MathAtanh" in cls:
+            self._do_unary(nid, nq, lambda v: math.atanh(v) if -1 < v < 1 else 0.0)
+        elif "Expr_MathDegreesToRadians" in cls:
+            self._do_unary(nid, nq, math.radians)
+        elif "Expr_MathRadiansToDegrees" in cls:
+            self._do_unary(nid, nq, math.degrees)
+        elif "Expr_MathBlend" in cls:
+            a = _as_float(self._in_val(nid, "InputA", 0))
+            b = _as_float(self._in_val(nid, "InputB", 0))
+            t = _as_float(self._in_val(nid, "Blend", 0))
+            self._out_val(nid, "Output", a + (b - a) * t)
+        elif "Expr_MathEasing" in cls:
+            self._do_easing(nid, nq)
+        elif "Expr_MathCeil" in cls:
+            self._do_unary(nid, nq, lambda v: float(math.ceil(v)))
+        elif "Expr_MathTrunc" in cls:
+            self._do_unary(nid, nq, lambda v: float(math.trunc(v)))
+        elif "Expr_MathRound" in cls:
+            self._do_unary(nid, nq, lambda v: float(round(v)))
+        elif "Expr_BitwiseBitCount" in cls:
+            a = _as_int(self._in_val(nid, "Input", 0))
+            self._out_val(nid, "Output", bin(abs(a)).count("1"))
+        elif "Expr_BitwiseNAND" in cls:
+            self._do_bitwise(nid, nq, lambda a, b: (~(a & b)))
+        elif "Expr_BitwiseNOR" in cls:
+            self._do_bitwise(nid, nq, lambda a, b: (~(a | b)))
+        elif "Expr_LogicalNOR" in cls:
+            self._do_bool(nid, nq, lambda a, b: not (a or b))
+        elif "Expr_MakeQuaternion" in cls:
+            self._out_val(nid, "Output", (
+                _as_float(self._in_val(nid, "X", 0)),
+                _as_float(self._in_val(nid, "Y", 0)),
+                _as_float(self._in_val(nid, "Z", 0)),
+                _as_float(self._in_val(nid, "W", 1))))
+        elif "Expr_MakeRotation" in cls:
+            self._out_val(nid, "Output", (
+                _as_float(self._in_val(nid, "X", 0)),
+                _as_float(self._in_val(nid, "Y", 0)),
+                _as_float(self._in_val(nid, "Z", 0))))
+        elif "Expr_MakeColorHex" in cls:
+            v = _as_int(self._in_val(nid, "Input", 0))
+            r, g, b, a = ((v >> 24) & 255, (v >> 16) & 255, (v >> 8) & 255, v & 255)
+            self._out_val(nid, "Output", (r / 255.0, g / 255.0, b / 255.0, a / 255.0))
+        elif "Expr_MakeColorSRGB" in cls:
+            v = _as_float(self._in_val(nid, "Input", 0))
+            if 0 <= v <= 1:
+                r = g = b = v
+            elif 1 < v <= 100:
+                r, g, b = v / 100.0, 0.0, 0.0
+            else:
+                r = g = b = 0.0
+            self._out_val(nid, "Output", (r, g, b, 1.0))
+        elif "Expr_SplitQuat" in cls:
+            v = self._in_val(nid, "Input", (0.0, 0.0, 0.0, 1.0))
+            if isinstance(v, (tuple, list)) and len(v) >= 4:
+                x, y, z, w = (_as_float(e) for e in v[:4])
+            else:
+                x = y = z = 0.0
+                w = 1.0
+            self._out_val(nid, "X", x)
+            self._out_val(nid, "Y", y)
+            self._out_val(nid, "Z", z)
+            self._out_val(nid, "W", w)
+        elif "WireGraphPseudo_QueueTicks" in cls:
+            self._do_queue(nid, nq, "ticks")
+        elif "WireGraphPseudo_QueueSeconds" in cls:
+            self._do_queue(nid, nq, "seconds")
+        elif "WireGraphPseudo_BufferSeconds" in cls:
+            self._do_buffer_seconds(nid, nq)
+        elif "WireGraphPseudo_Timer" in cls:
+            self._do_timer(nid, nq)
+        elif "WireGraphPseudo_Tween" in cls:
+            self._do_tween(nid, nq)
+        elif "WireGraphPseudo_Dampen" in cls:
+            self._do_dampen(nid, nq)
+        elif "WireGraph_DeltaTime" in cls:
+            self._out_val(nid, "DeltaTime", 0.01 * self.tick_delta)
+        elif "WireGraph_Exec_SweepSimple" in cls:
+            self._do_sweep(nid, nq)
         elif "WireGraph_ServerUptime" in cls:
             self._do_uptime(nid, nq)
         elif "Internal_ReadBrickGrid" in cls:
@@ -586,9 +759,6 @@ class Sim:
                 self._out_val(nid, 'RER_Output', self.inputs[label])
         elif "Internal_MicrochipOutput" in cls:
             pass
-        elif "Gate" in cls or "Event" in cls or "Coerce" in cls:
-            for w in self.out_wires.get((nid, "ExecOut"), []):
-                nq.add((w.dst_id, w.dst_port))
         else:
             # Unknown gate: never silent — a skipped gate corrupts the run.
             if cls not in self._unimpl_warned:
@@ -913,17 +1083,22 @@ class Sim:
         aid = self._arr_id(nid)
         arr = self._arr_list(aid)
         v = self._in_val(nid, "Value", None)
-        if v is not None:
-            arr.append(v)
-            if aid == self._loglines_id:
-                s = v if isinstance(v, str) else str(v)
-                if len(s) > _LOG_WIDTH:
-                    s = s[:_LOG_WIDTH - 1] + "\n"
-                self.log += s
-                lines = self.log.split("\n")
-                # trailing "" after the final newline is not a line
-                if len(lines) > _LOG_LINES + 1:
-                    self.log = "\n".join(lines[-(_LOG_LINES + 1):])
+        # A push gate ALWAYS appends: an unwired/None value reads as 0 on
+        # hardware.  Skipping it instead would shorten this array while its
+        # parallel siblings (bop/bpa/bpb/bpc) still grow, silently shifting
+        # every later operand by one.
+        if v is None:
+            v = 0.0
+        arr.append(v)
+        if aid == self._loglines_id:
+            s = v if isinstance(v, str) else str(v)
+            if len(s) > _LOG_WIDTH:
+                s = s[:_LOG_WIDTH - 1] + "\n"
+            self.log += s
+            lines = self.log.split("\n")
+            # trailing "" after the final newline is not a line
+            if len(lines) > _LOG_LINES + 1:
+                self.log = "\n".join(lines[-(_LOG_LINES + 1):])
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
@@ -1133,6 +1308,272 @@ class Sim:
         if src_arr is not None:
             arr = self._arr_list(aid)
             arr[:] = src_arr[max(0, start):max(0, start) + max(0, count)]
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_map_values(self, nid: int, nq: set):
+        mid = self._map_id(nid)
+        aid = None
+        for w in self.in_wires.get((nid, "ArrayVarRef"), []):
+            aid = w.src_id
+            break
+        if aid is not None:
+            self.arrays[aid] = list(self.maps.get(mid, {}).values())
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_arr_insert(self, nid: int, nq: set):
+        aid = self._arr_id(nid)
+        arr = self._arr_list(aid)
+        idx = _as_int(self._in_val(nid, "Index", 0))
+        v = self._in_val(nid, "Value", None)
+        if v is None:
+            v = 0.0
+        ok = 0 <= idx <= len(arr)
+        if ok:
+            arr.insert(idx, v)
+        self._out_val(nid, "bOutOfBounds", not ok)
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_arr_fill(self, nid: int, nq: set):
+        arr = self._arr_list(self._arr_id(nid))
+        v = self._in_val(nid, "Value", None)
+        if v is None:
+            v = 0.0
+        for i in range(len(arr)):
+            arr[i] = v
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_arr_reverse(self, nid: int, nq: set):
+        self._arr_list(self._arr_id(nid)).reverse()
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_arr_shuffle(self, nid: int, nq: set):
+        random.shuffle(self._arr_list(self._arr_id(nid)))
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    @staticmethod
+    def _sort_key(v: Any):
+        # Deterministic, type-tolerant ordering: numbers before strings.
+        if isinstance(v, bool):
+            return (0, float(v), "")
+        if isinstance(v, (int, float)):
+            return (0, float(v), "")
+        if isinstance(v, str):
+            return (1, 0.0, v)
+        return (2, 0.0, repr(v))
+
+    def _do_arr_sort(self, nid: int, nq: set):
+        arr = self._arr_list(self._arr_id(nid))
+        arr.sort(key=self._sort_key, reverse=_as_bool(self._in_val(nid, "bDescending", False)))
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_arr_sort_multiple(self, nid: int, nq: set):
+        # this array is the key; up to 7 parallel arrays follow on ArrayVarRef1..7
+        akey = self._arr_id(nid)
+        others = []
+        for w in self.in_wires.get((nid, "ArrayVarRef"), [])[1:]:
+            others.append(w.src_id)
+        for name in ("ArrayVarRef1", "ArrayVarRef2", "ArrayVarRef3", "ArrayVarRef4",
+                     "ArrayVarRef5", "ArrayVarRef6", "ArrayVarRef7"):
+            for w in self.in_wires.get((nid, name), []):
+                if w.src_id not in others and w.src_id != akey:
+                    others.append(w.src_id)
+        keys = self._arr_list(akey)
+        pairs = list(enumerate(range(len(keys))))
+        pairs.sort(key=lambda p: (self._sort_key(keys[p[0]]), p[0]),
+                   reverse=_as_bool(self._in_val(nid, "bDescending", False)))
+        order = [p[0] for p in pairs]
+        for aid in others:
+            src = self._arr_list(aid)
+            self.arrays[aid] = [src[i] for i in order if 0 <= i < len(src)]
+        self.arrays[akey] = [keys[i] for i in order]
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_arr_reduce(self, nid: int, nq: set, how: str):
+        arr = self._arr_list(self._arr_id(nid))
+        if not arr:
+            self._out_val(nid, "bIsEmpty", True)
+        else:
+            nums = [_as_float(v) for v in arr]
+            if how == "sum":
+                self._out_val(nid, "Value", sum(nums))
+            elif how == "average":
+                self._out_val(nid, "Value", sum(nums) / len(nums))
+            elif how == "max":
+                self._out_val(nid, "Value", max(arr, key=self._sort_key))
+            else:
+                self._out_val(nid, "Value", min(arr, key=self._sort_key))
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_arr_swap(self, nid: int, nq: set):
+        arr = self._arr_list(self._arr_id(nid))
+        a = _as_int(self._in_val(nid, "IndexA", 0))
+        b = _as_int(self._in_val(nid, "IndexB", 0))
+        ok = 0 <= a < len(arr) and 0 <= b < len(arr)
+        if ok:
+            arr[a], arr[b] = arr[b], arr[a]
+        self._out_val(nid, "bOutOfBounds", not ok)
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_modulo(self, nid: int, nq: set, floored: bool):
+        a = _as_float(self._in_val(nid, "InputA", 0))
+        b = _as_float(self._in_val(nid, "InputB", 0))
+        if b == 0:
+            # gate behaviour: x % 0 yields 0 (no inf/nan), matching divide
+            self._out_val(nid, "Output", 0.0)
+            return
+        r = math.fmod(a, b)
+        if floored and r != 0 and (r < 0) != (b < 0):
+            r += b
+        self._out_val(nid, "Output", r)
+
+    def _do_endswith(self, nid: int, nq: set):
+        s = _as_str(self._in_val(nid, "Input", ""))
+        suf = _as_str(self._in_val(nid, "Suffix", ""))
+        cs = self._in_val(nid, "bCaseSensitive", None)
+        cs = True if cs is None else _as_bool(cs)
+        if not cs:
+            s, suf = s.lower(), suf.lower()
+        self._out_val(nid, "Output", s.endswith(suf))
+
+    def _do_formattext(self, nid: int, nq: set):
+        # FormatText is variadic: every wired Input* becomes a positional {} arg
+        # after the format string, in port order A,B,C,D,E,F,G.
+        fmt = _as_str(self._in_val(nid, "FormatString", ""))
+        if not fmt:
+            vals = []
+            for name in ("InputA", "InputB", "InputC", "InputD",
+                         "InputE", "InputF", "InputG"):
+                if self.in_wires.get((nid, name)):
+                    vals.append(_as_str(self._in_val(nid, name, "")))
+            self._out_val(nid, "Output", "".join(vals))
+            return
+        args = []
+        for name in ("InputA", "InputB", "InputC", "InputD",
+                     "InputE", "InputF", "InputG"):
+            if self.in_wires.get((nid, name)):
+                args.append(_as_str(self._in_val(nid, name, "")))
+        try:
+            self._out_val(nid, "Output", fmt.format(*args))
+        except (IndexError, KeyError, ValueError):
+            self._out_val(nid, "Output", fmt)
+
+    _EASINGS = {
+        0: lambda t: t, 1: lambda t: t * t, 2: lambda t: t * t * t,
+        3: lambda t: 1 - (1 - t) ** 3, 4: lambda t: t ** 4,
+        5: lambda t: 1 - (1 - t) ** 4, 6: lambda t: t * (2 - t),
+        7: lambda t: (2 * t) ** 3 / 2, 8: lambda t: 1 - (2 - 2 * t) ** 3 / 2,
+    }
+
+    def _do_easing(self, nid: int, nq: set):
+        a = _as_float(self._in_val(nid, "InputA", 0))
+        b = _as_float(self._in_val(nid, "InputB", 0))
+        t = _as_float(self._in_val(nid, "Blend", 0))
+        fn = _as_int(self._in_val(nid, "Function", 0))
+        t = max(0.0, min(1.0, t))
+        f = self._EASINGS.get(fn, self._EASINGS[0])
+        self._out_val(nid, "Output", a + (b - a) * f(t))
+
+    def _do_queue(self, nid: int, nq: set, unit: str):
+        props = self.nodes[nid].props
+        if unit == "ticks":
+            wait = _as_int(props.get("TicksToWait", ("int", 1)), 1)
+            zero = _as_int(props.get("ZeroTicksToWait", ("int", -1)), -1)
+        else:
+            wait = _as_int(props.get("SecondsToWait", ("int", 1)), 1)
+            zero = _as_int(props.get("ZeroSecondsToWait", ("int", -1)), -1)
+        delay = 0 if (zero >= 0 and self.tick >= zero) else max(1, wait)
+        target = self.tick + delay
+        carried = {name: self._in_val(nid, "DataIn%d" % i, None)
+                   for i in range(1, 9)
+                   if self.in_wires.get((nid, "DataIn%d" % i))}
+        if target <= self.tick:
+            for name, val in carried.items():
+                self._out_val(nid, name.replace("DataIn", "DataOut"), val)
+            for w in self.out_wires.get((nid, "ExecOut"), []):
+                nq.add((w.dst_id, w.dst_port))
+        else:
+            self._deferred.setdefault(target, []).append((nid, "Output"))
+            self._queue_carry[nid] = carried
+
+    def _do_buffer_seconds(self, nid: int, nq: set):
+        props = self.nodes[nid].props
+        secs = _as_float(props.get("SecondsToWait", ("float", 0.01)), 0.01)
+        zero = _as_int(props.get("ZeroSecondsToWait", ("int", -1)), -1)
+        wait = max(1, int(round(secs / 0.01)))
+        delay = 0 if (zero >= 0 and self.tick >= zero) else wait
+        target = self.tick + delay
+        if target <= self.tick:
+            for w in self.out_wires.get((nid, "Output"), []):
+                nq.add((w.dst_id, w.dst_port))
+        else:
+            self._deferred.setdefault(target, []).extend(
+                (w.dst_id, w.dst_port) for w in self.out_wires.get((nid, "Output"), []))
+
+    def _do_timer(self, nid: int, nq: set):
+        limit = _as_float(self._in_val(nid, "Limit", 0))
+        start = self._timer_state.setdefault(nid, [self.tick, False])
+        if _as_bool(self._in_val(nid, "Restart", False)):
+            start[0] = self.tick
+            start[1] = False
+        paused = start[2] if len(start) > 2 else False
+        if _as_bool(self._in_val(nid, "Pause", False)):
+            paused = True
+        if _as_bool(self._in_val(nid, "Resume", False)):
+            paused = False
+        start[2] = paused
+        elapsed = 0.0 if paused else (self.tick - start[0]) * 0.01
+        expired = (not paused) and (limit > 0) and elapsed >= limit
+        if expired and not start[1]:
+            start[1] = True
+        self._out_val(nid, "Time", elapsed)
+        self._out_val(nid, "Expired", expired)
+
+    def _do_tween(self, nid: int, nq: set):
+        target = _as_float(self._in_val(nid, "Target", 0))
+        dur = _as_float(self._in_val(nid, "Duration", 1))
+        st = self._timer_state.setdefault(nid, [0.0, self.tick])
+        st[0] = target
+        if st[0] != target or self.in_wires.get((nid, "Target")):
+            if st[1] != self.tick:
+                st[1] = self.tick
+                st.append(0.0)
+        elapsed = (self.tick - st[1]) * 0.01
+        t = 1.0 if dur <= 0 else min(1.0, elapsed / dur)
+        start_v = st[2] if len(st) > 2 else 0.0
+        self._out_val(nid, "Value", start_v + (st[0] - start_v) * t)
+        self._out_val(nid, "Arrived", t >= 1.0)
+
+    def _do_dampen(self, nid: int, nq: set):
+        target = _as_float(self._in_val(nid, "Target", 0))
+        smooth = _as_float(self._in_val(nid, "SmoothTime", 0))
+        st = self._timer_state.get(nid)
+        if st is None:
+            self._timer_state[nid] = [target]
+            self._out_val(nid, "Value", target)
+            return
+        cur = st[0]
+        if smooth <= 0:
+            self._timer_state[nid][0] = target
+            self._out_val(nid, "Value", target)
+            return
+        alpha = min(1.0, 0.01 / smooth)
+        st[0] = cur + (target - cur) * alpha
+        self._out_val(nid, "Value", st[0])
+
+    def _do_sweep(self, nid: int, nq: set):
+        # SweepSimple: over the tick's inputs, emit one ExecOut per hit.  The
+        # sim has no entity set, so a sweep yields no hits (exec chain passes
+        # nothing through) unless inputs name explicit points.
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
