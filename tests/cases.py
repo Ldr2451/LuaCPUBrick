@@ -161,8 +161,7 @@ TESTS = [
     ("void-assign", "function v() end local x = v() print(x)", None, "run"),
     ("multi-args", "function id(a) return a end print(id(1), id(2))", None,
      "run"),
-    ("ret-multi-reject", "function f() return 1, 2 end print(f())", None,
-     "reject"),
+    ("ret-multi", "function f() return 1, 2 end print(f())", None, "run"),
     ("type-all", "print(type(1), type('s'), type(true), type(nil), "
      "type(print))", None, "run"),
     ("tostring-all", "print(tostring(2.5), tostring('s'), "

@@ -2143,7 +2143,7 @@ mod closeAction() {
       opC.pop()
       if valStk.length() == depth {
         if nargs == 0 {
-          bEmit(23, fr, 0, 0)
+          bEmit(23, fr, 0, if topFlag() then 1 else 0)
           bumpMax(fr + 2)
           cfNext[fnDepth] = fr + 1
         } else {
@@ -2523,15 +2523,98 @@ mod doCont() {
     contKind = 0
   } else if contKind == 5 {
     if curKind() == 5 && curSub() == 16 {
-      perr = true
-      perrMsg = "multiple return values not supported"
+      cpos = cpos + 1
+      tmpRegs.clear()
+      tmpRegs.push(presReg)
+      startUnit(14)
     } else if presIsCall {
       bEmit(27, presReg, 0, 0)
+      inExpr = false
+      contKind = 0
     } else {
       bEmit(24, presReg, 0, 0)
+      inExpr = false
+      contKind = 0
     }
-    inExpr = false
-    contKind = 0
+  } else if contKind == 14 {
+    tmpRegs.push(presReg)
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(14)
+    } else {
+      if tmpRegs.length() > 16 {
+        perr = true
+        perrMsg = "too many values"
+      } else {
+        let br = regAlloc()
+        let n = tmpRegs.length()
+        if 1 < n {
+          let r2 = regAlloc()
+          if 2 < n {
+            let r3 = regAlloc()
+            if 3 < n {
+              let r4 = regAlloc()
+              if 4 < n {
+                let r5 = regAlloc()
+                if 5 < n {
+                  let r6 = regAlloc()
+                  if 6 < n {
+                    let r7 = regAlloc()
+                    if 7 < n {
+                      let r8 = regAlloc()
+                      if 8 < n {
+                        let r9 = regAlloc()
+                        if 9 < n {
+                          let r10 = regAlloc()
+                          if 10 < n {
+                            let r11 = regAlloc()
+                            if 11 < n {
+                              let r12 = regAlloc()
+                              if 12 < n {
+                                let r13 = regAlloc()
+                                if 13 < n {
+                                  let r14 = regAlloc()
+                                  if 14 < n {
+                                    let r15 = regAlloc()
+                                    if 15 < n {
+                                      bEmit(7, br + 15, tmpRegs[15], 0)
+                                    }
+                                    bEmit(7, br + 14, tmpRegs[14], 0)
+                                  }
+                                  bEmit(7, br + 13, tmpRegs[13], 0)
+                                }
+                                bEmit(7, br + 12, tmpRegs[12], 0)
+                              }
+                              bEmit(7, br + 11, tmpRegs[11], 0)
+                            }
+                            bEmit(7, br + 10, tmpRegs[10], 0)
+                          }
+                          bEmit(7, br + 9, tmpRegs[9], 0)
+                        }
+                        bEmit(7, br + 8, tmpRegs[8], 0)
+                      }
+                      bEmit(7, br + 7, tmpRegs[7], 0)
+                    }
+                    bEmit(7, br + 6, tmpRegs[6], 0)
+                  }
+                  bEmit(7, br + 5, tmpRegs[5], 0)
+                }
+                bEmit(7, br + 4, tmpRegs[4], 0)
+              }
+              bEmit(7, br + 3, tmpRegs[3], 0)
+            }
+            bEmit(7, br + 2, tmpRegs[2], 0)
+          }
+          bEmit(7, br + 1, tmpRegs[1], 0)
+        }
+        bEmit(7, br, tmpRegs[0], 0)
+      }
+      if !perr {
+        bEmit(42, br, tmpRegs.length(), 0)
+      }
+      inExpr = false
+      contKind = 0
+    }
   } else if contKind == 6 {
     tmpRegs.push(presReg)
     if curKind() == 5 && curSub() == 16 {
@@ -3222,6 +3305,25 @@ mod vStr(r: int) -> string {
   return vstr[vmBase + r]
 }
 
+mod retAdjust(src: int, dst: int, k: int, n: int) {
+  if 1 <= k { vSet(dst, vTag(src), vNum(src), vStr(src)) }
+  if 2 <= k { vSet(dst+1, vTag(src+1), vNum(src+1), vStr(src+1)) }
+  if 3 <= k { vSet(dst+2, vTag(src+2), vNum(src+2), vStr(src+2)) }
+  if 4 <= k { vSet(dst+3, vTag(src+3), vNum(src+3), vStr(src+3)) }
+  if 5 <= k { vSet(dst+4, vTag(src+4), vNum(src+4), vStr(src+4)) }
+  if 6 <= k { vSet(dst+5, vTag(src+5), vNum(src+5), vStr(src+5)) }
+  if 7 <= k { vSet(dst+6, vTag(src+6), vNum(src+6), vStr(src+6)) }
+  if 8 <= k { vSet(dst+7, vTag(src+7), vNum(src+7), vStr(src+7)) }
+  if 9 <= k { vSet(dst+8, vTag(src+8), vNum(src+8), vStr(src+8)) }
+  if 10 <= k { vSet(dst+9, vTag(src+9), vNum(src+9), vStr(src+9)) }
+  if 11 <= k { vSet(dst+10, vTag(src+10), vNum(src+10), vStr(src+10)) }
+  if 12 <= k { vSet(dst+11, vTag(src+11), vNum(src+11), vStr(src+11)) }
+  if 13 <= k { vSet(dst+12, vTag(src+12), vNum(src+12), vStr(src+12)) }
+  if 14 <= k { vSet(dst+13, vTag(src+13), vNum(src+13), vStr(src+13)) }
+  if 15 <= k { vSet(dst+14, vTag(src+14), vNum(src+14), vStr(src+14)) }
+  if 16 <= k { vSet(dst+15, vTag(src+15), vNum(src+15), vStr(src+15)) }
+}
+
 mod vSet(r: int, tag: int, num: float, s: string) {
   vtag[vmBase + r] = tag
   vnum[vmBase + r] = num
@@ -3794,6 +3896,16 @@ mod vmStep() {
           }
         }
       }
+    } else if op == 41 {
+      let fid = toInt(vNum(a))
+      let mt = c == 1
+      let nargs = if mt then (b - 1) + (if retCountV == 1 then 1 else 0) else b
+      if fid <= 7 {
+        if nargs > 16 { vmFail("too many args") } else { vmFail("not implemented") }
+      } else {
+        userCall(a, fid, nargs, -1)
+        advanced = true
+      }
     } else if op == 24 {
       let rv = vTag(a)
       let rn = vNum(a)
@@ -3865,6 +3977,33 @@ mod vmStep() {
           vmBase = rb
         }
         vmPc = rpc
+      }
+      advanced = true
+    } else if op == 42 {
+      let cnt = b
+      if 16 < cnt {
+        vmFail("too many values")
+      } else {
+        let ra = fRetA[fRetA.length() - 1]
+        let rb = fRetBase[fRetBase.length() - 1]
+        let rpc = fRetPC[fRetPC.length() - 1]
+        fFunc.pop()
+        fBase.pop()
+        fRetA.pop()
+        fRetBase.pop()
+        fRetPC.pop()
+        let w = fRetN.pop().Value
+        let n = if w == -2 then cnt else if w == -1 then 1 else w
+        let k = if cnt < n then cnt else n
+        if fFunc.length() == 0 {
+          resultV = if 1 <= k then fmtVal(vTag(a), vNum(a), vStr(a)) else ""
+          vmHalted = true
+        } else {
+          retAdjust(rb + ra, vmBase + a, k, n)
+          vmBase = rb
+          vmPc = rpc
+          retCountV = if w == -2 then cnt else n
+        }
       }
       advanced = true
     } else if op == 25 {
