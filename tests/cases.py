@@ -43,6 +43,7 @@ TESTS = [
     ("lit-float", "print(3.5)", None, "run"),
     ("lit-exp", "print(1e3, 1.5e-2)", None, "run"),
     ("lit-dot", "print(.5, 5.)", None, "run"),
+    ("lit-exp-dot", "print(5.e3, 5.)", None, "run"),
     ("lit-hex", "print(0xff, 0X10, 0xFFFFFFFFFFFFFFFF)", None, "run"),
     ("int-arith", "print(7+8, 7-8, 7*8, -7, 2+2.0, 7/2)", None, "run"),
     ("int-mod", "print(7%3, -7%3, 7%-3, 7.5%2)", None, "run"),

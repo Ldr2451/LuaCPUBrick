@@ -3938,8 +3938,8 @@ mod vmStep() {
     } else if op == 34 {
       let lt = vTag(b)
       let rt = vTag(c)
-      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform floor division") }
-      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform floor division") }
+      if lt != 6 && lt != 1 { vmFail("attempt to perform floor division") }
+      if rt != 6 && rt != 1 { vmFail("attempt to perform floor division") }
       let x = vNum(b)
       let y = vNum(c)
       if y == 0.0 {
