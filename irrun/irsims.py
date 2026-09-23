@@ -125,6 +125,11 @@ class Sim:
         for w in wires:
             self.in_wires.setdefault((w.dst_id, w.dst_port), []).append(w)
             self.out_wires.setdefault((w.src_id, w.src_port), []).append(w)
+        # Wire layout never changes after construction, so which source feeds an
+        # input port, and whether that source is pure, are static facts.  They
+        # are resolved once here instead of on every read: _in_val runs about
+        # half a million times per simulated program.
+        self._src_cache: dict[tuple[int, str], tuple] = {}
         self.exec_queue: set[tuple[int, str]] = set()
         self.fired_nodes: set[int] = set()
         self.fired_ports: set[tuple[int, str]] = set()
@@ -181,9 +186,41 @@ class Sim:
         for w in wires:
             dn = self.nodes.get(w.src_id)
             if dn and dn.kind == "Input":
-                self.exec_queue.add((w.src_id, "RER_Output"))
                 if w.src_id not in self.input_ids:
                     self.input_ids.append(w.src_id)
+        self.reset()
+
+    def _seed_inputs(self):
+        for nid in self.input_ids:
+            self.exec_queue.add((nid, "RER_Output"))
+
+    def reset(self):
+        """Put the sim back in its just-constructed state, keeping the wiring.
+
+        The graph, the input seed and the source cache are static, so a whole
+        batch of programs can share one Sim.  Rebuilding them instead costs
+        about a second per program (124k wires, 59k nodes), which used to
+        dominate every test case.
+        """
+        self.exec_queue = set()
+        self.fired_nodes = set()
+        self.fired_ports = set()
+        self.value_ready = set()
+        self.vars = {}
+        self.arrays = {}
+        self.maps = {}
+        self.log = ""
+        self.tick = 0
+        self._deferred = {}
+        self._chg_state = {}
+        self._eval_stack = set()
+        self._unimpl_warned = set()
+        self._queue_carry = {}
+        self._timer_state = {}
+        self._dirty = set(self._pure_ids)
+        self.tick_delta = 1
+        self.inputs = {}
+        self._seed_inputs()
 
     def run(self, max_ticks: int = MAX_TICKS, on_tick=None):
         from collections import deque
@@ -338,35 +375,77 @@ class Sim:
     def _is_pure(self, cls: str) -> bool:
         return ("Expr_" in cls and "ChangeDetector" not in cls) or "ServerUptime" in cls
 
+    def _build_src(self, key: tuple[int, str]) -> tuple:
+        """Resolve an input port's static wiring once.
+
+        Returns (kind, src_id, src_port, tail) where kind 1/2/3 is a live
+        ArrayVar/MapVar/Var source, 4 is a Var_Get (its readiness changes every
+        tick, so it is still checked on each read) and 0 means no direct source
+        and the tail carries the full wire list.  tail holds the
+        (wire, source node, is_pure) triples the read has to fall back on.
+        """
+        nid, port = key
+        ins = self.in_wires.get(key, [])
+        kind = 0
+        sid = 0
+        sport = ""
+        for i, w in enumerate(ins):
+            src = self.nodes.get(w.src_id)
+            if not src:
+                continue
+            cls = src.cls
+            if "WireGraphPseudo_ArrayVar" in cls:
+                kind, sid, sport, start = 1, w.src_id, w.src_port, i + 1
+                break
+            if "WireGraphPseudo_MapVar" in cls:
+                kind, sid, sport, start = 2, w.src_id, w.src_port, i + 1
+                break
+            if "WireGraphPseudo_Var" in cls:
+                kind, sid, sport, start = 3, w.src_id, w.src_port, i + 1
+                break
+            if "Var_Get" in cls:
+                # a Var_Get that is not ready this tick must let the read fall
+                # through, so keep this wire in the tail
+                kind, sid, sport, start = 4, w.src_id, w.src_port, i
+                break
+        else:
+            start = 0
+        tail = []
+        for w in ins[start:]:
+            src = self.nodes.get(w.src_id)
+            tail.append((w, src, self._is_pure(src.cls) if src else False))
+        info = (kind, sid, sport, tuple(tail))
+        self._src_cache[key] = info
+        return info
+
     def _in_val(self, nid: int, port: str, default: Any = None):
-        ins = self.in_wires.get((nid, port), [])
-        for w in ins:
-            src = self.nodes.get(w.src_id)
+        key = (nid, port)
+        info = self._src_cache.get(key)
+        if info is None:
+            info = self._build_src(key)
+        kind, sid, sport, tail = info
+        if kind == 1:
+            # Return the live list, not a copy: gates that only read it
+            # (SourceRef of append/slice/copyFrom) never mutate, and copying
+            # a 512-instruction bytecode array on every read dominated sim
+            # time.  Consumers that write use _arr_list() instead.
+            if sid in self.arrays:
+                return self.arrays[sid]
+            return self._default_for(self.nodes[sid], sport)
+        if kind == 2:
+            if sid in self.maps:
+                return self.maps[sid]
+            return self._default_for(self.nodes[sid], sport)
+        if kind == 3:
+            return self.vars.get(sid, self._default_for(self.nodes[sid], sport))
+        if kind == 4 and (sid, sport) in self.value_ready:
+            vid = self._var_id(sid)
+            if vid is not None:
+                return self.vars.get(vid, default)
+        for w, src, pure in tail:
             if not src:
                 continue
-            if "WireGraphPseudo_ArrayVar" in src.cls:
-                # Return the live list, not a copy: gates that only read it
-                # (SourceRef of append/slice/copyFrom) never mutate, and copying
-                # a 512-instruction bytecode array on every read dominated sim
-                # time.  Consumers that write use _arr_list() instead.
-                if w.src_id in self.arrays:
-                    return self.arrays[w.src_id]
-                return self._default_for(src, w.src_port)
-            if "WireGraphPseudo_MapVar" in src.cls:
-                if w.src_id in self.maps:
-                    return self.maps[w.src_id]
-                return self._default_for(src, w.src_port)
-            if "WireGraphPseudo_Var" in src.cls:
-                return self.vars.get(w.src_id, self._default_for(src, w.src_port))
-            if "Var_Get" in src.cls and (w.src_id, w.src_port) in self.value_ready:
-                vid = self._var_id(w.src_id)
-                if vid is not None:
-                    return self.vars.get(vid, default)
-        for w in ins:
-            src = self.nodes.get(w.src_id)
-            if not src:
-                continue
-            if self._is_pure(src.cls) and w.src_id not in self._eval_stack:
+            if pure and w.src_id not in self._eval_stack:
                 # Pull evaluation: pure gates are side-effect-free functions
                 # of their inputs, so compute on demand for fresh values
                 # instead of trusting possibly-stale cached outputs.
@@ -383,7 +462,7 @@ class Sim:
                     label = _extract(src.props.get('PortLabel', ('raw', '')))
                     if isinstance(label, str) and label in self.inputs:
                         return self.inputs[label]
-        if not ins:
+        if not tail:
             pv = self.nodes[nid].props.get(port)
             if pv:
                 return _extract(pv)
@@ -1667,6 +1746,28 @@ def run_ws(ws_path: str, max_ticks: int = MAX_TICKS,
     if inputs:
         sim.inputs = dict(inputs)
     return sim.run(max_ticks)
+
+
+class ChipRunner:
+    """Compiles the chip once, then runs any number of programs on it.
+
+    Compiling the WireScript and indexing 124k wires costs about six seconds.
+    The test scripts used to pay that again for every single program; here one
+    build serves a whole batch, because reset() returns the sim to its initial
+    state without touching the wiring or the source cache.
+    """
+
+    def __init__(self, ws_path: str):
+        nodes, wires, _ = dump_source(ws_path)
+        self.sim = Sim(nodes, [Wire(*w) for w in wires])
+
+    def run(self, src: str, max_ticks: int = MAX_TICKS,
+            inputs: dict | None = None) -> dict:
+        self.sim.reset()
+        self.sim.inputs = {"program": src, "run": True}
+        if inputs:
+            self.sim.inputs.update(inputs)
+        return self.sim.run(max_ticks)
 
 
 class Wire:

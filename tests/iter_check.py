@@ -2,7 +2,7 @@ import sys, os
 sys.path.insert(0, '.')
 sys.path.insert(0, 'irrun')
 from irdump import dump_source
-from irsims import Sim, Wire
+from irsims import Sim, Wire, ChipRunner
 import lua_oracle as OR
 
 CASES = [
@@ -21,11 +21,13 @@ CASES = [
     'local t = {1,2,3} local n = 0 for k, v in next, t do n = n + 1 end print(n)',
 ]
 
+_RUNNER = None
+
 def chip(src, ticks=8000):
-    nodes, wires, _ = dump_source(os.path.abspath('lua.ws'))
-    sim = Sim(nodes, [Wire(*w) for w in wires])
-    sim.inputs = {'program': src, 'run': True}
-    r = sim.run(max_ticks=ticks)
+    global _RUNNER
+    if _RUNNER is None:
+        _RUNNER = ChipRunner(os.path.abspath('lua.ws'))
+    r = _RUNNER.run(src, ticks)
     return r.get('log', ''), r.get('outGlobals', {})
 
 ok = fail = 0
