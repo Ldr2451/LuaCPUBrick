@@ -5449,6 +5449,9 @@ on goParse {
   // shifted by however many lines it added; libLines undoes that for errors.
   // One variable per library piece, then concatenate: the host compiler cannot
   // lower a mod call inside a binary operation, only variable + variable.
+  // A piece is charged by its characters (4 per tick of lexing), so only pieces
+  // of a few hundred characters belong here; string.format is a builtin instead
+  // (lib/str_format.lua is the reference implementation it is built from).
   let libA = libIter(program)
   let libB = libStrIndex(program)
   let libC = libStrCase(program)

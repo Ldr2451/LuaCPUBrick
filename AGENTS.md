@@ -76,6 +76,37 @@
 - Compile the chip once per batch of experiments: a loop over N test programs
   must not trigger N recompiles.
 
+## Performance: the chip has two cost currencies
+- **Every change costs gates AND ticks. Measure both, before and after.** Gates
+  are `tools/audit.py` (nodes/wires); ticks are what `tools/check.py` prints per
+  program. A change that is free in one can be ruinous in the other, and only one
+  of them shows up in the obvious place.
+- **The prepended library is charged by the character, and that is the trap.**
+  Library pieces are Lua *source* spliced in front of the program, and the lexer
+  runs at 4 characters per tick, so a piece of C characters costs `C/4` ticks of
+  boot on *every* run of a program that names it. The ceiling is a few hundred
+  characters per piece (the existing ones are 300–700). Before adding a piece,
+  measure it: `python -u tools/libconst.py piece.lua LIB_x` prints the escaped
+  size, and `tools/check.py` prints the boot cost. 443 lines of `string.format`
+  was 10769 characters, 9.4s of sim time and ~45s in-game — written before
+  anyone checked what the mechanism charges.
+- **The lexer is not a cheap global speed lever.** Each unrolled `lexStep()` is
+  ~1633 nodes (`tools/lexcost.py`: 8 steps +6.5k nodes, 16 steps +19.6k), so
+  buying lexing speed costs gates linearly and cannot rescue an oversized piece.
+  Shrink the piece or move the work into a gate.
+- **Where a cost belongs:** Lua-level loops are VM state machines, so they cost
+  ticks per iteration and no gates. WireScript has no loops at all, so a gate-side
+  loop is either hand-unrolled (gates proportional to the trip count) or a
+  micro-step (ticks proportional to it, as `next` does). String-heavy work
+  belongs in Lua; tight arithmetic that runs per call belongs in a gate.
+- **A new builtin must earn its gates** against the alternative of a library
+  piece, and the answer changes with the piece's size: `string.format` at 10.7k
+  characters is 20x over the source ceiling, so it belongs in a gate even though
+  `table.insert` at 400 does not.
+- Time the *program*, not just the harness: a case that goes from 0.2s to 2s in
+  the suite is a user-visible regression in the chip, and the suite prints
+  per-case seconds precisely so it cannot hide.
+
 ## Fixing bugs
 - Fix the **class**, not the instance. When something breaks, ask what made it
   possible and make that harder next time; a one-line patch that leaves the trap
@@ -104,6 +135,12 @@
 - Add an oracle case for the rule you just got wrong, not just for the program
   that exposed it. The state-stays-fixed rule of the generic-for protocol was
   wrong until `iter_check.py` compared against real Lua.
+- **Reverting is not deleting.** When a change is replaced or dropped, the work
+  still has value: keep the reference implementation as a file
+  (`lib/str_format.lua` is the PUC-verified Lua `string.format`, kept while the
+  gate version is built), keep the minimal repro as a case, and keep the
+  measurement as a tool (`tools/lexcost.py`, `tools/libconst.py`). A throwaway
+  probe in a temp directory is the only thing allowed to disappear.
 
 ## Code clarity
 - Show the intent in the code: a name that says what a register is for
