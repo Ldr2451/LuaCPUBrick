@@ -6,7 +6,7 @@ tested directly against the Lua 5.5 oracle instead.)
 """
 
 KEYWORDS = {"and", "break", "do", "else", "elseif", "end", "false",
-            "for", "function", "if", "in", "local", "nil", "not", "or",
+            "for", "function", "goto", "if", "in", "local", "nil", "not", "or",
             "repeat", "return", "then", "true", "until", "while"}
 
 (HALT, LOADNIL, LOADNUM, LOADSTR, LOADBOOL, LOADGLOBAL, STOREGLOBAL, MOV,
