@@ -6,6 +6,7 @@ comparable to the Lua 5.5 oracle.
 """
 from __future__ import annotations
 
+import math
 import os
 import re
 import sys
@@ -137,6 +138,7 @@ class Sim:
         self.input_ids: list[int] = []
         self.inputs: dict[str, Any] = {}
         self._eval_stack: set[int] = set()
+        self._unimpl_warned: set[str] = set()
         self._loglines_id: int | None = None
         for _nid, _nd in self.nodes.items():
             if "ArrayVar" in _nd.cls and _extract(
@@ -467,6 +469,38 @@ class Sim:
             self._do_bitwise(nid, nq, lambda a, b: a & b)
         elif "Expr_BitwiseOR" in cls:
             self._do_bitwise(nid, nq, lambda a, b: a | b)
+        elif "Expr_BitwiseXOR" in cls:
+            self._do_bitwise(nid, nq, lambda a, b: a ^ b)
+        elif "Expr_BitwiseNOT" in cls:
+            a = _as_int(self._in_val(nid, "Input", 0))
+            self._out_val(nid, "Output", ~a)
+        elif "Expr_BitwiseShiftLeft" in cls:
+            self._do_bitwise(nid, nq, lambda a, b: a << b if b >= 0 else 0)
+        elif "Expr_BitwiseShiftRight" in cls:
+            self._do_bitwise(nid, nq, lambda a, b: a >> b if b >= 0 else 0)
+        elif "Expr_MathSqrt" in cls:
+            self._do_unary(nid, nq, lambda a: math.sqrt(a) if a >= 0 else 0.0)
+        elif "Expr_MathSin" in cls:
+            self._do_unary(nid, nq, math.sin)
+        elif "Expr_MathCos" in cls:
+            self._do_unary(nid, nq, math.cos)
+        elif "Expr_MathTan" in cls:
+            self._do_unary(nid, nq, math.tan)
+        elif "Expr_MathAsin" in cls:
+            self._do_unary(nid, nq, lambda a: math.asin(a) if -1.0 <= a <= 1.0 else 0.0)
+        elif "Expr_MathAcos" in cls:
+            self._do_unary(nid, nq, lambda a: math.acos(a) if -1.0 <= a <= 1.0 else 0.0)
+        elif "Expr_MathAtan2" in cls:
+            y = _as_float(self._in_val(nid, "Y", 0))
+            x = _as_float(self._in_val(nid, "X", 0))
+            try:
+                self._out_val(nid, "Output", math.atan2(y, x))
+            except (TypeError, ValueError):
+                self._out_val(nid, "Output", 0.0)
+        elif "Expr_MathExp" in cls:
+            self._do_unary(nid, nq, lambda a: math.exp(a) if a < 700 else float("inf"))
+        elif "Expr_MathCeil" in cls:
+            self._do_unary(nid, nq, lambda a: float(math.ceil(a)))
         elif "Expr_Select" in cls:
             self._do_select(nid, nq)
         elif "Expr_String_Concatenate" in cls:
@@ -477,6 +511,28 @@ class Sim:
             self._do_substr(nid, nq)
         elif "Expr_String_CharacterToCodepoint" in cls:
             self._do_codepoint(nid, nq)
+        elif "Expr_String_CodepointToCharacter" in cls:
+            self._do_fromcodepoint(nid, nq)
+        elif "Expr_String_Contains" in cls:
+            self._do_contains(nid, nq)
+        elif "Expr_String_StartsWith" in cls:
+            self._do_startswith(nid, nq)
+        elif "Expr_String_Find" in cls:
+            self._do_strfind(nid, nq)
+        elif "Expr_String_Replace" in cls:
+            self._do_replace(nid, nq)
+        elif "Expr_String_Split" in cls:
+            self._do_split(nid, nq)
+        elif "Expr_String_Trim" in cls:
+            self._do_trim(nid, nq)
+        elif "Expr_String_ParseNumber" in cls:
+            self._do_parsenum(nid, nq)
+        elif "Expr_String_ParseInt" in cls:
+            self._do_parseint(nid, nq)
+        elif "Expr_LogicalNAND" in cls:
+            self._do_bool(nid, nq, lambda a, b: not (a and b))
+        elif "Expr_LogicalXOR" in cls:
+            self._do_bool(nid, nq, lambda a, b: bool(a) != bool(b))
         elif "WireGraph_Exec_ArrayVar_Push" in cls:
             self._do_arr_push(nid, nq)
         elif "WireGraph_Exec_ArrayVar_GetLength" in cls:
@@ -491,6 +547,14 @@ class Sim:
             self._do_arr_clear(nid, nq)
         elif "WireGraph_Exec_ArrayVar_CopyFrom" in cls:
             self._do_arr_copy(nid, nq)
+        elif "WireGraph_Exec_ArrayVar_Append" in cls:
+            self._do_arr_append(nid, nq)
+        elif "WireGraph_Exec_ArrayVar_Slice" in cls:
+            self._do_arr_slice(nid, nq)
+        elif "WireGraph_Exec_MapVar_CopyFrom" in cls:
+            self._do_map_copy(nid, nq)
+        elif "WireGraph_Exec_MapVar_GetLength" in cls:
+            self._do_map_len(nid, nq)
         elif "WireGraph_Exec_ArrayVar_Find" in cls:
             self._do_arr_find(nid, nq)
         elif "WireGraph_Exec_ArrayVar_RemoveAtIndex" in cls:
@@ -523,6 +587,12 @@ class Sim:
         elif "Gate" in cls or "Event" in cls or "Coerce" in cls:
             for w in self.out_wires.get((nid, "ExecOut"), []):
                 nq.add((w.dst_id, w.dst_port))
+        else:
+            # Unknown gate: never silent — a skipped gate corrupts the run.
+            if cls not in self._unimpl_warned:
+                self._unimpl_warned.add(cls)
+                print("irsims: unimplemented gate %s (nid %d)" % (cls, nid),
+                      file=sys.stderr, flush=True)
 
     # ---- gate impls ----
     def _do_buffer(self, nid: int, nq: set):
@@ -719,6 +789,124 @@ class Sim:
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
+    def _do_fromcodepoint(self, nid: int, nq: set):
+        cp = _as_int(self._in_val(nid, "Codepoint", -1))
+        if 0 <= cp <= 0x10FFFF:
+            self._out_val(nid, "Character", chr(cp))
+            self._out_val(nid, "bSuccess", True)
+        else:
+            self._out_val(nid, "Character", "")
+            self._out_val(nid, "bSuccess", False)
+
+    @staticmethod
+    def _match_case(s: str, sub: str, case: bool) -> tuple[str, str]:
+        if case:
+            return s, sub
+        return s.lower(), sub.lower()
+
+    def _do_contains(self, nid: int, nq: set):
+        s = _as_str(self._in_val(nid, "Input", ""))
+        sub = _as_str(self._in_val(nid, "Search", ""))
+        case = self._in_val(nid, "bCaseSensitive", None)
+        case = True if case is None else _as_bool(case)
+        s, sub = self._match_case(s, sub, case)
+        self._out_val(nid, "Output", sub in s)
+
+    def _do_startswith(self, nid: int, nq: set):
+        s = _as_str(self._in_val(nid, "Input", ""))
+        pre = _as_str(self._in_val(nid, "Prefix", ""))
+        case = self._in_val(nid, "bCaseSensitive", None)
+        case = True if case is None else _as_bool(case)
+        s, pre = self._match_case(s, pre, case)
+        self._out_val(nid, "Output", s.startswith(pre))
+
+    def _do_strfind(self, nid: int, nq: set):
+        s = _as_str(self._in_val(nid, "Input", ""))
+        sub = _as_str(self._in_val(nid, "Search", ""))
+        case = self._in_val(nid, "bCaseSensitive", None)
+        case = True if case is None else _as_bool(case)
+        start = _as_int(self._in_val(nid, "Start", 0))
+        s, sub = self._match_case(s, sub, case)
+        self._out_val(nid, "Output", s.find(sub, max(0, start)))
+
+    def _do_replace(self, nid: int, nq: set):
+        s = _as_str(self._in_val(nid, "Input", ""))
+        sub = _as_str(self._in_val(nid, "Search", ""))
+        rep = _as_str(self._in_val(nid, "Replacement", ""))
+        case = self._in_val(nid, "bCaseSensitive", None)
+        case = True if case is None else _as_bool(case)
+        maxrep = _as_int(self._in_val(nid, "MaxReplacements", -1))
+        start = _as_int(self._in_val(nid, "Start", 0))
+        if not sub:
+            self._out_val(nid, "Output", s)
+            return
+        if not case:
+            i, n, head = max(0, start), 0, s[:max(0, start)]
+            out = ""
+            low, lsub = s.lower(), sub.lower()
+            while True:
+                j = low.find(lsub, i)
+                if j < 0 or (maxrep > 0 and n >= maxrep):
+                    out += s[i:]
+                    break
+                out += s[i:j] + rep
+                i = j + len(sub)
+                n += 1
+            self._out_val(nid, "Output", head + out)
+            return
+        head, tail = s[:max(0, start)], s[max(0, start):]
+        if maxrep > 0:
+            tail = tail.replace(sub, rep, maxrep)
+        else:
+            tail = tail.replace(sub, rep)
+        self._out_val(nid, "Output", head + tail)
+
+    def _do_split(self, nid: int, nq: set):
+        s = _as_str(self._in_val(nid, "Input", ""))
+        delim = _as_str(self._in_val(nid, "Delimiter", ""))
+        case = self._in_val(nid, "bCaseSensitive", None)
+        case = True if case is None else _as_bool(case)
+        if not delim:
+            self._out_val(nid, "Left", s)
+            self._out_val(nid, "Right", "")
+            self._out_val(nid, "Found", False)
+            self._out_val(nid, "bFound", False)
+            return
+        hay, ndl = (s, delim) if case else (s.lower(), delim.lower())
+        j = hay.find(ndl)
+        if j < 0:
+            self._out_val(nid, "Left", s)
+            self._out_val(nid, "Right", "")
+            self._out_val(nid, "Found", False)
+            self._out_val(nid, "bFound", False)
+        else:
+            self._out_val(nid, "Left", s[:j])
+            self._out_val(nid, "Right", s[j + len(delim):])
+            self._out_val(nid, "Found", True)
+            self._out_val(nid, "bFound", True)
+
+    def _do_trim(self, nid: int, nq: set):
+        self._out_val(nid, "Output",
+                      _as_str(self._in_val(nid, "Input", "")).strip())
+
+    def _do_parsenum(self, nid: int, nq: set):
+        s = _as_str(self._in_val(nid, "Input", ""))
+        try:
+            self._out_val(nid, "Value", float(s))
+            self._out_val(nid, "bSuccess", True)
+        except (TypeError, ValueError):
+            self._out_val(nid, "Value", 0.0)
+            self._out_val(nid, "bSuccess", False)
+
+    def _do_parseint(self, nid: int, nq: set):
+        s = _as_str(self._in_val(nid, "Input", ""))
+        try:
+            self._out_val(nid, "Value", int(s))
+            self._out_val(nid, "bSuccess", True)
+        except (TypeError, ValueError):
+            self._out_val(nid, "Value", 0)
+            self._out_val(nid, "bSuccess", False)
+
     def _do_arr_push(self, nid: int, nq: set):
         aid = self._arr_id(nid)
         arr = self._arr_list(aid)
@@ -879,6 +1067,62 @@ class Sim:
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
+    def _do_map_copy(self, nid: int, nq: set):
+        mid = self._map_id(nid)
+        src = None
+        for w in self.in_wires.get((nid, "SourceRef"), []):
+            src = self.maps.get(w.src_id)
+            if src is not None:
+                break
+        if src is None:
+            v = self._in_val(nid, "SourceRef", None)
+            if isinstance(v, dict):
+                src = v
+        self.maps[mid] = dict(src) if src is not None else {}
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_map_len(self, nid: int, nq: set):
+        self._out_val(nid, "Length", len(self.maps.get(self._map_id(nid), {})))
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_arr_append(self, nid: int, nq: set):
+        aid = self._arr_id(nid)
+        arr = self._arr_list(aid)
+        src_arr = None
+        for w in self.in_wires.get((nid, "SourceRef"), []):
+            src_arr = self.arrays.get(w.src_id)
+            if src_arr is not None:
+                break
+        if src_arr is None:
+            v = self._in_val(nid, "SourceRef", None)
+            if isinstance(v, list):
+                src_arr = v
+        if src_arr:
+            arr.extend(src_arr)
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_arr_slice(self, nid: int, nq: set):
+        aid = self._arr_id(nid)
+        start = _as_int(self._in_val(nid, "Start", 0))
+        count = _as_int(self._in_val(nid, "Count", 0))
+        src_arr = None
+        for w in self.in_wires.get((nid, "SourceRef"), []):
+            src_arr = self.arrays.get(w.src_id)
+            if src_arr is not None:
+                break
+        if src_arr is None:
+            v = self._in_val(nid, "SourceRef", None)
+            if isinstance(v, list):
+                src_arr = v
+        if src_arr is not None:
+            arr = self._arr_list(aid)
+            arr[:] = src_arr[max(0, start):max(0, start) + max(0, count)]
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
     def _do_uptime(self, nid: int, nq: set):
         self._out_val(nid, "Uptime", float(self.tick) * 0.01)
         for w in self.out_wires.get((nid, "Uptime"), []):
@@ -902,7 +1146,12 @@ class Sim:
             return
         if "WireGraphPseudo_MapVar" in node.cls:
             if nid not in self.maps:
-                self.maps[nid] = {}
+                v = node.props.get("InitialValue", None)
+                if isinstance(v, tuple) and v and v[0] == "maplit":
+                    self.maps[nid] = {lit_value(k): lit_value(val)
+                                      for k, val in v[1]}
+                else:
+                    self.maps[nid] = {}
             return
         v = node.props.get("InitialValue", node.props.get("Value", ("raw", "0")))
         if isinstance(v, tuple):

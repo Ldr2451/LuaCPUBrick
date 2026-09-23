@@ -6,6 +6,7 @@ Usage:
   python -u tinylua/tests/test_chip_suite.py [filter]  # cases whose name contains filter
   python -u tinylua/tests/test_chip_suite.py --all     # everything incl. slow cases
   python -u tinylua/tests/test_chip_suite.py --list    # list case names
+  Append --ws=PATH to test a different chip source instead of tinylua/lua.ws.
 
 Each case runs in its own process (8 workers) with a hard TIMEOUT so one
 slow case can never stall the batch. Exit 0 when all green.
@@ -102,12 +103,13 @@ def run_case(name, src, inputs, mode, kw):
     src = resolve_src(src, kw)
     timeout = TIMEOUT_OVERRIDES.get(name, TIMEOUT)
     irpkl = kw.get("_irpkl")
+    ws_path = kw.get("_ws", WS_PATH)
     for attempt in (1, 2):
         t0 = time.time()
         try:
             p = subprocess.run(
                 [sys.executable, "-u", __file__, "--worker",
-                 WS_PATH, json.dumps({"src": src, "kw": kw,
+                 ws_path, json.dumps({"src": src, "kw": kw,
                                       "ticks": kw.get("ticks", TICKS)}),
                  irpkl or ""],
                 capture_output=True, text=True, timeout=timeout,
@@ -273,8 +275,11 @@ def main(args):
         return 0
     # Slow cases (heavy tick budgets) run only with --all; the default
     # fast tier covers everything else.
-    run_all = args and args[0] == "--all"
-    filt = None if run_all else (args[0] if args else None)
+    run_all = "--all" in args
+    wsflag = [a for a in args if a.startswith("--ws=")]
+    ws_path = wsflag[0][5:] if wsflag else WS_PATH
+    rest = [a for a in args if a != "--all" and not a.startswith("--ws=")]
+    filt = None if run_all and not rest else (rest[0] if rest else None)
     skip_pre = 0
     if OR.LUA_BIN is None:
         print("SKIP: no Lua 5.5 oracle found")
@@ -295,6 +300,7 @@ def main(args):
             continue
         kw = dict(kw)
         kw["inputs"] = inputs
+        kw["_ws"] = ws_path
         if name in TICKS_OVERRIDES:
             kw["ticks"] = TICKS_OVERRIDES[name]
         selected.append((name, src, inputs, mode, kw))
@@ -303,7 +309,7 @@ def main(args):
     import tempfile
     from irdump import dump_source
     t0 = time.time()
-    nodes, wires, _ = dump_source(WS_PATH)
+    nodes, wires, _ = dump_source(ws_path)
     with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
         irpkl = f.name
     with open(irpkl, "wb") as f:

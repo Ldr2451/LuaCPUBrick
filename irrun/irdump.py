@@ -63,6 +63,22 @@ def _split_top(s):
     return parts
 
 
+def _unescape_dq(inner):
+    out = ""
+    i = 0
+    while i < len(inner):
+        c = inner[i]
+        if c == "\\" and i + 1 < len(inner):
+            e = inner[i + 1]
+            out += {"n": "\n", "r": "\r", "t": "\t", "\\": "\\",
+                    '"': '"', "0": "\0"}.get(e, e)
+            i += 2
+        else:
+            out += c
+            i += 1
+    return out
+
+
 def _parse_lit(s):
     s = s.strip()
     m = re.match(r"Bool\((true|false)\)", s)
@@ -74,21 +90,11 @@ def _parse_lit(s):
     m = re.match(r"Float\((.*)\)$", s)
     if m:
         return ("float", float(m.group(1)))
+    m = re.match(r'String\("(.*)"\)$', s, re.S)
+    if m:
+        return ("str", _unescape_dq(m.group(1)))
     if s.startswith('"') and s.endswith('"'):
-        inner = s[1:-1]
-        out = ""
-        i = 0
-        while i < len(inner):
-            c = inner[i]
-            if c == "\\" and i + 1 < len(inner):
-                e = inner[i + 1]
-                out += {"n": "\n", "r": "\r", "t": "\t", "\\": "\\",
-                        '"': '"', "0": "\0"}.get(e, e)
-                i += 2
-            else:
-                out += c
-                i += 1
-        return ("str", out)
+        return ("str", _unescape_dq(s[1:-1]))
     m = re.match(r"Vector\s*\{([^{}]*)\}", s)
     if m:
         kv = dict(kv.split(":") for kv in _split_top(m.group(1)))
@@ -106,6 +112,18 @@ def _parse_lit(s):
     if m:
         return ("arraylit", [_parse_lit(p) for p in _split_top(m.group(1))
                              if p])
+    m = re.match(r"Map\(\[(.*)\]\)$", s, re.S)
+    if m:
+        pairs = []
+        for p in _split_top(m.group(1)):
+            if not p:
+                continue
+            inner = p.strip()
+            if inner.startswith("(") and inner.endswith(")"):
+                kv = _split_top(inner[1:-1])
+                if len(kv) == 2:
+                    pairs.append((_parse_lit(kv[0]), _parse_lit(kv[1])))
+        return ("maplit", pairs)
     return ("raw", s)
 
 
