@@ -195,6 +195,10 @@ TESTS = [
     ("mod-float", "print(7.5%2)", None, "run"),
     ("long-sum", "local s = 0 local i = 1 while i<=100000 do "
      "s = s+i i = i+1 end print(s)", None, "run"),
+    ("long-string", "print([[hello]])", None, "run"),
+    ("long-string-nest", 'print([=[a]=])', None, "run"),
+    ("long-comment", "--[[this is a comment]]print(1)", None, "run"),
+    ("long-comment-nest", "--[==[nested]==]print(2)", None, "run"),
     ("stress-instr", "STRESS", None, "run"),
     ("over-cap", "OVERCAP", None, "reject"),
     # error-class tests

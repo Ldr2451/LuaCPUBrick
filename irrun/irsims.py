@@ -555,6 +555,8 @@ class Sim:
             self._do_map_copy(nid, nq)
         elif "WireGraph_Exec_MapVar_GetLength" in cls:
             self._do_map_len(nid, nq)
+        elif "WireGraph_Exec_MapVar_GetKeys" in cls:
+            self._do_map_keys(nid, nq)
         elif "WireGraph_Exec_ArrayVar_Find" in cls:
             self._do_arr_find(nid, nq)
         elif "WireGraph_Exec_ArrayVar_RemoveAtIndex" in cls:
@@ -1084,6 +1086,17 @@ class Sim:
 
     def _do_map_len(self, nid: int, nq: set):
         self._out_val(nid, "Length", len(self.maps.get(self._map_id(nid), {})))
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_map_keys(self, nid: int, nq: set):
+        mid = self._map_id(nid)
+        aid = None
+        for w in self.in_wires.get((nid, "ArrayVarRef"), []):
+            aid = w.src_id
+            break
+        if aid is not None:
+            self.arrays[aid] = list(self.maps.get(mid, {}).keys())
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 

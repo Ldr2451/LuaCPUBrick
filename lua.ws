@@ -204,7 +204,7 @@ mod fmtVal(tag: int, num: float, s: string) -> string {
 // token kinds: 1 NUM, 2 STR, 3 NAME, 4 KW, 5 SYM, 6 EOF
  // KW ids: and1 break2 do3 else4 elseif5 end6 false7 function8 if9 local10
 //   nil11 not12 or13 return14 then15 true16 while17 for18 in19 repeat20 until21
-// SYM ids: +1 -2 *3 /4 %5 ^6 <7 >8 <=9 >=10 ==11 ~=12 =13 (14 )15 ,16 ;17 ..18 &25 |26 ~27 <<28 >>29 //30
+// SYM ids: +1 -2 *3 /4 %5 ^6 <7 >8 <=9 >=10 ==11 ~=12 =13 (14 )15 ,16 ;17 ..18 &25 |26 ~27 <<28 >>29 //30 :31
 // Lexer stages: 0 dispatch, 1 number int, 2 number frac, 3 number exp,
 //   4 string body, 5 escape, 6 name, 7 decimal escape, 8 hex escape,
 //   9 z-skip, 10 comment, 99 done.
@@ -288,6 +288,7 @@ mod resolveKw() {
     else if n == "in" then 19
     else if n == "repeat" then 20
     else if n == "until" then 21
+    else if n == "goto" then 22
     else if n == "while" then 17
     else 0
   if id == 0 {
@@ -303,6 +304,41 @@ mod hexVal(cp: int) -> int {
     else if cp >= 97 && cp <= 102 then cp - 87
     else if cp >= 65 && cp <= 70 then cp - 55
     else -1
+}
+
+// level of a long bracket ([[, [=[, ...) starting at pos, or -1
+mod longLevel(pos: int) -> int {
+  let seg = lsrc.Substring(pos, 8)
+  return if seg.StartsWith("[[", true) then 0
+    else if seg.StartsWith("[=[", true) then 1
+    else if seg.StartsWith("[==[", true) then 2
+    else if seg.StartsWith("[===[", true) then 3
+    else if seg.StartsWith("[====[", true) then 4
+    else if seg.StartsWith("[=====[", true) then 5
+    else -1
+}
+
+mod closerFor(level: int) -> string {
+  return if level == 0 then "]]" else if level == 1 then "]=]" else if level == 2 then "]==]"
+    else if level == 3 then "]===]" else if level == 4 then "]====]" else "]=====]"
+}
+
+// A long string or long comment starting at pos (its opening bracket has `level` equals equals signs).
+mod lexLong(pos: int, level: int, isComment: bool) {
+  let closer = closerFor(level)
+  let cstart = pos + level + 2
+  let e = lsrc.Find(closer, true, cstart)
+  if e < 0 {
+    lexFail("unfinished long string/comment")
+  } else {
+    let skip = if lsrc.Substring(cstart, 2) == "\r\n" then 2 else if lsrc.Substring(cstart, 1) == "\n" then 1 else 0
+    let span = lsrc.Substring(pos, e + closer.Length() - pos)
+    if !isComment {
+      emitTok(2, 0, 0.0, lsrc.Substring(cstart + skip, e - cstart - skip))
+    }
+    lline = lline + span.Length() - span.Replace("\n", "").Length()
+    lpos = e + closer.Length()
+  }
 }
 
 mod emitEscByte(v: int) {
@@ -424,8 +460,13 @@ mod lexStep() {
         lpos = lpos + 1
       } else if cp == 45 {
         if cp2 == 45 {
-          lstage = 10
-          lpos = lpos + 2
+          let lv = longLevel(lpos + 2)
+          if lv >= 0 {
+            lexLong(lpos + 2, lv, true)
+          } else {
+            lstage = 10
+            lpos = lpos + 2
+          }
         } else {
           emitTok(5, 2, 0.0, "")
           lpos = lpos + 1
@@ -512,13 +553,21 @@ mod lexStep() {
         emitTok(5, 20, 0.0, "")
         lpos = lpos + 1
       } else if cp == 91 {
-        emitTok(5, 21, 0.0, "")
-        lpos = lpos + 1
+        let lv = longLevel(lpos)
+        if lv >= 0 {
+          lexLong(lpos, lv, false)
+        } else {
+          emitTok(5, 21, 0.0, "")
+          lpos = lpos + 1
+        }
       } else if cp == 93 {
         emitTok(5, 22, 0.0, "")
         lpos = lpos + 1
       } else if cp == 35 {
         emitTok(5, 24, 0.0, "")
+        lpos = lpos + 1
+      } else if cp == 58 {
+        emitTok(5, 31, 0.0, "")
         lpos = lpos + 1
       } else {
         lexFail("unexpected character")
