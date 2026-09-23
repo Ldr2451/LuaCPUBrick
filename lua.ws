@@ -161,6 +161,10 @@ const MAX_VA = 256
 // unrolling in retAdjust and the return paths)
 const MAXVALS = 16
 
+// Library sources, prepended on demand (see libFor).  These are ordinary Lua:
+// the parser sees them exactly like the user's program.
+const LIB_iter = "do\nfunction _ipairs_iter(t, i) i = i + 1 local v = t[i] if v ~= nil then return i, v end end\nfunction ipairs(t) return _ipairs_iter, t, 0 end\nfunction pairs(t) return next, t, nil end\nend\n"
+
 // ---------------------------------------------------------------- state: outputs + status
 
 var logV: string = ""
@@ -223,6 +227,8 @@ var lerr: bool = false
 var lerrLine: int = 1
 var lerrMsg: string = ""
 var lstrDelim: string = ""
+// lines the prepended library added, so error line numbers match the program
+var libLines: int = 0
 var lnumInt: float = 0.0
 var lnumFrac: float = 0.0
 var lnumDiv: float = 1.0
@@ -1160,11 +1166,28 @@ mod regFree(r: int) {
   }
 }
 
-// Account for call argument slots (fr+1..), which bypass regAlloc.
+// Claim register slots up to n.  Both the frame size and the allocator move:
+// code that writes a block of registers outside regAlloc (call argument and
+// result windows, an expanded call's copies) must claim them here, or a later
+// regAlloc hands out a slot that is still live.
 mod bumpMax(n: int) {
   if n > cfMax[fnDepth] {
     cfMax[fnDepth] = n
   }
+  if n > cfNext[fnDepth] {
+    cfNext[fnDepth] = n
+  }
+}
+
+// Put the allocator back inside a window bumpMax already claimed.  A call's
+// arguments are parsed after its callee register is allocated, and they belong
+// in that window, so allocation resumes at reg+1 rather than past its end.
+mod rewindTo(r: int) {
+  if regAlloc() >= cfNext[fnDepth] {
+    perr = true
+    perrMsg = "too many registers"
+  }
+  cfNext[fnDepth] = r
 }
 
 // Mark the instruction at `pos` as returning all of its values (a CALL's C
@@ -1178,10 +1201,7 @@ mod patchAt(pos: int) {
       bpc[pos] = bpc[pos] + 2
     }
     let fr = bpa[pos]
-    if cfNext[fnDepth] < fr + MAXVALS {
-      cfNext[fnDepth] = fr + MAXVALS
-      bumpMax(fr + MAXVALS)
-    }
+    bumpMax(fr + MAXVALS)
   }
 }
 
@@ -1190,6 +1210,11 @@ mod patchMultiTail() {
   lastCallPos = -1
 }
 
+// A call in the LAST value position of a target list expands into the targets
+// that list still has unfilled: `local a, b = f()` binds b to f's second value
+// (nil when f returned only one).  Mark the call to return everything, then
+// normalise however many values came back into `extra` consecutive registers so
+// the ordinary store machinery can treat them like any other value registers.
 // A call in the LAST value position of a target list expands into the targets
 // that list still has unfilled: `local a, b = f()` binds b to f's second value
 // (nil when f returned only one).  Mark the call to return everything, then
@@ -1204,7 +1229,6 @@ mod expandTailCall() {
     let callBase = presReg
     patchAt(presCallPos)
     let sc = regAlloc()
-    // the first value already sits in tmpRegs; the extras start one past it
     bEmit(43, callBase + 1, sc, extra)
     bumpMax(sc + extra)
     if 1 <= extra { tmpRegs.push(sc) }
@@ -1908,7 +1932,7 @@ mod exprPushName(callParen: bool, callSugar: bool) {
       bEmit(7, fr + 1, ar, 0)
       bEmit(23, fr, 1, 0)
       bumpMax(fr + 3)
-      cfNext[fnDepth] = fr + 1
+      rewindTo(fr + 1)
       pushVal(fr, true, true)
       cpos = cpos + 2
       expectOperand = false
@@ -2190,7 +2214,7 @@ mod exprInfix() {
     bEmit(7, fr + 1, ar, 0)
     bEmit(23, fr, 1, 0)
     bumpMax(fr + 3)
-    cfNext[fnDepth] = fr + 1
+    rewindTo(fr + 1)
     pushVal(fr, true, true)
     cpos = cpos + 1
     expectOperand = false
@@ -2271,7 +2295,7 @@ mod closeAction() {
           let p = bEmit(23, fr, 0, 0)
           lastCallPos = p
           bumpMax(fr + 2)
-          cfNext[fnDepth] = fr + 1
+          rewindTo(fr + 1)
         } else {
           perr = true
           perrMsg = "trailing comma"
@@ -2289,7 +2313,7 @@ mod closeAction() {
         let p = bEmit(23, fr, nargs + 1, if wasCall then 1 else 0)
         lastCallPos = p
         bumpMax(fr + nargs + 3)
-        cfNext[fnDepth] = fr + 1
+        rewindTo(fr + 1)
       }
       pushVal(fr, true, true)
       cpos = cpos + 1
@@ -2518,12 +2542,6 @@ var tmpB: int = 0
 var tmpC: int = 0
 var tmpS: string = ""
 var forName: string = ""
-// generic-for registers, live between the header and the matching `end`
-var genF: int = 0
-var genS: int = 0
-var genC: int = 0
-var genV1: int = 0
-var genV2: int = -1
 var forInit: int = -1
 var forLimit: int = -1
 var forStep: int = -1
@@ -2580,10 +2598,12 @@ mod startUnit(cont: int) {
 // then FORPREP + entry JMP and open the body block (ctl kind 5).
 // Generic for: `for v1 [, v2] in explist do`.
 // The explist gives (f, s, ctrl); each step calls f(s, ctrl), stops when the
-// first result is nil, and feeds the results to the loop variables.  s and ctrl
-// are then updated from the first two variables, as Lua specifies.  The header
-// emits the loop head and the body's variable bindings; doBlockClose(kind 7)
-// appends the state update and the jump back.
+// first result is nil, and feeds the results to the loop variables.  Only the
+// control variable moves on: it becomes the first result of each step, while
+// the state stays what the explist put there (verified against the oracle).
+// The header emits the loop head and the variable bindings; doBlockClose(kind
+// 7) appends the control update and the jump back.  Everything the close needs
+// lives in the control frame, so generic-fors nest.
 mod genForHead() {
   if !(curKind() == 4 && curSub() == 3) {
     perr = true
@@ -2600,9 +2620,6 @@ mod genForHead() {
   let freg = regAlloc()
   let sreg = regAlloc()
   let creg = regAlloc()
-  // the call gets its own base: its result registers would otherwise land on
-  // top of the saved iterator, which has to survive for the next step
-  let creg2 = regAlloc()
   bEmit(7, freg, tmpRegs[0], 0)
   if 1 < tmpRegs.length() {
     bEmit(7, sreg, tmpRegs[1], 0)
@@ -2618,32 +2635,32 @@ mod genForHead() {
   if freg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = freg }
   if sreg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = sreg }
   if creg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = creg }
-  if creg2 > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = creg2 }
-  genF = freg
-  genS = sreg
-  genC = creg
-  genV1 = locDeclare(tmpNames[0])
+  let v1 = locDeclare(tmpNames[0])
   dirtySelf(tmpNames[0])
+  var v2 = -1
   if 1 < tmpNames.length() {
-    genV2 = locDeclare(tmpNames[1])
+    v2 = locDeclare(tmpNames[1])
     dirtySelf(tmpNames[1])
-  } else {
-    genV2 = -1
   }
+  // The call gets its own base, allocated *after* the loop variables: a call
+  // leaves its results in the base register and the one above it, so a base
+  // below them would overwrite a variable with the iterator's own first result.
+  let cb = regAlloc()
+  if cb > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = cb }
   // loop head: f(s, ctrl) with its two arguments in place
   let top = bop.length()
-  bEmit(7, creg2, freg, 0)
-  bEmit(7, creg2 + 1, sreg, 0)
-  bEmit(7, creg2 + 2, creg, 0)
-  bEmit(23, creg2, 2, 2)
-  let done = bEmit(21, 0, creg2, 0)
+  bEmit(7, cb, freg, 0)
+  bEmit(7, cb + 1, sreg, 0)
+  bEmit(7, cb + 2, creg, 0)
+  bEmit(23, cb, 2, 2)
+  let done = bEmit(21, 0, cb, 0)
   // bind the results to the loop variables (runs once per entry)
-  bEmit(7, genV1, creg2, 0)
-  if 0 <= genV2 {
-    bEmit(7, genV2, creg2 + 1, 0)
+  bEmit(7, v1, cb, 0)
+  if 0 <= v2 {
+    bEmit(7, v2, cb + 1, 0)
   }
-  // kind 7: A=loop top, B=exit jump, C=break list
-  pushCtl(7, top, done, -1, ctlLoop, 0, 0)
+  // kind 7: A=loop top, B=exit jump, C=break list, D=ctrl reg, E=first var
+  pushCtl(7, top, done, -1, ctlLoop, creg, v1)
   ctlLoop = ctlKind.length() - 1
   forNames.push(tmpNames[0])
 }
@@ -2893,12 +2910,22 @@ mod doCont() {
       contKind = 0
     }
   } else if contKind == 15 {
-    // generic-for explist: f, s and the control value
+    // Generic-for explist.  A trailing call supplies the whole triple
+    // (ipairs(t) -> f, s, 0), so mark it to return everything and pad its own
+    // result registers to three -- Lua fills a short explist with nil.  The
+    // call's result window is already claimed by patchAt, so nothing else has
+    // to be allocated here.
     tmpRegs.push(presReg)
     if curKind() == 5 && curSub() == 16 && tmpRegs.length() < 3 {
       cpos = cpos + 1
       startUnit(15)
     } else {
+      if presIsCall {
+        patchAt(presCallPos)
+        bEmit(43, presReg + 1, presReg + 1, 2)
+        tmpRegs.push(presReg + 1)
+        tmpRegs.push(presReg + 2)
+      }
       genForHead()
       inExpr = false
       contKind = 0
@@ -3259,10 +3286,10 @@ mod doBlockClose() {
       pdThen = 1
       popCtl()
     } else if kind == 7 {
-      // generic for tail: the control variable becomes the first result (the
-      // state stays as it was), then jump back to the loop head
+      // generic-for tail: the control variable becomes this step's first
+      // result, then jump back to the loop head
       blkExit()
-      bEmit(7, genC, genV1, 0)
+      bEmit(7, ctlE[n], ctlF[n], 0)
       let back = bEmit(20, 0, 0, 0)
       bPatch(back, ctlA[n])
       bPatch(ctlB[n], bop.length())
@@ -4944,6 +4971,25 @@ mod parseChunk() {
   parseStep()
 }
 
+// ---------------------------------------------------------------- stdlib
+//
+// The library is plain Lua source, prepended to the program before it is
+// lexed, and only the pieces a program actually names are included: parsing is
+// a tick-bounded job, so an unused library would cost every run.  Only the
+// handful of operations Lua cannot express at all (next, select, the _s/_m
+// string and math primitives) live in the VM; everything else is Lua.
+
+// Does p name this library entry?  A plain substring test, like the reference
+// chip: it never misses a word the program actually uses, and the worst a
+// needless match can do is parse a little more library.
+mod srcUses(p: string, name: string) -> bool {
+  return p.Find(name, true, 0) >= 0
+}
+
+mod libFor(p: string) -> string {
+  return if srcUses(p, "ipairs") || srcUses(p, "pairs") then LIB_iter else ""
+}
+
 mod vmBurst() {
   vmStep()
   vmStep()
@@ -4979,8 +5025,12 @@ on sched {
 
 on goParse {
   parseJobStart()
-  lsrc = program
-  llen = program.Length()
+  // The library goes in front of the program, so the user's line numbers are
+  // shifted by however many lines it added; libLines undoes that for errors.
+  let lib = libFor(program)
+  libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
+  lsrc = if 0 < lib.Length() then lib .. program else program
+  llen = lsrc.Length()
   lpos = 0
   lstage = 0
   lidBuf = ""
@@ -4993,7 +5043,9 @@ on goParse {
   } else {
     if lerr {
       progOkV = false
-      errV = "line " .. (lerrLine | 0) .. ": " .. lerrMsg
+      let el = lerrLine | 0
+      if libLines < el { el = el - libLines } else { el = 1 }
+      errV = "line " .. el .. ": " .. lerrMsg
       vmHalted = true
       jobBusy = false
     } else {

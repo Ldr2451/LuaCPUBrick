@@ -19,7 +19,25 @@ CASES = [
     'local t = {5} local a, b, c = ipairs(t) print(a, b, c)',
     'local t = {7,8,9} local f, s, ctl = ipairs(t) print(f, s, ctl)',
     'local t = {1,2,3} local n = 0 for k, v in next, t do n = n + 1 end print(n)',
+    # the state stays fixed across steps; only the control variable advances
+    'local t = {1,2,3} local o = "" for k, v in next, t do o = o .. k end print(o)',
+    # deleting the current key during a walk is allowed
+    'local t = {1,2,3} for k in next, t do t[k] = nil end local n = 0 for _ in next, t do n = n + 1 end print(n)',
+    # adding a key during a walk may or may not be visited; the count is stable
+    'local t = {a=1,b=2} local n = 0 for k,v in pairs(t) do n = n + 1 t[k] = 9 end print(n)',
+    # nested generic-for over different tables
+    'local a = {1,2} local b = {10,20} local s = "" for i,v in ipairs(a) do for j,w in ipairs(b) do s = s .. (i*j) .. ":" .. (v+w) .. " " end end print(s)',
+    # ipairs stops at the first hole
+    'local t = {1,2,nil,4} local n = 0 for _ in ipairs(t) do n = n + 1 end print(n)',
+    # break out of a generic-for
+    'local t = {1,2,3} for _, v in ipairs(t) do if v == 2 then break end print(v) end print("done")',
 ]
+
+def norm(s: str) -> str:
+    """PUC Lua prints 'function: 0x...' / 'table: 0x...'; the chip prints the
+    type name.  Documented divergence, so compare on the type."""
+    import re
+    return re.sub(r'\b(function|table|thread|userdata): [0-9a-fx]+', r'\1', s)
 
 _RUNNER = None
 
@@ -44,7 +62,7 @@ for src in CASES:
         err = og.get('err', '')
     except Exception as e:
         got, err = f"<sim error: {e}>", ''
-    good = got == want
+    good = norm(got) == norm(want)
     ok += good
     fail += not good
     print(f"{'OK ' if good else 'FAIL'} chip={got!r} lua={want!r} err={err!r} :: {src}")

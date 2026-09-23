@@ -48,6 +48,41 @@
 - Compile the chip once per batch of experiments: a loop over N test programs
   must not trigger N recompiles.
 
+## Fixing bugs
+- Fix the **class**, not the instance. When something breaks, ask what made it
+  possible and make that harder next time; a one-line patch that leaves the trap
+  in place will be hit again.
+- Prefer **restructuring** over a lint or a comment: if two rules have to be
+  kept in step, merge them into one function so half of it cannot be forgotten.
+  (Real example: `bumpMax` claimed registers but only grew the frame, so each
+  call site had to *also* set `cfNext` — six sites, one of which had already
+  forgotten. Now `bumpMax` does both and the paired line is gone.)
+- Per-loop/per-scope state belongs in the per-level arrays the parser already
+  keeps, not in globals. Globals get clobbered by nesting (generic-for did).
+- Check the neighbouring invariants when a bug shows up: the real
+  `local a,b,c = pairs(t)` path was fine while the for-in path was broken, so
+  one working neighbour is not evidence the code is right.
+- Watch for silent miscompiles. The host language has traps that produce
+  confidently wrong results instead of errors: a `mod` that mutates a `var`
+  inside an `if` and returns it yields garbage (use the single-expression
+  `return if c then a else b` form, which every other mod uses), and WireScript
+  has no `while` at all (use a `for`, or a `buffer`/`await` micro-step).
+- Add an oracle case for the rule you just got wrong, not just for the program
+  that exposed it. The state-stays-fixed rule of the generic-for protocol was
+  wrong until `iter_check.py` compared against real Lua.
+
+## Code clarity
+- Show the intent in the code: a name that says what a register is for
+  (`freg`/`sreg`/`creg`, not `r1`/`r2`/`r3`) beats a comment explaining it.
+- Keep short, useful comments next to a footgun, especially where the obvious
+  code is wrong: state *why* the non-obvious thing is necessary ("a call leaves
+  its results in the base register and the one above it, so a base below them
+  would overwrite a variable"). Skip the comment when the code can be made to
+  say it.
+- Prefer deleting a concept over documenting it. If a helper exists only to
+  work around a missing one, remove the workaround once the real thing is
+  there.
+
 ## Verification
 - Verify with execution, never by reasoning alone: run the relevant checks after every change.
 - Chip-vs-oracle suite: `python -u tinylua/tests/test_chip_suite.py [filter]`.
