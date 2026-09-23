@@ -148,9 +148,15 @@
 // ---------------------------------------------------------------- tunables
 
 const STEP_INTERVAL = 0.01
-const MAX_INSTR = 512
+const MAX_INSTR = 1024
+// the prepended library plus a full program; the token arrays are sized from
+// this, so raising it costs gates (see tools/gatecount.py)
+const MAX_TOKENS = 4096
 const MAX_REGS = 64
-const MAX_FUNCS = 32
+// function slots: the reserved builtins, the prepended library, and the
+// program's own functions.  The arrays grow on demand, so this is a bound, not
+// a size.
+const MAX_FUNCS = 96
 const MAX_GLOBALS = 64
 const MAX_CALLS = 32
 const MAX_TABLES = 64
@@ -161,9 +167,31 @@ const MAX_VA = 256
 // unrolling in retAdjust and the return paths)
 const MAXVALS = 16
 
-// Library sources, prepended on demand (see libFor).  These are ordinary Lua:
-// the parser sees them exactly like the user's program.
-const LIB_iter = "do\nfunction _ipairs_iter(t, i) i = i + 1 local v = t[i] if v ~= nil then return i, v end end\nfunction ipairs(t) return _ipairs_iter, t, 0 end\nfunction pairs(t) return next, t, nil end\nend\n"
+// Gate builtins live in function slots 0..NB-1; a program's own functions start
+// at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
+// means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
+// the dispatch case.  test_ws_consistency.py checks all four line up.
+const NB = 13
+
+// Library sources, prepended on demand (see libIter and friends).  These are
+// ordinary Lua: the parser sees them exactly like the user's program.  They are
+// split per family because lexing them is the cost -- a program that names one
+// string function pays for one family, not for all eight.
+// Library functions are written as field assignments, not `function string.f`:
+// the parser does not take a dotted name on `function` yet.
+const LIB_iter = "function _ipairs_iter(t, i) i = i + 1 local v = t[i] if v ~= nil then return i, v end end\nfunction ipairs(t) return _ipairs_iter, t, 0 end\nfunction pairs(t) return next, t, nil end\n"
+const LIB_str_index = "string = string or {}\nstring.len = function(s) return #s end\nstring.sub = function(s, i, j)\n  local l = #s\n  i = i or 1\n  j = j or -1\n  if i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end\n  if j < 0 then j = l + j + 1 elseif j > l then j = l end\n  if i > j then return \"\" end\n  return _s(1, s, i - 1, j - i + 1)\nend\nstring.byte = function(s, i, j)\n  i = i or 1\n  j = j or i\n  if i < 0 then i = #s + i + 1 end\n  if j < 0 then j = #s + j + 1 end\n  if i < 1 then i = 1 end\n  if j > #s then j = #s end\n  if i > j then return end\n  if i == j then return _s(4, s, i - 1, 0) end\n  return _s(4, s, i - 1, 0), string.byte(s, i + 1, j)\nend\nstring.char = function(...)\n  local r = \"\"\n  for i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\n  return r\nend\n"
+const LIB_str_case = "string = string or {}\nstring.upper = function(s) return _s(2, s) end\nstring.lower = function(s) return _s(3, s) end\n"
+const LIB_str_misc = "string = string or {}\nstring.rep = function(s, n, sep)\n  if n <= 0 then return \"\" end\n  sep = sep or \"\"\n  local r = s\n  for i = 2, n do r = r .. sep .. s end\n  return r\nend\nstring.reverse = function(s)\n  local r = \"\"\n  for i = #s, 1, -1 do r = r .. _s(1, s, i - 1, 1) end\n  return r\nend\n"
+const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775807 - 1\n"
+const LIB_math_int = "math = math or {}\nmath.floor = function(x) return _m(1, x, 0) end\nmath.ceil = function(x) return _m(2, x, 0) end\nmath.tointeger = function(x) return _m(13, x, 0) end\nmath.type = function(x) return _m(14, x, 0) end\nmath.abs = function(x) if x < 0 then return -x end return x end\nmath.sqrt = function(x) return _m(3, x, 0) end\n"
+const LIB_math_trig = "math = math or {}\nmath.sin = function(x) return _m(4, x, 0) end\nmath.cos = function(x) return _m(5, x, 0) end\nmath.tan = function(x) return _m(6, x, 0) end\nmath.asin = function(x) return _m(7, x, 0) end\nmath.acos = function(x) return _m(8, x, 0) end\nmath.atan = function(y, x) return _m(9, y, x or 1) end\n"
+const LIB_math_exp = "math = math or {}\nmath.exp = function(x) return _m(10, x, 0) end\nmath.log = function(x, b)\n  if b == nil then return _m(11, x, 0) end\n  if b == 10 then return _m(12, x, 0) end\n  return _m(11, x, 0) / _m(11, b, 0)\nend\n"
+const LIB_math_misc = "math = math or {}\nmath.max = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v > m then m = v end end\n  return m\nend\nmath.min = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v < m then m = v end end\n  return m\nend\nmath.fmod = function(a, b)\n  local r = a % b\n  if r ~= 0 and (a < 0) ~= (b < 0) then r = r - b end\n  return r\nend\nmath.modf = function(x) local i = (x >= 0 and _m(1, x, 0)) or _m(2, x, 0) return i + 0.0, x - i end\n"
+const LIB_tab_ins = "table = table or {}\ntable.insert = function(t, ...)\n  local n = #t\n  local c = select('#', ...)\n  if c == 1 then\n    t[n + 1] = (...)\n  elseif c == 2 then\n    local pos, v = ...\n    for i = n, pos, -1 do t[i + 1] = t[i] end\n    t[pos] = v\n  end\nend\ntable.remove = function(t, pos)\n  local n = #t\n  if pos == nil then pos = n end\n  local v = t[pos]\n  for i = pos, n - 1 do t[i] = t[i + 1] end\n  t[n] = nil\n  return v\nend\n"
+const LIB_tab_list = "table = table or {}\ntable.unpack = unpack\ntable.pack = function(...) local t = {...} t.n = select('#', ...) return t end\ntable.move = function(a1, f, e, t, a2)\n  a2 = a2 or a1\n  if e >= f then\n    if t > e or t <= f or a1 ~= a2 then\n      for i = 0, e - f do a2[t + i] = a1[f + i] end\n    else\n      for i = e - f, 0, -1 do a2[t + i] = a1[f + i] end\n    end\n  end\n  return a2\nend\n"
+const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, j)\n  sep = sep or \"\"\n  i = i or 1\n  j = j or #t\n  local r = \"\"\n  for k = i, j do\n    local v = t[k]\n    if k > i then r = r .. sep end\n    r = r .. v\n  end\n  return r\nend\n"
+const LIB_tab_sort = "table = table or {}\n_lt = function(a, b) return a < b end\ntable.sort = function(t, cmp)\n  local lt = cmp or _lt\n  for i = 2, #t do\n    local v = t[i]\n    local j = i - 1\n    while j >= 1 and lt(v, t[j]) do t[j + 1] = t[j] j = j - 1 end\n    t[j + 1] = v\n  end\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -264,8 +292,8 @@ mod emitTok(kind: int, sub: int, num: float, text: string) {
   tn.push(num)
   tt.push(text)
   tl.push(lline)
-  if tk.length() > 1024 {
-    lexFail("too many tokens (max 1024)")
+  if tk.length() > MAX_TOKENS {
+    lexFail("too many tokens (max " .. (MAX_TOKENS | 0) .. ")")
   }
 }
 
@@ -805,6 +833,11 @@ var fVar: bool[]
 var mainFid: int = 0
 var gmap: Map<string, int>
 var gslotNext: int = 0
+// global slots the runtime wires directly, resolved by name in parseInit
+var slotOutLatch: int = 0
+var slotInLatch: int = 0
+var slotInInt0: int = 0
+var slotOutInt0: int = 0
 var fnDepth: int = 0
 var cfNext: int[]
 var cfMax: int[]
@@ -1056,9 +1089,12 @@ mod parseInit() {
   ctlF.clear()
   ctlG.clear()
   plNext.clear()
-  plNext.resize(512, -1)
+  plNext.resize(MAX_INSTR, -1)
   tmpNames.clear()
   tmpRegs.clear()
+  svC.clear()
+  svI.clear()
+  svS.clear()
   forNames.clear()
   tmpSStk.clear()
   blkLen.clear()
@@ -1141,8 +1177,18 @@ mod parseInit() {
   gDeclare("outarr")
   gDeclare("select")
   gDeclare("next")
+  gDeclare("_s")
+  gDeclare("_m")
+  gDeclare("unpack")
   gDeclare("inInt0")
   gDeclare("outInt0")
+  // The runtime wires the latches and outputs straight into these slots, so
+  // take the numbers from the declarations instead of repeating them: adding a
+  // builtin used to leave a stale literal behind and overwrite its id.
+  slotOutLatch = gLookup("outNum0")
+  slotInLatch = gLookup("inNum0")
+  slotInInt0 = gLookup("inInt0")
+  slotOutInt0 = gLookup("outInt0")
 }
 
 // ---------------------------------------------------------------- registers + scope
@@ -1954,6 +2000,42 @@ mod exprPushName(callParen: bool, callSugar: bool) {
   }
 }
 
+// A function body runs its own statements, which reuse the statement-level
+// scratch arrays.  Park the outer statement's copy of them, or the body's first
+// `local` wipes the names the outer one still has to assign (the assignment then
+// silently vanished, taking `local f = function() local x ... end` with it).
+mod saveTmp() {
+  svC.push(tmpRegs.length())
+  svC.push(itBase.length())
+  svC.push(itKey.length())
+  svC.push(tmpNames.length())
+  svC.push(tmpA)
+  svI.append(tmpRegs)
+  svI.append(itBase)
+  svI.append(itKey)
+  svS.append(tmpNames)
+  tmpRegs.clear()
+  itBase.clear()
+  itKey.clear()
+  tmpNames.clear()
+}
+
+mod restoreTmp() {
+  tmpA = svC.pop().Value
+  let nN = svC.pop().Value
+  let nK = svC.pop().Value
+  let nB = svC.pop().Value
+  let nR = svC.pop().Value
+  tmpNames.slice(svS, svS.length() - nN, nN)
+  svS.resize(svS.length() - nN, "")
+  itKey.slice(svI, svI.length() - nK, nK)
+  svI.resize(svI.length() - nK, 0)
+  itBase.slice(svI, svI.length() - nB, nB)
+  svI.resize(svI.length() - nB, 0)
+  tmpRegs.slice(svI, svI.length() - nR, nR)
+  svI.resize(svI.length() - nR, 0)
+}
+
 mod newFunc() -> int {
   fStart.push(-1)
   fParams.push(0)
@@ -2005,6 +2087,7 @@ mod funcHeadAnon(fr: int) {
   ctorStk.push(openCtor)
   openCtor = 0
   ctlLoop = -1
+  saveTmp()
   fnDepth = fnDepth + 1
   opBase[fnDepth] = opKind.length()
   funcDepthInit(false)
@@ -2548,6 +2631,10 @@ var forStep: int = -1
 var forNames: string[]
 var tmpNames: string[]
 var tmpRegs: int[]
+// saveTmp's parking lot: counts and values of the scratch arrays
+var svC: int[]
+var svI: int[]
+var svS: string[]
 var ctlD: int[]
 var ctlE: int[]
 var ctlF: int[]
@@ -2779,8 +2866,16 @@ mod doCont() {
         perr = true
         perrMsg = "too many values"
       } else {
+        // `return a, f()` returns f's values too, and how many there are is
+        // only known at run time: RETURNM with a negative count returns that
+        // many fixed values and then everything the call produced.  The call's
+        // own register is left out of the copy below -- its result block can
+        // overlap the block being built here.
+        let n = if presIsCall then tmpRegs.length() - 1 else tmpRegs.length()
+        // reserve the call's result window before allocating the return block,
+        // or regAlloc can hand out a register the call is about to write
+        if presIsCall { patchAt(presCallPos) }
         let br = regAlloc()
-        let n = tmpRegs.length()
         if 1 < n {
           let r2 = regAlloc()
           if 2 < n {
@@ -2840,8 +2935,12 @@ mod doCont() {
           }
           bEmit(7, br + 1, tmpRegs[1], 0)
         }
-        bEmit(7, br, tmpRegs[0], 0)
-        bEmit(42, br, n, 0)
+        if 1 <= n { bEmit(7, br, tmpRegs[0], 0) }
+        if presIsCall {
+          bEmit(42, br, 0 - n, presReg)
+        } else {
+          bEmit(42, br, n, 0)
+        }
         inExpr = false
         contKind = 0
       }
@@ -3320,10 +3419,13 @@ mod doBlockClose() {
       bPatch(skip, bop.length())
       ctlLoop = ctlD[n]
       tmpS = tmpSStk.pop().Value
+      restoreTmp()
       openCtor = ctorStk.pop().Value
       popCtl()
       if resume == 1 {
-        pushVal(extra, true, true)
+        // a function literal is a value, not a call: marking it as a call made
+        // the enclosing call treat it as an expanding tail argument
+        pushVal(extra, false, true)
         expectOperand = false
         inExpr = true
         exprDone = false
@@ -3704,10 +3806,11 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
-// (inputs filled from the latches), 19..26 builtins (print, type, tostring,
-// setvec, setcol, clock, inarr, outarr) as functions with ids 0..7.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 0.0, 0.0]
+// (inputs filled from the latches), 19..31 builtins (print, type, tostring,
+// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack) as
+// functions with ids 0..NB-1, then the two int globals.
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -3772,20 +3875,20 @@ mod vmReset() {
   gnum.copyFrom(GNUM_INIT)
   gtag.resize(64, 0)
   gnum.resize(64, 0.0)
-  gnum[6] = latchN0
-  gnum[7] = latchN1
-  gnum[8] = latchN2
-  gnum[9] = latchN3
-  gstr[10] = latchS0
-  gstr[11] = latchS1
-  gnum[12] = latchVX
-  gnum[13] = latchVY
-  gnum[14] = latchVZ
-  gnum[15] = latchCR
-  gnum[16] = latchCG
-  gnum[17] = latchCB
-  gnum[18] = latchCA
-  gnum[29] = latchI0 + 0.0
+  gnum[slotInLatch + 0] = latchN0
+  gnum[slotInLatch + 1] = latchN1
+  gnum[slotInLatch + 2] = latchN2
+  gnum[slotInLatch + 3] = latchN3
+  gstr[slotInLatch + 4] = latchS0
+  gstr[slotInLatch + 5] = latchS1
+  gnum[slotInLatch + 6] = latchVX
+  gnum[slotInLatch + 7] = latchVY
+  gnum[slotInLatch + 8] = latchVZ
+  gnum[slotInLatch + 9] = latchCR
+  gnum[slotInLatch + 10] = latchCG
+  gnum[slotInLatch + 11] = latchCB
+  gnum[slotInLatch + 12] = latchCA
+  gnum[slotInInt0] = latchI0 + 0.0
   vmPc = 0
   vmBase = 0
   vmHalted = bop.length() == 0
@@ -3851,13 +3954,13 @@ mod logPush(line: string) {
 // mirror them once per tick. Numeric outs read as numbers (nil -> 0.0),
 // string outs Lua-formatted (nil -> "").
 mod syncOuts() {
-  oF0 = if gtag[0] == 0 then 0.0 else gnum[0]
-  oF1 = if gtag[1] == 0 then 0.0 else gnum[1]
-  oF2 = if gtag[2] == 0 then 0.0 else gnum[2]
-  oF3 = if gtag[3] == 0 then 0.0 else gnum[3]
-  oI0 = if gtag[30] == 0 then 0 else toInt(gnum[30])
-  oS4 = if gtag[4] == 0 then "" else fmtVal(gtag[4], gnum[4], gstr[4])
-  oS5 = if gtag[5] == 0 then "" else fmtVal(gtag[5], gnum[5], gstr[5])
+  oF0 = if gtag[slotOutLatch + 0] == 0 then 0.0 else gnum[slotOutLatch + 0]
+  oF1 = if gtag[slotOutLatch + 1] == 0 then 0.0 else gnum[slotOutLatch + 1]
+  oF2 = if gtag[slotOutLatch + 2] == 0 then 0.0 else gnum[slotOutLatch + 2]
+  oF3 = if gtag[slotOutLatch + 3] == 0 then 0.0 else gnum[slotOutLatch + 3]
+  oI0 = if gtag[slotOutInt0] == 0 then 0 else toInt(gnum[slotOutInt0])
+  oS4 = if gtag[slotOutLatch + 4] == 0 then "" else fmtVal(gtag[slotOutLatch + 4], gnum[slotOutLatch + 4], gstr[slotOutLatch + 4])
+  oS5 = if gtag[slotOutLatch + 5] == 0 then "" else fmtVal(gtag[slotOutLatch + 5], gnum[slotOutLatch + 5], gstr[slotOutLatch + 5])
 }
 
 mod vmNum2(op: int, b: int, c: int) -> bool {
@@ -3927,6 +4030,37 @@ mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
 }
 
 // Normalize integral floats to the int tag so 1 and 1.0 share one key.
+// Copy cnt values from src down to a.  The two ranges overlap, so fill from the
+// LOW end: writing a high slot first would overwrite a source value that a
+// lower slot still has to read.
+mod shiftDown(a: int, src: int, cnt: int) {
+  if 1 <= cnt { vSet(a, vTag(src), vNum(src), vStr(src)) }
+  if 2 <= cnt { vSet(a + 1, vTag(src + 1), vNum(src + 1), vStr(src + 1)) }
+  if 3 <= cnt { vSet(a + 2, vTag(src + 2), vNum(src + 2), vStr(src + 2)) }
+  if 4 <= cnt { vSet(a + 3, vTag(src + 3), vNum(src + 3), vStr(src + 3)) }
+  if 5 <= cnt { vSet(a + 4, vTag(src + 4), vNum(src + 4), vStr(src + 4)) }
+  if 6 <= cnt { vSet(a + 5, vTag(src + 5), vNum(src + 5), vStr(src + 5)) }
+  if 7 <= cnt { vSet(a + 6, vTag(src + 6), vNum(src + 6), vStr(src + 6)) }
+  if 8 <= cnt { vSet(a + 7, vTag(src + 7), vNum(src + 7), vStr(src + 7)) }
+  if 9 <= cnt { vSet(a + 8, vTag(src + 8), vNum(src + 8), vStr(src + 8)) }
+  if 10 <= cnt { vSet(a + 9, vTag(src + 9), vNum(src + 9), vStr(src + 9)) }
+  if 11 <= cnt { vSet(a + 10, vTag(src + 10), vNum(src + 10), vStr(src + 10)) }
+  if 12 <= cnt { vSet(a + 11, vTag(src + 11), vNum(src + 11), vStr(src + 11)) }
+  if 13 <= cnt { vSet(a + 12, vTag(src + 12), vNum(src + 12), vStr(src + 12)) }
+  if 14 <= cnt { vSet(a + 13, vTag(src + 13), vNum(src + 13), vStr(src + 13)) }
+  if 15 <= cnt { vSet(a + 14, vTag(src + 14), vNum(src + 14), vStr(src + 14)) }
+  if 16 <= cnt { vSet(a + 15, vTag(src + 15), vNum(src + 15), vStr(src + 15)) }
+}
+
+mod tblFill(dst: int, tid: int, idx: int) {
+  let r = tmap.get(tkey(tid, 1, idx, ""))
+  if r.Found {
+    vSet(dst, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
+  } else {
+    vSet(dst, 0, 0.0, "")
+  }
+}
+
 mod keyTag(t: int, v: float) -> int {
   return if t == 1 && v == floor(v) then 6 else t
 }
@@ -4164,10 +4298,12 @@ mod vmStep() {
     } else if op == 5 {
       vSet(a, gTag(b), gNum(b), gStr(b))
     } else if op == 6 {
-      // outNum0..outNum3 are numeric ports: numbers/booleans/nil only
-      if a <= 3 && vTag(b) != 1 && vTag(b) != 6 && vTag(b) != 0 && vTag(b) != 3 {
+      // The typed output ports check what they accept, by slot: the numeric
+      // ones take numbers, booleans and nil, and outInt0 takes integers.
+      if slotOutLatch <= a && a <= slotOutLatch + 3
+         && vTag(b) != 1 && vTag(b) != 6 && vTag(b) != 0 && vTag(b) != 3 {
         vmFail("cannot convert to number (outNum0..outNum3 take numbers)")
-      } else if a == 30 {
+      } else if a == slotOutInt0 {
         // outInt0 takes integers (integral floats convert, like outNum)
         if vTag(b) == 6 {
           gSet(a, 6, vNum(b), "")
@@ -4432,24 +4568,7 @@ mod vmStep() {
             if cnt > MAXVALS {
               vmFail("too many results to select")
             } else {
-              // results move down to a.. ; copy from the high end so the
-              // overlapping source registers are not clobbered
-              if 16 <= cnt { vSet(a + 15, vTag(src + 15), vNum(src + 15), vStr(src + 15)) }
-              if 15 <= cnt { vSet(a + 14, vTag(src + 14), vNum(src + 14), vStr(src + 14)) }
-              if 14 <= cnt { vSet(a + 13, vTag(src + 13), vNum(src + 13), vStr(src + 13)) }
-              if 13 <= cnt { vSet(a + 12, vTag(src + 12), vNum(src + 12), vStr(src + 12)) }
-              if 12 <= cnt { vSet(a + 11, vTag(src + 11), vNum(src + 11), vStr(src + 11)) }
-              if 11 <= cnt { vSet(a + 10, vTag(src + 10), vNum(src + 10), vStr(src + 10)) }
-              if 10 <= cnt { vSet(a + 9, vTag(src + 9), vNum(src + 9), vStr(src + 9)) }
-              if 9 <= cnt { vSet(a + 8, vTag(src + 8), vNum(src + 8), vStr(src + 8)) }
-              if 8 <= cnt { vSet(a + 7, vTag(src + 7), vNum(src + 7), vStr(src + 7)) }
-              if 7 <= cnt { vSet(a + 6, vTag(src + 6), vNum(src + 6), vStr(src + 6)) }
-              if 6 <= cnt { vSet(a + 5, vTag(src + 5), vNum(src + 5), vStr(src + 5)) }
-              if 5 <= cnt { vSet(a + 4, vTag(src + 4), vNum(src + 4), vStr(src + 4)) }
-              if 4 <= cnt { vSet(a + 3, vTag(src + 3), vNum(src + 3), vStr(src + 3)) }
-              if 3 <= cnt { vSet(a + 2, vTag(src + 2), vNum(src + 2), vStr(src + 2)) }
-              if 2 <= cnt { vSet(a + 1, vTag(src + 1), vNum(src + 1), vStr(src + 1)) }
-              if 1 <= cnt { vSet(a, vTag(src), vNum(src), vStr(src)) }
+              shiftDown(a, src, cnt)
               retCountV = cnt
             }
           }
@@ -4485,6 +4604,102 @@ mod vmStep() {
               nxActive = true
               nxStep()
               advanced = true
+            }
+          }
+        } else if fid == 10 {
+          // _s(mode, s, pos, len): the string operations Lua cannot express.
+          // 1 substring  2 upper  3 lower  4 byte at pos  5 char  6 find
+          let so = toInt(vNum(a + 1))
+          let s = vStr(a + 2)
+          let p = toInt(vNum(a + 3))
+          let q = if 3 < nargs then toInt(vNum(a + 4)) else 1
+          if so == 1 {
+            vSet(a, 2, 0.0, if q < 1 then "" else s.Substring(p, q))
+          } else if so == 2 {
+            vSet(a, 2, 0.0, s.ToUpper())
+          } else if so == 3 {
+            vSet(a, 2, 0.0, s.ToLower())
+          } else if so == 4 {
+            if 0 <= p && p < s.Length() {
+              vSetInt(a, s.Substring(p, 1).ToCharCode().Codepoint)
+            } else {
+              vSet(a, 0, 0.0, "")
+            }
+          } else if so == 5 {
+            vSet(a, 2, 0.0, FromCharCode(p).Character)
+          } else {
+            // 6: find(needle) from pos q, 1-based like Lua's string.find
+            vSetInt(a, s.Find(vStr(a + 3), true, q) + 1)
+          }
+          retCountV = 1
+        } else if fid == 11 {
+          // _m(mode, x, y): the transcendental functions, which have no way to
+          // be written in Lua.  1 floor 2 ceil 3 sqrt 4 sin 5 cos 6 tan 7 asin
+          // 8 acos 9 atan2 10 exp 11 ln 12 log10 13 tointeger 14 math.type
+          let mo = toInt(vNum(a + 1))
+          let x = if 1 < nargs then numArg(vTag(a + 2), vNum(a + 2), 0.0) else 0.0
+          let y = if 2 < nargs then numArg(vTag(a + 3), vNum(a + 3), 0.0) else 0.0
+          if mo == 1 || mo == 2 || mo == 13 {
+            // the floor gate truncates toward zero, so step to the right for
+            // negatives (floor) or positives (ceil)
+            let t = x | 0
+            let fl = if x < 0.0 && x != t + 0.0 then t - 1 else t
+            let ce = if 0 < x && x != t + 0.0 then t + 1 else t
+            if mo == 1 {
+              // Lua's floor/ceil return integers; the chip tags whole numbers
+              // apart from fractions so they print and compare the same way
+              if abs(fl) < 9.2e18 { vSetInt(a, fl) } else { vSetNum(a, fl + 0.0) }
+            } else if mo == 2 {
+              if abs(ce) < 9.2e18 { vSetInt(a, ce) } else { vSetNum(a, ce + 0.0) }
+            } else if x == fl + 0.0 && abs(x) < 9.2e18 {
+              vSetInt(a, fl)
+            } else {
+              vSet(a, 0, 0.0, "")
+            }
+          } else if mo == 14 {
+            vSet(a, 2, 0.0, if vTag(a + 2) == 6 then "integer"
+              else if vTag(a + 2) == 1 then "float" else "nil")
+          } else {
+            vSetNum(a, if mo == 3 then sqrt(x) else if mo == 4 then sin(x)
+              else if mo == 5 then cos(x) else if mo == 6 then tan(x)
+              else if mo == 7 then asin(x) else if mo == 8 then acos(x)
+              else if mo == 9 then atan2(x, y)
+              else if mo == 10 then exp(x) else if mo == 11 then ln(x)
+              else log(x, 10.0))
+          }
+          retCountV = 1
+        } else if fid == 12 {
+          // unpack(t [, i [, j]]): t[i..j] as multiple results.  Lua cannot
+          // write this -- a return list is fixed length -- so it is a primitive.
+          if nargs < 1 || vTag(a + 1) != 5 {
+            vmFail("bad argument #1 to 'unpack' (table expected)")
+          } else {
+            let tid = toInt(vNum(a + 1))
+            let lo = if 1 < nargs then toInt(numArg(vTag(a + 2), vNum(a + 2), 1.0)) else 1
+            let hi = if 2 < nargs then toInt(numArg(vTag(a + 3), vNum(a + 3), 0.0)) else tLen[tid]
+            let cnt = if hi < lo then 0 else hi - lo + 1
+            if cnt > MAXVALS {
+              vmFail("too many results to unpack")
+            } else {
+              // fill high to low: the values move up into the call's own
+              // registers, so copying down would overwrite them
+              if 16 <= cnt { tblFill(a + 15, tid, lo + 15) }
+              if 15 <= cnt { tblFill(a + 14, tid, lo + 14) }
+              if 14 <= cnt { tblFill(a + 13, tid, lo + 13) }
+              if 13 <= cnt { tblFill(a + 12, tid, lo + 12) }
+              if 12 <= cnt { tblFill(a + 11, tid, lo + 11) }
+              if 11 <= cnt { tblFill(a + 10, tid, lo + 10) }
+              if 10 <= cnt { tblFill(a + 9, tid, lo + 9) }
+              if 9 <= cnt { tblFill(a + 8, tid, lo + 8) }
+              if 8 <= cnt { tblFill(a + 7, tid, lo + 7) }
+              if 7 <= cnt { tblFill(a + 6, tid, lo + 6) }
+              if 6 <= cnt { tblFill(a + 5, tid, lo + 5) }
+              if 5 <= cnt { tblFill(a + 4, tid, lo + 4) }
+              if 4 <= cnt { tblFill(a + 3, tid, lo + 3) }
+              if 3 <= cnt { tblFill(a + 2, tid, lo + 2) }
+              if 2 <= cnt { tblFill(a + 1, tid, lo + 1) }
+              if 1 <= cnt { tblFill(a, tid, lo) }
+              retCountV = cnt
             }
           }
         } else {
@@ -4706,8 +4921,21 @@ mod vmStep() {
       let n = if avail < c then avail else c
       retAdjust(vmBase + a, vmBase + b, n, c)
     } else if op == 42 {
-      let cnt = b
-      if 16 < cnt {
+      // RETURNM a, b: b >= 0 returns b values from a; b < 0 returns -b values
+      // from a and then every value the call at register c produced, which is
+      // how `return x, f()` reaches the caller.
+      var cnt = b
+      var tail = 0
+      var tailSrc = 0
+      if cnt < 0 {
+        tail = if 0 < retCountV then retCountV else 0
+        if tail > MAXVALS {
+          tail = MAXVALS
+        }
+        tailSrc = c
+        cnt = 0 - cnt
+      }
+      if 16 < cnt + tail {
         vmFail("too many values")
       } else {
         let ra = fRetA[fRetA.length() - 1]
@@ -4721,13 +4949,26 @@ mod vmStep() {
         fRetPC.pop()
         fRetN.pop()
         vaTop = fVaB.pop().Value
-        let n = if want == -2 then cnt else 1
-        let k = if cnt < n then cnt else n
+        let n = if want == -2 then cnt + tail else 1
+        let k = if cnt + tail < n then cnt + tail else n
         if fFunc.length() == 0 {
           resultV = if 1 <= k then fmtVal(vTag(a), vNum(a), vStr(a)) else ""
           vmHalted = true
         } else {
-          retAdjust(vmBase + a, rb + ra, k, n)
+          if 0 < tail {
+            // The call's values sit in this frame and the fixed ones are copied
+            // into the caller's return block, which overlaps them (a frame
+            // starts at the very register the results go to).  Park the call's
+            // values on the vararg stack first so neither copy can clobber the
+            // other.
+            let save = vaTop
+            vaSpill(vmBase + tailSrc, save, tail)
+            retAdjust(vmBase + a, rb + ra, k, n)
+            vaFill(save, rb + ra + cnt, if k < cnt + tail then k - cnt else tail)
+            vaTop = save
+          } else {
+            retAdjust(vmBase + a, rb + ra, k, n)
+          }
           vmBase = rb
           vmPc = rpc
           retCountV = n
@@ -4921,38 +5162,12 @@ var wantParse: bool = false
 
 mod parseJobStart() {
   parseInit()
-  // one reserved slot per gate builtin (ids 0..9); the rest of the standard
-// library is Lua source prepended to the program (see libFor)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
-  fStart.push(-1)
-  fParams.push(-1)
-  fRegs.push(-1)
+  // One reserved function slot per gate builtin (ids 0..NB-1), so a program's
+  // own functions start at NB and can never collide with one.  The rest of the
+  // standard library is Lua source prepended to the program (see libIter etc).
+  fStart.resize(NB, -1)
+  fParams.resize(NB, -1)
+  fRegs.resize(NB, -1)
   mainFid = newFunc()
   fStart[mainFid] = 0
   fParams[mainFid] = 0
@@ -4986,8 +5201,73 @@ mod srcUses(p: string, name: string) -> bool {
   return p.Find(name, true, 0) >= 0
 }
 
-mod libFor(p: string) -> string {
+mod libIter(p: string) -> string {
   return if srcUses(p, "ipairs") || srcUses(p, "pairs") then LIB_iter else ""
+}
+
+mod libStrIndex(p: string) -> string {
+  return if srcUses(p, "string.len") || srcUses(p, "string.sub")
+      || srcUses(p, "string.byte") || srcUses(p, "string.char")
+      then LIB_str_index else ""
+}
+
+mod libStrCase(p: string) -> string {
+  return if srcUses(p, "string.upper") || srcUses(p, "string.lower")
+      then LIB_str_case else ""
+}
+
+mod libStrMisc(p: string) -> string {
+  return if srcUses(p, "string.rep") || srcUses(p, "string.reverse")
+      then LIB_str_misc else ""
+}
+
+mod libMathConst(p: string) -> string {
+  return if srcUses(p, "math.pi") || srcUses(p, "math.huge")
+      || srcUses(p, "math.maxinteger") || srcUses(p, "math.mininteger")
+      then LIB_math_const else ""
+}
+
+mod libMathInt(p: string) -> string {
+  return if srcUses(p, "math.floor") || srcUses(p, "math.ceil")
+      || srcUses(p, "math.tointeger") || srcUses(p, "math.type")
+      || srcUses(p, "math.abs") || srcUses(p, "math.sqrt")
+      then LIB_math_int else ""
+}
+
+mod libMathTrig(p: string) -> string {
+  return if srcUses(p, "math.sin") || srcUses(p, "math.cos")
+      || srcUses(p, "math.tan") || srcUses(p, "math.asin")
+      || srcUses(p, "math.acos") || srcUses(p, "math.atan")
+      then LIB_math_trig else ""
+}
+
+mod libMathExp(p: string) -> string {
+  return if srcUses(p, "math.exp") || srcUses(p, "math.log")
+      then LIB_math_exp else ""
+}
+
+mod libMathMisc(p: string) -> string {
+  return if srcUses(p, "math.max") || srcUses(p, "math.min")
+      || srcUses(p, "math.fmod") || srcUses(p, "math.modf")
+      then LIB_math_misc else ""
+}
+
+mod libTabIns(p: string) -> string {
+  return if srcUses(p, "table.insert") || srcUses(p, "table.remove")
+      then LIB_tab_ins else ""
+}
+
+mod libTabList(p: string) -> string {
+  return if srcUses(p, "table.unpack") || srcUses(p, "table.pack")
+      || srcUses(p, "table.move") then LIB_tab_list else ""
+}
+
+mod libTabConcat(p: string) -> string {
+  return if srcUses(p, "table.concat") then LIB_tab_concat else ""
+}
+
+mod libTabSort(p: string) -> string {
+  return if srcUses(p, "table.sort") then LIB_tab_sort else ""
 }
 
 mod vmBurst() {
@@ -5027,7 +5307,23 @@ on goParse {
   parseJobStart()
   // The library goes in front of the program, so the user's line numbers are
   // shifted by however many lines it added; libLines undoes that for errors.
-  let lib = libFor(program)
+  // One variable per library piece, then concatenate: the host compiler cannot
+  // lower a mod call inside a binary operation, only variable + variable.
+  let libA = libIter(program)
+  let libB = libStrIndex(program)
+  let libC = libStrCase(program)
+  let libD = libStrMisc(program)
+  let libE = libMathConst(program)
+  let libF = libMathInt(program)
+  let libG = libMathTrig(program)
+  let libH = libMathExp(program)
+  let libI = libMathMisc(program)
+  let libJ = libTabIns(program)
+  let libK = libTabList(program)
+  let libL = libTabConcat(program)
+  let libM = libTabSort(program)
+  let lib = libA .. libB .. libC .. libD .. libE .. libF .. libG
+    .. libH .. libI .. libJ .. libK .. libL .. libM
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program
   llen = lsrc.Length()

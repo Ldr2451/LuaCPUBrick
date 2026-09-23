@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(TINYLUA, "irrun"))
 
 import cases
 import lua_oracle as OR
+from timing import Elapsed
 
 WS_PATH = os.path.join(TINYLUA, "lua.ws")
 
@@ -68,17 +69,25 @@ TIMEOUT_OVERRIDES = {
     "func-fib": 300,
 }
 
-# Documented chip-only behaviors (chip diverges, oracle differs):
-# - lit-hex / int-wrap: exact ints past +/-2^53 float-round on the chip.
-# - fmt-div3 / fmt-big: shortest-round-trip last digits and 3-digit
-#   exponents (TODO: Ryu/Grisu shortest round-trip in fmtNum).
+# Documented chip-only behaviors (chip diverges, oracle differs). Keep this list
+# short: an entry here is a real incompatibility, and most of these trace to one
+# place -- fmtNum prints the shortest round-trip form where PUC prints %.14g
+# plus a digit when that does not round-trip. Fixing that formatting would
+# retire fmt-*, math-pi, math-log and math-modf at once.
+# - lit-hex / int-wrap / math-maxinteger: exact ints past +/-2^53 float-round.
 # - tab-del: #{1,nil,3} is undefined in Lua (hole length); the chip
 #   keeps the allocated length while PUC Lua reports 1.
+# - io-int-coerce is a chip feature, not a divergence: outInt0 is a typed int
+#   port, so an integral float is stored as an integer.
 CHIP_LOG = {
     "lit-hex": "255\t16\t18446744073709551616\n",
     "int-wrap": "9.223372036854778e+18\t9.223372036854778e+18\n",
     "fmt-div3": "0.3333333333333333\n",
     "fmt-big": "1.2676506002282294e+30\t1e+20\n",
+    "math-maxinteger": "9223372036854777856\n",
+    "math-pi": "3.141592653589793\n",
+    "math-log": "4.605170185988092\n",
+    "math-modf": "3.0\t0.7000000000000002\n",
     "tab-del": "1\tnil\t3\t3\n",
 }
 
@@ -152,10 +161,9 @@ def run_batch(cases_in):
             if len(lines) == len(cases_in):
                 dt = time.time() - t0
                 out = []
-                tag = " [batch]" if len(cases_in) > 1 else ""
                 for (name, src, kw, mode, _), ln in zip(cases_in, lines):
-                    r = compare(name, mode, kw, json.loads(ln), dt)
-                    out.append((r[0], r[1], "%s%s" % (r[2], tag), r[3]))
+                    r = json.loads(ln)
+                    out.append(compare(name, mode, kw, r, r.get("secs", dt)))
                 return out
         why = "batch-rc=%d: %s" % (p.returncode, (p.stderr or "")[-200:])
     except subprocess.TimeoutExpired:
@@ -278,6 +286,7 @@ def worker(ws_path, payload, irpkl=None):
     sim = Sim(nodes, [Wire(*w) for w in wires])
     for p in batch:
         src, kw, ticks = p["src"], p["kw"], p["ticks"]
+        t_case = time.time()
         sim.reset()
         si = {"program": src, "run": True}
         for k, v in enumerate(kw.get("inputs") or []):
@@ -297,6 +306,7 @@ def worker(ws_path, payload, irpkl=None):
         og = r["outGlobals"]
         sys.stdout.write(json.dumps({
             "src": src,
+            "secs": time.time() - t_case,
             "log": r["log"],
             "outGlobals": {
                 "outNum0": og.get("outNum0", 0.0),
@@ -325,7 +335,7 @@ def main(args):
     # Every case runs by default: the slow ones used to live behind --all,
     # which only meant running the whole suite twice to see everything.
     wsflag = [a for a in args if a.startswith("--ws=")]
-    ws_path = wsflag[0][5:] if wsflag else WS_PATH
+    ws_path = os.path.abspath(wsflag[0][5:]) if wsflag else WS_PATH
     rest = [a for a in args
             if a not in ("--all", "--list") and not a.startswith("--ws=")]
     filt = rest[0] if rest else None
@@ -388,7 +398,8 @@ def main(args):
                           flush=True)
     finally:
         os.unlink(irpkl)
-    print("OK=%d FAIL=%d SKIP=%d" % (ok, fail, skip))
+    print("OK=%d FAIL=%d SKIP=%d  (%d cases in %d batches)"
+          % (ok, fail, skip, len(prepared), len(batches)))
     return 1 if fail else 0
 
 
@@ -397,4 +408,5 @@ if __name__ == "__main__":
         worker(sys.argv[2], sys.argv[3],
                sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None)
     else:
-        sys.exit(main(sys.argv[1:]))
+        with Elapsed("suite(%s)" % (" ".join(sys.argv[1:]) or "all")):
+            sys.exit(main(sys.argv[1:]))

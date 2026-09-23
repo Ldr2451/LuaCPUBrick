@@ -188,6 +188,11 @@ class Sim:
             if dn and dn.kind == "Input":
                 if w.src_id not in self.input_ids:
                     self.input_ids.append(w.src_id)
+        self._halted_id = None
+        for nid, nd in nodes.items():
+            if _extract(nd.props.get('_label', ('raw', ''))) == 'vmHalted':
+                self._halted_id = nid
+                break
         self.reset()
 
     def _seed_inputs(self):
@@ -288,6 +293,12 @@ class Sim:
             self._deferred = {k: v for k, v in self._deferred.items() if k > tick}
             if on_tick is not None:
                 on_tick(self, tick)
+            # The clock keeps ticking after a program finishes, which used to
+            # burn the rest of the tick budget (1.9s for a one-line program).
+            # vmHalted is the chip's own "nothing left to do" flag.
+            if self._halted_id is not None and self.vars.get(self._halted_id):
+                if not self.exec_queue and not self._deferred:
+                    break
         return self.capture()
 
     def _run_value_fixpoint(self):
@@ -603,7 +614,7 @@ class Sim:
                 self._out_val(nid, "Output", 0.0)
         elif "Expr_MathExp" in cls:
             self._do_unary(nid, nq, lambda a: math.exp(a) if a < 700 else float("inf"))
-        elif "Expr_MathCeil" in cls:
+        elif "Expr_MathCeil" in cls or "Expr_Ceil" in cls:
             self._do_unary(nid, nq, lambda a: float(math.ceil(a)))
         elif "Expr_Select" in cls:
             self._do_select(nid, nq)
@@ -1760,6 +1771,9 @@ class ChipRunner:
     def __init__(self, ws_path: str):
         nodes, wires, _ = dump_source(ws_path)
         self.sim = Sim(nodes, [Wire(*w) for w in wires])
+
+    def reset(self):
+        self.sim.reset()
 
     def run(self, src: str, max_ticks: int = MAX_TICKS,
             inputs: dict | None = None) -> dict:

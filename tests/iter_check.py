@@ -1,13 +1,18 @@
 import sys, os
-sys.path.insert(0, '.')
-sys.path.insert(0, 'irrun')
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'irrun'))
 from irdump import dump_source
 from irsims import Sim, Wire, ChipRunner
+from timing import Elapsed
 import lua_oracle as OR
 
 CASES = [
     'local t = {10, 20, x=1} local k, v = next(t) print(k, v)',
-    'local t = {} t.a=1 t.b=2 local k, v = next(t) print(k, v)',
+    # PUC's order for string keys is hash-based and its seed varies per process,
+    # so canonicalise before printing: the chip's insertion order is
+    # deterministic but the two are not required to agree.
+    'local t = {} t.a=1 t.b=2 local r = {} for x, y in pairs(t) do r[#r+1] = x .. y end table.sort(r) print(r[1], r[2])',
     'local t = {1,2,3} local s = 0 for k, v in next, t do s = s + v end print(s)',
     'local t = {1,2,3} print(next(t, 1))',
     'local t = {1,2,3} print(next({}))',
@@ -44,26 +49,28 @@ _RUNNER = None
 def chip(src, ticks=8000):
     global _RUNNER
     if _RUNNER is None:
-        _RUNNER = ChipRunner(os.path.abspath('lua.ws'))
+        _RUNNER = ChipRunner(os.path.join(os.path.dirname(HERE), 'lua.ws'))
     r = _RUNNER.run(src, ticks)
     return r.get('log', ''), r.get('outGlobals', {})
 
 ok = fail = 0
-for src in CASES:
-    o = OR.oracle_run(src)
-    if not o.get("avail"):
-        want = "<oracle unavailable>"
-    elif o.get("calls") is None:
-        want = f"<oracle: {o.get('stderr')}>"
-    else:
-        want = OR.oracle_log(o["calls"])
-    try:
-        got, og = chip(src)
-        err = og.get('err', '')
-    except Exception as e:
-        got, err = f"<sim error: {e}>", ''
-    good = norm(got) == norm(want)
-    ok += good
-    fail += not good
-    print(f"{'OK ' if good else 'FAIL'} chip={got!r} lua={want!r} err={err!r} :: {src}")
+with Elapsed('iter_check'):
+    for src in CASES:
+        o = OR.oracle_run(src)
+        if not o.get("avail"):
+            want = "<oracle unavailable>"
+        elif o.get("calls") is None:
+            want = f"<oracle: {o.get('stderr')}>"
+        else:
+            want = OR.oracle_log(o["calls"])
+        try:
+            got, og = chip(src)
+            err = og.get('err', '')
+        except Exception as e:
+            got, err = f"<sim error: {e}>", ''
+        good = norm(got) == norm(want)
+        ok += good
+        fail += not good
+        print(f"{'OK ' if good else 'FAIL'} chip={got!r} lua={want!r} "
+              f"err={err!r} :: {src}", flush=True)
 print(f"\nOK={ok} FAIL={fail}")

@@ -1,0 +1,186 @@
+"""Structural consistency of the WireScript chip against the spec.
+
+The chip-vs-oracle suite proves behavior matches real Lua. These checks prove
+the chip's static structure matches the spec where behavior tests cannot
+reach: builtin ids vs reserved function slots, global slot order, limits,
+port bindings, opcode coverage, keyword coverage, and re-parse/restart
+clearing of every state array. A mismatch here is a gate bug no behavior
+test can catch (e.g. the parseJobStart six-slot collision that broke every
+function once inarr and outarr took ids 6 and 7).
+
+Run: python -u tests/test_consistency.py  (exit 0 = all green)
+"""
+import os
+import re
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import spec as m
+
+_T0 = time.time()
+
+WS = open(os.path.join(os.path.dirname(HERE), "lua.ws"),
+          encoding="utf-8").read()
+
+FAILS = []
+
+
+def check(name, cond, detail=""):
+    print(("PASS " if cond else "FAIL ") + name
+          + ("" if cond or not detail else f": {detail}"))
+    if not cond:
+        FAILS.append(name)
+
+
+def mod_body(name):
+    """Extract the full body of `mod name(...) { ... }` by brace matching."""
+    i = WS.index(f"mod {name}(")
+    i = WS.index("{", i)
+    depth, j = 0, i
+    while True:
+        if WS[j] == "{":
+            depth += 1
+        elif WS[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return WS[i:j + 1]
+        j += 1
+
+
+# 1. builtins: ids, reserved slots, fid dispatch ---------------------------
+n_builtin = len(m.BUILTINS)
+check("builtin-count", n_builtin == 13, f"got {n_builtin}")
+ids = sorted(fid for _, fid in m.BUILTINS)
+check("builtin-ids-contiguous", ids == list(range(n_builtin)), f"got {ids}")
+nb_ws = re.search(r"const NB = (\d+)", WS)
+check("nb-const-present", nb_ws is not None, "no `const NB` in lua.ws")
+if nb_ws:
+    check("nb-matches-builtins", int(nb_ws.group(1)) == n_builtin,
+          f"lua.ws NB={nb_ws.group(1)}, spec has {n_builtin} builtins")
+pjs = mod_body("parseJobStart")
+check("reserved-slots-sized", "fStart.resize(NB, -1)" in pjs,
+      "parseJobStart must size the reserved slots from NB, not push them")
+vm = mod_body("vmStep")
+for fid in range(n_builtin):
+    check(f"fid-{fid}-dispatched",
+          re.search(rf"fid == {fid}\b", vm) is not None)
+check("fid-user-else", "} else {" in vm)
+
+# 2. global slot order ------------------------------------------------------
+model_order = list(m.GSLOT_ORDER)
+decls = re.findall(r'gDeclare\("(\w+)"\)', mod_body("parseInit"))
+check("global-order-match", decls == model_order,
+      f"\n  ws   ={decls}\n  spec ={model_order}")
+check("global-count-64", len(model_order) <= m.MAX_GLOBALS,
+      f"{len(model_order)} slots vs MAX_GLOBALS={m.MAX_GLOBALS}")
+for arr, n in (("GTAG_INIT", None), ("GNUM_INIT", None)):
+    vals = re.search(arr + r": (?:int|float)\[\] = \[([^\]]*)\]",
+                     WS).group(1).split(",")
+    check(f"{arr}-len", len(vals) == len(model_order),
+          f"{len(vals)} vs {len(model_order)}")
+
+# 3. limits -----------------------------------------------------------------
+# Every limit is written in lua.ws as a const and mirrored in spec.py; the
+# mirror is only useful if it is checked, which is what this loop is for.
+for name in ["MAX_INSTR", "MAX_TOKENS", "MAX_REGS", "MAX_FUNCS", "MAX_GLOBALS",
+             "MAX_CALLS", "MAX_TABLES", "MAX_HEAP", "MAXVALS"]:
+    m_ws = re.search(rf"const {name} = (\d+)", WS)
+    check(f"limit-{name}-declared", m_ws is not None, "no const in lua.ws")
+    if m_ws:
+        check(f"limit-{name}-{getattr(m, name)}",
+              int(m_ws.group(1)) == getattr(m, name), f"ws={m_ws.group(1)}")
+check(f"log-lines-{m.LOG_LINES}",
+      f"logLines.length() > {m.LOG_LINES}" in WS)
+check(f"log-width-{m.LOG_WIDTH}",
+      f".Length() > {m.LOG_WIDTH}" in WS
+      and f"Substring(0, {m.LOG_WIDTH - 1})" in WS)
+check(f"outarr-{m.OUTARR}",
+      f"outArrV.resize({m.OUTARR}, 0.0)" in WS)
+check("call-params-8", "max 8 in-gate" in WS)
+
+# 4. ports ------------------------------------------------------------------
+outs = re.findall(r"@right out (\w+)(?:: (\S+))? = (\S+)", WS)
+outs_d = {n: (t, b) for n, t, b in outs}
+for port, typ in [("log", "string"), ("outNum0", "float"),
+                  ("outNum1", "float"), ("outNum2", "float"),
+                  ("outNum3", "float"), ("outInt0", "int"),
+                  ("outStr0", "string"),
+                  ("outStr1", "string"), ("outArr", "float[]"),
+                  ("result", "string"), ("err", "string"),
+                  ("progOk", "bool"), ("busy", "bool")]:
+    check(f"port-{port}", port in outs_d,
+          f"missing (have {sorted(outs_d)})")
+    if port in outs_d and typ:
+        check(f"port-{port}-type", outs_d[port][0] == typ,
+              f"got {outs_d[port][0]}")
+for port, bindvar in [("log", "logV"), ("outNum0", "oF0"),
+                      ("outInt0", "oI0"),
+                      ("outStr0", "oS4"), ("result", "resultV"),
+                      ("err", "errV"), ("progOk", "progOkV")]:
+    check(f"port-{port}-bound", re.search(
+        rf"^(var|let) {bindvar}\b", WS, re.M) is not None)
+check("no-halted-port", "out halted" not in WS)
+check("no-proglen-port", "out progLen" not in WS)
+check("no-nprint-port", "out nPrint" not in WS)
+for hw, port in [("inarr", "inArr"), ("outarr", "outArr"),
+                 ("setvec", "outVec"), ("setcol", "outCol"),
+                 ("print", "log")]:
+    check(f"hw-{hw}-{port}", re.search(
+        rf"@(?:left|right) (?:in|out) {port}\b", WS) is not None)
+check("no-change-on-array", "on Change(inArr)" not in WS)
+
+# 5. state clearing: every array/Map cleared on re-parse or restart ---------
+decls_arr = set(re.findall(r"^var (\w+): (?:.*\[\]|Map<[^>]*>)",
+                           WS, re.M))
+with_init = set(re.findall(r"^var (\w+): (?:.*\[\]|Map<[^>]*>) =",
+                           WS, re.M))
+must_clear = decls_arr - with_init
+pi = mod_body("parseInit")
+vr = mod_body("vmReset")
+cleared = (set(re.findall(r"(\w+)\.clear\(\)", pi))
+           | set(re.findall(r"(\w+)\.clear\(\)", vr)))
+missing = sorted(n for n in must_clear if n not in cleared)
+check("all-state-cleared", not missing, f"never cleared: {missing}")
+for where, body in (("parseInit", pi), ("vmReset", vr)):
+    for tgt in set(re.findall(r"(\w+)\.clear\(\)", body)):
+        check(f"clear-target-{tgt}-{where}", tgt in decls_arr,
+              "clears undeclared array")
+# restart resets outputs, log and error text
+for var in ["logV", "oF0", "oI0", "oS4", "outVecV", "outColV",
+            "resultV", "errV"]:
+    check(f"reset-{var}", re.search(rf"\b{var} = ", vr) is not None)
+check("reset-logLines", "logLines.clear()" in vr)
+check("reset-outArrV", "outArrV.resize(64, 0.0)" in vr)
+
+# 6. opcode coverage: every model opcode handled in vmStep -------------------
+# (8..13 share one range-dispatched arithmetic branch)
+handled = set(int(x) for x in re.findall(r"op == (\d+)", vm))
+if re.search(r"op >= 8 && op <= 13", vm):
+    handled |= set(range(8, 14))
+emitted = set(int(x) for x in re.findall(r"bEmit\((\d+)", WS))
+check("opcodes-0-45-handled", handled >= set(range(46)),
+      f"missing {[o for o in range(46) if o not in handled]}")
+check("no-op-46", max(emitted | {0}) <= 45,
+      f"max emitted {max(emitted)}")
+check("spec-46-ops", m.N_OPS == 46 and m.HALT == 0 and m.RETURNM == 42
+      and m.CALLM == 41 and m.ADJUST == 43 and m.TAPPEND == 44
+      and m.VARARG == 45)
+
+# 7. keyword coverage --------------------------------------------------------
+model_kw = set(m.KEYWORDS)
+ws_kw = set(re.findall(r'n == "(\w+)"', mod_body("resolveKw")))
+check("keywords-match", ws_kw == model_kw,
+      f"\n  ws-only={sorted(ws_kw - model_kw)}"
+      f"\n  model-only={sorted(model_kw - ws_kw)}")
+
+# 8. error-line wiring -------------------------------------------------------
+check("tl-push", "tl.push(lline)" in WS)
+check("tl-clear", "tl.clear()" in pi)
+check("tl-read", "tl[epos]" in WS)
+check("lex-line-tracked", "lerrLine = lline" in WS)
+
+print(f"{len(FAILS)} failed" if FAILS else "ALL-OK")
+print("test_consistency: %.1fs" % (time.time() - _T0), file=sys.stderr)
+sys.exit(1 if FAILS else 0)

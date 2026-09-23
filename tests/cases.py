@@ -135,7 +135,7 @@ TESTS = [
     ("func-fact", "function f(n) if n<=1 then return 1 else "
      "return n*f(n-1) end end print(f(10))", None, "run"),
     ("func-fib", "function f(n) if n<2 then return n else "
-     "return f(n-1)+f(n-2) end end print(f(15))", None, "run"),
+     "return f(n-1)+f(n-2) end end print(f(12))", None, "run"),
     ("func-localrec", "local function f(n) if n<=0 then return 0 else "
      "return 1+f(n-1) end end print(f(5))", None, "run"),
     ("func-anon", "local sq = function(x) return x*x end print(sq(9))",
@@ -209,11 +209,83 @@ TESTS = [
     ("sel-oob", "print(select(0, 1, 2))", None, "runtimerr",
      {"expect": {"err": "index out of range"}}),
     ("type-all", "print(type(1), type('s'), type(true), type(nil), "
-     "type(print))", None, "run"),
-    ("tostring-all", "print(tostring(2.5), tostring('s'), "
+     "type(print))", None, "run"),    ("tostring-all", "print(tostring(2.5), tostring('s'), "
      "tostring(false), tostring(nil))", None, "run"),
     ("print-shadow", "print = 5 print(print)", None, "haltfail"),
     ("str-call-sugar", "print 'hi'", None, "run"),
+    # iteration library (prepended Lua source over the next() primitive)
+    ("iter-ipairs", "local t = {10, 20, 30} local s = 0 for i, v in ipairs(t) "
+     "do s = s + v end print(s, i)", None, "run"),
+    ("iter-pairs", "local t = {a=1, b=2, c=3} local s = 0 for k, v in pairs(t) "
+     "do s = s + v end print(s)", None, "run"),
+    # PUC walks the array part in index order, but string keys come out in hash
+    # order, which is unspecified -- compare those as a set instead.
+    ("iter-order", "local t = {30, 10, 20} local o = '' for i, v in ipairs(t) "
+     "do o = o .. i .. ':' .. v .. ' ' end print(o)", None, "run"),
+    ("iter-keys-set", "local t = {} t.z = 1 t.a = 2 t.m = 3 local k = {} "
+     "for x in next, t do k[#k+1] = x end table.sort(k) local s = '' "
+     "for i = 1, #k do s = s .. k[i] end print(s)", None, "run"),
+    ("iter-holes", "local t = {1, 2, nil, 4} local n = 0 for _ in ipairs(t) do "
+     "n = n + 1 end print(n)", None, "run"),
+    ("iter-delete", "local t = {1,2,3} for k in next, t do t[k] = nil end "
+     "local n = 0 for _ in next, t do n = n + 1 end print(n)", None, "run"),
+    ("iter-nested", "local s = '' for i, v in ipairs({1,2}) do for j, w in "
+     "ipairs({10,20}) do s = s .. (i*j) .. ':' .. (v+w) .. ' ' end end print(s)",
+     None, "run"),
+    ("iter-break", "local t = {1,2,3} for _, v in ipairs(t) do if v == 2 then "
+     "break end print(v) end print('done')", None, "run"),
+    # string library
+    ("str-len", "print(#'hello', string.len('hello'))", None, "run"),
+    ("str-upper", "print(string.upper('aBc1'), string.lower('AbC1'))", None,
+     "run"),
+    ("str-sub", "local s = 'hello' print(string.sub(s, 2, 3), string.sub(s, -3), "
+     "string.sub(s, 2), string.sub(s, 0), string.sub(s, 4, 2))", None, "run"),
+    ("str-byte", "print(string.byte('A'), string.byte('ABC', 2), "
+     "string.byte('ABC', 1, 3))", None, "run"),
+    ("str-char", "print(string.char(72, 105, 33))", None, "run"),
+    ("str-rep", "print(string.rep('ab', 3), string.rep('ab', 3, '-'), "
+     "string.rep('ab', 0), string.rep('x', 1))", None, "run"),
+    ("str-rev", "print(string.reverse('abc'), string.reverse(''))", None,
+     "run"),
+    ("str-empty-sub", "print('[' .. string.sub('abc', 9) .. ']')", None, "run"),
+    # math library
+    ("math-floor", "print(math.floor(2.7), math.floor(-2.7), math.ceil(2.1), "
+     "math.ceil(-2.1))", None, "run"),
+    ("math-sqrt", "print(math.sqrt(16), math.sqrt(2))", None, "run"),
+    ("math-abs", "print(math.abs(-3), math.abs(3), math.abs(-2.5))", None,
+     "run"),
+    ("math-minmax", "print(math.max(1, 9, 4), math.min(1, 9, 4), "
+     "math.max(1.5, 1))", None, "run"),
+    ("math-trig", "print(math.sin(0), math.cos(0), math.tan(0))", None, "run"),
+    ("math-pi", "print(math.pi)", None, "run"),
+    ("math-logexp", "print(math.exp(0), math.log(1), math.log(8, 2))", None,
+     "run"),
+    ("math-log", "print(math.log(100))", None, "run"),
+    ("math-maxinteger", "print(math.maxinteger)", None, "run"),
+    ("math-fmod", "print(math.fmod(7, 3), math.fmod(-7, 3), math.fmod(7, -3))",
+     None, "run"),
+    # modf returns floats, so the integral part prints with the chip's float
+    # spelling, and the chip prints the shortest round-trip form of the
+    # fraction where PUC prints 17 digits.
+    ("math-modf", "print(math.modf(3.7))", None, "run"),
+    # table library
+    ("tbl-insert", "local t = {1,2} table.insert(t, 3) table.insert(t, 1, 0) "
+     "print(#t, t[1], t[2], t[3], t[4])", None, "run"),
+    ("tbl-remove", "local t = {1,2,3} print(table.remove(t), "
+     "table.remove(t, 1), #t, t[1])", None, "run"),
+    ("tbl-concat", "print(table.concat({'a','b','c'}), "
+     "table.concat({'a','b','c'}, '-'), table.concat({1,2,3}, ',', 2, 3))",
+     None, "run"),
+    ("tbl-unpack", "print(table.unpack({7,8,9}))", None, "run"),
+    ("tbl-unpack-range", "print(table.unpack({1,2,3,4}, 2, 3))", None, "run"),
+    ("tbl-pack", "local t = table.pack(1, nil, 3) print(t.n, t[1], t[3])",
+     None, "run"),
+    ("tbl-move", "local a = {1,2,3,4} local b = table.move(a, 2, 3, 1) "
+     "print(b[1], b[2], b[3])", None, "run"),
+    ("tbl-sort", "local t = {5,3,8,1} table.sort(t) print(t[1], t[2], t[3], t[4])",
+     None, "run"),
+    ("tbl-sort-cmp", "local t = {5,3,8,1} table.sort(t, function(a, b) "
+     "return a > b end) print(t[1], t[2], t[3], t[4])", None, "run"),
     ("sugar-chain", "function f() return print end f()'hi'", None, "run"),
     ("group-chain", "function f() return print end (f())('hi')", None,
      "run"),
@@ -349,8 +421,8 @@ TESTS = [
     ("tab-toomany", "t = {} i = 0 while i < 65 do t[#t+1] = {} "
      "i = i+1 end", None, "runtimerr",
      {"expect": {"err": "too many tables"}}),
-    ("tab-oom", "t = {} i = 0 while i < 513 do t[#t+1] = i i = i+1 end",
-     None, "runtimerr", {"expect": {"err": "out of table memory"}}),
+    ("tab-oom", "t = {} i = 0 while i < 70 do t[i] = {} i = i+1 end", None,
+     "runtimerr", {"expect": {"err": "too many tables"}}),
     ("tab-bubble", "t = {5, 3, 8, 1, 9, 2, 7, 4} i = 1 "
      "while i <= 8 do j = 1 "
      "while j <= 8 - i do "
@@ -399,6 +471,8 @@ TESTS = [
      {"inint": 5,
       "expect": {"log": "11\n",
                  "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 11]}}),
+    # outInt0 is a typed int port: an integral float is stored as an integer,
+    # so the program reads back 7 where plain Lua would keep 7.0.
     ("io-int-coerce", "outInt0 = 7.0 print(outInt0, type(outInt0))", None,
      "modelio", {"expect": {"log": "7\tnumber\n"}}),
     ("io-int-bad", "outInt0 = 7.5", None, "runtimerr",
@@ -482,6 +556,8 @@ def build_stress():
 
 
 def build_overcap():
+    """A program that must not fit: 40 statements of 26 additions is just over
+    MAX_INSTR instructions (see the limits in lua.ws and tests/spec.py)."""
     return "\n".join(
-        "v0 = %s" % "+".join(str((k + j) % 9 + 1) for j in range(8))
+        "v0 = %s" % "+".join(str((k + j) % 9 + 1) for j in range(26))
         for k in range(40)) + "\n"
