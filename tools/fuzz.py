@@ -2,7 +2,7 @@
 real Lua oracle. Only generates programs both sides must accept with
 identical logs (documented divergences are excluded by construction).
 
-Usage: python fuzz.py [count=200] [seed0=1]
+Usage: python -u tools/fuzz.py [count=200] [seed0=1]
 Exit 0 when every seed agrees, 1 with the failing program otherwise.
 """
 import concurrent.futures as cf
@@ -11,8 +11,9 @@ import random
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-sys.path.insert(0, os.path.join(HERE, "tests"))
+sys.path.insert(0, os.path.join(ROOT, "tests"))
 from test_chip_suite import run_case
 
 INPUTS = [2.5, -1.0, 0.5, 8.0]

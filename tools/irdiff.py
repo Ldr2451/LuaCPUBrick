@@ -1,19 +1,26 @@
-"""Compare IR node-kind histograms between two --dump-ir outputs."""
+"""Compare IR node-kind histograms between two .ws files.
+
+  python -u tools/irdiff.py lua_full.ws lua.ws
+
+Use it to see what a change costs in gates, and to find what to simplify when
+the total moves the wrong way.
+"""
 import collections
+import os
 import re
 import subprocess
 import sys
 
-WS = (r"C:\Users\Alessandro\AppData\Local\Temp\opencode\wirescript"
-      r"\target\release\wirescript.exe")
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(ROOT, 'irrun'))
+from irdump import WS_EXE, WS_DIR
 
 
 def dump(src):
-    p = subprocess.run([WS, "compile", src, "-o",
-                        src + ".tmp.brz", "--dump-ir"],
-                       capture_output=True, text=True, cwd=
-                       r"C:\Users\Alessandro\AppData\Local\Temp\opencode"
-                       r"\wirescript")
+    p = subprocess.run([WS_EXE, "compile", src, "-o", src + ".tmp.brz",
+                        "--dump-ir"],
+                       capture_output=True, text=True, cwd=WS_DIR)
     return p.stderr
 
 

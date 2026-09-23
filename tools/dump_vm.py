@@ -1,9 +1,18 @@
-import sys
-sys.path.insert(0, '.')
-sys.path.insert(0, 'irrun')
-from irdump import dump_source
-from irsims import Sim, Wire, _extract
+"""Dump the bytecode (and with --tokens the token stream) a program compiles to.
+
+  python -u tools/dump_vm.py "for k,v in pairs(t) do print(k,v) end"
+  python -u tools/dump_vm.py --tokens "print(1)"
+
+Builds the chip once per invocation (~6s), so pass several programs at once.
+"""
 import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(ROOT, 'irrun'))
+from irdump import dump_source
+from irsims import Sim, Wire, ChipRunner, _extract
 
 NAMES = {0:'HALT',1:'LOADNIL',2:'LOADNUM',3:'LOADSTR',4:'LOADBOOL',5:'LOADGLOBAL',
          6:'STOREGLOBAL',7:'MOV',8:'ADD',9:'SUB',10:'MUL',11:'DIV',12:'MOD',13:'POW',
@@ -17,14 +26,14 @@ KWSUBS = {1:'and',2:'break',3:'do',4:'else',5:'elseif',6:'end',7:'false',8:'func
           9:'if',10:'local',11:'nil',12:'not',13:'or',14:'return',15:'then',16:'true',
           17:'while',18:'for',19:'in',20:'repeat',21:'until',22:'goto'}
 
-def dump(ws, src, only_main=True, tokens=False):
-    nodes, wires, _ = dump_source(os.path.abspath(ws))
-    sim = Sim(nodes, [Wire(*w) for w in wires])
+def dump(runner, src, tokens=False):
+    sim = runner.sim
+    runner.reset()
     sim.inputs = {'program': src, 'run': True}
     r = sim.run(max_ticks=900)
     err = r.get('outGlobals', {}).get('err', '') if r else ''
     labels = {}
-    for nid, nd in nodes.items():
+    for nid, nd in sim.nodes.items():
         lbl = _extract(nd.props.get('_label', ('raw', '')))
         if isinstance(lbl, str):
             labels[nid] = lbl
@@ -59,10 +68,10 @@ def dump(ws, src, only_main=True, tokens=False):
         c = int(bpc[i]) if i < len(bpc) else '?'
         print(f"  [{i:2}] {NAMES.get(op, op):10} a={a} b={b} c={c}")
 
-if '--tokens' in sys.argv:
+
+if __name__ == '__main__':
+    tokens = '--tokens' in sys.argv
     srcs = [a for a in sys.argv[1:] if a != '--tokens']
+    runner = ChipRunner(os.path.join(ROOT, 'lua.ws'))
     for src in srcs:
-        dump('lua.ws', src, tokens=True)
-else:
-    for src in sys.argv[1:]:
-        dump('lua.ws', src)
+        dump(runner, src, tokens=tokens)

@@ -1,12 +1,22 @@
-import sys, os
-sys.path.insert(0, '.')
-sys.path.insert(0, 'irrun')
+"""Trace the VM one instruction at a time, with chosen registers.
+
+  python -u tools/trace_pc.py "for k,v in pairs(t) do end" "0,1,2,3"
+
+The second argument is a comma-separated register list; only the last
+TRACE_ROWS (default 40) state changes are printed, one line each.
+"""
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(ROOT, 'irrun'))
 from irdump import dump_source
 from irsims import Sim, Wire, _extract
 
 src = sys.argv[1] if len(sys.argv) > 1 else "function f() return 1,2 end local a, b = f() print(a, b)"
 regs = [int(x) for x in sys.argv[2].split(',')] if len(sys.argv) > 2 else []
-nodes, wires, _ = dump_source(os.path.abspath('lua.ws'))
+nodes, wires, _ = dump_source(os.path.join(ROOT, 'lua.ws'))
 sim = Sim(nodes, [Wire(*w) for w in wires])
 sim.inputs = {'program': src, 'run': True}
 

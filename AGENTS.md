@@ -1,23 +1,38 @@
 # AGENTS.md — how to work in this repo
 
-## Shell (Windows PowerShell 5.1)
-- No `tail`, `head`, `nproc`, `&&`. Use `Select-Object -First/-Last`, `;`, `$env:NUMBER_OF_PROCESSORS`.
-- Quote paths with spaces. Prefer the `bash` tool's `workdir` param over `cd`.
-- Python is 3.12 (no JIT, GIL on) — CPU parallelism means **multiprocessing**, not threads.
+## Commands: plain and platform-independent
+- Python, Lua and WireScript are all cross-platform, so **the repo is too**. No
+  PowerShell in scripts or docs, no shell-specific incantations in commands.
+  `python -u tests/test_chip_suite.py iter-` means the same thing everywhere.
+- Do not reach for PowerShell (or any other shell) to do what a Python script
+  does better. The shell tool here happens to be PowerShell, but that is not a
+  reason to write PowerShell: it mangles quoting, has no heredocs, and none of
+  it works on Linux. Put the logic in a script under `tools/`.
+- Always run Python with `-u`. Buffered output is indistinguishable from a hang.
+- Prefer a script's own `workdir`/path handling over `cd`, and use `os.path`
+  inside scripts, never hard-coded separators or absolute machine paths.
+- Anything external is discovered, not hard-coded: `tests/lua_oracle.py` finds
+  the oracle (`$LUA55`, then PATH, then the usual install dirs) and
+  `irrun/irdump.py` finds the compiler (`$WIRESCRIPT`, then a sibling checkout,
+  then PATH).
+- Python is 3.12 (no JIT, GIL on) — CPU parallelism means **multiprocessing**.
 - Changing the Python build (3.13 free-threading / `--enable-jit`, Cython) is not
   worth it here: the sim is a single-threaded interpreter-bound pointer chase,
   free-threading only helps threaded code, and the JIT would buy single-digit
   percent for a large rewrite. The wins were algorithmic instead.
 
-## Timeouts and process hygiene
-- Always set short explicit timeouts (60–90s for probes). Never assume a command returns.
-- Tool timeouts and interrupts do **not** reliably kill process trees — orphaned
-  `python` processes keep burning CPU in the background. After any killed/long command,
-  check `Get-Process python` and `Stop-Process` the leftovers.
-- Always run Python with `-u` (unbuffered). Buffered output through a pipe is
-  indistinguishable from a hang.
-- Never pipe a long-running command into `Select-Object -Last` — it hides all progress
-  until completion. Stream output, or redirect to a file and poll the file.
+## Time every command
+- **Know how long things take.** Every check script prints its elapsed time (via
+  `tests/timing.py`); keep that. Without a number you cannot tell a 3-second
+  probe from a 3-minute suite, and slow scripts quietly end up in a loop.
+- Before repeating a command, look at the previous run's time. If it is slow,
+  make it faster or run it less — do not wrap it in a `for` loop and wait.
+- Never pipe a long-running command through a filter that hides progress until
+  the end. Stream it, or redirect to a file and poll the file.
+- Bound everything: explicit timeouts on probes, and a per-case timeout in the
+  suite. An unpatched jump is an infinite loop, so the sim can hang too.
+- After a killed or long command, check for leftover `python` processes; a
+  timeout does not reliably kill the process tree.
 - Bisect slow batches: run suspect cases one at a time, each with its own timeout.
 
 ## Batching (the single biggest speed lever)
@@ -25,24 +40,37 @@
   pay that per program: `irsims.ChipRunner` compiles once and runs many programs
   via `Sim.reset()`, which restores the just-constructed state without touching
   the wiring or the static source cache. The check scripts use it.
-- `test_chip_suite.py` puts `BATCH` (12, override with `CHIP_BATCH=1`) cases in
-  each worker process, so a batch builds the chip once. A batch that dies or
-  times out is re-run case by case, keeping the hard per-case timeout.
+- `tests/test_chip_suite.py` puts `BATCH` (12, override with `CHIP_BATCH=1`)
+  cases in each worker process, so a batch builds the chip once. A batch that
+  dies or times out is re-run case by case, keeping the hard per-case timeout.
 - Measured: suite 125s -> 78s, `iter_check` 78s -> 33s, byte-identical results.
 - Do not split the suite into fast/slow tiers. It only ever meant running the
   whole suite twice to see everything; all cases now run by default.
 - When a script loops over cases, build the expensive shared object once outside
   the loop. Check for this before concluding that a harness is just "slow".
 
+## Layout
+- `lua.ws` is the chip; `irrun/` simulates it; `tests/` holds the suite and the
+  oracle-diff checks; `tools/` holds the development tools. `README.md` lists
+  them. Keep the root to the chip sources and the two docs.
+- Anything used more than once belongs in a script, not in a shell one-liner:
+  a probe you keep retyping should become `tools/<what it does>.py`.
+- One-off debug scripts get deleted once the finding is in; the tool that
+  reproduces it stays. `tools/unsup.py`, `tools/unhandled.py` and
+  `tools/check.py` exist so the next person does not write another `debug_*.py`.
+
 ## Batch your own work too
 - Independent tool calls go out in one message (parallel), not one at a time:
   searches, reads of unrelated files, independent test commands.
 - Prefer one command that runs everything over many commands that each run part:
-  `test_ws_consistency.py`, the suite and the three oracle checks belong in a
+  `tests/test_consistency.py`, the suite and the three oracle checks belong in a
   single parallel call at the end of a change, not one per edit.
 - Don't re-run the same test file repeatedly to "confirm" — one run at the end
   covers it. While iterating, run the single narrowest command that proves the
-  thing just changed (a filter, a dump, a debug script), then verify wide once.
+  thing just changed (`tools/check.py` with the program, a suite filter, a dump),
+  then verify wide once.
+- Merge plan steps that would each need their own test round: adding several
+  library batches is one step and one verification, not one step per batch.
 - Read every file a change will touch in one batched read before editing, so the
   edits are right the first time instead of iterating on stale context.
 - Compile the chip once per batch of experiments: a loop over N test programs
@@ -52,6 +80,12 @@
 - Fix the **class**, not the instance. When something breaks, ask what made it
   possible and make that harder next time; a one-line patch that leaves the trap
   in place will be hit again.
+- **Minimise divergence from Lua 5.5.** A difference the chip does not have to
+  have is a bug, even when the test says otherwise: fix the chip, not the
+  expectation. `tests/test_chip_suite.py`'s `CHIP_LOG` is for what is genuinely
+  unavoidable (doubles cannot hold 2^63-1; the chip has no float type) and
+  should shrink, not grow. Before adding an entry, ask what the chip would have
+  to do differently to match — that is usually the real work item.
 - Prefer **restructuring** over a lint or a comment: if two rules have to be
   kept in step, merge them into one function so half of it cannot be forgotten.
   (Real example: `bumpMax` claimed registers but only grew the frame, so each
@@ -85,18 +119,15 @@
 
 ## Verification
 - Verify with execution, never by reasoning alone: run the relevant checks after every change.
-- Chip-vs-oracle suite: `python -u tinylua/tests/test_chip_suite.py [filter]`.
-  All cases run unless a filter narrows them. Output to a file and poll it —
-  never pipe a batch into `Select-Object -Last`.
+- Chip-vs-oracle suite: `python -u tests/test_chip_suite.py [filter]`. All cases
+  run unless a filter narrows them. It prints per-case and total times.
 - After changing the sim or the runner, prove the fast path equals the slow one
   (e.g. `CHIP_BATCH=1` must give the same OK/FAIL counts) before trusting it.
-- Bound every stage with timeouts — including the oracle and the sim, which can
-  hang too (e.g. an unpatched jump is an infinite loop). Prefer worker subprocesses with
-  hard timeouts over in-process calls for anything that can spin.
-- A "hung" batch is often buffering, orphan contention, or one stuck case hiding behind
-  aggregated output — bisect to single cases with per-case output before concluding.
+- A "hung" batch is often buffering, orphan contention, or one stuck case hiding
+  behind aggregated output — bisect to single cases with per-case output.
 
 ## Workflow
-- Keep a todo list for multi-step work, with exactly one `in_progress` item at a time.
-- The `tinylua/` subdirectory is its own git repo — run its git commands with
-  `workdir` set there. Commit only when explicitly asked.
+- Keep a todo list for multi-step work, with exactly one `in_progress` item at a
+  time, and keep it current as steps finish so it is not re-planned by mistake.
+- Commit only when explicitly asked; commit often when asked, with a message
+  that says what changed and why.

@@ -10,12 +10,44 @@ Property values use Rust {:?} for Literal: Bool(true), Int(3),
 Float(1.5), String("...") with \" and \\ escapes, Vector {...},
 Color/LinearColor {...}, Array([...]), Map([...]), Object.
 """
+import os
 import re
+import shutil
 import subprocess
 
-WS_EXE = (r"C:\Users\Alessandro\AppData\Local\Temp\opencode\wirescript"
-          r"\target\release\wirescript.exe")
-WS_DIR = (r"C:\Users\Alessandro\AppData\Local\Temp\opencode\wirescript")
+
+def _find_wirescript():
+    """Locate the wirescript compiler.
+
+    Set WIRESCRIPT to point at it.  Otherwise look for a build next to the
+    repo, on PATH, and in the usual cargo output directories.
+    """
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cands = [
+        os.environ.get("WIRESCRIPT"),
+        shutil.which("wirescript"),
+        os.path.join(here, "wirescript", "target", "release",
+                     "wirescript.exe"),
+        os.path.join(here, "wirescript", "target", "release", "wirescript"),
+        os.path.join(here, "..", "wirescript", "target", "release",
+                     "wirescript.exe"),
+        os.path.join(here, "..", "wirescript", "target", "release",
+                     "wirescript"),
+        os.path.join(os.path.expanduser("~"), ".cargo", "bin", "wirescript"
+                     + (".exe" if os.name == "nt" else "")),
+    ]
+    for c in cands:
+        if c and os.path.isfile(c):
+            return os.path.abspath(c)
+    # last resort: the local scratch checkout this was developed against
+    return os.path.join(
+        os.environ.get("TEMP", "/tmp"), "opencode", "wirescript",
+        "target", "release", "wirescript.exe" if os.name == "nt"
+        else "wirescript")
+
+
+WS_EXE = _find_wirescript()
+WS_DIR = os.path.dirname(os.path.dirname(WS_EXE))
 
 
 class Node:
