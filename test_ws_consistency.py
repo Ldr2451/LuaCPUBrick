@@ -47,9 +47,9 @@ def mod_body(name):
 
 # 1. builtins: ids, reserved slots, fid dispatch ---------------------------
 n_builtin = len(m.BUILTINS)
-check("builtin-count-9", n_builtin == 9, f"got {n_builtin}")
+check("builtin-count-10", n_builtin == 10, f"got {n_builtin}")
 ids = sorted(fid for _, fid in m.BUILTINS)
-check("builtin-ids-0-8", ids == list(range(9)), f"got {ids}")
+check("builtin-ids-0-9", ids == list(range(10)), f"got {ids}")
 pjs = mod_body("parseJobStart")
 slots = pjs.count("fStart.push(-1)")
 check("reserved-slots-match-builtins", slots == n_builtin,

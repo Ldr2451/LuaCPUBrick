@@ -945,72 +945,11 @@ var lastPatchTarget: int = -1
 var lastCallPos: int = -1
 // Position of the CALL that produced the value currently in presReg, or -1 if
 // that value is not a call.  It outlives lastCallPos (which only tracks the
-// most recent emission) so the consumers of a finished value — `return f()`,
-// a target list, a constructor's last element — can still mark the call as
+// most recent emission) so the consumers of a finished value â€” `return f()`,
+// a target list, a constructor's last element â€” can still mark the call as
 // returning all of its results.
 var presCallPos: int = -1
 
-mod patchAt(pos: int) {
-  if pos >= 0 && pos < bpc.length() {
-    if bop[pos] == 45 {
-      // VARARG: B 1 = one value, 0 = all of them
-      bpb[pos] = 0
-    } else {
-      // CALL: bit 1 (value 2) = return all of this call's results
-      bpc[pos] = bpc[pos] + 2
-    }
-    // an expanding call/vararg may write up to MAXVALS registers starting at
-    // its base, so the allocator must step over that whole area; otherwise a
-    // later regAlloc (an ADJUST scratch, the next expression) lands on a live
-    // result register
-    let fr = bpa[pos]
-    if cfNext[fnDepth] < fr + MAXVALS {
-      cfNext[fnDepth] = fr + MAXVALS
-      bumpMax(fr + MAXVALS)
-    }
-  }
-}
-
-mod patchMultiTail() {
-  patchAt(lastCallPos)
-  lastCallPos = -1
-}
-
-// A call in the LAST value position of a target list expands into the targets
-// that list still has unfilled: `local a, b = f()` binds b to f's second value
-// (nil when f returned only one).  Mark the call to return everything, then
-// normalise however many values came back into `extra` consecutive registers so
-// the ordinary store machinery can treat them like any other value registers.
-mod expandTailCall() {
-  let extra = tmpNames.length() - tmpRegs.length()
-  if presIsCall && 0 < extra && !perr {
-    if extra > 16 {
-      extra = 16
-    }
-    let callBase = presReg
-    patchAt(presCallPos)
-    let sc = regAlloc()
-    // the first value already sits in tmpRegs; the extras start one past it
-    bEmit(43, callBase + 1, sc, extra)
-    bumpMax(sc + extra)
-    if 1 <= extra { tmpRegs.push(sc) }
-    if 2 <= extra { tmpRegs.push(sc + 1) }
-    if 3 <= extra { tmpRegs.push(sc + 2) }
-    if 4 <= extra { tmpRegs.push(sc + 3) }
-    if 5 <= extra { tmpRegs.push(sc + 4) }
-    if 6 <= extra { tmpRegs.push(sc + 5) }
-    if 7 <= extra { tmpRegs.push(sc + 6) }
-    if 8 <= extra { tmpRegs.push(sc + 7) }
-    if 9 <= extra { tmpRegs.push(sc + 8) }
-    if 10 <= extra { tmpRegs.push(sc + 9) }
-    if 11 <= extra { tmpRegs.push(sc + 10) }
-    if 12 <= extra { tmpRegs.push(sc + 11) }
-    if 13 <= extra { tmpRegs.push(sc + 12) }
-    if 14 <= extra { tmpRegs.push(sc + 13) }
-    if 15 <= extra { tmpRegs.push(sc + 14) }
-    if 16 <= extra { tmpRegs.push(sc + 15) }
-  }
-}
 
 mod bPatch(pos: int, target: int) {
   bpa[pos] = target
@@ -1195,6 +1134,7 @@ mod parseInit() {
   gDeclare("inarr")
   gDeclare("outarr")
   gDeclare("select")
+  gDeclare("next")
   gDeclare("inInt0")
   gDeclare("outInt0")
 }
@@ -1224,6 +1164,65 @@ mod regFree(r: int) {
 mod bumpMax(n: int) {
   if n > cfMax[fnDepth] {
     cfMax[fnDepth] = n
+  }
+}
+
+// Mark the instruction at `pos` as returning all of its values (a CALL's C
+// operand bit 1, or VARARG's B = 0), and reserve the result registers it may
+// write so a later regAlloc cannot land on a live result.
+mod patchAt(pos: int) {
+  if pos >= 0 && pos < bpc.length() {
+    if bop[pos] == 45 {
+      bpb[pos] = 0
+    } else {
+      bpc[pos] = bpc[pos] + 2
+    }
+    let fr = bpa[pos]
+    if cfNext[fnDepth] < fr + MAXVALS {
+      cfNext[fnDepth] = fr + MAXVALS
+      bumpMax(fr + MAXVALS)
+    }
+  }
+}
+
+mod patchMultiTail() {
+  patchAt(lastCallPos)
+  lastCallPos = -1
+}
+
+// A call in the LAST value position of a target list expands into the targets
+// that list still has unfilled: `local a, b = f()` binds b to f's second value
+// (nil when f returned only one).  Mark the call to return everything, then
+// normalise however many values came back into `extra` consecutive registers so
+// the ordinary store machinery can treat them like any other value registers.
+mod expandTailCall() {
+  var extra = tmpNames.length() - tmpRegs.length()
+  if presIsCall && 0 < extra && !perr {
+    if extra > MAXVALS {
+      extra = MAXVALS
+    }
+    let callBase = presReg
+    patchAt(presCallPos)
+    let sc = regAlloc()
+    // the first value already sits in tmpRegs; the extras start one past it
+    bEmit(43, callBase + 1, sc, extra)
+    bumpMax(sc + extra)
+    if 1 <= extra { tmpRegs.push(sc) }
+    if 2 <= extra { tmpRegs.push(sc + 1) }
+    if 3 <= extra { tmpRegs.push(sc + 2) }
+    if 4 <= extra { tmpRegs.push(sc + 3) }
+    if 5 <= extra { tmpRegs.push(sc + 4) }
+    if 6 <= extra { tmpRegs.push(sc + 5) }
+    if 7 <= extra { tmpRegs.push(sc + 6) }
+    if 8 <= extra { tmpRegs.push(sc + 7) }
+    if 9 <= extra { tmpRegs.push(sc + 8) }
+    if 10 <= extra { tmpRegs.push(sc + 9) }
+    if 11 <= extra { tmpRegs.push(sc + 10) }
+    if 12 <= extra { tmpRegs.push(sc + 11) }
+    if 13 <= extra { tmpRegs.push(sc + 12) }
+    if 14 <= extra { tmpRegs.push(sc + 13) }
+    if 15 <= extra { tmpRegs.push(sc + 14) }
+    if 16 <= extra { tmpRegs.push(sc + 15) }
   }
 }
 
@@ -1803,7 +1802,7 @@ mod applyPop() {
 }
 
 // Finish one constructor element: the value sits on valStk above the frame.
-// isLast marks the element closed by '}' — a call there expands, so its results
+// isLast marks the element closed by '}' â€” a call there expands, so its results
 // all land in the table (Lua expands a call only in the final list position).
 mod finishCtorElem(isLast: bool) {
   let wasCall = topFlag()
@@ -2519,6 +2518,12 @@ var tmpB: int = 0
 var tmpC: int = 0
 var tmpS: string = ""
 var forName: string = ""
+// generic-for registers, live between the header and the matching `end`
+var genF: int = 0
+var genS: int = 0
+var genC: int = 0
+var genV1: int = 0
+var genV2: int = -1
 var forInit: int = -1
 var forLimit: int = -1
 var forStep: int = -1
@@ -2573,6 +2578,76 @@ mod startUnit(cont: int) {
 // Emit a numeric-for header after `do`: bind the control var (locals parsed
 // in the header still see outer scope), default a missing step to 1,
 // then FORPREP + entry JMP and open the body block (ctl kind 5).
+// Generic for: `for v1 [, v2] in explist do`.
+// The explist gives (f, s, ctrl); each step calls f(s, ctrl), stops when the
+// first result is nil, and feeds the results to the loop variables.  s and ctrl
+// are then updated from the first two variables, as Lua specifies.  The header
+// emits the loop head and the body's variable bindings; doBlockClose(kind 7)
+// appends the state update and the jump back.
+mod genForHead() {
+  if !(curKind() == 4 && curSub() == 3) {
+    perr = true
+    perrMsg = "expected do in for"
+    return
+  }
+  cpos = cpos + 1
+  blkEnter()
+  if tmpRegs.length() < 1 {
+    perr = true
+    perrMsg = "for iterator is missing"
+    return
+  }
+  let freg = regAlloc()
+  let sreg = regAlloc()
+  let creg = regAlloc()
+  // the call gets its own base: its result registers would otherwise land on
+  // top of the saved iterator, which has to survive for the next step
+  let creg2 = regAlloc()
+  bEmit(7, freg, tmpRegs[0], 0)
+  if 1 < tmpRegs.length() {
+    bEmit(7, sreg, tmpRegs[1], 0)
+  } else {
+    bEmit(1, sreg, 0, 0)
+  }
+  if 2 < tmpRegs.length() {
+    bEmit(7, creg, tmpRegs[2], 0)
+  } else {
+    bEmit(1, creg, 0, 0)
+  }
+  // the iterator, its state and the control value stay live across the body
+  if freg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = freg }
+  if sreg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = sreg }
+  if creg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = creg }
+  if creg2 > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = creg2 }
+  genF = freg
+  genS = sreg
+  genC = creg
+  genV1 = locDeclare(tmpNames[0])
+  dirtySelf(tmpNames[0])
+  if 1 < tmpNames.length() {
+    genV2 = locDeclare(tmpNames[1])
+    dirtySelf(tmpNames[1])
+  } else {
+    genV2 = -1
+  }
+  // loop head: f(s, ctrl) with its two arguments in place
+  let top = bop.length()
+  bEmit(7, creg2, freg, 0)
+  bEmit(7, creg2 + 1, sreg, 0)
+  bEmit(7, creg2 + 2, creg, 0)
+  bEmit(23, creg2, 2, 2)
+  let done = bEmit(21, 0, creg2, 0)
+  // bind the results to the loop variables (runs once per entry)
+  bEmit(7, genV1, creg2, 0)
+  if 0 <= genV2 {
+    bEmit(7, genV2, creg2 + 1, 0)
+  }
+  // kind 7: A=loop top, B=exit jump, C=break list
+  pushCtl(7, top, done, -1, ctlLoop, 0, 0)
+  ctlLoop = ctlKind.length() - 1
+  forNames.push(tmpNames[0])
+}
+
 mod forDoHead() {
   cpos = cpos + 1
   blkEnter()
@@ -2814,6 +2889,17 @@ mod doCont() {
       // stores run right to left (like PUC Lua), so the last target wins
       tmpA = itBase.length() - 1
       stState = 15
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 15 {
+    // generic-for explist: f, s and the control value
+    tmpRegs.push(presReg)
+    if curKind() == 5 && curSub() == 16 && tmpRegs.length() < 3 {
+      cpos = cpos + 1
+      startUnit(15)
+    } else {
+      genForHead()
       inExpr = false
       contKind = 0
     }
@@ -3107,6 +3193,25 @@ mod stmtProgress() {
     doStoreStep()
   } else if stState == 20 {
     funcParams()
+  } else if stState == 21 {
+    // gathering the remaining names of a generic-for header
+    if curKind() == 3 {
+      tmpNames.push(curStr())
+      cpos = cpos + 1
+      if curKind() == 5 && curSub() == 16 {
+        cpos = cpos + 1
+      } else if curKind() == 4 && curSub() == 19 {
+        cpos = cpos + 1
+        stState = 0
+        startUnit(15)
+      } else {
+        perr = true
+        perrMsg = "expected , or in after for name"
+      }
+    } else {
+      perr = true
+      perrMsg = "expected name after , in for"
+    }
   } else {
     perr = true
     perrMsg = "bad statement state"
@@ -3153,6 +3258,18 @@ mod doBlockClose() {
       pdHead = ctlC[n]
       pdThen = 1
       popCtl()
+    } else if kind == 7 {
+      // generic for tail: the control variable becomes the first result (the
+      // state stays as it was), then jump back to the loop head
+      blkExit()
+      bEmit(7, genC, genV1, 0)
+      let back = bEmit(20, 0, 0, 0)
+      bPatch(back, ctlA[n])
+      bPatch(ctlB[n], bop.length())
+      pdHead = ctlC[n]
+      pdThen = 1
+      popCtl()
+      forNames.pop()
     } else if kind == 5 {
       blkExit()
       tmpC = ctlD[n]
@@ -3299,12 +3416,26 @@ mod stmtDispatch() {
       forLimit = -1
       forStep = -1
       cpos = cpos + 1
-      if curKind() == 5 && curSub() == 13 {
+      if curKind() == 4 && curSub() == 19 {
+        // generic for with a single variable
+        tmpNames.clear()
+        tmpRegs.clear()
+        tmpNames.push(forName)
+        cpos = cpos + 1
+        startUnit(15)
+      } else if curKind() == 5 && curSub() == 16 {
+        // more names follow: gather them one per step, then expect `in`
+        tmpNames.clear()
+        tmpRegs.clear()
+        tmpNames.push(forName)
+        cpos = cpos + 1
+        stState = 21
+      } else if curKind() == 5 && curSub() == 13 {
         cpos = cpos + 1
         startUnit(10)
       } else {
         perr = true
-        perrMsg = "expected = in for"
+        perrMsg = "expected = or in for"
       }
     } else {
       perr = true
@@ -3444,6 +3575,23 @@ var tLen: int[]
 var tFree: int[]
 var tHeap: int = 0
 var tCount: int = 0
+// per-slot insertion-order chain: tOwner/tKey* describe the entry, tPrev/tNext
+// link it, and tFirst/tLast are each table's ends (so pairs/next can walk in
+// insertion order).  -2 marks a free (unlinked) slot, -1 the end of a chain.
+var tOwner: int[]
+var tKeyTag: int[]
+var tKeyNum: float[]
+var tKeyStr: string[]
+var tPrev: int[]
+var tNext: int[]
+var tFirst: int[]
+var tLast: int[]
+// pending next() walk: nxSlot is the candidate entry, nxDst the absolute
+// destination register, nxPc the call's pc (advanced when the walk finishes)
+var nxActive: bool = false
+var nxSlot: int = 0
+var nxDst: int = 0
+var nxPc: int = 0
 var lenChase: bool = false
 var lenTid: int = 0
 var latchN0: float = 0.0
@@ -3531,8 +3679,8 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
 // (inputs filled from the latches), 19..26 builtins (print, type, tostring,
 // setvec, setcol, clock, inarr, outarr) as functions with ids 0..7.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 0.0, 0.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -3547,6 +3695,23 @@ mod vmReset() {
   tFree.clear()
   tHeap = 0
   tCount = 0
+  tOwner.clear()
+  tOwner.resize(MAX_HEAP, -1)
+  tKeyTag.clear()
+  tKeyTag.resize(MAX_HEAP, 0)
+  tKeyNum.clear()
+  tKeyNum.resize(MAX_HEAP, 0.0)
+  tKeyStr.clear()
+  tKeyStr.resize(MAX_HEAP, "")
+  tPrev.clear()
+  tPrev.resize(MAX_HEAP, -2)
+  tNext.clear()
+  tNext.resize(MAX_HEAP, -2)
+  tFirst.clear()
+  tFirst.resize(MAX_TABLES, -1)
+  tLast.clear()
+  tLast.resize(MAX_TABLES, -1)
+  nxActive = false
   lenChase = false
   vtag.clear()
   vnum.clear()
@@ -3593,7 +3758,7 @@ mod vmReset() {
   gnum[16] = latchCG
   gnum[17] = latchCB
   gnum[18] = latchCA
-  gnum[28] = latchI0 + 0.0
+  gnum[29] = latchI0 + 0.0
   vmPc = 0
   vmBase = 0
   vmHalted = bop.length() == 0
@@ -3663,7 +3828,7 @@ mod syncOuts() {
   oF1 = if gtag[1] == 0 then 0.0 else gnum[1]
   oF2 = if gtag[2] == 0 then 0.0 else gnum[2]
   oF3 = if gtag[3] == 0 then 0.0 else gnum[3]
-  oI0 = if gtag[29] == 0 then 0 else toInt(gnum[29])
+  oI0 = if gtag[30] == 0 then 0 else toInt(gnum[30])
   oS4 = if gtag[4] == 0 then "" else fmtVal(gtag[4], gnum[4], gstr[4])
   oS5 = if gtag[5] == 0 then "" else fmtVal(gtag[5], gnum[5], gstr[5])
 }
@@ -3748,26 +3913,127 @@ mod lenStep() {
   }
 }
 
+// next(): one chain hop per tick, so a run of tombstones (keys assigned nil)
+// costs ticks but needs no loop.  Finishing writes key+value (or a lone nil)
+// and advances past the call.
+mod nxStep() {
+  if 0 <= nxSlot && (tvTag[nxSlot] == 0 || tNext[nxSlot] == -2) {
+    nxSlot = tNext[nxSlot]
+  } else {
+    if nxSlot < 0 {
+      vtag[nxDst] = 0
+      vnum[nxDst] = 0.0
+      vstr[nxDst] = ""
+      retCountV = 1
+    } else {
+      let kt = tKeyTag[nxSlot]
+      let kn = tKeyNum[nxSlot]
+      let ks = tKeyStr[nxSlot]
+      if kt == 6 || kt == 1 {
+        vtag[nxDst] = kt
+        vnum[nxDst] = kn
+        vstr[nxDst] = ""
+      } else if kt == 2 {
+        vtag[nxDst] = 2
+        vnum[nxDst] = 0.0
+        vstr[nxDst] = ks
+      } else if kt == 3 {
+        vtag[nxDst] = 3
+        vnum[nxDst] = kn
+        vstr[nxDst] = ""
+      } else if kt == 5 {
+        vtag[nxDst] = 5
+        vnum[nxDst] = kn
+        vstr[nxDst] = ks
+      } else {
+        vtag[nxDst] = 0
+        vnum[nxDst] = 0.0
+        vstr[nxDst] = ""
+      }
+      vtag[nxDst + 1] = tvTag[nxSlot]
+      vnum[nxDst + 1] = tvNum[nxSlot]
+      vstr[nxDst + 1] = tvStr[nxSlot]
+      retCountV = 2
+    }
+    nxActive = false
+    vmPc = nxPc + 1
+  }
+}
+
+// Unlink a slot from its table's insertion chain.
+mod tblUnlink(tid: int, sl: int) {
+  let pv = tPrev[sl]
+  let nx = tNext[sl]
+  if pv != -1 {
+    tNext[pv] = nx
+  } else {
+    tFirst[tid] = nx
+  }
+  if nx != -1 {
+    tPrev[nx] = pv
+  } else {
+    tLast[tid] = pv
+  }
+}
+
+// Link a slot at the tail of its table's chain, so pairs/next walk entries in
+// insertion order (the order PUC-Lua uses, which the tests compare against).
+mod tblLink(tid: int, sl: int) {
+  let last = tLast[tid]
+  tPrev[sl] = last
+  tNext[sl] = -1
+  if last != -1 {
+    tNext[last] = sl
+  } else {
+    tFirst[tid] = sl
+  }
+  tLast[tid] = sl
+}
+
 // One table store from raw values; false means the store failed (error already
-// raised).  Shared by SETFIELD and by TAPPEND's unrolled ladder.
+// raised).  Shared by SETFIELD and by TAPPEND's unrolled ladder.  A nil value
+// leaves the key's slot in place as a tombstone so the chain order is stable and
+// re-assigning the key revives the same slot.
 mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: string) -> bool {
   let key = tkey(tid, kt, kn, ks)
   let r = tmap.get(key)
   let kint = toInt(kn)
-  if vt == 0 {
-    if r.Found {
-      tmap.remove(key)
-      tFree.push(r.Value)
-      if kt == 6 && kint == tLen[tid] {
-        tLen[tid] = kint - 1
+  if r.Found {
+    let sl = r.Value
+    if vt == 0 {
+      // nil leaves the slot in the chain as a tombstone, so the walk order is
+      // stable and re-assigning the key revives the same slot
+      if tvTag[sl] != 0 {
+        tvTag[sl] = 0
+        tFree.push(sl)
+        if kt == 6 && kint == tLen[tid] {
+          tLen[tid] = kint - 1
+        }
+      }
+    } else {
+      tvTag[sl] = vt
+      tvNum[sl] = vn
+      tvStr[sl] = vs
+      if kt == 6 && kint == tLen[tid] + 1 {
+        tLen[tid] = kint
+        if tmap.has(tid .. "#" .. (kint + 1)) {
+          lenChase = true
+          lenTid = tid
+        }
       }
     }
+  } else if vt == 0 {
+    // assigning nil to a missing key does nothing
   } else {
-    var sl = 0
-    if r.Found {
-      sl = r.Value
-    } else if tFree.length() > 0 {
+    var sl = -1
+    if tFree.length() > 0 {
       sl = tFree.pop().Value
+      if tNext[sl] != -2 {
+        // still chained in its old table: unhook it and drop the stale key
+        let ot = tOwner[sl]
+        tblUnlink(ot, sl)
+        tmap.remove(tkey(ot, tKeyTag[sl], tKeyNum[sl], tKeyStr[sl]))
+      }
     } else {
       sl = tHeap
       tHeap = tHeap + 1
@@ -3779,14 +4045,17 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
     tvTag[sl] = vt
     tvNum[sl] = vn
     tvStr[sl] = vs
-    if !r.Found {
-      tmap.set(key, sl)
-      if kt == 6 && kint == tLen[tid] + 1 {
-        tLen[tid] = kint
-        if tmap.has(tid .. "#" .. (kint + 1)) {
-          lenChase = true
-          lenTid = tid
-        }
+    tOwner[sl] = tid
+    tKeyTag[sl] = kt
+    tKeyNum[sl] = kn
+    tKeyStr[sl] = ks
+    tblLink(tid, sl)
+    tmap.set(key, sl)
+    if kt == 6 && kint == tLen[tid] + 1 {
+      tLen[tid] = kint
+      if tmap.has(tid .. "#" .. (kint + 1)) {
+        lenChase = true
+        lenTid = tid
       }
     }
   }
@@ -3836,6 +4105,8 @@ mod vaFill(base: int, dst: int, n: int) {
 mod vmStep() {
   if lenChase {
     lenStep()
+  } else if nxActive {
+    nxStep()
   } else if cmpActive {
     cmpStep()
   } else if !vmHalted {
@@ -3869,7 +4140,7 @@ mod vmStep() {
       // outNum0..outNum3 are numeric ports: numbers/booleans/nil only
       if a <= 3 && vTag(b) != 1 && vTag(b) != 6 && vTag(b) != 0 && vTag(b) != 3 {
         vmFail("cannot convert to number (outNum0..outNum3 take numbers)")
-      } else if a == 29 {
+      } else if a == 30 {
         // outInt0 takes integers (integral floats convert, like outNum)
         if vTag(b) == 6 {
           gSet(a, 6, vNum(b), "")
@@ -4153,6 +4424,40 @@ mod vmStep() {
               if 2 <= cnt { vSet(a + 1, vTag(src + 1), vNum(src + 1), vStr(src + 1)) }
               if 1 <= cnt { vSet(a, vTag(src), vNum(src), vStr(src)) }
               retCountV = cnt
+            }
+          }
+        } else if fid == 9 {
+          // next(t [, k]): the entry after k in insertion order, as key+value.
+          // A nil result means the walk is over.  Tombstones (keys assigned nil)
+          // are skipped one per tick, so this needs the micro-step below rather
+          // than a loop.
+          if nargs < 1 || vTag(a + 1) != 5 {
+            vmFail("bad argument #1 to 'next' (table expected)")
+          } else {
+            let tid = toInt(vNum(a + 1))
+            var sl = -1
+            if nargs < 2 || vTag(a + 2) == 0 {
+              sl = tFirst[tid]
+            } else {
+              let kt = keyTag(vTag(a + 2), vNum(a + 2))
+              if kt == 0 {
+                vmFail("invalid key to 'next'")
+              } else {
+                let kr = tmap.get(tkey(tid, kt, vNum(a + 2), vStr(a + 2)))
+                if !kr.Found {
+                  vmFail("invalid key to 'next'")
+                } else {
+                  sl = tNext[kr.Value]
+                }
+              }
+            }
+            if !vmFailed {
+              nxSlot = sl
+              nxDst = vmBase + a
+              nxPc = vmPc
+              nxActive = true
+              nxStep()
+              advanced = true
             }
           }
         } else {
@@ -4589,7 +4894,11 @@ var wantParse: bool = false
 
 mod parseJobStart() {
   parseInit()
-  // one reserved slot per builtin (ids 0..8); user functions start after them
+  // one reserved slot per gate builtin (ids 0..9); the rest of the standard
+// library is Lua source prepended to the program (see libFor)
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
   fStart.push(-1)
   fParams.push(-1)
   fRegs.push(-1)

@@ -25,14 +25,16 @@ MAX_CALLS = 32
 MAX_TABLES = 64
 MAX_HEAP = 512
 
+# Gate-level builtins (VM primitives).  Everything else in the standard library
+# is Lua source prepended to the program on demand (see libFor in lua.ws).
 BUILTINS = (("print", 0), ("type", 1), ("tostring", 2), ("setvec", 3),
             ("setcol", 4), ("clock", 5), ("inarr", 6), ("outarr", 7),
-            ("select", 8))
+            ("select", 8), ("next", 9))
 
 # Canonical global slot order the chip must declare (out, in, builtins, ints).
 GSLOT_ORDER = ["outNum0", "outNum1", "outNum2", "outNum3", "outStr0",
                "outStr1", "inNum0", "inNum1", "inNum2", "inNum3", "inStr0",
                "inStr1", "invecx", "invecy", "invecz", "incolr", "incolg",
                "incolb", "incola", "print", "type", "tostring", "setvec",
-               "setcol", "clock", "inarr", "outarr", "select", "inInt0",
-               "outInt0"]
+               "setcol", "clock", "inarr", "outarr", "select", "next",
+               "inInt0", "outInt0"]
