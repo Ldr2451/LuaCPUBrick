@@ -155,6 +155,8 @@ const MAX_GLOBALS = 64
 const MAX_CALLS = 32
 const MAX_TABLES = 64
 const MAX_HEAP = 512
+// live vararg values across all active frames
+const MAX_VA = 256
 // most values one call/return/statement can carry (matches MAX_INSTR-style
 // unrolling in retAdjust and the return paths)
 const MAXVALS = 16
@@ -440,7 +442,8 @@ mod lexStep() {
           lpos = lpos + 1
         } else if cp2 == 46 {
           if cp3 == 46 {
-            lexFail("varargs '...' not supported")
+            emitTok(5, 32, 0.0, "")
+            lpos = lpos + 3
           } else {
             emitTok(5, 18, 0.0, "")
             lpos = lpos + 2
@@ -792,6 +795,7 @@ var constStr: string[]
 var fStart: int[]
 var fParams: int[]
 var fRegs: int[]
+var fVar: bool[]
 var mainFid: int = 0
 var gmap: Map<string, int>
 var gslotNext: int = 0
@@ -807,6 +811,9 @@ var locLen: int = 0
 var selfName: string[]
 var selfClean: bool[]
 var selfFid: int[]
+// is the function being compiled variadic?  `...` outside one is an error, and
+// the VM keeps the same flag per function id in fVar
+var fnVar: bool[]
 var valStk: int[]
 var valCall: bool[]
 var valPrefix: bool[]
@@ -945,9 +952,14 @@ var presCallPos: int = -1
 
 mod patchAt(pos: int) {
   if pos >= 0 && pos < bpc.length() {
-    // bit 1 (value 2): this call returns all of its results
-    bpc[pos] = bpc[pos] + 2
-    // an expanding call may write up to MAXVALS result registers starting at
+    if bop[pos] == 45 {
+      // VARARG: B 1 = one value, 0 = all of them
+      bpb[pos] = 0
+    } else {
+      // CALL: bit 1 (value 2) = return all of this call's results
+      bpc[pos] = bpc[pos] + 2
+    }
+    // an expanding call/vararg may write up to MAXVALS registers starting at
     // its base, so the allocator must step over that whole area; otherwise a
     // later regAlloc (an ADJUST scratch, the next expression) lands on a live
     // result register
@@ -1072,6 +1084,7 @@ mod parseInit() {
   fStart.clear()
   fParams.clear()
   fRegs.clear()
+  fVar.clear()
   gmap.clear()
   locName.clear()
   locReg.clear()
@@ -1120,6 +1133,8 @@ mod parseInit() {
   cfMaxLoc.resize(33, -1)
   selfName.resize(33, "")
   selfClean.resize(33, true)
+  fnVar.clear()
+  fnVar.resize(33, false)
   selfFid.resize(33, -1)
   funcEntryLoc.resize(33, 0)
   opBase.resize(33, 0)
@@ -1179,6 +1194,7 @@ mod parseInit() {
   gDeclare("clock")
   gDeclare("inarr")
   gDeclare("outarr")
+  gDeclare("select")
   gDeclare("inInt0")
   gDeclare("outInt0")
 }
@@ -1919,6 +1935,7 @@ mod newFunc() -> int {
   fStart.push(-1)
   fParams.push(0)
   fRegs.push(-1)
+  fVar.push(false)
   let bad = fStart.length() > MAX_FUNCS
   if bad {
     perr = true
@@ -1934,6 +1951,7 @@ mod funcDepthInit(islocal: bool) {
   cfMaxLoc[fnDepth] = -1
   selfClean[fnDepth] = true
   selfFid[fnDepth] = -1
+  fnVar[fnDepth] = false
   if islocal {
     selfName[fnDepth] = tmpS
     selfFid[fnDepth] = tmpB
@@ -1982,7 +2000,30 @@ mod funcHeadAnon(fr: int) {
 mod exprPrefix() {
   let k = curKind()
   let s = curSub()
-  if k == 1 {
+  if k == 5 && s == 32 {
+    // '...': one value by default, all of them when the expression turns out to
+    // be in tail position (patchAt rewrites B to 0).  In an argument list the
+    // destination is the callee's argument slot, so the values land exactly
+    // where the call expects them.
+    if fnVar[fnDepth] {
+      var dest = -1
+      if opKind.length() > opBase[fnDepth] && opTopKind() == 2 {
+        dest = opA[opA.length() - 1] + 1 + opB[opB.length() - 1]
+      }
+      if dest < 0 {
+        dest = regAlloc()
+      }
+      let p = bEmit(45, dest, 1, 0)
+      lastCallPos = p
+      bumpMax(dest + 2)
+      pushVal(dest, true, false)
+      cpos = cpos + 1
+      expectOperand = false
+    } else {
+      perr = true
+      perrMsg = "cannot use '...' outside a variadic function"
+    }
+  } else if k == 1 {
     let r = regAlloc()
     bEmit(2, r, cNum(curNum()), s)
     pushVal(r, false, false)
@@ -2971,9 +3012,27 @@ mod funcHead(islocal: bool, resume: int, fr: int) {
   }
 }
 
-// stState 20: parameter list.
+// stState 20: parameter list.  `...` may appear last and makes the function
+// variadic: extra arguments land in the vararg stack (fVar marks the fid).
 mod funcParams() {
-  if curKind() == 3 {
+  if curKind() == 5 && curSub() == 32 {
+    cpos = cpos + 1
+    fVar[tmpB] = true
+    if curKind() == 5 && curSub() == 15 {
+      cpos = cpos + 1
+      fParams[tmpB] = cfNext[fnDepth]
+      cfBase[fnDepth] = cfNext[fnDepth]
+      if selfName[fnDepth] != "" {
+        locDeclare(selfName[fnDepth])
+      }
+      fStart[tmpB] = bop.length()
+      fnVar[fnDepth] = true
+      stState = 0
+    } else {
+      perr = true
+      perrMsg = "expected ) after ..."
+    }
+  } else if curKind() == 3 {
     locDeclare(curStr())
     dirtySelf(curStr())
     cpos = cpos + 1
@@ -3356,6 +3415,13 @@ var fRetA: int[]
 var fRetBase: int[]
 var fRetPC: int[]
 var fRetN: int[]
+var fVaB: int[]
+// vararg values as one flat stack; each frame records its base in fVaB and
+// vaTop is the number of live entries
+var vaTag: int[]
+var vaNum: float[]
+var vaStr: string[]
+var vaTop: int = 0
 var gtag: int[]
 var gnum: float[]
 var gstr: string[]
@@ -3465,8 +3531,8 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
 // (inputs filled from the latches), 19..26 builtins (print, type, tostring,
 // setvec, setcol, clock, inarr, outarr) as functions with ids 0..7.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 0.0, 0.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -3496,6 +3562,14 @@ mod vmReset() {
   fRetBase.clear()
   fRetPC.clear()
   fRetN.clear()
+  fVaB.clear()
+  vaTag.clear()
+  vaNum.clear()
+  vaStr.clear()
+  vaTag.resize(MAX_VA, 0)
+  vaNum.resize(MAX_VA, 0.0)
+  vaStr.resize(MAX_VA, "")
+  vaTop = 0
   gtag.clear()
   gnum.clear()
   gstr.clear()
@@ -3519,7 +3593,7 @@ mod vmReset() {
   gnum[16] = latchCG
   gnum[17] = latchCB
   gnum[18] = latchCA
-  gnum[27] = latchI0 + 0.0
+  gnum[28] = latchI0 + 0.0
   vmPc = 0
   vmBase = 0
   vmHalted = bop.length() == 0
@@ -3547,6 +3621,7 @@ mod vmReset() {
   fRetBase.push(0)
   fRetPC.push(-1)
   fRetN.push(-1)
+  fVaB.push(0)
 }
 
 mod vmFail(msg: string) {
@@ -3588,7 +3663,7 @@ mod syncOuts() {
   oF1 = if gtag[1] == 0 then 0.0 else gnum[1]
   oF2 = if gtag[2] == 0 then 0.0 else gnum[2]
   oF3 = if gtag[3] == 0 then 0.0 else gnum[3]
-  oI0 = if gtag[28] == 0 then 0 else toInt(gnum[28])
+  oI0 = if gtag[29] == 0 then 0 else toInt(gnum[29])
   oS4 = if gtag[4] == 0 then "" else fmtVal(gtag[4], gnum[4], gstr[4])
   oS5 = if gtag[5] == 0 then "" else fmtVal(gtag[5], gnum[5], gstr[5])
 }
@@ -3718,6 +3793,46 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
   return true
 }
 
+// Copy up to MAXVALS values from the register file into the vararg stack.
+mod vaSpill(src: int, dst: int, n: int) {
+  if 1 <= n { vaTag[dst] = vtag[src] vaNum[dst] = vnum[src] vaStr[dst] = vstr[src] }
+  if 2 <= n { vaTag[dst+1] = vtag[src+1] vaNum[dst+1] = vnum[src+1] vaStr[dst+1] = vstr[src+1] }
+  if 3 <= n { vaTag[dst+2] = vtag[src+2] vaNum[dst+2] = vnum[src+2] vaStr[dst+2] = vstr[src+2] }
+  if 4 <= n { vaTag[dst+3] = vtag[src+3] vaNum[dst+3] = vnum[src+3] vaStr[dst+3] = vstr[src+3] }
+  if 5 <= n { vaTag[dst+4] = vtag[src+4] vaNum[dst+4] = vnum[src+4] vaStr[dst+4] = vstr[src+4] }
+  if 6 <= n { vaTag[dst+5] = vtag[src+5] vaNum[dst+5] = vnum[src+5] vaStr[dst+5] = vstr[src+5] }
+  if 7 <= n { vaTag[dst+6] = vtag[src+6] vaNum[dst+6] = vnum[src+6] vaStr[dst+6] = vstr[src+6] }
+  if 8 <= n { vaTag[dst+7] = vtag[src+7] vaNum[dst+7] = vnum[src+7] vaStr[dst+7] = vstr[src+7] }
+  if 9 <= n { vaTag[dst+8] = vtag[src+8] vaNum[dst+8] = vnum[src+8] vaStr[dst+8] = vstr[src+8] }
+  if 10 <= n { vaTag[dst+9] = vtag[src+9] vaNum[dst+9] = vnum[src+9] vaStr[dst+9] = vstr[src+9] }
+  if 11 <= n { vaTag[dst+10] = vtag[src+10] vaNum[dst+10] = vnum[src+10] vaStr[dst+10] = vstr[src+10] }
+  if 12 <= n { vaTag[dst+11] = vtag[src+11] vaNum[dst+11] = vnum[src+11] vaStr[dst+11] = vstr[src+11] }
+  if 13 <= n { vaTag[dst+12] = vtag[src+12] vaNum[dst+12] = vnum[src+12] vaStr[dst+12] = vstr[src+12] }
+  if 14 <= n { vaTag[dst+13] = vtag[src+13] vaNum[dst+13] = vnum[src+13] vaStr[dst+13] = vstr[src+13] }
+  if 15 <= n { vaTag[dst+14] = vtag[src+14] vaNum[dst+14] = vnum[src+14] vaStr[dst+14] = vstr[src+14] }
+  if 16 <= n { vaTag[dst+15] = vtag[src+15] vaNum[dst+15] = vnum[src+15] vaStr[dst+15] = vstr[src+15] }
+}
+
+// Copy up to MAXVALS values from the vararg stack into registers (VARARG).
+mod vaFill(base: int, dst: int, n: int) {
+  if 1 <= n { vtag[dst] = vaTag[base] vnum[dst] = vaNum[base] vstr[dst] = vaStr[base] }
+  if 2 <= n { vtag[dst+1] = vaTag[base+1] vnum[dst+1] = vaNum[base+1] vstr[dst+1] = vaStr[base+1] }
+  if 3 <= n { vtag[dst+2] = vaTag[base+2] vnum[dst+2] = vaNum[base+2] vstr[dst+2] = vaStr[base+2] }
+  if 4 <= n { vtag[dst+3] = vaTag[base+3] vnum[dst+3] = vaNum[base+3] vstr[dst+3] = vaStr[base+3] }
+  if 5 <= n { vtag[dst+4] = vaTag[base+4] vnum[dst+4] = vaNum[base+4] vstr[dst+4] = vaStr[base+4] }
+  if 6 <= n { vtag[dst+5] = vaTag[base+5] vnum[dst+5] = vaNum[base+5] vstr[dst+5] = vaStr[base+5] }
+  if 7 <= n { vtag[dst+6] = vaTag[base+6] vnum[dst+6] = vaNum[base+6] vstr[dst+6] = vaStr[base+6] }
+  if 8 <= n { vtag[dst+7] = vaTag[base+7] vnum[dst+7] = vaNum[base+7] vstr[dst+7] = vaStr[base+7] }
+  if 9 <= n { vtag[dst+8] = vaTag[base+8] vnum[dst+8] = vaNum[base+8] vstr[dst+8] = vaStr[base+8] }
+  if 10 <= n { vtag[dst+9] = vaTag[base+9] vnum[dst+9] = vaNum[base+9] vstr[dst+9] = vaStr[base+9] }
+  if 11 <= n { vtag[dst+10] = vaTag[base+10] vnum[dst+10] = vaNum[base+10] vstr[dst+10] = vaStr[base+10] }
+  if 12 <= n { vtag[dst+11] = vaTag[base+11] vnum[dst+11] = vaNum[base+11] vstr[dst+11] = vaStr[base+11] }
+  if 13 <= n { vtag[dst+12] = vaTag[base+12] vnum[dst+12] = vaNum[base+12] vstr[dst+12] = vaStr[base+12] }
+  if 14 <= n { vtag[dst+13] = vaTag[base+13] vnum[dst+13] = vaNum[base+13] vstr[dst+13] = vaStr[base+13] }
+  if 15 <= n { vtag[dst+14] = vaTag[base+14] vnum[dst+14] = vaNum[base+14] vstr[dst+14] = vaStr[base+14] }
+  if 16 <= n { vtag[dst+15] = vaTag[base+15] vnum[dst+15] = vaNum[base+15] vstr[dst+15] = vaStr[base+15] }
+}
+
 mod vmStep() {
   if lenChase {
     lenStep()
@@ -3754,7 +3869,7 @@ mod vmStep() {
       // outNum0..outNum3 are numeric ports: numbers/booleans/nil only
       if a <= 3 && vTag(b) != 1 && vTag(b) != 6 && vTag(b) != 0 && vTag(b) != 3 {
         vmFail("cannot convert to number (outNum0..outNum3 take numbers)")
-      } else if a == 28 {
+      } else if a == 29 {
         // outInt0 takes integers (integral floats convert, like outNum)
         if vTag(b) == 6 {
           gSet(a, 6, vNum(b), "")
@@ -3983,6 +4098,63 @@ mod vmStep() {
           } else {
             vmFail("array element must be a number")
           }
+        } else if fid == 8 {
+          // select('#', ...) counts the extra arguments; select(n, ...) returns
+          // them from n (negative counts from the end)
+          let st = if 0 < nargs then vTag(a + 1) else 0
+          let sv = if 0 < nargs then vNum(a + 1) else 0.0
+          if nargs == 0 {
+            vmFail("bad argument #1 to 'select' (number expected, got no value)")
+          } else if st == 2 && vStr(a + 1) == "#" {
+            vSetInt(a, nargs - 1)
+            retCountV = 1
+          } else if st != 1 && st != 6 {
+            vmFail("bad argument #1 to 'select' (number expected)")
+          } else {
+            // the arguments after the index are the "extra arguments"; a
+            // positive n starts at the n-th of those, a negative one counts
+            // back from the last
+            let n = toInt(sv)
+            let m = nargs - 1
+            var cnt = 0
+            var src = a
+            if n < 0 {
+              if 0 - n > m {
+                vmFail("bad argument #1 to 'select' (index out of range)")
+              } else {
+                cnt = 0 - n
+                src = a + m + n + 2
+              }
+            } else if n == 0 {
+              vmFail("bad argument #1 to 'select' (index out of range)")
+            } else if n <= m {
+              cnt = m - n + 1
+              src = a + n + 1
+            }
+            if cnt > MAXVALS {
+              vmFail("too many results to select")
+            } else {
+              // results move down to a.. ; copy from the high end so the
+              // overlapping source registers are not clobbered
+              if 16 <= cnt { vSet(a + 15, vTag(src + 15), vNum(src + 15), vStr(src + 15)) }
+              if 15 <= cnt { vSet(a + 14, vTag(src + 14), vNum(src + 14), vStr(src + 14)) }
+              if 14 <= cnt { vSet(a + 13, vTag(src + 13), vNum(src + 13), vStr(src + 13)) }
+              if 13 <= cnt { vSet(a + 12, vTag(src + 12), vNum(src + 12), vStr(src + 12)) }
+              if 12 <= cnt { vSet(a + 11, vTag(src + 11), vNum(src + 11), vStr(src + 11)) }
+              if 11 <= cnt { vSet(a + 10, vTag(src + 10), vNum(src + 10), vStr(src + 10)) }
+              if 10 <= cnt { vSet(a + 9, vTag(src + 9), vNum(src + 9), vStr(src + 9)) }
+              if 9 <= cnt { vSet(a + 8, vTag(src + 8), vNum(src + 8), vStr(src + 8)) }
+              if 8 <= cnt { vSet(a + 7, vTag(src + 7), vNum(src + 7), vStr(src + 7)) }
+              if 7 <= cnt { vSet(a + 6, vTag(src + 6), vNum(src + 6), vStr(src + 6)) }
+              if 6 <= cnt { vSet(a + 5, vTag(src + 5), vNum(src + 5), vStr(src + 5)) }
+              if 5 <= cnt { vSet(a + 4, vTag(src + 4), vNum(src + 4), vStr(src + 4)) }
+              if 4 <= cnt { vSet(a + 3, vTag(src + 3), vNum(src + 3), vStr(src + 3)) }
+              if 3 <= cnt { vSet(a + 2, vTag(src + 2), vNum(src + 2), vStr(src + 2)) }
+              if 2 <= cnt { vSet(a + 1, vTag(src + 1), vNum(src + 1), vStr(src + 1)) }
+              if 1 <= cnt { vSet(a, vTag(src), vNum(src), vStr(src)) }
+              retCountV = cnt
+            }
+          }
         } else {
           if fFunc.length() >= MAX_CALLS {
             vmFail("call depth exceeded")
@@ -4048,6 +4220,16 @@ mod vmStep() {
               } else if 7 < np {
                 vtag[nbase + 7] = 0
               }
+              // a variadic function keeps the arguments past its named
+              // parameters in the vararg stack; the frame records the base
+              let nva = if fVar[fid] && np < nargs then nargs - np else 0
+              if vaTop + nva > MAX_VA {
+                vmFail("too many varargs")
+              } else {
+                vaSpill(vmBase + a + 1 + np, vaTop, nva)
+                fVaB.push(vaTop)
+                vaTop = vaTop + nva
+              }
               fFunc.push(fid)
               fBase.push(nbase)
               fRetA.push(a)
@@ -4061,6 +4243,37 @@ mod vmStep() {
           }
         }
       }
+    } else if op == 45 {
+      // VARARG a, b: b = 1 gives one value, b = 0 gives all of them
+      let base = fVaB[fVaB.length() - 1]
+      let have = vaTop - base
+      let want = if b == 0 then have else b
+      if 1 <= want {
+        let k = if have < want then have else want
+        vaFill(base, vmBase + a, k)
+        if k < want {
+          // pad with nil so a fixed-arity target list sees the missing values
+          if k + 1 <= want { vSet(a + k, 0, 0.0, "") }
+          if k + 2 <= want { vSet(a + k + 1, 0, 0.0, "") }
+          if k + 3 <= want { vSet(a + k + 2, 0, 0.0, "") }
+          if k + 4 <= want { vSet(a + k + 3, 0, 0.0, "") }
+          if k + 5 <= want { vSet(a + k + 4, 0, 0.0, "") }
+          if k + 6 <= want { vSet(a + k + 5, 0, 0.0, "") }
+          if k + 7 <= want { vSet(a + k + 6, 0, 0.0, "") }
+          if k + 8 <= want { vSet(a + k + 7, 0, 0.0, "") }
+          if k + 9 <= want { vSet(a + k + 8, 0, 0.0, "") }
+          if k + 10 <= want { vSet(a + k + 9, 0, 0.0, "") }
+          if k + 11 <= want { vSet(a + k + 10, 0, 0.0, "") }
+          if k + 12 <= want { vSet(a + k + 11, 0, 0.0, "") }
+          if k + 13 <= want { vSet(a + k + 12, 0, 0.0, "") }
+          if k + 14 <= want { vSet(a + k + 13, 0, 0.0, "") }
+          if k + 15 <= want { vSet(a + k + 14, 0, 0.0, "") }
+          if k + 16 <= want { vSet(a + k + 15, 0, 0.0, "") }
+        }
+      } else {
+        vSet(a, 0, 0.0, "")
+      }
+      retCountV = want
     } else if op == 24 {
       let rv = vTag(a)
       let rn = vNum(a)
@@ -4074,6 +4287,7 @@ mod vmStep() {
       fRetBase.pop()
       fRetPC.pop()
       fRetN.pop()
+      vaTop = fVaB.pop().Value
       if fFunc.length() == 0 {
         resultV = fmtVal(rv, rn, rs)
         vmHalted = true
@@ -4094,6 +4308,7 @@ mod vmStep() {
       fRetBase.pop()
       fRetPC.pop()
       fRetN.pop()
+      vaTop = fVaB.pop().Value
       if fFunc.length() == 0 {
         resultV = ""
         vmHalted = true
@@ -4123,6 +4338,7 @@ mod vmStep() {
       fRetBase.pop()
       fRetPC.pop()
       fRetN.pop()
+      vaTop = fVaB.pop().Value
       let have = if 0 <= retCountV then retCountV else 0
       let n = if want == -2 then have else 1
       let k = if have < n then have else n
@@ -4172,6 +4388,7 @@ mod vmStep() {
         fRetBase.pop()
         fRetPC.pop()
         fRetN.pop()
+        vaTop = fVaB.pop().Value
         let n = if want == -2 then cnt else 1
         let k = if cnt < n then cnt else n
         if fFunc.length() == 0 {
@@ -4372,7 +4589,10 @@ var wantParse: bool = false
 
 mod parseJobStart() {
   parseInit()
-  // one reserved slot per builtin (ids 0..7); user functions start after them
+  // one reserved slot per builtin (ids 0..8); user functions start after them
+  fStart.push(-1)
+  fParams.push(-1)
+  fRegs.push(-1)
   fStart.push(-1)
   fParams.push(-1)
   fRegs.push(-1)

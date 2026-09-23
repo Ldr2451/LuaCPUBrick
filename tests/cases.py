@@ -162,6 +162,52 @@ TESTS = [
     ("multi-args", "function id(a) return a end print(id(1), id(2))", None,
      "run"),
     ("ret-multi", "function f() return 1, 2 end print(f())", None, "run"),
+    ("ret-multi3", "function f() return 1, 2, 3 end print(f())", None, "run"),
+    ("ret-multi-mid", "function f() return 1, 2 end print(9, f(), 8)", None,
+     "run"),
+    ("ret-multi-last", "function f() return 1, 2 end print(f(), 9)", None,
+     "run"),
+    ("ret-multi-local", "function f() return 1, 2 end local a, b = f() "
+     "print(a, b)", None, "run"),
+    ("ret-multi-local3", "function f() return 1, 2 end local a, b, c = f() "
+     "print(a, b, c)", None, "run"),
+    ("ret-multi-assign", "function f() return 1, 2 end a, b = f() "
+     "print(a, b)", None, "run"),
+    ("ret-multi-fwd", "function f() return 7, 8 end function g() return f() "
+     "end print(g())", None, "run"),
+    ("ret-multi-table", "function f() return 1, 2 end local t = {f()} "
+     "print(t[1], t[2])", None, "run"),
+    ("ret-multi-paren", "function f() return 1, 2 end print((f()))", None,
+     "run"),
+    ("ret-multi-binop", "function f() return 1, 2 end print(f() + 0)", None,
+     "run"),
+    ("ret-multi-trunc", "function f() return 1, 2 end local a = f() "
+     "print(a)", None, "run"),
+    # varargs
+    ("va-print", "function f(...) print(...) end f(1, 2, 3)", None, "run"),
+    ("va-empty", "function f(...) print(...) end f()", None, "run"),
+    ("va-count", "function f(...) print(select('#', ...)) end f(1, 2, 3)",
+     None, "run"),
+    ("va-local", "function f(...) local a, b = ... print(a, b) end f(7, 8)",
+     None, "run"),
+    ("va-return", "function f(...) return ... end print(f(1, 2, 3))", None,
+     "run"),
+    ("va-table", "function f(...) local t = {...} print(#t, t[1], t[3]) end "
+     "f(4, 5, 6)", None, "run"),
+    ("va-named", "function f(a, ...) print(a, ...) end f(1, 2, 3)", None,
+     "run"),
+    ("va-paren", "function f(...) print((...)) end f(9)", None, "run"),
+    ("va-nested", "function outer() return 1, 2 end function f(...) "
+     "print(...) end f(outer())", None, "run"),
+    ("va-reject", "print(...)", None, "reject"),
+    # select
+    ("sel-count", "print(select('#', 1, 2, 3))", None, "run"),
+    ("sel-index", "print(select(2, 'a', 'b', 'c'))", None, "run"),
+    ("sel-neg", "print(select(-1, 'a', 'b', 'c'))", None, "run"),
+    ("sel-va", "function f(...) return select(2, ...) end "
+     "print(f('x', 'y', 'z'))", None, "run"),
+    ("sel-oob", "print(select(0, 1, 2))", None, "runtimerr",
+     {"expect": {"err": "index out of range"}}),
     ("type-all", "print(type(1), type('s'), type(true), type(nil), "
      "type(print))", None, "run"),
     ("tostring-all", "print(tostring(2.5), tostring('s'), "

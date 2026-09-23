@@ -47,9 +47,9 @@ def mod_body(name):
 
 # 1. builtins: ids, reserved slots, fid dispatch ---------------------------
 n_builtin = len(m.BUILTINS)
-check("builtin-count-8", n_builtin == 8, f"got {n_builtin}")
+check("builtin-count-9", n_builtin == 9, f"got {n_builtin}")
 ids = sorted(fid for _, fid in m.BUILTINS)
-check("builtin-ids-0-7", ids == list(range(8)), f"got {ids}")
+check("builtin-ids-0-8", ids == list(range(9)), f"got {ids}")
 pjs = mod_body("parseJobStart")
 slots = pjs.count("fStart.push(-1)")
 check("reserved-slots-match-builtins", slots == n_builtin,
@@ -146,12 +146,13 @@ handled = set(int(x) for x in re.findall(r"op == (\d+)", vm))
 if re.search(r"op >= 8 && op <= 13", vm):
     handled |= set(range(8, 14))
 emitted = set(int(x) for x in re.findall(r"bEmit\((\d+)", WS))
-check("opcodes-0-44-handled", handled >= set(range(45)),
-      f"missing {[o for o in range(45) if o not in handled]}")
-check("no-op-45", max(emitted | {0}) <= 44,
+check("opcodes-0-45-handled", handled >= set(range(46)),
+      f"missing {[o for o in range(46) if o not in handled]}")
+check("no-op-46", max(emitted | {0}) <= 45,
       f"max emitted {max(emitted)}")
-check("spec-45-ops", m.N_OPS == 45 and m.HALT == 0 and m.RETURNM == 42
-      and m.CALLM == 41 and m.ADJUST == 43 and m.TAPPEND == 44)
+check("spec-46-ops", m.N_OPS == 46 and m.HALT == 0 and m.RETURNM == 42
+      and m.CALLM == 41 and m.ADJUST == 43 and m.TAPPEND == 44
+      and m.VARARG == 45)
 
 # 7. keyword coverage --------------------------------------------------------
 model_kw = set(m.KEYWORDS)
