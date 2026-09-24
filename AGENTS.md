@@ -1,502 +1,257 @@
 # AGENTS.md — how to work in this repo
 
-## Commands: plain and platform-independent
-- Python, Lua and WireScript are all cross-platform, so **the repo is too**. No
-  PowerShell in scripts or docs, no shell-specific incantations in commands.
-  `python -u tests/test_chip_suite.py iter-` means the same thing everywhere.
-- Do not reach for PowerShell (or any other shell) to do what a Python script
-  does better. The shell tool here happens to be PowerShell, but that is not a
-  reason to write PowerShell: it mangles quoting, has no heredocs, and none of
-  it works on Linux. Put the logic in a script under `tools/`.
+## Commands
+- Python, Lua and WireScript are cross-platform, so **the repo is too**. No
+  PowerShell in scripts, docs or commands; no shell-specific incantations. One
+  command per call: no `;`, no `&&`, no `$env:`, no heredocs. Options go in as
+  script arguments. Probes use `tools/check.py @file` (`%%` separates programs),
+  not quoted one-liners — PowerShell eats the quotes and compiles a different
+  program. Put anything reusable in a script under `tools/`, never a shell
+  one-liner.
 - Always run Python with `-u`. Buffered output is indistinguishable from a hang.
-- Prefer a script's own `workdir`/path handling over `cd`, and use `os.path`
-  inside scripts, never hard-coded separators or absolute machine paths.
-- Anything external is discovered, not hard-coded: `tests/lua_oracle.py` finds
-  the oracle (`$LUA55`, then PATH, then the usual install dirs) and
-  `irrun/irdump.py` finds the compiler (`$WIRESCRIPT`, then a sibling checkout,
-  then PATH).
-- The chip's port types are `float`, `int`, `bool`, `string`, `vector`, `color`
-  and `entity`, each with an array form (`float[]` ... `entity[]`), plus a
-  port-only `any` that cannot be stored in a variable gate.  `object`,
-  `reference`, `item`, `gameobject` and `player` are not types.  Read this off
-  the compiler with `python -u tools/porttypes.py [type ...]` rather than
-  guessing: it compiles a one-port net per candidate and says which are
-  accepted.  **An object in WireScript is an `entity`.**
-- Python is 3.12 (no JIT, GIL on) — CPU parallelism means **multiprocessing**.
-- Changing the Python build (3.13 free-threading / `--enable-jit`, Cython) is not
-  worth it here: the sim is a single-threaded interpreter-bound pointer chase,
-  free-threading only helps threaded code, and the JIT would buy single-digit
-  percent for a large rewrite. The wins were algorithmic instead.
+- Use `os.path` in scripts, never a hard-coded separator or machine path.
+- Anything external is discovered: `tests/lua_oracle.py` finds the oracle
+  (`$LUA55`, PATH, install dirs) and `irrun/irdump.py` the compiler.
+- Python is 3.12, GIL on: CPU parallelism means **multiprocessing**. A faster
+  interpreter is not the lever — the sim is an interpreter-bound pointer chase.
+- Port types: `float`, `int`, `bool`, `string`, `vector`, `color`, `entity` plus
+  array forms, and a port-only `any`. **An object in WireScript is an `entity`.**
+  Ask the compiler with `python -u tools/porttypes.py [type ...]`.
+- Search with ripgrep, not the tool's own grep.
 
-## Time every command
-- **Know how long things take.** Every check script prints its elapsed time (via
-  `tests/timing.py`); keep that. Without a number you cannot tell a 3-second
-  probe from a 3-minute suite, and slow scripts quietly end up in a loop.
-- Before repeating a command, look at the previous run's time. If it is slow,
-  make it faster or run it less — do not wrap it in a `for` loop and wait.
-- Never pipe a long-running command through a filter that hides progress until
-  the end. Stream it, or redirect to a file and poll the file.
-- Bound everything: explicit timeouts on probes, and a per-case timeout in the
-  suite. An unpatched jump is an infinite loop, so the sim can hang too.
-- **Size every timeout from the last measured run, and keep it short.** Two or
-  three times what the command actually took is a bound; twenty minutes is not,
-  and the tool's 120s default is not an invitation to raise it. A timeout that
-  is too loose is worse than none: it turns a five-second mistake into a
-  twenty-minute wait and a pile of orphaned workers.
-- When a command times out, kill what it left behind (`taskkill /F /IM
-  python.exe`) *before* doing anything else, then find out why. A starved
-  machine and an infinite loop look identical from the outside -- three
-  independent chip jobs in one batch took over three minutes when the same work
-  takes 22s and 63s run one after another, and the timeout hid which it was.
-- After a killed or long command, check for leftover `python` processes; a
-  timeout does not reliably kill the process tree.
-- Bisect slow batches: run suspect cases one at a time, each with its own timeout.
+## Time every command, and bound it
+- Every check script prints its own elapsed time; keep that. Anything else goes
+  through `python -u tools/timecmd.py <command> [args...]`, which streams the
+  output and prints the seconds and the exit code. A `.py` argument gets the
+  interpreter put in front of it.
+- **Size the timeout from the last measured run and keep it short** — two or three
+  times the measured cost. The tool's 120s default is not an invitation to raise
+  it to minutes: a loose timeout turns a five-second mistake into a long wait
+  and a pile of orphaned workers. Suite 63s → 150s; a probe 38s → 90s.
+- **When a command times out, kill what it left behind first**
+  (`taskkill /F /IM python.exe`), then find out why. A timeout does not reliably
+  kill the process tree, and a starved machine looks exactly like an infinite
+  loop from outside — three chip jobs in one batch took over three minutes when
+  the same work takes 22s and 63s in sequence.
+- Never pipe a long command through a filter that hides progress; stream it.
+- Bisect a slow batch one case at a time, each with its own timeout. A "hung"
+  batch is often buffering, orphan contention, or one stuck case hidden behind
+  aggregated output.
 
-## Batching (the single biggest speed lever)
-- Compiling `lua.ws` costs ~5s and indexing its 124k wires another ~0.8s. Never
-  pay that per program: `irsims.ChipRunner` compiles once and runs many programs
-  via `Sim.reset()`, which restores the just-constructed state without touching
-  the wiring or the static source cache. The check scripts use it.
-- `tests/test_chip_suite.py` puts `BATCH` (12, override with `CHIP_BATCH=1`)
-  cases in each worker process, so a batch builds the chip once. A batch that
-  dies or times out is re-run case by case, keeping the hard per-case timeout.
-- Measured: suite 125s -> 78s, `iter_check` 78s -> 33s, byte-identical results.
-- Do not split the suite into fast/slow tiers. It only ever meant running the
-  whole suite twice to see everything; all cases now run by default.
-- When a script loops over cases, build the expensive shared object once outside
-  the loop. Check for this before concluding that a harness is just "slow".
-- A differential check that tries N values is N programs and N oracle processes
-  unless you batch it, and the batch unit is the *program*, not the value:
-  `print` appends one capped line, `io.write` appends raw text with no width
-  cap, and the log keeps 32 appends, so one `io.write` can carry a whole group
-  of values (`tools/fmtsweep.py` does six per call, marked with a group number so
-  one errored value cannot shift the rest of the comparison). Two ceilings bound
-  a batch: the chip's source buffer is about 4 KB *including* the prepended
-  library, and an expression is MAXVALS = 16 registers, so a group is built a few
-  values per statement -- one fifteen-operand `..` came out with its tail
-  dropped. Both are silent: check the program's length and its operand count
-  when a big batch comes back empty or truncated.
-- Time each phase, not just the script: `tools/fmtsweep.py` prints values/second
-  per precision, because a sweep that was 121s per precision became 20s and the
-  only way to see that was the number.
-- A run whose program has an error should stop when the error appears. The sim's
-  condition was "vmHalted and the queue drained", and a source too long to lex
-  never drained, so an errored program ran its whole 200k-tick budget: 63
-  seconds to be told what 2 seconds would say. `irsims.py` now also breaks on
-  `errV`.
+## Batching
+- **One test command at a time, in its own call, never beside another chip job.**
+  The suite takes the whole machine: twelve worker processes, each with its own
+  Sim. Independent *searches* and *reads* do go out in parallel.
+- Compiling `lua.ws` costs ~10s. Never pay it per program: `irsims.ChipRunner`
+  compiles once and runs many via `Sim.reset()`; the suite's workers share the
+  dump (`share_dump`/`sim_from_dump`). Hand out work one case at a time —
+  a batch is as long as its slowest member. `CHIP_POOL=1` (default),
+  `CHIP_WORKERS=12`, `CHIP_POOL=0` is the old batch path.
+- While iterating run the single narrowest command that proves the change
+  (`tools/check.py @file`, a suite filter, a dump), then verify wide once.
+  Re-running the same file to "confirm" is wasted.
+- A differential sweep's batch unit is the *program*, not the value: one
+  `io.write` can carry a group (the log keeps 32 appends). Two silent ceilings:
+  the source buffer is ~4 KB *including* the prepended library, and an expression
+  is MAXVALS = 16 registers.
+- Time each phase, not just the script. A run whose program errored should stop
+  when the error appears — `irsims.py` breaks on `errV` for exactly that reason.
+- Read every file a change will touch in one batched read before editing.
 
 ## Layout
 - `lua.ws` is the chip; `irrun/` simulates it; `tests/` holds the suite and the
-  oracle-diff checks; `tools/` holds the development tools. `README.md` lists
-  them. Keep the root to the chip sources and the two docs.
-- **The oracle is the reference and nothing else.** Real Lua 5.5, found by
-  `tests/lua_oracle.py`, decides what correct means; a diff against it is the
-  only proof. There is no second chip source to compare against.
-- `lua.ws` is one file because the compiler reads one file: there is no include,
-  so splitting it needs either a concatenate step that makes the real chip a
-  generated artifact or compiler support we do not have. It is 7.9k lines and
-  the tools do not care -- the things that bite are the *else-if chains inside
-  it*, not the file: a chain of about sixteen arms is where arms near the top
-  stop taking effect (the 33-arm state dispatch meant `%d` of 42 came out 00, so
-  it is two halves of sixteen), and the conversion chain broke the same way at
-  ten. When a dispatch grows, split it before the next arm, and keep the states
-  in named mods so a split is mechanical.
-- PUC's own split decides where a standard library function belongs: if PUC
-  implements it in Lua, port that Lua and prepend it on demand (`LIB_*`, a few
-  hundred characters); if PUC implements it in C, a gate. The float
-  conversions, the pattern matcher and `error`/`pcall` are all C in PUC and are
-  gates here for that reason; `pairs`, `ipairs`, `select`'s neighbours and the
-  string helpers are Lua in PUC and are library source.
-- A piece is a plain Lua function, and the chip's parser has three shapes PUC
-  accepts that it does not: a nested `local function` inside a function literal
-  assigned to a *field* (`string.gsub = function() local function f() ... end
-  ... end`) is not bound, so a piece spells a nested function `local f =
-  function(...) ... end`; a nested function may not read a local of the
-  function it sits in (that is an upvalue, and closures are not built yet), so
-  anything it needs is passed in as an argument; and a nested call in an
-  argument list is fine, but a *function literal* there loses its returns (the
-  `arg-fn-returns` skip). `tools/check.py @file` proves a piece against PUC
-  before it is installed: the piece runs with an `_s`/`_m`/`_pat` shim and its
-  results are diffed against real `gsub` on a set of shapes.
-- A piece may use another piece: `libStrGsub` prepends `LIB_str_pat` with it
-  (gsub scans its replacement for `%` with `string.find`) and `libStrPat` then
-  stands down, so a program that uses both pays for the shared piece once.
-  A piece referring to a name the loader does not install is not an error at
-  load time -- it is "attempt to call" on the first call.
+  oracle diffs; `tools/` holds the tools. Keep the root to the chip and the docs.
+- **The oracle is the reference and nothing else.** Real Lua 5.5 decides what
+  correct means; a diff against it is the only proof. There is no second chip
+  source.
+- `lua.ws` is one file because the compiler reads one file. Its size does not
+  matter; the *else-if chains inside it* do: past ~16 arms the arms near the top
+  stop taking effect (a 33-arm dispatch meant `%d` of 42 came out 00). Split a
+  dispatch before the next arm, keeping states in named mods so the split is
+  mechanical. `python -u tools/chainmap.py` lists every chain.
+- **PUC's own split decides where a library function belongs**: C in PUC → a gate
+  (`_s`, `_m`, `_fmt`, `next`, `select`, `unpack`, the pattern matcher, the float
+  conversions, `error`/`pcall`); Lua in PUC → a `LIB_*` source piece. A new
+  builtin must earn its gates against the piece alternative, and the answer
+  changes with the piece's size.
+- A piece may use another piece (gsub prepends `LIB_str_pat`); the shared one is
+  paid once. A piece the loader does not install is not a load error — it is
+  "attempt to call" on first use. `tests/test_consistency.py` proves every
+  `const LIB_*` is installed by some `lib*` mod and reaches the `..` chain;
+  `tools/check.py @file` proves a piece against PUC with an `_s`/`_m`/`_pat` shim.
+- One-off debug scripts are deleted once the finding is in; the tool that
+  reproduces it stays (`tools/unsup.py`, `tools/unhandled.py`, `tools/check.py`).
+- `tools/wswarn.py` and `tests/test_consistency.py` run in preflight and have
+  caught real bugs — keep them passing.
 
-- A value that PUC's C code produces is a value the *sim* has to mirror
-  exactly. The sim kept the log's old rule -- 64 characters and 32 lines --
-  after the chip moved the width cap into the print handler and made the limit
-  32 appends, so it silently cut every `io.write` over 63 characters and the
-  oracle diff reported the chip as wrong. When a port's rule changes, the
-  harness's copy of it changes with it.
-- Anything used more than once belongs in a script, not in a shell one-liner:
-  a probe you keep retyping should become `tools/<what it does>.py`.
-- One-off debug scripts get deleted once the finding is in; the tool that
-  reproduces it stays. `tools/unsup.py`, `tools/unhandled.py` and
-  `tools/check.py` exist so the next person does not write another `debug_*.py`.
-- **Search with ripgrep, not the tool's own grep.** `rg` is on PATH after
-  `winget install BurntSushi.ripgrep.MSVC` (Linux/macOS: the package manager);
-  it walks the tree in a fraction of a second where a built-in content search
-  takes long enough to be worth timing. `rg PATTERN path`, `-n` for line
-  numbers, `-g` for a glob (`-g '*.py'`), `-C` for context, `--stats` when you
-  want to know how much it read, and `-o` to print only the matches. In a shell
-  that was already open when ripgrep was installed, the machine's PATH has it
-  and that shell does not: a new terminal does, and in the old one call the
-  full path under `%LOCALAPPDATA%\Microsoft\WinGet\Packages\`.
-- **Time every command, so a slowdown is something you notice.** The check
-  scripts print their own elapsed time; anything else goes through
-  `python -u tools/timecmd.py <command> [args...]`, which streams the output
-  and prints the seconds and the exit code. Without a number you cannot tell a
-  3-second search from a 3-minute one, and a search that quietly got slow is
-  the one worth catching before it becomes a habit. A `.py` argument gets the
-  interpreter put in front of it, so the same wrapper times a script too.
-- **lua.ws is easy to get wrong in ways nothing complains about**, so the two
-  cheap nets run in preflight and have caught real bugs:
-  - `tests/test_consistency.py` proves every `const LIB_*` piece is installed by
-    some `lib*` mod, that every `lib*` mod is called from `goParse`, and that
-    each `let libX = lib...(program)` reaches the `..` chain. A piece nobody
-    installs is an "attempt to call" on the first call and nothing else --
-    gsub's replacement walk lost `string.find` exactly that way.
-  - `tools/wswarn.py` flags **a bare copy of a file-level var that the same mod
-    has already written** (`patR = patStart` after writing patStart reads the
-    value from before that write). It is 15 sites, not the 259 the general "read
-    after write" form reports: reading a var after writing it is normal and
-    usually right, so the narrow form is the one worth reading. The fix is always
-    to compute into a `let` and write the vars last.
+## Performance: three cost currencies
+- **Gates, ticks, and the clock are three different things.** Gates are
+  `tools/audit.py`; ticks are what `tools/check.py` prints. Sim wall time tracks
+  gates fired per tick, so fewer ticks with the same work costs the same sim
+  time. **In-game a tick is 16.7ms of real time whatever the chip does**, so
+  there only fewer ticks reaches the user. A change can halve one and double the
+  other; say which one you moved.
+- **A library piece is charged by the character**: source is spliced in front of
+  the program and the lexer runs at 4 chars/tick, so C characters cost `C/4`
+  ticks of boot on every run of a program that names it. **That count over 4 is
+  the in-game number to argue about** — `LIB_str_gsub` is 2,769 escaped chars =
+  692 ticks = 11.5s at 60 ticks/s, before the program runs one instruction.
+  `tools/libconst.py piece.lua LIB_x` prints the size; `--install` minifies
+  (comments, indentation, blank lines out, nothing else — a line inside a long
+  bracket string is data) and rewrites the const in `lua.ws`.
+- A boot cost is only reducible three ways: fewer characters, more chars per
+  tick, or not parsing. The middle one is linear in gates (unrolling `lexStep`:
+  8 steps +6.5k nodes, 16 steps +19.6k — `tools/lexcost.py`). The cheap end is a
+  `Find`-based fast path for string literals and a run ladder for identifiers,
+  which is where the ladder's zero-progress trap (below) bites.
+- **A gate that must call back into Lua is a separate mechanism nothing needs
+  yet.** The only place the chip calls Lua on a gate's behalf is the pcall frame,
+  and pcall-of-pcall is unsupported, so a machine cannot suspend mid-loop for a
+  call. That is why gsub stays a piece: a gate would not pay the 692 ticks, but
+  its replacement can be a Lua function, so the gate needs the hook *first* — and
+  the matcher cost is the same micro-step either way, so the gate would buy the
+  boot and nothing else. Do not build it unless a gate that must call Lua
+  appears for another reason.
+- **Where a cost belongs:** Lua-level loops are VM state machines (ticks, no
+  gates). WireScript has no loop statement, so a gate-side loop is a hand-unrolled
+  ladder (gates, ~2.5 nodes per arm) or a micro-step (ticks). String-heavy work
+  belongs in Lua; tight per-call arithmetic belongs in a gate.
+- **A rarely-taken path does not belong in `vmStep`** — it is inlined four times
+  and fires every tick. A closure cell-fill there cost every program 20% of its
+  per-tick time; moved to `vmBurst` (once per tick) it cost 2,133 nodes instead
+  of 3,054 and the tick-bound cases went back to normal.
+- Time the *program*, not just the harness: a case going 0.2s → 2s in the suite
+  is a user-visible regression, and the suite prints per-case seconds so it
+  cannot hide.
+- To compare two chips, **alternate them in one process** (a throwaway worktree
+  at the previous commit). Run as two separate processes it read 1.66 → 2.22ms
+  for a change that was really +7% — drift, not a regression. Compare slopes,
+  never one run per chip.
 
-## Batch your own work too
-- Independent tool calls go out in one message (parallel), not one at a time:
-  searches, reads of unrelated files, independent test commands.
-- **But never run two test commands in parallel, and never put a test command in
-  the same batch as a chip job.** The suite takes the whole machine for itself:
-  twelve worker processes, each with its own Sim. Three chip jobs in one batch
-  took over three minutes against the 22s and 63s the same two take one after
-  another, and it looks exactly like a hang — the timeouts hid which job was
-  which. One test command at a time, in its own call, with a timeout sized from
-  its last measured run: the suite 63s gets 150s, a probe 38s gets 90s.
-- Prefer one command that runs everything over many commands that each run part:
-  `tests/test_consistency.py`, the suite and the three oracle checks belong in a
-  single parallel call at the end of a change, not one per edit. That sentence
-  predates the rule above and loses to it: they are one command *in sequence*,
-  not one batch.
-- **The tests use the whole machine: a pool of worker *processes*, each with its
-  own Sim, and the chip compiled once into a dump they all share.** Two things
-  matter and both were measured the hard way. The chip is built once (ten
-  seconds) and every worker loads that dump (`irsims.share_dump` /
-  `sim_from_dump`), so a worker is not paying a build before its first program.
-  And the work is handed out **one case at a time**: batching is faster than one
-  process per case but a batch is as long as its slowest member, and the twenty
-  gsub cases are three to seven seconds each, so one batch held a core for a
-  minute while seven sat idle — that was the taper from 100% to 14% CPU. The
-  pool is `CHIP_POOL=1` (the default), `CHIP_WORKERS` (12), and the old batch
-  path is still there as `CHIP_POOL=0`. `tools/check.py` does the same thing
-  above four programs, in chunks, because a worker spends a second and a half
-  loading the dump and a program is a second.
-- Don't re-run the same test file repeatedly to "confirm" — one run at the end
-  covers it. While iterating, run the single narrowest command that proves the
-  thing just changed (`tools/check.py` with the program, a suite filter, a dump),
-  then verify wide once.
-- Merge plan steps that would each need their own test round: adding several
-  library batches is one step and one verification, not one step per batch.
-- Read every file a change will touch in one batched read before editing, so the
-  edits are right the first time instead of iterating on stale context.
-- Compile the chip once per batch of experiments: a loop over N test programs
-  must not trigger N recompiles.
-
-## Performance: the chip has three cost currencies
-- **Every change costs gates AND ticks, and those are not the same currency as
-  the clock.** Gates are `tools/audit.py` (nodes/wires); ticks are what
-  `tools/check.py` prints per program. In the sim, wall time tracks the gates
-  fired per tick, so a change that does the same work in fewer ticks still costs
-  the same sim time. In the game a tick is 16.7ms of *real* time whatever the
-  chip does inside it, so there fewer ticks is the only thing that matters. A
-  change can halve one and double the other; say which one you moved.
-- **The prepended library is charged by the character, and that is the trap.**
-  Library pieces are Lua *source* spliced in front of the program, and the lexer
-  runs at 4 characters per tick, so a piece of C characters costs `C/4` ticks of
-  boot on *every* run of a program that names it. The ceiling is a few hundred
-  characters per piece (the existing ones are 300–700). Before adding a piece,
-  measure it: `python -u tools/libconst.py piece.lua LIB_x` prints the escaped
-  size, and `tools/check.py` prints the boot cost. 443 lines of `string.format`
-  was 10769 characters, 9.4s of sim time and ~45s in-game — written before
-  anyone checked what the mechanism charges.
-- **A library's in-game cost is its character count over 4, and that is the
-  number to argue about.** `LIB_str_gsub` is 2,769 escaped characters = 692 ticks
-  = **11.5s in-game** at 60 ticks/s, paid by every program that names gsub
-  before it runs one instruction. `tools/libconst.py --install` minifies the
-  const (comments, indentation, blank lines out; nothing else, because a line
-  inside a long bracket string is data), which took gsub from 2,975 to 2,769.
-- **A boot cost is a character count, so it is only reducible three ways:**
-  fewer characters, more characters per tick, or not paying the parse at all.
-  Unrolling the lexer is the middle one and it is linear in gates (16 steps
-  +19.6k nodes for 4x the rate). A `Find`-based fast path for string literals
-  and a run ladder for identifiers are the cheap end of the same trade — the
-  ladder is the one to watch, because a run length that comes out 0 hangs the
-  whole lexer (see the zero-progress trap below).
-- **The lexer is not a cheap global speed lever.** Each unrolled `lexStep()` is
-  ~1633 nodes (`tools/lexcost.py`: 8 steps +6.5k nodes, 16 steps +19.6k), so
-  buying lexing speed costs gates linearly and cannot rescue an oversized piece.
-  Shrink the piece or move the work into a gate.
-- **A gate that calls back into Lua is a separate mechanism, and nothing needs
-  it yet.** `string.gsub`'s replacement can be a Lua function, and a gate cannot
-  call one: the only place the chip calls Lua on a gate's behalf is the pcall
-  frame, and pcall of pcall is unsupported, so a machine cannot suspend mid-loop
-  for a call. Making gsub a gate therefore needs a call-from-a-gate hook *before*
-  it saves anything, and the hook costs gates and risk on its own. It buys the
-  boot, nothing else: the matcher already dominates per-position cost, and that
-  is the same micro-step either way. Do not build it unless a gate that must
-  call Lua shows up for some other reason.
-- **Where a cost belongs:** Lua-level loops are VM state machines, so they cost
-  ticks per iteration and no gates. WireScript has no loops at all, so a gate-side
-  loop is either hand-unrolled (gates proportional to the trip count) or a
-  micro-step (ticks proportional to it, as `next` does). String-heavy work
-  belongs in Lua; tight arithmetic that runs per call belongs in a gate.
-- **Follow PUC's own split.** In PUC Lua the primitives are exactly the things
-  Lua cannot express: `string.format`/`string.find`/`string.rep` are C,
-  `math.floor`/`math.tointeger` are C, and `next` is C -- while the iterators,
-  `table.*` and the rest are Lua. The chip already draws the line the same way
-  (`next`, `select`, `unpack`, `_s`, `_m`, `_fmt` are gates; the iterators, the
-  table library and the small string helpers are Lua source). When a function
-  needs a loop, exact decimal conversion, or a libc call to be faithful, it is a
-  gate, and the PUC source is the argument for that rather than against it.
-- **A new builtin must earn its gates** against the alternative of a library
-  piece, and the answer changes with the piece's size: `string.format` at 10.7k
-  characters is 20x over the source ceiling, so it belongs in a gate even though
-  `table.insert` at 400 does not.
-- **`string.gsub` is the piece that is too big, and it is waiting on a feature
-  the VM does not have.** The piece is 3109 characters, so a program that merely
-  *names* gsub pays ~2.9s of boot (measured: `print(string.gsub == nil)` is
-  3.0s against a 0.1s baseline) while the loop itself is cheap (~0.1s per
-  match). A gate would not have that cost, but gsub's replacement can be a Lua
-  function and a gate cannot call one: the only place the chip calls Lua on a
-  gate's behalf is the pcall frame, and `pcall of pcall` is explicitly
-  unsupported, so a machine cannot suspend mid-loop for a call. The escape is a
-  call-from-a-gate hook, which is gate-budget work, not a gsub bug. Meanwhile the
-  piece is correct (49 shapes against the oracle) and the cost is in the file
-  for everyone to see.
-- Time the *program*, not just the harness: a case that goes from 0.2s to 2s in
-  the suite is a user-visible regression in the chip, and the suite prints
-  per-case seconds precisely so it cannot hide.
-- **A rarely-taken path does not belong in `vmStep`, because `vmStep` is inlined
-  four times.** The closure cell-fill was first a micro-step arm in `vmStep` next
-  to `gmStep`, which is the established pattern, and it cost *every* program a
-  fifth of its per-tick time (func-fib 9.6s to 11.9s, over-cap 6.1s to 7.8s) for
-  code almost no program runs. Moved to `vmBurst`, which is called once per tick,
-  the same behaviour costs 2,133 nodes instead of 3,054 and the tick-bound cases
-  went back to within a few percent. The rule is not "micro-steps are bad" -- the
-  other three are fine where they are, because they are one or two lines at the
-  arm -- it is that `vmStep` is the hottest code in the chip and four copies of it
-  fire every tick.
+## Closures
+A function value (tag 4) holds a **closure number, not a prototype**. Below
+`cloBase` a closure *is* its own prototype, so every builtin and every
+capture-free function is unchanged and PUC's "equal when nothing was captured"
+falls out for free.
+- **Compiler:** one descriptor per captured local (`instack` for the declaring
+  frame, an upvalue for each frame above), interned on `(prototype, local
+  entry)` in `upIdx` — keyed on the entry, not the name, so an inner and an outer
+  `x` are different cells. `resolveUp` is a short ladder; deeper is a loud error.
+  `locFind` records which local matched and decides local-vs-capture *after* the
+  arms, because a mod call in 32 arms would be inlined 32 times.
+- **Runtime:** a frame's cells sit in the vararg stack below its varargs, three
+  words each (cell, frame, loop round) under the frame's sequence number. The
+  stamps stop a new frame adopting the last one's cells and give each loop round
+  its own — which is what PUC gets by closing cells at block exit. A block with a
+  capture ends with one `GEN` from `blkExit`, **except a `repeat`**, whose block
+  ends after its `until`, so its bump goes in front of the condition.
+- **The cell is canonical, the register is the seed:** the first capture makes
+  the cell and after that every read *and write* of that local goes through it,
+  including the declaring function's own — that is what makes a nested write
+  visible outside. A nested `SETUP` writes only the cell (that frame's registers
+  are gone).
+- Cost: 2,133 nodes, one tick per cell, and a **fixed arena with no collector** —
+  a loop building a closure per iteration spends a cell per iteration, the same
+  bargain as the table heap. Every program pays +7% per tick, explained by 12
+  more gates fired per tick.
 - **Advancing the pc from an instruction needs both halves.** The dispatcher ends
   with `if !advanced && !vmHalted { vmPc = vmPc + 1 }`, so an arm that steps over
   its own instruction must write `vmPc = vmPc + 1` *and* set `advanced = true`:
-  the first alone double-advances and runs the next instruction, the second alone
-  stalls on the same instruction forever. The closure path hit both halves in
-  turn, which is why it re-entered LOADFUNC 327 times before the arena ran out.
+  one alone stalls forever, the other double-advances.
 
-## Closures: how they work here
-A function value (tag 4) holds a **closure number, not a prototype**. Below
-`cloBase` a closure *is* its own prototype (`cloF` is only written for the records
-above it), so every builtin and every capture-free function is unchanged, and
-PUC's rule that two evaluations of one literal compare equal when nothing was
-captured falls out of that for free -- which is why no existing tag-4 site
-(`type`, `==`, table keys, `next`, pcall) had to be taught about closures.
-- **The compiler** gives every function a descriptor per captured local: the
-  declaring function's is `instack` (the local is in its own frame) and each one
-  above it is an upvalue of the closure below it, so a capture three levels out
-  is three descriptors deep and a read is still one `GETUP`. `upIdx` interns
-  `(prototype, local entry) -> descriptor`, keyed on the *entry* and not the name
-  because one function can capture its own `x` and an enclosing `x` in the same
-  body and they are different cells with one name. The chain is a four-step
-  ladder (`resolveUp`) and deeper is a loud error.
-- **`locFind` finds the index, one test after the ladder decides what it is.** A
-  mod call inside the 32 arms would be inlined 32 times, so the arms only record
-  which live local matched and `resolveUp` runs once, after them. The ladder it
-  replaced had 32 arms each deciding local-or-error on its own, which is a
-  separate one-line lesson: the per-arm work was identical, so the new one is two
-  lines per arm against thirteen and the whole mod is 40 lines shorter.
-- **The runtime** keeps a frame's cells in the vararg stack just below that
-  frame's varargs: three words per captured local (the cell, the frame that made
-  it, the loop round it was made in) and, under those, the frame's own sequence
-  number. The stamps are what stop a new frame adopting the last one's cells (the
-  table is scratch) and what give each round of a loop its own, which is what PUC
-  gets by closing the cells at the end of the block. A loop that contains a
-  capture ends with one `GEN`, emitted by `blkExit` -- except a `repeat`, whose
-  block ends *after* its `until` condition, so there the bump has to go in front
-  of the condition or it lands outside the loop and runs once.
-- **The cell is canonical; the register is the seed.** A cell is made from the
-  local's register the first time a closure needs it in that frame and round, and
-  after that every read and write of that local goes through the cell -- including
-  the declaring function's own (`locCap`), which is what makes a write from a
-  nested function visible to it. `SETUP` writes the register too, so the code
-  compiled *before* the capture was noticed (it is a one-pass compiler) still
-  agrees with it. A nested `SETUP` writes only the cell: that frame's registers
-  are gone or reused.
-- **What this costs:** 2,133 nodes, one tick per cell when a closure with upvalues
-  is made, and a fixed arena -- there is no collector, so a loop that builds a
-  closure per iteration spends a cell per iteration, which is the same bargain the
-  table heap makes and what a GC would fix.
-- **And what it costs every program that does not use it:** a tight loop went
-  1.82ms to 1.95ms per tick (+7%), measured as the slope of
-  `while true do s = s + 1 end` at 2000 and 6000 ticks against the previous
-  commit *in a throwaway worktree, alternating the two chips in one process*.
-  That last part is the lesson: the same comparison run as two separate
-  processes said 1.66 to 2.22ms, a 34% "regression" that was drift. The +7% is
-  real and it is explained: the fire log says the loop now fires 12 more gates
-  per tick (4 more Get, 3 NOT, 3 AND, 1 Branch, 1 Union) on 483, so the cost
-  tracks the extra work rather than the 2,133 extra nodes. Compare against that
-  slope, never against one run per chip.
-
-## Writing WireScript that survives the compiler
-These are measured traps, not style rules. `tools/wswarn.py` flags the shapes it
-can see and `tools/vargraph.py <name>` answers the rest (how many var nodes back
-a name, how many write it, what fires each write). The `_fmt` header in
-`lua.ws` records which one cost which bug.
+## WireScript traps
+Measured, not style. `tools/wswarn.py` flags the visible shapes;
+`tools/vargraph.py <name>` shows which gate fires each write.
 - **A value gate fed by a var the same mod writes reads the NEW value.** Fetch a
-  character (or anything positional) in one state and consume it in the next, so
-  the cursor is written in one tick and read in the next. Reading `s[pos]` and
-  then `pos = pos + 1` in one mod walks one step ahead of the data.
-- **A condition on a file-level `var`, nested inside another `if`, is unreliable
-  where the mod around it is inlined more than once.** `vmStep` is inlined four
-  times (`vmBurst` calls it four times a tick) and the compiler shares one Get
-  per var across the copies, so the nested arm silently loses; the lexer's chain
-  has the same shape and works, because `lexChunk` inlines it once. Hoist the
-  test to the top of the mod or take the flag as a parameter.
-- **A write at the top of a mod, followed by an `else if` chain that deep with
-  mod calls in it, is dropped.** One mod per state, and repeat the write in each
-  arm rather than once at the top.
+  character in one state, consume it in the next.
+- **A condition on a file-level `var`, nested inside another `if`, silently
+  loses where the mod is inlined more than once.** `vmStep` is inlined four
+  times and the compiler shares one Get per var across the copies. Hoist the
+  test to the top of the mod or pass it in.
 - **A ladder that can report zero progress is an infinite loop, not a slow
-  path.** A per-tick state machine that consumes `lpos = lpos + n` hangs outright
-  when `n` is 0. An identifier-run ladder in `lexStep` hung `print('hello')`
-  past 120s: each arm read its character through a *nested* `if` inside a mod
-  that `lexChunk` inlines four times, so the arms past the first lost their Exec
-  chain, every term after `a0` read 0, and the run length came out 0. A
-  run-length ladder may only be entered when the first character is already
-  known to match, and its first term must come from a value computed before the
-  chain, not from a conditional gate call inside it. Prove a new ladder on a
-  one-word program first -- it costs 10s -- before running a suite that will not
-  tell you which case hung.
-- **An array read that follows a var write inside a nested arm loses its Exec
-  chain** where the mod is inlined more than once, and the writes fed by it never
-  happen -- the pattern backtracker popped an entry and then read its four slots
-  into three vars, and only the pop landed. Read the slots into locals at the top
-  of the mod, before any write; `tools/vargraph.py <name>` shows the shape (a Set
-  whose Exec comes from an `ArrayVar.Get` is one that can be starved).
-- **An `int[]` does not keep a negative value.** The pattern capture ends were
-  `-1` for "open" and `-2` for a position capture, and every one of them read
-  back as `0`, so every capture looked like an empty match. Store the end plus
-  one and keep a flag for the special case, or use a `float[]`.
+  path.** An identifier ladder in `lexStep` hung `print('hello')` past 120s: the
+  arms past the first read their character through a nested `if` in a mod
+  `lexChunk` inlines four times, lose the Exec chain, return 0, and the run
+  length comes out 0. Enter a run ladder only when the first character is known
+  to match, and take its first term from a value computed before the chain.
+  **Prove a new ladder on a one-word program first (10s)** — a suite will not tell
+  you which case hung.
+- **A write at the top of a mod followed by an `else if` chain that deep is
+  dropped.** One mod per state; repeat the write per arm.
+- **An array read after a var write in a nested arm loses its Exec chain** where
+  the mod is inlined more than once, and the writes fed by it never happen. Read
+  the slots into locals at the top of the mod, before any write.
 - **A local computed from a var the same mod writes is re-derived at its next
-  use**, so `let n = patCapN + 1` was `n + 1` by the time it reached the push
-  below. Compute it, use it, and write the var last.
-- **A gate may read only the arguments it was given.** A register past `nargs`
-  still holds whatever the caller's previous call left in it: `_pat` read `a+4`
-  for an `init` that was never passed and gave a find a boolean init. Guard every
-  argument read with its count, the way `gateLow`'s `select` arm does.
-- `x = a == b` leaves a placeholder that reads 0, and an int flag var read in a
-  condition compares through one too: set flags with an `if`/`else` and keep the
-  condition flags as `bool`.
-- **`floor()` truncates toward zero; it is not a floor.** `floor(-1.0 / 16.0)` is
-  0, so anything that needs floor division of a negative (a digit loop for a
-  radix conversion, a bit of two's complement) has to do it by hand: truncate,
-  then carry a negative remainder into the digit and off the quotient. Lua's
-  `math.floor` is a different code path — the `_m` gate — and does floor, so
-  `math.floor(-2.7)` being −3 proves nothing about the host's `floor`.
-- A mod call on the right of `..` is "attempt to call" (the print handler and a
-  `vmFail` argument get away with it, so `wswarn`'s hit there is a false
-  positive); a string `+`, a chain mixing `..` with `+`, `%`, `for`, and a mod
-  and a var sharing a name all leave placeholders; `c >= "0"` compiles and reads
-  false; a string returned from a mod compares equal but its `ToCharCode()` is 0.
-- `vmBurst` is four `vmStep` calls in one tick, so anything with cross-instruction
-  state inside `vmStep` is entered up to four times per tick. `next`'s walk is
-  fine with that (extra hops are harmless); a state machine is not — it needs a
-  one-per-burst latch, as `fmtGo` is.
+  use** (`let n = patCapN + 1` arrived as `n + 1`). Compute, use, write last.
+- **An `int[]` does not keep a negative value** — a `-1` read back as `0` made
+  every pattern capture look empty. Store end+1 with a flag, or use `float[]`.
+- **A gate may read only the arguments it was given**; a register past `nargs`
+  holds the previous call's value. Guard every argument read with its count.
+- `x = a == b` leaves a placeholder that reads 0; set flags with `if`/`else` and
+  keep them `bool`. A mod call on the right of `..` is "attempt to call". A
+  string returned from a mod compares equal but its `ToCharCode()` is 0.
+- **`floor()` truncates toward zero, it is not a floor** (Lua's `math.floor` is
+  the `_m` gate and does floor, so it proves nothing about the host's). Negative
+  floor division has to be done by hand.
+- `vmBurst` is four `vmStep` calls in one tick, so cross-instruction state inside
+  `vmStep` is entered up to four times: harmless for `next`, fatal for a state
+  machine, which needs a one-per-burst latch (`fmtGo`).
 
 ## Fixing bugs
-- Fix the **class**, not the instance. When something breaks, ask what made it
-  possible and make that harder next time; a one-line patch that leaves the trap
-  in place will be hit again.
+- Fix the **class**, not the instance: ask what made it possible and make it
+  harder next time.
 - **Minimise divergence from Lua 5.5.** A difference the chip does not have to
-  have is a bug, even when the test says otherwise: fix the chip, not the
-  expectation. `tests/test_chip_suite.py`'s `CHIP_LOG` is for what is genuinely
-  unavoidable (doubles cannot hold 2^63-1; the chip has no float type) and
-  should shrink, not grow. Before adding an entry, ask what the chip would have
-  to do differently to match — that is usually the real work item.
-- Prefer **restructuring** over a lint or a comment: if two rules have to be
-  kept in step, merge them into one function so half of it cannot be forgotten.
-  (Real example: `bumpMax` claimed registers but only grew the frame, so each
-  call site had to *also* set `cfNext` — six sites, one of which had already
-  forgotten. Now `bumpMax` does both and the paired line is gone.)
-- Per-loop/per-scope state belongs in the per-level arrays the parser already
-  keeps, not in globals. Globals get clobbered by nesting (generic-for did).
-- Check the neighbouring invariants when a bug shows up: the real
-  `local a,b,c = pairs(t)` path was fine while the for-in path was broken, so
-  one working neighbour is not evidence the code is right.
-- Watch for silent miscompiles. The host language has traps that produce
-  confidently wrong results instead of errors: a `mod` that mutates a `var`
-  inside an `if` and returns it yields garbage (use the single-expression
-  `return if c then a else b` form, which every other mod uses), and
-  **WireScript has no loop statement at all** — see below.
-- **There is no loop in WireScript.** Asked of the compiler directly (a body
-  reachable from `on Clock`, so it is not dropped as dead code): `for`, `while`,
-  `loop` and `repeat` are all `unknown identifier`, and the `for` in Lua's
-  grammar (the numeric/generic `for` in the chip's own header, the `forCtrl` /
-  `forDepth` stack) is the *Lua* the chip implements, not the host language. A
-  loop is a hand-unrolled ladder — measured, 2.5 nodes per extra arm — or a
-  `buffer`/`await` micro-step, which is what `nxActive`/`nxMode` and
-  `fmtGo` are. `await` is not a loop either: `await 1` and `await 4` both cost
-  12 nodes, so it is a fixed-cost yield, and a ladder is cheaper per iteration.
-  (This line used to say "no `while` at all (use a `for`)", which sent a
-  capture-chain implementation down a construct that does not exist. A dead mod
-  compiles to 4 nodes, so a probe that does not reach its body from an event
-  handler measures nothing.)
-- Add an oracle case for the rule you just got wrong, not just for the program
-  that exposed it. The state-stays-fixed rule of the generic-for protocol was
-  wrong until `iter_check.py` compared against real Lua.
-- **Fight complexity, and cut it whenever it can go without hurting the chip.**
-  A new mechanism is a cost that is paid forever, in review, in bugs and in
-  tests, so the bar is not "it works" but "nothing simpler works". Ask what the
-  existing machinery already does before adding a flag, a heuristic or a second
-  code path — and delete the cleverness the moment it is shown to be unreliable.
-  The stall detector in the runner is the worked example: it watched the log,
-  the table counts and the frame depth, and it was right about a stuck program
-  and *wrong about fib*, which is the one failure mode that matters. It went
-  back out for `Sim.finished` — one flag saying the chip said it was done — and
-  `check.py` prints `CAP` when the budget ran out, so a truncated run never
-  reads like a finished one. The same question applies to the chip: the gmatch
-  walk's state is three arrays and two gates because a closure would have been
-  the obvious answer and closures are not built yet.
-- **Reverting is not deleting.** When a change is replaced or dropped, the work
-  still has value: keep the reference implementation as a file
-  (`lib/str_format.lua` is the PUC-verified Lua `string.format`, kept while the
-  gate version is built), keep the minimal repro as a case, and keep the
-  measurement as a tool (`tools/lexcost.py`, `tools/libconst.py`). A throwaway
-  probe in a temp directory is the only thing allowed to disappear.
+  have is a bug even when a test says so — fix the chip, not the expectation.
+  `CHIP_LOG` is for the genuinely unavoidable and should shrink. Before adding
+  an entry, ask what the chip would have to do differently; that is the work item.
+- Prefer **restructuring** over a lint or a comment: if two rules must be kept in
+  step, merge them into one function (`bumpMax` now does both halves, which
+  six call sites had to remember and one had forgotten).
+- Per-loop/per-scope state belongs in the per-level arrays the parser keeps, not
+  in globals — globals get clobbered by nesting.
+- Check the neighbouring invariants: the real `local a,b,c = pairs(t)` path was
+  fine while the for-in path was broken, so one working neighbour proves nothing.
+- **WireScript has no loop statement at all** — asked of the compiler with a body
+  reachable from `on Clock`: `for`, `while`, `loop` and `repeat` are all
+  `unknown identifier` (the chip's own `for` is *Lua's* for). A loop is a
+  hand-unrolled ladder or a `buffer`/`await` micro-step. `await` is not a loop:
+  `await 1` and `await 4` both cost 12 nodes, a fixed-cost yield. A dead mod
+  compiles to 4 nodes, so a probe that does not reach its body measures nothing.
+- Add an oracle case for the *rule* you got wrong, not just the program that
+  exposed it.
+- **Fight complexity, and cut it whenever it can go.** The bar is not "it works"
+  but "nothing simpler works"; ask what existing machinery already does before
+  adding a flag, a heuristic or a second path, and delete cleverness the moment it
+  proves unreliable. The runner's stall detector watched the log, table counts
+  and frame depth and was wrong about fib, the one failure mode that matters; it
+  went back out for `Sim.finished` (one flag: the chip said it was done) with
+  `CAP` printed when the budget ran out, so a truncated run never reads as a
+  finished one.
+- **Reverting is not deleting.** Keep the reference implementation
+  (`lib/str_format.lua`), the minimal repro as a case, and the measurement as a
+  tool (`tools/lexcost.py`, `tools/libconst.py`). A throwaway probe in a temp
+  directory is the only thing allowed to disappear.
 
 ## Code clarity
-- Show the intent in the code: a name that says what a register is for
-  (`freg`/`sreg`/`creg`, not `r1`/`r2`/`r3`) beats a comment explaining it.
-- Keep short, useful comments next to a footgun, especially where the obvious
-  code is wrong: state *why* the non-obvious thing is necessary ("a call leaves
-  its results in the base register and the one above it, so a base below them
-  would overwrite a variable"). Skip the comment when the code can be made to
-  say it.
-- Prefer deleting a concept over documenting it. If a helper exists only to
-  work around a missing one, remove the workaround once the real thing is
-  there.
+- Names that say what a register is for (`freg`/`sreg`/`creg`, not `r1`/`r2`).
+- Comment a footgun only where the obvious code is wrong, and say *why*.
+  Otherwise make the code say it.
+- Prefer deleting a concept over documenting it; remove a workaround once the
+  real thing exists.
 
 ## Verification
-- Verify with execution, never by reasoning alone: run the relevant checks after every change.
-- Chip-vs-oracle suite: `python -u tests/test_chip_suite.py [filter]`. All cases
-  run unless a filter narrows them. It prints per-case and total times.
+- Verify by execution, never by reasoning alone. All cases run unless a filter
+  narrows them: `python -u tests/test_chip_suite.py [filter]`.
+- `python -u tools/preflight.py` runs the four cheap structural nets (audit,
+  wswarn, consistency, syntax) in parallel — that plus one suite run is the
+  minimum bar for a change.
 - After changing the sim or the runner, prove the fast path equals the slow one
-  (e.g. `CHIP_BATCH=1` must give the same OK/FAIL counts) before trusting it.
-- A "hung" batch is often buffering, orphan contention, or one stuck case hiding
-  behind aggregated output — bisect to single cases with per-case output.
+  (`CHIP_BATCH=1` must give the same OK/FAIL counts).
 
 ## Workflow
-- Keep a todo list for multi-step work, with exactly one `in_progress` item at a
-  time, and keep it current as steps finish so it is not re-planned by mistake.
+- Keep a todo list for multi-step work, exactly one `in_progress` at a time, and
+  update it as steps finish.
 - Commit only when explicitly asked; commit often when asked, with a message
   that says what changed and why.
+- Keep this file to rules that earn their place. When a finding is recorded,
+  fold it into an existing rule or replace an older one — it is not a log.

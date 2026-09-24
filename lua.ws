@@ -2519,7 +2519,12 @@ mod closeAction() {
       cpos = cpos + 1
       expectOperand = true
       closeMode = 0
-    } else if opKind.length() != 0 {
+    } else if opKind.length() > opBase[fnDepth] {
+      // A separator is misplaced when a marker opened *in this expression* is
+      // still open.  The base matters: inside a function body the call and
+      // group markers of the expression that holds the literal are still on the
+      // stack, and they are not this comma's business.  The check was the bare
+      // length, so `(function() return 1, 2 end)()` reported the body's comma.
       perr = true
       perrMsg = "misplaced separator"
     } else if valStk.length() == 0 {
