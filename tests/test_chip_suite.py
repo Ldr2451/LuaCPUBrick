@@ -51,20 +51,10 @@ TICKS = 6000
 SKIP = {
     "long-sum": "100k loop iterations exceed tick simulation",
     "io-clock": "wall-clock granularity untestable in tick sim",
-    # A function literal in an argument list loses every return value but the
-    # last: `pcall(function() return 1, 2 end)` gives true 2 where PUC gives
-    # true 1 2.  The same literal as a local initialiser is fine, so it is the
-    # argument position, not the literal.  Minimal repro:
-    #   local f = function() return 1, 2 end print(f())   -- 1 2, correct
-    #   print(pcall(function() return 1, 2 end))          -- true 2
-    # It is a compiler bug in the suspend/resume path for an expression, and the
-    # cases here use named functions until it is fixed.
-    "arg-fn-returns": "a function literal in an argument list loses its returns",
-    # The same path miscounts a call's arguments when the second argument is
-    # the builtin tostring: `local ok = xpcall(f, tostring)` lowers with one
-    # argument where the source has two, and the dispatch then reads a
-    # non-function.  xpcall(f, print) -- the same shape, a different slot --
-    # is correct, and so is every form of pcall.
+    # A call with tostring as its second argument lowers with one argument where
+    # the source has two, and the dispatch then reads a non-function.
+    # xpcall(f, print) -- the same shape, a different slot -- is correct, and so
+    # is every form of pcall.
     "xpcall-tostring": "a call with tostring as its second argument loses one",
     # A `local function` inside a function literal that is assigned to a field
     # is not bound, so calling it is "attempt to call".  The same nesting under

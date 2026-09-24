@@ -474,8 +474,15 @@ TESTS = [
                         "got number)"}}),
     ("xpcall-not-a-function", "function h() end print(xpcall(42, h))", None,
      "run"),
-    # The two compiler gaps, kept as the repros they are.
+    # A function literal as a call argument, in the shapes where the enclosing
+    # call's marker is still open: these are what the two comma-scope bugs in
+    # closeAction looked like from the outside.
     ("arg-fn-returns", "print(pcall(function() return 1, 2 end))", None, "run"),
+    ("arg-fn-count", "print(select('#', pcall(function() return 1, 2, 3 end)))",
+     None, "run"),
+    ("arg-fn-paren-call", "print((function() return 1, 2 end)())", None, "run"),
+    ("arg-fn-table", "local t = {function() return 1, 2 end} print(t[1]())", None,
+     "run"),
     ("xpcall-tostring", "function f() error('b') end "
      "local ok = xpcall(f, tostring) print(ok)", None, "run"),
     # string.find and string.match, which PUC also has in C: a backtracking

@@ -2490,7 +2490,12 @@ mod closeAction() {
     // ',' arg boundary (with call marker) or plain unit terminator.
     // Terminated units are validated by doCont / the statement level.
     let mk = opTopKind()
-    if closeTrig == 1 && (mk == 2 || mk == 9) {
+    // A comma is an argument boundary or a table element only for a marker that
+    // this function opened: inside a function body the enclosing call's marker is
+    // still on the stack, and a comma there belongs to the body's own return
+    // list.  Both tests were on the bare kind, so `pcall(function() return 1, 2
+    // end)` spent the body's comma as pcall's second argument.
+    if closeTrig == 1 && (mk == 2 || mk == 9) && opKind.length() > opBase[fnDepth] {
       let fr = opA[opA.length() - 1]
       let nargs = opB[opB.length() - 1]
       let depth = opC[opC.length() - 1]
@@ -2509,7 +2514,7 @@ mod closeAction() {
       cpos = cpos + 1
       expectOperand = true
       closeMode = 0
-    } else if closeTrig == 1 && mk == 6 {
+    } else if closeTrig == 1 && mk == 6 && opKind.length() > opBase[fnDepth] {
       if valStk.length() == opC[opC.length() - 1] {
         perr = true
         perrMsg = "expected table element"
