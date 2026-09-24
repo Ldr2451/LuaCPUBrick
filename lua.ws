@@ -4862,6 +4862,36 @@ mod fmtDdMul(hi: float, lo: float, c: float) {
 // not an arbitrary one -- 10^15 is the last power of ten a double holds
 // exactly, and the double-double carries 53 bits of guard beyond it, so a
 // precision past that would be rounding a number that is not the value.
+// %e and %g, and why they are not here yet.  %f needed a double-double because
+// it scales by the precision; %e cannot do that at all, because the mantissa is
+// the value divided by 10^k and no division by ten is exact -- 1/10 is not even
+// representable.  So the work is a digit stream instead, and the shape it takes
+// is settled:
+//
+//   - the integer part's digits come off fmtFNDigits as they do here, and the
+//     fraction's come off a dd multiplied by ten per digit, which is exact for
+//     about fifteen of them and not the sixteenth -- so a value whose first
+//     significant digit is further down than that is a range error, the same
+//     kind as the two limits above.
+//   - the two digit runs join into one string with the point's index beside
+//     them, the first nonzero digit gives the exponent (index - (index of the
+//     point) + 1), and the mantissa is the p+1 digits from there read as one
+//     integer, so a carry out of them is +1 on the exponent rather than a walk
+//     back through the digits.
+//   - the rounding is the same two-half test as %f's, on the digit after the
+//     mantissa, with the dd's leftover as the sticky bit.  That leftover is why
+//     the fraction is extracted to exactly one digit past the round position:
+//     one more and the sticky needs a scan of the string, one fewer and the last
+//     digit read is a rounded one.
+//   - the multiply and the digit read cannot share a state, for the reason above,
+//     so it is two states and about thirty ticks per conversion's fraction.
+//   - %g is %e and %f chosen by the exponent (e when it is below -4 or at least
+//     the precision, f otherwise, at p-1-k places), with trailing zeros dropped
+//     unless # is given and a precision of 0 read as 1.  The trailing-zero strip
+//     is one more one-character-per-tick state.
+//
+// tools/fmtsweep.py takes the conversion letter as its second argument, so
+// `python -u tools/fmtsweep.py 64 e` is the same check for %e when it lands.
 mod fmtConvFloat() {
   fmtArgI = fmtArgI + 1
   let ab = fmtArgAt()
