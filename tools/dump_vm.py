@@ -2,6 +2,11 @@
 
   python -u tools/dump_vm.py "for k,v in pairs(t) do print(k,v) end"
   python -u tools/dump_vm.py --tokens "print(1)"
+  python -u tools/dump_vm.py @prog.lua
+
+An argument of @path reads one program from that file.  A shell that eats the
+double quotes out of an argument turns `print("x")` into `print(x)`, which
+compiles to something else entirely; the file form cannot be mangled that way.
 
 Builds the chip once per invocation (~6s), so pass several programs at once.
 """
@@ -71,7 +76,15 @@ def dump(runner, src, tokens=False):
 
 if __name__ == '__main__':
     tokens = '--tokens' in sys.argv
-    srcs = [resolve_prog(a, ROOT) for a in sys.argv[1:] if a != '--tokens']
+    srcs = []
+    for a in sys.argv[1:]:
+        if a == '--tokens':
+            continue
+        if a.startswith("@"):
+            with open(a[1:], encoding="utf-8") as f:
+                srcs.append(f.read())
+        else:
+            srcs.append(resolve_prog(a, ROOT))
     runner = ChipRunner(os.path.join(ROOT, 'lua.ws'))
     for src in srcs:
         dump(runner, src, tokens=tokens)

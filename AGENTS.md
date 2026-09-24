@@ -180,6 +180,16 @@ a name, how many write it, what fires each write). The `_fmt` header in
 - **A write at the top of a mod, followed by an `else if` chain that deep with
   mod calls in it, is dropped.** One mod per state, and repeat the write in each
   arm rather than once at the top.
+- **An array read that follows a var write inside a nested arm loses its Exec
+  chain** where the mod is inlined more than once, and the writes fed by it never
+  happen -- the pattern backtracker popped an entry and then read its four slots
+  into three vars, and only the pop landed. Read the slots into locals at the top
+  of the mod, before any write; `tools/vargraph.py <name>` shows the shape (a Set
+  whose Exec comes from an `ArrayVar.Get` is one that can be starved).
+- **A gate may read only the arguments it was given.** A register past `nargs`
+  still holds whatever the caller's previous call left in it: `_pat` read `a+4`
+  for an `init` that was never passed and gave a find a boolean init. Guard every
+  argument read with its count, the way `gateLow`'s `select` arm does.
 - `x = a == b` leaves a placeholder that reads 0, and an int flag var read in a
   condition compares through one too: set flags with an `if`/`else` and keep the
   condition flags as `bool`.

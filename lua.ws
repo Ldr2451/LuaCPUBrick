@@ -213,7 +213,7 @@ const MAXVALS = 16
 // at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
 // means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
 // the dispatch case.  test_ws_consistency.py checks all four line up.
-const NB = 20
+const NB = 21
 
 // Library sources, prepended on demand (see libIter and friends).  These are
 // ordinary Lua: the parser sees them exactly like the user's program.  They are
@@ -224,6 +224,10 @@ const NB = 20
 const LIB_iter = "function _ipairs_iter(t, i) i = i + 1 local v = t[i] if v ~= nil then return i, v end end\nfunction ipairs(t) return _ipairs_iter, t, 0 end\nfunction pairs(t) return next, t, nil end\n"
 const LIB_str_index = "string = string or {}\nstring.len = function(s) return #s end\nstring.sub = function(s, i, j)\n  local l = #s\n  i = i or 1\n  j = j or -1\n  if i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end\n  if j < 0 then j = l + j + 1 elseif j > l then j = l end\n  if i > j then return \"\" end\n  return _s(1, s, i - 1, j - i + 1)\nend\nstring.byte = function(s, i, j)\n  i = i or 1\n  j = j or i\n  if i < 0 then i = #s + i + 1 end\n  if j < 0 then j = #s + j + 1 end\n  if i < 1 then i = 1 end\n  if j > #s then j = #s end\n  if i > j then return end\n  if i == j then return _s(4, s, i - 1, 0) end\n  return _s(4, s, i - 1, 0), string.byte(s, i + 1, j)\nend\nstring.char = function(...)\n  local r = \"\"\n  for i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\n  return r\nend\n"
 const LIB_str_fmt = "string = string or {}\nstring.format = _fmt\n"
+// The wrappers pass their arguments straight through rather than naming them:
+// a named parameter pads a missing one with nil, and PUC's "got no value" and
+// "got nil" are different messages.  A vararg call keeps the real count.
+const LIB_str_pat = "string = string or {}\nstring.find = function(...) return _pat(0, ...) end\nstring.match = function(...) return _pat(1, ...) end\n"
 const LIB_str_case = "string = string or {}\nstring.upper = function(s) return _s(2, s) end\nstring.lower = function(s) return _s(3, s) end\n"
 const LIB_str_misc = "string = string or {}\nstring.rep = function(s, n, sep)\n  if n <= 0 then return \"\" end\n  sep = sep or \"\"\n  local r = s\n  for i = 2, n do r = r .. sep .. s end\n  return r\nend\nstring.reverse = function(s)\n  local r = \"\"\n  for i = #s, 1, -1 do r = r .. _s(1, s, i - 1, 1) end\n  return r\nend\n"
 const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775807 - 1\n"
@@ -1240,6 +1244,7 @@ mod parseInit() {
   gDeclare("assert")
   gDeclare("pcall")
   gDeclare("xpcall")
+  gDeclare("_pat")
   gDeclare("inInt0")
   gDeclare("outInt0")
   // The runtime wires the latches and outputs straight into these slots, so
@@ -3968,11 +3973,11 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
-// (inputs filled from the latches), 19..38 builtins (print, type, tostring,
-// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall) as
+// (inputs filled from the latches), 19..39 builtins (print, type, tostring,
+// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall, _pat) as
 // functions with ids 0..NB-1, then the two int globals.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 0.0, 0.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -4062,6 +4067,7 @@ mod vmReset() {
   logLines.clear()
   fmtDd.clear()
   pcallBad.clear()
+  patSl.clear()
   // the text in inStr0 is the program's standard input, and a run starts at its
   // beginning; the cursors are state, so they go with everything else
   rdText = inStr0
@@ -6121,6 +6127,728 @@ mod tblUnlink(tid: int, sl: int) {
   }
 }
 
+// ==================================================================== patterns
+//
+// string.find, match, gsub and gmatch are C in PUC (lstrlib.c) and are gates
+// here for the same reason: a backtracking matcher wants a stack and a loop,
+// and a Lua program gets neither without a coroutine per match.  The library
+// pieces around them are ordinary Lua (see libStrPat), which is the split PUC
+// itself makes.
+//
+// The shape is the _fmt machine: the gate arm sets the subject, the pattern and
+// where the answers go, raises patGo, and the steps below run one piece per
+// tick until the registers hold PUC's answer.  What is PUC's is the algorithm:
+// lstrlib's match() is recursive, and the recursion here is an explicit stack
+// of continuations (patSl, four ints per entry -- kind, pattern position,
+// subject position, and one spare for %b's depth).
+//
+// The stack holds only what a flat pattern needs:
+//
+//   1  a class item under + or *: the subject position before the item, so a
+//      failed rest can consume one more character and try again
+//   2  a ?: the pattern position past the ?, to carry on with the item skipped
+//   3  %b: the balance depth, to keep counting from where it was
+//
+// Captures are not here yet.  A ( in a pattern is PUC's capture syntax and the
+// answer has a different shape -- find returns the captures after the two
+// positions, match returns the captures and not the whole match -- so a
+// capture is a loud error rather than a silently wrong arity.  They come with
+// gsub, which needs them anyway.
+//
+// The cost is ticks, not gates, and it is worth knowing which is which before
+// making this faster.  The library piece is 130 characters, so a program that
+// names find or match pays about 33 ticks of lexing on every run (4 chars a
+// tick) and two function literals to parse; a find that matches near the front
+// is then five or six states, one tick each.  What costs is the retry: a find
+// that fails tries every start position, and a quantifier that gives characters
+// back walks the pattern again for each one, so a failing find over a long
+// subject is O(n) states and a subject of a few hundred characters is a
+// program's worth of ticks.  The fix when that matters is more states per tick
+// -- call patStep several times in the arm at the top of vmStep, the way
+// lexChunk calls lexStep four times -- not fewer gates.
+//
+// Two traps this machine paid for, both general enough to be here:
+//   - A gate may read only the arguments it was given.  A register past nargs
+//     still holds whatever the caller's previous call left there, so reading
+//     a+4 for an init that was never passed gave a find a boolean init and an
+//     error about argument #3.  Every argument read is guarded by its count.
+//   - An array read that FOLLOWS a var write inside a nested arm loses its Exec
+//     chain when the mod is inlined this many times, and the writes fed by it
+//     quietly never happen: patBack popped an entry and then read its four
+//     slots into patI, patItemP and patQEnd, and only the pop landed.  The
+//     slots are read into locals at the top of the mod now, before anything is
+//     written.  tools/vargraph.py shows the shape: a Set whose Exec comes from
+//     an ArrayVar.Get is one that can be starved.
+const PAT_STACK = 200
+
+var patGo: bool = false      // one pattern step per burst, like fmtGo
+var patMode: int = 0         // 0 find, 1 match
+var patSrc: string = ""      // the subject
+var patPat: string = ""      // the pattern, with a leading ^ already skipped
+var patPEnd: int = 0         // and its length
+var patLen: int = 0
+var patI: int = 0            // subject cursor, 0-based
+var patP: int = 0            // pattern cursor, 0-based
+var patStart: int = 0        // where this attempt began
+var patR: int = 0            // the start to try after this one fails
+var patAnchor: bool = false  // the pattern began with ^
+var patPSkip: int = 0        // and the ^ is not part of the pattern proper
+var patPlain: bool = false   // the pattern is a literal
+var patQ: int = 0            // the item's quantifier: 0 none, 1 *, 2 +, 3 -, 4 ?
+var patItemP: int = 0        // where the item under test starts
+var patItemE: int = 0        // and just past it
+var patQEnd: int = 0         // just past the quantifier
+var patQS: int = 0           // the subject position before the item
+var patHit: bool = false     // the last item's verdict
+var patSetP: int = 0         // the set scan's cursor, just past its [
+var patSetC: int = 0         // the character it is testing
+var patSetAny: bool = false  // whether that character is in the set so far
+var patSetSeen: bool = false // whether the set has any text yet
+var patSetPrev: int = 0      // the previous character, for a range
+var patSetHasPrev: bool = false
+var patSetNeg: bool = false  // [^...]
+var patBOpen: string = ""    // %b's two delimiters
+var patBClose: string = ""
+var patBC: int = 0           // and its balance
+var patBFirst: bool = false  // and whether the opening delimiter is still ahead
+var patFPrev: bool = false   // %f's previous-character test
+var patSp: int = 0           // the backtrack stack's pointer, in ints
+var patSl: int[]
+var patErr: string = ""      // a malformed pattern's message
+var patAfter: int = 0        // where a finished set scan goes on a match
+var patFailTo: int = 0       // and on a miss
+var patSt: int = 0
+
+// The dispatch, in two halves for the same reason fmtStep is: one chain for
+// fifteen states is at the edge where the arms near the top stop taking effect.
+mod patStep() {
+  if patSt < 9 {
+    patStepA()
+  } else {
+    patStepB()
+  }
+}
+
+mod patStepA() {
+  if patSt == 0 {
+    patStartStep()
+  } else if patSt == 1 {
+    patNextItem()
+  } else if patSt == 2 {
+    patApply()
+  } else if patSt == 3 {
+    patBStep()
+  } else if patSt == 4 {
+    patBack()
+  } else if patSt == 5 {
+    patDone()
+  } else if patSt == 6 {
+    patNextStart()
+  } else if patSt == 7 {
+    patSetStep()
+  } else {
+    patError()
+  }
+}
+
+mod patStepB() {
+  if patSt == 9 {
+    patFPrevStep()
+  } else if patSt == 10 {
+    patFCurStep()
+  } else if patSt == 11 {
+    patGreedy()
+  } else if patSt == 12 {
+    patSetHit()
+  } else if patSt == 13 {
+    patSetRetry()
+  } else {
+    patGreedyEnd()
+  }
+}
+
+// A new attempt at patStart: an empty backtrack stack, and the pattern back at
+// its first item.
+mod patStartStep() {
+  patSp = 0
+  patP = patPSkip
+  patI = patStart
+  patSt = 1
+}
+
+// The classes PUC's %a %c %d %g %l %p %s %u %w %x mean, on the codes
+// themselves: the host's isalpha is not a gate, and the lexer spells digit and
+// letter out the same way.  A letter that names no class is the character
+// itself, which is how %. and %b and %q work, and an uppercase letter negates.
+mod patClassHit(c: int, code: int, neg: bool) -> bool {
+  if code == 97 {
+    let hit = (65 <= c && c <= 90) || (97 <= c && c <= 122)
+    return if neg then !hit else hit
+  } else if code == 99 {
+    let hit = c < 32 || c == 127
+    return if neg then !hit else hit
+  } else if code == 100 {
+    let hit = 48 <= c && c <= 57
+    return if neg then !hit else hit
+  } else if code == 103 {
+    let hit = 33 <= c && c <= 126
+    return if neg then !hit else hit
+  } else if code == 108 {
+    let hit = 97 <= c && c <= 122
+    return if neg then !hit else hit
+  } else if code == 112 {
+    let hit = 33 <= c && c <= 126 && !(48 <= c && c <= 57) && !(65 <= c && c <= 90)
+      && !(97 <= c && c <= 122)
+    return if neg then !hit else hit
+  } else if code == 115 {
+    let hit = c == 32 || (9 <= c && c <= 13)
+    return if neg then !hit else hit
+  } else if code == 117 {
+    let hit = 65 <= c && c <= 90
+    return if neg then !hit else hit
+  } else if code == 119 {
+    let hit = (48 <= c && c <= 57) || (65 <= c && c <= 90) || (97 <= c && c <= 122)
+    return if neg then !hit else hit
+  } else if code == 120 {
+    let hit = (48 <= c && c <= 57) || (97 <= c && c <= 102) || (65 <= c && c <= 70)
+    return if neg then !hit else hit
+  }
+  let lit = c == code
+  return if neg then !lit else lit
+}
+
+// Set up a set scan for the set whose text starts at p, testing the character
+// code.  The scan is one character of the set per tick and finishes in
+// patSetStep, so this only writes; the caller picks the states it ends in.
+mod patSetBegin(p: int, code: int) {
+  patSetP = p
+  patSetC = code
+  patSetAny = false
+  patSetSeen = false
+  patSetHasPrev = false
+  patSetPrev = 0
+  patSetNeg = false
+  if p < patPEnd && patPat.Substring(p, 1) == "^" {
+    patSetNeg = true
+    patSetP = p + 1
+  }
+}
+
+// The item at pattern position p against the character at subject position s.
+// 0 does not match, 1 does, 2 a set has to be scanned first, 3 the pattern is
+// malformed and patErr says how.  Only the items that can carry a quantifier
+// answer here; %b and %f are patNextItem's business.  patItemE is where the
+// quantifier is read from, which is why a set reports its end when its scan
+// finishes rather than here.
+mod patTestItem(p: int, s: int) -> int {
+  if s >= patLen || p >= patPEnd {
+    return 0
+  }
+  let sc = patSrc.Substring(s, 1)
+  if patPlain {
+    patItemE = p + 1
+    return if patPat.Substring(p, 1) == sc then 1 else 0
+  }
+  let k = patPat.Substring(p, 1)
+  if k == "[" {
+    patSetBegin(p + 1, sc.ToCharCode().Codepoint)
+    return 2
+  }
+  if k == "%" {
+    if p + 1 >= patPEnd {
+      patErr = "malformed pattern (ends with '%')"
+      return 3
+    }
+    let code = patPat.Substring(p + 1, 1).ToCharCode().Codepoint
+    if 49 <= code && code <= 57 {
+      // %1 to %9 are backreferences, and there are no captures to point at
+      patErr = "invalid capture index %" .. FromCharCode(code).Character
+      return 3
+    }
+    let neg = 65 <= code && code <= 90
+    patItemE = p + 2
+    return if patClassHit(sc.ToCharCode().Codepoint, if neg then code + 32 else code, neg) then 1 else 0
+  }
+  patItemE = if k == "." then p + 1 else p + 1
+  if k == "." {
+    return 1
+  }
+  return if k == sc then 1 else 0
+}
+
+// One continuation onto the backtrack stack, or false when it is full.  kind 1
+// is a greedy + or * that has taken at least one character: slot 1 is the
+// item, slot 2 the subject position the rest would resume from, slot 3 the
+// pattern position past the quantifier.  kind 2 is a ?'s matched item, kind 4 a
+// lazy - that has taken one.  A kind 1 entry is re-pushed as it is used, one
+// position further back, which is what makes the rest of the pattern try the
+// longer match first and the shorter ones after it.
+mod patPush(kind: int, p: int, s: int, x: int) -> bool {
+  if patSp + 4 > PAT_STACK {
+    return false
+  }
+  patSl[patSp] = kind
+  patSl[patSp + 1] = p
+  patSl[patSp + 2] = s
+  patSl[patSp + 3] = x
+  patSp = patSp + 4
+  return true
+}
+
+// The next item in the pattern.  $ at the very end is the end anchor and %b and
+// %f are the two items that walk the subject themselves.  A capture is a loud
+// error rather than a silently wrong arity, an unmatched ) never matches (which
+// is what PUC's level-0 case amounts to), and a quantifier with no item in
+// front of it is not an error at all: PUC treats it as an item that matches
+// nothing, so "*l" is a pattern that simply does not match.
+mod patNextItem() {
+  if patP >= patPEnd {
+    patSt = 5
+  } else if patPlain {
+    // the whole pattern is literal, so a magic character is just a character:
+    // $ is an anchor only when the pattern is read as a pattern
+    patItemP = patP
+    patQS = patI
+    patAfter = 2
+    patFailTo = 2
+    patHit = if patTestItem(patP, patI) == 1 then true else false
+    patSt = 2
+  } else {
+    let ch = patPat.Substring(patP, 1)
+    if ch == "$" && patP + 1 == patPEnd {
+      if patI == patLen {
+        patSt = 5
+      } else {
+        patSt = 4
+      }
+    } else if ch == "(" {
+      patErr = "captures are not supported yet"
+      patSt = 8
+    } else if ch == ")" || ch == "*" || ch == "+" || ch == "-" || ch == "?" {
+      // an unmatched ) and a quantifier with no item in front of it are both
+      // an item that matches nothing
+      patItemP = patP
+      patItemE = patP + 1
+      patQS = patI
+      patHit = false
+      patSt = 2
+    } else if ch == "%" && patP + 1 < patPEnd {
+      let code = patPat.Substring(patP + 1, 1).ToCharCode().Codepoint
+      if code == 98 {
+        patSt = patBS()
+      } else if code == 102 {
+        patSt = patF()
+      } else {
+        patItemP = patP
+        patQS = patI
+        patAfter = 2
+        patFailTo = 2
+        let r = patTestItem(patP, patI)
+        if r == 3 {
+          patSt = 8
+        } else if r == 2 {
+          patSt = 7
+        } else {
+          patHit = if r == 1 then true else false
+          patSt = 2
+        }
+      }
+    } else {
+      patItemP = patP
+      patQS = patI
+      patAfter = 2
+      patFailTo = 2
+      let r = patTestItem(patP, patI)
+      if r == 3 {
+        patSt = 8
+      } else if r == 2 {
+        patSt = 7
+      } else {
+        patHit = if r == 1 then true else false
+        patSt = 2
+      }
+    }
+  }
+}
+
+// %bxy: the opening delimiter, the closing one, and the subject's balance.  PUC
+// does not backtrack this one -- matchbalance counts to the first return to zero
+// and either has its match or has not -- so nothing goes on the stack.  Returns
+// the state to run next: the scan, or the error.
+mod patBS() -> int {
+  if patP + 3 >= patPEnd {
+    patErr = "malformed pattern (missing arguments to '%b')"
+    return 8
+  }
+  patBOpen = patPat.Substring(patP + 2, 1)
+  patBClose = patPat.Substring(patP + 3, 1)
+  patQEnd = patP + 4
+  patBC = 0
+  patBFirst = true
+  return 3
+}
+
+// %f[set]: the frontier, a transition into the set.  It needs two set tests, the
+// character before the cursor and the one at it, and patItemP is what brings the
+// second scan back to the set's text.  Returns the state to run next.
+mod patF() -> int {
+  if patP + 2 >= patPEnd || patPat.Substring(patP + 2, 1) != "[" {
+    patErr = "missing '[' after '%f' in pattern"
+    return 8
+  }
+  patItemP = patP
+  if patI == 0 {
+    // there is no character before the first one, so that test is vacuously
+    // true and only the one at the cursor is worth making
+    patFPrev = false
+    patAfter = 10
+    patFailTo = 4
+    patSetBegin(patP + 3, patSrc.Substring(patI, 1).ToCharCode().Codepoint)
+    return 7
+  }
+  patAfter = 9
+  patFailTo = 9
+  patSetBegin(patP + 3, patSrc.Substring(patI - 1, 1).ToCharCode().Codepoint)
+  return 7
+}
+
+// The item's verdict is in patHit and its extent in patItemE, so this is where
+// the quantifier is read and where every alternative is recorded.  The order
+// matters: a greedy quantifier records the position the rest would resume from
+// and then consumes as many characters as it can, so the rest of the pattern
+// sees the longest match first; a lazy one records the position before the item
+// and tries the rest there first; ? records how to skip the item it matched, and
+// a quantifier whose item did not match records nothing, because there is no
+// longer alternative to come back to.
+mod patApply() {
+  let q = if patPlain then "" else if patItemE < patPEnd then patPat.Substring(patItemE, 1) else ""
+  patQ = if q == "*" then 1 else if q == "+" then 2 else if q == "-" then 3 else if q == "?" then 4 else 0
+  patQEnd = if patQ == 0 then patItemE else patItemE + 1
+  if patQ == 0 {
+    if patHit {
+      patI = patI + 1
+      patP = patQEnd
+      patSt = 1
+    } else {
+      patSt = 4
+    }
+  } else if patQ == 1 || patQ == 2 {
+    if !patHit {
+      // zero repetitions: + is the one quantifier that cannot have none
+      if patQ == 2 {
+        patSt = 4
+      } else {
+        patP = patQEnd
+        patSt = 1
+      }
+    } else if !patPush(1, patItemP, patI, patQEnd) {
+      patErr = "pattern too complex"
+      patSt = 8
+    } else {
+      patSt = 11
+    }
+  } else if patQ == 3 {
+    if patHit {
+      if !patPush(4, patItemP, patI, patQEnd) {
+        patErr = "pattern too complex"
+        patSt = 8
+      } else {
+        patP = patQEnd
+        patSt = 1
+      }
+    } else {
+      patP = patQEnd
+      patSt = 1
+    }
+  } else {
+    if patHit {
+      if patPush(2, patQEnd, 0, 0) {
+        patI = patI + 1
+        patP = patQEnd
+        patSt = 1
+      } else {
+        patErr = "pattern too complex"
+        patSt = 8
+      }
+    } else {
+      patP = patQEnd
+      patSt = 1
+    }
+  }
+}
+
+// A greedy quantifier, taking one more character while the item still matches.
+// When it stops, the pattern carries on past the quantifier with as many as it
+// took, and the stack entry is left holding the position one before the last
+// character it took, which is where the rest starts if this attempt fails.
+mod patGreedy() {
+  if patI < patLen {
+    patAfter = 12
+    patFailTo = 14
+    let r = patTestItem(patItemP, patI)
+    if r == 0 {
+      patSt = 14
+    } else if r == 3 {
+      patSt = 8
+    } else if r == 2 {
+      patSt = 7
+    } else {
+      patSl[patSp - 2] = patI
+      patI = patI + 1
+      patSt = 11
+    }
+  } else {
+    patSt = 14
+  }
+}
+
+mod patGreedyEnd() {
+  patP = patQEnd
+  patSt = 1
+}
+
+// %b's walk.  The opening delimiter has to be the character under the cursor --
+// PUC's matchbalance compares the subject with the pattern's first delimiter
+// before it counts anything -- and then one character per tick, counting up on
+// the opening delimiter and down on the closing one until the balance is back
+// where it started.  A subject that runs out is a miss, which is all
+// matchbalance can answer too.
+mod patBStep() {
+  if patBFirst {
+    patBFirst = false
+    if patI < patLen && patSrc.Substring(patI, 1) == patBOpen {
+      patBC = 1
+      patI = patI + 1
+      patSt = 3
+    } else {
+      patSt = 4
+    }
+  } else if patI >= patLen {
+    patSt = 4
+  } else {
+    let c = patSrc.Substring(patI, 1)
+    if c == patBOpen {
+      patBC = patBC + 1
+      patI = patI + 1
+      patSt = 3
+    } else if c == patBClose {
+      if patBC == 1 {
+        patI = patI + 1
+        patP = patQEnd
+        patSt = 1
+      } else {
+        patBC = patBC - 1
+        patI = patI + 1
+        patSt = 3
+      }
+    } else {
+      patI = patI + 1
+      patSt = 3
+    }
+  }
+}
+
+// %f's previous-character test is done, whether it was in the set or not: the
+// frontier needs to know, so the test at the cursor runs either way.
+mod patFPrevStep() {
+  patFPrev = patHit
+  patAfter = 10
+  patFailTo = 4
+  patSetBegin(patItemP + 3, patSrc.Substring(patI, 1).ToCharCode().Codepoint)
+  patSt = 7
+}
+
+// %f's second test is done: a match is the transition from outside the set to
+// inside it, and it consumes nothing.
+mod patFCurStep() {
+  if !patFPrev && patHit {
+    patP = patItemE
+    patSt = 1
+  } else {
+    patSt = 4
+  }
+}
+
+// Take back the most recent alternative.  A greedy entry moves the rest of the
+// pattern one character back and records where to move it back to next time; a
+// lazy entry gives the item one more character if it matches there; a ?'s entry
+// carries on with its item skipped.  An empty stack means this attempt is over.
+//
+// The four slots are read into locals before anything is written, at the top of
+// the mod: an array read that follows a var write inside a nested arm loses its
+// Exec chain when the mod is inlined this many times, and the writes fed by it
+// quietly never happen.  Reading them first is what the header's trap is about.
+mod patBack() {
+  if patSp <= 0 {
+    patSt = 6
+  } else {
+    let sp = patSp - 4
+    let k0 = patSl[sp]
+    let k1 = patSl[sp + 1]
+    let k2 = patSl[sp + 2]
+    let k3 = patSl[sp + 3]
+    if k0 == 1 {
+      patSp = sp
+      patI = k2
+      patItemP = k1
+      patQEnd = k3
+      if 0 <= patI - 1 {
+        patPush(1, patItemP, patI - 1, patQEnd)
+      }
+      patP = patQEnd
+      patSt = 1
+    } else if k0 == 2 {
+      patSp = sp
+      patP = k1
+      patSt = 1
+    } else {
+      patSp = sp
+      patI = k2
+      patItemP = k1
+      patQEnd = k3
+      patAfter = 13
+      patFailTo = 4
+      let r = patTestItem(k1, k2)
+      if r == 0 {
+        patSt = 4
+      } else if r == 3 {
+        patSt = 8
+      } else if r == 2 {
+        patSt = 7
+      } else {
+        patI = k2 + 1
+        if 0 <= patI {
+          patPush(4, k1, patI, k3)
+        }
+        patP = k3
+        patSt = 1
+      }
+    }
+  }
+}
+
+// One pass through a set's text: a literal character, a %class, a range, or the
+// closing bracket.  The alternatives accumulate in patSetAny and patSetNeg
+// flips the answer at the end, so [^a-z] is one rule rather than a special
+// case per character.  A '-' with a character before it and one after it is a
+// range, which is why a leading or trailing '-' stays a literal.
+mod patSetStep() {
+  if patSetP >= patPEnd {
+    patErr = "malformed pattern (missing ']')"
+    patSt = 8
+  } else {
+    let sc = patPat.Substring(patSetP, 1)
+    if sc == "]" {
+      if patSetSeen {
+        patItemE = patSetP + 1
+        patHit = if patSetNeg then !patSetAny else patSetAny
+        patSetP = patSetP + 1
+        patSt = if patHit then patAfter else patFailTo
+      } else {
+        patErr = "malformed pattern (missing ']')"
+        patSt = 8
+      }
+    } else if sc == "%" && patSetP + 1 < patPEnd {
+      let code = patPat.Substring(patSetP + 1, 1).ToCharCode().Codepoint
+      let neg = 65 <= code && code <= 90
+      if (97 <= code && code <= 122) || (65 <= code && code <= 90) {
+        patSetAny = patSetAny || patClassHit(patSetC, if neg then code + 32 else code, neg)
+        patSetSeen = true
+        patSetP = patSetP + 2
+        patSt = 7
+      } else {
+        patSetAny = patSetAny || patSetC == code
+        patSetSeen = true
+        patSetP = patSetP + 2
+        patSt = 7
+      }
+    } else if sc == "-" && patSetHasPrev && patSetP + 1 < patPEnd
+        && patPat.Substring(patSetP + 1, 1) != "]" {
+      let hi = patPat.Substring(patSetP + 1, 1).ToCharCode().Codepoint
+      patSetAny = patSetAny || (patSetPrev <= patSetC && patSetC <= hi)
+      patSetSeen = true
+      patSetP = patSetP + 2
+      patSt = 7
+    } else {
+      patSetAny = patSetAny || patSetC == sc.ToCharCode().Codepoint
+      patSetSeen = true
+      patSetHasPrev = true
+      patSetPrev = sc.ToCharCode().Codepoint
+      patSetP = patSetP + 1
+      patSt = 7
+    }
+  }
+}
+
+// A set matched where the greedy quantifier is taking characters: one more,
+// and the entry's resume point moves with it.
+mod patSetHit() {
+  patSl[patSp - 2] = patI
+  patI = patI + 1
+  patSt = 11
+}
+
+// A set matched on the way back up the stack: the lazy item takes one more
+// character and records where to take the next one from.
+mod patSetRetry() {
+  patI = patI + 1
+  if 0 <= patI {
+    patPush(4, patItemP, patI, patQEnd)
+  }
+  patP = patQEnd
+  patSt = 1
+}
+
+// The whole pattern matched at patStart.  find reports the two positions, an
+// empty match ending one before it starts; match reports the match itself.
+mod patDone() {
+  if patMode == 0 {
+    vtag[nxDst] = 6
+    vnum[nxDst] = patStart + 1.0
+    vstr[nxDst] = ""
+    vtag[nxDst + 1] = 6
+    vnum[nxDst + 1] = patI * 1.0
+    vstr[nxDst + 1] = ""
+    retCountV = 2
+  } else {
+    vtag[nxDst] = 2
+    vnum[nxDst] = 0.0
+    vstr[nxDst] = patSrc.Substring(patStart, patI - patStart)
+    retCountV = 1
+  }
+  nxActive = false
+  vmPc = nxPc + 1
+}
+
+// No match anywhere: both find and match answer nil.
+mod patNone() {
+  vtag[nxDst] = 0
+  vnum[nxDst] = 0.0
+  vstr[nxDst] = ""
+  retCountV = 1
+  nxActive = false
+  vmPc = nxPc + 1
+}
+
+// This attempt failed, so the next start position, unless the pattern is
+// anchored or the subject has run out.  PUC's loop stops at the last character
+// rather than at the end, which is why an empty pattern's match past it comes
+// only from the first attempt.
+mod patNextStart() {
+  if patAnchor || patR + 1 >= patLen {
+    patNone()
+  } else {
+    patR = patR + 1
+    patStart = patR
+    patSt = 0
+  }
+}
+
+mod patError() {
+  nxActive = false
+  vmFail(patErr)
+}
+
 // ==================================================================== io: stdin
 //
 // The text in the inStr0 port is the program's standard input, and two gate
@@ -6773,6 +7501,89 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
         retCountV = 1
       }
     }
+  } else if fid == 20 {
+    // _pat(mode, s, p [, init [, plain]]): the pattern matcher.  mode 0 is
+    // find and 1 is match.  All of this is argument checking and setup; the
+    // matching is the machine at the top of vmStep, which writes its answers
+    // into this call's own registers the way the _fmt machine does.
+    let mode = toInt(numArg(vTag(a + 1), vNum(a + 1)))
+    let nm = if mode == 0 then "find" else "match"
+    // Only the arguments that were actually passed may be read: a register past
+    // nargs still holds whatever the caller's previous call left in it, and a
+    // find whose init came from there is a find with a boolean init.
+    let st = if 1 < nargs then vTag(a + 2) else 0
+    let pt = if 2 < nargs then vTag(a + 3) else 0
+    let it = if 3 < nargs then vTag(a + 4) else 0
+    let inum = if 3 < nargs then vNum(a + 4) else 0.0
+    let pl = if 4 < nargs then vTag(a + 5) else 0
+    let plv = if 4 < nargs then vNum(a + 5) else 0.0
+    if nargs < 2 {
+      vmFail("bad argument #1 to '" .. nm .. "' (string expected, got no value)")
+    } else if st == 2 {
+      patSrc = vStr(a + 2)
+    } else if st == 1 || st == 6 {
+      patSrc = fmtVal(st, vNum(a + 2), vStr(a + 2))
+    } else {
+      vmFail("bad argument #1 to '" .. nm .. "' (string expected, got " .. typeName(st) .. ")")
+    }
+    if !vmFailed {
+      if nargs < 3 {
+        vmFail("bad argument #2 to '" .. nm .. "' (string expected, got no value)")
+      } else if pt == 2 {
+        patPat = vStr(a + 3)
+      } else if pt == 1 || pt == 6 {
+        patPat = fmtVal(pt, vNum(a + 3), vStr(a + 3))
+      } else {
+        vmFail("bad argument #2 to '" .. nm .. "' (string expected, got " .. typeName(pt) .. ")")
+      }
+    }
+    if !vmFailed {
+      // only nil and false are false, so a plain of 0 or "" is plain all the same
+      patPlain = mode == 0 && !(pl == 0 || pl == 3 && plv == 0.0)
+      patAnchor = false
+      patPSkip = 0
+      // a leading ^ is the anchor, but not on the plain path, which is a
+      // literal search and never looks at the pattern's meaning
+      if !patPlain && 0 < patPat.Length() && patPat.Substring(0, 1) == "^" {
+        patAnchor = true
+        patPSkip = 1
+      }
+      patPEnd = patPat.Length()
+      patLen = patSrc.Length()
+      // PUC's posrelat: a positive init is itself, a negative one counts back
+      // from the end plus one, and a zero goes to the clamp below.  A numeric
+      // *string* init is the one thing here PUC takes and this does not: the
+      // chip has no string-to-number conversion, so it is a number or nothing.
+      var ini = 1
+      if it == 0 {
+        ini = 1
+      } else if it == 1 || it == 6 {
+        let raw = toInt(inum)
+        ini = if 0 < raw then raw else if 0 < 0 - raw then patLen + raw + 1 else 0
+      } else {
+        vmFail("bad argument #3 to '" .. nm .. "' (number expected, got " .. typeName(it) .. ")")
+      }
+      if !vmFailed {
+        if ini < 1 {
+          ini = 1
+        }
+        if patLen + 1 < ini {
+          vSet(a, 0, 0.0, "")
+          retCountV = 1
+        } else {
+          patMode = mode
+          patStart = ini - 1
+          patR = patStart
+          patSt = 0
+          patSp = 0
+          patErr = ""
+          nxDst = vmBase + a
+          nxPc = vmPc
+          nxMode = 2
+          nxActive = true
+        }
+      }
+    }
   } else if fid == 14 {
     // _rd(fmt): one read from the text in inStr0, the way io.read does it
     if nargs < 1 {
@@ -6923,6 +7734,12 @@ mod vmStep() {
       if fmtGo {
         fmtGo = false
         fmtStep()
+      }
+    } else if nxMode == 2 {
+      // the pattern matcher, one state per burst, the same latch fmtGo is
+      if patGo {
+        patGo = false
+        patStep()
       }
     } else {
       nxStep()
@@ -7554,6 +8371,7 @@ mod parseJobStart() {
   // own functions start at NB and can never collide with one.  The rest of the
   // standard library is Lua source prepended to the program (see libIter etc).
   pcallBad.resize(1, 0)
+  patSl.resize(PAT_STACK, 0)
   fStart.resize(NB, -1)
   fParams.resize(NB, -1)
   fRegs.resize(NB, -1)
@@ -7621,6 +8439,12 @@ mod libStrCase(p: string) -> string {
 mod libStrFmt(p: string) -> string {
   return if srcUses(p, "string.format") || srcUsesField(p, "format")
       then LIB_str_fmt else ""
+}
+
+mod libStrPat(p: string) -> string {
+  return if srcUses(p, "string.find") || srcUses(p, "string.match")
+      || srcUsesField(p, "find") || srcUsesField(p, "match")
+      then LIB_str_pat else ""
 }
 
 mod libStrMisc(p: string) -> string {
@@ -7695,6 +8519,7 @@ mod libIo(p: string) -> string {
 
 mod vmBurst() {
   fmtGo = true
+  patGo = true
   vmStep()
   if !vmHold { vmStep() }
   if !vmHold { vmStep() }
@@ -7751,8 +8576,9 @@ on goParse {
   let libM = libTabSort(program)
   let libN = libStrFmt(program)
   let libO = libIo(program)
+  let libP = libStrPat(program)
   let lib = libA .. libB .. libC .. libD .. libE .. libF .. libG
-    .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO
+    .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO .. libP
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program
   llen = lsrc.Length()

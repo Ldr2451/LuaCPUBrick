@@ -478,6 +478,121 @@ TESTS = [
     ("arg-fn-returns", "print(pcall(function() return 1, 2 end))", None, "run"),
     ("xpcall-tostring", "function f() error('b') end "
      "local ok = xpcall(f, tostring) print(ok)", None, "run"),
+    # string.find and string.match, which PUC also has in C: a backtracking
+    # matcher wants a stack and a loop, so it is a gate machine here and the
+    # library piece around it is three lines of Lua.  The cases below are the
+    # shapes whose answers are not obvious: an empty match ends one position
+    # before it starts, a greedy quantifier is tried longest first and gives
+    # characters back one at a time, a lazy one the other way round, and %b is
+    # never backtracked at all (PUC's matchbalance counts to the first return
+    # to zero and either has its match or has not).
+    ("pat-find", "print(string.find('hello world', 'o'))", None, "run"),
+    ("pat-find-init", "print(string.find('hello world', 'o', 6))", None,
+     "run"),
+    ("pat-find-negative-init",
+     "print(string.find('hello', 'l', -2))", None, "run"),
+    ("pat-find-past-end", "print(string.find('hello', 'l', 9))", None, "run"),
+    ("pat-find-empty", "print(string.find('abc', ''))", None, "run"),
+    ("pat-find-empty-init", "print(string.find('hello', '', 4))", None, "run"),
+    ("pat-find-empty-past-end", "print(string.find('hello', '', 7))", None,
+     "run"),
+    ("pat-find-none", "print(string.find('hello', 'xyz'))", None, "run"),
+    ("pat-find-anchor", "print(string.find('hello', '^h'), "
+     "string.find('hello', '^e'))", None, "run"),
+    ("pat-find-end-anchor", "print(string.find('hello', 'o$'), "
+     "string.find('hello', 'x$'))", None, "run"),
+    ("pat-find-plain", "print(string.find('a.b', '.', 1, true), "
+     "string.find('a.b', '.'), string.find('a.b', 'a$', 1, true))", None,
+     "run"),
+    # The gate reads only the arguments that were passed: a find with no init
+    # follows a find that had one, and the register past its own arguments still
+    # holds the earlier call's plain flag.  Reading it made the boolean an init.
+    ("pat-find-no-init-after-four", "print(string.find('a.b', '.', 1, true), "
+     "string.find('a.b', '.'), string.find('a.b', 'b', 1, true))", None, "run"),
+    ("pat-find-class", "print(string.match('abc123', '%d+'))", None, "run"),
+    ("pat-match-quantifier", "print(string.match('hello', 'l+'), "
+     "string.match('hello', 'l*'), string.match('hello', 'l-'), "
+     "string.match('hello', 'l?'))", None, "run"),
+    ("pat-match-greedy-backtrack",
+     "print(string.find('hello', 'l*l'), string.match('hello', 'l*l'))",
+     None, "run"),
+    ("pat-match-lazy", "print(string.find('hello', 'h-e'), "
+     "string.match('aaab', 'a-b'))", None, "run"),
+    ("pat-match-optional", "print(string.match('aab', 'a?b'), "
+     "string.match('color colour', 'colou?r'))", None, "run"),
+    ("pat-match-set", "print(string.match('abc', '[a-c]+'), "
+     "string.match('abc', '[^b]'), string.match('hello', '[el]+'))", None,
+     "run"),
+    ("pat-match-set-dashes", "print(string.match('abc', '[-a]'), "
+     "string.match('abc', '[a-]'), string.match('a-b', '[%-]'))", None, "run"),
+    ("pat-match-set-class", "print(string.match('  x', '%s*%a'), "
+     "string.match('5 apples', '%x+'))", None, "run"),
+    ("pat-match-dot", "print(string.match('abc', 'a.c'), "
+     "string.match('aXb', 'a%db'))", None, "run"),
+    # A set's own ] has to be escaped, and the scan that finds the end of the set
+    # has to see the escape: PUC's classend skips a %x pair, so [%]] is the set
+    # holding ] and not an unterminated one.
+    ("pat-match-set-escaped", "print(string.match('a]b', '[%]]'), "
+     "string.find('abc', '[%]]'))", None, "run"),
+    # The machine runs from the top of vmStep with absolute registers, so a find
+    # inside a function, off a table, or in a loop is the same find; and a
+    # malformed pattern raised three ticks into one is a value pcall can catch.
+    ("pat-in-function", "local function f(s) return string.find(s, 'b') end "
+     "print(f('abc'))", None, "run"),
+    ("pat-in-table", "local t = {s = 'hello'} "
+     "print(string.find(t.s, 'l+'))", None, "run"),
+    ("pat-in-pcall", "print(pcall(string.find, 'abc', '%'))", None, "run"),
+    ("pat-in-loop", "local out = '' for i = 1, 3 do out = out .. "
+     "string.match('ab', 'a') end print(out)", None, "run"),
+    ("pat-float-init", "print(string.find('abc', 'b', 1.0))", None, "run"),
+    ("pat-match-balance", "print(string.find('a(b)c', '%b()'), "
+     "string.find('a(b)c(d)e', '%b()d'))", None, "run"),
+    ("pat-match-frontier", "print(string.match('THE (quick) fox', "
+     "'%f[%a]%a+%f[%A]'))", None, "run"),
+    ("pat-malformed-set", "print(string.find('hello', '['))", None,
+     "runtimerr", {"expect": {"err": "malformed pattern (missing ']')"}}),
+    ("pat-malformed-percent", "print(string.find('hello', '%'))", None,
+     "runtimerr",
+     {"expect": {"err": "malformed pattern (ends with '%')"}}),
+    ("pat-malformed-b", "print(string.find('hello', '%b'))", None,
+     "runtimerr",
+     {"expect": {"err": "malformed pattern (missing arguments to '%b')"}}),
+    ("pat-malformed-f", "print(string.find('hello', '%f'))", None,
+     "runtimerr",
+     {"expect": {"err": "missing '[' after '%f' in pattern"}}),
+    ("pat-leading-quantifier", "print(string.find('hello', '*l'))", None,
+     "run"),
+    ("pat-unmatched-close", "print(string.find('hello', ')'), "
+     "string.find('hello', 'a)'))", None, "run"),
+    ("pat-backref", "print(string.find('abc', '%1'))", None, "runtimerr",
+     {"expect": {"err": "invalid capture index %1"}}),
+    # Captures are the one part of the matcher that is not here yet: a ( in a
+    # pattern is PUC's capture syntax and the answer has a different shape --
+    # find puts the captures after the two positions, match returns the captures
+    # and not the whole match -- so it is a loud error rather than a silently
+    # wrong arity.  gsub needs them, and comes with them.
+    ("pat-capture", "print(string.find('abc', '()'))", None, "runtimerr",
+     {"expect": {"err": "captures are not supported yet"}}),
+    ("pat-capture-match", "print(string.match('x=1', '(%w+)%s*=%s*(%w+)'))",
+     None, "runtimerr",
+     {"expect": {"err": "captures are not supported yet"}}),
+    ("pat-no-subject", "print(string.find('hello'))", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'find' (string expected, got no "
+                        "value)"}}),
+    ("pat-no-pattern-match", "print(string.match('hello'))", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'match' (string expected, got no "
+                        "value)"}}),
+    ("pat-nil-pattern", "print(string.find('hello', nil))", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'find' (string expected, got nil)"}}),
+    ("pat-bad-subject", "print(string.find({}, 'l'))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'find' (string expected, got "
+                        "table)"}}),
+    ("pat-number-subject", "print(string.find(5, 'l'), string.find('a1b', "
+     "'%d'))", None, "run"),
+    ("pat-bad-init", "print(string.find('hello', 'l', 'x'))", None,
+     "runtimerr",
+     {"expect": {"err": "bad argument #3 to 'find' (number expected, got "
+                        "string)"}}),
     # error and assert, both C in PUC and gates here.  assert returns *all* of
     # its arguments on success, which is a shift down by one register on a
     # register VM.  PUC prefixes error's message with the chunk and line of

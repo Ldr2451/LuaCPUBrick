@@ -3,6 +3,11 @@ line, and show the chip result next to the Lua 5.5 oracle when it differs.
 
   python -u tools/check.py "print(1)" "local t = {1,2} print(#t)"
 
+An argument of @path reads the programs from that file instead, one per
+paragraph with a line of %% between them.  A shell that eats the double quotes
+out of an argument turns `print("x")` into `print(x)`, which looks like a chip
+bug and is not one; the file form cannot be mangled that way.
+
 Each argument is one program.  This is the narrow probe to use while iterating;
 run the full suite once at the end of a change.  ~6s to build the chip, then
 roughly a second per program.
@@ -20,8 +25,17 @@ from irdump import resolve_prog
 from timing import Elapsed
 import lua_oracle as OR
 
-progs = [resolve_prog(a, ROOT) for a in sys.argv[1:]] or [
-    "function f() return 1,2 end local a, b = f() print(a, b)"]
+args = sys.argv[1:]
+progs = []
+for a in args:
+    if a.startswith("@"):
+        with open(a[1:], encoding="utf-8") as f:
+            for part in f.read().split("\n%%\n"):
+                if part.strip():
+                    progs.append(part)
+    else:
+        progs.append(resolve_prog(a, ROOT))
+progs = progs or ["function f() return 1,2 end local a, b = f() print(a, b)"]
 ticks = int(os.environ.get("PROBE_TICKS", "6000"))
 # STDIN feeds inStr0, which is where the chip reads standard input from, so a
 # probe of io.read can set it without writing a case
