@@ -39,19 +39,6 @@ TIMEOUT = 90  # seconds per case; healthy runs take ~5-8s
 TICKS = 6000
 
 # Cases the tick sim cannot reach (documented, not chip bugs):
-# long-sum needs ~100k loop iterations, far beyond any tick budget.
-SKIP = {
-    "long-sum": "100k loop iterations exceed tick simulation",
-}
-
-# Extra VM ticks for heavy but reachable cases.
-TICKS_OVERRIDES = {
-    "func-fib": 300000,
-    "tab-bubble": 120000,
-    "log-many": 60000,
-}
-
-# Cases the tick sim cannot reach (documented, not chip bugs):
 # - long-sum needs ~100k loop iterations, far beyond any tick budget.
 # - io-clock needs wall-clock granularity; the tick sim freezes time.
 SKIP = {
@@ -101,6 +88,13 @@ def resolve_src(src, kw):
         for k, v in cases.DEMO_KW.items():
             kw.setdefault(k, v)
         return cases.DEMO_SRC
+    if src.startswith("PRE:"):
+        # a repro kept as a file, with the rest of the source appended: the
+        # chip has no dofile, so a case that needs a library of helpers spells
+        # them out in a file and prepends it
+        path, _, rest = src[4:].partition("\n")
+        with open(os.path.join(cases.TINYLUA, path), encoding="utf-8") as f:
+            return f.read() + rest
     return src
 
 

@@ -329,6 +329,11 @@ TESTS = [
     ("fmt-err-nofmt", "print(string.format())", None, "runtimerr",
      {"expect": {"err": "bad argument #1 to 'format' (string expected, got no "
                           "value)"}}),
+    # the call-path repro: the shapes around the known failure, pinned so a fix
+    # for it (tests/lib_callchain.lua, with the bisection and what is left to
+    # find) cannot land as a change to these
+    ("call-chain", "PRE:tests/lib_callchain.lua\nprint(call_chain_ok1(1.5, 2), "
+     "call_chain_ok1(1.5, 2)) print(probe_s2(12), probe_s2(12))", None, "run"),
     # math library
     ("math-floor", "print(math.floor(2.7), math.floor(-2.7), math.ceil(2.1), "
      "math.ceil(-2.1))", None, "run"),
