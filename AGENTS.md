@@ -90,10 +90,27 @@
   in named mods so a split is mechanical.
 - PUC's own split decides where a standard library function belongs: if PUC
   implements it in Lua, port that Lua and prepend it on demand (`LIB_*`, a few
-  hundred characters); if PUC implements it in C, it is a gate. The float
+  hundred characters); if PUC implements it in C, a gate. The float
   conversions, the pattern matcher and `error`/`pcall` are all C in PUC and are
   gates here for that reason; `pairs`, `ipairs`, `select`'s neighbours and the
   string helpers are Lua in PUC and are library source.
+- A piece is a plain Lua function, and the chip's parser has three shapes PUC
+  accepts that it does not: a nested `local function` inside a function literal
+  assigned to a *field* (`string.gsub = function() local function f() ... end
+  ... end`) is not bound, so a piece spells a nested function `local f =
+  function(...) ... end`; a nested function may not read a local of the
+  function it sits in (that is an upvalue, and closures are not built yet), so
+  anything it needs is passed in as an argument; and a nested call in an
+  argument list is fine, but a *function literal* there loses its returns (the
+  `arg-fn-returns` skip). `tools/check.py @file` proves a piece against PUC
+  before it is installed: the piece runs with an `_s`/`_m`/`_pat` shim and its
+  results are diffed against real `gsub` on a set of shapes.
+- A piece may use another piece: `libStrGsub` prepends `LIB_str_pat` with it
+  (gsub scans its replacement for `%` with `string.find`) and `libStrPat` then
+  stands down, so a program that uses both pays for the shared piece once.
+  A piece referring to a name the loader does not install is not an error at
+  load time -- it is "attempt to call" on the first call.
+
 - A value that PUC's C code produces is a value the *sim* has to mirror
   exactly. The sim kept the log's old rule -- 64 characters and 32 lines --
   after the chip moved the width cap into the print handler and made the limit
@@ -158,6 +175,17 @@
   piece, and the answer changes with the piece's size: `string.format` at 10.7k
   characters is 20x over the source ceiling, so it belongs in a gate even though
   `table.insert` at 400 does not.
+- **`string.gsub` is the piece that is too big, and it is waiting on a feature
+  the VM does not have.** The piece is 3109 characters, so a program that merely
+  *names* gsub pays ~2.9s of boot (measured: `print(string.gsub == nil)` is
+  3.0s against a 0.1s baseline) while the loop itself is cheap (~0.1s per
+  match). A gate would not have that cost, but gsub's replacement can be a Lua
+  function and a gate cannot call one: the only place the chip calls Lua on a
+  gate's behalf is the pcall frame, and `pcall of pcall` is explicitly
+  unsupported, so a machine cannot suspend mid-loop for a call. The escape is a
+  call-from-a-gate hook, which is gate-budget work, not a gsub bug. Meanwhile the
+  piece is correct (49 shapes against the oracle) and the cost is in the file
+  for everyone to see.
 - Time the *program*, not just the harness: a case that goes from 0.2s to 2s in
   the suite is a user-visible regression in the chip, and the suite prints
   per-case seconds precisely so it cannot hide.

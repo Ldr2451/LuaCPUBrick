@@ -627,7 +627,94 @@ TESTS = [
     ("pat-bad-init", "print(string.find('hello', 'l', 'x'))", None,
      "runtimerr",
      {"expect": {"err": "bad argument #3 to 'find' (number expected, got "
-                        "string)"}}),
+                         "string)"}}),
+    # gsub is a library loop over the matcher: the gate answers one match at a
+    # time and the loop is PUC's own.  Three things in that loop are the whole
+    # reason the piece is not a straight transcription: the unmatched text
+    # between one match and the next is copied when the match lands (a no-match
+    # step copies exactly one character and does not count as a replacement),
+    # the loop stops when a match ends where the last one ended -- that is what
+    # ends "aaa" on "a*" after one replacement, not the matcher, which does
+    # match at the end of the subject -- and a leading ^ gives one match and no
+    # more, because PUC's loop breaks after it.
+    ("gsub-plain", "print(string.gsub('hello world', 'o', '0'), "
+     "string.gsub('abc', 'x', 'y'), string.gsub('', 'a', 'b'))", None, "run"),
+    ("gsub-empty-pattern", "print(string.gsub('hello', '', '-'), "
+     "string.gsub('a', '', '-'), string.gsub('ab', '', '-'), "
+     "string.gsub('', '', '-'))", None, "run"),
+    ("gsub-limit", "print(string.gsub('hello', 'l', 'L', 1), "
+     "string.gsub('hello', 'l', 'L', 10), string.gsub('hello', 'l', 'L', 0), "
+     "string.gsub('hello', 'l', 'L', -1), string.gsub('abc', 'a', 'x', 1.0))",
+     None, "run"),
+    ("gsub-anchor", "print(string.gsub('hello', '^h', 'H'), "
+     "string.gsub('hello', '^e', 'E'), string.gsub('abc', '^', '-'), "
+     "string.gsub('hello', '^h', 'H', 2), string.gsub('hello', '^', '-', 3))",
+     None, "run"),
+    ("gsub-whole-match", "print(string.gsub('abc', '%w', '%0%0'), "
+     "string.gsub('abc', 'a', '%0%%'), string.gsub('abc', '[abc]', '%0%0'), "
+     "string.gsub('abc', 'a', '%1'))", None, "run"),
+    ("gsub-captures", "print(string.gsub('abc', '(%w)', '[%1]'), "
+     "string.gsub('abc', '(a)(b)', '%2%1'), string.gsub('2026-09-24', "
+     "'(%d+)', '<%1>'), string.gsub('x=1, y=2', '(%w+)=(%w+)', '%2=%1'))",
+     None, "run"),
+    ("gsub-position-capture", "print(string.gsub('abc', '()', '%1'))", None,
+     "run"),
+    ("gsub-star-empty", "print(string.gsub('aaa', 'a*', '-'), "
+     "string.gsub('abc', 'b*', '-'), string.gsub('abc', '.-', 'X'), "
+     "string.gsub('abc', '', '%0', 2))", None, "run"),
+    # A table replacement is keyed by the first capture, or by the whole match
+    # when the pattern has none, and a value that is nil or false keeps the
+    # matched text instead of dropping it.
+    ("gsub-table", "print(string.gsub('abc', '(a)', {a='X'}), "
+     "string.gsub('abc', '(a)', {b='X'}), string.gsub('abc', 'a', {X='Y'}))",
+     None, "run"),
+    # A function replacement gets the captures, or the whole match when there
+    # are none -- not the match and then the captures.
+    ("gsub-function", "print(string.gsub('abc', '.', function(m) return '[' "
+     ".. m .. ']' end), string.gsub('abc', 'a', string.upper), "
+     "string.gsub('a1b2', '%d', function(d) return '[' .. d .. ']' end))",
+     None, "run"),
+    ("gsub-function-args", "local function f(...) return select('#', ...) end "
+     "print(string.gsub('abc', 'a', f), string.gsub('abc', '(a)', f), "
+     "string.gsub('abc', '(a)(b)', f), string.gsub('abc', '()', f))", None,
+     "run"),
+    ("gsub-function-nil", "print(string.gsub('abc', '(a)', function(m, c) "
+     "return nil end), string.gsub('abc', '(a)', function(m, c) return false "
+     "end))", None, "run"),
+    ("gsub-number-replacement", "print(string.gsub('abc', 'a', 5), "
+     "string.gsub(42, '%d', 'x'), string.gsub('abc', 'a', 'x', 2.0))", None,
+     "run"),
+    # The two error wordings differ: no value at all is the C function's own
+    # check and says 'gsub', a value of the wrong type is luaL_argexpected and
+    # says 'string.gsub'.
+    ("gsub-no-replacement", "print(string.gsub('abc', 'a'))", None, "runtimerr",
+     {"expect": {"err": "bad argument #3 to 'gsub' (string/function/table "
+                        "expected, got no value)"}}),
+    ("gsub-bad-replacement", "print(string.gsub('abc', 'a', true))", None,
+     "runtimerr",
+     {"expect": {"err": "bad argument #3 to 'string.gsub' (string/function/"
+                        "table expected, got boolean)"}}),
+    ("gsub-bad-limit", "print(string.gsub('abc', 'a', 'b', 'x'))", None,
+     "runtimerr",
+     {"expect": {"err": "bad argument #4 to 'string.gsub' (number expected, "
+                        "got string)"}}),
+    ("gsub-fractional-limit", "print(string.gsub('abc', 'a', 'b', 1.9))", None,
+     "runtimerr",
+     {"expect": {"err": "bad argument #4 to 'gsub' (number has no integer "
+                        "representation)"}}),
+    ("gsub-bad-percent", "print(string.gsub('abc', 'a', '%'))", None,
+     "runtimerr",
+     {"expect": {"err": "invalid use of '%' in replacement string"}}),
+    ("gsub-bad-escape", "print(string.gsub('abc', 'a', '%z'))", None,
+     "runtimerr",
+     {"expect": {"err": "invalid use of '%' in replacement string"}}),
+    ("gsub-bad-capture-index", "print(string.gsub('abc', '(%w)', '%2'))", None,
+     "runtimerr", {"expect": {"err": "invalid capture index %2"}}),
+    ("gsub-boolean-value", "print(string.gsub('abc', '(a)', {a=true}))", None,
+     "runtimerr", {"expect": {"err": "invalid replacement value (a boolean)"}}),
+    ("gsub-table-value", "print(string.gsub('abc', '(a)', {a={}}))", None,
+     "runtimerr", {"expect": {"err": "invalid replacement value (a table)"}}),
+
     # error and assert, both C in PUC and gates here.  assert returns *all* of
     # its arguments on success, which is a shift down by one register on a
     # register VM.  PUC prefixes error's message with the chunk and line of
@@ -766,6 +853,13 @@ TESTS = [
     ("run-negstr", "print('before') print(-'x')", None, "haltfail"),
     ("upvalue-read", "local x = 5 function f() return x end print(f())",
      None, "reject"),
+    # A `local function` nested in a function literal that is assigned to a
+    # *field* is not bound: the same nesting under a top-level `local function`
+    # and the `local g = function` form both work, so it is the field
+    # assignment that loses the binding.  Library pieces hit this shape, which
+    # is why they are written `local add = function(v) ... end`.
+    ("nested-local-function", "local t = {} t.f = function() local function g() "
+     "return 1 end return g() end print(t.f())", None, "run"),
     ("callarg-temp", "local s = 'abcdef' print('x', s, #s, s .. '!')",
      None, "run"),
     ("callarg-binop", "local a = 6 local b = 7 print(a + b, a * b, -a)",

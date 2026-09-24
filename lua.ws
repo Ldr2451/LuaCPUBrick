@@ -240,6 +240,7 @@ const LIB_tab_list = "table = table or {}\ntable.unpack = unpack\ntable.pack = f
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, j)\n  sep = sep or \"\"\n  i = i or 1\n  j = j or #t\n  local r = \"\"\n  for k = i, j do\n    local v = t[k]\n    if k > i then r = r .. sep end\n    r = r .. v\n  end\n  return r\nend\n"
 const LIB_tab_sort = "table = table or {}\n_lt = function(a, b) return a < b end\ntable.sort = function(t, cmp)\n  local lt = cmp or _lt\n  for i = 2, #t do\n    local v = t[i]\n    local j = i - 1\n    while j >= 1 and lt(v, t[j]) do t[j + 1] = t[j] j = j - 1 end\n    t[j + 1] = v\n  end\nend\n"
 const LIB_io = "io = io or {}\nio.read = function(...) if select('#', ...) == 0 then return _rd('*l') end return _rd((...)) end\nio.write = function(...) for i = 1, select('#', ...) do _wr(tostring((select(i, ...)))) end end\n_io_next = function() local l = _rd('*l') if l == nil then return nil end return l end\nio.lines = function() _rd('*r') return _io_next end\n"
+const LIB_str_gsub = "string = string or {}\nstring.gsub = function(s, p, r, n)\n  if type(s) == \"number\" then s = tostring(s) end\n  local sl, out, pos, cnt, last = #s, \"\", 1, 0, -1\n  local anch = _s(1, p, 0, 1) == \"^\"\n  local rt = type(r)\n  if r == nil then error(\"bad argument #3 to 'gsub' (string/function/table expected, got no value)\", 2) end\n  if rt == \"number\" then r = tostring(r) rt = \"string\" end\n  local add = function(v)\n    local tv = type(v)\n    if tv == \"string\" then return v end\n    if tv == \"number\" then return tostring(v) end\n    if tv == \"boolean\" then error(\"invalid replacement value (a boolean)\", 2) end\n    error(\"invalid replacement value (a \" .. tv .. \")\", 2)\n  end\n  local rep = function(kt, kr, add, res, m)\n    if kt == \"function\" then\n      local v, w\n      if res[3] == 0 then v, w = kr(m) else v, w = kr(unpack(res, 4, 3 + res[3])) end\n      if v == nil or v == false then return m end\n      if w == nil or w == false then return add(v) end\n      return add(v) .. add(w)\n    elseif kt == \"table\" then\n      local k = m\n      if res[3] > 0 then k = res[4] end\n      local v = kr[k]\n      if v == nil or v == false then return m end\n      return add(v)\n    else\n      local o, i, rl = \"\", 1, #kr\n      while i <= rl do\n        local j = string.find(kr, \"%\", i, true)\n        if j == nil then o = o .. _s(1, kr, i - 1, rl - i + 1) break end\n        if i < j then o = o .. _s(1, kr, i - 1, j - i) end\n        if j == rl then error(\"invalid use of '%' in replacement string\", 2) end\n        local d = _s(1, kr, j, 1)\n        if d == \"%\" then o = o .. \"%\"\n        elseif d == \"0\" then o = o .. m\n        else\n          local q = _s(4, d, 0, 0) - 48\n          if q < 1 or 9 < q then error(\"invalid use of '%' in replacement string\", 2) end\n          if 1 < q and res[3] < q then error(\"invalid capture index %\" .. d, 2) end\n          if q == 1 and res[3] == 0 then o = o .. m else o = o .. add(res[q + 3]) end\n        end\n        i = j + 2\n      end\n      return o\n    end\n  end\n  if rt ~= \"string\" and rt ~= \"table\" and rt ~= \"function\" then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got \" .. rt .. \")\", 2) end\n  if n == nil then n = sl + 1 end\n  if type(n) ~= \"number\" then error(\"bad argument #4 to 'string.gsub' (number expected, got \" .. type(n) .. \")\", 2) end\n  n = _m(13, n, 0)\n  if n == nil then error(\"bad argument #4 to 'gsub' (number has no integer representation)\", 2) end\n  if n < 1 then return s, 0 end\n  while cnt < n do\n    local res = {_pat(2, s, p, pos)}\n    if res[1] == nil then break end\n    local a, b = res[1], res[2]\n    if b == last then\n      if pos <= sl then out = out .. _s(1, s, pos - 1, 1) pos = pos + 1 else break end\n    else\n      if pos < a then out = out .. _s(1, s, pos - 1, a - pos) end\n      out = out .. rep(rt, r, add, res, _s(1, s, a - 1, b - a + 1))\n      cnt = cnt + 1\n      pos = b + 1\n    end\n    last = b\n    if anch then break end\n  end\n  return out .. _s(1, s, pos - 1, sl - pos + 1), cnt\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -6133,11 +6134,14 @@ mod tblUnlink(tid: int, sl: int) {
 
 // ==================================================================== patterns
 //
-// string.find, match, gsub and gmatch are C in PUC (lstrlib.c) and are gates
-// here for the same reason: a backtracking matcher wants a stack and a loop,
-// and a Lua program gets neither without a coroutine per match.  The library
-// pieces around them are ordinary Lua (see libStrPat), which is the split PUC
-// itself makes.
+// string.find, string.match and string.gmatch are C in PUC (lstrlib.c) and are
+// gates here for the same reason: a backtracking matcher wants a stack and a
+// loop, and a Lua program gets neither without a coroutine per match.  gsub's
+// *matcher* is the same gate, called one match at a time by mode 2, but gsub's
+// loop is a library piece (LIB_str_gsub): its replacement can be a Lua function
+// and a gate cannot call one, so the part that has to call back into Lua stays
+// in Lua.  The library piece around find and match is ordinary Lua too (see
+// libStrPat), which is the split PUC itself makes.
 //
 // The shape is the _fmt machine: the gate arm sets the subject, the pattern and
 // where the answers go, raises patGo, and the steps below run one piece per
@@ -6201,10 +6205,31 @@ mod tblUnlink(tid: int, sl: int) {
 //     quietly never happen: patBack popped an entry and then read its four slots
 //     into patI, patItemP and patQEnd, and only the pop landed.  The slots are
 //     read into locals at the top of the mod now, before anything is written.
+//
+// Mode 2 is the gsub shape: the same answer find gives, plus the capture count
+// in the third register so the loop knows how many of the next nine it must
+// read, and plus the whole match in the first when the pattern captured
+// nothing.  gsub's own loop is PUC's and three of its rules are not the
+// matcher's, which is where the time went when this was ported:
+//   - The unmatched text between one match and the next is copied when the
+//     match lands, not before it, so a find's a can be past the loop's cursor.
+//     A step that does not match copies exactly one character and does not count
+//     as a replacement.
+//   - The loop stops when a match ends where the last one ended, which is
+//     because lstrlib compares e with lastmatch and not because the matcher
+//     refuses the end of the subject: find("abc", "a*", 4) is 4 3, and "aaa" on
+//     "a*" is one replacement for the same reason.
+//   - A leading ^ gives one match: the loop breaks after it, whatever the limit.
+// A function replacement gets the captures, or the whole match when there are
+// none, and not the match and then the captures; a table replacement is keyed
+// by the first capture or by the whole match, and a nil or false value from
+// either keeps the matched text rather than dropping it.  Those last two are
+// lstrlib's push_captures and add_table, measured, not remembered.
+
 const PAT_STACK = 200
 
 var patGo: bool = false      // one pattern step per burst, like fmtGo
-var patMode: int = 0         // 0 find, 1 match
+var patMode: int = 0         // 0 find, 1 match, 2 gsub's one match at a time
 var patSrc: string = ""      // the subject
 var patPat: string = ""      // the pattern, with a leading ^ already skipped
 var patPEnd: int = 0         // and its length
@@ -6550,9 +6575,15 @@ mod patBackref(p: int, s: int, ci: int) -> int {
 
 // The next item in the pattern.  $ at the very end is the end anchor, %b and %f
 // are the two items that walk the subject themselves, ( and ) are the captures,
-// and a quantifier with no item in front of it is not an error at all: PUC
-// treats it as an item that matches nothing, so "*l" is a pattern that simply
-// does not match.
+// and a quantifier with no item in front of it is PUC's own dead end, not an
+// error: max_expand wants at least one match of the character it names, so "*l"
+// and "a??b" are patterns that do not match, while "(%d+)-" still finds its
+// minus.  (PUC's lazy branch starts the rest one character early, and "l???" is
+// the one shape where that shows: it matches empty there, not here.)
+//
+// A pattern does match at the end of the subject: find("abc", "a*", 4) is 4 3.
+// What stops gsub's loop on "aaa" after one replacement is not the matcher but
+// str_gsub's own e == lastmatch test, which is a step of the library loop.
 mod patNextItem() {
   if patP >= patPEnd {
     patSt = 5
@@ -7003,22 +7034,36 @@ mod patSetRetry() {
 
 // The whole pattern matched at patStart.  find reports the two positions, an
 // empty match ending one before it starts, and then one value per capture; match
-// reports the captures, or the match itself when the pattern has none.  A
-// capture still open here is PUC's "unfinished capture", and an answer that will
-// not fit the expression's register window is refused rather than written over
-// the values after it.
+// reports the captures, or the match itself when the pattern has none.  Mode 2
+// is one step of string.gsub's loop, and answers the two positions, how many
+// captures there are, and then the captures, so the piece above can index them
+// without counting nils.  A capture still open here is PUC's "unfinished
+// capture", and an answer that will not fit the expression's register window is
+// refused rather than written over the values after it.
 mod patDone() {
   if patCapN > 0 {
     patErr = "unfinished capture"
     patSt = 8
-  } else if patMode == 0 {
+  } else if patMode == 0 || patMode == 2 {
     vtag[nxDst] = 6
     vnum[nxDst] = patStart + 1.0
     vstr[nxDst] = ""
     vtag[nxDst + 1] = 6
     vnum[nxDst + 1] = patI * 1.0
     vstr[nxDst + 1] = ""
-    if 2 + patNCap > MAXVALS {
+    if patMode == 2 {
+      vtag[nxDst + 2] = 6
+      vnum[nxDst + 2] = patNCap * 1.0
+      vstr[nxDst + 2] = ""
+      if 3 + patNCap > MAXVALS {
+        patErr = "too many captures to return"
+        patSt = 8
+      } else {
+        patAOff = 3
+        patAn = 1
+        patSt = 16
+      }
+    } else if 2 + patNCap > MAXVALS {
       patErr = "too many captures to return"
       patSt = 8
     } else {
@@ -7759,11 +7804,13 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
     }
   } else if fid == 20 {
     // _pat(mode, s, p [, init [, plain]]): the pattern matcher.  mode 0 is
-    // find and 1 is match.  All of this is argument checking and setup; the
-    // matching is the machine at the top of vmStep, which writes its answers
-    // into this call's own registers the way the _fmt machine does.
+    // find, 1 is match and 2 is one step of string.gsub's loop, which answers
+    // the two positions, the number of captures and the captures.  All of this
+    // is argument checking and setup; the matching is the machine at the top of
+    // vmStep, which writes its answers into this call's own registers the way
+    // the _fmt machine does.
     let mode = toInt(numArg(vTag(a + 1), vNum(a + 1)))
-    let nm = if mode == 0 then "find" else "match"
+    let nm = if mode == 0 then "find" else if mode == 1 then "match" else "gsub"
     // Only the arguments that were actually passed may be read: a register past
     // nargs still holds whatever the caller's previous call left in it, and a
     // find whose init came from there is a find with a boolean init.
@@ -7795,8 +7842,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
     }
     if !vmFailed {
       // only nil and false are false, so a plain of 0 or "" is plain all the same
-      patPlain = mode == 0 && !(pl == 0 || pl == 3 && plv == 0.0)
-      patAnchor = false
+      patPlain = mode == 0 && !(pl == 0 || pl == 3 && plv == 0.0)      patAnchor = false
       patPSkip = 0
       // a leading ^ is the anchor, but not on the plain path, which is a
       // literal search and never looks at the pattern's meaning
@@ -8703,10 +8749,18 @@ mod libStrFmt(p: string) -> string {
       then LIB_str_fmt else ""
 }
 
+// gsub's replacement walk scans for '%' with string.find, so it brings the pat
+// piece with it; libStrPat then stands down so the program pays for it once.
 mod libStrPat(p: string) -> string {
-  return if srcUses(p, "string.find") || srcUses(p, "string.match")
-      || srcUsesField(p, "find") || srcUsesField(p, "match")
+  return if (srcUses(p, "string.find") || srcUses(p, "string.match")
+      || srcUsesField(p, "find") || srcUsesField(p, "match"))
+      && !(srcUses(p, "string.gsub") || srcUsesField(p, "gsub"))
       then LIB_str_pat else ""
+}
+
+mod libStrGsub(p: string) -> string {
+  return if srcUses(p, "string.gsub") || srcUsesField(p, "gsub")
+      then LIB_str_pat .. LIB_str_gsub else ""
 }
 
 mod libStrMisc(p: string) -> string {
@@ -8839,8 +8893,10 @@ on goParse {
   let libN = libStrFmt(program)
   let libO = libIo(program)
   let libP = libStrPat(program)
+  let libQ = libStrGsub(program)
   let lib = libA .. libB .. libC .. libD .. libE .. libF .. libG
     .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO .. libP
+    .. libQ
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program
   llen = lsrc.Length()

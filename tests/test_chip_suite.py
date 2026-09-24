@@ -60,6 +60,12 @@ SKIP = {
     # non-function.  xpcall(f, print) -- the same shape, a different slot --
     # is correct, and so is every form of pcall.
     "xpcall-tostring": "a call with tostring as its second argument loses one",
+    # A `local function` inside a function literal that is assigned to a field
+    # is not bound, so calling it is "attempt to call".  The same nesting under
+    # a top-level `local function` works, and so does `local g = function`, so
+    # it is the field assignment that loses the name -- which is why every
+    # library piece spells a nested function `local f = function(...) ... end`.
+    "nested-local-function": "a local function in a field-assigned literal is unbound",
 }
 
 # Extra VM ticks / timeouts for heavy but reachable cases.
