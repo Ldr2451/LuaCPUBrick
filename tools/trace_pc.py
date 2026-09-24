@@ -79,7 +79,7 @@ def hook(s, tick):
     for name, nid in var_watch.items():
         vals.append('%s=%s' % (name, s.vars.get(nid)))
     head = " ".join("%s=%s" % (w, s.vars.get(ids[w])) for w in WATCH)
-    rows.append("pc=%s %s %s" % (pc, head, " ".join(vals)))
+    rows.append("t=%-5s pc=%s %s %s" % (tick, pc, head, " ".join(vals)))
 
 r = sim.run(max_ticks=int(os.environ.get('TRACE_TICKS', '6000')), on_tick=hook)
 print("log:", repr(r.get('log')), "err:", repr(r.get('outGlobals', {}).get('err')))

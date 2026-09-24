@@ -51,7 +51,6 @@ def mod_body(name):
 
 # 1. builtins: ids, reserved slots, fid dispatch ---------------------------
 n_builtin = len(m.BUILTINS)
-check("builtin-count", n_builtin == 13, f"got {n_builtin}")
 ids = sorted(fid for _, fid in m.BUILTINS)
 check("builtin-ids-contiguous", ids == list(range(n_builtin)), f"got {ids}")
 nb_ws = re.search(r"const NB = (\d+)", WS)
@@ -80,6 +79,17 @@ for arr, n in (("GTAG_INIT", None), ("GNUM_INIT", None)):
                      WS).group(1).split(",")
     check(f"{arr}-len", len(vals) == len(model_order),
           f"{len(vals)} vs {len(model_order)}")
+    if len(vals) == len(model_order):
+        globals()[arr] = [v.strip() for v in vals]
+# a builtin's slot must be a function (tag 4) whose num is its fid: the dispatch
+# reads the fid straight out of the value, so a slot pointing at the wrong number
+# is a silently different builtin
+for name, fid in m.BUILTINS:
+    slot = model_order.index(name)
+    check(f"builtin-slot-tag-{name}", GTAG_INIT[slot] == "4",
+          f"slot {slot} has tag {GTAG_INIT[slot]}")
+    check(f"builtin-slot-fid-{name}", float(GNUM_INIT[slot]) == fid,
+          f"slot {slot} has num {GNUM_INIT[slot]}, fid {fid}")
 
 # 3. limits -----------------------------------------------------------------
 # Every limit is written in lua.ws as a const and mirrored in spec.py; the

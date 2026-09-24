@@ -180,7 +180,7 @@ const MAXVALS = 16
 // at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
 // means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
 // the dispatch case.  test_ws_consistency.py checks all four line up.
-const NB = 13
+const NB = 14
 
 // Library sources, prepended on demand (see libIter and friends).  These are
 // ordinary Lua: the parser sees them exactly like the user's program.  They are
@@ -190,6 +190,7 @@ const NB = 13
 // the parser does not take a dotted name on `function` yet.
 const LIB_iter = "function _ipairs_iter(t, i) i = i + 1 local v = t[i] if v ~= nil then return i, v end end\nfunction ipairs(t) return _ipairs_iter, t, 0 end\nfunction pairs(t) return next, t, nil end\n"
 const LIB_str_index = "string = string or {}\nstring.len = function(s) return #s end\nstring.sub = function(s, i, j)\n  local l = #s\n  i = i or 1\n  j = j or -1\n  if i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end\n  if j < 0 then j = l + j + 1 elseif j > l then j = l end\n  if i > j then return \"\" end\n  return _s(1, s, i - 1, j - i + 1)\nend\nstring.byte = function(s, i, j)\n  i = i or 1\n  j = j or i\n  if i < 0 then i = #s + i + 1 end\n  if j < 0 then j = #s + j + 1 end\n  if i < 1 then i = 1 end\n  if j > #s then j = #s end\n  if i > j then return end\n  if i == j then return _s(4, s, i - 1, 0) end\n  return _s(4, s, i - 1, 0), string.byte(s, i + 1, j)\nend\nstring.char = function(...)\n  local r = \"\"\n  for i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\n  return r\nend\n"
+const LIB_str_fmt = "string = string or {}\nstring.format = _fmt\n"
 const LIB_str_case = "string = string or {}\nstring.upper = function(s) return _s(2, s) end\nstring.lower = function(s) return _s(3, s) end\n"
 const LIB_str_misc = "string = string or {}\nstring.rep = function(s, n, sep)\n  if n <= 0 then return \"\" end\n  sep = sep or \"\"\n  local r = s\n  for i = 2, n do r = r .. sep .. s end\n  return r\nend\nstring.reverse = function(s)\n  local r = \"\"\n  for i = #s, 1, -1 do r = r .. _s(1, s, i - 1, 1) end\n  return r\nend\n"
 const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775807 - 1\n"
@@ -1197,6 +1198,7 @@ mod parseInit() {
   gDeclare("_s")
   gDeclare("_m")
   gDeclare("unpack")
+  gDeclare("_fmt")
   gDeclare("inInt0")
   gDeclare("outInt0")
   // The runtime wires the latches and outputs straight into these slots, so
@@ -3820,6 +3822,15 @@ var nxActive: bool = false
 var nxSlot: int = 0
 var nxDst: int = 0
 var nxPc: int = 0
+var nxMode: int = 0
+// One micro-step per burst.  vmBurst calls vmStep four times, so the whole VM
+// body -- and this state machine with it -- is inlined four times and entered up
+// to four times in one tick.  Extra hops are harmless for next()'s walk but not
+// for a state machine: each inlined copy reads the state the earlier copies wrote
+// in an order the graph does not define, and the walk takes a wrong branch (the
+// spec's conversion character came out as a literal).  vmBurst raises this, the
+// first copy consumes it.
+var fmtGo: bool = false
 var lenChase: bool = false
 var lenTid: int = 0
 var latchN0: float = 0.0
@@ -3906,10 +3917,10 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
 // (inputs filled from the latches), 19..31 builtins (print, type, tostring,
-// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack) as
+// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt) as
 // functions with ids 0..NB-1, then the two int globals.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 0.0, 0.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -4220,6 +4231,565 @@ mod nxStep() {
   }
 }
 
+// ================================================================= _fmt
+//
+// string.format as a WireScript micro-step: one character of the spec, or one
+// digit, per tick, stepped from nxStep like next() is.  This hunk is installed
+// and the suite covers it; lib/fmt_gate_draft.txt is the extracted copy of it,
+// with the findings that took the builds to get:
+//
+//   python -u tools/fmtdraft.py --check      what lua.ws has
+//   python -u tools/fmtdraft.py --extract    save this hunk back to the draft
+//
+// Why a gate and not the library: the PUC-verified Lua implementation of this
+// function is lib/str_format.lua, 10769 characters, and the lexer runs at four
+// characters per tick, so prepending it cost 2692 ticks of boot per program --
+// about 45 seconds in-game.  As a gate it costs +3,308 nodes and +6,026 wires
+// (68,134 -> 71,442) and 0 boot ticks, and a "%d" format call runs in 0.2s of
+// sim time where the Lua version took 9.4s.
+//
+// State: %d %i %u %s %q %%, every flag (- + space # 0), width, precision and
+// the error messages all match lua5.5, case by case, in the fmt-* suite cases.
+// Not yet: %x %X %o %c, and %f %e %g (lib/str_format.lua has the algorithm and
+// the notes on why it needs a Dekker two-product).
+//
+// The rules this shape follows, each one learned by getting it wrong:
+//
+//   - fetch a character in a state of its own, consume it in the next.  A value
+//     gate fed by a variable the same mod writes reads the NEW value, so a state
+//     that read the character at fmtPos and then advanced fmtPos walked one
+//     character ahead of the spec: every conversion came out as its own
+//     conversion character ("%d" -> "d", "%s|%s" -> "s|s").
+//   - the walk enters at the fetch state, never at the literal state, or the
+//     first character is skipped.
+//   - a state that hands back to the walk goes through the fetch, because
+//     fmtCh still holds the character the previous state consumed: going straight
+//     to the literal state appended it ("%d" -> "42d").
+//   - a condition on a file-level var, NESTED inside another if, is unreliable
+//     where the mod around it is inlined more than once: fmtPadStep's
+//     `if fmtPadLeft` chose the else arm whatever the var held, and swapping the
+//     two arms changed nothing.  vmStep is inlined four times and the compiler
+//     shares one Get per var across the copies; the lexer's chain has the same
+//     shape and works, because lexChunk inlines it once.  So the rule of thumb
+//     is to hoist the test to the top of the mod or take the flag as a
+//     parameter, and tools/wswarn.py flags the shape as a candidate.
+//   - one micro-step per burst.  vmBurst calls vmStep four times, so this whole
+//     machine is inlined four times and entered up to four times in one tick;
+//     fmtGo is raised by vmBurst and consumed by the first copy, so a state sees
+//     one write per tick.
+//   - a write at the top of a mod, followed by an else-if chain that deep with
+//     mod calls in it, is silently dropped: fmtPos = fmtPos + 1 at the top of
+//     fmtConv never happened, so the conversion was re-read as a literal.  The
+//     advance is repeated in every arm instead.
+//   - an int flag var read in a condition compares through a placeholder that
+//     reads 0, so fmtPadLeft/fmtPadZero are bools and every assignment that
+//     depends on a comparison is written as an if/else.
+//
+// WireScript traps measured while building this, all of them in tools/wswarn.py
+// now, and all of them worth knowing before writing any more WireScript:
+//   - `%`, `for`, and a mod call on the right of `..` all leave a placeholder
+//     that reads 0, or fail as "attempt to call"
+//   - a string `+`, and a chain mixing `..` with `+` -> placeholder
+//   - `x = a == b` -> placeholder (assign a constant and set it in an if)
+//   - a mod and a var sharing a name (fmtNum, fmtZero) -> placeholder
+//   - `c >= "0"` on strings -> compiles, reads false; compare codepoints
+//   - a string returned from a mod: equal by ==, but ToCharCode() reads 0, so
+//     read characters into a var and test the var in a later state
+//   - an assignment at the bottom of a deep else-if chain silently does not take
+//     effect: fmtState = 7 in the %d branch never ran.  One mod per state is
+//     the fix, and the reason fmtLit/fmtFlag/fmtWidthStep/... exist separately.
+//   - tools/vargraph.py is what settled the rest: it lists the var nodes behind
+//     a name, how many write it, and what fires each write.
+//
+// ---------------------------------------------------------------- _fmt
+//
+// string.format as a micro-step: one character of the spec, or one digit, per
+// tick.  The library is prepended Lua source and the lexer runs at four
+// characters per tick, so the PUC-verified Lua implementation of this function
+// (kept as lib/str_format.lua) cost 10769 characters -- 2692 ticks of boot, about
+// 45 seconds in-game, before the program so much as started.  A gate pays
+// nothing for the source and one state machine covers the loops, so this is the
+// cheaper host by two orders of magnitude.  The semantics are settled by that
+// reference: 107 of 108 cases match lua5.5 byte for byte.
+// The argument register of the call being formatted, absolute: fmtBase + 1 +
+// fmtArgI.  A mod because a write at the top of a mod is dropped, and an
+// expression in the middle of fmtConv's chain would be too deep for the same
+// reason.
+var fmtSrc: string = ""
+var fmtBase: int = 0          // the call's register base (absolute)
+var fmtArgs: int = 0
+var fmtArgI: int = 0
+var fmtPos: int = 0
+var fmtOut: string = ""
+var fmtBody: string = ""
+var fmtPre: string = ""       // the sign or 0x prefix, kept ahead of zero padding
+var fmtPadAcc: string = ""
+var fmtArg: string = ""
+var fmtNum_: float = 0.0
+var fmtWidth: int = 0
+var fmtPrec: int = 0
+// one int per flag rather than a bitmask: WireScript has no bitwise and, and
+// fmtMinus / fmtZero / ... say what they are
+var fmtMinus: int = 0
+var fmtPlus: int = 0
+var fmtSpace: int = 0
+var fmtHash: int = 0
+var fmtZero: int = 0
+var fmtState: int = 0
+var fmtPad: int = 0
+var fmtNeg: bool = false
+// the padding side and fill are bools, not the 0/1 ints the flags are: an int
+// flag var read in a condition compares through a placeholder that reads 0, and
+// %-6d silently came out right-justified
+var fmtPadLeft: bool = false
+var fmtPadZero: bool = false
+var fmtCh: string = ""
+var fmtEof: bool = false
+var fmtTo: int = 0
+// the quoted walk has its own cursor: it used to share fmtPos with the spec walk
+// and reset it to 0, so after %q the spec was read from the start again and the
+// conversion ran twice ("%q" of "" asked for argument #3)
+var fmtQPos: int = 0
+
+// states: 0 literal, 1 flags, 2 width, 3 precision, 4 conversion, 5 padding,
+// 6 finish a conversion, 7 one integer digit, 8 one quoted byte, 9 one
+// precision zero
+// The character at a 1-based position is read inline at each use rather than
+// from a mod: a string returned from a mod compares equal to the right text but
+// its ToCharCode() reads 0, so a digit test on it never fires.
+mod fmtArgAt() -> int {
+  return fmtBase + 1 + fmtArgI
+}
+
+// The name of a value tag, for error messages: PUC says "got string" for a
+// wrong argument and "got no value" for a missing one, so the caller passes the
+// tag it would have read and says "no value" itself when there is none.
+mod typeName(t: int) -> string {
+  return if t == 0 then "nil" else if t == 1 || t == 6 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else if t == 5 then "table" else "userdata"
+}
+
+// The argument number for an error message.  Concatenating an int prints it as
+// a float, so "bad argument #5.0" would come out; the digits are spelled out.
+mod fmtArgName() -> string {
+  let n = 1 + fmtArgI
+  let tens = floor(n / 10.0)
+  let ones = n - tens * 10.0
+  let a = FromCharCode(48 + tens).Character
+  let b = FromCharCode(48 + ones).Character
+  return if n < 10 then b else a .. b
+}
+
+mod fmtDone() {
+  vtag[nxDst] = 2
+  vnum[nxDst] = 0.0
+  vstr[nxDst] = fmtOut
+  retCountV = 1
+  nxActive = false
+  vmPc = nxPc + 1
+}
+
+// The quoted form of one byte: PUC 5.5 writes a backslash and a real newline
+// for a newline, not "\n", so a quoted multi-line string stays one pasteable
+// literal; a tab is a numeric escape.  The digits are written without a loop:
+// anything below 32 is one or two digits, and 127 is the only three-digit one.
+mod fmtQuoteByte(b: int) -> string {
+  if b == 34 {
+    return "\\\""
+  } else if b == 92 {
+    return "\\\\"
+  } else if b == 10 {
+    return "\\\n"
+  } else if b == 13 {
+    return "\\r"
+  } else if b == 0 {
+    return "\\0"
+  } else if b == 127 {
+    return "\\127"
+  } else if b < 10 {
+    let one = b
+    let ch1 = FromCharCode(48 + one).Character
+    return "\\" .. ch1
+  } else if b < 32 {
+    // no `%` operator in WireScript, so the tens digit is a floor division
+    let tens = floor(b / 10.0)
+    let ones = b - tens * 10.0
+    let ch2 = FromCharCode(48 + tens).Character
+    let ch3 = FromCharCode(48 + ones).Character
+    return "\\" .. ch2 .. ch3
+  } else {
+    return FromCharCode(b).Character
+  }
+}
+
+// One mod per state.  A single fmtStep with the states in one long else-if chain
+// nested three deep lost the assignment at the bottom: `fmtState = 7` in the %d
+// branch never took effect, so the state machine ran the conversion twice and
+// read past the end of the spec.  The %s branch, one level shallower, worked --
+// which is exactly the kind of neighbour-is-fine trap that says the whole chain
+// should be flat.  One state per mod also gives each step a name that says what
+// it does, which a numbered branch cannot.
+// The character at the cursor, fetched in a state of its own, then handed to
+// whichever state asked for it (fmtTo).  A value gate fed by a variable that the
+// same mod writes reads the *new* value, so a state that both read the character
+// at fmtPos and advanced fmtPos walked one character ahead of the spec: %d came
+// out as "d" and %s|%s as "s|a".  Fetching in one state and consuming in the
+// next means the cursor is written in one tick and read in the next, which no
+// evaluation order in the graph can get wrong.  It costs one tick per spec
+// character, against the lexer's four.
+mod fmtFetch() {
+  if fmtPos < fmtSrc.Length() {
+    fmtCh = fmtSrc.Substring(fmtPos, 1)
+    fmtEof = false
+  } else {
+    fmtCh = ""
+    fmtEof = true
+  }
+  fmtState = fmtTo
+}
+
+// The same fetch for the argument %q walks, which is not the spec.  fmtEof is a
+// flag rather than an empty fmtCh because %q of a string with a NUL in it must
+// escape it, not stop there.
+mod fmtQFetch() {
+  if fmtQPos < fmtArg.Length() {
+    fmtCh = fmtArg.Substring(fmtQPos, 1)
+    fmtEof = false
+  } else {
+    fmtCh = ""
+    fmtEof = true
+  }
+  fmtState = 8
+}
+
+mod fmtLit() {
+  if fmtEof {
+    fmtDone()
+  } else if fmtCh == "%" {
+    fmtMinus = 0
+    fmtPlus = 0
+    fmtSpace = 0
+    fmtHash = 0
+    fmtZero = 0
+    fmtWidth = 0
+    fmtPrec = -1
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else {
+    fmtOut = fmtOut .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtTo = 0
+    fmtState = 10
+  }
+}
+
+mod fmtFlag() {
+  if fmtCh == "-" {
+    fmtMinus = 1
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else if fmtCh == "+" {
+    fmtPlus = 1
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else if fmtCh == " " {
+    fmtSpace = 1
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else if fmtCh == "#" {
+    fmtHash = 1
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else if fmtCh == "0" {
+    fmtZero = 1
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else {
+    fmtTo = 2
+    fmtState = 10
+  }
+}
+
+mod fmtWidthStep() {
+  let cp = if 0 < fmtCh.Length() then fmtCh.ToCharCode().Codepoint else -1
+  if 48 <= cp && cp <= 57 {
+    fmtWidth = fmtWidth * 10 + (cp - 48)
+    fmtPos = fmtPos + 1
+    fmtTo = 2
+    fmtState = 10
+  } else if fmtCh == "." {
+    fmtPos = fmtPos + 1
+    fmtPrec = 0
+    fmtTo = 3
+    fmtState = 10
+  } else {
+    fmtTo = 4
+    fmtState = 10
+  }
+}
+
+mod fmtPrecStep() {
+  let cp = if 0 < fmtCh.Length() then fmtCh.ToCharCode().Codepoint else -1
+  if 48 <= cp && cp <= 57 {
+    fmtPrec = fmtPrec * 10 + (cp - 48)
+    fmtPos = fmtPos + 1
+    fmtTo = 3
+    fmtState = 10
+  } else {
+    fmtState = 4
+  }
+}
+
+// The conversion character, consumed here.  Each conversion sets up its own
+// state and checks its own argument, so %% does not consume one and a missing
+// one is reported against the conversion that wanted it.  The cursor advance is
+// repeated in every branch rather than written once at the top: a write at the
+// top of a mod followed by a chain this deep, with mod calls in it, is silently
+// dropped, and the walk then re-read the conversion character as a literal
+// ("%d" -> "42d").
+mod fmtConv() {
+  if fmtCh == "%" {
+    fmtPos = fmtPos + 1
+    fmtBody = "%"
+    fmtPre = ""
+    fmtState = 6
+  } else if fmtCh == "s" || fmtCh == "q" {
+    fmtPos = fmtPos + 1
+    fmtConvStr(fmtCh)
+  } else if fmtCh == "d" || fmtCh == "i" || fmtCh == "u" {
+    fmtPos = fmtPos + 1
+    fmtConvInt()
+  } else {
+    fmtPos = fmtPos + 1
+    vmFail("invalid conversion '%" .. fmtCh .. "' to 'format'")
+  }
+}
+
+// %s and %q.  %q quotes a string and leaves everything else as %s does, which
+// is why the tag is tested here rather than in the walk.
+mod fmtConvStr(c: string) {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vTag(ab)
+    fmtArg = fmtVal(t, vNum(ab), vStr(ab))
+    if c == "q" && t == 2 {
+      fmtBody = "\""
+      fmtQPos = 0
+      fmtState = 11
+    } else {
+      fmtBody = fmtArg
+      if 0 <= fmtPrec && fmtPrec < fmtBody.Length() {
+        fmtBody = fmtBody.Substring(0, fmtPrec)
+      }
+      fmtPre = ""
+      fmtState = 6
+    }
+  }
+}
+
+mod fmtConvInt() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vTag(ab)
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else if vNum(ab) != floor(vNum(ab)) {
+      vmFail("number has no integer representation")
+    } else {
+      fmtNeg = vNum(ab) < 0.0
+      fmtNum_ = if fmtNeg then 0.0 - vNum(ab) else vNum(ab)
+      fmtBody = ""
+      fmtState = 7
+    }
+  }
+}
+
+// One integer digit per tick.  Digits come out least significant first and are
+// prepended, so no array is needed to reverse them.
+mod fmtDigit() {
+  if fmtNum_ < 1.0 {
+    if fmtBody == "" {
+      // %.0d of zero is the empty string in PUC, not "0"
+      if fmtPrec == 0 {
+        fmtBody = ""
+      } else {
+        fmtBody = "0"
+      }
+    }
+    if 0 < fmtPrec && fmtPrec > fmtBody.Length() {
+      fmtPad = fmtPrec - fmtBody.Length()
+      fmtPadAcc = ""
+      fmtState = 9
+    } else {
+      fmtSign()
+    }
+  } else {
+    let q = floor(fmtNum_ / 10.0)
+    let d = toInt(fmtNum_ - q * 10.0)
+    let ch = FromCharCode(48 + d).Character
+    fmtBody = ch .. fmtBody
+    fmtNum_ = q
+  }
+}
+
+mod fmtSign() {
+  if fmtNeg {
+    fmtBody = "-" .. fmtBody
+  } else if fmtPlus == 1 {
+    fmtBody = "+" .. fmtBody
+  } else if fmtSpace == 1 {
+    fmtBody = " " .. fmtBody
+  }
+  fmtPre = ""
+  fmtState = 6
+}
+
+// One precision zero per tick: WireScript has no loop to unroll for it.  Named
+// for the state, not fmtZero: a mod and a var sharing a name silently
+// miscompiles, so this must not be called fmtZero.
+mod fmtPrecZero() {
+  fmtPad = fmtPad - 1
+  fmtPadAcc = fmtPadAcc .. "0"
+  if fmtPad <= 0 {
+    fmtBody = fmtPadAcc .. fmtBody
+    fmtSign()
+  }
+}
+
+// One byte per tick, escaped the way PUC escapes it.  The byte comes from
+// fmtQFetch, a state earlier, for the same reason fmtLit does not read the
+// cursor itself.
+mod fmtQuoted() {
+  if fmtEof {
+    fmtBody = fmtBody .. "\""
+    fmtPre = ""
+    fmtState = 6
+  } else {
+    let b = fmtCh.ToCharCode().Codepoint
+    let piece = fmtQuoteByte(b)
+    fmtQPos = fmtQPos + 1
+    fmtBody = fmtBody .. piece
+    fmtState = 11
+  }
+}
+
+// Split the sign or 0x prefix off the body, since zero padding goes after it,
+// and decide how the width is filled.
+mod fmtFinish() {
+  let c1 = if 0 < fmtBody.Length() then fmtBody.Substring(0, 1) else ""
+  if c1 == "-" || c1 == "+" || c1 == " " {
+    fmtPre = c1
+    fmtBody = fmtBody.Substring(1, fmtBody.Length() - 1)
+  } else {
+    fmtPre = ""
+  }
+  if fmtBody.Length() >= 2 {
+    let c2 = fmtBody.Substring(0, 2)
+    if c2 == "0x" || c2 == "0X" {
+      fmtPre = fmtPre .. c2
+      fmtBody = fmtBody.Substring(2, fmtBody.Length() - 2)
+    }
+  }
+  // the - flag wins over the 0 flag: %-06d pads with spaces on the right
+  if fmtMinus == 1 {
+    fmtPadLeft = true
+  } else {
+    fmtPadLeft = false
+  }
+  if fmtZero == 1 {
+    fmtPadZero = true
+  } else {
+    fmtPadZero = false
+  }
+  if fmtPadLeft {
+    fmtPadZero = false
+  }
+  fmtPadAcc = ""
+  fmtPad = fmtWidth - fmtPre.Length() - fmtBody.Length()
+  if fmtPad <= 0 {
+    fmtOut = fmtOut .. fmtPre .. fmtBody
+    // back to the walk through the fetch: fmtCh still holds the conversion
+    // character, and entering the literal state directly appended it
+    fmtTo = 0
+    fmtState = 10
+  } else {
+    fmtState = 5
+  }
+}
+
+// One padding character per tick.  Three sides, because the sign goes in a
+// different place in each: right-justified spaces go before it (%6d of -42 is
+// "   -42"), zero padding after it ("%06d" is "-00042"), and left justification
+// after the number.  The side is read at the top level of the mod and each arm
+// carries its own end-of-loop test, because a nested condition on a file-level
+// var is unreliable in a mod this inlined (see the header).
+mod fmtPadStep() {
+  fmtPad = fmtPad - 1
+  if fmtPadLeft {
+    fmtPadAcc = fmtPadAcc .. " "
+    if fmtPad <= 0 {
+      fmtOut = fmtOut .. fmtPre .. fmtBody .. fmtPadAcc
+      fmtTo = 0
+      fmtState = 10
+    }
+  } else if fmtPadZero {
+    fmtPadAcc = fmtPadAcc .. "0"
+    if fmtPad <= 0 {
+      fmtOut = fmtOut .. fmtPre .. fmtPadAcc .. fmtBody
+      fmtTo = 0
+      fmtState = 10
+    }
+  } else {
+    fmtPadAcc = fmtPadAcc .. " "
+    if fmtPad <= 0 {
+      fmtOut = fmtOut .. fmtPadAcc .. fmtPre .. fmtBody
+      fmtTo = 0
+      fmtState = 10
+    }
+  }
+}
+
+mod fmtStep() {
+  if fmtState == 0 {
+    fmtLit()
+  } else if fmtState == 1 {
+    fmtFlag()
+  } else if fmtState == 2 {
+    fmtWidthStep()
+  } else if fmtState == 3 {
+    fmtPrecStep()
+  } else if fmtState == 4 {
+    fmtConv()
+  } else if fmtState == 5 {
+    fmtPadStep()
+  } else if fmtState == 6 {
+    fmtFinish()
+  } else if fmtState == 7 {
+    fmtDigit()
+  } else if fmtState == 8 {
+    fmtQuoted()
+  } else if fmtState == 9 {
+    fmtPrecZero()
+  } else if fmtState == 10 {
+    fmtFetch()
+  } else {
+    fmtQFetch()
+  }
+}
+
+
 // Unlink a slot from its table's insertion chain.
 mod tblUnlink(tid: int, sl: int) {
   let pv = tPrev[sl]
@@ -4366,7 +4936,14 @@ mod vmStep() {
   if lenChase {
     lenStep()
   } else if nxActive {
-    nxStep()
+    if nxMode == 1 {
+      if fmtGo {
+        fmtGo = false
+        fmtStep()
+      }
+    } else {
+      nxStep()
+    }
   } else if cmpActive {
     cmpStep()
   } else if !vmHalted {
@@ -4700,6 +5277,7 @@ mod vmStep() {
               nxSlot = sl
               nxDst = vmBase + a
               nxPc = vmPc
+              nxMode = 0
               nxActive = true
               nxStep()
               advanced = true
@@ -4799,6 +5377,57 @@ mod vmStep() {
               if 2 <= cnt { tblFill(a + 1, tid, lo + 1) }
               if 1 <= cnt { tblFill(a, tid, lo) }
               retCountV = cnt
+            }
+          }
+        } else if fid == 13 {
+          // _fmt(fmt, ...): string.format, as a micro-step.  lib/str_format.lua
+          // is the PUC-verified Lua version of this algorithm; as prepended
+          // source it cost 2692 ticks of lexing per program, so it lives here
+          // and the library only aliases the name (LIB_str_fmt).
+          if nargs < 1 {
+            vmFail("bad argument #1 to 'format' (string expected, got no value)")
+          } else {
+            // PUC reads the format with luaL_checkstring, which takes a number as
+            // a string: string.format(5) is "5", not an error
+            if vTag(a + 1) == 2 {
+              fmtSrc = vStr(a + 1)
+            } else if vTag(a + 1) == 1 || vTag(a + 1) == 6 {
+              fmtSrc = fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1))
+            } else {
+              vmFail("bad argument #1 to 'format' (string expected, got "
+                     .. typeName(vTag(a + 1)) .. ")")
+            }
+            if !vmFailed {
+              fmtBase = vmBase + a
+              fmtArgs = nargs - 1
+              fmtArgI = 0
+              fmtPos = 0
+              fmtQPos = 0
+              fmtOut = ""
+              fmtBody = ""
+              fmtPre = ""
+              fmtPadAcc = ""
+              fmtPad = 0
+              fmtNeg = false
+              fmtWidth = 0
+              fmtPrec = -1
+              fmtMinus = 0
+              fmtPlus = 0
+              fmtSpace = 0
+              fmtHash = 0
+              fmtZero = 0
+              fmtPadLeft = false
+              fmtPadZero = false
+              fmtCh = ""
+              fmtEof = false
+              // start at the fetch, not at the literal state: the walk has not
+              // read a character yet, and entering at the literal state skipped
+              // the first one (every spec came out one character late)
+              fmtState = 10
+              nxDst = vmBase + a
+              nxPc = vmPc
+              nxMode = 1
+              nxActive = true
             }
           }
         } else {
@@ -5345,6 +5974,11 @@ mod libStrCase(p: string) -> string {
       then LIB_str_case else ""
 }
 
+mod libStrFmt(p: string) -> string {
+  return if srcUses(p, "string.format") || srcUsesField(p, "format")
+      then LIB_str_fmt else ""
+}
+
 mod libStrMisc(p: string) -> string {
   return if srcUses(p, "string.rep") || srcUses(p, "string.reverse")
       || srcUsesField(p, "rep") || srcUsesField(p, "reverse")
@@ -5411,6 +6045,7 @@ mod libTabSort(p: string) -> string {
 }
 
 mod vmBurst() {
+  fmtGo = true
   vmStep()
   vmStep()
   vmStep()
@@ -5465,8 +6100,9 @@ on goParse {
   let libK = libTabList(program)
   let libL = libTabConcat(program)
   let libM = libTabSort(program)
+  let libN = libStrFmt(program)
   let lib = libA .. libB .. libC .. libD .. libE .. libF .. libG
-    .. libH .. libI .. libJ .. libK .. libL .. libM
+    .. libH .. libI .. libJ .. libK .. libL .. libM .. libN
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program
   llen = lsrc.Length()

@@ -122,6 +122,37 @@
   the suite is a user-visible regression in the chip, and the suite prints
   per-case seconds precisely so it cannot hide.
 
+## Writing WireScript that survives the compiler
+These are measured traps, not style rules. `tools/wswarn.py` flags the shapes it
+can see and `tools/vargraph.py <name>` answers the rest (how many var nodes back
+a name, how many write it, what fires each write). The `_fmt` header in
+`lua.ws` records which one cost which bug.
+- **A value gate fed by a var the same mod writes reads the NEW value.** Fetch a
+  character (or anything positional) in one state and consume it in the next, so
+  the cursor is written in one tick and read in the next. Reading `s[pos]` and
+  then `pos = pos + 1` in one mod walks one step ahead of the data.
+- **A condition on a file-level `var`, nested inside another `if`, is unreliable
+  where the mod around it is inlined more than once.** `vmStep` is inlined four
+  times (`vmBurst` calls it four times a tick) and the compiler shares one Get
+  per var across the copies, so the nested arm silently loses; the lexer's chain
+  has the same shape and works, because `lexChunk` inlines it once. Hoist the
+  test to the top of the mod or take the flag as a parameter.
+- **A write at the top of a mod, followed by an `else if` chain that deep with
+  mod calls in it, is dropped.** One mod per state, and repeat the write in each
+  arm rather than once at the top.
+- `x = a == b` leaves a placeholder that reads 0, and an int flag var read in a
+  condition compares through one too: set flags with an `if`/`else` and keep the
+  condition flags as `bool`.
+- A mod call on the right of `..` is "attempt to call" (the print handler and a
+  `vmFail` argument get away with it, so `wswarn`'s hit there is a false
+  positive); a string `+`, a chain mixing `..` with `+`, `%`, `for`, and a mod
+  and a var sharing a name all leave placeholders; `c >= "0"` compiles and reads
+  false; a string returned from a mod compares equal but its `ToCharCode()` is 0.
+- `vmBurst` is four `vmStep` calls in one tick, so anything with cross-instruction
+  state inside `vmStep` is entered up to four times per tick. `next`'s walk is
+  fine with that (extra hops are harmless); a state machine is not — it needs a
+  one-per-burst latch, as `fmtGo` is.
+
 ## Fixing bugs
 - Fix the **class**, not the instance. When something breaks, ask what made it
   possible and make that harder next time; a one-line patch that leaves the trap

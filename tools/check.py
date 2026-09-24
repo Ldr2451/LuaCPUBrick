@@ -44,8 +44,16 @@ with Elapsed("check(%d programs)" % len(progs)):
                 want = '<oracle failed: %s>' % e
         mark = '    '
         if want is not None:
-            mark = 'OK  ' if (got == want and not err) else 'DIFF'
+            if err:
+                # an error case: the contract is the message, not the log, and the
+                # oracle's stderr carries a "lua: " prefix and a stack trace
+                oerr = (o.get('stderr') or '').strip()
+                mark = 'OK  ' if err in oerr else 'DIFF'
+                if mark == 'DIFF':
+                    print('     lua stderr=%r' % (oerr[:200],), flush=True)
+            else:
+                mark = 'OK  ' if got == want else 'DIFF'
         print('%s %5.1fs chip=%r err=%r :: %s' % (mark, dt, got, err, src),
               flush=True)
-        if want is not None and got != want:
+        if want is not None and got != want and not err:
             print('     lua=%r' % (want,), flush=True)

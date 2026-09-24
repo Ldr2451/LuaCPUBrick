@@ -8,9 +8,12 @@ expectations). Moved verbatim from the retired Python model;
 "runtimerr".
 """
 import os
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TINYLUA = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+import spec
 
 DEMO_SRC = open(os.path.join(TINYLUA,
                              "demo.lua"), encoding="utf-8").read()
@@ -267,6 +270,30 @@ TESTS = [
      "print(({f = M.f}):f(1), M.f(M, 2))", None, "run"),
     ("meth-two-calls", "local s = 'ab' print(s:upper(), s:upper(), s:len())",
      None, "run"),
+    # string.format is a gate builtin (_fmt), a micro-step like next(); these are
+    # the shapes that were each wrong at least once while it was built
+    ("fmt-int", "print(string.format('%d', 42), string.format('%d', -42), "
+     "string.format('%i %u', 7, 8))", None, "run"),
+    ("fmt-int-zero", "print(string.format('%d', 0), string.format('%.3d', 5), "
+     "string.format('%.0d', 0))", None, "run"),
+    ("fmt-str", "print(string.format('%s|%s', 'a', 2), string.format('%s', 1.5), "
+     "string.format('%s %s', true, nil))", None, "run"),
+    ("fmt-str-prec", "print(string.format('%.2s', 'abcdef'), "
+     "string.format('[%.0s]', 'abc'))", None, "run"),
+    ("fmt-pct", "print(string.format('%%'), string.format('%d%%', 50), "
+     "string.format('a%%b%sc', 'X'))", None, "run"),
+    ("fmt-width", "print(string.format('[%5d]', 42), string.format('%-5d|', 42), "
+     "string.format('%05d', 42))", None, "run"),
+    ("fmt-width-neg", "print(string.format('%6d|', -42), "
+     "string.format('%-06d|', -42), string.format('%+d % d', 7, 7))", None, "run"),
+    ("fmt-q", "print(string.format('%q', 'a' .. string.char(34) .. 'b'), "
+     "string.format('%q', ''), string.format('%q %q', 'x', true))", None, "run"),
+    ("fmt-q-ctl", "local c = string.char print(string.format('%q', "
+     "c(9) .. c(10) .. c(0) .. c(127)))", None, "run"),
+    ("fmt-many", "print(string.format('%s=%d (%s)', 'n', 12, 'x'), "
+     "string.format('%d %s %d', 1, 'two', 3))", None, "run"),
+    ("fmt-num-fmt", "print(string.format(5), string.format('%d', 3.0), "
+     "string.format('%s', print))", None, "run"),
     # math library
     ("math-floor", "print(math.floor(2.7), math.floor(-2.7), math.ceil(2.1), "
      "math.ceil(-2.1))", None, "run"),
@@ -566,11 +593,15 @@ TESTS = [
 
 
 def build_stress():
+    """As many globals as the chip has room for: MAX_GLOBALS less the slots it
+    pre-declares (outputs, inputs, builtins, the two int globals).  Derived from
+    the spec rather than counted by hand, because a hardcoded 30 is one builtin
+    away from being one too many -- which is how adding _fmt broke this case."""
+    n = spec.MAX_GLOBALS - len(spec.GSLOT_ORDER)
     lines = []
-    for k in range(30):
+    for k in range(n):
         lines.append(f"v{k} = {k}*2+1")
-    lines.append("print(" + ", ".join(f"v{k}" for k in range(0, 30, 10)) +
-                 ")")
+    lines.append("print(" + ", ".join(f"v{k}" for k in range(0, n, 10)) + ")")
     return "\n".join(lines) + "\n"
 
 

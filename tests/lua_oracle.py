@@ -176,7 +176,9 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     for call in calls:
         norm.append([norm_val(v) for v in call])
     return {"avail": True, "rc": p.returncode, "calls": norm,
-            "stderr": p.stderr.strip().splitlines()[-1] if p.stderr.strip()
+            # the message is the first line; the last is the tail of the stack
+            # traceback ("[C]: in ?"), which says nothing about what went wrong
+            "stderr": p.stderr.strip().splitlines()[0] if p.stderr.strip()
             else ""}
 
 

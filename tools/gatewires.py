@@ -8,7 +8,12 @@ that is a question about the graph, so answer it from the graph: every
 Expr_String_Substring / CharacterToCodepoint node, what drives each input, and
 which of our variables that driver is.
 
-  python -u tools/gatewires.py [substring|codepoint|fromcode] [filter] [--ask]
+  python -u tools/gatewires.py [substring|codepoint|fromcode] [filter] [--ask] [--exec]
+
+With --exec, each source gate is also checked for whether its Exec input is
+driven.  A value gate fed by Exec_Var_Get only produces a value when the exec
+chain reaches it, so a Get whose Exec is unwired hands the gate its default
+rather than the variable -- which looks exactly like an empty string.
 """
 import os
 import sys
@@ -25,6 +30,7 @@ WANT = {
     'fromcode': 'CodepointToCharacter',
 }[sys.argv[1] if len(sys.argv) > 1 else 'substring']
 filt = sys.argv[2] if len(sys.argv) > 2 else ''
+EXEC = '--exec' in sys.argv
 ASK = None
 if '--ask' in sys.argv:
     from irsims import Sim, Wire as _W
@@ -121,4 +127,10 @@ for nid in sorted(hits):
                     if isinstance(v, str) and v:
                         extra = ' %s=%r' % (key, v[:28])
                         break
-            print('   %-12s <- %s %s%s [%s.%s]' % (p[0], scls, sl, extra, s, sp))
+            note = ''
+            if EXEC and 'Exec_Var_Get' in by_id[s].cls:
+                ex = drives.get((s, 'Exec'), [])
+                note = '  Exec %s' % ('<- ' + by_id[ex[0][0]].cls.split('_')[-1]
+                                      if ex else 'UNWIRED (this Get never fires)')
+            print('   %-12s <- %s %s%s [%s.%s]%s'
+                  % (p[0], scls, sl, extra, s, sp, note))

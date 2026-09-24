@@ -60,12 +60,30 @@ TRAPS = [
     ('string ordering', re.compile(r'[A-Za-z_)\]]\s*(?:>=|<=)\s*"')),
 ]
 
+# A condition on a file-level var, nested inside another if, is unreliable where
+# the mod around it is inlined more than once: measured while building _fmt, where
+# fmtPadStep's `if fmtPadLeft` chose the else arm whatever the var held -- swapping
+# the two arms changed nothing.  vmStep is inlined four times (vmBurst calls it
+# four times a tick) and the compiler shares one Get per var across the copies;
+# the lexer's own chain has the same shape and works, because lexChunk inlines it
+# once.  So this is a prompt to hoist the test or take the flag as a parameter,
+# not a verdict -- the two candidates it prints today are both in the lexer and
+# both work.  Indent is the proxy for "nested"; the file is formatted consistently.
+NESTED = re.compile(r'^\s{4,}(?:}\s*else\s+)?if\s+(!?\w+)\s*\{')
+
 hits = []
 for name, pat in TRAPS:
     for i, l in code:
         if pat.search(strip_strings(l)):
             hits.append((i, name, l.strip()))
             break       # one example per trap is enough to act on
+
+filevars = set(re.findall(r'^var\s+(\w+)', src, re.M))
+for i, l in code:
+    m = NESTED.match(l)
+    if m and m.group(1).lstrip('!') in filevars:
+        hits.append((i, 'nested filevar cond', l.strip()))
+        break
 
 names = {}
 for m in re.finditer(r'^(?:var|mod|const)\s+(\w+)', src, re.M):
