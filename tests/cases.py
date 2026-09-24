@@ -566,16 +566,51 @@ TESTS = [
      "string.find('hello', 'a)'))", None, "run"),
     ("pat-backref", "print(string.find('abc', '%1'))", None, "runtimerr",
      {"expect": {"err": "invalid capture index %1"}}),
-    # Captures are the one part of the matcher that is not here yet: a ( in a
-    # pattern is PUC's capture syntax and the answer has a different shape --
-    # find puts the captures after the two positions, match returns the captures
-    # and not the whole match -- so it is a loud error rather than a silently
-    # wrong arity.  gsub needs them, and comes with them.
-    ("pat-capture", "print(string.find('abc', '()'))", None, "runtimerr",
-     {"expect": {"err": "captures are not supported yet"}}),
-    ("pat-capture-match", "print(string.match('x=1', '(%w+)%s*=%s*(%w+)'))",
-     None, "runtimerr",
-     {"expect": {"err": "captures are not supported yet"}}),
+    # Captures.  PUC 5.5's () is a position capture, not an empty one: it
+    # answers where it stands, as a number, and %1 to %9 compare the subject
+    # against a capture and move both on by its length.  A capture's number is
+    # how many the attempt has opened and its depth is how many are open now,
+    # which is why "(a)(b)" numbers those one and two and "((a))" nests.  A
+    # quantifier inside a capture gives a character back and runs the ) again,
+    # so the ) has to be able to open what it closed.
+    ("pat-capture", "print(string.find('abc', '(a)'))", None, "run"),
+    ("pat-capture-two", "print(string.find('abc', '(a)(b)'))", None, "run"),
+    ("pat-capture-match", "print(string.match('abc', '(a)(b)'))", None, "run"),
+    ("pat-capture-nested", "print(string.find('abc', '((a))'), "
+     "string.find('abc', '(a(b))'))", None, "run"),
+    ("pat-position-capture", "print(string.find('abc', '()'), "
+     "string.match('abc', '()'), string.find('abc', '()b'), "
+     "string.find('abc', '()()a'))", None, "run"),
+    ("pat-capture-greedy", "print(string.find('2026-09-24', "
+     "'(%d+)-(%d+)-(%d+)'))", None, "run"),
+    ("pat-capture-classes", "print(string.match('hello world', "
+     "'(%w+) (%w+)'), string.find('a1b2', '(%a)(%d)'))", None, "run"),
+    ("pat-backref", "print(string.find('aa', '(a)%1'), "
+     "string.find('abab', '(ab)%1'), string.find('aa', '(%a+)%1'))", None,
+     "run"),
+    ("pat-backref-miss", "print(string.find('abc', '()%1'), "
+     "string.find('ab', '(a)(b)%1'))", None, "run"),
+    ("pat-backref-quantified", "print(string.find('abc', '(a)%1*'))", None,
+     "run"),
+    ("pat-backref-invalid", "print(string.find('abc', '(%1)'))", None,
+     "runtimerr",
+     {"expect": {"err": "invalid capture index %1"}}),
+    ("pat-backref-missing", "print(string.find('abc', '(a)%2'))", None,
+     "runtimerr",
+     {"expect": {"err": "invalid capture index %2"}}),
+    ("pat-capture-unfinished", "print(string.find('abc', '(a'))", None,
+     "runtimerr", {"expect": {"err": "unfinished capture"}}),
+    ("pat-capture-unfinished-nested", "print(string.find('abc', '((a)'))",
+     None, "runtimerr", {"expect": {"err": "unfinished capture"}}),
+    ("pat-capture-close-unopened", "print(string.find('abc', 'a(b)c)'))", None,
+     "runtimerr", {"expect": {"err": "invalid pattern capture"}}),
+    # The one thing here the chip cannot do: a find answers two positions and one
+    # value per capture, and an expression has MAXVALS registers to answer in.
+    # Fifteen captures is seventeen values, so it is refused rather than written
+    # over whatever follows.
+    ("pat-too-many-to-return", "print(string.find('abc', '" +
+     "()()()()()()()()()()()()()()()" + "'))", None, "runtimerr",
+     {"expect": {"err": "too many captures to return"}}),
     ("pat-no-subject", "print(string.find('hello'))", None, "runtimerr",
      {"expect": {"err": "bad argument #2 to 'find' (string expected, got no "
                         "value)"}}),

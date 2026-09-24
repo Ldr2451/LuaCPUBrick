@@ -186,6 +186,13 @@ a name, how many write it, what fires each write). The `_fmt` header in
   into three vars, and only the pop landed. Read the slots into locals at the top
   of the mod, before any write; `tools/vargraph.py <name>` shows the shape (a Set
   whose Exec comes from an `ArrayVar.Get` is one that can be starved).
+- **An `int[]` does not keep a negative value.** The pattern capture ends were
+  `-1` for "open" and `-2` for a position capture, and every one of them read
+  back as `0`, so every capture looked like an empty match. Store the end plus
+  one and keep a flag for the special case, or use a `float[]`.
+- **A local computed from a var the same mod writes is re-derived at its next
+  use**, so `let n = patCapN + 1` was `n + 1` by the time it reached the push
+  below. Compute it, use it, and write the var last.
 - **A gate may read only the arguments it was given.** A register past `nargs`
   still holds whatever the caller's previous call left in it: `_pat` read `a+4`
   for an `init` that was never passed and gave a find a boolean init. Guard every

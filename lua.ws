@@ -4068,6 +4068,10 @@ mod vmReset() {
   fmtDd.clear()
   pcallBad.clear()
   patSl.clear()
+  patCapS.clear()
+  patCapE.clear()
+  patCapP.clear()
+  patCapIx.clear()
   // the text in inStr0 is the program's standard input, and a run starts at its
   // beginning; the cursors are state, so they go with everything else
   rdText = inStr0
@@ -6149,11 +6153,31 @@ mod tblUnlink(tid: int, sl: int) {
 //   2  a ?: the pattern position past the ?, to carry on with the item skipped
 //   3  %b: the balance depth, to keep counting from where it was
 //
-// Captures are not here yet.  A ( in a pattern is PUC's capture syntax and the
-// answer has a different shape -- find returns the captures after the two
-// positions, match returns the captures and not the whole match -- so a
-// capture is a loud error rather than a silently wrong arity.  They come with
-// gsub, which needs them anyway.
+// Captures work the way PUC's do_match recursion does, with a flat machine
+// keeping what the recursion gets for free.  A capture's number is how many the
+// attempt has opened, and its depth is how many are open now: "(a)(b)" closes the
+// first before it opens the second, so the number is not the depth, and the
+// number of the innermost *open* capture is neither -- that one is a stack,
+// patCapIx.  A quantifier inside a capture gives a character back and runs the
+// ) again, so the ) records that it closed and the rewind opens it again.  A (
+// followed by ) is PUC 5.5's position capture, whose value is where it stands,
+// as a number.
+//
+// Four traps this part paid for, all general enough to be here:
+//   - An int[] does not keep a negative value.  The capture ends were sentinels
+//     of -1 for "open" and -2 for a position capture, and every one of them read
+//     back as 0, so every capture looked like an empty match.  The ends are
+//     stored plus one, with the position case in a flag of its own.
+//   - A local computed from a var the same mod writes is re-derived at its next
+//     use, so patOpen's n = patCapN + 1 became n + 1 when it reached the push
+//     and the first capture's entry pointed at the second one's slot.  Compute
+//     it, use it, and write the var last.
+//   - A quantifier with no item in front of it is PUC's own dead end rather than
+//     an error: max_expand wants at least one match of the character it names.
+//     That is why "(%d+)-" still finds its minus and "a??b" finds nothing.
+//   - A capture's answer does not fit an expression's registers past MAXVALS, so
+//     a find with more captures than that is refused rather than written over
+//     the values after it.
 //
 // The cost is ticks, not gates, and it is worth knowing which is which before
 // making this faster.  The library piece is 130 characters, so a program that
@@ -6167,18 +6191,16 @@ mod tblUnlink(tid: int, sl: int) {
 // -- call patStep several times in the arm at the top of vmStep, the way
 // lexChunk calls lexStep four times -- not fewer gates.
 //
-// Two traps this machine paid for, both general enough to be here:
+// Two more from the first pass, also general:
 //   - A gate may read only the arguments it was given.  A register past nargs
-//     still holds whatever the caller's previous call left there, so reading
+//     still holds whatever the caller's previous call left in it, so reading
 //     a+4 for an init that was never passed gave a find a boolean init and an
 //     error about argument #3.  Every argument read is guarded by its count.
 //   - An array read that FOLLOWS a var write inside a nested arm loses its Exec
 //     chain when the mod is inlined this many times, and the writes fed by it
-//     quietly never happen: patBack popped an entry and then read its four
-//     slots into patI, patItemP and patQEnd, and only the pop landed.  The
-//     slots are read into locals at the top of the mod now, before anything is
-//     written.  tools/vargraph.py shows the shape: a Set whose Exec comes from
-//     an ArrayVar.Get is one that can be starved.
+//     quietly never happen: patBack popped an entry and then read its four slots
+//     into patI, patItemP and patQEnd, and only the pop landed.  The slots are
+//     read into locals at the top of the mod now, before anything is written.
 const PAT_STACK = 200
 
 var patGo: bool = false      // one pattern step per burst, like fmtGo
@@ -6212,6 +6234,25 @@ var patBClose: string = ""
 var patBC: int = 0           // and its balance
 var patBFirst: bool = false  // and whether the opening delimiter is still ahead
 var patFPrev: bool = false   // %f's previous-character test
+var patCapS: int[]           // a capture's start, by number
+var patCapE: int[]           // its end plus one, so a zero means "no end yet"
+var patCapP: int[]           // and 1 for a position capture, whose value is where
+                             // it stands rather than what it covers.  None of
+                             // these hold a negative: an int[] does not keep one,
+                             // which is what sentinels of -1 and -2 turned into
+                             // plain zeroes and left every capture reading as an
+                             // empty match.  Zero-plus-one is the encoding that
+                             // works.
+var patCapIx: int[]          // the numbers of the captures open right now, as a
+                             // stack: the innermost one is not a counter, since
+                             // "(a)(b)" closes the first before it opens the
+                             // second, and "((a))" does not
+var patNCap: int = 0         // how many captures this attempt has opened
+var patCapN: int = 0         // and how many are open at this point
+var patAOff: int = 0         // where the answer's captures start
+var patAn: int = 0           // and which one is being written
+var patAdv: int = 1          // how far the item under test moved the cursor:
+                             // one character for everything but a backreference
 var patSp: int = 0           // the backtrack stack's pointer, in ints
 var patSl: int[]
 var patErr: string = ""      // a malformed pattern's message
@@ -6262,17 +6303,23 @@ mod patStepB() {
     patSetHit()
   } else if patSt == 13 {
     patSetRetry()
-  } else {
+  } else if patSt == 14 {
     patGreedyEnd()
+  } else {
+    patAnswer()
   }
 }
 
-// A new attempt at patStart: an empty backtrack stack, and the pattern back at
-// its first item.
+// A new attempt at patStart: an empty backtrack stack, the pattern back at its
+// first item, and no captures.  The captures go with the attempt, not with the
+// call: PUC's level is per match() and a second start begins with none, which
+// is why "()b" finds its one position capture on the second try and not two.
 mod patStartStep() {
   patSp = 0
   patP = patPSkip
   patI = patStart
+  patNCap = 0
+  patCapN = 0
   patSt = 1
 }
 
@@ -6341,6 +6388,7 @@ mod patSetBegin(p: int, code: int) {
 // quantifier is read from, which is why a set reports its end when its scan
 // finishes rather than here.
 mod patTestItem(p: int, s: int) -> int {
+  patAdv = 1
   if s >= patLen || p >= patPEnd {
     return 0
   }
@@ -6361,9 +6409,7 @@ mod patTestItem(p: int, s: int) -> int {
     }
     let code = patPat.Substring(p + 1, 1).ToCharCode().Codepoint
     if 49 <= code && code <= 57 {
-      // %1 to %9 are backreferences, and there are no captures to point at
-      patErr = "invalid capture index %" .. FromCharCode(code).Character
-      return 3
+      return patBackref(p, s, code - 48)
     }
     let neg = 65 <= code && code <= 90
     patItemE = p + 2
@@ -6395,12 +6441,118 @@ mod patPush(kind: int, p: int, s: int, x: int) -> bool {
   return true
 }
 
-// The next item in the pattern.  $ at the very end is the end anchor and %b and
-// %f are the two items that walk the subject themselves.  A capture is a loud
-// error rather than a silently wrong arity, an unmatched ) never matches (which
-// is what PUC's level-0 case amounts to), and a quantifier with no item in
-// front of it is not an error at all: PUC treats it as an item that matches
-// nothing, so "*l" is a pattern that simply does not match.
+// ( starts a capture, and a ( followed by ) is PUC's position capture: its value
+// is where it stands rather than what it covers, which is why find answers a
+// number there and not a string.  A capture's number is how many the attempt has
+// opened, and patCapN is how many are open *now*: the two are not the same, since
+// "(a)(b)" closes the first before it opens the second, and PUC numbers those one
+// and two.  Each records the start it had, so a rewind puts that back.  Returns
+// the state to run next.
+//
+// The two counters are written last, and n is read from patNCap first: a local
+// computed from a var the same mod writes is re-derived at its next use, so
+// patPush was handed n + 1 and the first capture's entry pointed at the second
+// one's slot.
+mod patOpen() -> int {
+  let n = patNCap + 1
+  let old = patCapS[n]
+  if 32 < n {
+    patErr = "too many captures"
+    return 8
+  }
+  if patP + 1 < patPEnd && patPat.Substring(patP + 1, 1) == ")" {
+    // the ) is part of the item, so it is consumed here and the capture is
+    // already closed: patCapN does not count it
+    if !patPush(6, n, old, 0) {
+      patErr = "pattern too complex"
+      return 8
+    }
+    patCapS[n] = patI
+    patCapE[n] = 0
+    patCapP[n] = 1
+    patP = patP + 2
+    patNCap = n
+  } else {
+    if !patPush(5, n, old, 0) {
+      patErr = "pattern too complex"
+      return 8
+    }
+    patCapS[n] = patI
+    patCapE[n] = 0
+    patCapP[n] = 0
+    patCapIx[patCapN] = n
+    patP = patP + 1
+    patNCap = n
+    patCapN = patCapN + 1
+  }
+  return 1
+}
+
+// ) closes the innermost open capture -- the one on top of patCapIx, whose
+// number is neither the depth nor the count in general -- and records that it
+// did: a quantifier inside the capture gives a character back and runs the )
+// again, which has to find the capture open the second time.  PUC's
+// start_capture is a recursive call and gets that from the recursion; a flat
+// machine has to write it down, and the entry carries the depth to put back.  A
+// ) reached once a capture has been opened is PUC's "invalid pattern capture",
+// and before any has, it is a character that matches nothing, which is where
+// PUC's answers for "a)" and ")" come from.
+mod patClose() -> int {
+  let d = patCapN - 1
+  let c = patCapIx[d]
+  let old = patCapE[c]
+  if !patPush(7, c, old, d + 1) {
+    patErr = "pattern too complex"
+    return 8
+  }
+  patCapE[c] = patI + 1
+  patCapN = d
+  patP = patP + 1
+  return 1
+}
+
+// %1 to %9: the subject has to carry the same text the capture did, and both
+// move on by the capture's length.  A position capture has no text to compare --
+// PUC's CAP_POSITION is not a length -- so it never matches, and PUC agrees that
+// "()%1" finds nothing.  A capture the pattern has not opened yet, or has not
+// closed, is PUC's "invalid capture index".
+mod patBackref(p: int, s: int, ci: int) -> int {
+  let ce = patCapE[ci]
+  let cp = patCapP[ci]
+  let cs = patCapS[ci]
+  if patNCap < ci || ce == 0 && cp == 0 {
+    patErr = "invalid capture index %" .. FromCharCode(48 + ci).Character
+    return 3
+  }
+  if cp == 1 {
+    return 0
+  }
+  // A quantifier on a backreference is PUC's own dead end: max_expand counts one
+  // subject character a repetition while the pattern steps over %N, so it never
+  // matches -- "aa" with "(a)%1*" finds nothing.
+  if p + 2 < patPEnd {
+    let q = patPat.Substring(p + 2, 1)
+    if q == "*" || q == "+" || q == "-" || q == "?" {
+      return 0
+    }
+  }
+  let len = ce - 1 - cs
+  if s + len > patLen {
+    return 0
+  }
+  if patSrc.Substring(s, len) != patSrc.Substring(cs, len) {
+    return 0
+  }
+  patItemE = p + 2
+  patAdv = len
+  return 1
+}
+
+// The next item in the pattern.  $ at the very end is the end anchor, %b and %f
+// are the two items that walk the subject themselves, ( and ) are the captures,
+// and a quantifier with no item in front of it is not an error at all: PUC
+// treats it as an item that matches nothing, so "*l" is a pattern that simply
+// does not match.
 mod patNextItem() {
   if patP >= patPEnd {
     patSt = 5
@@ -6422,16 +6574,36 @@ mod patNextItem() {
         patSt = 4
       }
     } else if ch == "(" {
-      patErr = "captures are not supported yet"
-      patSt = 8
-    } else if ch == ")" || ch == "*" || ch == "+" || ch == "-" || ch == "?" {
-      // an unmatched ) and a quantifier with no item in front of it are both
-      // an item that matches nothing
+      patSt = patOpen()
+    } else if ch == ")" {
+      if patCapN != 0 {
+        patSt = patClose()
+      } else if patNCap == 0 {
+        patSt = 4
+      } else {
+        patErr = "invalid pattern capture"
+        patSt = 8
+      }
+    } else if ch == "*" || ch == "+" || ch == "?" {
+      // A quantifier with no item in front of it is PUC's own dead end, not an
+      // error: max_expand wants at least one match of the character it names, so
+      // "*l" and "a??b" are patterns that do not match, while "(%d+)-" still
+      // finds its minus.  (PUC's lazy branch starts the rest one character early,
+      // and "l???" is the one shape where that shows: it matches empty there and
+      // finds nothing here.)
       patItemP = patP
-      patItemE = patP + 1
       patQS = patI
-      patHit = false
-      patSt = 2
+      patAfter = 2
+      patFailTo = 2
+      let rq = patTestItem(patP, patI)
+      if rq == 3 {
+        patSt = 8
+      } else if rq == 2 {
+        patSt = 7
+      } else {
+        patHit = if rq == 1 then true else false
+        patSt = 2
+      }
     } else if ch == "%" && patP + 1 < patPEnd {
       let code = patPat.Substring(patP + 1, 1).ToCharCode().Codepoint
       if code == 98 {
@@ -6526,7 +6698,7 @@ mod patApply() {
   patQEnd = if patQ == 0 then patItemE else patItemE + 1
   if patQ == 0 {
     if patHit {
-      patI = patI + 1
+      patI = patI + patAdv
       patP = patQEnd
       patSt = 1
     } else {
@@ -6701,7 +6873,33 @@ mod patBack() {
       patSp = sp
       patP = k1
       patSt = 1
-    } else {
+    } else if k0 == 5 {
+      // undo a capture: PUC's start_capture is a recursive call, so when the
+      // rest inside the parens has no alternative left, neither has the attempt
+      patSp = sp
+      patCapS[k1] = k2
+      patCapE[k1] = 0
+      patCapP[k1] = 0
+      patCapN = k1 - 1
+      patNCap = k1 - 1
+      patSt = 4
+    } else if k0 == 6 {
+      // a position capture has no depth to undo, only a number and a start
+      patSp = sp
+      patCapS[k1] = k2
+      patCapP[k1] = 0
+      patNCap = k1 - 1
+      patSt = 4
+    } else if k0 == 7 {
+      // a rewind past a ) has to open the capture again, because the item
+      // inside it is about to run once more; k3 is the depth to put back, and
+      // the open list holds the capture's number one below it
+      patSp = sp
+      patCapE[k1] = k2
+      patCapIx[k3 - 1] = k1
+      patCapN = k3
+      patSt = 4
+    } else if k0 == 4 {
       patSp = sp
       patI = k2
       patItemP = k1
@@ -6723,6 +6921,9 @@ mod patBack() {
         patP = k3
         patSt = 1
       }
+    } else {
+      patSp = sp
+      patSt = 4
     }
   }
 }
@@ -6733,6 +6934,7 @@ mod patBack() {
 // case per character.  A '-' with a character before it and one after it is a
 // range, which is why a leading or trailing '-' stays a literal.
 mod patSetStep() {
+  patAdv = 1
   if patSetP >= patPEnd {
     patErr = "malformed pattern (missing ']')"
     patSt = 8
@@ -6800,24 +7002,78 @@ mod patSetRetry() {
 }
 
 // The whole pattern matched at patStart.  find reports the two positions, an
-// empty match ending one before it starts; match reports the match itself.
+// empty match ending one before it starts, and then one value per capture; match
+// reports the captures, or the match itself when the pattern has none.  A
+// capture still open here is PUC's "unfinished capture", and an answer that will
+// not fit the expression's register window is refused rather than written over
+// the values after it.
 mod patDone() {
-  if patMode == 0 {
+  if patCapN > 0 {
+    patErr = "unfinished capture"
+    patSt = 8
+  } else if patMode == 0 {
     vtag[nxDst] = 6
     vnum[nxDst] = patStart + 1.0
     vstr[nxDst] = ""
     vtag[nxDst + 1] = 6
     vnum[nxDst + 1] = patI * 1.0
     vstr[nxDst + 1] = ""
-    retCountV = 2
-  } else {
+    if 2 + patNCap > MAXVALS {
+      patErr = "too many captures to return"
+      patSt = 8
+    } else {
+      patAOff = 2
+      patAn = 1
+      patSt = 16
+    }
+  } else if patNCap == 0 {
     vtag[nxDst] = 2
     vnum[nxDst] = 0.0
     vstr[nxDst] = patSrc.Substring(patStart, patI - patStart)
     retCountV = 1
+    nxActive = false
+    vmPc = nxPc + 1
+  } else if MAXVALS < patNCap {
+    patErr = "too many captures to return"
+    patSt = 8
+  } else {
+    patAOff = 0
+    patAn = 1
+    patSt = 16
   }
-  nxActive = false
-  vmPc = nxPc + 1
+}
+
+// One capture per tick, and one value each: find answers the two positions and
+// then the captures, match the captures alone.  A loop is not available here,
+// and the slots are read into locals at the top: an array read that follows a
+// var write inside a nested arm loses its Exec chain.
+mod patAnswer() {
+  let cs = patCapS[patAn]
+  let ce = patCapE[patAn]
+  let cp = patCapP[patAn]
+  let d = nxDst + patAOff + patAn - 1
+  if cp == 1 {
+    // a position capture answers where it stands, as a number
+    vtag[d] = 6
+    vnum[d] = cs + 1.0
+    vstr[d] = ""
+  } else if ce == 0 {
+    vtag[d] = 0
+    vnum[d] = 0.0
+    vstr[d] = ""
+  } else {
+    vtag[d] = 2
+    vnum[d] = 0.0
+    vstr[d] = patSrc.Substring(cs, ce - 1 - cs)
+  }
+  patAn = patAn + 1
+  if patNCap < patAn {
+    retCountV = patAOff + patNCap
+    nxActive = false
+    vmPc = nxPc + 1
+  } else {
+    patSt = 16
+  }
 }
 
 // No match anywhere: both find and match answer nil.
@@ -7576,6 +7832,8 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
           patR = patStart
           patSt = 0
           patSp = 0
+          patNCap = 0
+          patCapN = 0
           patErr = ""
           nxDst = vmBase + a
           nxPc = vmPc
@@ -8372,6 +8630,10 @@ mod parseJobStart() {
   // standard library is Lua source prepended to the program (see libIter etc).
   pcallBad.resize(1, 0)
   patSl.resize(PAT_STACK, 0)
+  patCapS.resize(33, 0)
+  patCapE.resize(33, 0)
+  patCapP.resize(33, 0)
+  patCapIx.resize(33, 0)
   fStart.resize(NB, -1)
   fParams.resize(NB, -1)
   fRegs.resize(NB, -1)
