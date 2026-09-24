@@ -15,6 +15,13 @@
   the oracle (`$LUA55`, then PATH, then the usual install dirs) and
   `irrun/irdump.py` finds the compiler (`$WIRESCRIPT`, then a sibling checkout,
   then PATH).
+- The chip's port types are `float`, `int`, `bool`, `string`, `vector`, `color`
+  and `entity`, each with an array form (`float[]` ... `entity[]`), plus a
+  port-only `any` that cannot be stored in a variable gate.  `object`,
+  `reference`, `item`, `gameobject` and `player` are not types.  Read this off
+  the compiler with `python -u tools/porttypes.py [type ...]` rather than
+  guessing: it compiles a one-port net per candidate and says which are
+  accepted.  **An object in WireScript is an `entity`.**
 - Python is 3.12 (no JIT, GIL on) — CPU parallelism means **multiprocessing**.
 - Changing the Python build (3.13 free-threading / `--enable-jit`, Cython) is not
   worth it here: the sim is a single-threaded interpreter-bound pointer chase,
