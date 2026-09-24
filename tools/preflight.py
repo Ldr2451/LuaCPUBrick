@@ -33,6 +33,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CHECKS = [
     ('audit', ['tools/audit.py'], '0 placeholder(s)'),
+    ('wswarn', ['tools/wswarn.py'], 'compiler warnings: 0'),
     ('consistency', ['tests/test_consistency.py'], 'ALL-OK'),
     ('syntax', ['tests/syntax_check.py'], 'FAIL=0'),
 ]
@@ -54,8 +55,9 @@ for name, args, expect in CHECKS:
     if not good:
         failed.append((name, out))
     for line in out.splitlines():
-        if line.startswith(('FAIL', 'Traceback')) or 'placeholder(s)' in line \
-                or 'unhandled' in line or 'FAIL=' in line or 'ALL-OK' in line:
+        if line.startswith(('FAIL', 'Traceback', 'WARN', 'HARD', 'cand')) \
+                or 'placeholder(s)' in line or 'compiler warnings:' in line \
+                or 'FAIL=' in line or 'ALL-OK' in line:
             print('    ' + line)
 print('\npreflight: %d/%d checks passed in %.1fs' % (
     len(CHECKS) - len(failed), len(CHECKS), total))

@@ -1,10 +1,12 @@
-"""What loop and control facilities does the WireScript host actually offer?
+"""Which operators and call shapes does the WireScript source actually use?
 
-The chip is written in WireScript, which is not Lua: if it has no `while` and
-no `break`, then every loop in the chip is a bounded `for` that the compiler
-unrolls, and the gate cost of a loop is proportional to its trip count.  That
-number decides where expensive work can live, so it is worth reading off the
-chip source rather than guessing.
+The compiler leaves an _Unsupported placeholder for an expression it cannot
+lower, and tools/audit.py counts them, but it does not say which line produced
+one.  Rather than guess, read what the working chip uses: if no mod in the
+WireScript source contains a `%`, then `%` is not lowerable, and every new `%` is
+a placeholder.  Same for a method call inside a binary operation.
+
+  python -u tools/ws_features.py
 """
 import os
 import re
@@ -14,22 +16,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ws = open(os.path.join(ROOT, 'lua.ws'), encoding='utf-8').read()
 
 # const LIB_* lines carry Lua source, not WireScript: hide them
-lines = []
-for line in ws.splitlines():
-    lines.append('' if line.startswith('const LIB_') else line)
-body = '\n'.join(lines)
+lines = ['' if l.startswith('const LIB_') else l for l in ws.splitlines()]
+code = [(i, l) for i, l in enumerate(lines, 1)
+        if l.strip() and not l.strip().startswith('//')]
 
-for kw in ('while', 'break', 'continue', 'for', 'loop'):
-    pat = re.compile(r'^\s*%s\b' % kw)
-    hits = [(i, l.strip()) for i, l in enumerate(lines, 1) if pat.match(l)]
-    print('%-8s %d line(s) at statement start' % (kw, len(hits)))
-    for i, l in hits[:6]:
-        print('   %5d %s' % (i, l[:96]))
-
-print('\nfor-loop headers:')
-for m in sorted(set(re.findall(r'^\s*for\s+[^\n{]*\{', body, re.M))):
-    print('   ' + m.strip()[:96])
-
-print('\ngate-side unrolled step calls (how the chip avoids loops):')
-for m in sorted(set(re.findall(r'^\s*(lexChunk|parseChunk|vmStep|vmBurst|stepOnce)\(\)', body, re.M))):
-    print('   ' + m)
+CHECKS = [
+    ('percent', re.compile(r'[^%]%[^%]')),
+    ('bitwise-and', re.compile(r'[^&]&[^&=]')),
+    ('method-in-expr', re.compile(r'[+*/-]\s*\w+\.\w+\(')),
+    ('mod-in-expr', re.compile(r'[+*/-]\s*[A-Za-z_]\w*\(')),
+    ('unary-not', re.compile(r'!\s*[A-Za-z_]')),
+    ('for-loop', re.compile(r'^\s*for\b')),
+]
+for name, pat in CHECKS:
+    hits = [(i, l.strip()) for i, l in code if pat.search(l)]
+    print('%-16s %3d' % (name, len(hits)))
+    for i, l in hits[:4]:
+        print('   %5d %s' % (i, l[:92]))

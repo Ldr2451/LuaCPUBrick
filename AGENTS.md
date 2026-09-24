@@ -99,6 +99,14 @@
   loop is either hand-unrolled (gates proportional to the trip count) or a
   micro-step (ticks proportional to it, as `next` does). String-heavy work
   belongs in Lua; tight arithmetic that runs per call belongs in a gate.
+- **Follow PUC's own split.** In PUC Lua the primitives are exactly the things
+  Lua cannot express: `string.format`/`string.find`/`string.rep` are C,
+  `math.floor`/`math.tointeger` are C, and `next` is C -- while the iterators,
+  `table.*` and the rest are Lua. The chip already draws the line the same way
+  (`next`, `select`, `unpack`, `_s`, `_m`, `_fmt` are gates; the iterators, the
+  table library and the small string helpers are Lua source). When a function
+  needs a loop, exact decimal conversion, or a libc call to be faithful, it is a
+  gate, and the PUC source is the argument for that rather than against it.
 - **A new builtin must earn its gates** against the alternative of a library
   piece, and the answer changes with the piece's size: `string.format` at 10.7k
   characters is 20x over the source ceiling, so it belongs in a gate even though
