@@ -291,13 +291,15 @@ captured falls out of that for free -- which is why no existing tag-4 site
   closure per iteration spends a cell per iteration, which is the same bargain the
   table heap makes and what a GC would fix.
 - **And what it costs every program that does not use it:** a tight loop went
-  1.66ms to 2.22ms per tick (slope of a `while true do s = s + 1 end` at 2000
-  and 6000 ticks, against the previous commit in a throwaway worktree), so
-  over-cap is 6.1s to 9.0s and call-chain 12.3s to 16.6s. Stubbing the four new op
-  arms recovers only 6% of that, so it is not the arms' size: the cost is the VM
-  code around them, and it is not yet explained. Two percent more nodes and
-  twenty-seven percent more time is the thing to beat if this is ever revisited --
-  the number to compare against is the slope above, not the suite total.
+  1.82ms to 1.95ms per tick (+7%), measured as the slope of
+  `while true do s = s + 1 end` at 2000 and 6000 ticks against the previous
+  commit *in a throwaway worktree, alternating the two chips in one process*.
+  That last part is the lesson: the same comparison run as two separate
+  processes said 1.66 to 2.22ms, a 34% "regression" that was drift. The +7% is
+  real and it is explained: the fire log says the loop now fires 12 more gates
+  per tick (4 more Get, 3 NOT, 3 AND, 1 Branch, 1 Union) on 483, so the cost
+  tracks the extra work rather than the 2,133 extra nodes. Compare against that
+  slope, never against one run per chip.
 
 ## Writing WireScript that survives the compiler
 These are measured traps, not style rules. `tools/wswarn.py` flags the shapes it
