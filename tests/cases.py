@@ -714,6 +714,79 @@ TESTS = [
      "runtimerr", {"expect": {"err": "invalid replacement value (a boolean)"}}),
     ("gsub-table-value", "print(string.gsub('abc', '(a)', {a={}}))", None,
      "runtimerr", {"expect": {"err": "invalid replacement value (a table)"}}),
+    # gmatch is a stateful iterator and the state is three arrays, not a closure:
+    # _gmatch makes the walk and _gmnext takes one step of it, which is two gates
+    # because PUC's iterator is a different value from string.gmatch (a call with
+    # one string is a gmatch missing its pattern, and the iterator is handed
+    # whatever the loop has and ignores it).  The walk's cursor is PUC's rule with
+    # the part that is not the matcher's: a non-empty match that ends at the end
+    # of the subject finishes the walk, which is why "aaa" on "a*" is one result
+    # while "aaa" on "b*" is four and "abc" on "" is four -- the empty matches at
+    # the end are real.  A leading ^ matches nothing at all here, measured.
+    ("gmatch-words", "for k in string.gmatch('hello world', '%a+') do "
+     "io.write(k, '|') end print()", None, "run"),
+    ("gmatch-captures", "for k, v in string.gmatch('a=1, b=2', "
+     "'(%a+)=(%d)') do io.write(k, v, '|') end print()", None, "run"),
+    ("gmatch-empty-pattern", "for k in string.gmatch('abc', '') do io.write('[', "
+     "k, ']') end print()", None, "run"),
+    ("gmatch-star-empty", "for k in string.gmatch('aaa', 'a*') do io.write('[', "
+     "k, ']') end print()", None, "run"),
+    ("gmatch-lazy-empty", "for k in string.gmatch('abc', '.-') do io.write('[', "
+     "k, ']') end print()", None, "run"),
+    ("gmatch-optional-end", "for k in string.gmatch('abc', 'c?') do io.write('[', "
+     "k, ']') end print()", None, "run"),
+    ("gmatch-star-miss", "for k in string.gmatch('aaa', 'b*') do io.write('[', k, "
+     "']') end print()", None, "run"),
+    ("gmatch-dot", "for k in string.gmatch('abc', '.') do io.write('[', k, ']') "
+     "end print()", None, "run"),
+    ("gmatch-dollars", "for k in string.gmatch('abc', 'b$') do io.write('[', k, "
+     "']') end print() for k in string.gmatch('abc', 'c$') do io.write('[', k, "
+     "']') end print()", None, "run"),
+    # a leading ^ is the anchor for find and gsub and never matches in gmatch
+    ("gmatch-anchor-a", "for k in string.gmatch('aba', '^a') do io.write('[', "
+     "k, ']') end print()", None, "run"),
+    ("gmatch-anchor-b", "for k in string.gmatch('abcabc', '^b') do io.write('[', "
+     "k, ']') end print()", None, "run"),
+    ("gmatch-anchor-whole", "for k in string.gmatch('abc', '^abc$') do "
+     "io.write('[', k, ']') end print()", None, "run"),
+    ("gmatch-position-capture", "local f, s, c = string.gmatch('abc', '()') "
+     "print(f(s, c)) print(f(s, c)) print(f(s, c))", None, "run"),
+    ("gmatch-init", "for k in string.gmatch('aab', 'a', 2) do io.write(k, '|') "
+     "end print()", None, "run"),
+    ("gmatch-number-subject", "for k in string.gmatch(42, '%d') do io.write(k, "
+     "'|') end print()", None, "run"),
+    ("gmatch-empty-subject", "for k in string.gmatch('', 'a') do io.write(k) end "
+     "print('empty')", None, "run"),
+    ("gmatch-count", "local n = 0 for k in string.gmatch('abcabc', 'a') do n = "
+     "n + 1 end print(n)", None, "run"),
+    ("gmatch-collect", "local t = {} for k in string.gmatch('a,b,c', '[^,]+') "
+     "do t[#t + 1] = k end print(#t, t[1], t[3])", None, "run"),
+    # the second value is the walk (a number here, nil in PUC) and the loop never
+    # shows it; three values come back and the third is the control
+    ("gmatch-three-values", "local f, s, c = string.gmatch('a1b2', '(%a)(%d)') "
+     "print(select('#', f, s, c)) print(f(s, c)) print(f(s, c)) print(f(s, c))",
+     None, "run"),
+    # PUC's iterator ignores its arguments; this one falls back to the last walk
+    ("gmatch-junk-argument", "local f, s, c = string.gmatch('a1b2', '(%a)(%d)') "
+     "print(f('junk'))", None, "run"),
+    ("gmatch-malformed-set", "for k in string.gmatch('abc', '[') do io.write(k) "
+     "end print('done')", None, "runtimerr",
+     {"expect": {"err": "malformed pattern (missing ']')"}}),
+    ("gmatch-malformed-percent", "for k in string.gmatch('abc', '%') do "
+     "io.write(k) end print('done')", None, "runtimerr",
+     {"expect": {"err": "malformed pattern (ends with '%')"}}),
+    ("gmatch-no-subject", "string.gmatch()", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.gmatch' (string expected, "
+                        "got no value)"}}),
+    ("gmatch-bad-subject", "string.gmatch({}, 'a')", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.gmatch' (string expected, "
+                        "got table)"}}),
+    ("gmatch-bad-pattern", "string.gmatch('a', {})", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'string.gmatch' (string expected, "
+                        "got table)"}}),
+    ("gmatch-no-pattern", "string.gmatch('a')", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'string.gmatch' (string expected, "
+                        "got no value)"}}),
 
     # error and assert, both C in PUC and gates here.  assert returns *all* of
     # its arguments on success, which is a shift down by one register on a
@@ -860,6 +933,10 @@ TESTS = [
     # is why they are written `local add = function(v) ... end`.
     ("nested-local-function", "local t = {} t.f = function() local function g() "
      "return 1 end return g() end print(t.f())", None, "run"),
+    # pcall of a library wrapper that calls a gate: the argument count is one
+    # short, so the error names the wrong argument and a call that should find
+    # something finds nothing.  See the pcall-gate-args SKIP.
+    ("pcall-gate-args", "print(pcall(string.find, 'abc'))", None, "run"),
     ("callarg-temp", "local s = 'abcdef' print('x', s, #s, s .. '!')",
      None, "run"),
     ("callarg-binop", "local a = 6 local b = 7 print(a + b, a * b, -a)",

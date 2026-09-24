@@ -122,6 +122,35 @@
 - One-off debug scripts get deleted once the finding is in; the tool that
   reproduces it stays. `tools/unsup.py`, `tools/unhandled.py` and
   `tools/check.py` exist so the next person does not write another `debug_*.py`.
+- **Search with ripgrep, not the tool's own grep.** `rg` is on PATH after
+  `winget install BurntSushi.ripgrep.MSVC` (Linux/macOS: the package manager);
+  it walks the tree in a fraction of a second where a built-in content search
+  takes long enough to be worth timing. `rg PATTERN path`, `-n` for line
+  numbers, `-g` for a glob (`-g '*.py'`), `-C` for context, `--stats` when you
+  want to know how much it read, and `-o` to print only the matches. In a shell
+  that was already open when ripgrep was installed, the machine's PATH has it
+  and that shell does not: a new terminal does, and in the old one call the
+  full path under `%LOCALAPPDATA%\Microsoft\WinGet\Packages\`.
+- **Time every command, so a slowdown is something you notice.** The check
+  scripts print their own elapsed time; anything else goes through
+  `python -u tools/timecmd.py <command> [args...]`, which streams the output
+  and prints the seconds and the exit code. Without a number you cannot tell a
+  3-second search from a 3-minute one, and a search that quietly got slow is
+  the one worth catching before it becomes a habit. A `.py` argument gets the
+  interpreter put in front of it, so the same wrapper times a script too.
+- **lua.ws is easy to get wrong in ways nothing complains about**, so the two
+  cheap nets run in preflight and have caught real bugs:
+  - `tests/test_consistency.py` proves every `const LIB_*` piece is installed by
+    some `lib*` mod, that every `lib*` mod is called from `goParse`, and that
+    each `let libX = lib...(program)` reaches the `..` chain. A piece nobody
+    installs is an "attempt to call" on the first call and nothing else --
+    gsub's replacement walk lost `string.find` exactly that way.
+  - `tools/wswarn.py` flags **a bare copy of a file-level var that the same mod
+    has already written** (`patR = patStart` after writing patStart reads the
+    value from before that write). It is 15 sites, not the 259 the general "read
+    after write" form reports: reading a var after writing it is normal and
+    usually right, so the narrow form is the one worth reading. The fix is always
+    to compute into a `let` and write the vars last.
 
 ## Batch your own work too
 - Independent tool calls go out in one message (parallel), not one at a time:
@@ -129,6 +158,19 @@
 - Prefer one command that runs everything over many commands that each run part:
   `tests/test_consistency.py`, the suite and the three oracle checks belong in a
   single parallel call at the end of a change, not one per edit.
+- **The tests use the whole machine: a pool of worker *processes*, each with its
+  own Sim, and the chip compiled once into a dump they all share.** Two things
+  matter and both were measured the hard way. The chip is built once (ten
+  seconds) and every worker loads that dump (`irsims.share_dump` /
+  `sim_from_dump`), so a worker is not paying a build before its first program.
+  And the work is handed out **one case at a time**: batching is faster than one
+  process per case but a batch is as long as its slowest member, and the twenty
+  gsub cases are three to seven seconds each, so one batch held a core for a
+  minute while seven sat idle — that was the taper from 100% to 14% CPU. The
+  pool is `CHIP_POOL=1` (the default), `CHIP_WORKERS` (12), and the old batch
+  path is still there as `CHIP_POOL=0`. `tools/check.py` does the same thing
+  above four programs, in chunks, because a worker spends a second and a half
+  loading the dump and a program is a second.
 - Don't re-run the same test file repeatedly to "confirm" — one run at the end
   covers it. While iterating, run the single narrowest command that proves the
   thing just changed (`tools/check.py` with the program, a suite filter, a dump),
@@ -272,6 +314,19 @@ a name, how many write it, what fires each write). The `_fmt` header in
 - Add an oracle case for the rule you just got wrong, not just for the program
   that exposed it. The state-stays-fixed rule of the generic-for protocol was
   wrong until `iter_check.py` compared against real Lua.
+- **Fight complexity, and cut it whenever it can go without hurting the chip.**
+  A new mechanism is a cost that is paid forever, in review, in bugs and in
+  tests, so the bar is not "it works" but "nothing simpler works". Ask what the
+  existing machinery already does before adding a flag, a heuristic or a second
+  code path — and delete the cleverness the moment it is shown to be unreliable.
+  The stall detector in the runner is the worked example: it watched the log,
+  the table counts and the frame depth, and it was right about a stuck program
+  and *wrong about fib*, which is the one failure mode that matters. It went
+  back out for `Sim.finished` — one flag saying the chip said it was done — and
+  `check.py` prints `CAP` when the budget ran out, so a truncated run never
+  reads like a finished one. The same question applies to the chip: the gmatch
+  walk's state is three arrays and two gates because a closure would have been
+  the obvious answer and closures are not built yet.
 - **Reverting is not deleting.** When a change is replaced or dropped, the work
   still has value: keep the reference implementation as a file
   (`lib/str_format.lua` is the PUC-verified Lua `string.format`, kept while the

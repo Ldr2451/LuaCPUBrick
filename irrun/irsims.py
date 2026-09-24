@@ -229,6 +229,14 @@ class Sim:
         self._dirty = set(self._pure_ids)
         self.tick_delta = 1
         self.inputs = {}
+        # True when the run ended because the chip said it was done, not because
+        # the budget ran out.  A caller that reads a truncated program as a
+        # finished one is how a probe lies, so this is one flag and no cleverness:
+        # whether a program is stuck or merely slow is not knowable in advance,
+        # and the detector that tried to guess (a fingerprint of the log, the
+        # table counts and the frame depth) was right about the stuck case and
+        # wrong about fib, which is the failure mode that matters.
+        self.finished = False
         self._seed_inputs()
 
     def run(self, max_ticks: int = MAX_TICKS, on_tick=None):
@@ -302,12 +310,14 @@ class Sim:
             # vmHalted is the chip's own "nothing left to do" flag.
             if self._halted_id is not None and self.vars.get(self._halted_id):
                 if not self.exec_queue and not self._deferred:
+                    self.finished = True
                     break
             # A program that has an error is finished, whatever the clock is
             # doing, and the queue does not necessarily drain after one: a
             # source too long to lex errored and still ran its whole 200k-tick
             # budget, 63 seconds for a program that had already given up.
             if self._err_id is not None and self.vars.get(self._err_id):
+                self.finished = True
                 break
         return self.capture()
 
@@ -1783,9 +1793,13 @@ class ChipRunner:
     state without touching the wiring or the source cache.
     """
 
-    def __init__(self, ws_path: str):
-        nodes, wires, _ = dump_source(ws_path)
-        self.sim = Sim(nodes, [Wire(*w) for w in wires])
+    def __init__(self, ws_path: str = None, sim: "Sim" = None):
+        # A runner is a sim plus nothing, so a worker that already has the sim
+        # (loaded from a share_dump pickle, say) can make one without compiling.
+        if sim is None:
+            nodes, wires, _ = dump_source(ws_path)
+            sim = Sim(nodes, [Wire(*w) for w in wires])
+        self.sim = sim
 
     def reset(self):
         self.sim.reset()
@@ -1807,3 +1821,25 @@ class Wire:
         self.dst_port = dst_port
     def __iter__(self):
         return iter((self.src_id, self.src_port, self.dst_id, self.dst_port))
+
+
+def share_dump(ws_path: str, path: str) -> str:
+    """Compile and index the chip once, into a pickle every worker can share.
+
+    The suite and check.py both used to do this inline; the point of the file is
+    that it is the one place, because a worker that rebuilds the chip pays ten
+    seconds before it runs a program that takes a second.
+    """
+    import pickle
+    nodes, wires, _ = dump_source(ws_path)
+    with open(path, "wb") as f:
+        pickle.dump((nodes, wires), f)
+    return path
+
+
+def sim_from_dump(path: str) -> "Sim":
+    """A Sim over the graph in a share_dump pickle, with nothing compiled."""
+    import pickle
+    with open(path, "rb") as f:
+        nodes, wires = pickle.load(f)
+    return Sim(nodes, [Wire(*w) for w in wires])

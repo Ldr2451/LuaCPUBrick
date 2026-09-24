@@ -54,7 +54,9 @@ BUILTINS = (("print", 0), ("type", 1), ("tostring", 2), ("setvec", 3),
              ("assert", 17),
              ("pcall", 18),
              ("xpcall", 19),
-             ("_pat", 20))
+             ("_pat", 20),
+             ("_gmatch", 21),
+             ("_gmnext", 22))
 
 NB = len(BUILTINS)  # first id available to the program's own functions
 
@@ -64,4 +66,5 @@ GSLOT_ORDER = ["outNum0", "outNum1", "outNum2", "outNum3", "outStr0",
                "inStr1", "invecx", "invecy", "invecz", "incolr", "incolg",
                "incolb", "incola", "print", "type", "tostring", "setvec",
                "setcol", "clock", "inarr", "outarr", "select", "next", "_s",
-               "_m", "unpack", "_fmt", "_rd", "_wr", "error", "assert", "pcall", "xpcall", "_pat", "inInt0", "outInt0"]
+               "_m", "unpack", "_fmt", "_rd", "_wr", "error", "assert", "pcall",
+               "xpcall", "_pat", "_gmatch", "_gmnext", "inInt0", "outInt0"]

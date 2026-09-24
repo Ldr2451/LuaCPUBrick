@@ -36,7 +36,11 @@ def check(name, cond, detail=""):
 
 def mod_body(name):
     """Extract the full body of `mod name(...) { ... }` by brace matching."""
-    i = WS.index(f"mod {name}(")
+    return _braced(f"mod {name}(")
+
+
+def _braced(prefix):
+    i = WS.index(prefix)
     i = WS.index("{", i)
     depth, j = 0, i
     while True:
@@ -196,6 +200,41 @@ check("tl-push", "tl.push(lline)" in WS)
 check("tl-clear", "tl.clear()" in pi)
 check("tl-read", "tl[epos]" in WS)
 check("lex-line-tracked", "lerrLine = lline" in WS)
+
+# 9. library pieces: every piece is installed, and every installer is called ---
+# A piece is Lua source the chip prepends, chosen by a mod that looks at the
+# program.  A piece with no installer is a "attempt to call" at run time and
+# nothing else: the loader has no way to know a library function was supposed to
+# be there, which is exactly how gsub's replacement walk lost string.find.  So
+# every const is named in some lib mod, and every lib mod goParse calls.
+lib_consts = set(re.findall(r"^const (LIB_\w+) =", WS, re.M))
+lib_mods = {m.group(1): mod_body(m.group(1))
+            for m in re.finditer(r"^mod (lib\w+)\(p: string\) -> string \{", WS,
+                                 re.M)}
+installed = set()
+for name, body in lib_mods.items():
+    installed |= set(re.findall(r"\b(LIB_\w+)\b", body))
+missing_mod = sorted(lib_consts - installed)
+check("every-lib-piece-installed", not missing_mod,
+      f"no lib mod mentions {missing_mod}")
+goparse = _braced("on goParse {")
+called = set(re.findall(r"\b(lib\w+)\(program\)", goparse))
+orphan = sorted(set(lib_mods) - called)
+check("every-lib-mod-called", not orphan,
+      f"goParse never calls {orphan}; add `let libX = libX(program)` and its")
+dangling = sorted(called - set(lib_mods))
+check("no-missing-lib-mod", not dangling, f"goParse calls undefined {dangling}")
+# the pieces are local under short names, so check the assignment reaches the
+# concatenation: adding `let libX = ...` and forgetting the `.. libX` is silent
+assigned = dict(re.findall(r"let (\w+) = (lib\w+)\(program\)", goparse))
+chain = goparse[goparse.index("let lib = "):goparse.index("libLines =")]
+used = set(re.findall(r"lib\w+", chain))
+for local, mod in sorted(assigned.items()):
+    check(f"piece-in-concat-{local}", local in used,
+          f"`let {local} = {mod}(program)` is never concatenated")
+for local in sorted(used - set(assigned)):
+    check(f"concat-has-piece-{local}", False,
+          f"the chain names {local}, which no `let {local} = ...` assigns")
 
 print(f"{len(FAILS)} failed" if FAILS else "ALL-OK")
 print("test_consistency: %.1fs" % (time.time() - _T0), file=sys.stderr)

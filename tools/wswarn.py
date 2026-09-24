@@ -85,6 +85,50 @@ for i, l in code:
         hits.append((i, 'nested filevar cond', l.strip()))
         break
 
+# A copy of a var the same mod has already written reads the value from before
+# that write, not the one the source says: measured, and silent both times.
+# patArm's `patR = patStart` read the patStart from before the line above wrote
+# it, so the pattern walk never advanced its right edge and a for-in in gmatch
+# ran to the tick budget; patOpen's `n = patCapN + 1` came out as `n + 1` at the
+# push.  The rule is deliberately narrow -- only a *bare* copy of a file-level var
+# -- because reading a var after writing it is normal and usually right, and the
+# first version of this check flagged 259 sites of which two were bugs.  The fix
+# is always the same: compute into a `let`, then write the vars.
+COPY = re.compile(r'^\s*(?:var\s+|let\s+)?(\w+)\s*=\s*(\w+)\s*$')
+MODHEAD = re.compile(r'^mod\s+(\w+)\(')
+
+filevars = set(re.findall(r'^var\s+(\w+)', src, re.M))
+hits_raw = []
+lines = src.splitlines()
+i = 0
+while i < len(lines):
+    m = MODHEAD.match(lines[i])
+    if m:
+        j, depth, body, started = i, 0, [], False
+        while j < len(lines):
+            body.append((j + 1, lines[j]))
+            if '{' in lines[j]:
+                depth += lines[j].count('{')
+                started = True
+            if '}' in lines[j]:
+                depth -= lines[j].count('}')
+                if started and depth <= 0:
+                    break
+            j += 1
+        written = {}
+        for ln, bl in body:
+            c = COPY.match(bl)
+            if c and c.group(2) in filevars and c.group(2) in written:
+                hits_raw.append((ln, m.group(1), c.group(1), c.group(2),
+                                 written[c.group(2)], bl.strip()))
+                continue
+            w = re.match(r'^\s*(?:var\s+)?(\w+)\s*(?:\[[^\]]*\])?\s*'
+                         r'(?:=|\+=|-=)\s*(?!=)', bl)
+            if w and w.group(1) in filevars:
+                written.setdefault(w.group(1), ln)
+        i = j
+    i += 1
+
 names = {}
 for m in re.finditer(r'^(?:var|mod|const)\s+(\w+)', src, re.M):
     names.setdefault(m.group(1), []).append(m.start())
@@ -95,17 +139,21 @@ p = subprocess.run([WS_EXE, 'compile', path, '--dump-ir'],
 warn = [l.strip() for l in p.stderr.splitlines()
         if 'WARN' in l or '_Unsupported' in l]
 
-print('compiler warnings: %d, name collisions: %d, trap candidates: %d, rc=%d'
-      % (len(warn), len(dups), len(hits), p.returncode))
+print('compiler warnings: %d, name collisions: %d, trap candidates: %d, '
+      'var rereads: %d, rc=%d'
+      % (len(warn), len(dups), len(hits), len(hits_raw), p.returncode))
 for l in warn[:12]:
     print('  WARN ' + l[:170])
 for k in dups:
     print('  HARD %-21s %s is declared more than once' % ('name collision', k))
 for i, name, l in hits:
     print('  cand %-21s lua.ws:%d  %s' % (name, i, l[:88]))
+for ln, mod_name, dst, src, wln, l in hits_raw:
+    print('  cand %-21s lua.ws:%d  %s: %s = %s copies a var written at :%d'
+          % ('var copy after write', ln, mod_name, dst, src, wln))
 if warn or dups:
     print('=> fix the compiler warnings and the collisions')
-elif hits:
+elif hits or hits_raw:
     print('=> trap candidates only: some shapes are false positives (the print')
     print('   handler concatenates mod calls fine), so read them and judge')
 sys.exit(1 if (warn or dups) else 0)

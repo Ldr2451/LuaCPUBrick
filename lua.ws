@@ -213,7 +213,7 @@ const MAXVALS = 16
 // at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
 // means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
 // the dispatch case.  test_ws_consistency.py checks all four line up.
-const NB = 21
+const NB = 23
 
 // Library sources, prepended on demand (see libIter and friends).  These are
 // ordinary Lua: the parser sees them exactly like the user's program.  They are
@@ -228,6 +228,9 @@ const LIB_str_fmt = "string = string or {}\nstring.format = _fmt\n"
 // a named parameter pads a missing one with nil, and PUC's "got no value" and
 // "got nil" are different messages.  A vararg call keeps the real count.
 const LIB_str_pat = "string = string or {}\nstring.find = function(...) return _pat(0, ...) end\nstring.match = function(...) return _pat(1, ...) end\n"
+// gmatch is a gate that answers all three values itself, so the piece is the
+// binding and nothing else: 25 characters, where the gsub piece is 3109.
+const LIB_str_gmatch = "string = string or {}\nstring.gmatch = _gmatch\n"
 const LIB_str_case = "string = string or {}\nstring.upper = function(s) return _s(2, s) end\nstring.lower = function(s) return _s(3, s) end\n"
 const LIB_str_misc = "string = string or {}\nstring.rep = function(s, n, sep)\n  if n <= 0 then return \"\" end\n  sep = sep or \"\"\n  local r = s\n  for i = 2, n do r = r .. sep .. s end\n  return r\nend\nstring.reverse = function(s)\n  local r = \"\"\n  for i = #s, 1, -1 do r = r .. _s(1, s, i - 1, 1) end\n  return r\nend\n"
 const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775807 - 1\n"
@@ -1246,6 +1249,8 @@ mod parseInit() {
   gDeclare("pcall")
   gDeclare("xpcall")
   gDeclare("_pat")
+  gDeclare("_gmatch")
+  gDeclare("_gmnext")
   gDeclare("inInt0")
   gDeclare("outInt0")
   // The runtime wires the latches and outputs straight into these slots, so
@@ -3975,10 +3980,10 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
 // (inputs filled from the latches), 19..39 builtins (print, type, tostring,
-// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall, _pat) as
+// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall, _pat, _gmatch, _gmnext) as
 // functions with ids 0..NB-1, then the two int globals.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 0.0, 0.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -4073,6 +4078,11 @@ mod vmReset() {
   patCapE.clear()
   patCapP.clear()
   patCapIx.clear()
+  patGmS.clear()
+  patGmP.clear()
+  patGmPos.clear()
+  patTid = 0
+  patLastTid = 0
   // the text in inStr0 is the program's standard input, and a run starts at its
   // beginning; the cursors are state, so they go with everything else
   rdText = inStr0
@@ -6227,6 +6237,10 @@ mod tblUnlink(tid: int, sl: int) {
 // lstrlib's push_captures and add_table, measured, not remembered.
 
 const PAT_STACK = 200
+// How many gmatch walks can be live at once: each is a slot in three arrays, and
+// the nesting a program can write is the nesting a chip can afford.  The list
+// resets between programs, so this is not a total-iterations budget.
+const PAT_WALKS = 16
 
 var patGo: bool = false      // one pattern step per burst, like fmtGo
 var patMode: int = 0         // 0 find, 1 match, 2 gsub's one match at a time
@@ -6281,6 +6295,17 @@ var patAdv: int = 1          // how far the item under test moved the cursor:
 var patSp: int = 0           // the backtrack stack's pointer, in ints
 var patSl: int[]
 var patErr: string = ""      // a malformed pattern's message
+var patTid: int = 0          // gmatch's state slot, and how far the walk is
+var patLastTid: int = 0      // the last one made, for an iterator called with
+                             // something that is not a number: PUC's gmatch
+                             // ignores its arguments entirely, so this is the
+                             // closest answer to "f(junk)" when one walk is live
+var patGmS: string[]         // each walk's subject, pattern and cursor
+var patGmP: string[]
+var patGmPos: int[]
+var patGmId: int = 0          // the walk this call is about
+var patGmPhase: int = 0       // 0 make the walk, 1 take a step
+var patGmIni: int = 1         // where the walk starts: gmatch takes an init
 var patAfter: int = 0        // where a finished set scan goes on a match
 var patFailTo: int = 0       // and on a miss
 var patSt: int = 0
@@ -7041,6 +7066,18 @@ mod patSetRetry() {
 // capture", and an answer that will not fit the expression's register window is
 // refused rather than written over the values after it.
 mod patDone() {
+  if patMode == 3 {
+    // gmatch's cursor, measured rather than derived: the next attempt starts at
+    // the end of this match, an empty match steps one past where it stands, and
+    // a NON-empty match that ends at the end of the subject finishes the walk.
+    // That last rule is what makes "aaa" on "a*" one result and "abc" on "c?"
+    // three, while "aaa" on "b*" is four and "abc" on "" is four -- the empty
+    // matches at the end are real and the walk does take them.
+    let np = if patI == patStart then patStart + 2
+             else if patI == patLen then patLen + 2
+             else patI + 1
+    patGmPos[patTid] = np
+  }
   if patCapN > 0 {
     patErr = "unfinished capture"
     patSt = 8
@@ -7126,7 +7163,9 @@ mod patNone() {
   vtag[nxDst] = 0
   vnum[nxDst] = 0.0
   vstr[nxDst] = ""
-  retCountV = 1
+  // a gmatch step with no match is the end of the walk, and that is *no* values:
+  // one nil is a value, and a for-in that gets one calls the iterator for ever
+  retCountV = if patMode == 3 then 0 else 1
   nxActive = false
   vmPc = nxPc + 1
 }
@@ -7447,6 +7486,148 @@ mod gateLow(fid: int, a: int, nargs: int) {
     }
   }
 }
+// gmatch's two halves, run from the micro-step at the top of vmStep (nxMode 3)
+// because an array element write inside gateHigh's arm is dropped; see the note
+// there.  Phase 0 is the constructor: the walk's subject, pattern and cursor go
+// into three arrays, and the three values a generic for takes come back.  Phase
+// 1 is one step: the cursor comes out of the arrays and the matcher runs from
+// it.  The walk is a number where PUC's is a closure, and it is the second
+// value here and nil in PUC; the loop hands it back and the body never sees it,
+// so the only difference a program can see is type() of that value.
+mod gmStep() {
+  if patGmPhase == 0 {
+    patGmS[patGmId] = patSrc
+    patGmP[patGmId] = patPat
+    patGmPos[patGmId] = patGmIni
+    vtag[nxDst] = 4
+    vnum[nxDst] = 22.0
+    vstr[nxDst] = ""
+    vtag[nxDst + 1] = 6
+    vnum[nxDst + 1] = patGmId * 1.0
+    vstr[nxDst + 1] = ""
+    vtag[nxDst + 2] = 0
+    vnum[nxDst + 2] = 0.0
+    vstr[nxDst + 2] = ""
+    retCountV = 3
+    nxActive = false
+    vmPc = nxPc + 1
+  } else {
+    patSrc = patGmS[patGmId]
+    patPat = patGmP[patGmId]
+    let pos = patGmPos[patGmId]
+    // patArm records where to come back to as vmPc, and this step runs a tick
+    // *after* the call, by which time vmPc is the next instruction: without
+    // putting it back the machine returns past the generic-for's nil test, the
+    // loop never ends, and the walk is called again from the start for ever.
+    vmPc = nxPc
+    // patArm answers a single nil itself when the walk is past the end, and it
+    // leaves the machine down: the arm raised nxActive before it knew whether a
+    // machine was coming, so without this the call re-runs the gate for ever.
+    patMode = -1
+    patArm(pos, 3, nxDst, patGmId)
+    if patMode == -1 {
+      nxActive = false
+      vmPc = nxPc + 1
+    }
+  }
+}
+
+// The subject and the pattern out of a call's own registers, with find's two
+// argument checks, shared by the matcher's gate and by gmatch's constructor so
+// the two cannot drift apart.  off is where the subject sits: _pat takes a mode
+// first, so its subject is the second argument, while _gmatch's is the first.
+// Only the arguments actually passed are read: a register past nargs still
+// holds the caller's previous call, and a find whose init came from there is a
+// find with a boolean init.
+mod patCheck(a: int, nargs: int, nm: string, off: int) -> bool {
+  let st = if nargs < off then 0 else vTag(a + off)
+  let pt = if nargs < off + 1 then 0 else vTag(a + off + 1)
+  if nargs < off {
+    vmFail("bad argument #1 to '" .. nm .. "' (string expected, got no value)")
+    return false
+  } else if st == 2 {
+    patSrc = vStr(a + off)
+  } else if st == 1 || st == 6 {
+    patSrc = fmtVal(st, vNum(a + off), vStr(a + off))
+  } else {
+    vmFail("bad argument #1 to '" .. nm .. "' (string expected, got " .. typeName(st) .. ")")
+    return false
+  }
+  if nargs < off + 1 {
+    vmFail("bad argument #2 to '" .. nm .. "' (string expected, got no value)")
+    return false
+  } else if pt == 2 {
+    patPat = vStr(a + off + 1)
+  } else if pt == 1 || pt == 6 {
+    patPat = fmtVal(pt, vNum(a + off + 1), vStr(a + off + 1))
+  } else {
+    vmFail("bad argument #2 to '" .. nm .. "' (string expected, got " .. typeName(pt) .. ")")
+    return false
+  }
+  return true
+}
+
+// Start the machine: mode 0 find, 1 match, 2 one gsub step, 3 one gmatch step.
+// dst is the absolute register the answers go in and tid is gmatch's state table
+// (0 when there is none).  A start past the subject's end answers a single nil,
+// which is how a walk that is over ends and how a find past the end has always
+// answered here.
+mod patArm(ini: int, mode: int, dst: int, tid: int) {
+  patAnchor = false
+  patPSkip = 0
+  // a leading ^ is the anchor, but not on the plain path, which is a literal
+  // search and never looks at the pattern's meaning.  Mode 3 strips it and does
+  // not anchor: PUC's gmatch is not the anchored find, it re-enters the matcher
+  // at a new position every step.
+  if !patPlain && 0 < patPat.Length() && patPat.Substring(0, 1) == "^" {
+    if mode == 3 {
+      patPSkip = 1
+    } else {
+      patAnchor = true
+      patPSkip = 1
+    }
+  }
+  patPEnd = patPat.Length()
+  patLen = patSrc.Length()
+  if ini < 1 {
+    ini = 1
+  }
+  if patLen + 1 < ini {
+    vtag[dst] = 0
+    vnum[dst] = 0.0
+    vstr[dst] = ""
+    // the end of a gmatch walk answers *no* values, which is what ends the loop:
+    // a single nil is a value, and a for-in that gets one runs for ever
+    retCountV = if mode == 3 then 0 else 1
+  } else if mode == 3 && patPSkip == 1 {
+    // measured: a pattern that starts with ^ matches nothing at all in gmatch,
+    // while find and gsub both take it as the anchor and honour it
+    vtag[dst] = 0
+    vnum[dst] = 0.0
+    vstr[dst] = ""
+    retCountV = 0
+  } else {
+    patMode = mode
+    patTid = tid
+    // one local for both cursors: patR = patStart would read the value patStart
+    // had *before* the line above wrote it, and the walk then never advances
+    // its right edge, so patNextStart takes the "there is another start" arm for
+    // ever and the machine cycles 0 1 2 4 6 until the tick budget runs out
+    let start = ini - 1
+    patStart = start
+    patR = start
+    patSt = 0
+    patSp = 0
+    patNCap = 0
+    patCapN = 0
+    patErr = ""
+    nxDst = dst
+    nxPc = vmPc
+    nxMode = 2
+    nxActive = true
+  }
+}
+
 // The high half: the rest of the builtins, and the generic Lua call at the
 // end, which is what a program function reaches.  a and nargs are the call's
 // own registers; mtSelf says whether the call wants every result or one.
@@ -7804,54 +7985,22 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
     }
   } else if fid == 20 {
     // _pat(mode, s, p [, init [, plain]]): the pattern matcher.  mode 0 is
-    // find, 1 is match and 2 is one step of string.gsub's loop, which answers
-    // the two positions, the number of captures and the captures.  All of this
-    // is argument checking and setup; the matching is the machine at the top of
-    // vmStep, which writes its answers into this call's own registers the way
-    // the _fmt machine does.
+    // find, 1 is match, 2 is one step of string.gsub's loop and 3 is one step of
+    // string.gmatch's.  All of this is argument checking and setup; the matching
+    // is the machine at the top of vmStep, which writes its answers into this
+    // call's own registers the way the _fmt machine does.
     let mode = toInt(numArg(vTag(a + 1), vNum(a + 1)))
     let nm = if mode == 0 then "find" else if mode == 1 then "match" else "gsub"
     // Only the arguments that were actually passed may be read: a register past
     // nargs still holds whatever the caller's previous call left in it, and a
     // find whose init came from there is a find with a boolean init.
-    let st = if 1 < nargs then vTag(a + 2) else 0
-    let pt = if 2 < nargs then vTag(a + 3) else 0
     let it = if 3 < nargs then vTag(a + 4) else 0
     let inum = if 3 < nargs then vNum(a + 4) else 0.0
     let pl = if 4 < nargs then vTag(a + 5) else 0
     let plv = if 4 < nargs then vNum(a + 5) else 0.0
-    if nargs < 2 {
-      vmFail("bad argument #1 to '" .. nm .. "' (string expected, got no value)")
-    } else if st == 2 {
-      patSrc = vStr(a + 2)
-    } else if st == 1 || st == 6 {
-      patSrc = fmtVal(st, vNum(a + 2), vStr(a + 2))
-    } else {
-      vmFail("bad argument #1 to '" .. nm .. "' (string expected, got " .. typeName(st) .. ")")
-    }
-    if !vmFailed {
-      if nargs < 3 {
-        vmFail("bad argument #2 to '" .. nm .. "' (string expected, got no value)")
-      } else if pt == 2 {
-        patPat = vStr(a + 3)
-      } else if pt == 1 || pt == 6 {
-        patPat = fmtVal(pt, vNum(a + 3), vStr(a + 3))
-      } else {
-        vmFail("bad argument #2 to '" .. nm .. "' (string expected, got " .. typeName(pt) .. ")")
-      }
-    }
-    if !vmFailed {
+    if patCheck(a, nargs, nm, 2) {
       // only nil and false are false, so a plain of 0 or "" is plain all the same
-      patPlain = mode == 0 && !(pl == 0 || pl == 3 && plv == 0.0)      patAnchor = false
-      patPSkip = 0
-      // a leading ^ is the anchor, but not on the plain path, which is a
-      // literal search and never looks at the pattern's meaning
-      if !patPlain && 0 < patPat.Length() && patPat.Substring(0, 1) == "^" {
-        patAnchor = true
-        patPSkip = 1
-      }
-      patPEnd = patPat.Length()
-      patLen = patSrc.Length()
+      patPlain = mode == 0 && !(pl == 0 || pl == 3 && plv == 0.0)
       // PUC's posrelat: a positive init is itself, a negative one counts back
       // from the end plus one, and a zero goes to the clamp below.  A numeric
       // *string* init is the one thing here PUC takes and this does not: the
@@ -7861,31 +8010,75 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
         ini = 1
       } else if it == 1 || it == 6 {
         let raw = toInt(inum)
-        ini = if 0 < raw then raw else if 0 < 0 - raw then patLen + raw + 1 else 0
+        ini = if 0 < raw then raw else if 0 < 0 - raw then patSrc.Length() + raw + 1 else 0
       } else {
         vmFail("bad argument #3 to '" .. nm .. "' (number expected, got " .. typeName(it) .. ")")
       }
       if !vmFailed {
-        if ini < 1 {
-          ini = 1
+        patArm(ini, mode, vmBase + a, 0)
+      }
+    }
+  } else if fid == 21 || fid == 22 {
+    // _gmatch(s, p) is string.gmatch: it answers the iterator, the state it
+    // walks and the control, which is how a generic for takes three values from
+    // an expression and shows only the results to the body.  _gmnext(state) is
+    // one step of that walk, and it is a *different* gate because PUC's
+    // iterator is a different value from string.gmatch: a call with one string
+    // is a gmatch missing its pattern, and the iterator is handed whatever the
+    // loop has and ignores it.  PUC's is a closure over (s, p, the cursor) and
+    // there are no closures here, so the cursor is a table the loop never sees.
+    // The differences from PUC are that type() of the state is a table where PUC
+    // answers nil, and that a hand-made table is an error where PUC ignores its
+    // argument.
+    if fid == 21 {
+      if patCheck(a, nargs, "string.gmatch", 1) {
+        // gmatch's third argument is the init posrelat gives it, with the same
+        // shape find has: a negative one counts back from the end
+        var ini = 1
+        if 2 < nargs {
+          let it = vTag(a + 3)
+          if it == 0 {
+            ini = 1
+          } else if it == 1 || it == 6 {
+            let raw = toInt(vNum(a + 3))
+            ini = if 0 < raw then raw else if 0 < 0 - raw then patSrc.Length() + raw + 1 else 0
+          } else {
+            vmFail("bad argument #3 to 'gmatch' (number expected, got " .. typeName(it) .. ")")
+          }
         }
-        if patLen + 1 < ini {
-          vSet(a, 0, 0.0, "")
-          retCountV = 1
-        } else {
-          patMode = mode
-          patStart = ini - 1
-          patR = patStart
-          patSt = 0
-          patSp = 0
-          patNCap = 0
-          patCapN = 0
-          patErr = ""
-          nxDst = vmBase + a
-          nxPc = vmPc
-          nxMode = 2
-          nxActive = true
+        if !vmFailed {
+          if PAT_WALKS <= patTid {
+            vmFail("too many gmatch walks")
+          } else {
+            patGmId = patTid
+            patLastTid = patTid
+            patTid = patTid + 1
+            patGmIni = ini
+            patGmPhase = 0
+            nxDst = vmBase + a
+            nxPc = vmPc
+            nxMode = 3
+            nxActive = true
+          }
         }
+      }
+    } else {
+      var id = patLastTid
+      if vTag(a + 1) == 1 || vTag(a + 1) == 6 {
+        let raw = toInt(vNum(a + 1))
+        if 0 <= raw && raw < patTid {
+          id = raw
+        }
+      }
+      if id < 0 || PAT_WALKS <= id {
+        vmFail("bad argument #1 to 'gmatch' (number expected)")
+      } else {
+        patGmId = id
+        patGmPhase = 1
+        nxDst = vmBase + a
+        nxPc = vmPc
+        nxMode = 3
+        nxActive = true
       }
     }
   } else if fid == 14 {
@@ -8045,6 +8238,14 @@ mod vmStep() {
         patGo = false
         patStep()
       }
+    } else if nxMode == 3 {
+      // gmatch's two halves.  They are here and not in the gate arm because an
+      // array element write inside gateHigh -- which is inlined once per vmStep
+      // -- is dropped: the walk's subject, pattern and cursor went into three
+      // arrays and every one of the stores was lost, so the first call read a
+      // cursor of 0 and matched at -1.  A scalar write in the same place lands,
+      // so the arm only sets the phase and the id and this does the arrays.
+      gmStep()
     } else {
       nxStep()
     }
@@ -8680,6 +8881,9 @@ mod parseJobStart() {
   patCapE.resize(33, 0)
   patCapP.resize(33, 0)
   patCapIx.resize(33, 0)
+  patGmS.resize(PAT_WALKS, "")
+  patGmP.resize(PAT_WALKS, "")
+  patGmPos.resize(PAT_WALKS, 1)
   fStart.resize(NB, -1)
   fParams.resize(NB, -1)
   fRegs.resize(NB, -1)
@@ -8747,6 +8951,11 @@ mod libStrCase(p: string) -> string {
 mod libStrFmt(p: string) -> string {
   return if srcUses(p, "string.format") || srcUsesField(p, "format")
       then LIB_str_fmt else ""
+}
+
+mod libStrGmatch(p: string) -> string {
+  return if srcUses(p, "string.gmatch") || srcUsesField(p, "gmatch")
+      then LIB_str_gmatch else ""
 }
 
 // gsub's replacement walk scans for '%' with string.find, so it brings the pat
@@ -8894,9 +9103,10 @@ on goParse {
   let libO = libIo(program)
   let libP = libStrPat(program)
   let libQ = libStrGsub(program)
+  let libR = libStrGmatch(program)
   let lib = libA .. libB .. libC .. libD .. libE .. libF .. libG
     .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO .. libP
-    .. libQ
+    .. libQ .. libR
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program
   llen = lsrc.Length()
