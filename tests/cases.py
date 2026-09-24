@@ -380,6 +380,36 @@ TESTS = [
       "this chip"}}),
     ("fmt-f-range", "print(string.format('%.2f', 1e16))", None, "runtimerr",
      {"expect": {"err": "number too large to format exactly on this chip"}}),
+    # %e: a digit stream, because the mantissa is the value divided by 10^k and
+    # no division by ten is exact.  The exponent is three digits, which is PUC
+    # 5.5 and not C's two -- %.3e of zero measures ten characters.  The sticky
+    # bit has to come from the digits as well as the double-double, because
+    # when the round digit is still inside the integer part the walk has not
+    # started the fraction and the leftover says nothing.
+    ("fmt-e-default", "print(string.format('%e', 1.5), "
+     "string.format('%.1e', -2.25))", None, "run"),
+    ("fmt-e-small", "print(string.format('%.2e', 0.000123), "
+     "string.format('%.0e', 1234.5))", None, "run"),
+    ("fmt-e-upper", "print(string.format('%E', 12345.6789), "
+     "string.format('%.3E', -0.0004567))", None, "run"),
+    # -0.0 is not here: the chip's lexer loses the sign of a negative zero
+    # (tostring(-0.0) is 0.0, where PUC has -0.0), which is its own divergence
+    # and not a %e one
+    ("fmt-e-zero", "print(string.format('%.3e', 0), string.format('%.0e', 0))",
+     None, "run"),
+    ("fmt-e-round", "print(string.format('%.0e', 25.5), "
+     "string.format('%.2e', 916506699492), string.format('%.1e', "
+     "-225090321657))", None, "run"),
+    ("fmt-e-flags", "print(string.format('%012.2e', 1.5), "
+     "string.format('%+.1e', 1.5), string.format('%-12.1e|', 1.5))",
+     None, "run"),
+    # the mantissa is p+1 digits read as one integer, and ten of them is past
+    # 2^53 -- so 15 places is a range error and not an approximation
+    ("fmt-e-prec-limit", "print(string.format('%.15e', 1.5))", None, "runtimerr",
+     {"expect": {"err": "precision above 14 cannot be formatted exactly on "
+      "this chip"}}),
+    ("fmt-e-range", "print(string.format('%.2e', 1e16))", None, "runtimerr",
+     {"expect": {"err": "number too large to format exactly on this chip"}}),
     # suite passes case sources on the command line: two of them in a batch is
     # already most of the way to Windows' 32 KB limit.  The first line pins the
     # shapes that always worked, the rest the two that used to fail -- one per

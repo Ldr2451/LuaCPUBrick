@@ -79,11 +79,13 @@
 ///   strings    "..." and '...' with \n \r \t \\ \" \' \<newline>, \z, \ddd and \xXX
 ///              for printable ASCII (32..126); other escapes are a compile error
 ///   formats    string.format's %d %i %u %x %X %o %c %s %q %% are exact, and so
-///              is %f: the value is scaled in a double-double, so the digits are
-///              the value's own -- %f of 0.15 is 0.1 at one place and 344.95 is
-///              344.9, which a single rounding cannot get right. A precision
-///              above 15, or a magnitude at 2^53 or above, is an error rather
-///              than an approximation. %e and %g are not here
+///              are %f and %e: the value is scaled in a double-double, so the
+///              digits are the value's own -- %f of 0.15 is 0.1 at one place and
+///              344.95 is 344.9, which a single rounding cannot get right, and
+///              %e reads the digits as a stream because its mantissa is a
+///              division by 10^k and no division by ten is exact. A precision
+///              above 15 for %f or 14 for %e, or a magnitude at 2^53 or above,
+///              is an error rather than an approximation. %g is not here
 ///   compare    == and ~= work on all types without coercion (tables by identity);
 ///              < > <= >= work on numbers or lexicographically on strings;
 ///              arithmetic never coerces strings
@@ -4036,6 +4038,7 @@ mod vmReset() {
   logV = ""
   logLen = 0
   logLines.clear()
+  fmtDd.clear()
   // the text in inStr0 is the program's standard input, and a run starts at its
   // beginning; the cursors are state, so they go with everything else
   rdText = inStr0
@@ -4670,14 +4673,12 @@ mod fmtConv() {
   } else if fmtCh == "c" {
     fmtPos = fmtPos + 1
     fmtConvChar()
-  } else if fmtCh == "f" {
+  } else if fmtCh == "f" || fmtCh == "e" || fmtCh == "E" || fmtCh == "g"
+      || fmtCh == "G" {
+    // the float conversions dispatch in a mod of their own: with them in this
+    // chain the arms above stopped taking effect and %d of 42 came out 00
     fmtPos = fmtPos + 1
-    fmtConvFloat()
-  } else if fmtCh == "e" || fmtCh == "E" || fmtCh == "g" || fmtCh == "G" {
-    // valid in PUC and not here yet, and saying "invalid conversion" would be
-    // a lie about a conversion the chip has heard of
-    fmtPos = fmtPos + 1
-    vmFail("conversion '%" .. fmtCh .. "' is not available on this chip")
+    fmtConvFloatish()
   } else {
     fmtPos = fmtPos + 1
     vmFail("invalid conversion '%" .. fmtCh .. "' to 'format'")
@@ -4813,6 +4814,320 @@ mod fmtConvChar() {
   }
 }
 
+// %e.  The mantissa is the value divided by 10^k, and no division by ten is
+// exact -- 1/10 is not representable -- so this cannot be %f with a different
+// exponent bolted on.  It is a digit stream instead: the integer part's digits
+// come off one division at a time, the fraction's off a double-double multiplied
+// by ten per digit, and the exponent is where the first nonzero digit sits
+// relative to the point.  The mantissa is those p+1 digits read as one integer,
+// so a carry out of them is +1 on the exponent rather than a walk back through
+// the digits.  See the note above fmtConvFloat for why this is its own shape.
+var fmtFrac0: float = 0.0    // the fraction, before any scaling
+var fmtAll: string = ""      // the integer's and the fraction's together
+var fmtK: int = 0            // the decimal exponent
+var fmtS: int = 0            // the index of the first significant digit
+var fmtPt: int = 0           // how many digits sit before the point
+var fmtM: float = 0.0        // the mantissa's p+1 digits, as one integer
+var fmtMI: int = 0           // the cursor while they are read
+var fmtNz: int = 0           // the fraction digits taken so far
+var fmtLz: int = -1          // where the first nonzero one is, -1 until it is
+var fmtLead: int = 0         // the mantissa's first digit, once they are read
+var fmtExp: string = ""      // the exponent's digits, separate from the value's
+var fmtUpperE: bool = false  // %E, which is the same number with an E
+var fmtSticky: bool = false // something nonzero follows the round digit
+var fmtSI: int = 0           // the cursor for that scan
+var fmtENum: int = 0         // the exponent while it is written out
+
+// The entry, as %f's: the argument, the sign, the precision.  14 is the ceiling
+// and not an arbitrary one -- the mantissa is p+1 digits read as one integer,
+// and ten of them is past 2^53.
+mod fmtConvExp() {  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vTag(ab)
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else {
+      fmtNeg = vNum(ab) < 0.0
+      if fmtNeg {
+        fmtV = 0.0 - vNum(ab)
+      } else {
+        fmtV = vNum(ab)
+      }
+      fmtP = if fmtPrec < 0 then 6 else fmtPrec
+      fmtInt = ""
+      fmtFr = ""
+      // every one of these is per conversion, not per program: fmtExp left over
+      // from the last one is why two %e in a print gave e+00000
+      fmtExp = ""
+      fmtSticky = false
+      fmtUpperE = fmtCh == "E"
+      if fmtV == 0.0 {
+        // 0 is 0.000000e+00 whatever the precision, and the exponent is a
+        // positive zero however the value was signed
+        fmtBody = (if fmtNeg then "-0" else "0")
+        if 0 < fmtP {
+          fmtBody = fmtBody .. "." .. ZEROS16.Substring(0, fmtP)
+        }
+        fmtBody = fmtBody .. (if fmtUpperE then "E+000" else "e+000")
+        fmtPre = ""
+        fmtState = 6
+      } else if 14 < fmtP {
+        vmFail("precision above 14 cannot be formatted exactly on this chip")
+      } else if 9007199254740992.0 <= fmtV {
+        vmFail("number too large to format exactly on this chip")
+      } else {
+        fmtIP = floor(fmtV)
+        fmtNz = 0
+        fmtLz = -1
+        // The walk below multiplies whatever pair it finds, so the fraction has
+        // to be in it before the first state, and it cannot go through fmtFrac0:
+        // a var this state writes is not what a later line of the same state
+        // reads, so every fraction digit of 1.5 came out 0.
+        fmtDd[0] = fmtV - floor(fmtV)
+        fmtDd[1] = 0.0
+        fmtNxt = 21
+        fmtState = 20
+      }
+    }
+  }
+}
+
+// The integer part's digits, then the fraction's.  One state to hand the digit
+// walk its next state, so the walk itself stays the one %f uses.
+mod fmtIntStart() {
+  fmtFNDigits()
+}
+
+// The integer part's digits, then the fraction's.  The fraction is exact for
+// about fifteen digits and not the sixteenth, so the walk stops at the round
+// digit and what is left in the double-double is the sticky bit -- which is why
+// it takes one more digit than the mantissa needs: the last one it reads is the
+// one it rounds on.
+mod fmtEFracMul() {
+  fmtDdMul(fmtDd[0], fmtDd[1], 10.0)
+  fmtState = 22
+}
+
+mod fmtEFracDig() {
+  let d = floor(fmtDd[0])
+  // the character is its own let, as fmtDigit does it: the right-hand side of an
+  // assignment is a value gate, and it sees the value the same mod has just
+  // written, so an inline FromCharCode(48 + d) re-read floor(fmtDd[0]) after
+  // fmtDd[0] had been reduced and every digit came out 0
+  let ch = FromCharCode(48 + d).Character
+  fmtDd[0] = fmtDd[0] - d
+  fmtFr = fmtFr .. ch
+  if fmtLz < 0 && d != 0 {
+    fmtLz = fmtNz
+  }
+  fmtNz = fmtNz + 1
+  fmtState = 31
+}
+
+// Whether the walk goes on, in a state of its own.  A value of a hundred or
+// more has all its significant digits in the integer part, so it only has to
+// reach the round digit: p+2 digits less the ones already there.  Below one it
+// has to get past the leading zeros first, which it cannot know until the first
+// nonzero turns up.  The test cannot live at the end of the walk's own chain:
+// there it is a nested if under a mod call, and the state write in it is
+// dropped, so the walk never stopped and %.2e of 0.000123 ran until the ticks
+// ran out.
+mod fmtEFracMore() {
+  if fmtInt == "" {
+    if fmtLz < 0 || fmtNz < fmtLz + fmtP + 2 {
+      fmtState = 21
+    } else {
+      fmtState = 23
+    }
+  } else {
+    if fmtNz < fmtP + 2 - fmtInt.Length() {
+      fmtState = 21
+    } else {
+      fmtState = 23
+    }
+  }
+}
+
+// The exponent, and the string the digits are read from.  The first significant
+// digit is the integer part's first when there is one -- an integer part has no
+// leading zeros -- and otherwise the first nonzero fraction digit, which the
+// walk already counted, so nothing here has to scan.
+mod fmtEJoin() {
+  fmtAll = fmtInt .. fmtFr
+  fmtPt = fmtInt.Length()
+  if fmtInt == "" {
+    fmtS = fmtLz
+  } else {
+    fmtS = 0
+  }
+  fmtK = fmtPt - 1 - fmtS
+  if fmtLz < 0 {
+    fmtLz = fmtS
+  }
+  fmtMI = 0
+  fmtM = 0.0
+  fmtState = 24
+}
+
+// One digit of the mantissa per state, the character in one and the number in
+// the next: a string returned from a mod compares equal to the right text and
+// its ToCharCode reads 0, so the code has to travel through a variable and a
+// tick.  The cursor counts from the first significant digit, and p+1 of them
+// make the mantissa.
+mod fmtEFetch() {
+  fmtD_ = fmtAll.Substring(fmtS + fmtMI, 1).ToCharCode().Codepoint - 48
+  fmtState = 25
+}
+
+mod fmtEBuild() {
+  fmtM = fmtM * 10.0 + fmtD_
+  fmtMI = fmtMI + 1
+  if fmtMI <= fmtP {
+    fmtState = 24
+  } else {
+    fmtSI = 0
+    fmtState = 32
+  }
+}
+
+// Whether anything nonzero follows the round digit, one character per state.
+// The double-double's leftover is not the whole answer: when the round digit is
+// still inside the integer part -- 916506699492 at two places rounds on the 5
+// and the 066 behind it are what say it is above the tie -- the walk stopped
+// before the fraction and the leftover is zero.  So the digits after the round
+// digit are read from the string as well, and either source is enough.
+mod fmtESticky() {
+  if fmtS + fmtP + 2 + fmtSI < fmtAll.Length() {
+    if fmtAll.Substring(fmtS + fmtP + 2 + fmtSI, 1) != "0" {
+      fmtSticky = true
+      fmtState = 26
+    } else {
+      fmtSI = fmtSI + 1
+    }
+  } else {
+    fmtState = 26
+  }
+}
+
+// The round digit is the one after the mantissa, and whether anything nonzero
+// follows it decides a tie.  A carry out of the mantissa is 10^p with the
+// exponent up by one, which is 9.999e5 becoming 1.000e6.
+mod fmtERound() {
+  let rd = fmtAll.Substring(fmtS + fmtP + 1, 1).ToCharCode().Codepoint - 48
+  let last = fmtM - floor(fmtM / 10.0) * 10.0
+  let odd = last - floor(last / 2.0) * 2.0
+  let sticky = fmtSticky || fmtDd[0] != 0.0 || fmtDd[1] != 0.0
+  if rd > 5 || (rd == 5 && (sticky || odd == 1.0)) {
+    fmtM = fmtM + 1.0
+    if 10.0 ** (fmtP + 1.0) <= fmtM {
+      fmtM = 10.0 ** (fmtP + 0.0)
+      fmtK = fmtK + 1
+    }
+  }
+  fmtNz = 0
+  // the mantissa's digits go into the same string the fraction's came out in,
+  // so it has to be emptied: left alone, %e of 1.5 printed thirteen zeros
+  fmtFr = ""
+  fmtState = 27
+}
+
+// The mantissa's trailing p digits, least significant first as everywhere else,
+// then the point and the leading digit in the state after.
+mod fmtEMant() {
+  if fmtNz < fmtP {
+    let q = floor(fmtM / 10.0)
+    let d = toInt(fmtM - q * 10.0)
+    let ch = FromCharCode(48 + d).Character
+    fmtFr = ch .. fmtFr
+    fmtM = q
+    fmtNz = fmtNz + 1
+  } else {
+    fmtLead = toInt(fmtM)
+    fmtState = 28
+  }
+}
+
+mod fmtEMantEnd() {
+  if fmtNeg {
+    fmtBody = "-" .. FromCharCode(48 + fmtLead).Character
+  } else if fmtPlus == 1 {
+    fmtBody = "+" .. FromCharCode(48 + fmtLead).Character
+  } else if fmtSpace == 1 {
+    fmtBody = " " .. FromCharCode(48 + fmtLead).Character
+  } else {
+    fmtBody = FromCharCode(48 + fmtLead).Character
+  }
+  if 0 < fmtP {
+    fmtBody = fmtBody .. "." .. fmtFr
+  }
+  fmtENum = if fmtK < 0 then 0 - fmtK else fmtK
+  fmtNz = 0
+  fmtState = 29
+}
+
+// The exponent, three digits with a sign.  Three, not C's two: PUC 5.5 formats
+// the floats itself rather than through the platform's printf, and measures
+// %.3e of zero at ten characters, which is 0.000e+000.  Every double's exponent
+// fits in three digits -- the largest is 308 -- so the width is fixed and there
+// is no loop for it.
+// The exponent's digits, one per state, most significant first.  Each arm says
+// where to go before it does its work: a state write after a mod call in the
+// deepest arm of a chain this deep is dropped, and the walk then wrote its zero
+// over and over -- an exponent of zero came out as e+00000.  Two at a time
+// would be fewer states, but FromCharCode(48 + d) is one character, so an
+// exponent past 99 came out as e-1< and e-2w.
+mod fmtEExpDig() {
+  if fmtENum >= 10 {
+    fmtState = 29
+    let q = floor(fmtENum / 10.0)
+    let ch = FromCharCode(48 + toInt(fmtENum - q * 10.0)).Character
+    fmtExp = ch .. fmtExp
+    fmtENum = q
+  } else {
+    fmtState = 30
+    let ch1 = FromCharCode(48 + fmtENum).Character
+    fmtExp = ch1 .. fmtExp
+  }
+}
+
+mod fmtEExpEnd() {
+  // three digits, whatever the exponent: one is 00, two is 0N.  Two pads, since
+  // no double's exponent passes 308, and each pad is its own write so the second
+  // sees the first's result.
+  if fmtExp.Length() < 3 {
+    fmtExp = "0" .. fmtExp
+  }
+  if fmtExp.Length() < 3 {
+    fmtExp = "0" .. fmtExp
+  }
+  if fmtK < 0 {
+    fmtBody = fmtBody .. (if fmtUpperE then "E-" else "e-") .. fmtExp
+  } else {
+    fmtBody = fmtBody .. (if fmtUpperE then "E+" else "e+") .. fmtExp
+  }
+  fmtPre = ""
+  fmtState = 6
+}
+
+// %f %e %g, which dispatch apart from fmtConv's chain: that chain was already
+// at the edge of what holds, and two more arms in it stopped the %d arm's write
+// from taking effect.
+mod fmtConvFloatish() {
+  if fmtCh == "f" {
+    fmtConvFloat()
+  } else if fmtCh == "e" || fmtCh == "E" {
+    fmtConvExp()
+  } else {
+    // valid in PUC and not here yet, and saying "invalid conversion" would be
+    // a lie about a conversion the chip has heard of
+    vmFail("conversion '%" .. fmtCh .. "' is not available on this chip")
+  }
+}
+
 // %f: the value scaled by its precision and rounded to an integer, which is
 // then read out one digit per tick with the point put back.  The scale is the
 // whole difficulty: a double times a power of ten is not the exact product
@@ -4824,21 +5139,20 @@ mod fmtConvChar() {
 // cheap version costs: 0.17% of the values that fit come out with the wrong
 // last digit, and they are 0.05, 0.15, 344.95 -- the values programs format.
 var fmtV: float = 0.0         // |the argument|
-var fmtDHi: float = 0.0       // the scaled fraction, high half
-var fmtDLo: float = 0.0       // and the low half Dekker's two-product keeps
+var fmtDd: float[]           // the double-double: [0] the high half, [1] the low
 var fmtIP: float = 0.0        // the integer part, exact while it is below 2^53
 var fmtF: float = 0.0         // the fraction scaled by the precision
 var fmtInt: string = ""       // its digits, least significant first
 var fmtFr: string = ""        // and the fraction's
 var fmtP: int = 0             // the precision in force, %f's 6 when none given
+var fmtNxt: int = 17          // where the integer digit walk goes when it ends
 
-// hi * c as a double-double, exact to 106 bits, left in fmtDHi / fmtDLo.  c has
-// to be a power of ten no larger than 10^22 and the product no wider than 106
-// bits, which every step here is: the widest is 10^15 against a 53-bit value,
-// 83 bits.  The pair comes in as parameters and goes out in vars, because a var
-// written earlier in the same state is not visible to the value gates here: with
-// fmtDHi as an input the scale read the *previous* value and every conversion
-// came out 0.00.
+// The double-double lives in an array, fmtDd[0] and fmtDd[1], and not in two
+// scalars.  As scalars it did not survive being read back: with fmtConvExp
+// seeding the pair and the walk reducing it, the compiler's shared Get per var
+// handed the digit state the seeded value instead of the multiplied one, and
+// every fraction digit came out 0.  Arrays are how the rest of the chip passes a
+// value a mod wrote to a state that runs later.
 mod fmtDdMul(hi: float, lo: float, c: float) {
   let ph = hi * c
   // 2^27 + 1 splits each operand into halves a multiply cannot mix, so the
@@ -4854,8 +5168,8 @@ mod fmtDdMul(hi: float, lo: float, c: float) {
   // two-sum, so s is the rounded sum and the rest of it exactly
   let s = ph + t
   let bb = s - ph
-  fmtDHi = s
-  fmtDLo = (ph - (s - bb)) + (t - bb)
+  fmtDd[0] = s
+  fmtDd[1] = (ph - (s - bb)) + (t - bb)
 }
 
 // The entry: the argument, the sign, and the precision.  15 is the ceiling and
@@ -4945,8 +5259,8 @@ mod fmtFScale() {
 // needs it -- the high half is 0.5 and the low half is 2.8e-17, so it is a hair
 // above the tie and PUC prints 0.1, not 0.0.
 mod fmtFRound() {
-  let fl = floor(fmtDHi)
-  let rh = fmtDHi - fl
+  let fl = floor(fmtDd[0])
+  let rh = fmtDd[0] - fl
   // Which digit the tie looks at is the last one the conversion keeps, and with
   // no precision there are no fraction digits to keep: it is the units digit of
   // the integer part.  Taking the fraction's instead made every %.0f tie round
@@ -4954,7 +5268,7 @@ mod fmtFRound() {
   let last = if 0 < fmtP then fl else fmtIP - floor(fmtIP / 10.0) * 10.0
   let odd = last - floor(last / 2.0) * 2.0
   fmtF = if rh > 0.5 then fl + 1.0 else if rh < 0.5 then fl
-    else if fmtDLo > 0.0 then fl + 1.0 else if fmtDLo < 0.0 then fl
+    else if fmtDd[1] > 0.0 then fl + 1.0 else if fmtDd[1] < 0.0 then fl
     else if odd == 1.0 then fl + 1.0 else fl
   // 9.999 at three places rounds to 10.000: the fraction carries into the
   // integer part, which is an exact add while it is below 2^53.  The limit is
@@ -4968,6 +5282,7 @@ mod fmtFRound() {
     vmFail("number too large to format exactly on this chip")
   } else {
     fmtFr = ""
+    fmtNxt = 17
     fmtState = 16
   }
 }
@@ -4987,10 +5302,13 @@ mod fmtFFDigits() {
 // One integer digit per tick.  The integer part of a double below 2^53 is exact
 // and each division by ten is exact too -- the quotient is at least 0.1 away
 // from a whole number, which is far more than the division's own rounding -- so
-// these are the value's digits and not approximations of them.
+// these are the value's digits and not approximations of them.  fmtNxt says
+// where to go when they run out: %f pads the fraction next, %e walks the
+// fraction's.  It cannot be a parameter, because a mod cannot write one to a
+// var -- four placeholders and a refusal to lower.
 mod fmtFNDigits() {
   if fmtIP < 1.0 {
-    fmtState = 17
+    fmtState = fmtNxt
   } else {
     let q = floor(fmtIP / 10.0)
     let d = toInt(fmtIP - q * 10.0)
@@ -5075,18 +5393,37 @@ mod fmtSpecBad() -> int {
 // negative remainder is carried into the digit and taken off the quotient, which
 // is floor division; the quotient then settles at -1 and the digit count is what
 // stops the loop, which is where the 64-bit two's complement comes from.
+// One digit of a radix conversion, with the division done by hand: the host's
+// floor truncates toward zero, so a negative quotient never goes negative and
+// %x of -1 came out as fifteen zeros.  The quotient is a truncating cast and a
+// negative remainder is carried into the digit and taken off the quotient, which
+// is floor division; the quotient then settles at -1 and the digit count is what
+// stops the loop, which is where the 64-bit two's complement comes from.  It
+// leaves the digit in fmtQ_ and fmtDigitPut turns it into a character.
 mod fmtRadixDigit() {
-  fmtQ_ = toInt(fmtNum_ / fmtBase_)
-  let r = toInt(fmtNum_ - fmtQ_ * fmtBase_)
+  let q = toInt(fmtNum_ / fmtBase_)
+  let r = toInt(fmtNum_ - q * fmtBase_)
   if r < 0 {
-    fmtD_ = r + fmtBaseI
-    fmtQ_ = fmtQ_ - 1
+    fmtQ_ = r + fmtBaseI
+    fmtNum_ = q - 1.0
   } else {
-    fmtD_ = r
+    fmtQ_ = r
+    fmtNum_ = q
   }
-  let ch = if fmtUpper then HEXDIG_U.Substring(fmtD_, 1) else HEXDIG.Substring(fmtD_, 1)
+  fmtState = 33
+}
+
+// Prepend the digit the state before worked out.  A state of its own because the
+// digit and the quotient both come from one var, and a mod that writes that var
+// has its own expressions re-evaluated against the new value: with the character
+// built in the same state, %d of 42 came out 00, because the digit and the
+// quotient were both recomputed after fmtNum_ had become 4.  Nothing here is
+// derived from the var this writes.
+mod fmtDigitPut() {
+  let ch = if fmtBase_ == 16.0 then if fmtUpper then HEXDIG_U.Substring(fmtQ_, 1)
+    else HEXDIG.Substring(fmtQ_, 1) else FromCharCode(48 + fmtQ_).Character
   fmtBody = ch .. fmtBody
-  fmtNum_ = fmtQ_
+  fmtState = 7
 }
 
 // One digit per tick.  Digits come out least significant first and are
@@ -5098,10 +5435,9 @@ mod fmtDigit() {
       fmtState = 13
     } else {
       let q = floor(fmtNum_ / 10.0)
-      let d = toInt(fmtNum_ - q * 10.0)
-      let ch = FromCharCode(48 + d).Character
-      fmtBody = ch .. fmtBody
+      fmtQ_ = toInt(fmtNum_ - q * 10.0)
       fmtNum_ = q
+      fmtState = 33
     }
   } else if fmtNum_ > 0.0 || fmtDigits < fmtDigitsMax {
     fmtDigits = fmtDigits + 1
@@ -5268,7 +5604,19 @@ mod fmtPadStep() {
   }
 }
 
+// The dispatch, in two halves.  One chain for all of it stops working once it
+// is this long: the arms near the top quietly stop taking effect, and %d of 42
+// came out 00 because the integer digit state was never entered.  Sixteen arms
+// each is what holds, which is the same lesson as the conversion chain.
 mod fmtStep() {
+  if fmtState < 16 {
+    fmtStepA()
+  } else {
+    fmtStepB()
+  }
+}
+
+mod fmtStepA() {
   if fmtState == 0 {
     fmtLit()
   } else if fmtState == 1 {
@@ -5295,20 +5643,48 @@ mod fmtStep() {
     fmtQFetch()
   } else if fmtState == 13 {
     fmtDigitEnd()
-  } else if fmtState == 15 {
+  } else {
     fmtFScale()
-  } else if fmtState == 16 {
+  }
+}
+
+mod fmtStepB() {
+  if fmtState == 16 {
     fmtFFDigits()
-  } else if fmtState == 20 {
-    fmtFNDigits()
   } else if fmtState == 17 {
     fmtFPad()
   } else if fmtState == 18 {
     fmtFPoint()
   } else if fmtState == 19 {
     fmtFRound()
+  } else if fmtState == 20 {
+    fmtIntStart()
+  } else if fmtState == 21 {
+    fmtEFracMul()
+  } else if fmtState == 22 {
+    fmtEFracDig()
+  } else if fmtState == 23 {
+    fmtEJoin()
+  } else if fmtState == 24 {
+    fmtEFetch()
+  } else if fmtState == 25 {
+    fmtEBuild()
+  } else if fmtState == 26 {
+    fmtERound()
+  } else if fmtState == 27 {
+    fmtEMant()
+  } else if fmtState == 28 {
+    fmtEMantEnd()
+  } else if fmtState == 29 {
+    fmtEExpDig()
+  } else if fmtState == 30 {
+    fmtEExpEnd()
+  } else if fmtState == 31 {
+    fmtEFracMore()
+  } else if fmtState == 33 {
+    fmtDigitPut()
   } else {
-    fmtDigitEnd()
+    fmtESticky()
   }
 }
 
