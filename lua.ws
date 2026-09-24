@@ -79,13 +79,14 @@
 ///   strings    "..." and '...' with \n \r \t \\ \" \' \<newline>, \z, \ddd and \xXX
 ///              for printable ASCII (32..126); other escapes are a compile error
 ///   formats    string.format's %d %i %u %x %X %o %c %s %q %% are exact, and so
-///              are %f and %e: the value is scaled in a double-double, so the
+///              are %f %e and %g: the value is scaled in a double-double, so the
 ///              digits are the value's own -- %f of 0.15 is 0.1 at one place and
 ///              344.95 is 344.9, which a single rounding cannot get right, and
-///              %e reads the digits as a stream because its mantissa is a
+///              %e and %g read the digits as a stream because a mantissa is a
 ///              division by 10^k and no division by ten is exact. A precision
-///              above 15 for %f or 14 for %e, or a magnitude at 2^53 or above,
-///              is an error rather than an approximation. %g is not here
+///              above 15 for %f or 14 for %e and %g, a magnitude at 2^53 or above,
+///              or a %e or %g of a value below 10^(p-14), is an error rather
+///              than an approximation
 ///   compare    == and ~= work on all types without coercion (tables by identity);
 ///              < > <= >= work on numbers or lexicographically on strings;
 ///              arithmetic never coerces strings
@@ -4838,6 +4839,112 @@ var fmtSticky: bool = false // something nonzero follows the round digit
 var fmtSI: int = 0           // the cursor for that scan
 var fmtENum: int = 0         // the exponent while it is written out
 
+// %g, which is %e or %f chosen by the exponent, and then has its trailing zeros
+// taken off.  The choice needs the exponent first, so it runs %e's digit walk
+// to get it and then goes back through one arm or the other: %e's, with the
+// precision one lower, or %f's, with p-1-k places and no exponent at all.  The
+// digits are already in fmtAll either way, so the %f arm is string surgery on
+// them rather than a second conversion.
+var fmtIsG: bool = false     // this conversion is %g, not %e
+var fmtG0: int = 0           // %g's own precision, before either arm changes it
+var fmtStrip: bool = false   // and it drops trailing zeros (# says keep them)
+var fmtGToExp: bool = false  // and its stripped form wants the exponent after
+
+mod fmtConvG() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vTag(ab)
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else {
+      fmtNeg = vNum(ab) < 0.0
+      if fmtNeg {
+        fmtV = 0.0 - vNum(ab)
+      } else {
+        fmtV = vNum(ab)
+      }
+      // a precision of zero means one, which is C's rule and PUC's
+      fmtP = if fmtPrec < 0 then 6 else if fmtPrec == 0 then 1 else fmtPrec
+      fmtG0 = fmtP
+      // and the mantissa is read at one place fewer, whichever arm it ends up
+      // in: both spend a digit on a leading zero or a point
+      fmtP = fmtG0 - 1
+      fmtInt = ""
+      fmtFr = ""
+      fmtExp = ""
+      fmtSticky = false
+      fmtIsG = true
+      fmtStrip = if fmtHash == 1 then false else true
+      fmtGToExp = false
+      if fmtV == 0.0 {
+        fmtBody = if fmtNeg then "-0" else "0"
+        fmtPre = ""
+        fmtState = 6
+      } else if 14 < fmtP {
+        vmFail("precision above 14 cannot be formatted exactly on this chip")
+      } else if 9007199254740992.0 <= fmtV {
+        vmFail("number too large to format exactly on this chip")
+      } else {
+        fmtIP = floor(fmtV)
+        fmtNz = 0
+        fmtLz = -1
+        fmtDd[0] = fmtV - floor(fmtV)
+        fmtDd[1] = 0.0
+        fmtNxt = 21
+        fmtState = 20
+      }
+    }
+  }
+}
+
+// Which of the two forms, once the exponent is known: %e when it is below -4 or
+// at least the precision, %f otherwise.  Either way the precision the chosen
+// form runs at is one lower than %g's, because both forms spend one of the
+// digits on a leading zero or a point.
+// Which of the two forms, and this is after the rounding on purpose.  The
+// exponent C compares against the precision is the one the value has *after*
+// being rounded to that many digits, and 9.5 at one digit is 10, so its exponent
+// is 1, 1 is at the precision, and %g gives 1e+001 and not 10.  Deciding before
+// the rounding, with the exponent the digits had going in, gave 10.
+mod fmtGStyle() {
+  if fmtK < -4 || fmtG0 <= fmtK {
+    fmtGToExp = true
+    if fmtStrip {
+      fmtState = 36
+    } else {
+      fmtState = 29
+    }
+  } else {
+    fmtP = fmtG0 - 1 - fmtK
+    fmtGToExp = false
+    fmtInt = ""
+    fmtState = 15
+  }
+}
+
+
+// Trailing zeros off the fraction, and the point with them when nothing is left
+// after it: 1.2300 is 1.23 and 1.000 is 1.  Not the integer part -- %g of 100 is
+// 100, not 1 -- so the zeros stop at the point.
+mod fmtGStrip() {
+  let n = fmtBody.Length()
+  let last = fmtBody.Substring(n - 1, 1)
+  let dot = fmtBody.Find(".", true, 0)
+  if last == "0" && 0 <= dot && dot < n - 1 {
+    fmtBody = fmtBody.Substring(0, n - 1)
+  } else {
+    if last == "." {
+      fmtBody = fmtBody.Substring(0, n - 1)
+    }
+    fmtPre = ""
+    fmtState = if fmtGToExp then 29 else 6
+  }
+}
+
 // The entry, as %f's: the argument, the sign, the precision.  14 is the ceiling
 // and not an arbitrary one -- the mantissa is p+1 digits read as one integer,
 // and ten of them is past 2^53.
@@ -4864,6 +4971,7 @@ mod fmtConvExp() {  fmtArgI = fmtArgI + 1
       // from the last one is why two %e in a print gave e+00000
       fmtExp = ""
       fmtSticky = false
+      fmtIsG = false
       fmtUpperE = fmtCh == "E"
       if fmtV == 0.0 {
         // 0 is 0.000000e+00 whatever the precision, and the exponent is a
@@ -4937,7 +5045,14 @@ mod fmtEFracDig() {
 // dropped, so the walk never stopped and %.2e of 0.000123 ran until the ticks
 // ran out.
 mod fmtEFracMore() {
-  if fmtInt == "" {
+  if 16 <= fmtNz {
+    // The double-double carries about sixteen fraction digits exactly and the
+    // walk has not found a nonzero one in that many, so the value's first
+    // significant digit is further down than the digits are the value's own.
+    // Without this the walk never ends: %.2e of 1e-300 ran until the ticks ran
+    // out, and a value that cannot be converted should say so.
+    vmFail("value too small to format exactly on this chip")
+  } else if fmtInt == "" {
     if fmtLz < 0 || fmtNz < fmtLz + fmtP + 2 {
       fmtState = 21
     } else {
@@ -4970,6 +5085,8 @@ mod fmtEJoin() {
   }
   fmtMI = 0
   fmtM = 0.0
+  // %g reads the same mantissa %e does, at one place fewer, and chooses its form
+  // once the rounding has given the exponent it compares against the precision
   fmtState = 24
 }
 
@@ -5051,6 +5168,11 @@ mod fmtEMant() {
   }
 }
 
+// The mantissa, the point and the sign.  The point goes after the leading
+// digit, which is what %e and %g's %e arm both want; %g's other arm is the %f
+// conversion with a precision of its own, not a different way of spelling this
+// one.  # keeps the point even with no places after it, so %#.0e of 1.5 is
+// 2.e+000 and not 2e+000.
 mod fmtEMantEnd() {
   if fmtNeg {
     fmtBody = "-" .. FromCharCode(48 + fmtLead).Character
@@ -5063,10 +5185,16 @@ mod fmtEMantEnd() {
   }
   if 0 < fmtP {
     fmtBody = fmtBody .. "." .. fmtFr
+  } else if fmtHash == 1 {
+    fmtBody = fmtBody .. "."
   }
   fmtENum = if fmtK < 0 then 0 - fmtK else fmtK
   fmtNz = 0
-  fmtState = 29
+  if fmtIsG {
+    fmtState = 34
+  } else {
+    fmtState = 29
+  }
 }
 
 // The exponent, three digits with a sign.  Three, not C's two: PUC 5.5 formats
@@ -5122,9 +5250,7 @@ mod fmtConvFloatish() {
   } else if fmtCh == "e" || fmtCh == "E" {
     fmtConvExp()
   } else {
-    // valid in PUC and not here yet, and saying "invalid conversion" would be
-    // a lie about a conversion the chip has heard of
-    vmFail("conversion '%" .. fmtCh .. "' is not available on this chip")
+    fmtConvG()
   }
 }
 
@@ -5226,6 +5352,7 @@ mod fmtConvFloat() {
       fmtP = if fmtPrec < 0 then 6 else fmtPrec
       fmtInt = ""
       fmtFr = ""
+      fmtIsG = false
       if fmtV == 0.0 {
         fmtState = 17
       } else if 15 < fmtP {
@@ -5348,9 +5475,18 @@ mod fmtFPoint() {
     fmtBody = "+" .. fmtBody
   } else if fmtSpace == 1 {
     fmtBody = " " .. fmtBody
+  } else if fmtHash == 1 && fmtP == 0 {
+    // # keeps the point even with no places, on this arm as on %e's: %#.1g of
+    // 1.5 is 2. and not 2
+    fmtBody = fmtBody .. "."
   }
   fmtPre = ""
-  fmtState = 6
+  // %g's %f arm strips its trailing zeros on the way out
+  if fmtIsG && fmtStrip {
+    fmtState = 36
+  } else {
+    fmtState = 6
+  }
 }
 
 // Which flags each conversion takes, as PUC's table has it.  Returns 0 when the
@@ -5381,6 +5517,11 @@ mod fmtSpecBad() -> int {
     if fmtPlus == 1 || fmtSpace == 1 {
       return 1
     }
+  } else if fmtCh == "f" || fmtCh == "e" || fmtCh == "E" || fmtCh == "g"
+      || fmtCh == "G" {
+    // the three float conversions take every flag, and only the integer ones
+    // refuse #: this arm is why %#.0g was an invalid specification
+    return 0
   } else if fmtHash == 1 {
     return 1
   }
@@ -5683,6 +5824,10 @@ mod fmtStepB() {
     fmtEFracMore()
   } else if fmtState == 33 {
     fmtDigitPut()
+  } else if fmtState == 34 {
+    fmtGStyle()
+  } else if fmtState == 36 {
+    fmtGStrip()
   } else {
     fmtESticky()
   }

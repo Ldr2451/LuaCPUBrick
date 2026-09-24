@@ -18,8 +18,7 @@ from irdump import dump_source, Node
 import gates as GATES
 
 MAX_TICKS = 5000
-_LOG_LINES = 32
-_LOG_WIDTH = 64
+_LOG_LINES = 32       # appends the log keeps, which is not lines: see the push
 _RE_STR = re.compile(r'"([^"]*)"')
 _WS_ESCAPES = {
     "a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r",
@@ -146,6 +145,7 @@ class Sim:
         self._eval_stack: set[int] = set()
         self._unimpl_warned: set[str] = set()
         self._loglines_id: int | None = None
+        self._log_appends: list[str] = []
         # A compiler `_Unsupported` placeholder is a silent miscompile: it reads
         # 0 on hardware, so running it produces confidently wrong results (it
         # once shifted every bytecode operand by one array).  Fail loudly here,
@@ -189,10 +189,13 @@ class Sim:
                 if w.src_id not in self.input_ids:
                     self.input_ids.append(w.src_id)
         self._halted_id = None
+        self._err_id = None
         for nid, nd in nodes.items():
-            if _extract(nd.props.get('_label', ('raw', ''))) == 'vmHalted':
+            lbl = _extract(nd.props.get('_label', ('raw', '')))
+            if lbl == 'vmHalted':
                 self._halted_id = nid
-                break
+            elif lbl == 'errV' and self._err_id is None:
+                self._err_id = nid
         self.reset()
 
     def _seed_inputs(self):
@@ -215,6 +218,7 @@ class Sim:
         self.arrays = {}
         self.maps = {}
         self.log = ""
+        self._log_appends = []
         self.tick = 0
         self._deferred = {}
         self._chg_state = {}
@@ -299,6 +303,12 @@ class Sim:
             if self._halted_id is not None and self.vars.get(self._halted_id):
                 if not self.exec_queue and not self._deferred:
                     break
+            # A program that has an error is finished, whatever the clock is
+            # doing, and the queue does not necessarily drain after one: a
+            # source too long to lex errored and still ran its whole 200k-tick
+            # budget, 63 seconds for a program that had already given up.
+            if self._err_id is not None and self.vars.get(self._err_id):
+                break
         return self.capture()
 
     def _run_value_fixpoint(self):
@@ -1182,13 +1192,18 @@ class Sim:
         arr.append(v)
         if aid == self._loglines_id:
             s = v if isinstance(v, str) else str(v)
-            if len(s) > _LOG_WIDTH:
-                s = s[:_LOG_WIDTH - 1] + "\n"
-            self.log += s
-            lines = self.log.split("\n")
-            # trailing "" after the final newline is not a line
-            if len(lines) > _LOG_LINES + 1:
-                self.log = "\n".join(lines[-(_LOG_LINES + 1):])
+            # The log is the last 32 *appends*, whatever is in them.  A print
+            # call appends one line the chip has already capped at 64
+            # characters; io.write appends its raw text with no cap at all, and
+            # neither is trimmed here.  This used to mirror the older rule --
+            # cap at 64, keep 32 lines -- and silently cut every io.write longer
+            # than 63 characters, which the oracle diff then reported as the
+            # chip being wrong.  The chip's logV is the authority; logLines is
+            # the list of appends, and this is it.
+            self._log_appends.append(s)
+            if len(self._log_appends) > _LOG_LINES:
+                del self._log_appends[0]
+            self.log = "".join(self._log_appends)
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 

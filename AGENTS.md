@@ -55,11 +55,51 @@
   whole suite twice to see everything; all cases now run by default.
 - When a script loops over cases, build the expensive shared object once outside
   the loop. Check for this before concluding that a harness is just "slow".
+- A differential check that tries N values is N programs and N oracle processes
+  unless you batch it, and the batch unit is the *program*, not the value:
+  `print` appends one capped line, `io.write` appends raw text with no width
+  cap, and the log keeps 32 appends, so one `io.write` can carry a whole group
+  of values (`tools/fmtsweep.py` does six per call, marked with a group number so
+  one errored value cannot shift the rest of the comparison). Two ceilings bound
+  a batch: the chip's source buffer is about 4 KB *including* the prepended
+  library, and an expression is MAXVALS = 16 registers, so a group is built a few
+  values per statement -- one fifteen-operand `..` came out with its tail
+  dropped. Both are silent: check the program's length and its operand count
+  when a big batch comes back empty or truncated.
+- Time each phase, not just the script: `tools/fmtsweep.py` prints values/second
+  per precision, because a sweep that was 121s per precision became 20s and the
+  only way to see that was the number.
+- A run whose program has an error should stop when the error appears. The sim's
+  condition was "vmHalted and the queue drained", and a source too long to lex
+  never drained, so an errored program ran its whole 200k-tick budget: 63
+  seconds to be told what 2 seconds would say. `irsims.py` now also breaks on
+  `errV`.
 
 ## Layout
 - `lua.ws` is the chip; `irrun/` simulates it; `tests/` holds the suite and the
   oracle-diff checks; `tools/` holds the development tools. `README.md` lists
   them. Keep the root to the chip sources and the two docs.
+- `lua.ws` is one file because the compiler reads one file: there is no include,
+  so splitting it needs either a concatenate step that makes the real chip a
+  generated artifact or compiler support we do not have. It is 7.9k lines and
+  the tools do not care -- the things that bite are the *else-if chains inside
+  it*, not the file: a chain of about sixteen arms is where arms near the top
+  stop taking effect (the 33-arm state dispatch meant `%d` of 42 came out 00, so
+  it is two halves of sixteen), and the conversion chain broke the same way at
+  ten. When a dispatch grows, split it before the next arm, and keep the states
+  in named mods so a split is mechanical.
+- PUC's own split decides where a standard library function belongs: if PUC
+  implements it in Lua, port that Lua and prepend it on demand (`LIB_*`, a few
+  hundred characters); if PUC implements it in C, it is a gate. The float
+  conversions, the pattern matcher and `error`/`pcall` are all C in PUC and are
+  gates here for that reason; `pairs`, `ipairs`, `select`'s neighbours and the
+  string helpers are Lua in PUC and are library source.
+- A value that PUC's C code produces is a value the *sim* has to mirror
+  exactly. The sim kept the log's old rule -- 64 characters and 32 lines --
+  after the chip moved the width cap into the print handler and made the limit
+  32 appends, so it silently cut every `io.write` over 63 characters and the
+  oracle diff reported the chip as wrong. When a port's rule changes, the
+  harness's copy of it changes with it.
 - Anything used more than once belongs in a script, not in a shell one-liner:
   a probe you keep retyping should become `tools/<what it does>.py`.
 - One-off debug scripts get deleted once the finding is in; the tool that

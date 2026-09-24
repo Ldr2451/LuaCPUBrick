@@ -410,6 +410,29 @@ TESTS = [
       "this chip"}}),
     ("fmt-e-range", "print(string.format('%.2e', 1e16))", None, "runtimerr",
      {"expect": {"err": "number too large to format exactly on this chip"}}),
+    # %g: %e or %f by the exponent, and the two rules that are easy to get
+    # wrong. The exponent is the one the value has *after* rounding to the
+    # precision -- 9.5 at one digit is 10, so its exponent is 1 and the answer is
+    # 1e+001, not 10. And a precision of zero means one.
+    ("fmt-g-default", "print(string.format('%g', 1.5), "
+     "string.format('%g', 123456789), string.format('%g', 0.00001234))",
+     None, "run"),
+    ("fmt-g-style", "print(string.format('%.3g', 1), string.format('%.2g', 100), "
+     "string.format('%.0g', 9.5), string.format('%.3g', 123.4))", None, "run"),
+    ("fmt-g-small", "print(string.format('%.2g', 0.0001), "
+     "string.format('%.2g', 0.00001), string.format('%.6g', 33483122.829051971))",
+     None, "run"),
+    # # keeps the trailing zeros and the point, on both arms
+    ("fmt-g-hash", "print(string.format('%#.0e', 1.5), string.format('%#.1g', "
+     "1.5), string.format('%#.0g', 1234.5), string.format('%#5.1f', 1.5))",
+     None, "run"),
+    ("fmt-g-zero", "print(string.format('%g', 0), string.format('%.0g', 0))",
+     None, "run"),
+    # the walk needs the fraction's leading zeros, the mantissa's places and two
+    # more, and the double-double carries sixteen exactly: below 10^(p-14) there
+    # is no exact conversion and saying so beats a digit that is not the value's
+    ("fmt-g-small-limit", "print(string.format('%.2g', 1e-300))", None, "runtimerr",
+     {"expect": {"err": "value too small to format exactly on this chip"}}),
     # suite passes case sources on the command line: two of them in a batch is
     # already most of the way to Windows' 32 KB limit.  The first line pins the
     # shapes that always worked, the rest the two that used to fail -- one per
