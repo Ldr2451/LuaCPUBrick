@@ -91,9 +91,7 @@
   them. Keep the root to the chip sources and the two docs.
 - **The oracle is the reference and nothing else.** Real Lua 5.5, found by
   `tests/lua_oracle.py`, decides what correct means; a diff against it is the
-  only proof. There is no second chip source to compare against -- an old
-  `lua_full.ws` (deleted in 1abd9ce) was an incomplete earlier attempt, and
-  reading it only ever invites reading the wrong file.
+  only proof. There is no second chip source to compare against.
 - `lua.ws` is one file because the compiler reads one file: there is no include,
   so splitting it needs either a concatenate step that makes the real chip a
   generated artifact or compiler support we do not have. It is 7.9k lines and
