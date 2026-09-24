@@ -78,6 +78,12 @@
 ///              gives "x1", #t prints like 3
 ///   strings    "..." and '...' with \n \r \t \\ \" \' \<newline>, \z, \ddd and \xXX
 ///              for printable ASCII (32..126); other escapes are a compile error
+///   formats    string.format's %d %i %u %x %X %o %c %s %q %% are exact, and so
+///              is %f: the value is scaled in a double-double, so the digits are
+///              the value's own -- %f of 0.15 is 0.1 at one place and 344.95 is
+///              344.9, which a single rounding cannot get right. A precision
+///              above 15, or a magnitude at 2^53 or above, is an error rather
+///              than an approximation. %e and %g are not here
 ///   compare    == and ~= work on all types without coercion (tables by identity);
 ///              < > <= >= work on numbers or lexicographically on strings;
 ///              arithmetic never coerces strings
@@ -4427,6 +4433,7 @@ var fmtDigitsMax: int = 0
 var fmtSpec: string = ""
 const HEXDIG = "0123456789abcdef"
 const HEXDIG_U = "0123456789ABCDEF"
+const ZEROS16 = "0000000000000000"
 
 // states: 0 literal, 1 flags, 2 width, 3 precision, 4 conversion, 5 padding,
 // 6 finish a conversion, 7 one integer digit, 8 one quoted byte, 9 one
@@ -4663,6 +4670,14 @@ mod fmtConv() {
   } else if fmtCh == "c" {
     fmtPos = fmtPos + 1
     fmtConvChar()
+  } else if fmtCh == "f" {
+    fmtPos = fmtPos + 1
+    fmtConvFloat()
+  } else if fmtCh == "e" || fmtCh == "E" || fmtCh == "g" || fmtCh == "G" {
+    // valid in PUC and not here yet, and saying "invalid conversion" would be
+    // a lie about a conversion the chip has heard of
+    fmtPos = fmtPos + 1
+    vmFail("conversion '%" .. fmtCh .. "' is not available on this chip")
   } else {
     fmtPos = fmtPos + 1
     vmFail("invalid conversion '%" .. fmtCh .. "' to 'format'")
@@ -4796,6 +4811,198 @@ mod fmtConvChar() {
       fmtState = 6
     }
   }
+}
+
+// %f: the value scaled by its precision and rounded to an integer, which is
+// then read out one digit per tick with the point put back.  The scale is the
+// whole difficulty: a double times a power of ten is not the exact product
+// (0.15 * 10 is 1.5, and the exact product is 1.4999999999999999944..., so the
+// one-rounding version prints 0.2 where PUC prints 0.1), and a rounded product
+// cannot say which side of a .5 it landed on.  So the product is carried in a
+// double-double: two doubles holding 106 bits, and the tie is read off the sign
+// of the half the single multiply dropped.  tools/fmtdiff.py measures what the
+// cheap version costs: 0.17% of the values that fit come out with the wrong
+// last digit, and they are 0.05, 0.15, 344.95 -- the values programs format.
+var fmtV: float = 0.0         // |the argument|
+var fmtDHi: float = 0.0       // the scaled fraction, high half
+var fmtDLo: float = 0.0       // and the low half Dekker's two-product keeps
+var fmtIP: float = 0.0        // the integer part, exact while it is below 2^53
+var fmtF: float = 0.0         // the fraction scaled by the precision
+var fmtInt: string = ""       // its digits, least significant first
+var fmtFr: string = ""        // and the fraction's
+var fmtP: int = 0             // the precision in force, %f's 6 when none given
+
+// hi * c as a double-double, exact to 106 bits, left in fmtDHi / fmtDLo.  c has
+// to be a power of ten no larger than 10^22 and the product no wider than 106
+// bits, which every step here is: the widest is 10^15 against a 53-bit value,
+// 83 bits.  The pair comes in as parameters and goes out in vars, because a var
+// written earlier in the same state is not visible to the value gates here: with
+// fmtDHi as an input the scale read the *previous* value and every conversion
+// came out 0.00.
+mod fmtDdMul(hi: float, lo: float, c: float) {
+  let ph = hi * c
+  // 2^27 + 1 splits each operand into halves a multiply cannot mix, so the
+  // low half of the product comes out of four small products
+  let ca = 134217729.0 * hi
+  let ahi = ca - (ca - hi)
+  let alo = hi - ahi
+  let cb = 134217729.0 * c
+  let bhi = cb - (cb - c)
+  let blo = c - bhi
+  let pe = ((ahi * bhi - ph) + ahi * blo + alo * bhi) + alo * blo
+  let t = pe + lo * c
+  // two-sum, so s is the rounded sum and the rest of it exactly
+  let s = ph + t
+  let bb = s - ph
+  fmtDHi = s
+  fmtDLo = (ph - (s - bb)) + (t - bb)
+}
+
+// The entry: the argument, the sign, and the precision.  15 is the ceiling and
+// not an arbitrary one -- 10^15 is the last power of ten a double holds
+// exactly, and the double-double carries 53 bits of guard beyond it, so a
+// precision past that would be rounding a number that is not the value.
+mod fmtConvFloat() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vTag(ab)
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else {
+      fmtNeg = vNum(ab) < 0.0
+      if fmtNeg {
+        fmtV = 0.0 - vNum(ab)
+      } else {
+        fmtV = vNum(ab)
+      }
+      fmtP = if fmtPrec < 0 then 6 else fmtPrec
+      fmtInt = ""
+      fmtFr = ""
+      if fmtV == 0.0 {
+        fmtState = 17
+      } else if 15 < fmtP {
+        vmFail("precision above 15 cannot be formatted exactly on this chip")
+      } else if 9007199254740992.0 <= fmtV {
+        vmFail("number too large to format exactly on this chip")
+      } else {
+        fmtState = 15
+      }    }
+  }
+}
+
+// Scale the *fraction* by the precision.  Scaling the whole value instead -- one
+// number, round it, read it out -- is simpler and wrong past 2^53: %f of 1e10
+// at the default six places is 1e16 scaled, which no double holds, so the digits
+// are gone.  The integer part of a value below 2^53 is exact and its digits come
+// off one division at a time, and it is the fraction that needs the care, so
+// that is the only thing scaled here.
+mod fmtFScale() {
+  let ip = floor(fmtV)
+  fmtDdMul(fmtV - ip, 0.0, 10.0 ** (fmtP + 0.0))
+  fmtIP = ip
+  fmtState = 19
+}
+
+// Round the scaled fraction to its p digits, ties to even, and let a carry out
+// of the fraction bump the integer part.  The decision reads the two halves
+// separately, because that is the only way to see the difference: hi - fl is
+// exact, so `rh == 0.5` says the high half is exactly a half and the low half
+// says which side of it the value is on.  0.05 at one place is the case that
+// needs it -- the high half is 0.5 and the low half is 2.8e-17, so it is a hair
+// above the tie and PUC prints 0.1, not 0.0.
+mod fmtFRound() {
+  let fl = floor(fmtDHi)
+  let rh = fmtDHi - fl
+  // Which digit the tie looks at is the last one the conversion keeps, and with
+  // no precision there are no fraction digits to keep: it is the units digit of
+  // the integer part.  Taking the fraction's instead made every %.0f tie round
+  // down, so 1.5 came out 1 where PUC has 2.
+  let last = if 0 < fmtP then fl else fmtIP - floor(fmtIP / 10.0) * 10.0
+  let odd = last - floor(last / 2.0) * 2.0
+  fmtF = if rh > 0.5 then fl + 1.0 else if rh < 0.5 then fl
+    else if fmtDLo > 0.0 then fl + 1.0 else if fmtDLo < 0.0 then fl
+    else if odd == 1.0 then fl + 1.0 else fl
+  // 9.999 at three places rounds to 10.000: the fraction carries into the
+  // integer part, which is an exact add while it is below 2^53.  The limit is
+  // the precision's own 10^p -- fixed at 10^15 it never fired, and %.2f of 9.999
+  // came out 9.999 with a point in it.
+  if 10.0 ** (fmtP + 0.0) <= fmtF {
+    fmtF = 0.0
+    fmtIP = fmtIP + 1.0
+  }
+  if 9007199254740992.0 <= fmtIP {
+    vmFail("number too large to format exactly on this chip")
+  } else {
+    fmtFr = ""
+    fmtState = 16
+  }
+}
+
+// One fraction digit per tick, least significant first, as %d does.
+mod fmtFFDigits() {
+  if fmtF < 1.0 {
+    fmtState = 20
+  } else {
+    let q = floor(fmtF / 10.0)
+    let d = toInt(fmtF - q * 10.0)
+    fmtFr = FromCharCode(48 + d).Character .. fmtFr
+    fmtF = q
+  }
+}
+
+// One integer digit per tick.  The integer part of a double below 2^53 is exact
+// and each division by ten is exact too -- the quotient is at least 0.1 away
+// from a whole number, which is far more than the division's own rounding -- so
+// these are the value's digits and not approximations of them.
+mod fmtFNDigits() {
+  if fmtIP < 1.0 {
+    fmtState = 17
+  } else {
+    let q = floor(fmtIP / 10.0)
+    let d = toInt(fmtIP - q * 10.0)
+    fmtInt = FromCharCode(48 + d).Character .. fmtInt
+    fmtIP = q
+  }
+}
+
+// Pad the fraction out to the precision, so %.2f of 0.4 is 0.40 and not 0.4.  The
+// zeros come from a constant with a Substring rather than a state: there are at
+// most sixteen of them and a state each would cost a tick apiece.
+mod fmtFPad() {
+  let n = fmtFr.Length()
+  if n < fmtP {
+    fmtFr = ZEROS16.Substring(0, fmtP - n) .. fmtFr
+  }
+  fmtState = 18
+}
+
+// The point between the two halves, the leading zero, and the sign.  A state of
+// its own because the lengths it reads are the ones the pad and the digit loops
+// have just written: a value gate fed by a variable the same mod writes reads
+// the new one, so doing this with them would splice the strings at the wrong
+// offsets.
+mod fmtFPoint() {
+  if fmtInt == "" {
+    fmtInt = "0"
+  }
+  if 0 < fmtP {
+    fmtBody = fmtInt .. "." .. fmtFr
+  } else {
+    fmtBody = fmtInt
+  }
+  if fmtNeg {
+    fmtBody = "-" .. fmtBody
+  } else if fmtPlus == 1 {
+    fmtBody = "+" .. fmtBody
+  } else if fmtSpace == 1 {
+    fmtBody = " " .. fmtBody
+  }
+  fmtPre = ""
+  fmtState = 6
 }
 
 // Which flags each conversion takes, as PUC's table has it.  Returns 0 when the
@@ -5056,6 +5263,20 @@ mod fmtStep() {
     fmtFetch()
   } else if fmtState == 11 {
     fmtQFetch()
+  } else if fmtState == 13 {
+    fmtDigitEnd()
+  } else if fmtState == 15 {
+    fmtFScale()
+  } else if fmtState == 16 {
+    fmtFFDigits()
+  } else if fmtState == 20 {
+    fmtFNDigits()
+  } else if fmtState == 17 {
+    fmtFPad()
+  } else if fmtState == 18 {
+    fmtFPoint()
+  } else if fmtState == 19 {
+    fmtFRound()
   } else {
     fmtDigitEnd()
   }

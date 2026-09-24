@@ -352,7 +352,34 @@ TESTS = [
      "print(io.read('*l'))", None, "run", {"sinputs": {"0": "p\nq\n"}}),
     ("io-read-bad", "print(io.read('*x'))", None, "runtimerr",
      {"expect": {"err": "bad argument to 'read' (invalid format)"}}),
-    # the call-path repro, all in one case because its PRE file is ~10 KB and the
+    # %f: the digits have to be the value's own, which is the whole difficulty.
+    # 0.15 at one place is 0.1 and not 0.2, and 344.95 is 344.9 and not 345.0,
+    # because the exact double sits just below the tie -- a single rounding puts
+    # it on the tie and cannot say which side.  tools/fmtsweep.py compares 3888
+    # values at precisions 0..15 against the oracle; these are the cases that
+    # made the algorithm what it is.
+    ("fmt-f-default", "print(string.format('%f', 1.5), "
+     "string.format('%.3f', 0))", None, "run"),
+    ("fmt-f-ties", "print(string.format('%.1f', 0.05), string.format('%.1f', "
+     "0.15), string.format('%.1f', 344.95), string.format('%.1f', 302.05))",
+     None, "run"),
+    ("fmt-f-half-even", "print(string.format('%.0f', 0.5), "
+     "string.format('%.0f', 1.5), string.format('%.0f', 2.5), "
+     "string.format('%.0f', -1.5), string.format('%.0f', -2.5))", None, "run"),
+    ("fmt-f-carry", "print(string.format('%.2f', 9.999), string.format('%.2f', "
+     "0.999), string.format('%.2f', 99.995))", None, "run"),
+    ("fmt-f-flags", "print(string.format('%010.2f', -1.5), "
+     "string.format('%+08.2f', 1.5), string.format('%-8.2f|', 1.5), "
+     "string.format('% .2f', 1.5))", None, "run"),
+    ("fmt-f-wide", "print(string.format('%.2f', 12345678901.5), "
+     "string.format('%.15f', 0.1), string.format('%.2f', 1e15))", None, "run"),
+    # the two limits are errors, not approximations: past 15 places the scale
+    # would not be exact, and past 2^53 the integer part is not this chip's
+    ("fmt-f-prec-limit", "print(string.format('%.16f', 0.1))", None, "runtimerr",
+     {"expect": {"err": "precision above 15 cannot be formatted exactly on "
+      "this chip"}}),
+    ("fmt-f-range", "print(string.format('%.2f', 1e16))", None, "runtimerr",
+     {"expect": {"err": "number too large to format exactly on this chip"}}),
     # suite passes case sources on the command line: two of them in a batch is
     # already most of the way to Windows' 32 KB limit.  The first line pins the
     # shapes that always worked, the rest the two that used to fail -- one per
