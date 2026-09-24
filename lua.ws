@@ -4248,10 +4248,11 @@ mod nxStep() {
 // (68,134 -> 71,442) and 0 boot ticks, and a "%d" format call runs in 0.2s of
 // sim time where the Lua version took 9.4s.
 //
-// State: %d %i %u %s %q %%, every flag (- + space # 0), width, precision and
-// the error messages all match lua5.5, case by case, in the fmt-* suite cases.
-// Not yet: %x %X %o %c, and %f %e %g (lib/str_format.lua has the algorithm and
-// the notes on why it needs a Dekker two-product).
+// State: %d %i %u %s %q %x %X %o %c %%, every flag (- + space # 0), width,
+// precision, the per-conversion flag table and the error messages all match
+// lua5.5, case by case, in the fmt-* suite cases.  Not yet: %f %e %g (and %a),
+// for which lib/str_format.lua has the algorithm and the notes on why the
+// rounding needs a Dekker two-product.
 //
 // The rules this shape follows, each one learned by getting it wrong:
 //
@@ -4284,6 +4285,12 @@ mod nxStep() {
 //   - an int flag var read in a condition compares through a placeholder that
 //     reads 0, so fmtPadLeft/fmtPadZero are bools and every assignment that
 //     depends on a comparison is written as an if/else.
+//   - `floor()` TRUNCATES toward zero, it is not a floor: `floor(-1.0 / 16.0)`
+//     is 0, so a digit loop that divides with it never goes negative and %x of -1
+//     came out as fifteen zeros.  Floor division is done by hand in fmtRadixDigit
+//     (truncate, then carry a negative remainder into the digit and off the
+//     quotient).  Lua's math.floor is a different code path -- the _m gate -- and
+//     does floor, which is why math.floor(-2.7) is -3 and this is not.
 //
 // WireScript traps measured while building this, all of them in tools/wswarn.py
 // now, and all of them worth knowing before writing any more WireScript:
@@ -4350,6 +4357,16 @@ var fmtTo: int = 0
 // and reset it to 0, so after %q the spec was read from the start again and the
 // conversion ran twice ("%q" of "" asked for argument #3)
 var fmtQPos: int = 0
+var fmtBase_: float = 10.0
+var fmtBaseI: int = 10
+var fmtQ_: int = 0
+var fmtD_: int = 0
+var fmtUpper: bool = false
+var fmtDigits: int = 0
+var fmtDigitsMax: int = 0
+var fmtSpec: string = ""
+const HEXDIG = "0123456789abcdef"
+const HEXDIG_U = "0123456789ABCDEF"
 
 // states: 0 literal, 1 flags, 2 width, 3 precision, 4 conversion, 5 padding,
 // 6 finish a conversion, 7 one integer digit, 8 one quoted byte, 9 one
@@ -4474,6 +4491,7 @@ mod fmtLit() {
     fmtPrec = -1
     fmtPos = fmtPos + 1
     fmtTo = 1
+    fmtSpec = "%"
     fmtState = 10
   } else {
     fmtOut = fmtOut .. fmtCh
@@ -4486,26 +4504,31 @@ mod fmtLit() {
 mod fmtFlag() {
   if fmtCh == "-" {
     fmtMinus = 1
+    fmtSpec = fmtSpec .. fmtCh
     fmtPos = fmtPos + 1
     fmtTo = 1
     fmtState = 10
   } else if fmtCh == "+" {
     fmtPlus = 1
+    fmtSpec = fmtSpec .. fmtCh
     fmtPos = fmtPos + 1
     fmtTo = 1
     fmtState = 10
   } else if fmtCh == " " {
     fmtSpace = 1
+    fmtSpec = fmtSpec .. fmtCh
     fmtPos = fmtPos + 1
     fmtTo = 1
     fmtState = 10
   } else if fmtCh == "#" {
     fmtHash = 1
+    fmtSpec = fmtSpec .. fmtCh
     fmtPos = fmtPos + 1
     fmtTo = 1
     fmtState = 10
   } else if fmtCh == "0" {
     fmtZero = 1
+    fmtSpec = fmtSpec .. fmtCh
     fmtPos = fmtPos + 1
     fmtTo = 1
     fmtState = 10
@@ -4519,10 +4542,12 @@ mod fmtWidthStep() {
   let cp = if 0 < fmtCh.Length() then fmtCh.ToCharCode().Codepoint else -1
   if 48 <= cp && cp <= 57 {
     fmtWidth = fmtWidth * 10 + (cp - 48)
+    fmtSpec = fmtSpec .. fmtCh
     fmtPos = fmtPos + 1
     fmtTo = 2
     fmtState = 10
   } else if fmtCh == "." {
+    fmtSpec = fmtSpec .. fmtCh
     fmtPos = fmtPos + 1
     fmtPrec = 0
     fmtTo = 3
@@ -4537,6 +4562,7 @@ mod fmtPrecStep() {
   let cp = if 0 < fmtCh.Length() then fmtCh.ToCharCode().Codepoint else -1
   if 48 <= cp && cp <= 57 {
     fmtPrec = fmtPrec * 10 + (cp - 48)
+    fmtSpec = fmtSpec .. fmtCh
     fmtPos = fmtPos + 1
     fmtTo = 3
     fmtState = 10
@@ -4553,17 +4579,30 @@ mod fmtPrecStep() {
 // dropped, and the walk then re-read the conversion character as a literal
 // ("%d" -> "42d").
 mod fmtConv() {
+  let bad = fmtSpecBad()
   if fmtCh == "%" {
     fmtPos = fmtPos + 1
     fmtBody = "%"
     fmtPre = ""
     fmtState = 6
-  } else if fmtCh == "s" || fmtCh == "q" {
+  } else if bad == 1 {
     fmtPos = fmtPos + 1
+    fmtSpec = fmtSpec .. fmtCh
+    vmFail("invalid conversion specification: '" .. fmtSpec .. "'")
+  } else if bad == 2 {
+    fmtPos = fmtPos + 1
+    vmFail("specifier '%q' cannot have modifiers")
+  } else if fmtCh == "s" || fmtCh == "q" {    fmtPos = fmtPos + 1
     fmtConvStr(fmtCh)
   } else if fmtCh == "d" || fmtCh == "i" || fmtCh == "u" {
     fmtPos = fmtPos + 1
     fmtConvInt()
+  } else if fmtCh == "x" || fmtCh == "X" || fmtCh == "o" {
+    fmtPos = fmtPos + 1
+    fmtConvRadix()
+  } else if fmtCh == "c" {
+    fmtPos = fmtPos + 1
+    fmtConvChar()
   } else {
     fmtPos = fmtPos + 1
     vmFail("invalid conversion '%" .. fmtCh .. "' to 'format'")
@@ -4616,44 +4655,215 @@ mod fmtConvInt() {
   }
 }
 
-// One integer digit per tick.  Digits come out least significant first and are
-// prepended, so no array is needed to reverse them.
-mod fmtDigit() {
-  if fmtNum_ < 1.0 {
-    if fmtBody == "" {
-      // %.0d of zero is the empty string in PUC, not "0"
-      if fmtPrec == 0 {
-        fmtBody = ""
-      } else {
-        fmtBody = "0"
-      }
-    }
-    if 0 < fmtPrec && fmtPrec > fmtBody.Length() {
-      fmtPad = fmtPrec - fmtBody.Length()
-      fmtPadAcc = ""
-      fmtState = 9
-    } else {
-      fmtSign()
-    }
+// %x %X %o.  A negative value is converted as its 64-bit two's complement, so
+// the digit loop divides with floor and is bounded by a digit count instead of
+// running until the quotient reaches zero -- the floor of a negative never does.
+// 16 digits for hex, 22 for octal, which is what makes %x of -1 come out as
+// ffffffffffffffff and %o of -1 as 1777777777777777777777.
+mod fmtConvRadix() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
   } else {
-    let q = floor(fmtNum_ / 10.0)
-    let d = toInt(fmtNum_ - q * 10.0)
-    let ch = FromCharCode(48 + d).Character
-    fmtBody = ch .. fmtBody
-    fmtNum_ = q
+    let t = vTag(ab)
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else if vNum(ab) != floor(vNum(ab)) {
+      vmFail("number has no integer representation")
+    } else {
+      if fmtCh == "o" {
+        fmtBase_ = 8.0
+        fmtBaseI = 8
+      } else {
+        fmtBase_ = 16.0
+        fmtBaseI = 16
+      }
+      if fmtCh == "X" {
+        fmtUpper = true
+      } else {
+        fmtUpper = false
+      }
+      fmtNeg = vNum(ab) < 0.0
+      fmtNum_ = vNum(ab)
+      fmtDigits = 0
+      fmtBody = ""
+      if fmtNeg {
+        // 64 bits is 16 hex digits exactly but 21 and a bit in octal, and the
+        // top octal digit is bit 63: %o of -1 is 1 followed by 21 sevens, not 22
+        // sevens.  Hex needs no leading digit; 16 divisions cover all 64 bits,
+        // and the octal one goes in front of the digits at the end (they are
+        // prepended as they come, so a leading 1 written here would end up last).
+        if fmtCh == "o" {
+          fmtDigitsMax = 21
+        } else {
+          fmtDigitsMax = 16
+        }
+      } else {
+        fmtDigitsMax = 0
+      }
+      fmtState = 7
+    }
   }
 }
 
+// %c: the low byte of the argument, because C's sprintf("%c", n) takes the low
+// byte of an int -- 256 is a NUL and -1 is 0xFF.  Width and - are allowed (the
+// spec check handles the rest).
+mod fmtConvChar() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vTag(ab)
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else if vNum(ab) != floor(vNum(ab)) {
+      vmFail("number has no integer representation")
+    } else {
+      fmtQ_ = toInt(vNum(ab) / 256.0)
+      let r = toInt(vNum(ab) - fmtQ_ * 256.0)
+      if r < 0 {
+        fmtD_ = r + 256
+      } else {
+        fmtD_ = r
+      }
+      fmtBody = FromCharCode(fmtD_).Character
+      fmtPre = ""
+      fmtState = 6
+    }
+  }
+}
+
+// Which flags each conversion takes, as PUC's table has it.  Returns 0 when the
+// spec is good, 1 for a flag the conversion does not take, 2 for a %q with any
+// modifier at all -- which PUC words differently, and without the spec text.
+//   - + space # 0  width  prec
+//   d i u           y y y   n y  y     y
+//   f e g           y y y   y y  y     y
+//   x X o           y n n   y y  y     y
+//   c               y n n   n n  y     n
+//   s               y n n   n y  y     y
+//   q               n n n   n n  n     n
+mod fmtSpecBad() -> int {
+  if fmtCh == "q" {
+    if fmtMinus == 1 || fmtPlus == 1 || fmtSpace == 1 || fmtHash == 1
+        || fmtZero == 1 || 0 < fmtWidth || 0 <= fmtPrec {
+      return 2
+    }
+  } else if fmtCh == "c" {
+    if fmtHash == 1 || fmtPlus == 1 || fmtSpace == 1 || fmtZero == 1 || 0 <= fmtPrec {
+      return 1
+    }
+  } else if fmtCh == "s" {
+    if fmtHash == 1 || fmtPlus == 1 || fmtSpace == 1 {
+      return 1
+    }
+  } else if fmtCh == "x" || fmtCh == "X" || fmtCh == "o" {
+    if fmtPlus == 1 || fmtSpace == 1 {
+      return 1
+    }
+  } else if fmtHash == 1 {
+    return 1
+  }
+  return 0
+}
+
+// One digit of a radix conversion, with the division done by hand: the host's
+// floor truncates toward zero, so a negative quotient never goes negative and
+// %x of -1 came out as fifteen zeros.  The quotient is a truncating cast and a
+// negative remainder is carried into the digit and taken off the quotient, which
+// is floor division; the quotient then settles at -1 and the digit count is what
+// stops the loop, which is where the 64-bit two's complement comes from.
+mod fmtRadixDigit() {
+  fmtQ_ = toInt(fmtNum_ / fmtBase_)
+  let r = toInt(fmtNum_ - fmtQ_ * fmtBase_)
+  if r < 0 {
+    fmtD_ = r + fmtBaseI
+    fmtQ_ = fmtQ_ - 1
+  } else {
+    fmtD_ = r
+  }
+  let ch = if fmtUpper then HEXDIG_U.Substring(fmtD_, 1) else HEXDIG.Substring(fmtD_, 1)
+  fmtBody = ch .. fmtBody
+  fmtNum_ = fmtQ_
+}
+
+// One digit per tick.  Digits come out least significant first and are
+// prepended, so no array is needed to reverse them.  Base 10 divides a
+// non-negative value; the radix bases divide the signed one.
+mod fmtDigit() {
+  if fmtBase_ == 10.0 {
+    if fmtNum_ < 1.0 {
+      fmtState = 13
+    } else {
+      let q = floor(fmtNum_ / 10.0)
+      let d = toInt(fmtNum_ - q * 10.0)
+      let ch = FromCharCode(48 + d).Character
+      fmtBody = ch .. fmtBody
+      fmtNum_ = q
+    }
+  } else if fmtNum_ > 0.0 || fmtDigits < fmtDigitsMax {
+    fmtDigits = fmtDigits + 1
+    fmtRadixDigit()
+  } else {
+    fmtState = 13
+  }
+}
+
+// The last digit: the zero a bare zero formats to (not with %.0), then the
+// precision zeros.  The # prefix and the sign are fmtSign's business, because the
+// prefix goes in front of the precision padding: %#.3x of 255 is 0x0ff, not 0xff.
+mod fmtDigitEnd() {
+  if fmtBody == "" && fmtPrec != 0 {
+    fmtBody = "0"
+  }
+  if 0 < fmtPrec && fmtPrec > fmtBody.Length() {
+    fmtPad = fmtPrec - fmtBody.Length()
+    fmtPadAcc = ""
+    fmtState = 9
+  } else {
+    fmtSign()
+  }
+}
+
+// The sign for %d %i %u, and the 0x / 0X / 0 prefix for %x %X %o.  The radix
+// conversions have no sign -- they print the two's complement -- and # adds
+// nothing for a zero, in either base.
 mod fmtSign() {
-  if fmtNeg {
-    fmtBody = "-" .. fmtBody
-  } else if fmtPlus == 1 {
-    fmtBody = "+" .. fmtBody
-  } else if fmtSpace == 1 {
-    fmtBody = " " .. fmtBody
+  if fmtBase_ == 10.0 {
+    if fmtNeg {
+      fmtBody = "-" .. fmtBody
+    } else if fmtPlus == 1 {
+      fmtBody = "+" .. fmtBody
+    } else if fmtSpace == 1 {
+      fmtBody = " " .. fmtBody
+    }
+  } else {
+    fmtRadixPrefix()
   }
   fmtPre = ""
   fmtState = 6
+}
+
+// The top octal digit of a negative value, and the 0x / 0X / 0 prefix the # flag
+// asks for.  # adds nothing for a zero, in either base.
+mod fmtRadixPrefix() {
+  if fmtNeg && fmtCh == "o" {
+    fmtBody = "1" .. fmtBody
+  }
+  if fmtHash == 1 && fmtBody != "" && fmtBody != "0" {
+    if fmtCh == "o" {
+      fmtBody = "0" .. fmtBody
+    } else if fmtUpper {
+      fmtBody = "0X" .. fmtBody
+    } else {
+      fmtBody = "0x" .. fmtBody
+    }
+  }
 }
 
 // One precision zero per tick: WireScript has no loop to unroll for it.  Named
@@ -4784,8 +4994,10 @@ mod fmtStep() {
     fmtPrecZero()
   } else if fmtState == 10 {
     fmtFetch()
-  } else {
+  } else if fmtState == 11 {
     fmtQFetch()
+  } else {
+    fmtDigitEnd()
   }
 }
 
@@ -5420,6 +5632,14 @@ mod vmStep() {
               fmtPadZero = false
               fmtCh = ""
               fmtEof = false
+              fmtBase_ = 10.0
+              fmtBaseI = 10
+              fmtQ_ = 0
+              fmtD_ = 0
+              fmtUpper = false
+              fmtDigits = 0
+              fmtDigitsMax = 0
+              fmtSpec = ""
               // start at the fetch, not at the literal state: the walk has not
               // read a character yet, and entering at the literal state skipped
               // the first one (every spec came out one character late)

@@ -294,6 +294,41 @@ TESTS = [
      "string.format('%d %s %d', 1, 'two', 3))", None, "run"),
     ("fmt-num-fmt", "print(string.format(5), string.format('%d', 3.0), "
      "string.format('%s', print))", None, "run"),
+    # %x %X %o: a negative value is its 64-bit two's complement, and 64 bits is
+    # 16 hex digits but 21-and-a-bit in octal
+    ("fmt-hex", "print(string.format('%x', 255), string.format('%X', 26), "
+     "string.format('%o', 8), string.format('%x', 0))", None, "run"),
+    ("fmt-hex-neg", "print(string.format('%x', -1), string.format('%o', -1), "
+     "string.format('%o', -2), string.format('%X', -255))", None, "run"),
+    ("fmt-hash", "print(string.format('%#x', 255), string.format('%#o', 8), "
+     "string.format('%#X', 26), string.format('%#x', 0))", None, "run"),
+    ("fmt-radix-flags", "print(string.format('%08x|', 255), "
+     "string.format('%-8x|', 255), string.format('%5.2o|', 8), "
+     "string.format('%#.3x', 255))", None, "run"),
+    # %c takes the low byte, as C's sprintf does: 256 is a NUL and -1 is 0xFF
+    ("fmt-char", "print(string.format('%c', 65), string.format('%5c|', 65), "
+     "string.format('%-c|', 65), string.byte(string.format('%c', 256)), "
+     "string.byte(string.format('%c', -1)))", None, "run"),
+    ("fmt-spec-hash-d", "print(string.format('%#d', 5))", None, "runtimerr",
+     {"expect": {"err": "invalid conversion specification: '%#d'"}}),
+    ("fmt-spec-prec-c", "print(string.format('%.2c', 65))", None, "runtimerr",
+     {"expect": {"err": "invalid conversion specification: '%.2c'"}}),
+    ("fmt-spec-plus-x", "print(string.format('%+x', 15))", None, "runtimerr",
+     {"expect": {"err": "invalid conversion specification: '%+x'"}}),
+    ("fmt-spec-space-s", "print(string.format('% s', 'x'))", None, "runtimerr",
+     {"expect": {"err": "invalid conversion specification: '% s'"}}),
+    ("fmt-spec-q-mod", "print(string.format('%5q', 'x'))", None, "runtimerr",
+     {"expect": {"err": "specifier '%q' cannot have modifiers"}}),
+    ("fmt-err-noarg", "print(string.format('%d'))", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'format' (no value)"}}),
+    ("fmt-err-notnum", "print(string.format('%d', 'x'))", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'format' (number expected, got "
+                          "string)"}}),
+    ("fmt-err-noint", "print(string.format('%d', 1.5))", None, "runtimerr",
+     {"expect": {"err": "number has no integer representation"}}),
+    ("fmt-err-nofmt", "print(string.format())", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'format' (string expected, got no "
+                          "value)"}}),
     # math library
     ("math-floor", "print(math.floor(2.7), math.floor(-2.7), math.ceil(2.1), "
      "math.ceil(-2.1))", None, "run"),

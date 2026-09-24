@@ -55,5 +55,8 @@ with Elapsed("check(%d programs)" % len(progs)):
                 mark = 'OK  ' if got == want else 'DIFF'
         print('%s %5.1fs chip=%r err=%r :: %s' % (mark, dt, got, err, src),
               flush=True)
-        if want is not None and got != want and not err:
+        if want is not None and got != want:
             print('     lua=%r' % (want,), flush=True)
+        oerr = (o.get('stderr') or '').strip() if want is not None else ''
+        if oerr and (err or (want is not None and got != want)):
+            print('     lua stderr=%r' % (oerr[:200],), flush=True)

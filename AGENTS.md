@@ -143,6 +143,12 @@ a name, how many write it, what fires each write). The `_fmt` header in
 - `x = a == b` leaves a placeholder that reads 0, and an int flag var read in a
   condition compares through one too: set flags with an `if`/`else` and keep the
   condition flags as `bool`.
+- **`floor()` truncates toward zero; it is not a floor.** `floor(-1.0 / 16.0)` is
+  0, so anything that needs floor division of a negative (a digit loop for a
+  radix conversion, a bit of two's complement) has to do it by hand: truncate,
+  then carry a negative remainder into the digit and off the quotient. Lua's
+  `math.floor` is a different code path — the `_m` gate — and does floor, so
+  `math.floor(-2.7)` being −3 proves nothing about the host's `floor`.
 - A mod call on the right of `..` is "attempt to call" (the print handler and a
   `vmFail` argument get away with it, so `wswarn`'s hit there is a false
   positive); a string `+`, a chain mixing `..` with `+`, `%`, `for`, and a mod
