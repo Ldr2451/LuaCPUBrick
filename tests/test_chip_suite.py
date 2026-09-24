@@ -77,6 +77,12 @@ CHIP_LOG = {
     "math-log": "4.605170185988092\n",
     "math-modf": "3.0\t0.7000000000000002\n",
     "tab-del": "1\tnil\t3\t3\n",
+    # error's message carries the chunk and line of whatever called error, and
+    # pcall hands that message on as a value.  The chip has no line at run time
+    # to name, so the text a program asked for is what it gets.
+    "pcall-catch": "false\tboom\n",
+    "pcall-deep-error": "false\tbottom\n",
+    "pcall-nested": "true\tfalse\tinner\n",
 }
 
 

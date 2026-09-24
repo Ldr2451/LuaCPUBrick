@@ -410,6 +410,44 @@ TESTS = [
       "this chip"}}),
     ("fmt-e-range", "print(string.format('%.2e', 1e16))", None, "runtimerr",
      {"expect": {"err": "number too large to format exactly on this chip"}}),
+    # pcall, which PUC has in C.  The interesting cases are the ones that are not
+    # just "does it catch an error": a gate builtin has no frame, so its
+    # arguments move down a register and the call instruction runs again as the
+    # gate (pcall(error, ...) and pcall(print, ...)); a non-function is the pair
+    # and not a failure of pcall, because PUC raises the attempt at the call and
+    # pcall catches it; and a caught error has to leave the program able to
+    # carry on, which is the whole point of it.
+    ("pcall-ok", "function f() return 7, 8 end print(pcall(f))", None, "run"),
+    ("pcall-targets",
+     "function f() return 7, 8 end local ok, a, b = pcall(f) "
+     "print(ok, a, b)", None, "run"),
+    ("pcall-catch", "function f() error('boom') end print(pcall(f))", None,
+     "run"),
+    ("pcall-gate", "print(pcall(print, 'hi'))", None, "run"),
+    ("pcall-gate-error", "local ok, e = pcall(error, 'bang') print(ok, e)",
+     None, "run"),
+    ("pcall-gate-value", "print(pcall(tostring, 42), pcall(type, nil))", None,
+     "run"),
+    ("pcall-not-a-function", "local ok, e = pcall(42) print(ok, e)", None,
+     "run"),
+    ("pcall-not-a-function-nil", "local ok, e = pcall(nil) print(ok, e)",
+     None, "run"),
+    ("pcall-no-argument", "pcall()", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'pcall' (value expected)"}}),
+    ("pcall-nested",
+     "function f() return pcall(error, 'inner') end print(pcall(f))", None,
+     "run"),
+    ("pcall-deep-error",
+     "function d(n) if n == 0 then error('bottom') end return d(n - 1) end "
+     "print(pcall(d, 5))", None, "run"),
+    ("pcall-statement", "function f() return 1 end pcall(f) print('after')",
+     None, "run"),
+    # The one thing pcall cannot do here: pcall of pcall.  pcall is the only
+    # gate that pushes a frame, and the in-place dispatch has one result slot,
+    # so it is a loud error rather than a wrong answer.
+    ("pcall-of-pcall", "function f() return 1 end print(pcall(pcall, f))",
+     None, "runtimerr",
+     {"expect": {"err": "pcall of pcall is not supported on this chip"}}),
     # error and assert, both C in PUC and gates here.  assert returns *all* of
     # its arguments on success, which is a shift down by one register on a
     # register VM.  PUC prefixes error's message with the chunk and line of

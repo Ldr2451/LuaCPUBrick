@@ -97,13 +97,16 @@
 ///                             so it cannot call a local function of one
 ///   metatables               no setmetatable, no __index, no operator metamethods
 ///   string patterns          no find, match, gmatch, gsub
-///   error      error(msg [, level]) raises with msg as the message, and assert
-///              is its conditional form: a truthy first argument returns *all*
-///              of them, a falsey one raises with the message or PUC's
-///              "assertion failed!". PUC prefixes error's message with the chunk
-///              and line of whatever called it and the chip has no line at run
-///              time, so the text goes through as it is. pcall and xpcall are not
-///              here yet
+///   error      error(msg [, level]) raises with msg as the message, assert is its
+///              conditional form (a truthy first argument returns *all* of them, a
+///              falsey one raises), and pcall(f, ...) is the protected call:
+///              true plus f's values, or false plus the message. PUC prefixes
+///              error's message with the chunk and line of whatever called it and
+///              the chip has no line at run time, so the text goes through as it
+///              is -- and pcall hands that text on as a value. Two things pcall
+///              cannot do here: call a non-Lua gate by frame (so pcall(pcall, f)
+///              is a loud error, not a wrong answer), and name a position
+///              (xpcall is not here yet either)
 ///   goto and labels          a compile error
 ///   coroutines, modules, bitwise operators
 ///   integers as a type       one number type: math.type reports "integer" for a
@@ -208,7 +211,7 @@ const MAXVALS = 16
 // at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
 // means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
 // the dispatch case.  test_ws_consistency.py checks all four line up.
-const NB = 18
+const NB = 19
 
 // Library sources, prepended on demand (see libIter and friends).  These are
 // ordinary Lua: the parser sees them exactly like the user's program.  They are
@@ -1233,6 +1236,7 @@ mod parseInit() {
   gDeclare("_wr")
   gDeclare("error")
   gDeclare("assert")
+  gDeclare("pcall")
   gDeclare("inInt0")
   gDeclare("outInt0")
   // The runtime wires the latches and outputs straight into these slots, so
@@ -3962,10 +3966,10 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
 // (inputs filled from the latches), 19..37 builtins (print, type, tostring,
-// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert) as
+// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall) as
 // functions with ids 0..NB-1, then the two int globals.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 0.0, 0.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -4054,6 +4058,7 @@ mod vmReset() {
   logLen = 0
   logLines.clear()
   fmtDd.clear()
+  pcallBad.clear()
   // the text in inStr0 is the program's standard input, and a run starts at its
   // beginning; the cursors are state, so they go with everything else
   rdText = inStr0
@@ -4082,10 +4087,166 @@ mod vmReset() {
   fVaB.push(0)
 }
 
+// pcall, which PUC has in C and is a gate here for the same reason.
+//
+// The shape is a marker frame: a sentinel fid on the same fFunc stack the calls
+// use, carrying the pcall's own return.  pcall pushes the marker and then makes
+// the call to f itself with that call's results one register past the pcall's
+// own, so `true` has a register of its own and the values land beside it.  The
+// marker is what makes nesting work: a pcall inside a pcall has its own, and
+// the innermost one is what an error unwinds to.
+const PCALL_MARK = 99
+var pcallMsg: string = ""      // the error a protected call caught
+var pcallUnwind: bool = false  // and that there is one to unwind
+var pcallDepth: int = 0        // markers on the stack: above zero, an error is a value
+var pcallGate: bool = false    // a gate is waiting to run at pcallGatePc
+var pcallGatePc: int = 0       // which is the pcall's own call instruction
+var pcallRan: bool = false     // and the dispatch now under way is that gate
+var pcallBad: int[]            // whether that dispatch raised: an array, because
+                               // a mod's write to a file variable is not read
+                               // back reliably inside the same step
+var pcallGo: bool = false      // and pcallEnter has a frame to push
+var pcallFid: int = 0          // which function
+var pcallA: int = 0            // the pcall's own register
+var pcallNArgs: int = 0        // and how many arguments it was given
+
+// An error inside a pcall is a value, not the end of the program.  vmFailed is
+// set either way, because the arms that check it after a possible failure must
+// not go on to do the work that failed -- pcallStep clears it when it hands the
+// message over.
 mod vmFail(msg: string) {
   vmFailed = true
-  errV = msg
-  vmHalted = true
+  pcallBad[0] = 1
+  if pcallDepth > 0 {
+    pcallMsg = msg
+    pcallUnwind = true
+  } else {
+    errV = msg
+    vmHalted = true
+  }
+}
+
+// One frame per tick off a caught error, until the frame it pops is the marker:
+// then the pair is (false, message) where the pcall's results go and the pcall's
+// caller carries on.  A loop is a state machine here, like everything else on
+// the chip -- but this one is a tick of its own per frame, so a deep stack costs
+// a deep stack in ticks and nothing else.
+mod pcallStep() {
+  let popped = fFunc[fFunc.length() - 1]
+  var ra = 0
+  var rb = 0
+  var rpc = 0
+  if popped == PCALL_MARK {
+    ra = fRetA[fRetA.length() - 1]
+    rb = fRetBase[fRetBase.length() - 1]
+    rpc = fRetPC[fRetPC.length() - 1]
+  }
+  fFunc.pop()
+  fBase.pop()
+  fRetA.pop()
+  fRetBase.pop()
+  fRetPC.pop()
+  fRetN.pop()
+  vaTop = fVaB.pop().Value
+  if popped == PCALL_MARK {
+    pcallDepth = pcallDepth - 1
+    pcallUnwind = false
+    vmFailed = false
+    vtag[rb + ra] = 3
+    vnum[rb + ra] = 0.0
+    vstr[rb + ra] = "false"
+    vtag[rb + ra + 1] = 2
+    vnum[rb + ra + 1] = 0.0
+    vstr[rb + ra + 1] = pcallMsg
+    vmBase = rb
+    vmHold = true
+    vmPc = rpc
+    retCountV = 2
+  } else if fFunc.length() == 0 {
+    // The error outran the protection, which pcallDepth > 0 says cannot happen.
+    // The stack is the chip's only record of where the program was, so the
+    // alternative is a pop of nothing.
+    pcallUnwind = false
+    errV = pcallMsg
+    vmHalted = true
+  }
+}
+
+// The protected call has come back and the marker is on top, so the pcall's
+// values are its own: the call's k results move up past the pcall's register,
+// `true` goes there, and the pcall's caller carries on with the count it asked
+// for.
+//
+// One mod, and one call site per return variant plus one for a gate, because
+// these are mods this size and a test in the middle of one is the trap the
+// header warns about.  Every call site passes the same thing -- the results are
+// at vmBase + a -- because a frame starts at the very register its results go
+// to, so that is where they are in all four return forms and in a gate.
+mod pcallEnd(src: int, k: int) {
+  let ra = fRetA[fRetA.length() - 1]
+  let rb = fRetBase[fRetBase.length() - 1]
+  let rpc = fRetPC[fRetPC.length() - 1]
+  let want = fRetN[fRetN.length() - 1]
+  fFunc.pop()
+  fBase.pop()
+  fRetA.pop()
+  fRetBase.pop()
+  fRetPC.pop()
+  fRetN.pop()
+  vaTop = fVaB.pop().Value
+  pcallDepth = pcallDepth - 1
+  // up one register, into the space after the true; copying up cannot overwrite
+  // anything, which copying down would
+  retAdjust(src, rb + ra + 1, k, k)
+  vtag[rb + ra] = 3
+  vnum[rb + ra] = 1.0
+  vstr[rb + ra] = "true"
+  let m = if 1 <= k then k + 1 else 1
+  let cnt = if want == -2 then m else if want < m then want else m
+  vmBase = rb
+  vmHold = true
+  vmPc = rpc
+  retCountV = cnt
+}
+
+// The call itself, on the step after pcall's arm.  A frame switch from inside
+// a mod is the one thing that cannot be done where it is written: vmStep is
+// inlined four times and the copies share one Get per var, so a copy that reads
+// the base the mod has just changed disagrees with the copy that wrote it, and
+// the callee's first instruction lands in the caller's registers.  The inline
+// call path gets away with it because vmHold spends the next step; a mod needs
+// the same thing a step later, which is what every other micro-step here does
+// (lenChase, nxActive, fmtGo).  pcallEnter is that step, and it clears pcallGo
+// before it does anything so the rest of the burst sees the new base and the
+// hold.
+mod pcallEnter() {
+  let inner = pcallFid
+  let a = pcallA
+  let a1 = if 1 < pcallNArgs then pcallNArgs - 1 else 0
+  let nbase = vmBase + a + 1
+  let np = fParams[inner]
+  if 8 < np {
+    vmFail("too many parameters")
+  } else if vaTop + (if fVar[inner] && np < a1 then a1 - np else 0) > MAX_VA {
+    vmFail("too many varargs")
+  } else {
+    // the parameters land in the new frame from one past the pcall's own
+    // register, and retAdjust's nil-fill is what a missing argument is
+    retAdjust(vmBase + a + 2, nbase, a1, np)
+    let nva = if fVar[inner] && np < a1 then a1 - np else 0
+    vaSpill(vmBase + a + 2 + np, vaTop, nva)
+    fVaB.push(vaTop)
+    vaTop = vaTop + nva
+    fFunc.push(inner)
+    fBase.push(nbase)
+    fRetA.push(a + 1)
+    fRetBase.push(vmBase)
+    fRetPC.push(vmPc + 1)
+    fRetN.push(-2)
+    vmBase = nbase
+    vmHold = true
+    vmPc = fStart[inner]
+  }
 }
 
 mod numArg(t: int, v: float) -> float {
@@ -6263,6 +6424,63 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
         else log(x, 10.0))
     }
     retCountV = 1
+  } else if fid == 18 {
+    // pcall(f, ...): the marker, `true` in the pcall's own register, and then
+    // the call itself.  A Lua function's frame goes up one register and is
+    // pushed by pcallEnter on the next step, because a mod cannot switch frames
+    // where it stands; a gate builtin has no frame, so its arguments move down
+    // one and the instruction runs again as the gate.  The design note is by
+    // vmFail, which is where the error path is.
+    if nargs < 1 {
+      vmFail("bad argument #1 to 'pcall' (value expected)")
+    } else if fFunc.length() + 2 >= MAX_CALLS {
+      vmFail("call depth exceeded")
+    } else if vTag(a + 1) != 4 {
+      // PUC raises "attempt to call" at the call and pcall catches it, so a
+      // non-function is the pair, not a failure of pcall itself: pcall(42) is
+      // false, "attempt to call a number value" and not an error
+      let t0 = vTag(a + 1)
+      vtag[vmBase + a] = 3
+      vnum[vmBase + a] = 0.0
+      vstr[vmBase + a] = "false"
+      vtag[vmBase + a + 1] = 2
+      vnum[vmBase + a + 1] = 0.0
+      vstr[vmBase + a + 1] = "attempt to call a " .. typeName(t0) .. " value"
+      retCountV = 2
+    } else if toInt(vNum(a + 1)) == 18 {
+      // pcall of pcall is the one gate that pushes a frame, and the in-place
+      // dispatch has one result slot, so it cannot be nested this way
+      vmFail("pcall of pcall is not supported on this chip")
+    } else {
+      let a1 = if 1 < nargs then nargs - 1 else 0
+      fFunc.push(PCALL_MARK)
+      fBase.push(vmBase)
+      fRetA.push(a)
+      fRetBase.push(vmBase)
+      fRetPC.push(vmPc + 1)
+      fRetN.push(if mtSelf then -2 else 1)
+      fVaB.push(vaTop)
+      pcallDepth = pcallDepth + 1
+      vtag[vmBase + a] = 3
+      vnum[vmBase + a] = 1.0
+      vstr[vmBase + a] = "true"
+      pcallFid = toInt(vNum(a + 1))
+      pcallA = a
+      pcallNArgs = nargs
+      if pcallFid < NB {
+        // A gate has no frame and reads its function from the call's own
+        // register, so f and every argument move down one and the instruction
+        // runs again as the gate.  That re-run is a step of its own, like
+        // pcallEnter: vmStep is inlined four times and a mod's write to a file
+        // variable is only read back reliably at the top of the mod, which is
+        // where this flag is tested.
+        retAdjust(vmBase + a + 1, vmBase + a, a1 + 1, a1 + 1)
+        pcallGatePc = vmPc
+        pcallGate = true
+      } else {
+        pcallGo = true
+      }
+    }
   } else if fid == 12 {
     // unpack(t [, i [, j]]): t[i..j] as multiple results.  Lua cannot
     // write this -- a return list is fixed length -- so it is a primitive.
@@ -6558,7 +6776,27 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
 }
 
 mod vmStep() {
-  if lenChase {
+  if pcallUnwind {
+    // a caught error: frames come off until the marker is up.  This is the
+    // first arm because the instruction that raised is still in vmPc and must
+    // not run again while the unwind is in progress.
+    pcallStep()
+  } else if pcallGo {
+    pcallGo = false
+    pcallEnter()
+  } else if pcallGate {
+    // the gate a pcall is protecting: put vmPc back on the pcall's own call
+    // instruction, which now reads the gate where its function belongs, and
+    // mark the dispatch so the call site knows whose results these are.  The
+    // instruction's argument count is pcall's, one more than the gate's now
+    // that f has moved into the function slot, so it comes down by one here --
+    // in the bytecode, where a write is read back the same step.
+    pcallGate = false
+    pcallRan = true
+    pcallBad[0] = 0
+    bpb[pcallGatePc] = bpb[pcallGatePc] - 1
+    vmPc = pcallGatePc
+  } else if lenChase {
     lenStep()
   } else if nxActive {
     if nxMode == 1 {
@@ -6779,9 +7017,16 @@ mod vmStep() {
         } else {
           gateHigh(fid, a, nargs, mtSelf)
         }
-        // a gate that changed the frame moved vmPc; one that did not falls
-        // through to the caller's vmPc + 1, as every other arm here does
-        if vmPc != pc0 {
+        if pcallRan && pcallBad[0] == 0 {
+          // a gate dispatched in place by a pcall: its results are at the
+          // pcall's own register, so they move up one and the true goes below.
+          // A gate that raised does not come here: the error is the value, and
+          // the unwind finds the marker with the message in it.
+          pcallRan = false
+          pcallEnd(vmBase + a, if 0 <= retCountV then retCountV else 0)
+        } else if vmPc != pc0 {
+          // a gate that changed the frame moved vmPc; one that did not falls
+          // through to the caller's vmPc + 1, as every other arm here does
           advanced = true
         }
       }
@@ -6833,6 +7078,8 @@ mod vmStep() {
       if fFunc.length() == 0 {
         resultV = fmtVal(rv, rn, rs)
         vmHalted = true
+      } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
+        pcallEnd(vmBase + a, 1)
       } else {
         vmBase = rb
         vmHold = true
@@ -6855,6 +7102,8 @@ mod vmStep() {
       if fFunc.length() == 0 {
         resultV = ""
         vmHalted = true
+      } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
+        pcallEnd(vmBase + a, 0)
       } else {
         vmBase = rb
         vmHold = true
@@ -6893,6 +7142,8 @@ mod vmStep() {
           resultV = ""
         }
         vmHalted = true
+      } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
+        pcallEnd(vmBase + a, k)
       } else {
         if want == -2 {
           // forward every value the call produced (absolute indices, so this
@@ -6952,6 +7203,8 @@ mod vmStep() {
         if fFunc.length() == 0 {
           resultV = if 1 <= k then fmtVal(vTag(a), vNum(a), vStr(a)) else ""
           vmHalted = true
+        } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
+          pcallEnd(vmBase + a, k)
         } else {
           if 0 < tail {
             // The call's values sit in this frame and the fixed ones are copied
@@ -7180,6 +7433,7 @@ mod parseJobStart() {
   // One reserved function slot per gate builtin (ids 0..NB-1), so a program's
   // own functions start at NB and can never collide with one.  The rest of the
   // standard library is Lua source prepended to the program (see libIter etc).
+  pcallBad.resize(1, 0)
   fStart.resize(NB, -1)
   fParams.resize(NB, -1)
   fRegs.resize(NB, -1)
