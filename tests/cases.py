@@ -448,6 +448,36 @@ TESTS = [
     ("pcall-of-pcall", "function f() return 1 end print(pcall(pcall, f))",
      None, "runtimerr",
      {"expect": {"err": "pcall of pcall is not supported on this chip"}}),
+    # xpcall, which PUC also has in C.  The one thing to measure before writing
+    # it: PUC 5.5 returns false *plus* whatever the handler returned, not the
+    # handler's results alone -- the false is there even when the handler
+    # returns a truthy thing of its own.  The handler is a variable rather than
+    # a register, because the protected call's own frame is written over the
+    # register the handler was in.  The cases use named functions: a function
+    # literal in an argument list loses its returns (see SKIP in the suite).
+    ("xpcall-ok", "function f() return 1, 2 end function h() end "
+     "print(xpcall(f, h))", None, "run"),
+    ("xpcall-targets", "function f() return 1, 2 end function h() end "
+     "local ok, a, b = xpcall(f, h) print(ok, a, b)", None, "run"),
+    ("xpcall-catch", "function f() error('boom') end "
+     "print(xpcall(f, function(e) return 'H:' .. e end))", None, "run"),
+    ("xpcall-catch-targets", "function f() error('b') end "
+     "function h(e) return 'H' end local ok, e = xpcall(f, h) print(ok, e)",
+     None, "run"),
+    ("xpcall-two-results", "function f() error('z') end function h(e) "
+     "return 7, 8 end print(xpcall(f, h))", None, "run"),
+    ("xpcall-handler-args", "function f(a, b) return a + b end function h() end "
+     "print(xpcall(f, h, 10, 3))", None, "run"),
+    ("xpcall-no-handler", "function f() error('n') end xpcall(f, 42)", None,
+     "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'xpcall' (function expected, "
+                        "got number)"}}),
+    ("xpcall-not-a-function", "function h() end print(xpcall(42, h))", None,
+     "run"),
+    # The two compiler gaps, kept as the repros they are.
+    ("arg-fn-returns", "print(pcall(function() return 1, 2 end))", None, "run"),
+    ("xpcall-tostring", "function f() error('b') end "
+     "local ok = xpcall(f, tostring) print(ok)", None, "run"),
     # error and assert, both C in PUC and gates here.  assert returns *all* of
     # its arguments on success, which is a shift down by one register on a
     # register VM.  PUC prefixes error's message with the chunk and line of
