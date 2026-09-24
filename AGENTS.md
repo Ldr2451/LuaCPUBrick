@@ -38,6 +38,16 @@
   the end. Stream it, or redirect to a file and poll the file.
 - Bound everything: explicit timeouts on probes, and a per-case timeout in the
   suite. An unpatched jump is an infinite loop, so the sim can hang too.
+- **Size every timeout from the last measured run, and keep it short.** Two or
+  three times what the command actually took is a bound; twenty minutes is not,
+  and the tool's 120s default is not an invitation to raise it. A timeout that
+  is too loose is worse than none: it turns a five-second mistake into a
+  twenty-minute wait and a pile of orphaned workers.
+- When a command times out, kill what it left behind (`taskkill /F /IM
+  python.exe`) *before* doing anything else, then find out why. A starved
+  machine and an infinite loop look identical from the outside -- three
+  independent chip jobs in one batch took over three minutes when the same work
+  takes 22s and 63s run one after another, and the timeout hid which it was.
 - After a killed or long command, check for leftover `python` processes; a
   timeout does not reliably kill the process tree.
 - Bisect slow batches: run suspect cases one at a time, each with its own timeout.
@@ -79,6 +89,11 @@
 - `lua.ws` is the chip; `irrun/` simulates it; `tests/` holds the suite and the
   oracle-diff checks; `tools/` holds the development tools. `README.md` lists
   them. Keep the root to the chip sources and the two docs.
+- **The oracle is the reference and nothing else.** Real Lua 5.5, found by
+  `tests/lua_oracle.py`, decides what correct means; a diff against it is the
+  only proof. There is no second chip source to compare against -- an old
+  `lua_full.ws` (deleted in 1abd9ce) was an incomplete earlier attempt, and
+  reading it only ever invites reading the wrong file.
 - `lua.ws` is one file because the compiler reads one file: there is no include,
   so splitting it needs either a concatenate step that makes the real chip a
   generated artifact or compiler support we do not have. It is 7.9k lines and
@@ -155,9 +170,18 @@
 ## Batch your own work too
 - Independent tool calls go out in one message (parallel), not one at a time:
   searches, reads of unrelated files, independent test commands.
+- **But never run two test commands in parallel, and never put a test command in
+  the same batch as a chip job.** The suite takes the whole machine for itself:
+  twelve worker processes, each with its own Sim. Three chip jobs in one batch
+  took over three minutes against the 22s and 63s the same two take one after
+  another, and it looks exactly like a hang — the timeouts hid which job was
+  which. One test command at a time, in its own call, with a timeout sized from
+  its last measured run: the suite 63s gets 150s, a probe 38s gets 90s.
 - Prefer one command that runs everything over many commands that each run part:
   `tests/test_consistency.py`, the suite and the three oracle checks belong in a
-  single parallel call at the end of a change, not one per edit.
+  single parallel call at the end of a change, not one per edit. That sentence
+  predates the rule above and loses to it: they are one command *in sequence*,
+  not one batch.
 - **The tests use the whole machine: a pool of worker *processes*, each with its
   own Sim, and the chip compiled once into a dump they all share.** Two things
   matter and both were measured the hard way. The chip is built once (ten
@@ -182,11 +206,14 @@
 - Compile the chip once per batch of experiments: a loop over N test programs
   must not trigger N recompiles.
 
-## Performance: the chip has two cost currencies
-- **Every change costs gates AND ticks. Measure both, before and after.** Gates
-  are `tools/audit.py` (nodes/wires); ticks are what `tools/check.py` prints per
-  program. A change that is free in one can be ruinous in the other, and only one
-  of them shows up in the obvious place.
+## Performance: the chip has three cost currencies
+- **Every change costs gates AND ticks, and those are not the same currency as
+  the clock.** Gates are `tools/audit.py` (nodes/wires); ticks are what
+  `tools/check.py` prints per program. In the sim, wall time tracks the gates
+  fired per tick, so a change that does the same work in fewer ticks still costs
+  the same sim time. In the game a tick is 16.7ms of *real* time whatever the
+  chip does inside it, so there fewer ticks is the only thing that matters. A
+  change can halve one and double the other; say which one you moved.
 - **The prepended library is charged by the character, and that is the trap.**
   Library pieces are Lua *source* spliced in front of the program, and the lexer
   runs at 4 characters per tick, so a piece of C characters costs `C/4` ticks of
@@ -196,10 +223,32 @@
   size, and `tools/check.py` prints the boot cost. 443 lines of `string.format`
   was 10769 characters, 9.4s of sim time and ~45s in-game — written before
   anyone checked what the mechanism charges.
+- **A library's in-game cost is its character count over 4, and that is the
+  number to argue about.** `LIB_str_gsub` is 2,769 escaped characters = 692 ticks
+  = **11.5s in-game** at 60 ticks/s, paid by every program that names gsub
+  before it runs one instruction. `tools/libconst.py --install` minifies the
+  const (comments, indentation, blank lines out; nothing else, because a line
+  inside a long bracket string is data), which took gsub from 2,975 to 2,769.
+- **A boot cost is a character count, so it is only reducible three ways:**
+  fewer characters, more characters per tick, or not paying the parse at all.
+  Unrolling the lexer is the middle one and it is linear in gates (16 steps
+  +19.6k nodes for 4x the rate). A `Find`-based fast path for string literals
+  and a run ladder for identifiers are the cheap end of the same trade — the
+  ladder is the one to watch, because a run length that comes out 0 hangs the
+  whole lexer (see the zero-progress trap below).
 - **The lexer is not a cheap global speed lever.** Each unrolled `lexStep()` is
   ~1633 nodes (`tools/lexcost.py`: 8 steps +6.5k nodes, 16 steps +19.6k), so
   buying lexing speed costs gates linearly and cannot rescue an oversized piece.
   Shrink the piece or move the work into a gate.
+- **A gate that calls back into Lua is a separate mechanism, and nothing needs
+  it yet.** `string.gsub`'s replacement can be a Lua function, and a gate cannot
+  call one: the only place the chip calls Lua on a gate's behalf is the pcall
+  frame, and pcall of pcall is unsupported, so a machine cannot suspend mid-loop
+  for a call. Making gsub a gate therefore needs a call-from-a-gate hook *before*
+  it saves anything, and the hook costs gates and risk on its own. It buys the
+  boot, nothing else: the matcher already dominates per-position cost, and that
+  is the same micro-step either way. Do not build it unless a gate that must
+  call Lua shows up for some other reason.
 - **Where a cost belongs:** Lua-level loops are VM state machines, so they cost
   ticks per iteration and no gates. WireScript has no loops at all, so a gate-side
   loop is either hand-unrolled (gates proportional to the trip count) or a
@@ -319,6 +368,17 @@ a name, how many write it, what fires each write). The `_fmt` header in
 - **A write at the top of a mod, followed by an `else if` chain that deep with
   mod calls in it, is dropped.** One mod per state, and repeat the write in each
   arm rather than once at the top.
+- **A ladder that can report zero progress is an infinite loop, not a slow
+  path.** A per-tick state machine that consumes `lpos = lpos + n` hangs outright
+  when `n` is 0. An identifier-run ladder in `lexStep` hung `print('hello')`
+  past 120s: each arm read its character through a *nested* `if` inside a mod
+  that `lexChunk` inlines four times, so the arms past the first lost their Exec
+  chain, every term after `a0` read 0, and the run length came out 0. A
+  run-length ladder may only be entered when the first character is already
+  known to match, and its first term must come from a value computed before the
+  chain, not from a conditional gate call inside it. Prove a new ladder on a
+  one-word program first -- it costs 10s -- before running a suite that will not
+  tell you which case hung.
 - **An array read that follows a var write inside a nested arm loses its Exec
   chain** where the mod is inlined more than once, and the writes fed by it never
   happen -- the pattern backtracker popped an entry and then read its four slots
