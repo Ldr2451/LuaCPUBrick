@@ -187,7 +187,14 @@ const MAX_REGS = 64
 // program's own functions.  The arrays grow on demand, so this is a bound, not
 // a size.
 const MAX_FUNCS = 96
-const MAX_GLOBALS = 64
+// A bound, not a size, like MAX_FUNCS: gtag/gnum/gstr grow on demand, so this
+// costs no gates at all (measured: 64 -> 96 left the audit at the same node
+// count).  It was 64 and every gate builtin takes a global slot of its own, so
+// a program that used the whole library plus a large reproducer ran out of
+// names -- tests/lib_callchain.lua needs 24 of them and hit the ceiling the
+// moment pcall took slot 39.  The number that matters is MAX_GLOBALS minus the
+// builtin slots, and it should stay well clear of what a real program declares.
+const MAX_GLOBALS = 96
 const MAX_CALLS = 32
 const MAX_TABLES = 64
 const MAX_HEAP = 512
@@ -3954,7 +3961,7 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
-// (inputs filled from the latches), 19..36 builtins (print, type, tostring,
+// (inputs filled from the latches), 19..37 builtins (print, type, tostring,
 // setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert) as
 // functions with ids 0..NB-1, then the two int globals.
 var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
@@ -6037,6 +6044,519 @@ mod vaFill(base: int, dst: int, n: int) {
   if 16 <= n { vtag[dst+15] = vaTag[base+15] vnum[dst+15] = vaNum[base+15] vstr[dst+15] = vaStr[base+15] }
 }
 
+// The low half of the gate dispatch: fids 0..8.  The chain was one of
+// seventeen arms inside vmStep, which is inlined four times, and the
+// documented edge for a chain is about sixteen -- past it the arms near
+// the top stop taking effect, silently.  tools/chainmap.py counts them.
+
+mod gateLow(fid: int, a: int, nargs: int) {
+  if fid == 0 {
+    if nargs > 16 {
+      vmFail("too many print args (max 16)")
+    } else {
+      // one pure expression (no variable traffic): guarded segments
+      let raw = (if 0 < nargs then fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)) else "") .. (if 1 < nargs then "\t" .. fmtVal(vTag(a + 2), vNum(a + 2), vStr(a + 2)) else "") .. (if 2 < nargs then "\t" .. fmtVal(vTag(a + 3), vNum(a + 3), vStr(a + 3)) else "") .. (if 3 < nargs then "\t" .. fmtVal(vTag(a + 4), vNum(a + 4), vStr(a + 4)) else "") .. (if 4 < nargs then "\t" .. fmtVal(vTag(a + 5), vNum(a + 5), vStr(a + 5)) else "") .. (if 5 < nargs then "\t" .. fmtVal(vTag(a + 6), vNum(a + 6), vStr(a + 6)) else "") .. (if 6 < nargs then "\t" .. fmtVal(vTag(a + 7), vNum(a + 7), vStr(a + 7)) else "") .. (if 7 < nargs then "\t" .. fmtVal(vTag(a + 8), vNum(a + 8), vStr(a + 8)) else "") .. (if 8 < nargs then "\t" .. fmtVal(vTag(a + 9), vNum(a + 9), vStr(a + 9)) else "") .. (if 9 < nargs then "\t" .. fmtVal(vTag(a + 10), vNum(a + 10), vStr(a + 10)) else "") .. (if 10 < nargs then "\t" .. fmtVal(vTag(a + 11), vNum(a + 11), vStr(a + 11)) else "") .. (if 11 < nargs then "\t" .. fmtVal(vTag(a + 12), vNum(a + 12), vStr(a + 12)) else "") .. (if 12 < nargs then "\t" .. fmtVal(vTag(a + 13), vNum(a + 13), vStr(a + 13)) else "") .. (if 13 < nargs then "\t" .. fmtVal(vTag(a + 14), vNum(a + 14), vStr(a + 14)) else "") .. (if 14 < nargs then "\t" .. fmtVal(vTag(a + 15), vNum(a + 15), vStr(a + 15)) else "") .. (if 15 < nargs then "\t" .. fmtVal(vTag(a + 16), vNum(a + 16), vStr(a + 16)) else "") .. "\n"
+      // the 64-character cap is print's, and it stays here so the log
+      // itself takes whatever it is given
+      let line = if raw.Length() > 64 then raw.Substring(0, 63) .. "\n" else raw
+      logPush(line)
+      vSet(a, 0, 0.0, "")
+      retCountV = 0
+    }
+  } else if fid == 1 || fid == 2 {
+    if nargs == 0 {
+      vmFail("wrong number of arguments")
+    } else if fid == 1 {
+      let t = vTag(a + 1)
+      vSet(a, 2, 0.0, if t == 0 then "nil" else if t == 1 || t == 6 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else "table")
+      retCountV = 1
+    } else {
+      vSet(a, 2, 0.0, fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)))
+      retCountV = 1
+    }
+  } else if fid == 3 {
+    let x = numArg(if 0 < nargs then vTag(a + 1) else 0, if 0 < nargs then vNum(a + 1) else 0.0)
+    let y = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
+    let z = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
+    outVecV = Vec(x, y, z)
+    vSet(a, 0, 0.0, "")
+    retCountV = 0
+  } else if fid == 4 {
+    let r = numArg(if 0 < nargs then vTag(a + 1) else 0, if 0 < nargs then vNum(a + 1) else 0.0)
+    let g = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
+    let bl = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
+    let al = numArg(if 3 < nargs then vTag(a + 4) else 0, if 3 < nargs then vNum(a + 4) else 0.0)
+    outColV = Color(r, g, bl, al)
+    vSet(a, 0, 0.0, "")
+    retCountV = 0
+  } else if fid == 5 {
+    if nargs != 0 {
+      vmFail("wrong number of arguments to clock")
+    } else {
+      vSetNum(a, ServerUptime())
+      retCountV = 1
+    }
+  } else if fid == 6 {
+    let it = if 0 < nargs then vTag(a + 1) else 0
+    let iv = if 0 < nargs then vNum(a + 1) else 0.0
+    if (it == 1 || it == 6) && iv == floor(iv) && iv >= 1.0 && iv <= inArr.length() {
+      vSetNum(a, inArr[toInt(iv) - 1])
+    } else {
+      vSet(a, 0, 0.0, "")
+    }
+    retCountV = 1
+  } else if fid == 7 {
+    let it = if 0 < nargs then vTag(a + 1) else 0
+    let iv = if 0 < nargs then vNum(a + 1) else 0.0
+    let vt = if 1 < nargs then vTag(a + 2) else 0
+    let vv = if 1 < nargs then vNum(a + 2) else 0.0
+    if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > outArrV.length() {
+      vmFail("array index out of range")
+    } else if vt == 1 || vt == 6 || vt == 0 || vt == 3 {
+      outArrV[toInt(iv) - 1] = if vt == 0 then 0.0 else vv
+      vSet(a, 0, 0.0, "")
+      retCountV = 0
+    } else {
+      vmFail("array element must be a number")
+    }
+  } else if fid == 8 {
+    // select('#', ...) counts the extra arguments; select(n, ...) returns
+    // them from n (negative counts from the end)
+    let st = if 0 < nargs then vTag(a + 1) else 0
+    let sv = if 0 < nargs then vNum(a + 1) else 0.0
+    if nargs == 0 {
+      vmFail("bad argument #1 to 'select' (number expected, got no value)")
+    } else if st == 2 && vStr(a + 1) == "#" {
+      vSetInt(a, nargs - 1)
+      retCountV = 1
+    } else if st != 1 && st != 6 {
+      vmFail("bad argument #1 to 'select' (number expected)")
+    } else {
+      // the arguments after the index are the "extra arguments"; a
+      // positive n starts at the n-th of those, a negative one counts
+      // back from the last
+      let n = toInt(sv)
+      let m = nargs - 1
+      var cnt = 0
+      var src = a
+      if n < 0 {
+        if 0 - n > m {
+          vmFail("bad argument #1 to 'select' (index out of range)")
+        } else {
+          cnt = 0 - n
+          src = a + m + n + 2
+        }
+      } else if n == 0 {
+        vmFail("bad argument #1 to 'select' (index out of range)")
+      } else if n <= m {
+        cnt = m - n + 1
+        src = a + n + 1
+      }
+      if cnt > MAXVALS {
+        vmFail("too many results to select")
+      } else {
+        shiftDown(a, src, cnt)
+        retCountV = cnt
+      }
+    }
+  }
+}
+// The high half: the rest of the builtins, and the generic Lua call at the
+// end, which is what a program function reaches.  a and nargs are the call's
+// own registers; mtSelf says whether the call wants every result or one.
+
+mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
+  if fid == 9 {
+    // next(t [, k]): the entry after k in insertion order, as key+value.
+    // A nil result means the walk is over.  Tombstones (keys assigned nil)
+    // are skipped one per tick, so this needs the micro-step below rather
+    // than a loop.
+    if nargs < 1 || vTag(a + 1) != 5 {
+      vmFail("bad argument #1 to 'next' (table expected)")
+    } else {
+      let tid = toInt(vNum(a + 1))
+      var sl = -1
+      if nargs < 2 || vTag(a + 2) == 0 {
+        sl = tFirst[tid]
+      } else {
+        let kt = keyTag(vTag(a + 2), vNum(a + 2))
+        if kt == 0 {
+          vmFail("invalid key to 'next'")
+        } else {
+          let kr = tmap.get(tkey(tid, kt, vNum(a + 2), vStr(a + 2)))
+          if !kr.Found {
+            vmFail("invalid key to 'next'")
+          } else {
+            sl = tNext[kr.Value]
+          }
+        }
+      }
+      if !vmFailed {
+        nxSlot = sl
+        nxDst = vmBase + a
+        nxPc = vmPc
+        nxMode = 0
+        nxActive = true
+        nxStep()
+        advanced = true
+      }
+    }
+  } else if fid == 10 {
+    // _s(mode, s, pos, len): the string operations Lua cannot express.
+    // 1 substring  2 upper  3 lower  4 byte at pos  5 char  6 find
+    let so = toInt(vNum(a + 1))
+    let s = vStr(a + 2)
+    let p = toInt(vNum(a + 3))
+    let q = if 3 < nargs then toInt(vNum(a + 4)) else 1
+    if so == 1 {
+      vSet(a, 2, 0.0, if q < 1 then "" else s.Substring(p, q))
+    } else if so == 2 {
+      vSet(a, 2, 0.0, s.ToUpper())
+    } else if so == 3 {
+      vSet(a, 2, 0.0, s.ToLower())
+    } else if so == 4 {
+      if 0 <= p && p < s.Length() {
+        vSetInt(a, s.Substring(p, 1).ToCharCode().Codepoint)
+      } else {
+        vSet(a, 0, 0.0, "")
+      }
+    } else if so == 5 {
+      vSet(a, 2, 0.0, FromCharCode(p).Character)
+    } else {
+      // 6: find(needle) from pos q, 1-based like Lua's string.find
+      vSetInt(a, s.Find(vStr(a + 3), true, q) + 1)
+    }
+    retCountV = 1
+  } else if fid == 11 {
+    // _m(mode, x, y): the transcendental functions, which have no way to
+    // be written in Lua.  1 floor 2 ceil 3 sqrt 4 sin 5 cos 6 tan 7 asin
+    // 8 acos 9 atan2 10 exp 11 ln 12 log10 13 tointeger 14 math.type
+    let mo = toInt(vNum(a + 1))
+    let x = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
+    let y = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
+    if mo == 1 || mo == 2 || mo == 13 {
+      // the floor gate truncates toward zero, so step to the right for
+      // negatives (floor) or positives (ceil)
+      let t = x | 0
+      let fl = if x < 0.0 && x != t + 0.0 then t - 1 else t
+      let ce = if 0 < x && x != t + 0.0 then t + 1 else t
+      if mo == 1 {
+        // Lua's floor/ceil return integers; the chip tags whole numbers
+        // apart from fractions so they print and compare the same way
+        if abs(fl) < 9.2e18 { vSetInt(a, fl) } else { vSetNum(a, fl + 0.0) }
+      } else if mo == 2 {
+        if abs(ce) < 9.2e18 { vSetInt(a, ce) } else { vSetNum(a, ce + 0.0) }
+      } else if x == fl + 0.0 && abs(x) < 9.2e18 {
+        vSetInt(a, fl)
+      } else {
+        vSet(a, 0, 0.0, "")
+      }
+    } else if mo == 14 {
+      vSet(a, 2, 0.0, if vTag(a + 2) == 6 then "integer"
+        else if vTag(a + 2) == 1 then "float" else "nil")
+    } else {
+      vSetNum(a, if mo == 3 then sqrt(x) else if mo == 4 then sin(x)
+        else if mo == 5 then cos(x) else if mo == 6 then tan(x)
+        else if mo == 7 then asin(x) else if mo == 8 then acos(x)
+        else if mo == 9 then atan2(x, y)
+        else if mo == 10 then exp(x) else if mo == 11 then ln(x)
+        else log(x, 10.0))
+    }
+    retCountV = 1
+  } else if fid == 12 {
+    // unpack(t [, i [, j]]): t[i..j] as multiple results.  Lua cannot
+    // write this -- a return list is fixed length -- so it is a primitive.
+    if nargs < 1 || vTag(a + 1) != 5 {
+      vmFail("bad argument #1 to 'unpack' (table expected)")
+    } else {
+      let tid = toInt(vNum(a + 1))
+      // the tag and the value are chosen first, then numArg sees only
+      // those: a mod call in a conditional's value position is evaluated
+      // whether the arm runs or not, so an absent argument has to be
+      // sanitised before numArg is handed it.  Each one keeps its own
+      // default -- 1 for lo, the table's length for hi -- which is why
+      // the choice cannot happen inside numArg.
+      let lt = if 1 < nargs then vTag(a + 2) else 0
+      let lv = if 1 < nargs then vNum(a + 2) else 0.0
+      let ht = if 2 < nargs then vTag(a + 3) else 0
+      let hv = if 2 < nargs then vNum(a + 3) else 0.0
+      let lo = toInt(if lt == 0 then 1.0 else numArg(lt, lv))
+      let hi = toInt(if ht == 0 then tLen[tid] + 0.0 else numArg(ht, hv))
+      let cnt = if hi < lo then 0 else hi - lo + 1
+      if cnt > MAXVALS {
+        vmFail("too many results to unpack")
+      } else {
+        // fill high to low: the values move up into the call's own
+        // registers, so copying down would overwrite them
+        if 16 <= cnt { tblFill(a + 15, tid, lo + 15) }
+        if 15 <= cnt { tblFill(a + 14, tid, lo + 14) }
+        if 14 <= cnt { tblFill(a + 13, tid, lo + 13) }
+        if 13 <= cnt { tblFill(a + 12, tid, lo + 12) }
+        if 12 <= cnt { tblFill(a + 11, tid, lo + 11) }
+        if 11 <= cnt { tblFill(a + 10, tid, lo + 10) }
+        if 10 <= cnt { tblFill(a + 9, tid, lo + 9) }
+        if 9 <= cnt { tblFill(a + 8, tid, lo + 8) }
+        if 8 <= cnt { tblFill(a + 7, tid, lo + 7) }
+        if 7 <= cnt { tblFill(a + 6, tid, lo + 6) }
+        if 6 <= cnt { tblFill(a + 5, tid, lo + 5) }
+        if 5 <= cnt { tblFill(a + 4, tid, lo + 4) }
+        if 4 <= cnt { tblFill(a + 3, tid, lo + 3) }
+        if 3 <= cnt { tblFill(a + 2, tid, lo + 2) }
+        if 2 <= cnt { tblFill(a + 1, tid, lo + 1) }
+        if 1 <= cnt { tblFill(a, tid, lo) }
+        retCountV = cnt
+      }
+    }
+  } else if fid == 13 {
+    // _fmt(fmt, ...): string.format, as a micro-step.  lib/str_format.lua
+    // is the PUC-verified Lua version of this algorithm; as prepended
+    // source it cost 2692 ticks of lexing per program, so it lives here
+    // and the library only aliases the name (LIB_str_fmt).
+    if nargs < 1 {
+      vmFail("bad argument #1 to 'format' (string expected, got no value)")
+    } else {
+      // PUC reads the format with luaL_checkstring, which takes a number as
+      // a string: string.format(5) is "5", not an error
+      if vTag(a + 1) == 2 {
+        fmtSrc = vStr(a + 1)
+      } else if vTag(a + 1) == 1 || vTag(a + 1) == 6 {
+        fmtSrc = fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1))
+      } else {
+        vmFail("bad argument #1 to 'format' (string expected, got "
+               .. typeName(vTag(a + 1)) .. ")")
+      }
+      if !vmFailed {
+        fmtBase = vmBase + a
+        fmtArgs = nargs - 1
+        fmtArgI = 0
+        fmtPos = 0
+        fmtQPos = 0
+        fmtOut = ""
+        fmtBody = ""
+        fmtPre = ""
+        fmtPadAcc = ""
+        fmtPad = 0
+        fmtNeg = false
+        fmtWidth = 0
+        fmtPrec = -1
+        fmtMinus = 0
+        fmtPlus = 0
+        fmtSpace = 0
+        fmtHash = 0
+        fmtZero = 0
+        fmtPadLeft = false
+        fmtPadZero = false
+        fmtCh = ""
+        fmtEof = false
+        fmtBase_ = 10.0
+        fmtBaseI = 10
+        fmtQ_ = 0
+        fmtD_ = 0
+        fmtUpper = false
+        fmtDigits = 0
+        fmtDigitsMax = 0
+        fmtSpec = ""
+        // start at the fetch, not at the literal state: the walk has not
+        // read a character yet, and entering at the literal state skipped
+        // the first one (every spec came out one character late)
+        fmtState = 10
+        nxDst = vmBase + a
+        nxPc = vmPc
+        nxMode = 1
+        nxActive = true
+      }
+    }
+  } else if fid == 15 {
+    // _wr(s): raw text into the log, no tab and no newline, through the
+    // one append path -- a write to logV that is not paired with a
+    // logLines push does not reach the port at all (io.write produced
+    // nothing until it went through logPush)
+    if nargs < 1 {
+      vSet(a, 0, 0.0, "")
+    } else {
+      let w = fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1))
+      logPush(w)
+      vSet(a, 0, 0.0, "")
+    }
+    retCountV = 1
+  } else if fid == 16 {
+    // error(msg [, level]) and assert, which PUC has in C (lbaselib.c)
+    // and are gates here for the same reason.  pcall and xpcall are C
+    // there too, and the shape they need is settled:
+    //
+    //   - pcall pushes a marker frame, a sentinel fid on the same fFunc
+    //     stack the calls use, carrying its own fRetA / fRetBase /
+    //     fRetPC; then it makes the call to f with fRetA at one past the
+    //     pcall's own register, so f's results land beside it and the
+    //     `true` has a register of its own.
+    //   - the four RETURN variants recognise the marker when it comes up
+    //     and write `true` where the results start, then return to the
+    //     pcall's caller.  The test has to be at the top of each variant:
+    //     they are mods this size, and a condition in the middle of one
+    //     of these chains is the trap the header warns about.
+    //   - vmFail gets a protected mode: it finds the marker, unwinds the
+    //     frames above it, and writes (false, message) in the same place.
+    //     Without it an error inside a pcall stops the program, which is
+    //     the whole thing pcall is for.
+    //   - xpcall is the same with the handler called on the message first,
+    //     and its results are what the pair holds -- which means one more
+    //     frame and one more return path, so it is worth doing after pcall
+    //     rather than with it.
+    //
+    // The one thing none of them can do is name a position: PUC prefixes
+    // error's message with the chunk and line of whatever called error,
+    // and the chip has no line at run time, so the message goes through
+    // as it is.
+    if nargs < 1 {
+      vmFail("")
+    } else {
+      let t = vTag(a + 1)
+      vmFail(fmtVal(t, vNum(a + 1), vStr(a + 1)))
+    }
+  } else if fid == 17 {
+    // assert(v [, msg, ...]): a truthy first argument returns *all* of
+    // the arguments, which on a register VM is a shift down by one
+    // register, and a falsey one raises with the message or PUC's
+    // default.  The shift is retAdjust's job: copying forward would
+    // overwrite each value with the one below it.
+    if vTag(a + 1) == 0 || vTag(a + 1) == 3 && vNum(a + 1) == 0.0 {
+      if 1 < nargs {
+        let t2 = vTag(a + 2)
+        vmFail(fmtVal(t2, vNum(a + 2), vStr(a + 2)))
+      } else {
+        vmFail("assertion failed!")
+      }
+    } else {
+      if 0 < nargs {
+        retAdjust(vmBase + a + 1, vmBase + a, nargs, nargs)
+        retCountV = nargs
+      } else {
+        vSet(a, 0, 0.0, "")
+        retCountV = 1
+      }
+    }
+  } else if fid == 14 {
+    // _rd(fmt): one read from the text in inStr0, the way io.read does it
+    if nargs < 1 {
+      rdLine()
+      if rdGot {
+        vSet(a, 2, 0.0, rdBuf)
+      } else {
+        vSet(a, 0, 0.0, "")
+      }
+    } else if vTag(a + 1) == 1 || vTag(a + 1) == 6 {
+      rdTake(toInt(vNum(a + 1)))
+      vSet(a, 2, 0.0, rdBuf)
+    } else {
+      let f = vStr(a + 1)
+      if f == "*a" || f == "a" {
+        rdTake(rdText.Length())
+        vSet(a, 2, 0.0, rdBuf)
+      } else if f == "*l" || f == "l" {
+        rdLine()
+        if rdGot {
+          vSet(a, 2, 0.0, rdBuf)
+        } else {
+          vSet(a, 0, 0.0, "")
+        }
+      } else if f == "*r" || f == "r" {
+        rdPos = 0
+        vSet(a, 2, 0.0, "")
+      } else {
+        vmFail("bad argument to 'read' (invalid format)")
+      }
+    }
+    retCountV = 1
+  } else {
+    if fFunc.length() >= MAX_CALLS {
+      vmFail("call depth exceeded")
+    } else {
+      let nbase = vmBase + a
+      let np = fParams[fid]
+      if np > 8 {
+        vmFail("too many parameters")
+      } else {
+        if 0 < np && 0 < nargs {
+          vtag[nbase + 0] = vtag[vmBase + a + 1]
+          vnum[nbase + 0] = vnum[vmBase + a + 1]
+          vstr[nbase + 0] = vstr[vmBase + a + 1]
+        } else if 0 < np {
+          vtag[nbase + 0] = 0
+        }
+        if 1 < np && 1 < nargs {
+          vtag[nbase + 1] = vtag[vmBase + a + 2]
+          vnum[nbase + 1] = vnum[vmBase + a + 2]
+          vstr[nbase + 1] = vstr[vmBase + a + 2]
+        } else if 1 < np {
+          vtag[nbase + 1] = 0
+        }
+        if 2 < np && 2 < nargs {
+          vtag[nbase + 2] = vtag[vmBase + a + 3]
+          vnum[nbase + 2] = vnum[vmBase + a + 3]
+          vstr[nbase + 2] = vstr[vmBase + a + 3]
+        } else if 2 < np {
+          vtag[nbase + 2] = 0
+        }
+        if 3 < np && 3 < nargs {
+          vtag[nbase + 3] = vtag[vmBase + a + 4]
+          vnum[nbase + 3] = vnum[vmBase + a + 4]
+          vstr[nbase + 3] = vstr[vmBase + a + 4]
+        } else if 3 < np {
+          vtag[nbase + 3] = 0
+        }
+        if 4 < np && 4 < nargs {
+          vtag[nbase + 4] = vtag[vmBase + a + 5]
+          vnum[nbase + 4] = vnum[vmBase + a + 5]
+          vstr[nbase + 4] = vstr[vmBase + a + 5]
+        } else if 4 < np {
+          vtag[nbase + 4] = 0
+        }
+        if 5 < np && 5 < nargs {
+          vtag[nbase + 5] = vtag[vmBase + a + 6]
+          vnum[nbase + 5] = vnum[vmBase + a + 6]
+          vstr[nbase + 5] = vstr[vmBase + a + 6]
+        } else if 5 < np {
+          vtag[nbase + 5] = 0
+        }
+        if 6 < np && 6 < nargs {
+          vtag[nbase + 6] = vtag[vmBase + a + 7]
+          vnum[nbase + 6] = vnum[vmBase + a + 7]
+          vstr[nbase + 6] = vstr[vmBase + a + 7]
+        } else if 6 < np {
+          vtag[nbase + 6] = 0
+        }
+        if 7 < np && 7 < nargs {
+          vtag[nbase + 7] = vtag[vmBase + a + 8]
+          vnum[nbase + 7] = vnum[vmBase + a + 8]
+          vstr[nbase + 7] = vstr[vmBase + a + 8]
+        } else if 7 < np {
+          vtag[nbase + 7] = 0
+        }
+        // a variadic function keeps the arguments past its named
+        // parameters in the vararg stack; the frame records the base
+        let nva = if fVar[fid] && np < nargs then nargs - np else 0
+        if vaTop + nva > MAX_VA {
+          vmFail("too many varargs")
+        } else {
+          vaSpill(vmBase + a + 1 + np, vaTop, nva)
+          fVaB.push(vaTop)
+          vaTop = vaTop + nva
+        }
+        fFunc.push(fid)
+        fBase.push(nbase)
+        fRetA.push(a)
+        fRetBase.push(vmBase)
+        fRetPC.push(vmPc + 1)
+        fRetN.push(if mtSelf then -2 else 1)
+        vmBase = nbase
+        vmHold = true
+        vmPc = fStart[fid]
+        advanced = true
+      }
+    }
+  }
+}
+
 mod vmStep() {
   if lenChase {
     lenStep()
@@ -6253,503 +6773,16 @@ mod vmStep() {
         // produced; the enclosing call counts those in place of its last arg
         let tailN = if mtArg then (if 0 <= retCountV then retCountV else 0) else 0
         let nargs = if mtArg && 0 < b then (b - 1) + tailN else b
-        if fid == 0 {
-          if nargs > 16 {
-            vmFail("too many print args (max 16)")
-          } else {
-            // one pure expression (no variable traffic): guarded segments
-            let raw = (if 0 < nargs then fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)) else "") .. (if 1 < nargs then "\t" .. fmtVal(vTag(a + 2), vNum(a + 2), vStr(a + 2)) else "") .. (if 2 < nargs then "\t" .. fmtVal(vTag(a + 3), vNum(a + 3), vStr(a + 3)) else "") .. (if 3 < nargs then "\t" .. fmtVal(vTag(a + 4), vNum(a + 4), vStr(a + 4)) else "") .. (if 4 < nargs then "\t" .. fmtVal(vTag(a + 5), vNum(a + 5), vStr(a + 5)) else "") .. (if 5 < nargs then "\t" .. fmtVal(vTag(a + 6), vNum(a + 6), vStr(a + 6)) else "") .. (if 6 < nargs then "\t" .. fmtVal(vTag(a + 7), vNum(a + 7), vStr(a + 7)) else "") .. (if 7 < nargs then "\t" .. fmtVal(vTag(a + 8), vNum(a + 8), vStr(a + 8)) else "") .. (if 8 < nargs then "\t" .. fmtVal(vTag(a + 9), vNum(a + 9), vStr(a + 9)) else "") .. (if 9 < nargs then "\t" .. fmtVal(vTag(a + 10), vNum(a + 10), vStr(a + 10)) else "") .. (if 10 < nargs then "\t" .. fmtVal(vTag(a + 11), vNum(a + 11), vStr(a + 11)) else "") .. (if 11 < nargs then "\t" .. fmtVal(vTag(a + 12), vNum(a + 12), vStr(a + 12)) else "") .. (if 12 < nargs then "\t" .. fmtVal(vTag(a + 13), vNum(a + 13), vStr(a + 13)) else "") .. (if 13 < nargs then "\t" .. fmtVal(vTag(a + 14), vNum(a + 14), vStr(a + 14)) else "") .. (if 14 < nargs then "\t" .. fmtVal(vTag(a + 15), vNum(a + 15), vStr(a + 15)) else "") .. (if 15 < nargs then "\t" .. fmtVal(vTag(a + 16), vNum(a + 16), vStr(a + 16)) else "") .. "\n"
-            // the 64-character cap is print's, and it stays here so the log
-            // itself takes whatever it is given
-            let line = if raw.Length() > 64 then raw.Substring(0, 63) .. "\n" else raw
-            logPush(line)
-            vSet(a, 0, 0.0, "")
-            retCountV = 0
-          }
-        } else if fid == 1 || fid == 2 {
-          if nargs == 0 {
-            vmFail("wrong number of arguments")
-          } else if fid == 1 {
-            let t = vTag(a + 1)
-            vSet(a, 2, 0.0, if t == 0 then "nil" else if t == 1 || t == 6 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else "table")
-            retCountV = 1
-          } else {
-            vSet(a, 2, 0.0, fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)))
-            retCountV = 1
-          }
-        } else if fid == 3 {
-          let x = numArg(if 0 < nargs then vTag(a + 1) else 0, if 0 < nargs then vNum(a + 1) else 0.0)
-          let y = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
-          let z = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
-          outVecV = Vec(x, y, z)
-          vSet(a, 0, 0.0, "")
-          retCountV = 0
-        } else if fid == 4 {
-          let r = numArg(if 0 < nargs then vTag(a + 1) else 0, if 0 < nargs then vNum(a + 1) else 0.0)
-          let g = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
-          let bl = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
-          let al = numArg(if 3 < nargs then vTag(a + 4) else 0, if 3 < nargs then vNum(a + 4) else 0.0)
-          outColV = Color(r, g, bl, al)
-          vSet(a, 0, 0.0, "")
-          retCountV = 0
-        } else if fid == 5 {
-          if nargs != 0 {
-            vmFail("wrong number of arguments to clock")
-          } else {
-            vSetNum(a, ServerUptime())
-            retCountV = 1
-          }
-        } else if fid == 6 {
-          let it = if 0 < nargs then vTag(a + 1) else 0
-          let iv = if 0 < nargs then vNum(a + 1) else 0.0
-          if (it == 1 || it == 6) && iv == floor(iv) && iv >= 1.0 && iv <= inArr.length() {
-            vSetNum(a, inArr[toInt(iv) - 1])
-          } else {
-            vSet(a, 0, 0.0, "")
-          }
-          retCountV = 1
-        } else if fid == 7 {
-          let it = if 0 < nargs then vTag(a + 1) else 0
-          let iv = if 0 < nargs then vNum(a + 1) else 0.0
-          let vt = if 1 < nargs then vTag(a + 2) else 0
-          let vv = if 1 < nargs then vNum(a + 2) else 0.0
-          if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > outArrV.length() {
-            vmFail("array index out of range")
-          } else if vt == 1 || vt == 6 || vt == 0 || vt == 3 {
-            outArrV[toInt(iv) - 1] = if vt == 0 then 0.0 else vv
-            vSet(a, 0, 0.0, "")
-            retCountV = 0
-          } else {
-            vmFail("array element must be a number")
-          }
-        } else if fid == 8 {
-          // select('#', ...) counts the extra arguments; select(n, ...) returns
-          // them from n (negative counts from the end)
-          let st = if 0 < nargs then vTag(a + 1) else 0
-          let sv = if 0 < nargs then vNum(a + 1) else 0.0
-          if nargs == 0 {
-            vmFail("bad argument #1 to 'select' (number expected, got no value)")
-          } else if st == 2 && vStr(a + 1) == "#" {
-            vSetInt(a, nargs - 1)
-            retCountV = 1
-          } else if st != 1 && st != 6 {
-            vmFail("bad argument #1 to 'select' (number expected)")
-          } else {
-            // the arguments after the index are the "extra arguments"; a
-            // positive n starts at the n-th of those, a negative one counts
-            // back from the last
-            let n = toInt(sv)
-            let m = nargs - 1
-            var cnt = 0
-            var src = a
-            if n < 0 {
-              if 0 - n > m {
-                vmFail("bad argument #1 to 'select' (index out of range)")
-              } else {
-                cnt = 0 - n
-                src = a + m + n + 2
-              }
-            } else if n == 0 {
-              vmFail("bad argument #1 to 'select' (index out of range)")
-            } else if n <= m {
-              cnt = m - n + 1
-              src = a + n + 1
-            }
-            if cnt > MAXVALS {
-              vmFail("too many results to select")
-            } else {
-              shiftDown(a, src, cnt)
-              retCountV = cnt
-            }
-          }
-        } else if fid == 9 {
-          // next(t [, k]): the entry after k in insertion order, as key+value.
-          // A nil result means the walk is over.  Tombstones (keys assigned nil)
-          // are skipped one per tick, so this needs the micro-step below rather
-          // than a loop.
-          if nargs < 1 || vTag(a + 1) != 5 {
-            vmFail("bad argument #1 to 'next' (table expected)")
-          } else {
-            let tid = toInt(vNum(a + 1))
-            var sl = -1
-            if nargs < 2 || vTag(a + 2) == 0 {
-              sl = tFirst[tid]
-            } else {
-              let kt = keyTag(vTag(a + 2), vNum(a + 2))
-              if kt == 0 {
-                vmFail("invalid key to 'next'")
-              } else {
-                let kr = tmap.get(tkey(tid, kt, vNum(a + 2), vStr(a + 2)))
-                if !kr.Found {
-                  vmFail("invalid key to 'next'")
-                } else {
-                  sl = tNext[kr.Value]
-                }
-              }
-            }
-            if !vmFailed {
-              nxSlot = sl
-              nxDst = vmBase + a
-              nxPc = vmPc
-              nxMode = 0
-              nxActive = true
-              nxStep()
-              advanced = true
-            }
-          }
-        } else if fid == 10 {
-          // _s(mode, s, pos, len): the string operations Lua cannot express.
-          // 1 substring  2 upper  3 lower  4 byte at pos  5 char  6 find
-          let so = toInt(vNum(a + 1))
-          let s = vStr(a + 2)
-          let p = toInt(vNum(a + 3))
-          let q = if 3 < nargs then toInt(vNum(a + 4)) else 1
-          if so == 1 {
-            vSet(a, 2, 0.0, if q < 1 then "" else s.Substring(p, q))
-          } else if so == 2 {
-            vSet(a, 2, 0.0, s.ToUpper())
-          } else if so == 3 {
-            vSet(a, 2, 0.0, s.ToLower())
-          } else if so == 4 {
-            if 0 <= p && p < s.Length() {
-              vSetInt(a, s.Substring(p, 1).ToCharCode().Codepoint)
-            } else {
-              vSet(a, 0, 0.0, "")
-            }
-          } else if so == 5 {
-            vSet(a, 2, 0.0, FromCharCode(p).Character)
-          } else {
-            // 6: find(needle) from pos q, 1-based like Lua's string.find
-            vSetInt(a, s.Find(vStr(a + 3), true, q) + 1)
-          }
-          retCountV = 1
-        } else if fid == 11 {
-          // _m(mode, x, y): the transcendental functions, which have no way to
-          // be written in Lua.  1 floor 2 ceil 3 sqrt 4 sin 5 cos 6 tan 7 asin
-          // 8 acos 9 atan2 10 exp 11 ln 12 log10 13 tointeger 14 math.type
-          let mo = toInt(vNum(a + 1))
-          let x = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
-          let y = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
-          if mo == 1 || mo == 2 || mo == 13 {
-            // the floor gate truncates toward zero, so step to the right for
-            // negatives (floor) or positives (ceil)
-            let t = x | 0
-            let fl = if x < 0.0 && x != t + 0.0 then t - 1 else t
-            let ce = if 0 < x && x != t + 0.0 then t + 1 else t
-            if mo == 1 {
-              // Lua's floor/ceil return integers; the chip tags whole numbers
-              // apart from fractions so they print and compare the same way
-              if abs(fl) < 9.2e18 { vSetInt(a, fl) } else { vSetNum(a, fl + 0.0) }
-            } else if mo == 2 {
-              if abs(ce) < 9.2e18 { vSetInt(a, ce) } else { vSetNum(a, ce + 0.0) }
-            } else if x == fl + 0.0 && abs(x) < 9.2e18 {
-              vSetInt(a, fl)
-            } else {
-              vSet(a, 0, 0.0, "")
-            }
-          } else if mo == 14 {
-            vSet(a, 2, 0.0, if vTag(a + 2) == 6 then "integer"
-              else if vTag(a + 2) == 1 then "float" else "nil")
-          } else {
-            vSetNum(a, if mo == 3 then sqrt(x) else if mo == 4 then sin(x)
-              else if mo == 5 then cos(x) else if mo == 6 then tan(x)
-              else if mo == 7 then asin(x) else if mo == 8 then acos(x)
-              else if mo == 9 then atan2(x, y)
-              else if mo == 10 then exp(x) else if mo == 11 then ln(x)
-              else log(x, 10.0))
-          }
-          retCountV = 1
-        } else if fid == 12 {
-          // unpack(t [, i [, j]]): t[i..j] as multiple results.  Lua cannot
-          // write this -- a return list is fixed length -- so it is a primitive.
-          if nargs < 1 || vTag(a + 1) != 5 {
-            vmFail("bad argument #1 to 'unpack' (table expected)")
-          } else {
-            let tid = toInt(vNum(a + 1))
-            // the tag and the value are chosen first, then numArg sees only
-            // those: a mod call in a conditional's value position is evaluated
-            // whether the arm runs or not, so an absent argument has to be
-            // sanitised before numArg is handed it.  Each one keeps its own
-            // default -- 1 for lo, the table's length for hi -- which is why
-            // the choice cannot happen inside numArg.
-            let lt = if 1 < nargs then vTag(a + 2) else 0
-            let lv = if 1 < nargs then vNum(a + 2) else 0.0
-            let ht = if 2 < nargs then vTag(a + 3) else 0
-            let hv = if 2 < nargs then vNum(a + 3) else 0.0
-            let lo = toInt(if lt == 0 then 1.0 else numArg(lt, lv))
-            let hi = toInt(if ht == 0 then tLen[tid] + 0.0 else numArg(ht, hv))
-            let cnt = if hi < lo then 0 else hi - lo + 1
-            if cnt > MAXVALS {
-              vmFail("too many results to unpack")
-            } else {
-              // fill high to low: the values move up into the call's own
-              // registers, so copying down would overwrite them
-              if 16 <= cnt { tblFill(a + 15, tid, lo + 15) }
-              if 15 <= cnt { tblFill(a + 14, tid, lo + 14) }
-              if 14 <= cnt { tblFill(a + 13, tid, lo + 13) }
-              if 13 <= cnt { tblFill(a + 12, tid, lo + 12) }
-              if 12 <= cnt { tblFill(a + 11, tid, lo + 11) }
-              if 11 <= cnt { tblFill(a + 10, tid, lo + 10) }
-              if 10 <= cnt { tblFill(a + 9, tid, lo + 9) }
-              if 9 <= cnt { tblFill(a + 8, tid, lo + 8) }
-              if 8 <= cnt { tblFill(a + 7, tid, lo + 7) }
-              if 7 <= cnt { tblFill(a + 6, tid, lo + 6) }
-              if 6 <= cnt { tblFill(a + 5, tid, lo + 5) }
-              if 5 <= cnt { tblFill(a + 4, tid, lo + 4) }
-              if 4 <= cnt { tblFill(a + 3, tid, lo + 3) }
-              if 3 <= cnt { tblFill(a + 2, tid, lo + 2) }
-              if 2 <= cnt { tblFill(a + 1, tid, lo + 1) }
-              if 1 <= cnt { tblFill(a, tid, lo) }
-              retCountV = cnt
-            }
-          }
-        } else if fid == 13 {
-          // _fmt(fmt, ...): string.format, as a micro-step.  lib/str_format.lua
-          // is the PUC-verified Lua version of this algorithm; as prepended
-          // source it cost 2692 ticks of lexing per program, so it lives here
-          // and the library only aliases the name (LIB_str_fmt).
-          if nargs < 1 {
-            vmFail("bad argument #1 to 'format' (string expected, got no value)")
-          } else {
-            // PUC reads the format with luaL_checkstring, which takes a number as
-            // a string: string.format(5) is "5", not an error
-            if vTag(a + 1) == 2 {
-              fmtSrc = vStr(a + 1)
-            } else if vTag(a + 1) == 1 || vTag(a + 1) == 6 {
-              fmtSrc = fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1))
-            } else {
-              vmFail("bad argument #1 to 'format' (string expected, got "
-                     .. typeName(vTag(a + 1)) .. ")")
-            }
-            if !vmFailed {
-              fmtBase = vmBase + a
-              fmtArgs = nargs - 1
-              fmtArgI = 0
-              fmtPos = 0
-              fmtQPos = 0
-              fmtOut = ""
-              fmtBody = ""
-              fmtPre = ""
-              fmtPadAcc = ""
-              fmtPad = 0
-              fmtNeg = false
-              fmtWidth = 0
-              fmtPrec = -1
-              fmtMinus = 0
-              fmtPlus = 0
-              fmtSpace = 0
-              fmtHash = 0
-              fmtZero = 0
-              fmtPadLeft = false
-              fmtPadZero = false
-              fmtCh = ""
-              fmtEof = false
-              fmtBase_ = 10.0
-              fmtBaseI = 10
-              fmtQ_ = 0
-              fmtD_ = 0
-              fmtUpper = false
-              fmtDigits = 0
-              fmtDigitsMax = 0
-              fmtSpec = ""
-              // start at the fetch, not at the literal state: the walk has not
-              // read a character yet, and entering at the literal state skipped
-              // the first one (every spec came out one character late)
-              fmtState = 10
-              nxDst = vmBase + a
-              nxPc = vmPc
-              nxMode = 1
-              nxActive = true
-            }
-          }
-        } else if fid == 15 {
-          // _wr(s): raw text into the log, no tab and no newline, through the
-          // one append path -- a write to logV that is not paired with a
-          // logLines push does not reach the port at all (io.write produced
-          // nothing until it went through logPush)
-          if nargs < 1 {
-            vSet(a, 0, 0.0, "")
-          } else {
-            let w = fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1))
-            logPush(w)
-            vSet(a, 0, 0.0, "")
-          }
-          retCountV = 1
-        } else if fid == 16 {
-          // error(msg [, level]) and assert, which PUC has in C (lbaselib.c)
-          // and are gates here for the same reason.  pcall and xpcall are C
-          // there too, and the shape they need is settled:
-          //
-          //   - pcall pushes a marker frame, a sentinel fid on the same fFunc
-          //     stack the calls use, carrying its own fRetA / fRetBase /
-          //     fRetPC; then it makes the call to f with fRetA at one past the
-          //     pcall's own register, so f's results land beside it and the
-          //     `true` has a register of its own.
-          //   - the four RETURN variants recognise the marker when it comes up
-          //     and write `true` where the results start, then return to the
-          //     pcall's caller.  The test has to be at the top of each variant:
-          //     they are mods this size, and a condition in the middle of one
-          //     of these chains is the trap the header warns about.
-          //   - vmFail gets a protected mode: it finds the marker, unwinds the
-          //     frames above it, and writes (false, message) in the same place.
-          //     Without it an error inside a pcall stops the program, which is
-          //     the whole thing pcall is for.
-          //   - xpcall is the same with the handler called on the message first,
-          //     and its results are what the pair holds -- which means one more
-          //     frame and one more return path, so it is worth doing after pcall
-          //     rather than with it.
-          //
-          // The one thing none of them can do is name a position: PUC prefixes
-          // error's message with the chunk and line of whatever called error,
-          // and the chip has no line at run time, so the message goes through
-          // as it is.
-          if nargs < 1 {
-            vmFail("")
-          } else {
-            let t = vTag(a + 1)
-            vmFail(fmtVal(t, vNum(a + 1), vStr(a + 1)))
-          }
-        } else if fid == 17 {
-          // assert(v [, msg, ...]): a truthy first argument returns *all* of
-          // the arguments, which on a register VM is a shift down by one
-          // register, and a falsey one raises with the message or PUC's
-          // default.  The shift is retAdjust's job: copying forward would
-          // overwrite each value with the one below it.
-          if vTag(a + 1) == 0 || vTag(a + 1) == 3 && vNum(a + 1) == 0.0 {
-            if 1 < nargs {
-              let t2 = vTag(a + 2)
-              vmFail(fmtVal(t2, vNum(a + 2), vStr(a + 2)))
-            } else {
-              vmFail("assertion failed!")
-            }
-          } else {
-            if 0 < nargs {
-              retAdjust(vmBase + a + 1, vmBase + a, nargs, nargs)
-              retCountV = nargs
-            } else {
-              vSet(a, 0, 0.0, "")
-              retCountV = 1
-            }
-          }
-        } else if fid == 14 {
-          // _rd(fmt): one read from the text in inStr0, the way io.read does it
-          if nargs < 1 {
-            rdLine()
-            if rdGot {
-              vSet(a, 2, 0.0, rdBuf)
-            } else {
-              vSet(a, 0, 0.0, "")
-            }
-          } else if vTag(a + 1) == 1 || vTag(a + 1) == 6 {
-            rdTake(toInt(vNum(a + 1)))
-            vSet(a, 2, 0.0, rdBuf)
-          } else {
-            let f = vStr(a + 1)
-            if f == "*a" || f == "a" {
-              rdTake(rdText.Length())
-              vSet(a, 2, 0.0, rdBuf)
-            } else if f == "*l" || f == "l" {
-              rdLine()
-              if rdGot {
-                vSet(a, 2, 0.0, rdBuf)
-              } else {
-                vSet(a, 0, 0.0, "")
-              }
-            } else if f == "*r" || f == "r" {
-              rdPos = 0
-              vSet(a, 2, 0.0, "")
-            } else {
-              vmFail("bad argument to 'read' (invalid format)")
-            }
-          }
-          retCountV = 1
+        let pc0 = vmPc
+        if fid < 9 {
+          gateLow(fid, a, nargs)
         } else {
-          if fFunc.length() >= MAX_CALLS {
-            vmFail("call depth exceeded")
-          } else {
-            let nbase = vmBase + a
-            let np = fParams[fid]
-            if np > 8 {
-              vmFail("too many parameters")
-            } else {
-              if 0 < np && 0 < nargs {
-                vtag[nbase + 0] = vtag[vmBase + a + 1]
-                vnum[nbase + 0] = vnum[vmBase + a + 1]
-                vstr[nbase + 0] = vstr[vmBase + a + 1]
-              } else if 0 < np {
-                vtag[nbase + 0] = 0
-              }
-              if 1 < np && 1 < nargs {
-                vtag[nbase + 1] = vtag[vmBase + a + 2]
-                vnum[nbase + 1] = vnum[vmBase + a + 2]
-                vstr[nbase + 1] = vstr[vmBase + a + 2]
-              } else if 1 < np {
-                vtag[nbase + 1] = 0
-              }
-              if 2 < np && 2 < nargs {
-                vtag[nbase + 2] = vtag[vmBase + a + 3]
-                vnum[nbase + 2] = vnum[vmBase + a + 3]
-                vstr[nbase + 2] = vstr[vmBase + a + 3]
-              } else if 2 < np {
-                vtag[nbase + 2] = 0
-              }
-              if 3 < np && 3 < nargs {
-                vtag[nbase + 3] = vtag[vmBase + a + 4]
-                vnum[nbase + 3] = vnum[vmBase + a + 4]
-                vstr[nbase + 3] = vstr[vmBase + a + 4]
-              } else if 3 < np {
-                vtag[nbase + 3] = 0
-              }
-              if 4 < np && 4 < nargs {
-                vtag[nbase + 4] = vtag[vmBase + a + 5]
-                vnum[nbase + 4] = vnum[vmBase + a + 5]
-                vstr[nbase + 4] = vstr[vmBase + a + 5]
-              } else if 4 < np {
-                vtag[nbase + 4] = 0
-              }
-              if 5 < np && 5 < nargs {
-                vtag[nbase + 5] = vtag[vmBase + a + 6]
-                vnum[nbase + 5] = vnum[vmBase + a + 6]
-                vstr[nbase + 5] = vstr[vmBase + a + 6]
-              } else if 5 < np {
-                vtag[nbase + 5] = 0
-              }
-              if 6 < np && 6 < nargs {
-                vtag[nbase + 6] = vtag[vmBase + a + 7]
-                vnum[nbase + 6] = vnum[vmBase + a + 7]
-                vstr[nbase + 6] = vstr[vmBase + a + 7]
-              } else if 6 < np {
-                vtag[nbase + 6] = 0
-              }
-              if 7 < np && 7 < nargs {
-                vtag[nbase + 7] = vtag[vmBase + a + 8]
-                vnum[nbase + 7] = vnum[vmBase + a + 8]
-                vstr[nbase + 7] = vstr[vmBase + a + 8]
-              } else if 7 < np {
-                vtag[nbase + 7] = 0
-              }
-              // a variadic function keeps the arguments past its named
-              // parameters in the vararg stack; the frame records the base
-              let nva = if fVar[fid] && np < nargs then nargs - np else 0
-              if vaTop + nva > MAX_VA {
-                vmFail("too many varargs")
-              } else {
-                vaSpill(vmBase + a + 1 + np, vaTop, nva)
-                fVaB.push(vaTop)
-                vaTop = vaTop + nva
-              }
-              fFunc.push(fid)
-              fBase.push(nbase)
-              fRetA.push(a)
-              fRetBase.push(vmBase)
-              fRetPC.push(vmPc + 1)
-              fRetN.push(if mtSelf then -2 else 1)
-              vmBase = nbase
-              vmHold = true
-              vmPc = fStart[fid]
-              advanced = true
-            }
-          }
+          gateHigh(fid, a, nargs, mtSelf)
+        }
+        // a gate that changed the frame moved vmPc; one that did not falls
+        // through to the caller's vmPc + 1, as every other arm here does
+        if vmPc != pc0 {
+          advanced = true
         }
       }
     } else if op == 45 {

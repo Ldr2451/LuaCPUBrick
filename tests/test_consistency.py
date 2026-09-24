@@ -62,10 +62,16 @@ pjs = mod_body("parseJobStart")
 check("reserved-slots-sized", "fStart.resize(NB, -1)" in pjs,
       "parseJobStart must size the reserved slots from NB, not push them")
 vm = mod_body("vmStep")
+# the arms live in gateLow and gateHigh now, two named mods, because one chain
+# of them all was seventeen inside a mod inlined four times; the call site picks
+# between the two on the fid and the generic Lua call is gateHigh's last arm
+gate = mod_body("gateLow") + mod_body("gateHigh")
 for fid in range(n_builtin):
     check(f"fid-{fid}-dispatched",
-          re.search(rf"fid == {fid}\b", vm) is not None)
-check("fid-user-else", "} else {" in vm)
+          re.search(rf"fid == {fid}\b", gate) is not None)
+check("fid-user-else", "} else {" in mod_body("gateHigh"))
+check("gate-split-call", "gateLow(fid, a, nargs)" in vm
+      and "gateHigh(fid, a, nargs, mtSelf)" in vm)
 
 # 2. global slot order ------------------------------------------------------
 model_order = list(m.GSLOT_ORDER)

@@ -1,9 +1,11 @@
 -- Minimal repro for the call-path bug the string.format work uncovered, with
 -- the bisection that narrowed it.  These are globals, not locals, because a
 -- local function that reads an enclosing local is a closure and the chip has no
--- closures yet -- and because the chip has room for only 29 program globals, so
--- the shapes that merely confirmed a neighbour are gone and only their results
--- are kept (below).
+-- closures yet -- and because the shapes that merely confirmed a neighbour are
+-- gone and only their results are kept (below).  It is 24 globals, which is
+-- most of what a program has left: every gate builtin takes a slot of its own,
+-- and MAX_GLOBALS is the whole table.  That is why it is 96 and not 64, since
+-- this file and a new builtin did not both fit.
 --
 -- The failure is "bad argument (number expected)", which numArg raises, so some
 -- builtin is being handed a non-number.  Replacing the first call with a trivial
