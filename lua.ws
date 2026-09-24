@@ -19,9 +19,10 @@
 ///   in  inVec: vector     Lua reads invecx / invecy / invecz
 ///   in  inCol: color      Lua reads incolr / incolg / incolb / incola
 ///   in  inArr: float[]    Lua reads it 1-based via inarr(i); out-of-range reads nil
-///   out log: string       print output: one line per call (args tab-separated plus
-///                         a newline); the last 32 lines are kept, each capped at
-///                         64 chars; cleared on restart
+///   out log: string       print and io.write output: a print call is one line (args
+///                         tab-separated plus a newline, capped at 64 chars), an
+///                         io.write is its raw text with no tab and no newline; the
+///                         last 32 appends are kept, cleared on restart
 ///   out outNum0..outNum3: float  writable numeric globals (nil writes 0.0;
 ///                         writing a string/table/function is a runtime error)
 ///   out outStr0..outStr1: string  writable globals, Lua-formatted (nil writes "")
@@ -60,11 +61,17 @@
 ///              function M:f() define them; multiple returns, varargs (...) and
 ///              select; a call in the last slot of an argument list, return, table
 ///              constructor or assignment expands all of its results
-///   library    the source of pairs, ipairs, next, select, string.*, math.* and
+///   library    the source of pairs, ipairs, next, select, io.*, string.*, math.* and
 ///              table.* is Lua text prepended to the program when the program mentions
 ///              it, so it is ordinary Lua running on this chip; the only gates are
 ///              what Lua cannot express (string byte/char/upper/lower/sub, the math
-///              functions, table.unpack, next)
+///              functions, table.unpack, next, _fmt, _rd, _wr)
+///   io         io.write(...) appends the Lua-formatted arguments to the log with no
+///              tab and no newline; io.read() and io.read('*l') read one line, io.read(n)
+///              n bytes and io.read('*a') the rest, all from inStr0, the program's
+///              standard input; io.lines() iterates its lines. Each returns nil at end
+///              of input. io.write returns nothing: the chip has no file objects, so
+///              there is no io.stdout to hand back the way PUC's does
 ///   numbers    integers (exact on-chip inside +/-2^53; Lua wraps 64-bit beyond that)
 ///              and floats: 0.5 .5 5. 1e3 1E-3, hex ints 0xFF. / and ^ always return
 ///              floats. Ints print bare (3), floats print Lua-style (3.0); 'x' .. 1
@@ -80,7 +87,7 @@
 ///   closures / upvalues      a function cannot read a local of an enclosing scope,
 ///                             so it cannot call a local function of one
 ///   metatables               no setmetatable, no __index, no operator metamethods
-///   string patterns          no find, match, gmatch, gsub, string.format
+///   string patterns          no find, match, gmatch, gsub
 ///   error handling           no error, assert, pcall, xpcall: a runtime error
 ///                             halts with err set
 ///   goto and labels          a compile error
@@ -180,7 +187,7 @@ const MAXVALS = 16
 // at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
 // means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
 // the dispatch case.  test_ws_consistency.py checks all four line up.
-const NB = 14
+const NB = 16
 
 // Library sources, prepended on demand (see libIter and friends).  These are
 // ordinary Lua: the parser sees them exactly like the user's program.  They are
@@ -202,10 +209,12 @@ const LIB_tab_ins = "table = table or {}\ntable.insert = function(t, ...)\n  loc
 const LIB_tab_list = "table = table or {}\ntable.unpack = unpack\ntable.pack = function(...) local t = {...} t.n = select('#', ...) return t end\ntable.move = function(a1, f, e, t, a2)\n  a2 = a2 or a1\n  if e >= f then\n    if t > e or t <= f or a1 ~= a2 then\n      for i = 0, e - f do a2[t + i] = a1[f + i] end\n    else\n      for i = e - f, 0, -1 do a2[t + i] = a1[f + i] end\n    end\n  end\n  return a2\nend\n"
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, j)\n  sep = sep or \"\"\n  i = i or 1\n  j = j or #t\n  local r = \"\"\n  for k = i, j do\n    local v = t[k]\n    if k > i then r = r .. sep end\n    r = r .. v\n  end\n  return r\nend\n"
 const LIB_tab_sort = "table = table or {}\n_lt = function(a, b) return a < b end\ntable.sort = function(t, cmp)\n  local lt = cmp or _lt\n  for i = 2, #t do\n    local v = t[i]\n    local j = i - 1\n    while j >= 1 and lt(v, t[j]) do t[j + 1] = t[j] j = j - 1 end\n    t[j + 1] = v\n  end\nend\n"
+const LIB_io = "io = io or {}\nio.read = function(...) if select('#', ...) == 0 then return _rd('*l') end return _rd((...)) end\nio.write = function(...) for i = 1, select('#', ...) do _wr(tostring((select(i, ...)))) end end\n_io_next = function() local l = _rd('*l') if l == nil then return nil end return l end\nio.lines = function() _rd('*r') return _io_next end\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
 var logV: string = ""
+var logLen: int = 0
 var logLines: string[]
 var oF0: float = 0.0
 var oF1: float = 0.0
@@ -1199,6 +1208,8 @@ mod parseInit() {
   gDeclare("_m")
   gDeclare("unpack")
   gDeclare("_fmt")
+  gDeclare("_rd")
+  gDeclare("_wr")
   gDeclare("inInt0")
   gDeclare("outInt0")
   // The runtime wires the latches and outputs straight into these slots, so
@@ -3916,11 +3927,11 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
-// (inputs filled from the latches), 19..31 builtins (print, type, tostring,
-// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt) as
+// (inputs filled from the latches), 19..34 builtins (print, type, tostring,
+// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr) as
 // functions with ids 0..NB-1, then the two int globals.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 0.0, 0.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -4006,7 +4017,14 @@ mod vmReset() {
   retCountV = -1
   cmpActive = false
   logV = ""
+  logLen = 0
   logLines.clear()
+  // the text in inStr0 is the program's standard input, and a run starts at its
+  // beginning; the cursors are state, so they go with everything else
+  rdText = inStr0
+  rdPos = 0
+  rdBuf = ""
+  rdGot = false
   oF0 = 0.0
   oF1 = 0.0
   oF2 = 0.0
@@ -4046,16 +4064,33 @@ mod toInt(v: float) -> int {
   return v | 0
 }
 
-// One print call: one tab-separated line plus a newline. The log keeps the
-// last 32 lines (each capped at 64 chars, about 2 KB); logV mirrors the
-// joined lines so the port stays a plain string read.
+// The one place the log grows, and the one place it shrinks.  logLen travels
+// with logV because a cap that computes a substring start from logV.Length() in
+// the same mod reads the NEW length -- the value gates are evaluated in a
+// fixpoint, not in source order -- so the start lands in the wrong place and the
+// log comes out empty.  Nothing writes logV except these two and vmReset.
+mod logAdd(s: string) {
+  logV = logV .. s
+  logLen = logLen + s.Length()
+}
+
+mod logDrop(n: int) {
+  logV = logV.Substring(n, logLen - n)
+  logLen = logLen - n
+}
+
+// One append to the log, by print or by io.write.  The caller has already made
+// the text what it wants -- print's line and its 64-character cap, or io.write's
+// raw chunk -- and the log keeps the last 32 appends, so the port stays a plain
+// string read and cannot grow without bound.  The 64-character cap is the
+// *caller's* because it is print's rule, not the log's: a write of 500 bytes is
+// one append here and 500 bytes of text, not eight dropped ones.
 mod logPush(line: string) {
-  let kept = if line.Length() > 64 then line.Substring(0, 63) .. "\n" else line
-  logLines.push(kept)
-  logV = logV .. kept
+  logLines.push(line)
+  logAdd(line)
   if logLines.length() > 32 {
     let drop = logLines[0]
-    logV = logV.Substring(drop.Length(), logV.Length() - drop.Length())
+    logDrop(drop.Length())
     logLines.remove(0)
   }
 }
@@ -5018,6 +5053,60 @@ mod tblUnlink(tid: int, sl: int) {
   }
 }
 
+// ==================================================================== io: stdin
+//
+// The text in the inStr0 port is the program's standard input, and two gate
+// builtins plus a library piece give it PUC's io.read / io.write / io.lines.
+// inStr0 rather than a port of its own: it is already a string input, the
+// harness already sets it, and a ninth input port is API surface for nothing.
+//
+//   _rd(fmt)  fmt is a byte count, "*a" (the rest), "*l" (a line, the newline
+//            eaten, a trailing CR not part of the line) or "*r" (rewind, which is
+//            what io.lines() needs to start at the beginning).  PUC's "*n" is not
+//            here: it needs a string-to-number scan and the chip has no such
+//            primitive, so a program that wants a number cannot get one yet.
+//   _wr(s)    append to the log with no tab and no newline, which is the whole
+//            point of io.write; print's line handling is not what a program
+//            writing a report wants.  The order with print is kept because both
+//            go through logPush, and the 32-append cap is the same one.
+var rdText: string = ""
+var rdPos: int = 0
+var rdBuf: string = ""
+var rdGot: bool = false
+
+// n bytes from the cursor, or whatever is left of them.
+mod rdTake(n: int) {
+  let avail = rdText.Length() - rdPos
+  let k = if n < avail then n else avail
+  rdBuf = if k <= 0 then "" else rdText.Substring(rdPos, k)
+  rdPos = rdPos + k
+  rdGot = rdBuf != ""
+}
+
+// One line, as PUC's "*l" gives it: no newline, and a trailing CR is not part of
+// the line.  rdGot is false at the end of the text, so io.lines terminates --
+// and a blank line in the middle is a line, not the end.
+mod rdLine() {
+  let nl = rdText.Find("\n", true, rdPos)
+  if rdPos >= rdText.Length() {
+    rdGot = false
+    rdBuf = ""
+  } else if nl < 0 {
+    rdBuf = rdText.Substring(rdPos, rdText.Length() - rdPos)
+    rdPos = rdText.Length()
+    rdGot = true
+  } else {
+    rdBuf = rdText.Substring(rdPos, nl - rdPos)
+    if rdBuf.Length() > 0 {
+      if rdBuf.Substring(rdBuf.Length() - 1, 1) == "\r" {
+        rdBuf = rdBuf.Substring(0, rdBuf.Length() - 1)
+      }
+    }
+    rdPos = nl + 1
+    rdGot = true
+  }
+}
+
 // Link a slot at the tail of its table's chain, so pairs/next walk entries in
 // insertion order (the order PUC-Lua uses, which the tests compare against).
 mod tblLink(tid: int, sl: int) {
@@ -5360,7 +5449,11 @@ mod vmStep() {
             vmFail("too many print args (max 16)")
           } else {
             // one pure expression (no variable traffic): guarded segments
-            logPush((if 0 < nargs then fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)) else "") .. (if 1 < nargs then "\t" .. fmtVal(vTag(a + 2), vNum(a + 2), vStr(a + 2)) else "") .. (if 2 < nargs then "\t" .. fmtVal(vTag(a + 3), vNum(a + 3), vStr(a + 3)) else "") .. (if 3 < nargs then "\t" .. fmtVal(vTag(a + 4), vNum(a + 4), vStr(a + 4)) else "") .. (if 4 < nargs then "\t" .. fmtVal(vTag(a + 5), vNum(a + 5), vStr(a + 5)) else "") .. (if 5 < nargs then "\t" .. fmtVal(vTag(a + 6), vNum(a + 6), vStr(a + 6)) else "") .. (if 6 < nargs then "\t" .. fmtVal(vTag(a + 7), vNum(a + 7), vStr(a + 7)) else "") .. (if 7 < nargs then "\t" .. fmtVal(vTag(a + 8), vNum(a + 8), vStr(a + 8)) else "") .. (if 8 < nargs then "\t" .. fmtVal(vTag(a + 9), vNum(a + 9), vStr(a + 9)) else "") .. (if 9 < nargs then "\t" .. fmtVal(vTag(a + 10), vNum(a + 10), vStr(a + 10)) else "") .. (if 10 < nargs then "\t" .. fmtVal(vTag(a + 11), vNum(a + 11), vStr(a + 11)) else "") .. (if 11 < nargs then "\t" .. fmtVal(vTag(a + 12), vNum(a + 12), vStr(a + 12)) else "") .. (if 12 < nargs then "\t" .. fmtVal(vTag(a + 13), vNum(a + 13), vStr(a + 13)) else "") .. (if 13 < nargs then "\t" .. fmtVal(vTag(a + 14), vNum(a + 14), vStr(a + 14)) else "") .. (if 14 < nargs then "\t" .. fmtVal(vTag(a + 15), vNum(a + 15), vStr(a + 15)) else "") .. (if 15 < nargs then "\t" .. fmtVal(vTag(a + 16), vNum(a + 16), vStr(a + 16)) else "") .. "\n")
+            let raw = (if 0 < nargs then fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)) else "") .. (if 1 < nargs then "\t" .. fmtVal(vTag(a + 2), vNum(a + 2), vStr(a + 2)) else "") .. (if 2 < nargs then "\t" .. fmtVal(vTag(a + 3), vNum(a + 3), vStr(a + 3)) else "") .. (if 3 < nargs then "\t" .. fmtVal(vTag(a + 4), vNum(a + 4), vStr(a + 4)) else "") .. (if 4 < nargs then "\t" .. fmtVal(vTag(a + 5), vNum(a + 5), vStr(a + 5)) else "") .. (if 5 < nargs then "\t" .. fmtVal(vTag(a + 6), vNum(a + 6), vStr(a + 6)) else "") .. (if 6 < nargs then "\t" .. fmtVal(vTag(a + 7), vNum(a + 7), vStr(a + 7)) else "") .. (if 7 < nargs then "\t" .. fmtVal(vTag(a + 8), vNum(a + 8), vStr(a + 8)) else "") .. (if 8 < nargs then "\t" .. fmtVal(vTag(a + 9), vNum(a + 9), vStr(a + 9)) else "") .. (if 9 < nargs then "\t" .. fmtVal(vTag(a + 10), vNum(a + 10), vStr(a + 10)) else "") .. (if 10 < nargs then "\t" .. fmtVal(vTag(a + 11), vNum(a + 11), vStr(a + 11)) else "") .. (if 11 < nargs then "\t" .. fmtVal(vTag(a + 12), vNum(a + 12), vStr(a + 12)) else "") .. (if 12 < nargs then "\t" .. fmtVal(vTag(a + 13), vNum(a + 13), vStr(a + 13)) else "") .. (if 13 < nargs then "\t" .. fmtVal(vTag(a + 14), vNum(a + 14), vStr(a + 14)) else "") .. (if 14 < nargs then "\t" .. fmtVal(vTag(a + 15), vNum(a + 15), vStr(a + 15)) else "") .. (if 15 < nargs then "\t" .. fmtVal(vTag(a + 16), vNum(a + 16), vStr(a + 16)) else "") .. "\n"
+            // the 64-character cap is print's, and it stays here so the log
+            // itself takes whatever it is given
+            let line = if raw.Length() > 64 then raw.Substring(0, 63) .. "\n" else raw
+            logPush(line)
             vSet(a, 0, 0.0, "")
             retCountV = 0
           }
@@ -5650,6 +5743,51 @@ mod vmStep() {
               nxActive = true
             }
           }
+        } else if fid == 15 {
+          // _wr(s): raw text into the log, no tab and no newline, through the
+          // one append path -- a write to logV that is not paired with a
+          // logLines push does not reach the port at all (io.write produced
+          // nothing until it went through logPush)
+          if nargs < 1 {
+            vSet(a, 0, 0.0, "")
+          } else {
+            let w = fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1))
+            logPush(w)
+            vSet(a, 0, 0.0, "")
+          }
+          retCountV = 1
+        } else if fid == 14 {
+          // _rd(fmt): one read from the text in inStr0, the way io.read does it
+          if nargs < 1 {
+            rdLine()
+            if rdGot {
+              vSet(a, 2, 0.0, rdBuf)
+            } else {
+              vSet(a, 0, 0.0, "")
+            }
+          } else if vTag(a + 1) == 1 || vTag(a + 1) == 6 {
+            rdTake(toInt(vNum(a + 1)))
+            vSet(a, 2, 0.0, rdBuf)
+          } else {
+            let f = vStr(a + 1)
+            if f == "*a" || f == "a" {
+              rdTake(rdText.Length())
+              vSet(a, 2, 0.0, rdBuf)
+            } else if f == "*l" || f == "l" {
+              rdLine()
+              if rdGot {
+                vSet(a, 2, 0.0, rdBuf)
+              } else {
+                vSet(a, 0, 0.0, "")
+              }
+            } else if f == "*r" || f == "r" {
+              rdPos = 0
+              vSet(a, 2, 0.0, "")
+            } else {
+              vmFail("bad argument to 'read' (invalid format)")
+            }
+          }
+          retCountV = 1
         } else {
           if fFunc.length() >= MAX_CALLS {
             vmFail("call depth exceeded")
@@ -6264,6 +6402,11 @@ mod libTabSort(p: string) -> string {
   return if srcUses(p, "table.sort") then LIB_tab_sort else ""
 }
 
+mod libIo(p: string) -> string {
+  return if srcUses(p, "io.read") || srcUses(p, "io.write")
+      || srcUses(p, "io.lines") then LIB_io else ""
+}
+
 mod vmBurst() {
   fmtGo = true
   vmStep()
@@ -6321,8 +6464,9 @@ on goParse {
   let libL = libTabConcat(program)
   let libM = libTabSort(program)
   let libN = libStrFmt(program)
+  let libO = libIo(program)
   let lib = libA .. libB .. libC .. libD .. libE .. libF .. libG
-    .. libH .. libI .. libJ .. libK .. libL .. libM .. libN
+    .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program
   llen = lsrc.Length()

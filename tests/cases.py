@@ -329,6 +329,29 @@ TESTS = [
     ("fmt-err-nofmt", "print(string.format())", None, "runtimerr",
      {"expect": {"err": "bad argument #1 to 'format' (string expected, got no "
                           "value)"}}),
+    # io: the text in inStr0 is the program's standard input, and io.write appends
+    # raw text to the log -- no tab, no newline -- through the same 32-append cap
+    # as print.  PUC's "*n" is not here: it needs a string-to-number scan.
+    ("io-write", "io.write('x') print('y') io.write('z')", None, "run"),
+    ("io-write-args", "io.write(1, true, nil)", None, "run"),
+    ("io-read-line", "print(io.read())", None, "run",
+     {"sinputs": {"0": "alpha\nbeta\n"}}),
+    ("io-read-lines", "print(io.read('*l'), io.read('*l')) print(io.read('*l'))",
+     None, "run", {"sinputs": {"0": "a\nb\nc\n"}}),
+    ("io-read-count", "print(io.read(3), io.read(2))", None, "run",
+     {"sinputs": {"0": "abcdefgh"}}),
+    ("io-read-all", "print('[' .. io.read('*a') .. ']')", None, "run",
+     {"sinputs": {"0": "one\ntwo\n"}}),
+    ("io-read-eof", "print(io.read('*l')) print(io.read('*l'))", None, "run",
+     {"sinputs": {"0": "only\n"}}),
+    ("io-lines", "for l in io.lines() do io.write(l) end", None, "run",
+     {"sinputs": {"0": "x\ny\nz\n"}}),
+    ("io-lines-empty", "local n = 0 for l in io.lines() do n = n + 1 end "
+     "print(n)", None, "run", {"sinputs": {"0": ""}}),
+    ("io-lines-then-read", "for l in io.lines() do io.write(l) end "
+     "print(io.read('*l'))", None, "run", {"sinputs": {"0": "p\nq\n"}}),
+    ("io-read-bad", "print(io.read('*x'))", None, "runtimerr",
+     {"expect": {"err": "bad argument to 'read' (invalid format)"}}),
     # the call-path repro: the shapes around the known failure, pinned so a fix
     # for it (tests/lib_callchain.lua, with the bisection and what is left to
     # find) cannot land as a change to these

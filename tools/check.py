@@ -23,6 +23,9 @@ import lua_oracle as OR
 progs = [resolve_prog(a, ROOT) for a in sys.argv[1:]] or [
     "function f() return 1,2 end local a, b = f() print(a, b)"]
 ticks = int(os.environ.get("PROBE_TICKS", "6000"))
+# STDIN feeds inStr0, which is where the chip reads standard input from, so a
+# probe of io.read can set it without writing a case
+sin = {0: os.environ["STDIN"]} if "STDIN" in os.environ else None
 
 with Elapsed("check(%d programs)" % len(progs)):
     t_build = time.time()
@@ -30,7 +33,7 @@ with Elapsed("check(%d programs)" % len(progs)):
     print("build %.1fs" % (time.time() - t_build), flush=True)
     for src in progs:
         t0 = time.time()
-        r = runner.run(src, ticks)
+        r = runner.run(src, ticks, {"inStr0": sin[0]} if sin else None)
         dt = time.time() - t0
         og = r.get('outGlobals', {})
         got = r.get('log', '')
@@ -38,7 +41,7 @@ with Elapsed("check(%d programs)" % len(progs)):
         want = None
         if OR.LUA_BIN is not None:
             try:
-                o = OR.oracle_run(src)
+                o = OR.oracle_run(src, sinputs=sin)
                 want = OR.oracle_log(o['calls']) if o.get('calls') is not None \
                     else '<oracle: %s>' % o.get('stderr')
             except Exception as e:

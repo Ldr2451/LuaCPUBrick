@@ -47,7 +47,9 @@ TIMEOUT = 90       # seconds per case before the worker is killed
 BUILTINS = (("print", 0), ("type", 1), ("tostring", 2), ("setvec", 3),
             ("setcol", 4), ("clock", 5), ("inarr", 6), ("outarr", 7),
             ("select", 8), ("next", 9), ("_s", 10), ("_m", 11), ("unpack", 12),
-             ("_fmt", 13))
+             ("_fmt", 13),
+             ("_rd", 14),
+             ("_wr", 15))
 
 NB = len(BUILTINS)  # first id available to the program's own functions
 
@@ -57,4 +59,4 @@ GSLOT_ORDER = ["outNum0", "outNum1", "outNum2", "outNum3", "outStr0",
                "inStr1", "invecx", "invecy", "invecz", "incolr", "incolg",
                "incolb", "incola", "print", "type", "tostring", "setvec",
                "setcol", "clock", "inarr", "outarr", "select", "next", "_s",
-               "_m", "unpack", "_fmt", "inInt0", "outInt0"]
+               "_m", "unpack", "_fmt", "_rd", "_wr", "inInt0", "outInt0"]
