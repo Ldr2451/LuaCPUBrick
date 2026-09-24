@@ -3293,6 +3293,14 @@ mod funcHead(islocal: bool, resume: int, fr: int) {
   ctorStk.push(openCtor)
   openCtor = 0
   ctlLoop = -1
+  // Every kind-3 frame is closed by one restoreTmp(), so every kind-3 entry has
+  // to save.  Only the anonymous head did, which made a `local function` (or a
+  // named `function M.f`) inside a function literal pop the *literal's* saved
+  // state on its way out and leave the outer close popping an empty stack -- so
+  // `t.f = function() local function g() ... end end` lost the field store and
+  // read back nil.  The save is per-body state: the values a body pushes on
+  // tmpNames/tmpRegs belong to that body and must not leak outwards.
+  saveTmp()
   fnDepth = fnDepth + 1
   opBase[fnDepth] = opKind.length()
   funcDepthInit(islocal)

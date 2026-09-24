@@ -1018,12 +1018,18 @@ TESTS = [
      "return function() i = i + 1 if i <= n then return i end end end "
      "local s = 0 for v in range(4) do s = s + v end print(s)", None, "run"),
     # A `local function` nested in a function literal that is assigned to a
-    # *field* is not bound: the same nesting under a top-level `local function`
-    # and the `local g = function` form both work, so it is the field
-    # assignment that loses the binding.  Library pieces hit this shape, which
-    # is why they are written `local add = function(v) ... end`.
+    # *field*: the literal's saved parser state was popped by the inner head on
+    # its way out, so the field store never ran and t.f read back nil.  The other
+    # three shapes are here because the bug was the save/restore pairing on every
+    # named head, not this one arrangement.
     ("nested-local-function", "local t = {} t.f = function() local function g() "
      "return 1 end return g() end print(t.f())", None, "run"),
+    ("nested-local-function-field", "local t = {} function t.f() local function g() "
+     "return 1 end return g() end print(t.f())", None, "run"),
+    ("nested-local-function-anon", "local t = {} t.f = function() local g = "
+     "function() return 1 end return g() end print(t.f())", None, "run"),
+    ("nested-local-function-plain", "local function outer() local function g() "
+     "return 1 end return g() end print(outer())", None, "run"),
     # pcall of a library wrapper that calls a gate: the argument count is one
     # short, so the error names the wrong argument and a call that should find
     # something finds nothing.  See the pcall-gate-args SKIP.
