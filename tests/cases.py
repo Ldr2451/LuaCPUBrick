@@ -410,7 +410,25 @@ TESTS = [
       "this chip"}}),
     ("fmt-e-range", "print(string.format('%.2e', 1e16))", None, "runtimerr",
      {"expect": {"err": "number too large to format exactly on this chip"}}),
-    # %g: %e or %f by the exponent, and the two rules that are easy to get
+    # error and assert, both C in PUC and gates here.  assert returns *all* of
+    # its arguments on success, which is a shift down by one register on a
+    # register VM.  PUC prefixes error's message with the chunk and line of
+    # whatever called error; the chip has no line at run time, so the text a
+    # program asked for is what it gets -- the case below pins that.
+    ("err-error", "error('boom')", None, "runtimerr",
+     {"expect": {"err": "boom"}}),
+    ("err-error-value", "error(42)", None, "runtimerr",
+     {"expect": {"err": "42"}}),
+    ("err-error-level", "local ok, e = 1 error('x', 2)", None, "runtimerr",
+     {"expect": {"err": "x"}}),
+    ("assert-args", "print(assert(1, 'a', 'b'))", None, "run"),
+    ("assert-count", "print(select('#', assert(1, 2, 3)))", None, "run"),
+    ("assert-nil", "assert(nil, 'nope')", None, "runtimerr",
+     {"expect": {"err": "nope"}}),
+    ("assert-false", "assert(false)", None, "runtimerr",
+     {"expect": {"err": "assertion failed!"}}),
+    # 0 and "" are truthy in Lua, so only nil and false reach the error
+    ("assert-zero-truthy", "print(assert(0, 'zero'), assert(''))", None, "run"),
     # wrong. The exponent is the one the value has *after* rounding to the
     # precision -- 9.5 at one digit is 10, so its exponent is 1 and the answer is
     # 1e+001, not 10. And a precision of zero means one.

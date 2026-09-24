@@ -97,8 +97,13 @@
 ///                             so it cannot call a local function of one
 ///   metatables               no setmetatable, no __index, no operator metamethods
 ///   string patterns          no find, match, gmatch, gsub
-///   error handling           no error, assert, pcall, xpcall: a runtime error
-///                             halts with err set
+///   error      error(msg [, level]) raises with msg as the message, and assert
+///              is its conditional form: a truthy first argument returns *all*
+///              of them, a falsey one raises with the message or PUC's
+///              "assertion failed!". PUC prefixes error's message with the chunk
+///              and line of whatever called it and the chip has no line at run
+///              time, so the text goes through as it is. pcall and xpcall are not
+///              here yet
 ///   goto and labels          a compile error
 ///   coroutines, modules, bitwise operators
 ///   integers as a type       one number type: math.type reports "integer" for a
@@ -196,7 +201,7 @@ const MAXVALS = 16
 // at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
 // means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
 // the dispatch case.  test_ws_consistency.py checks all four line up.
-const NB = 16
+const NB = 18
 
 // Library sources, prepended on demand (see libIter and friends).  These are
 // ordinary Lua: the parser sees them exactly like the user's program.  They are
@@ -1219,6 +1224,8 @@ mod parseInit() {
   gDeclare("_fmt")
   gDeclare("_rd")
   gDeclare("_wr")
+  gDeclare("error")
+  gDeclare("assert")
   gDeclare("inInt0")
   gDeclare("outInt0")
   // The runtime wires the latches and outputs straight into these slots, so
@@ -3947,11 +3954,11 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
-// (inputs filled from the latches), 19..34 builtins (print, type, tostring,
-// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr) as
+// (inputs filled from the latches), 19..36 builtins (print, type, tostring,
+// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert) as
 // functions with ids 0..NB-1, then the two int globals.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 0.0, 0.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 0.0, 0.0]
 
 mod vmReset() {
   tmap.clear()
@@ -6568,6 +6575,62 @@ mod vmStep() {
             vSet(a, 0, 0.0, "")
           }
           retCountV = 1
+        } else if fid == 16 {
+          // error(msg [, level]) and assert, which PUC has in C (lbaselib.c)
+          // and are gates here for the same reason.  pcall and xpcall are C
+          // there too, and the shape they need is settled:
+          //
+          //   - pcall pushes a marker frame, a sentinel fid on the same fFunc
+          //     stack the calls use, carrying its own fRetA / fRetBase /
+          //     fRetPC; then it makes the call to f with fRetA at one past the
+          //     pcall's own register, so f's results land beside it and the
+          //     `true` has a register of its own.
+          //   - the four RETURN variants recognise the marker when it comes up
+          //     and write `true` where the results start, then return to the
+          //     pcall's caller.  The test has to be at the top of each variant:
+          //     they are mods this size, and a condition in the middle of one
+          //     of these chains is the trap the header warns about.
+          //   - vmFail gets a protected mode: it finds the marker, unwinds the
+          //     frames above it, and writes (false, message) in the same place.
+          //     Without it an error inside a pcall stops the program, which is
+          //     the whole thing pcall is for.
+          //   - xpcall is the same with the handler called on the message first,
+          //     and its results are what the pair holds -- which means one more
+          //     frame and one more return path, so it is worth doing after pcall
+          //     rather than with it.
+          //
+          // The one thing none of them can do is name a position: PUC prefixes
+          // error's message with the chunk and line of whatever called error,
+          // and the chip has no line at run time, so the message goes through
+          // as it is.
+          if nargs < 1 {
+            vmFail("")
+          } else {
+            let t = vTag(a + 1)
+            vmFail(fmtVal(t, vNum(a + 1), vStr(a + 1)))
+          }
+        } else if fid == 17 {
+          // assert(v [, msg, ...]): a truthy first argument returns *all* of
+          // the arguments, which on a register VM is a shift down by one
+          // register, and a falsey one raises with the message or PUC's
+          // default.  The shift is retAdjust's job: copying forward would
+          // overwrite each value with the one below it.
+          if vTag(a + 1) == 0 || vTag(a + 1) == 3 && vNum(a + 1) == 0.0 {
+            if 1 < nargs {
+              let t2 = vTag(a + 2)
+              vmFail(fmtVal(t2, vNum(a + 2), vStr(a + 2)))
+            } else {
+              vmFail("assertion failed!")
+            }
+          } else {
+            if 0 < nargs {
+              retAdjust(vmBase + a + 1, vmBase + a, nargs, nargs)
+              retCountV = nargs
+            } else {
+              vSet(a, 0, 0.0, "")
+              retCountV = 1
+            }
+          }
         } else if fid == 14 {
           // _rd(fmt): one read from the text in inStr0, the way io.read does it
           if nargs < 1 {
