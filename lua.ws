@@ -3842,6 +3842,17 @@ var nxMode: int = 0
 // spec's conversion character came out as a literal).  vmBurst raises this, the
 // first copy consumes it.
 var fmtGo: bool = false
+// Raised by a frame push or pop, and the reason the rest of that burst's steps
+// do nothing: vmBase is a file-level var, vmStep is inlined four times and the
+// compiler shares one Get per var across the copies, so the copy that changes
+// the base and the copy that reads it in the same tick disagree.  That is not a
+// theory -- it is the call-path bug: a CALL that landed third in a burst was
+// followed by the callee's first instruction in the *same* tick, which read the
+// caller's base and wrote the callee's frame one register low, so the second of
+// two calls in one print died on "bad argument (number expected)" while the
+// first (whose CALL was the burst's last step) was right.  The latch is the
+// other half of the fmtGo rule above: one state change per burst.
+var vmHold: bool = false
 var lenChase: bool = false
 var lenTid: int = 0
 var latchN0: float = 0.0
@@ -4313,6 +4324,20 @@ mod nxStep() {
 //     machine is inlined four times and entered up to four times in one tick;
 //     fmtGo is raised by vmBurst and consumed by the first copy, so a state sees
 //     one write per tick.
+//   - a mod call in a conditional's VALUE position is evaluated whether the arm
+//     runs or not; only exec statements (a mod call that writes a var) are
+//     guarded.  So `let y = if 2 < nargs then numArg(vTag(a + 3), ...) else 0.0`
+//     still ran numArg on an argument the call never passed, on whatever the
+//     register held from an earlier call, and died on "bad argument (number
+//     expected)".  Choose the tag and the value first, then hand numArg those:
+//     `numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3)
+//     else 0.0)`, which is what setvec and setcol already did.
+//   - a frame change ends the burst.  vmBase is a file-level var read through the
+//     same shared Get as everything else, so the copy of vmStep that pushes or
+//     pops a frame and the copies after it in the same tick disagree about the
+//     base: the callee's first instructions wrote the caller's registers and the
+//     frame came out one register low.  vmHold is raised by every base change
+//     and spent by the next step, which does nothing.
 //   - a write at the top of a mod, followed by an else-if chain that deep with
 //     mod calls in it, is silently dropped: fmtPos = fmtPos + 1 at the top of
 //     fmtConv never happened, so the conversion was re-read as a literal.  The
@@ -5253,7 +5278,12 @@ mod vmStep() {
     let b = bpb[vmPc]
     let c = bpc[vmPc]
     var advanced = false
-    if op == 0 {
+    if vmHold {
+      // the previous step in this burst changed the frame base: spend this slot
+      // on nothing so the next instruction reads the base that is now current
+      vmHold = false
+      advanced = true
+    } else if op == 0 {
       vmHalted = true
       advanced = true
     } else if op == 1 {
@@ -5619,8 +5649,8 @@ mod vmStep() {
           // be written in Lua.  1 floor 2 ceil 3 sqrt 4 sin 5 cos 6 tan 7 asin
           // 8 acos 9 atan2 10 exp 11 ln 12 log10 13 tointeger 14 math.type
           let mo = toInt(vNum(a + 1))
-          let x = if 1 < nargs then numArg(vTag(a + 2), vNum(a + 2), 0.0) else 0.0
-          let y = if 2 < nargs then numArg(vTag(a + 3), vNum(a + 3), 0.0) else 0.0
+          let x = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
+          let y = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
           if mo == 1 || mo == 2 || mo == 13 {
             // the floor gate truncates toward zero, so step to the right for
             // negatives (floor) or positives (ceil)
@@ -5657,8 +5687,18 @@ mod vmStep() {
             vmFail("bad argument #1 to 'unpack' (table expected)")
           } else {
             let tid = toInt(vNum(a + 1))
-            let lo = if 1 < nargs then toInt(numArg(vTag(a + 2), vNum(a + 2), 1.0)) else 1
-            let hi = if 2 < nargs then toInt(numArg(vTag(a + 3), vNum(a + 3), 0.0)) else tLen[tid]
+            // the tag and the value are chosen first, then numArg sees only
+            // those: a mod call in a conditional's value position is evaluated
+            // whether the arm runs or not, so an absent argument has to be
+            // sanitised before numArg is handed it.  Each one keeps its own
+            // default -- 1 for lo, the table's length for hi -- which is why
+            // the choice cannot happen inside numArg.
+            let lt = if 1 < nargs then vTag(a + 2) else 0
+            let lv = if 1 < nargs then vNum(a + 2) else 0.0
+            let ht = if 2 < nargs then vTag(a + 3) else 0
+            let hv = if 2 < nargs then vNum(a + 3) else 0.0
+            let lo = toInt(if lt == 0 then 1.0 else numArg(lt, lv))
+            let hi = toInt(if ht == 0 then tLen[tid] + 0.0 else numArg(ht, hv))
             let cnt = if hi < lo then 0 else hi - lo + 1
             if cnt > MAXVALS {
               vmFail("too many results to unpack")
@@ -5870,6 +5910,7 @@ mod vmStep() {
               fRetPC.push(vmPc + 1)
               fRetN.push(if mtSelf then -2 else 1)
               vmBase = nbase
+              vmHold = true
               vmPc = fStart[fid]
               advanced = true
             }
@@ -5926,6 +5967,7 @@ mod vmStep() {
         vmHalted = true
       } else {
         vmBase = rb
+        vmHold = true
         vSet(ra, rv, rn, rs)
         vmPc = rpc
         retCountV = 1
@@ -5947,6 +5989,7 @@ mod vmStep() {
         vmHalted = true
       } else {
         vmBase = rb
+        vmHold = true
         vSet(ra, 0, 0.0, "")
         vmPc = rpc
         retCountV = 0
@@ -5995,6 +6038,7 @@ mod vmStep() {
           vSet(ra, 0, 0.0, "")
         }
         vmBase = rb
+        vmHold = true
         vmPc = rpc
         retCountV = n
       }
@@ -6410,9 +6454,9 @@ mod libIo(p: string) -> string {
 mod vmBurst() {
   fmtGo = true
   vmStep()
-  vmStep()
-  vmStep()
-  vmStep()
+  if !vmHold { vmStep() }
+  if !vmHold { vmStep() }
+  if !vmHold { vmStep() }
 }
 
 on Change(program) {

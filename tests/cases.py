@@ -352,11 +352,18 @@ TESTS = [
      "print(io.read('*l'))", None, "run", {"sinputs": {"0": "p\nq\n"}}),
     ("io-read-bad", "print(io.read('*x'))", None, "runtimerr",
      {"expect": {"err": "bad argument to 'read' (invalid format)"}}),
-    # the call-path repro: the shapes around the known failure, pinned so a fix
-    # for it (tests/lib_callchain.lua, with the bisection and what is left to
-    # find) cannot land as a change to these
+    # the call-path repro, all in one case because its PRE file is ~10 KB and the
+    # suite passes case sources on the command line: two of them in a batch is
+    # already most of the way to Windows' 32 KB limit.  The first line pins the
+    # shapes that always worked, the rest the two that used to fail -- one per
+    # cause: a CALL that landed mid-burst read the caller's frame base, and _m's
+    # third argument slot held a string the program never passed.
     ("call-chain", "PRE:tests/lib_callchain.lua\nprint(call_chain_ok1(1.5, 2), "
-     "call_chain_ok1(1.5, 2)) print(probe_s2(12), probe_s2(12))", None, "run"),
+     "call_chain_ok1(1.5, 2)) print(probe_s2(12), probe_s2(12))\n"
+     "print(call_chain_ok2(1.5, 2), call_chain_ok2(1.5, 2))\n"
+     "print(call_chain_ok2(1.5, 2)) print(call_chain_ok2(1.5, 2))\n"
+     "print(probe_o(1.5), probe_s1(1.5), probe_s3(1.5), probe_s4(1.5), "
+     "probe_s5(1.5))", None, "run"),
     # math library
     ("math-floor", "print(math.floor(2.7), math.floor(-2.7), math.ceil(2.1), "
      "math.ceil(-2.1))", None, "run"),

@@ -40,24 +40,32 @@
 --     calls are the same instruction sequence at bases 0 and 1, and the second
 --     one's frame does not reach the first call's live registers.
 --   - tools/trace_pc.py watching vmBase, fnDepth, retCountV and registers 0..8:
---     at the failing call the function slot holds _m, the mode is 1 and the
---     value is 1.5, with vmBase pointing at the right frame.  Everything visible
---     is right; the corruption is in state the trace does not name.
+--     the second call's frame base was one too high, and inside the callee the
+--     first two instructions had written the new frame while the third and
+--     later ones wrote the caller's -- vmBase is a file-level var, vmStep is
+--     inlined four times, and the compiler shares one Get per var across the
+--     copies, so the copy that changes the base and the copy that reads it in
+--     the same tick disagree.  vmHold now ends the burst at a frame change, the
+--     other half of the fmtGo rule.
 --   - Not a mod-local collision: a function that calls one gate builtin and then
 --     uses its own parameter again is fine (x + _m(1, x) comes out right), so
 --     vmStep's WireScript temporaries are not landing on the Lua frame's low
 --     registers in the ordinary case.
 --   - The trace's two calls enter the function at 526 and 529, which looks like
---     the giveaway but is only the burst boundary: vmBurst runs four vmSteps a
---     tick, so the first call's CALL is the last step of its tick and the second
---     call's first three steps land in the next one.
---   So: the failing shape is "call this function twice", the trigger is its frame
---   size (six registers here; the four-register neighbour passes), and the state
---   that goes wrong is not in any register.  fRegs records every function's frame
---   size and nothing reads it, which is where a look would start.
+--     the giveaway but is only the burst boundary: the callee's first
+--     instructions run in the tick that pushed the frame, which is the bug above.
+--   - The second cause was separate and survived the first fix: _m reads a third
+--     argument that a two-argument call never passed, and a mod call in a
+--     conditional's *value* position is evaluated whether the arm runs or not --
+--     `let y = if 2 < nargs then numArg(vTag(a + 3), ...) else 0.0` still ran
+--     numArg on the slot, which held a string from the previous call, and raised
+--     "bad argument (number expected)" on an argument that did not exist.  The
+--     fix is the idiom setvec already used: choose the tag and the value first,
+--     then hand numArg those.
 --
--- The suite's `call-chain` case pins the shapes that work, so a fix cannot land
--- as a change to those; nothing in lua.ws depends on this file.
+-- So both causes are fixed and the case in tests/cases.py pins all of it: the
+-- shapes that always worked and the two that used to fail.  The file stays as
+-- the reproducer.
 string = string or {}
 
 -- The chip's two gate builtins, as Lua, so the oracle can run this file too: on
