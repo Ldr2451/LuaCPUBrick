@@ -17,9 +17,9 @@ KEYWORDS = {"and", "break", "do", "else", "elseif", "end", "false",
  ADD, SUB, MUL, DIV, MOD, POW, UNM, NOT, CONCAT, EQ, LT, LE, JMP, JMPF,
  JMPT, CALL, RETURN, LOADFUNC, RETURN0, RETURNV, NEWTABLE, GETFIELD,
  SETFIELD, LEN, FORPREP, FORLOOP, IDIV, BAND, BOR, BXOR, BNOT, SHL, SHR,
- CALLM, RETURNM, ADJUST, TAPPEND, VARARG) = range(46)
+ CALLM, RETURNM, ADJUST, TAPPEND, VARARG, GETUP, SETUP, GETCLO, GEN) = range(50)
 
-N_OPS = 46
+N_OPS = 50
 
 # Chip limits.  Each has a `const` of the same name in lua.ws.
 MAX_INSTR = 1024

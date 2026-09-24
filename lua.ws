@@ -61,6 +61,17 @@
 ///              function M:f() define them; multiple returns, varargs (...) and
 ///              select; a call in the last slot of an argument list, return, table
 ///              constructor or assignment expands all of its results
+///   closures   a function reads and writes the locals of the scopes around it, and
+///              two closures over one local share it. A function value is a
+///              *closure*, not a prototype: below the closure records (cloF) a
+///              function is its own closure, so two evaluations of one literal
+///              compare equal when nothing was captured, and one that does capture
+///              gets a cell per evaluation. Each round of a loop that contains a
+///              capture gets its own cells, which is what PUC gets by closing the
+///              cells at the end of the block. The cells come from a fixed arena
+///              and are never reclaimed -- the table heap makes the same bargain --
+///              so a loop that builds a closure per iteration spends a cell per
+///              iteration, and a program that runs out gets "too many upvalues"
 ///   library    the source of pairs, ipairs, next, select, io.*, string.*, math.* and
 ///              table.* is Lua text prepended to the program when the program mentions
 ///              it, so it is ordinary Lua running on this chip; the only gates are
@@ -91,32 +102,27 @@
 ///              < > <= >= work on numbers or lexicographically on strings;
 ///              arithmetic never coerces strings
 ///   divzero    x/0, x%0 and 0/0 yield 0 (Brickadia gate behavior, unlike Lua inf/nan)
-///
-/// Not implemented yet (each is a loud error, never a wrong answer)
-///   closures / upvalues      a function cannot read a local of an enclosing scope,
-///                             so it cannot call a local function of one
-///   metatables               no setmetatable, no __index, no operator metamethods
-///   string patterns          no find, match, gmatch, gsub
-///   error      error(msg [, level]) raises with msg as the message, assert is its
+///   errors     error(msg [, level]) raises with msg as the message, assert is its
 ///              conditional form (a truthy first argument returns *all* of them, a
 ///              falsey one raises), and pcall(f, ...) / xpcall(f, handler, ...)
 ///              are the protected calls: true plus f's values, or false plus the
-///              message -- and for xpcall, false plus the handler's *first*
-///              result. PUC prefixes error's message with the chunk and line of
-///              whatever called it and the chip has no line at run time, so the
-///              text goes through as it is, and a protected call hands that text
-///              on as a value. One thing pcall cannot do here: pcall of pcall
-///              or xpcall, since those are the builtins that push a frame and
-///              the in-place dispatch has one result slot -- a loud error, never
-///              a wrong answer
+///              message -- and for xpcall, false plus the handler's *first* result
+///
+/// Not implemented yet (each is a loud error, never a wrong answer)
+///   metatables               no setmetatable, no __index, no operator metamethods
 ///   goto and labels          a compile error
 ///   coroutines, modules, bitwise operators
+///   pcall of pcall/xpcall    those are the builtins that push a frame and the
+///                             in-place dispatch has one result slot
 ///   integers as a type       one number type: math.type reports "integer" for a
 ///                             whole number, 1 == 1.0, and 64-bit wraparound is
 ///                             absent beyond 2^53
 ///   non-integer number keys  a runtime error on write, nil on read
 ///
 /// Other differences from PUC-Lua 5.5
+///   error's message has no "chunk:line:" prefix: the chip has no line at run
+///   time, so the text goes through as it is, and a protected call hands that
+///   text on as a value.
 ///   tostring of a table is "table" (PUC prints an address). t[nil] reads nil (PUC
 ///   errors). outNum0..outNum3 only take numbers/booleans/nil and outArr only
 ///   numbers (PUC tables take anything; fixed-size float storage is a gate
@@ -125,7 +131,8 @@
 /// Limits (compile error past them, progOk = false)
 ///   1024 tokens, 512 bytecode instructions, 64 registers per function, 32 functions,
 ///   64 globals (27 pre-registered), 256 numeric and 256 string constants, 16 call
-///   arguments, 32 nested calls. At run time: 64 tables and 512 table entries in total.
+///   arguments, 32 nested calls, 16 upvalues per function. At run time: 64 tables,
+///   512 table entries, 256 closures and 1024 upvalue cells in total.
 ///
 /// Speed and gate count
 ///   Everything is unrolled per tick, so gates buy speed. Approximate cost of one extra
@@ -205,6 +212,22 @@ const MAX_TABLES = 64
 const MAX_HEAP = 512
 // live vararg values across all active frames
 const MAX_VA = 256
+// Upvalue descriptors per function, and the stride of fUpSrc/cloU: one per
+// captured local of the frame plus one per upvalue inherited from the
+// enclosing function.  PUC's limit is 60,255; a frame has 64 registers, so 16
+// is well past anything a program can express here and it keeps the runtime's
+// slot table small.
+const MAX_UP = 16
+// Closure records.  A function with upvalues gets one per evaluation; a
+// function without them is its own closure (cloF[c] = c below the range), so
+// nothing is allocated for the common case.
+const MAX_CLO = 256
+// Upvalue cells, and the same bargain the table heap makes: there is no
+// garbage collector, so a cell lives until the program ends and a loop that
+// creates a closure per iteration spends one cell per iteration.  PUC
+// reclaims them; here the arena is the ceiling and a program that runs out
+// gets "too many upvalues", never a wrong answer.
+const MAX_CELL = 1024
 // most values one call/return/statement can carry (matches MAX_INSTR-style
 // unrolling in retAdjust and the return paths)
 const MAXVALS = 16
@@ -899,7 +922,46 @@ var cfMaxLoc: int[]
 var locName: string[]
 var locReg: int[]
 var locDepth: int[]
+// has anything captured this local?  Then the function that declares it reads
+// and writes the *cell* from the capture on, not the register: the cell is
+// what closures see, and the register only holds the value the cell was
+// seeded from.  A statement between the declaration and the first closure
+// over it still goes through the register, which is right because in those
+// instructions no closure exists yet.
+var locCap: bool[]
 var locLen: int = 0
+// Upvalues.  fUpN[fid] is how many descriptors the prototype has, and the two
+// arrays strided by MAX_UP say what each one is: fUpSrc >= 0 is the captured
+// local's register in that frame (instack), < 0 is -(1 + the same local's
+// index in the *enclosing* function), which is how a local two levels out
+// becomes a one-level read of the enclosing closure's cell; fUpSlot is where
+// that frame keeps the cell for an instack one.
+// upIdx interns (prototype, local entry) -> descriptor index.  Keying on the
+// entry and not the name is what makes shadowing right: a function may
+// capture its own `x` and an enclosing `x` in one body, and they are
+// different cells.
+var fUpN: int[]
+var fUpSrc: int[]
+var fUpSlot: int[]
+var fUpSlotN: int[]
+var upIdx: Map<string, int>
+// the prototype each compile depth is on, so a capture can be walked up the
+// chain of enclosing functions
+var fidAt: int[]
+// A loop whose body contains a capture has to bump the generation once per
+// iteration, so each round gets its own cells the way PUC's close-at-block-end
+// does.  capGen counts captures; a block stamps it on the way in and compares
+// on the way out, which is how "this body contains a capture" is answered
+// without walking the block tree: a capture inside a nested function still
+// leaves the outer loop's body stamped, which is right, because the captured
+// local's block is the outer body and PUC re-opens it every round.
+var capGen: int = 0
+var blkCapGen: int[]
+// A repeat's block ends *after* its until condition, so its one-per-round bump
+// is emitted in front of the condition and this says so, or the block exit
+// would add a second one outside the loop.
+var blkGenDone: bool = false
+var blkHadCap: bool = false
 var selfName: string[]
 var selfClean: bool[]
 var selfFid: int[]
@@ -928,6 +990,9 @@ var lkReg: int = -1
 var lkFid: int = -1
 var lkDone: bool = false
 var lkRaw: bool = false
+// which live local the name matched, so the one test after the ladder can tell
+// a local of this function from a capture without each of the 32 arms asking
+var lkIx: int = -1
 var blkLen: int[]
 var blkNext: int[]
 var opBase: int[]
@@ -1125,6 +1190,9 @@ mod parseInit() {
   locName.clear()
   locReg.clear()
   locDepth.clear()
+  locCap.clear()
+  fUpN.clear()
+  fUpSlotN.clear()
   valStk.clear()
   valCall.clear()
   valPrefix.clear()
@@ -1157,6 +1225,15 @@ mod parseInit() {
   tmpSStk.clear()
   blkLen.clear()
   blkNext.clear()
+  blkCapGen.clear()
+  capGen = 0
+  upIdx.clear()
+  fUpSrc.clear()
+  fUpSrc.resize(MAX_FUNCS * MAX_UP, -1)
+  fUpSlot.clear()
+  fUpSlot.resize(MAX_FUNCS * MAX_UP, 0)
+  fidAt.clear()
+  fidAt.resize(33, -1)
   cfNext.clear()
   cfMax.clear()
   cfBase.clear()
@@ -1378,10 +1455,12 @@ mod locBind(name: string, r: int) {
     locName[locLen] = name
     locReg[locLen] = r
     locDepth[locLen] = fnDepth
+    locCap[locLen] = false
   } else {
     locName.push(name)
     locReg.push(r)
     locDepth.push(fnDepth)
+    locCap.push(false)
   }
   locLen = locLen + 1
   if r > cfMaxLoc[fnDepth] {
@@ -1398,11 +1477,25 @@ mod locDeclare(name: string) -> int {
 mod blkEnter() {
   blkLen.push(locLen)
   blkNext.push(cfNext[fnDepth])
+  blkCapGen.push(capGen)
 }
 
+// A block that contains a capture ends with one GEN: a loop has to give each
+// round its own cells, and PUC gets that by closing them at the end of the
+// block, so a cell whose stamp is stale is simply replaced when the next
+// closure is made.  Emitted here rather than at each loop's back edge because
+// blkExit already knows the answer, and a `do` block that captures pays one
+// wasted tick -- harmless, since a bump only ever invalidates slots, and a
+// closure that outlived the block already holds the cell itself.
 mod blkExit() {
   locLen = blkLen.pop().Value
   cfNext[fnDepth] = blkNext.pop().Value
+  let had = blkCapGen.pop().Value != capGen
+  if blkGenDone {
+    blkGenDone = false
+  } else if had {
+    bEmit(49, 0, 0, 0)
+  }
 }
 
 mod regSync() {
@@ -1415,435 +1508,272 @@ mod regSync() {
   }
 }
 
-// lkKind: 0 none, 1 local reg, 2 self-recursion (LOADFUNC lkFid).
-// Sets perr on upvalue use.
+// lkKind: 0 none, 1 local reg, 2 self-recursion (GETCLO of the running
+// frame), 3 upvalue (lkReg = this function's descriptor index).  The ladder
+// only answers *which* live local the name is; one test after it decides
+// local or capture, because a mod call inside the arms would be inlined 32
+// times.  32 is the window, as before: a name with more live locals than that
+// in front of it reads as a global, which is the same hole the old ladder had.
 mod locFind(name: string) {
   lkKind = 0
   lkReg = -1
   lkFid = -1
   lkDone = false
+  lkIx = -1
   if !lkRaw && selfName[fnDepth] == name && selfClean[fnDepth] {
     lkKind = 2
     lkFid = selfFid[fnDepth]
     lkDone = true
   }
-  if !lkDone {
-    let ix0 = locLen - 1 - 0
-    if ix0 >= 0 && locName[ix0] == name {
-      if locDepth[ix0] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix0]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  var ix = locLen - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix1 = locLen - 1 - 1
-    if ix1 >= 0 && locName[ix1] == name {
-      if locDepth[ix1] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix1]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix2 = locLen - 1 - 2
-    if ix2 >= 0 && locName[ix2] == name {
-      if locDepth[ix2] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix2]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix3 = locLen - 1 - 3
-    if ix3 >= 0 && locName[ix3] == name {
-      if locDepth[ix3] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix3]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix4 = locLen - 1 - 4
-    if ix4 >= 0 && locName[ix4] == name {
-      if locDepth[ix4] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix4]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix5 = locLen - 1 - 5
-    if ix5 >= 0 && locName[ix5] == name {
-      if locDepth[ix5] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix5]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix6 = locLen - 1 - 6
-    if ix6 >= 0 && locName[ix6] == name {
-      if locDepth[ix6] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix6]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix7 = locLen - 1 - 7
-    if ix7 >= 0 && locName[ix7] == name {
-      if locDepth[ix7] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix7]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix8 = locLen - 1 - 8
-    if ix8 >= 0 && locName[ix8] == name {
-      if locDepth[ix8] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix8]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix9 = locLen - 1 - 9
-    if ix9 >= 0 && locName[ix9] == name {
-      if locDepth[ix9] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix9]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix10 = locLen - 1 - 10
-    if ix10 >= 0 && locName[ix10] == name {
-      if locDepth[ix10] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix10]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix11 = locLen - 1 - 11
-    if ix11 >= 0 && locName[ix11] == name {
-      if locDepth[ix11] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix11]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix12 = locLen - 1 - 12
-    if ix12 >= 0 && locName[ix12] == name {
-      if locDepth[ix12] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix12]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix13 = locLen - 1 - 13
-    if ix13 >= 0 && locName[ix13] == name {
-      if locDepth[ix13] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix13]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix14 = locLen - 1 - 14
-    if ix14 >= 0 && locName[ix14] == name {
-      if locDepth[ix14] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix14]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix15 = locLen - 1 - 15
-    if ix15 >= 0 && locName[ix15] == name {
-      if locDepth[ix15] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix15]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix16 = locLen - 1 - 16
-    if ix16 >= 0 && locName[ix16] == name {
-      if locDepth[ix16] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix16]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix17 = locLen - 1 - 17
-    if ix17 >= 0 && locName[ix17] == name {
-      if locDepth[ix17] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix17]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix18 = locLen - 1 - 18
-    if ix18 >= 0 && locName[ix18] == name {
-      if locDepth[ix18] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix18]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix19 = locLen - 1 - 19
-    if ix19 >= 0 && locName[ix19] == name {
-      if locDepth[ix19] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix19]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix20 = locLen - 1 - 20
-    if ix20 >= 0 && locName[ix20] == name {
-      if locDepth[ix20] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix20]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix21 = locLen - 1 - 21
-    if ix21 >= 0 && locName[ix21] == name {
-      if locDepth[ix21] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix21]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix22 = locLen - 1 - 22
-    if ix22 >= 0 && locName[ix22] == name {
-      if locDepth[ix22] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix22]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix23 = locLen - 1 - 23
-    if ix23 >= 0 && locName[ix23] == name {
-      if locDepth[ix23] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix23]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix24 = locLen - 1 - 24
-    if ix24 >= 0 && locName[ix24] == name {
-      if locDepth[ix24] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix24]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix25 = locLen - 1 - 25
-    if ix25 >= 0 && locName[ix25] == name {
-      if locDepth[ix25] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix25]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix26 = locLen - 1 - 26
-    if ix26 >= 0 && locName[ix26] == name {
-      if locDepth[ix26] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix26]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix27 = locLen - 1 - 27
-    if ix27 >= 0 && locName[ix27] == name {
-      if locDepth[ix27] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix27]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix28 = locLen - 1 - 28
-    if ix28 >= 0 && locName[ix28] == name {
-      if locDepth[ix28] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix28]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix29 = locLen - 1 - 29
-    if ix29 >= 0 && locName[ix29] == name {
-      if locDepth[ix29] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix29]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
   }
-  if !lkDone {
-    let ix30 = locLen - 1 - 30
-    if ix30 >= 0 && locName[ix30] == name {
-      if locDepth[ix30] == fnDepth {
-        lkKind = 1
-        lkReg = locReg[ix30]
+  if lkDone && lkKind == 0 {
+    if locDepth[lkIx] != fnDepth {
+      resolveUp(lkIx)
+    } else if locCap[lkIx] {
+      // this local of ours is captured, so from here on it lives in its cell
+      let k = upSelf(lkIx)
+      if 0 <= k {
+        lkKind = 3
+        lkReg = k
       } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
-      }
-      lkDone = true
-    }
-  }
-  if !lkDone {
-    let ix31 = locLen - 1 - 31
-    if ix31 >= 0 && locName[ix31] == name {
-      if locDepth[ix31] == fnDepth {
         lkKind = 1
-        lkReg = locReg[ix31]
-      } else {
-        perr = true
-        perrMsg = "upvalues/closures are not supported"
+        lkReg = locReg[lkIx]
       }
-      lkDone = true
+    } else {
+      lkKind = 1
+      lkReg = locReg[lkIx]
     }
   }
 }
+
+// The descriptor this function already has for one of its own locals, or -1.
+// A local that something captured is read and written through the cell from
+// then on: the cell is the value closures see, so a write from a nested
+// function has to be visible here without going through the register.
+mod upSelf(ix: int) -> int {
+  let r = upIdx.get(fidAt[fnDepth] .. "#" .. ix)
+  return if r.Found then r.Value else -1
+}
+
+// A local of an enclosing function is used here.  Every function from the one
+// that declares it up to this one gets a descriptor for it: the declaring
+// function's is instack (the local is in its own frame) and each one above
+// that is an upvalue of the closure below it.  So a capture two levels out is
+// two descriptors deep -- this function reads the enclosing closure's cell,
+// and that closure reads the cell in the frame the local lives in.  The chain
+// is a ladder because WireScript has no loop, and four links is the ceiling --
+// deeper is a loud error, never a wrong answer.
+mod resolveUp(ix: int) {
+  let ld = locDepth[ix]
+  let hops = fnDepth - ld
+  if 4 < hops {
+    perr = true
+    perrMsg = "too many nested functions to capture through"
+  } else {
+    let k0 = upStep(ld, ix, locReg[ix])
+    var k = k0
+    if 1 <= hops && !perr {
+      k = upStep(ld + 1, ix, -1 - k0)
+    }
+    if 2 <= hops && !perr {
+      k = upStep(ld + 2, ix, -1 - k)
+    }
+    if 3 <= hops && !perr {
+      k = upStep(ld + 3, ix, -1 - k)
+    }
+    if 4 <= hops && !perr {
+      k = upStep(ld + 4, ix, -1 - k)
+    }
+    if !perr {
+      lkKind = 3
+      lkReg = k
+      capGen = capGen + 1
+    }
+  }
+}
+
+// One link of a capture chain: the prototype at compile depth d gets a
+// descriptor for local entry ix, or finds the one it already has -- two
+// closures over one local must share its cell.  src >= 0 is the local's
+// register in that frame; src < 0 is -(1 + the same local's index in d's own
+// upvalues).  Keyed on the local *entry* and not the name because a function
+// can capture its own x and an enclosing x in one body, and those are two
+// different cells with one name.
+mod upStep(d: int, ix: int, src: int) -> int {
+  let p = fidAt[d]
+  let key = p .. "#" .. ix
+  let r = upIdx.get(key)
+  if r.Found {
+    return r.Value
+  }
+  let k = fUpN[p]
+  if MAX_UP <= k {
+    perr = true
+    perrMsg = "too many upvalues"
+    return 0
+  }
+  fUpN[p] = k + 1
+  fUpSrc[p * MAX_UP + k] = src
+  if 0 <= src {
+    fUpSlot[p * MAX_UP + k] = fUpSlotN[p]
+    fUpSlotN[p] = fUpSlotN[p] + 1
+    // the declaring function's own reads and writes go through this cell from
+    // here on, so a write from a nested function is visible to it
+    locCap[ix] = true
+  }
+  upIdx.set(key, k)
+  return k
+}
+
 mod pushOp(kind: int, prec: int, a: int, b: int, c: int) {
   opKind.push(kind)
   opPrec.push(prec)
@@ -2026,6 +1956,14 @@ mod pushPending() {
 
 // ---------------------------------------------------------------- codegen helpers
 
+// GETUP's c operand: 0 reads this frame's own cell for the local, 1 reads the
+// enclosing closure's cell.  Which one is a property of the descriptor, so it
+// is settled here rather than in the VM.
+mod upKind() -> int {
+  let src = fUpSrc[fidAt[fnDepth] * MAX_UP + lkReg]
+  return if 0 <= src then 0 else 1
+}
+
 mod exprPushName(callParen: bool, callSugar: bool) {
   let name = curStr()
   locFind(name)
@@ -2033,7 +1971,9 @@ mod exprPushName(callParen: bool, callSugar: bool) {
     // the callee goes into a fresh call-frame register
     let fr = regAlloc()
     if lkKind == 2 {
-      bEmit(25, fr, lkFid, 0)
+      bEmit(48, fr, 0, 0)
+    } else if lkKind == 3 {
+      bEmit(46, fr, lkReg, upKind())
     } else if lkKind == 1 {
       bEmit(7, fr, lkReg, 0)
     } else {
@@ -2060,7 +2000,11 @@ mod exprPushName(callParen: bool, callSugar: bool) {
     } else {
       let r = regAlloc()
       if lkKind == 2 {
-        bEmit(25, r, lkFid, 0)
+        // the recursive name is the closure this frame is running, not the
+        // prototype: a local function with upvalues has one per call
+        bEmit(48, r, 0, 0)
+      } else if lkKind == 3 {
+        bEmit(46, r, lkReg, upKind())
       } else {
         bEmit(5, r, gDeclare(name), 0)
       }
@@ -2112,6 +2056,8 @@ mod newFunc() -> int {
   fParams.push(0)
   fRegs.push(-1)
   fVar.push(false)
+  fUpN.push(0)
+  fUpSlotN.push(0)
   let bad = fStart.length() > MAX_FUNCS
   if bad {
     perr = true
@@ -2136,6 +2082,7 @@ mod funcDepthInit(islocal: bool) {
   }
   funcEntryLoc[fnDepth] = locLen
   fnSelfArg[fnDepth] = false
+  fidAt[fnDepth] = tmpB
 }
 
 // Shared function head: fid already created in tmpB, name in tmpS.
@@ -3283,7 +3230,12 @@ mod doStoreStep() {
     lkRaw = true
     locFind(nm)
     lkRaw = false
-    if lkKind == 1 {
+    if lkKind == 3 {
+      // an upvalue has no register to fold into, so this is always its own
+      // instruction
+      bEmit(47, tmpB, lkReg, upKind())
+      dirtySelf(nm)
+    } else if lkKind == 1 {
       // fold the store into the instruction that produced the value
       let li = bop.length() - 1
       let op0 = if li >= 0 then bop[li] else -1
@@ -3664,7 +3616,9 @@ mod stmtDispatch() {
         let isMethod = curSub() == 31
         let tr = regAlloc()
         locFind(tmpS)
-        if lkKind == 1 {
+        if lkKind == 3 {
+          bEmit(46, tr, lkReg, upKind())
+        } else if lkKind == 1 {
           bEmit(7, tr, lkReg, 0)
         } else {
           bEmit(5, tr, gDeclare(tmpS), 0)
@@ -3787,6 +3741,13 @@ mod stmtDispatch() {
       perrMsg = "until without repeat"
     } else {
       cpos = cpos + 1
+      // A repeat's body block is closed after this condition, so the bump that
+      // gives each round its own cells goes here, in front of it: at the block
+      // exit it would land outside the loop and run once.
+      if blkCapGen[blkCapGen.length() - 1] != capGen {
+        blkGenDone = true
+        bEmit(49, 0, 0, 0)
+      }
       startUnit(13)
     }
   } else if k == 4 && (s == 6 || s == 4 || s == 5) {
@@ -3913,6 +3874,113 @@ var latchI0: int = 0
 var forDepth: int = 0
 var forCtrl: int[]
 
+// ---------------------------------------------------------------- closures
+// A function value (tag 4) holds a *closure* number, not a prototype.  Below
+// cloBase a closure is its own prototype -- cloF is only written for the
+// records above it -- so every builtin and every function with no upvalues
+// works exactly as it did, and PUC's rule that two evaluations of one literal
+// are the same value when nothing was captured falls out of that.  A function
+// *with* upvalues gets a record per evaluation, and cloU is its cell list,
+// strided by MAX_UP.
+var cloBase: int = 0
+var cloTop: int = 0
+var cloF: int[]
+var cloU: int[]
+// Upvalue cells: one value each, out of a fixed arena, never reclaimed.  That
+// is the same bargain the table heap makes and it is what a collector would
+// fix -- a loop that makes a closure per iteration spends a cell per iteration.
+// Cell 0 is the "none" marker, so a slot needs no clearing to start empty.
+var uTag: int[]
+var uNum: float[]
+var uStr: string[]
+var uTop: int = 1
+// A frame's slot table -- three words per captured local: the cell, the frame
+// that made it, the loop round it was made in -- sits in the vararg stack just
+// below that frame's varargs, and the word below *it* is the frame's own
+// sequence number.  The stamps are what stop a new frame adopting the last
+// one's cells (the table is scratch space) and what give each round of a loop
+// its own, which is what PUC gets by closing the cells at the end of the block.
+var frameSeq: int = 0
+var iterGen: int = 0
+// cloStep's state: one cell per tick, driven from vmBurst.
+var cloCur: int = 0
+var cloCid: int = 0
+var cloK: int = 0
+var cloN: int = 0
+var cloDst: int = 0
+var cloActive: bool = false
+
+// The prototype the running frame is executing, and the closure number it is
+// running as.  The main chunk is the one frame not on the stack (an empty
+// fFunc is how it halts), so it answers for itself.
+mod curFid() -> int {
+  if fFunc.length() == 0 {
+    return mainFid
+  }
+  let cid = fFunc[fFunc.length() - 1]
+  if cid < cloBase {
+    return cid
+  }
+  return cloF[cid]
+}
+
+mod curClo() -> int {
+  if fFunc.length() == 0 {
+    return mainFid
+  }
+  return fFunc[fFunc.length() - 1]
+}
+
+// Where this frame's slot table starts, and the sequence number of the frame
+// that owns it (the word just below the table).
+mod slotBase() -> int {
+  return fVaB[fVaB.length() - 1] - 3 * fUpSlotN[curFid()]
+}
+
+mod frameStamp() -> float {
+  return vaNum[slotBase() - 1]
+}
+
+// The cell a descriptor names.  GETUP and SETUP only look: the closure that
+// captured the local made the cell, so by the time either runs it is there,
+// and a parent descriptor's cell belongs to the enclosing closure.
+mod cellRead(fid: int, k: int, parent: bool) -> int {
+  if parent {
+    return cloU[curClo() * MAX_UP + k]
+  }
+  return toInt(vaNum[slotBase() + 3 * fUpSlot[fid * MAX_UP + k]])
+}
+
+// The cell, made if this frame and this round have not made it yet, then
+// filled from the local's own register.  The register is the local's home --
+// code compiled before the capture was noticed still reads and writes it --
+// and SETUP writes both, so copying here is what makes a capture from inside a
+// loop, and one that comes after a write, read the value PUC would.
+mod cellAt(fid: int, k: int) -> int {
+  let s = slotBase() + 3 * fUpSlot[fid * MAX_UP + k]
+  var cell = toInt(vaNum[s])
+  if cell <= 0 || vaNum[s + 1] != frameStamp() || vaNum[s + 2] != iterGen {
+    if MAX_CELL <= uTop {
+      vmFail("too many upvalues")
+      return 0
+    }
+    cell = uTop
+    uTop = uTop + 1
+    vaNum[s] = cell
+    vaNum[s + 1] = frameStamp()
+    vaNum[s + 2] = iterGen
+    // seeded from the register, once: the register is where the value is until
+    // the cell exists, and after that the cell is the value and the register
+    // only gets written alongside it (SETUP), so re-copying here would undo a
+    // write that came from a nested function
+    let reg = fUpSrc[fid * MAX_UP + k]
+    uTag[cell] = vtag[vmBase + reg]
+    uNum[cell] = vnum[vmBase + reg]
+    uStr[cell] = vstr[vmBase + reg]
+  }
+  return cell
+}
+
 mod vTag(r: int) -> int {
   return vtag[vmBase + r]
 }
@@ -3985,8 +4053,22 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
 var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0]
 
-mod vmReset() {
-  tmap.clear()
+// One-time setup when a parsed program starts running: closure numbering, and
+// the main chunk's slot table.  The main chunk runs with no frame on the stack
+// (an empty fFunc is how it halts), so its vararg base and sequence number are
+// seeded here; every other frame gets both when it is entered.
+mod vmClosures() {
+  let base = fStart.length()
+  cloBase = base
+  cloTop = base
+  frameSeq = 1
+  let n = 3 * fUpSlotN[mainFid] + 1
+  vaNum[0] = 1.0
+  fVaB[0] = n
+  vaTop = n
+}
+
+mod vmReset() {  tmap.clear()
   tvTag.clear()
   tvNum.clear()
   tvStr.clear()
@@ -4038,6 +4120,19 @@ mod vmReset() {
   vaNum.resize(MAX_VA, 0.0)
   vaStr.resize(MAX_VA, "")
   vaTop = 0
+  cloF.clear()
+  cloF.resize(MAX_FUNCS + MAX_CLO, 0)
+  cloU.clear()
+  cloU.resize((MAX_FUNCS + MAX_CLO) * MAX_UP, 0)
+  uTag.clear()
+  uTag.resize(MAX_CELL, 0)
+  uNum.clear()
+  uNum.resize(MAX_CELL, 0.0)
+  uStr.clear()
+  uStr.resize(MAX_CELL, "")
+  uTop = 1
+  frameSeq = 0
+  iterGen = 0
   gtag.clear()
   gnum.clear()
   gstr.clear()
@@ -4327,7 +4422,8 @@ mod pcallEnd(src: int, k: int) {
 // before it does anything so the rest of the burst sees the new base and the
 // hold.
 mod pcallEnter() {
-  let inner = pcallFid
+  let cid = pcallFid
+  let inner = if cid < cloBase then cid else cloF[cid]
   let a = pcallA
   let a1 = if 1 < pcallNArgs then pcallNArgs - 1 else 0
   let base = pcallBase
@@ -4336,19 +4432,25 @@ mod pcallEnter() {
   // false is there already and its results belong there.
   let nbase = if pcallMode == 0 then base + a + 1 else base + a
   let np = fParams[inner]
+  let nslots = 3 * fUpSlotN[inner] + 1
   if 8 < np {
     vmFail("too many parameters")
-  } else if vaTop + (if fVar[inner] && np < a1 then a1 - np else 0) > MAX_VA {
+  } else if vaTop + nslots > MAX_VA {
+    vmFail("too many upvalues")
+  } else if vaTop + nslots + (if fVar[inner] && np < a1 then a1 - np else 0) > MAX_VA {
     vmFail("too many varargs")
   } else {
     // the parameters land in the new frame from one past the pcall's own
     // register, and retAdjust's nil-fill is what a missing argument is
     retAdjust(base + a + 1 + pcallArgOff, nbase, a1, np)
     let nva = if fVar[inner] && np < a1 then a1 - np else 0
-    vaSpill(base + a + 1 + pcallArgOff + np, vaTop, nva)
-    fVaB.push(vaTop)
-    vaTop = vaTop + nva
-    fFunc.push(inner)
+    frameSeq = frameSeq + 1
+    let slotB = vaTop
+    vaNum[slotB] = frameSeq
+    vaSpill(base + a + 1 + pcallArgOff + np, slotB + nslots, nva)
+    fVaB.push(slotB + nslots)
+    vaTop = slotB + nslots + nva
+    fFunc.push(cid)
     fBase.push(nbase)
     if pcallMode == 0 {
       fRetA.push(a + 1)
@@ -4533,8 +4635,43 @@ mod lenStep() {
 }
 
 // next(): one chain hop per tick, so a run of tombstones (keys assigned nil)
-// costs ticks but needs no loop.  Finishing writes key+value (or a lone nil)
-// and advances past the call.
+// Fill one cell of a closure per tick, then publish the value.  nxActive
+// short-circuits the instruction dispatch, so nothing can read the half-built
+// closure: the value lands in cloDst before the instruction after LOADFUNC
+// runs.  One tick per cell is the price of keeping the array stores out of
+// the op-25 arm.
+mod cloStep() {
+  if cloK < cloN {
+    let fid = cloCur
+    let cfid = curFid()
+    let src = fUpSrc[fid * MAX_UP + cloK]
+    if 0 <= src {
+      // the local is in the frame this closure is being made in
+      cloU[cloCid * MAX_UP + cloK] = cellAt(cfid, cloK)
+    } else {
+      // it is one link further out: that link is a cell of the frame this
+      // closure is being made in, or -- two links out -- of the closure that
+      // frame is running, which filled its own list when it was made
+      let kp = -1 - src
+      let psrc = fUpSrc[cfid * MAX_UP + kp]
+      if 0 <= psrc {
+        cloU[cloCid * MAX_UP + cloK] = cellAt(cfid, kp)
+      } else {
+        cloU[cloCid * MAX_UP + cloK] = cloU[curClo() * MAX_UP + (-1 - psrc)]
+      }
+    }
+    cloK = cloK + 1
+  } else if !vmFailed {
+    vtag[cloDst] = 4
+    vnum[cloDst] = cloCid
+    vstr[cloDst] = ""
+    cloActive = false
+  }
+}
+
+// next()'s walk: the candidate is a tombstone or a nil value, so skip it and
+// look again -- that costs ticks but needs no loop.  Finishing writes key+value
+// (or a lone nil) and advances past the call.
 mod nxStep() {
   if 0 <= nxSlot && (tvTag[nxSlot] == 0 || tNext[nxSlot] == -2) {
     nxSlot = tNext[nxSlot]
@@ -7632,7 +7769,11 @@ mod patArm(ini: int, mode: int, dst: int, tid: int) {
 // end, which is what a program function reaches.  a and nargs are the call's
 // own registers; mtSelf says whether the call wants every result or one.
 
-mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
+// `fid` is the prototype, which for every gate builtin is its own function
+// number; `cid` is the closure the call actually names, and it goes on the
+// frame so a closure body can ask which closure it is (GETCLO, the recursive
+// name of a `local function`).
+mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
   if fid == 9 {
     // next(t [, k]): the entry after k in insertion order, as key+value.
     // A nil result means the walk is over.  Tombstones (keys assigned nil)
@@ -8181,14 +8322,23 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool) {
         // a variadic function keeps the arguments past its named
         // parameters in the vararg stack; the frame records the base
         let nva = if fVar[fid] && np < nargs then nargs - np else 0
-        if vaTop + nva > MAX_VA {
+        // above the varargs come this frame's slot table and the word below it
+        // that says which frame it is (see slotBase), so the table can be
+        // scratch space a later frame reuses without adopting stale cells
+        let nslots = 3 * fUpSlotN[fid] + 1
+        if vaTop + nslots > MAX_VA {
+          vmFail("too many upvalues")
+        } else if vaTop + nslots + nva > MAX_VA {
           vmFail("too many varargs")
         } else {
-          vaSpill(vmBase + a + 1 + np, vaTop, nva)
-          fVaB.push(vaTop)
-          vaTop = vaTop + nva
+          frameSeq = frameSeq + 1
+          let slotB = vaTop
+          vaNum[slotB] = frameSeq
+          vaSpill(vmBase + a + 1 + np, slotB + nslots, nva)
+          fVaB.push(slotB + nslots)
+          vaTop = slotB + nslots + nva
         }
-        fFunc.push(fid)
+        fFunc.push(cid)
         fBase.push(nbase)
         fRetA.push(a)
         fRetBase.push(vmBase)
@@ -8441,7 +8591,7 @@ mod vmStep() {
       if vTag(a) != 4 {
         vmFail("attempt to call")
       } else {
-        let fid = toInt(vNum(a))
+        let cid = toInt(vNum(a))
         // C operand bits: 1 = my last argument is an expanding call (so the
         // arg count is one short and the tail's own count is added at run
         // time); 2 = I return all of my results, not just one.  Both can be
@@ -8454,10 +8604,13 @@ mod vmStep() {
         let tailN = if mtArg then (if 0 <= retCountV then retCountV else 0) else 0
         let nargs = if mtArg && 0 < b then (b - 1) + tailN else b
         let pc0 = vmPc
-        if fid < 9 {
-          gateLow(fid, a, nargs)
+        if cid < 9 {
+          gateLow(cid, a, nargs)
         } else {
-          gateHigh(fid, a, nargs, mtSelf)
+          // a builtin is its own closure, so the prototype is the number again
+          // until the closure records start
+          let fid = if cid < cloBase then cid else cloF[cid]
+          gateHigh(fid, a, nargs, mtSelf, cid)
         }
         if pcallRan && pcallBad[0] == 0 {
           // a gate dispatched in place by a pcall: its results are at the
@@ -8669,7 +8822,65 @@ mod vmStep() {
       }
       advanced = true
     } else if op == 25 {
-      vSet(a, 4, b, "")
+      if fUpN[b] == 0 {
+        vSet(a, 4, b, "")
+      } else if 1000000 <= cloTop {
+        vmFail("too many closures top " .. (cloTop | 0) .. " base " .. (cloBase | 0) .. " fid " .. (b | 0) .. " up " .. (fUpN[b] | 0) .. " nf " .. (fStart.length() | 0))
+      } else {
+        // A function with upvalues is a fresh closure every time it is
+        // evaluated.  Only scalars are written here: this arm is inlined once
+        // per vmStep and the array stores in it are dropped (the gmatch trap),
+        // so cloStep fills the cells from the micro-step arm instead.
+        cloCid = cloTop
+        cloTop = cloTop + 1
+        cloF[cloCid] = b
+        cloCur = b
+        cloK = 0
+        cloN = fUpN[b]
+        cloDst = vmBase + a
+        cloActive = true
+        // step over the instruction here: the fill owns the next tick, and the
+        // instruction after this runs the tick after that
+        vmPc = vmPc + 1
+        advanced = true
+      }
+    } else if op == 46 {
+      // GETUP a, b=descriptor, c=0 this frame's own cell for the local or
+      // c=1 the enclosing closure's cell for it
+      let cell = cellRead(curFid(), b, c == 1)
+      if 0 < cell {
+        vSet(a, uTag[cell], uNum[cell], uStr[cell])
+      } else {
+        vSet(a, 0, 0.0, "")
+      }
+    } else if op == 47 {
+      // SETUP a=source, b=descriptor, c=kind.  The local's own register is
+      // written as well as the cell, because the register is its home and a
+      // closure made later copies the register in (see cellAt).
+      let fid = curFid()
+      if c == 1 {
+        let cell = cloU[curClo() * MAX_UP + b]
+        if 0 < cell {
+          uTag[cell] = vTag(a)
+          uNum[cell] = vNum(a)
+          uStr[cell] = vStr(a)
+        }
+      } else {
+        let cell = cellRead(fid, b, false)
+        if 0 < cell {
+          uTag[cell] = vTag(a)
+          uNum[cell] = vNum(a)
+          uStr[cell] = vStr(a)
+        }
+        let abs = vmBase + fUpSrc[fid * MAX_UP + b]
+        vtag[abs] = vTag(a)
+        vnum[abs] = vNum(a)
+        vstr[abs] = vStr(a)
+      }
+    } else if op == 48 {
+      vSet(a, 4, curClo(), "")
+    } else if op == 49 {
+      iterGen = iterGen + 1
     } else if op == 28 {
       if tCount >= MAX_TABLES {
         vmFail("too many tables")
@@ -8887,9 +9098,14 @@ mod parseJobStart() {
   fStart.resize(NB, -1)
   fParams.resize(NB, -1)
   fRegs.resize(NB, -1)
+  fUpN.resize(NB, 0)
+  fUpSlotN.resize(NB, 0)
   mainFid = newFunc()
   fStart[mainFid] = 0
   fParams[mainFid] = 0
+  // the main chunk is the outermost function, so a capture of one of its locals
+  // is a descriptor on it
+  fidAt[0] = mainFid
 }
 
 // Lex one chunk per call; the driver loops these across ticks.
@@ -9042,13 +9258,23 @@ mod libIo(p: string) -> string {
       || srcUses(p, "io.lines") then LIB_io else ""
 }
 
+// A closure being filled owns the whole tick: its cells go in one per tick and
+// the value is published at the end, and nothing may read it half-built.  The
+// step lives here rather than in vmStep's micro-step arm because vmStep is
+// inlined four times and a rarely-taken path does not belong in the four copies
+// of the hottest code in the chip -- measured: as a vmStep arm it cost every
+// program about a fifth of its per-tick time, closures or not.
 mod vmBurst() {
   fmtGo = true
   patGo = true
-  vmStep()
-  if !vmHold { vmStep() }
-  if !vmHold { vmStep() }
-  if !vmHold { vmStep() }
+  if cloActive {
+    cloStep()
+  } else {
+    vmStep()
+    if !cloActive && !vmHold { vmStep() }
+    if !cloActive && !vmHold { vmStep() }
+    if !cloActive && !vmHold { vmStep() }
+  }
 }
 
 on Change(program) {
@@ -9144,6 +9370,7 @@ on goParse2 {
     progOkV = !perr && pDone
     jobBusy = false
     vmReset()
+    vmClosures()
     if perr {
       // vmReset clears errV, so report the failure after it; cpos sits at
       // (or just past) the offending token in nearly every perr path

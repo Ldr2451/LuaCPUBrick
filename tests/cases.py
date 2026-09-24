@@ -924,8 +924,92 @@ TESTS = [
      "haltfail"),
     ("run-callnil", "print('before') f()", None, "haltfail"),
     ("run-negstr", "print('before') print(-'x')", None, "haltfail"),
+    # Closures.  A function value is a closure, not a prototype: below the
+    # closure records a function is its own closure, so two evaluations of one
+    # literal compare equal when nothing was captured, and a function that does
+    # capture gets a cell per evaluation.
     ("upvalue-read", "local x = 5 function f() return x end print(f())",
-     None, "reject"),
+     None, "run"),
+    # a write through a closure is visible to the function that declares the
+    # local, which is the whole point of sharing one cell
+    ("upvalue-write", "local x = 1 local function bump() x = x + 1 end "
+     "bump() bump() print(x)", None, "run"),
+    # two closures over one local share the cell, so the second sees the first's
+    # write
+    ("upvalue-shared", "local x = 1 local g = function() x = x + 1 return x end "
+     "local h = function() return x end print(g(), h(), h())", None, "run"),
+    # the counter shape: the cell outlives the frame that made it
+    ("upvalue-counter", "local function counter() local n = 0 return function() "
+     "n = n + 1 return n end end local c = counter() print(c(), c(), c())",
+     None, "run"),
+    # a parameter is a local like any other
+    ("upvalue-param", "local function mk(tag) return function(v) "
+     "return tag .. v end end local hi = mk('x') print(hi('y'), hi('z'))",
+     None, "run"),
+    # two cells in one frame, written independently
+    ("upvalue-two-cells", "local function pair() local a, b = 0, 0 "
+     "return function() a = a + 1 b = b + 2 return a, b end, "
+     "function() return a + b end end local inc, sum = pair() print(inc()) "
+     "print(sum())", None, "run"),
+    # each round of a loop gets its own cell, which is what closing the cell at
+    # the end of the block buys in PUC
+    ("upvalue-loop-body", "local out = {} for i = 1, 3 do local y = i "
+     "out[i] = function() return y end end print(out[1](), out[2](), out[3]())",
+     None, "run"),
+    # so does the loop's own control variable, declared outside the body
+    ("upvalue-loop-var", "local t = {} for i = 1, 3 do t[i] = function() "
+     "return i end end print(t[1](), t[2](), t[3]())", None, "run"),
+    # a local declared outside the loop and mutated inside it: every round
+    # captures the value it had at the start of that round
+    ("upvalue-loop-outer", "local n = 0 for i = 1, 3 do "
+     "local f = function() return n end n = n + 1 end print(n)", None, "run"),
+    # three deep: the middle function's cell is what the innermost reads
+    ("upvalue-transitive", "local function outer() local a = 1 return function() "
+     "return function() return a end end end print(outer()()())", None, "run"),
+    # a recursive local function is the closure it is running, so a function
+    # with upvalues still recurses into itself
+    ("upvalue-selfrec", "local function f(n) if n == 0 then return 0 end "
+     "return n + f(n - 1) end print(f(5))", None, "run"),
+    # and so does one whose cell it also reads
+    ("upvalue-selfrec-cell", "local function fib(n) if n < 2 then return n end "
+     "return fib(n - 1) + fib(n - 2) end print(fib(10))", None, "run"),
+    # two evaluations of one literal with nothing captured are the same value
+    ("upvalue-same-value", "local function f() return 1 end "
+     "print(f == f, f == f)", None, "run"),
+    # a closure as a table value, and two different closures are different
+    ("upvalue-distinct", "local function mk() local x = 0 return function() "
+     "return x end end print(mk() == mk())", None, "run"),
+    # a captured local that shadows an outer one of the same name: two cells
+    ("upvalue-shadow", "local x = 'outer' local function f() local x = 'inner' "
+     "return function() return x end end print(f()(), x)", None, "run"),
+    # a closure over a while-body local
+    ("upvalue-while", "local out = {} local i = 0 while i < 3 do i = i + 1 "
+     "local y = i out[i] = function() return y end end print(out[1](), out[3]())",
+     None, "run"),
+    # pcall of a closure: the protected frame carries the closure with it
+    ("upvalue-pcall", "local x = 7 local f = function() return x end "
+     "print(pcall(f))", None, "run"),
+    # xpcall's handler is a closure too.  The handler returns a fixed string:
+    # PUC prefixes an error message with the chunk and line and the chip has no
+    # line at run time, so the text itself is not comparable.
+    ("upvalue-xpcall", "local msg = 'boom' local function bad() error(msg) end "
+     "print(xpcall(bad, function(e) return 'caught' end))", None, "run"),
+    # method sugar on a closure stored in a table
+    ("upvalue-method", "local t = {} local n = 5 function t:get() return n end "
+     "print(t:get())", None, "run"),
+    # a closure built inside a generic-for body
+    ("upvalue-generic-for", "local out = {} for _, v in ipairs({'a', 'b'}) do "
+     "out[#out + 1] = function() return v end end print(out[1](), out[2]())",
+     None, "run"),
+    # a captured local in a repeat body
+    ("upvalue-repeat", "local out = {} local i = 0 repeat i = i + 1 "
+     "local y = i out[i] = function() return y end until i == 3 "
+     "print(out[1](), out[3]())", None, "run"),
+    # closures in the standard library's own idiom: pairs/ipairs are functions
+    # that return an iterator, which is a closure over the state
+    ("upvalue-iter-state", "local function range(n) local i = 0 "
+     "return function() i = i + 1 if i <= n then return i end end end "
+     "local s = 0 for v in range(4) do s = s + v end print(s)", None, "run"),
     # A `local function` nested in a function literal that is assigned to a
     # *field* is not bound: the same nesting under a top-level `local function`
     # and the `local g = function` form both work, so it is the field

@@ -231,6 +231,73 @@
 - Time the *program*, not just the harness: a case that goes from 0.2s to 2s in
   the suite is a user-visible regression in the chip, and the suite prints
   per-case seconds precisely so it cannot hide.
+- **A rarely-taken path does not belong in `vmStep`, because `vmStep` is inlined
+  four times.** The closure cell-fill was first a micro-step arm in `vmStep` next
+  to `gmStep`, which is the established pattern, and it cost *every* program a
+  fifth of its per-tick time (func-fib 9.6s to 11.9s, over-cap 6.1s to 7.8s) for
+  code almost no program runs. Moved to `vmBurst`, which is called once per tick,
+  the same behaviour costs 2,133 nodes instead of 3,054 and the tick-bound cases
+  went back to within a few percent. The rule is not "micro-steps are bad" -- the
+  other three are fine where they are, because they are one or two lines at the
+  arm -- it is that `vmStep` is the hottest code in the chip and four copies of it
+  fire every tick.
+- **Advancing the pc from an instruction needs both halves.** The dispatcher ends
+  with `if !advanced && !vmHalted { vmPc = vmPc + 1 }`, so an arm that steps over
+  its own instruction must write `vmPc = vmPc + 1` *and* set `advanced = true`:
+  the first alone double-advances and runs the next instruction, the second alone
+  stalls on the same instruction forever. The closure path hit both halves in
+  turn, which is why it re-entered LOADFUNC 327 times before the arena ran out.
+
+## Closures: how they work here
+A function value (tag 4) holds a **closure number, not a prototype**. Below
+`cloBase` a closure *is* its own prototype (`cloF` is only written for the records
+above it), so every builtin and every capture-free function is unchanged, and
+PUC's rule that two evaluations of one literal compare equal when nothing was
+captured falls out of that for free -- which is why no existing tag-4 site
+(`type`, `==`, table keys, `next`, pcall) had to be taught about closures.
+- **The compiler** gives every function a descriptor per captured local: the
+  declaring function's is `instack` (the local is in its own frame) and each one
+  above it is an upvalue of the closure below it, so a capture three levels out
+  is three descriptors deep and a read is still one `GETUP`. `upIdx` interns
+  `(prototype, local entry) -> descriptor`, keyed on the *entry* and not the name
+  because one function can capture its own `x` and an enclosing `x` in the same
+  body and they are different cells with one name. The chain is a four-step
+  ladder (`resolveUp`) and deeper is a loud error.
+- **`locFind` finds the index, one test after the ladder decides what it is.** A
+  mod call inside the 32 arms would be inlined 32 times, so the arms only record
+  which live local matched and `resolveUp` runs once, after them. The ladder it
+  replaced had 32 arms each deciding local-or-error on its own, which is a
+  separate one-line lesson: the per-arm work was identical, so the new one is two
+  lines per arm against thirteen and the whole mod is 40 lines shorter.
+- **The runtime** keeps a frame's cells in the vararg stack just below that
+  frame's varargs: three words per captured local (the cell, the frame that made
+  it, the loop round it was made in) and, under those, the frame's own sequence
+  number. The stamps are what stop a new frame adopting the last one's cells (the
+  table is scratch) and what give each round of a loop its own, which is what PUC
+  gets by closing the cells at the end of the block. A loop that contains a
+  capture ends with one `GEN`, emitted by `blkExit` -- except a `repeat`, whose
+  block ends *after* its `until` condition, so there the bump has to go in front
+  of the condition or it lands outside the loop and runs once.
+- **The cell is canonical; the register is the seed.** A cell is made from the
+  local's register the first time a closure needs it in that frame and round, and
+  after that every read and write of that local goes through the cell -- including
+  the declaring function's own (`locCap`), which is what makes a write from a
+  nested function visible to it. `SETUP` writes the register too, so the code
+  compiled *before* the capture was noticed (it is a one-pass compiler) still
+  agrees with it. A nested `SETUP` writes only the cell: that frame's registers
+  are gone or reused.
+- **What this costs:** 2,133 nodes, one tick per cell when a closure with upvalues
+  is made, and a fixed arena -- there is no collector, so a loop that builds a
+  closure per iteration spends a cell per iteration, which is the same bargain the
+  table heap makes and what a GC would fix.
+- **And what it costs every program that does not use it:** a tight loop went
+  1.66ms to 2.22ms per tick (slope of a `while true do s = s + 1 end` at 2000
+  and 6000 ticks, against the previous commit in a throwaway worktree), so
+  over-cap is 6.1s to 9.0s and call-chain 12.3s to 16.6s. Stubbing the four new op
+  arms recovers only 6% of that, so it is not the arms' size: the cost is the VM
+  code around them, and it is not yet explained. Two percent more nodes and
+  twenty-seven percent more time is the thing to beat if this is ever revisited --
+  the number to compare against is the slope above, not the suite total.
 
 ## Writing WireScript that survives the compiler
 These are measured traps, not style rules. `tools/wswarn.py` flags the shapes it
@@ -309,8 +376,21 @@ a name, how many write it, what fires each write). The `_fmt` header in
 - Watch for silent miscompiles. The host language has traps that produce
   confidently wrong results instead of errors: a `mod` that mutates a `var`
   inside an `if` and returns it yields garbage (use the single-expression
-  `return if c then a else b` form, which every other mod uses), and WireScript
-  has no `while` at all (use a `for`, or a `buffer`/`await` micro-step).
+  `return if c then a else b` form, which every other mod uses), and
+  **WireScript has no loop statement at all** — see below.
+- **There is no loop in WireScript.** Asked of the compiler directly (a body
+  reachable from `on Clock`, so it is not dropped as dead code): `for`, `while`,
+  `loop` and `repeat` are all `unknown identifier`, and the `for` in Lua's
+  grammar (the numeric/generic `for` in the chip's own header, the `forCtrl` /
+  `forDepth` stack) is the *Lua* the chip implements, not the host language. A
+  loop is a hand-unrolled ladder — measured, 2.5 nodes per extra arm — or a
+  `buffer`/`await` micro-step, which is what `nxActive`/`nxMode` and
+  `fmtGo` are. `await` is not a loop either: `await 1` and `await 4` both cost
+  12 nodes, so it is a fixed-cost yield, and a ladder is cheaper per iteration.
+  (This line used to say "no `while` at all (use a `for`)", which sent a
+  capture-chain implementation down a construct that does not exist. A dead mod
+  compiles to 4 nodes, so a probe that does not reach its body from an event
+  handler measures nothing.)
 - Add an oracle case for the rule you just got wrong, not just for the program
   that exposed it. The state-stays-fixed rule of the generic-for protocol was
   wrong until `iter_check.py` compared against real Lua.
