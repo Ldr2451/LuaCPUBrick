@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(TINYLUA, "irrun"))
 import cases
 import lua_oracle as OR
 from timing import Elapsed
+from irdump import resolve_prog
 
 WS_PATH = os.path.join(TINYLUA, "lua.ws")
 
@@ -92,9 +93,7 @@ def resolve_src(src, kw):
         # a repro kept as a file, with the rest of the source appended: the
         # chip has no dofile, so a case that needs a library of helpers spells
         # them out in a file and prepends it
-        path, _, rest = src[4:].partition("\n")
-        with open(os.path.join(cases.TINYLUA, path), encoding="utf-8") as f:
-            return f.read() + rest
+        return resolve_prog(src, cases.TINYLUA)
     return src
 
 

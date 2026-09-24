@@ -11,7 +11,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, 'irrun'))
-from irdump import dump_source
+from irdump import dump_source, resolve_prog
 from irsims import Sim, Wire, ChipRunner, _extract
 
 NAMES = {0:'HALT',1:'LOADNIL',2:'LOADNUM',3:'LOADSTR',4:'LOADBOOL',5:'LOADGLOBAL',
@@ -30,7 +30,7 @@ def dump(runner, src, tokens=False):
     sim = runner.sim
     runner.reset()
     sim.inputs = {'program': src, 'run': True}
-    r = sim.run(max_ticks=900)
+    r = sim.run(max_ticks=int(os.environ.get('PROBE_TICKS', '8000')))
     err = r.get('outGlobals', {}).get('err', '') if r else ''
     labels = {}
     for nid, nd in sim.nodes.items():
@@ -71,7 +71,7 @@ def dump(runner, src, tokens=False):
 
 if __name__ == '__main__':
     tokens = '--tokens' in sys.argv
-    srcs = [a for a in sys.argv[1:] if a != '--tokens']
+    srcs = [resolve_prog(a, ROOT) for a in sys.argv[1:] if a != '--tokens']
     runner = ChipRunner(os.path.join(ROOT, 'lua.ws'))
     for src in srcs:
         dump(runner, src, tokens=tokens)

@@ -15,10 +15,12 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, 'irrun'))
-from irdump import dump_source
+from irdump import dump_source, resolve_prog
 from irsims import Sim, Wire, _extract
 
-src = sys.argv[1] if len(sys.argv) > 1 else "function f() return 1,2 end local a, b = f() print(a, b)"
+src = resolve_prog(sys.argv[1] if len(sys.argv) > 1 else
+                   "function f() return 1,2 end local a, b = f() print(a, b)",
+                   ROOT)
 watch = sys.argv[2].split(',') if len(sys.argv) > 2 else []
 nodes, wires, _ = dump_source(os.path.join(ROOT, 'lua.ws'))
 sim = Sim(nodes, [Wire(*w) for w in wires])

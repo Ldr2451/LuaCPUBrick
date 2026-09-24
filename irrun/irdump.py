@@ -50,6 +50,20 @@ WS_EXE = _find_wirescript()
 WS_DIR = os.path.dirname(os.path.dirname(WS_EXE))
 
 
+def resolve_prog(src, root):
+    """A program, or `PRE:<path>\\n<rest>` with a repro file prepended.
+
+    The suite's cases and the ad-hoc tools (check.py, dump_vm.py, trace_pc.py) all
+    take the same spelling, so a probe and a case cannot drift apart, and the
+    chip has no dofile for a case to load a helper library with.
+    """
+    if not src.startswith("PRE:"):
+        return src
+    path, _, rest = src[4:].partition("\n")
+    with open(os.path.join(root, path), encoding="utf-8") as f:
+        return f.read() + rest
+
+
 class Node:
     def __init__(self, nid, kind, cls, props, pin, pout):
         self.id = nid

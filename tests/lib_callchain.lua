@@ -30,26 +30,31 @@
 --   s3 three locals and a simple condition, then fmt_int             works
 --
 -- and the failure is not only about the pair: one call_chain_ok2 works, two of
--- them as sibling arguments of one print fails, and a print of four mixed calls
--- fails where any two of them pass.  So it is cumulative state around the call
--- windows rather than one bad pair.
+-- them as sibling arguments of one print fails, and -- the useful narrowing --
+-- two of them in two separate statements fails too, so it is not the argument
+-- window.  probe_s2 called twice side by side passes, and so does four mixed
+-- calls in one print, so it is neither repetition nor the print.
 --
--- So the shape is: a call to a function whose body has a conditional that
--- assigns one of its locals, immediately followed by a call to a function with a
--- while loop that calls a builtin.  Neither half is wrong on its own -- fmt_int
--- called first is fine, and the conditional function called first into anything
--- else is fine.  probe_o is the smallest failing pair found: `_chain_cond` makes
--- no calls whatsoever.
---
--- What is left to find: the interaction is between the callee's frame (which
--- aliases the caller's registers above the call's base -- fRegs records the size
--- but nothing reads it) and the next call's base register.  `_fmt_int` compiles
--- to nine registers because its condition temporaries go up to r8, and
--- call_chain_ok2's frame is six; the sibling-argument failures are where the
--- second call's base lands inside the first call's frame.  tools/dump_vm.py on
--- the failing program and tools/trace_pc.py watching the registers both show
--- correct values right up to the failing call, so the corruption is in a
--- register the trace is not watching.
+-- What is left to find, and what has been ruled out:
+--   - tools/dump_vm.py on the failing program: the bytecode is *correct*.  The two
+--     calls are the same instruction sequence at bases 0 and 1, and the second
+--     one's frame does not reach the first call's live registers.
+--   - tools/trace_pc.py watching vmBase, fnDepth, retCountV and registers 0..8:
+--     at the failing call the function slot holds _m, the mode is 1 and the
+--     value is 1.5, with vmBase pointing at the right frame.  Everything visible
+--     is right; the corruption is in state the trace does not name.
+--   - Not a mod-local collision: a function that calls one gate builtin and then
+--     uses its own parameter again is fine (x + _m(1, x) comes out right), so
+--     vmStep's WireScript temporaries are not landing on the Lua frame's low
+--     registers in the ordinary case.
+--   - The trace's two calls enter the function at 526 and 529, which looks like
+--     the giveaway but is only the burst boundary: vmBurst runs four vmSteps a
+--     tick, so the first call's CALL is the last step of its tick and the second
+--     call's first three steps land in the next one.
+--   So: the failing shape is "call this function twice", the trigger is its frame
+--   size (six registers here; the four-register neighbour passes), and the state
+--   that goes wrong is not in any register.  fRegs records every function's frame
+--   size and nothing reads it, which is where a look would start.
 --
 -- The suite's `call-chain` case pins the shapes that work, so a fix cannot land
 -- as a change to those; nothing in lua.ws depends on this file.

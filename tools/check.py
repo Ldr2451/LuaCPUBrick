@@ -16,20 +16,12 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, 'irrun'))
 sys.path.insert(0, os.path.join(ROOT, 'tests'))
 from irsims import ChipRunner
+from irdump import resolve_prog
 from timing import Elapsed
 import lua_oracle as OR
 
-progs = sys.argv[1:] or [
+progs = [resolve_prog(a, ROOT) for a in sys.argv[1:]] or [
     "function f() return 1,2 end local a, b = f() print(a, b)"]
-# PRE:<path>\n<rest> runs a repro kept in a file with the rest appended, the same
-# spelling the suite's cases use, so a probe and a case cannot drift apart
-pre = []
-for p in progs:
-    if p.startswith("PRE:"):
-        path, _, rest = p[4:].partition("\n")
-        p = open(os.path.join(ROOT, path), encoding="utf-8").read() + rest
-    pre.append(p)
-progs = pre
 ticks = int(os.environ.get("PROBE_TICKS", "6000"))
 
 with Elapsed("check(%d programs)" % len(progs)):
