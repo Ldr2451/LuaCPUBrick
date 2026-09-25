@@ -9065,19 +9065,18 @@ mod vmStep() {
       if vTag(a) == 6 && (vTag(b) != 6 || vTag(c) != 6) {
         vSetNum(a, vNum(a))
       }
-      forCtrl[forDepth] = a
-      forDepth = forDepth + 1
       let ctrl = vNum(a)
       let lim = vNum(b)
-      var rem = 0.0
       if (stp > 0.0 && ctrl <= lim) || (stp < 0.0 && ctrl >= lim) {
-        rem = floor((lim - ctrl) / stp) + 1.0
+        let rem = floor((lim - ctrl) / stp) + 1.0
+        forCtrl[forDepth] = a
+        forRem[forDepth] = rem
+        forDepth = forDepth + 1
         vmPc = vmPc + 2
         advanced = true
       } else {
         advanced = false
       }
-      forRem[forDepth - 1] = rem
     } else if op == 33 {
       let ctrl_reg = forCtrl[forDepth - 1]
       let ctrl = vNum(ctrl_reg)

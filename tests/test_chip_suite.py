@@ -230,6 +230,19 @@ def compare(name, mode, kw, r, dt):
         if OR.norm_val(c["log"]) != want:
             return (name, False, "log mismatch chip=%r lua=%r" % (c["log"], want), dt)
         return (name, True, "", dt)
+    if mode == "state":
+        if not c["progOk"]:
+            return (name, False, "chip rejected: %r" % c["err"], dt)
+        want_log = exp.get("log")
+        if want_log is not None and c["log"] != want_log:
+            return (name, False, "log mismatch got=%r want=%r" % (
+                c["log"], want_log), dt)
+        for key, value in exp.get("state", {}).items():
+            got = r.get("state", {}).get(key)
+            if got != value:
+                return (name, False, "state %s got=%r want=%r" % (
+                    key, got, value), dt)
+        return (name, True, "", dt)
     if mode == "modelio":
         for key in ("log", "outVec", "outCol", "outGlobals", "outArr",
                     "result"):
@@ -308,9 +321,18 @@ def run_in_sim(sim, p):
     sim.inputs = si
     r = sim.run(ticks)
     og = r["outGlobals"]
+    state = {}
+    if p["mode"] == "state":
+        from irsims import _extract
+        wanted = p["kw"].get("expect", {}).get("state", {})
+        for nid, node in sim.nodes.items():
+            label = _extract(node.props.get("_label", ("raw", "")))
+            if label in wanted:
+                state[label] = sim.vars.get(nid)
     return {
         "src": src,
         "secs": time.time() - t_case,
+        "state": state,
         "log": r["log"],
         "outGlobals": {
             "outNum0": og.get("outNum0", 0.0),
@@ -448,8 +470,9 @@ def main(args):
             # batch of cases is as long as its slowest member, so batching them
             # left seven cores idle and the wall time was the gsub batch
             import multiprocessing as mp
-            items = [(n, {"src": s, "kw": k, "ticks": k.get("ticks", TICKS)},
-                      m, k) for n, s, k, m, _ in prepared]
+            items = [(n, {"src": s, "kw": k, "ticks": k.get("ticks", TICKS),
+                          "mode": m}, m, k)
+                     for n, s, k, m, _ in prepared]
             with mp.Pool(WORKERS, initializer=_pool_init,
                          initargs=(irpkl,)) as pool:
                 for out in pool.imap_unordered(_pool_case, items,

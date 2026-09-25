@@ -1238,6 +1238,9 @@ TESTS = [
     ("for-int", "for i=1,3 do print(i) end", None, "run"),
     ("for-int-eq", "for i=1,1 do print(i) end", None, "run"),
     ("for-int-empty", "for i=3,1 do print(i) end", None, "run"),
+    ("for-zero-trip-depth", "local function skip() for i=1,0 do end end "
+     "for k=1,20 do skip() end for j=1,1 do end print('ok')", None, "state",
+     {"expect": {"log": "ok\n", "state": {"forDepth": 0}}}),
     ("for-int-sum", "local s=0 for i=1,3 do s=s+i end print(s)",
      None, "run"),
     ("for-int-step", "for i=1,3,2 do print(i) end", None, "run"),
