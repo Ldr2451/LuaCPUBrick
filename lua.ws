@@ -4452,11 +4452,15 @@ mod pcallEnd(src: int, k: int, extra: int) {
     vstr[rb + ra] = "true"
     m = (if 1 <= k then k else 0) + extra + 1
   } else {
-    retAdjust(src, rb + ra + 1, if 1 <= k then 1 else 0, 1)
-    if k < 1 {
-      vtag[rb + ra + 1] = 2
-      vnum[rb + ra + 1] = 0.0
-      vstr[rb + ra + 1] = "<no error object>"
+    let one = rb + ra + 1
+    if 1 <= k {
+      vtag[one] = vtag[src]
+      vnum[one] = vnum[src]
+      vstr[one] = vstr[src]
+    } else {
+      vtag[one] = 2
+      vnum[one] = 0.0
+      vstr[one] = "<no error object>"
     }
     vtag[rb + ra] = 3
     vnum[rb + ra] = 0.0

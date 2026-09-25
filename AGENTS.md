@@ -138,6 +138,11 @@
   380→336 / 118,529→112,385, and pcall 523→483 / 143,734→137,780. Pcall still
   switches frames through its own micro-state; only the redundant empty slots
   went. The full call/return, vararg, closure, method, and pcall batteries pass.
+- **A one-value protected handler does not need the 16-value copier.** The
+  error-handler branch of `pcallEnd` used `retAdjust` for either one value or a
+  nil that it immediately replaced. A direct absolute-register copy removed 428
+  nodes and 1,223 wires; successful pcall stayed at 483 ticks / 137,780 gates,
+  and all pcall/xpcall cases still pass.
 - **A mod is inlined at its call site, so extracting a chain does not shrink
   it.** Moving ops 34..40 (floor division and the bitwise operators) into their
   own mod and calling it from the same place measured **+20 nodes**, not fewer.
@@ -149,7 +154,7 @@
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
   the sixteen arms. Attempted, reverted rather than committed as a guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
-  After the unroll and parser/lexer cuts the chip is 39,045 nodes, of which the
+  After the unroll and parser/lexer cuts the chip is 38,617 nodes, of which the
   builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
   stop being inlined, and **that is a host primitive the compiler does not
   have**: a gate takes values on named ports and cannot index a register file by
