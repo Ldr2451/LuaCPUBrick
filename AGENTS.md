@@ -459,7 +459,15 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   two models live in `tools/` and run with `python -u tools/vmmodel.py`, which
   discovers quint, a JRE and Apalache and skips cleanly when one is missing; a
   model that cannot fail is no net, so each one says which line to delete to
-  make it fail.
+  make it fail. **Two backends, and the split is measured:** Apalache carries
+  both models (`--backend=tlc` is TLC, which checks the pcall model's *whole*
+  graph — 28 states, depth 4, queue empty — in 2.7s), while TLC cannot carry
+  `loopmodel` at all: it explores states explicitly, the loop model's lists put it
+  out of reach, and it was still running after ten minutes at max-steps 8 and
+  again at 5 where Apalache takes 42s. TLC also still needs the Apalache
+  *server*, because it compiles the spec to TLA+ with it
+  ("[TLC] Compiling to TLA+ (via Apalache)") — with no server up quint falls back
+  to spawning one itself, which is the hang to avoid.
 
 ## Workflow
 - Keep a todo list for multi-step work, exactly one `in_progress` at a time, and

@@ -29,6 +29,13 @@ MODELS = ("loopmodel", "pcallmodel")
 # Enough steps to nest two frames, run a loop in each and leave both: the shapes
 # the bugs lived in.  Deeper grows the state space fast and proves no more.
 MAX_STEPS = 8
+# Which model each backend can carry, measured.  TLC explores states explicitly
+# and checks the pcall model's whole graph in about a second (7 distinct states),
+# but the loop model's lists put it out of reach: still running after ten minutes
+# at max-steps 8 and again at 5, where Apalache's symbolic search finishes in
+# fifty.  So TLC covers the small model and says which it skipped, rather than
+# hanging on the one it cannot do.
+TLC_MODELS = ("pcallmodel",)
 PORT = 8822
 
 
@@ -112,7 +119,7 @@ def invariants_of(path):
     return names
 
 
-def verify(quint, model, steps, endpoint=None, extra=()):
+def verify(quint, model, steps, endpoint=None, extra=(), java_dir=None):
     """Run quint verify on one model.  A name is a model in tools/; anything
     ending in .qnt is a path, which is how a variant gets checked.  Returns
     (rc, seconds, output)."""
@@ -131,9 +138,16 @@ def verify(quint, model, steps, endpoint=None, extra=()):
     # quint and Apalache write _apalache-out wherever they are run, so they run
     # in a scratch directory and the repo stays clean.
     work = tempfile.mkdtemp(prefix="vmmodel")
+    env = None
+    if java_dir:
+        # the TLC backend spawns `java` itself and looks only at PATH, so the
+        # JRE this tool found has to be on the child's PATH, not just in
+        # JAVA_HOME -- which is the only way to run that backend here.
+        env = os.environ.copy()
+        env["PATH"] = java_dir + os.pathsep + env.get("PATH", "")
     t0 = time.time()
     p = subprocess.run(cmd, capture_output=True, text=True, cwd=work,
-                       encoding="utf-8", errors="replace")
+                       encoding="utf-8", errors="replace", env=env)
     return p.returncode, time.time() - t0, (p.stdout or "") + (p.stderr or "")
 
 
@@ -156,6 +170,12 @@ def main(argv):
     endpoint = None
     server = None
     java, jar = find_java(), find_apalache()
+    java_dir = os.path.dirname(java) if java else None
+    # TLC still needs the Apalache server: it compiles the spec to TLA+ with it
+    # ("[TLC] Compiling to TLA+ (via Apalache)") and only the model checking is
+    # its own.  With no server up, quint falls back to spawning one itself,
+    # which hangs here.
+    want_tlc = any(a.startswith("--backend=tlc") for a in argv[1:])
     if port_open(PORT):
         endpoint = "localhost:%d" % PORT
         print("vmmodel: using the Apalache server already on %s" % endpoint)
@@ -166,17 +186,33 @@ def main(argv):
             print("vmmodel: SKIP (could not start Apalache from %s)" % jar)
             return 0
         endpoint = "localhost:%d" % PORT
+    elif java:
+        java_dir = os.path.dirname(java)
+        endpoint = "localhost:%d" % PORT if port_open(PORT) else None
     else:
-        print("vmmodel: SKIP (need java and an Apalache dist under ~/.quint)")
+        print("vmmodel: SKIP (need java, and an Apalache dist under ~/.quint)")
         return 0
 
     rc = 0
     # --key=value flags are handed to quint; a bare --name is not, because the
     # value would be read as a model name.
     extra = tuple(a for a in argv[1:] if a.startswith("--") and "=" in a)
+    steps = MAX_STEPS
+    if any(a.startswith("--max-steps=") for a in extra):
+        steps = int([a for a in extra
+                     if a.startswith("--max-steps=")][0].split("=")[1])
+    if want_tlc:
+        skipped = [m for m in models if m not in TLC_MODELS]
+        models = [m for m in models if m in TLC_MODELS]
+        if skipped:
+            print("vmmodel: tlc skips %s -- see TLC_MODELS for why"
+                  % ", ".join(skipped))
+    print("vmmodel: backend=%s max-steps=%d models=%s"
+          % ("tlc" if want_tlc else "apalache", steps, ",".join(models)))
     try:
         for m in models:
-            code, secs, out = verify(quint, m, MAX_STEPS, endpoint, extra)
+            code, secs, out = verify(quint, m, steps, endpoint, extra,
+                                    java_dir)
             bad = code != 0 or "counterexample" in out.lower() \
                 or "invariant violated" in out.lower()
             print("%-10s %s  %.1fs" % (m, "FAIL" if bad else "OK", secs))
