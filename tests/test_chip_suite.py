@@ -45,17 +45,24 @@ BATCH = int(os.environ.get("CHIP_BATCH", "12"))
 TIMEOUT = 90  # seconds per case; healthy runs take ~5-8s
 TICKS = 6000
 
-# Cases the tick sim cannot reach (documented, not chip bugs):
-# - long-sum needs ~100k loop iterations, far beyond any tick budget.
-# - io-clock needs wall-clock granularity; the tick sim freezes time.
+# Cases the tick sim cannot reach, or that fail for a reason still open.  Every
+# entry here says what was measured, so the next attempt starts from evidence.
 SKIP = {
-    "long-sum": "100k loop iterations exceed tick simulation",
-    "io-clock": "wall-clock granularity untestable in tick sim",
-    # A call with tostring as its second argument lowers with one argument where
-    # the source has two, and the dispatch then reads a non-function.
-    # xpcall(f, print) -- the same shape, a different slot -- is correct, and so
-    # is every form of pcall.
-    "xpcall-tostring": "a call with tostring as its second argument loses one",
+    # A call with tostring as its second argument lowers correctly and then fails
+    # at RUN time: `tools/check.py` shows the handler's own output reaching the
+    # log, then "attempt to call" from a stale register.  Measured, not guessed:
+    # driving the parse with `run` false and reading the bytecode directly shows
+    # the CALL is emitted with nargs=2 in every variant, so the compiler is right
+    # and a dump taken *after* a run is not evidence about the compile -- the
+    # pcall re-dispatch patches the instruction (vmStep's pcallGate arm writes
+    # bpb[pcallGatePc] = pcallGateArgs) and the dump shows the patched count.
+    # Two fixes were tried against that read and neither changed the outcome: a
+    # separate pc for the handler's re-dispatch, and saving/restoring the
+    # borrowed count.  So the loss is elsewhere on the gate path (most likely the
+    # handler's results landing in registers the caller then re-reads), and until
+    # it is found the SKIP stays.  Note `xpcall(f, print)` fails the same way, so
+    # it is not about tostring: any gate handler does it.
+    "xpcall-tostring": "a gate message handler loses its result (compile is correct; runtime path)",
     # A pcall of a library wrapper that then calls a gate loses an argument:
     # `pcall(string.find, "abc")` reports argument #1 where PUC reports #2, and
     # `pcall(string.find, "ab", "b", 1)` finds nothing because the init is read

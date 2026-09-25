@@ -125,8 +125,14 @@ TESTS = [
      {"expect": {"outCol": [1.0, 0.5, 0.25, 1.0]}}),
     ("io-strings", "print(inStr0 .. inStr1)", None, "run",
      {"sinputs": {0: "foo", 1: "bar"}}),
-    ("io-clock", "local a = clock() local b = clock() "
-     "print(type(a), b > a)", None, "modelio",
+    # clock() is the server uptime, which the sim models as tick * 0.01 -- it
+    # advances, but not between two calls that sit next to each other in one
+    # statement.  The two calls are therefore a tick apart: a small spin loop
+    # between them is what makes b > a true, and that is also the only way this
+    # case can say anything about the gate at all (a single clock() read is
+    # checked by type below).
+    ("io-clock", "local a = clock() local i = 0 while i < 4 do i = i + 1 end "
+     "local b = clock() print(type(a), b > a)", None, "modelio",
      {"expect": {"log": "number\ttrue\n"}}),
     ("func-basic", "function add(a, b) return a+b end print(add(2, 3))",
      None, "run"),
@@ -909,7 +915,13 @@ TESTS = [
     ("neg-pow", "local x = 2 print(-x^2)", None, "run"),
     ("pow-neg-exp", "print(2^-2)", None, "run"),
     ("mod-float", "print(7.5%2)", None, "run"),
-    ("long-sum", "local s = 0 local i = 1 while i<=100000 do "
+    # A long loop, for loop-carried register integrity: a register wrongly reused
+    # or a vararg stack that stopped growing corrupts the accumulator or the
+    # control variable, and that shows up here and nowhere else.  2000 iterations
+    # is the size that fits the suite's per-case budget -- the rule it protects is
+    # about the loop running at all, not about how many times, and `over-cap` and
+    # `func-fib` are the cases that buy scale when someone wants to pay for it.
+    ("long-sum", "local s = 0 local i = 1 while i<=2000 do "
      "s = s+i i = i+1 end print(s)", None, "run"),
     ("long-string", "print([[hello]])", None, "run"),
     ("long-string-nest", 'print([=[a]=])', None, "run"),
