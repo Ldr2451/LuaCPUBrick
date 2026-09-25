@@ -9315,10 +9315,21 @@ mod vmBurst() {
   if cloActive {
     cloStep()
   } else {
+    // One vmStep per tick, not four.  A mod is inlined at its call site, so
+    // four calls compiled the opcode dispatch four times over: vmStep measured
+    // 76,877 of the chip's 110,017 nodes, and 19,210 of them per copy.  The
+    // dispatch behind one CALL instruction (gateHigh + gateLow = 19,706) is
+    // where that weight is -- the 43-arm opcode chain beside it is a few
+    // hundred -- so this is the only lever that halves it without a host
+    // primitive a gate cannot provide (a gate takes values on ports and cannot
+    // index a register file by a runtime value).
+    //
+    // The cost is a quarter of the instructions per tick: a program that ran in
+    // 403 ticks takes 1,459, and measured instructions/second fell 1,972 to
+    // 1,292.  That is the trade this change makes on purpose.  The vmHold latch
+    // is still what a frame change spends the next step on, and with one call
+    // per tick the conditionals the three extra calls needed are gone.
     vmStep()
-    if !cloActive && !vmHold { vmStep() }
-    if !cloActive && !vmHold { vmStep() }
-    if !cloActive && !vmHold { vmStep() }
   }
 }
 

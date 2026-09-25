@@ -97,6 +97,11 @@ TICKS_OVERRIDES = {
     "func-fib": 300000,
     "tab-bubble": 120000,
     "log-many": 60000,
+    # A loop of 2000 iterations, and vmBurst now runs one instruction per tick
+    # rather than four, so a case like this needs 3.6x the ticks it did.  The
+    # budget moves with the chip: anything that was near the cap before gets
+    # room now.
+    "long-sum": 24000,
 }
 TIMEOUT_OVERRIDES = {
     "func-fib": 300,
