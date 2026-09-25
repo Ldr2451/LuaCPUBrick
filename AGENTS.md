@@ -163,6 +163,10 @@
   inlined at ten call sites (3,004 nodes), and an early-exit ladder is the
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
   the sixteen arms. Attempted, reverted rather than committed as a guess.
+- **Merging the two simple return arms is not smaller.** `RETURN` and
+  `RETURN0` share their frame teardown in source, but one arm with a `count`
+  value and a captured source cost 90 nodes and 256 wires more than the two
+  specialized arms. Reverted after `tools/audit.py`, not a correctness guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
   After the unroll and parser/lexer cuts the chip is 38,187 nodes, of which the
   builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
