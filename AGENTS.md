@@ -438,7 +438,11 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   program prints the wrong thing". A model of the *chip* is a different and much
   more expensive thing: the chip's own constants, the gates and the host's laws
   are not in the model, so a green model proves nothing about the chip — it
-  proves the *rule* you are about to encode, which is what you want it for.
+  proves the *rule* you are about to encode, which is what you want it for. The
+  two models live in `tools/` and run with `python -u tools/vmmodel.py`, which
+  discovers quint, a JRE and Apalache and skips cleanly when one is missing; a
+  model that cannot fail is no net, so each one says which line to delete to
+  make it fail.
 
 ## Workflow
 - Keep a todo list for multi-step work, exactly one `in_progress` at a time, and
