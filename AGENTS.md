@@ -102,39 +102,43 @@
   1,381, `_gmatch`/`_gmnext` 1,268). So a 43-arm opcode chain costs a few
   hundred nodes and the dispatch *behind one CALL instruction* costs 19.7k, paid
   four times.
-- **"Make the dispatch a gate" is blocked by a host primitive, not by effort.**
-  A gate is a hardware node with named ports; it cannot be handed a register
-  index and left to index a register file, because that is exactly what the host
-  has no primitive for. Every gate in this chip takes values on ports and
-  returns values on ports, and the parts that look like array access — the
-  pattern matcher, the formatter — are micro-steps, which are mods, which are
-  inlined. So the dispatch has to be WireScript, and WireScript mods are inlined
-  at their call site. Reaching 20k needs the compiler to grow a gate that can
-  index a register file by a runtime value; it is not a refactor of the CALL arm.
-- **Splitting the chain does not shrink it, and that is worth knowing before
-  anyone tries.** Moving ops 34..40 (floor division and the bitwise operators)
-  into their own mod and calling it from the same place measured **+20 nodes**,
-  not fewer: the helper is inlined at the same call site, so the seven arms
-  became seven arms plus a dispatch. The only two things that reduce this are
-  **fewer `vmStep` calls per tick** and **a host primitive that is not there**.
-- **The 20k budget is not reachable by tuning.** One `vmStep` call per tick
-  already costs 52,386 nodes, and the four-call burst costs 76,877 of the chip's
-  110,017. Getting under 20k means the dispatch cannot be inlined even once,
-  which needs a host primitive the compiler does not have. Treat the budget as a
-  decision to take with numbers, not a target to grind at.
-- **The one measurement that settles it, both chips built and alternated in one
-  process** (a 200-iteration loop, so the two runs share the machine's drift):
+- **The unrolls are the whole lever, and they have been taken.** Building with
+  1/2/3/4 `vmStep` calls per tick gives 52,386 / 71,597 / 90,807 / 110,017 — the
+  per-call cost is 19,210, and `parseChunk` (2→1) and `lexChunk` (4→2) are the
+  same trade one level up. Where the chip stands: **37,899 nodes**, down from
+  110,017, with a measured cost of about 22% more time on a loop and on a gsub
+  (both chips built and alternated in one process, identical output):
 
-  | | nodes | ticks | instructions/sec |
+  | | nodes | loop-60 | gsub |
   |---|---|---|---|
-  | 4 `vmStep` per tick (as built) | 110,017 | 403 | 1,972 |
-  | 1 `vmStep` per tick | 52,386 | 1,459 | 1,292 |
+  | four `vmStep`, two `parseStep`, four `lexStep` | 110,017 | 157 ticks | 1,672 |
+  | one, one, two | 37,899 | 527 ticks | 3,751 |
 
-  So halving the unrolling to a quarter saves 57,631 nodes and costs **35% of
-  the chip's throughput** — every program gets 3.6x longer, and the chip is
-  *still* over the 20k budget at 52k. The 20k goal and the current VM speed are
-  not compatible; that is a decision for whoever wants the speed, and it should
-  be taken with these two numbers rather than discovered later.
+  A one-liner got *faster* (9 ticks to 18 is fewer instructions, not more — the
+  chip is small enough that the parse dominates and the parse is now shorter per
+  tick than the four-step burst it replaced). **The remaining throughput is the
+  last step of the plan**, and the target is the loop column: 3.4x the ticks for
+  a program that does nothing but arithmetic.
+- **A mod is inlined at its call site, so extracting a chain does not shrink
+  it.** Moving ops 34..40 (floor division and the bitwise operators) into their
+  own mod and calling it from the same place measured **+20 nodes**, not fewer.
+  Splitting a chain into mods is a no-op for size; fewer calls per tick is the
+  only lever that works without a host primitive.
+- **`retAdjust` cannot be made cheap either.** It is sixteen unconditional `if`s
+  inlined at ten call sites (3,004 nodes), and an early-exit ladder is the
+  obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
+  the sixteen arms. Attempted, reverted rather than committed as a guess.
+- **The 20k budget is not reachable by tuning, and the arithmetic says so.**
+  One `vmStep` call per tick already costs 52,386 nodes, so the four unrolls
+  together were never going to get there: 37,899 is what is left after taking
+  every one of them, and the dispatch behind one CALL instruction is 19,706 of
+  that. Going under 20k needs the dispatch to stop being inlined even once, and
+  **that is a host primitive the compiler does not have**: a gate takes values
+  on named ports and cannot index a register file by a runtime value, which is
+  exactly what a register VM's dispatch needs. The parts that look like array
+  access — the pattern matcher, the formatter — are micro-steps, which are
+  mods, which are inlined. So the budget is a decision about the host, not a
+  refactor of the CALL arm.
 - **Gates, ticks, and the clock are three different things.** Gates are
   `tools/audit.py`; ticks are what `tools/check.py` prints. Sim wall time tracks
   gates fired per tick, so fewer ticks with the same work costs the same sim
