@@ -168,18 +168,27 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   loses where the mod is inlined more than once.** `vmStep` is inlined four
   times and the compiler shares one Get per var across the copies. Hoist the
   test to the top of the mod or pass it in.
- - **A ladder that can report zero progress is an infinite loop, not a slow
-   path.** An identifier ladder in `lexStep` hung `print('hello')` past 120s: the
-   arms past the first read their character through a nested `if` in a mod
-   `lexChunk` inlines four times, lose the Exec chain, return 0, and the run
-   length comes out 0. Enter a run ladder only when the first character is known
-   to match, and **read every value the ladder combines before the chain** — a
-   conditional gate call inside an arm is the same trap, and factoring the test
-   into a mod is no escape, because that call is inlined four times too.
-   **Prove a new ladder twice: on a one-word program (10s), and on a name longer
-   than the ladder itself.** The two are different bugs: a 9-character name
-   against an 8-character ladder failed while short names and exact multiples
-   passed, so the "exactly full" and "past the end" arms need their own proof.
+- **A ladder that can report zero progress is an infinite loop, not a slow
+  path.** An identifier ladder in `lexStep` hung `print('hello')` past 120s: the
+  arms past the first read their character through a nested `if` in a mod
+  `lexChunk` inlines four times, lose the Exec chain, return 0, and the run
+  length comes out 0. Enter a run ladder only when the first character is known
+  to match, and **read every value the ladder combines before the chain** — a
+  conditional gate call inside an arm is the same trap, and factoring the test
+  into a mod is no escape, because that call is inlined four times too.
+  **Prove a new ladder twice: on a one-word program (10s), and on a name longer
+  than the ladder itself.** The two are different bugs: a 9-character name
+  against an 8-character ladder failed while short names and exact multiples
+  passed, so the "exactly full" and "past the end" arms need their own proof.
+- **A ladder cannot hand its work to a later step of the same mod.** `lexStep`
+  is called four times a tick, so a name longer than the ladder cannot set a
+  "keep reading" stage and let the next call finish it: the next call sees the
+  full buffer and resolves the keyword on the first eight characters, emitting
+  `abcdefgh` and `i` as two names. A ladder that runs past its own width has to
+  finish the token in the call that started it, which means straight-line code
+  (there is no loop in WireScript) and one test per extra character — which is
+  the reason the identifier ladder did not land: the string `Find` fast path
+  takes the same win with no ladder at all.
 - **A write at the top of a mod followed by an `else if` chain that deep is
   dropped.** One mod per state; repeat the write per arm.
 - **An array read after a var write in a nested arm loses its Exec chain** where
