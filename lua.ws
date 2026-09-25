@@ -127,13 +127,14 @@
 ///                             whole number, 1 == 1.0, and 64-bit wraparound is
 ///                             absent beyond 2^53
 ///   non-integer number keys  a runtime error on write, nil on read
-///   tonumber                 not a builtin and no library piece, so a program
-///                             that calls it gets an attempt to call.  The
-///                             primitive it needs already exists (the host's
-///                             ParseInt/ParseNumber gates, used by the coercion
-///                             above); what is missing is a fid to reach it from
-///                             Lua, and gateHigh is at the arm count where the
-///                             arms near the top stop taking effect
+///   tonumber with a base     the one-argument form is PUC's (a piece over the
+///                             coercion above, so tonumber(s) + 1 and s + 1
+///                             cannot disagree), but a base other than 10 raises
+///                             "not supported": reading a base-b numeral is a
+///                             walk over the digits, and WireScript has no loop,
+///                             so a ladder would be fixed-width and would answer
+///                             wrongly for a longer numeral.  A base outside
+///                             2..36 is PUC's own error, so that much is exact
 ///   hex numerals in text     the host's parse is Rust's f64/i64 FromStr, which
 ///                             takes no "0x10", so '0x10' + 0 raises where PUC
 ///                             says 16.  The gates are the host's only
@@ -300,6 +301,7 @@ const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, 
 const LIB_tab_sort = "table = table or {}\n_lt = function(a, b) return a < b end\ntable.sort = function(t, cmp)\n  local lt = cmp or _lt\n  for i = 2, #t do\n    local v = t[i]\n    local j = i - 1\n    while j >= 1 and lt(v, t[j]) do t[j + 1] = t[j] j = j - 1 end\n    t[j + 1] = v\n  end\nend\n"
 const LIB_io = "io = io or {}\nio.read = function(...) if select('#', ...) == 0 then return _rd('*l') end return _rd((...)) end\nio.write = function(...) for i = 1, select('#', ...) do _wr(tostring((select(i, ...)))) end end\n_io_next = function() local l = _rd('*l') if l == nil then return nil end return l end\nio.lines = function() _rd('*r') return _io_next end\n"
 const LIB_str_gsub = "string = string or {}\nstring.gsub = function(s, p, r, n)\nif type(s) == \"number\" then s = tostring(s) end\nlocal sl, out, pos, cnt, last = #s, \"\", 1, 0, -1\nlocal anch = _s(1, p, 0, 1) == \"^\"\nlocal rt = type(r)\nif r == nil then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got no value)\", 2) end\nif rt == \"number\" then r = tostring(r) rt = \"string\" end\nlocal add = function(v)\nlocal tv = type(v)\nif tv == \"string\" then return v end\nif tv == \"number\" then return tostring(v) end\nif tv == \"boolean\" then error(\"invalid replacement value (a boolean)\", 2) end\nerror(\"invalid replacement value (a \" .. tv .. \")\", 2)\nend\nlocal rep = function(kt, kr, add, res, m)\nif kt == \"function\" then\nlocal v, w\nif res[3] == 0 then v, w = kr(m) else v, w = kr(unpack(res, 4, 3 + res[3])) end\nif v == nil or v == false then return m end\nif w == nil or w == false then return add(v) end\nreturn add(v) .. add(w)\nelseif kt == \"table\" then\nlocal k = m\nif res[3] > 0 then k = res[4] end\nlocal v = kr[k]\nif v == nil or v == false then return m end\nreturn add(v)\nelse\nlocal o, i, rl = \"\", 1, #kr\nwhile i <= rl do\nlocal j = string.find(kr, \"%\", i, true)\nif j == nil then o = o .. _s(1, kr, i - 1, rl - i + 1) break end\nif i < j then o = o .. _s(1, kr, i - 1, j - i) end\nif j == rl then error(\"invalid use of '%' in replacement string\", 2) end\nlocal d = _s(1, kr, j, 1)\nif d == \"%\" then o = o .. \"%\"\nelseif d == \"0\" then o = o .. m\nelse\nlocal q = _s(4, d, 0, 0) - 48\nif q < 1 or 9 < q then error(\"invalid use of '%' in replacement string\", 2) end\nif 1 < q and res[3] < q then error(\"invalid capture index %\" .. d, 2) end\nif q == 1 and res[3] == 0 then o = o .. m else o = o .. add(res[q + 3]) end\nend\ni = j + 2\nend\nreturn o\nend\nend\nif rt ~= \"string\" and rt ~= \"table\" and rt ~= \"function\" then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got \" .. rt .. \")\", 2) end\nif n == nil then n = sl + 1 end\nif type(n) ~= \"number\" then error(\"bad argument #4 to 'string.gsub' (number expected, got \" .. type(n) .. \")\", 2) end\nn = _m(13, n, 0)\nif n == nil then error(\"bad argument #4 to 'string.gsub' (number has no integer representation)\", 2) end\nif n < 1 then return s, 0 end\nwhile cnt < n do\nlocal res = {_pat(2, s, p, pos)}\nif res[1] == nil then break end\nlocal a, b = res[1], res[2]\nif b == last then\nif pos <= sl then out = out .. _s(1, s, pos - 1, 1) pos = pos + 1 else break end\nelse\nif pos < a then out = out .. _s(1, s, pos - 1, a - pos) end\nout = out .. rep(rt, r, add, res, _s(1, s, a - 1, b - a + 1))\ncnt = cnt + 1\npos = b + 1\nend\nlast = b\nif anch then break end\nend\nreturn out .. _s(1, s, pos - 1, sl - pos + 1), cnt\nend\n"
+const LIB_tonumber = "local function _tonum_conv(v)\nreturn v + 0\nend\ntonumber = function(...)\nlocal n = select(\"#\", ...)\nlocal v = select(1, ...)\nlocal base = select(2, ...)\nif n == 0 then\nerror(\"bad argument #1 to 'tonumber' (value expected)\", 2)\nend\nif base ~= nil then\nif type(v) ~= \"string\" then\nerror(\"bad argument #1 to 'tonumber' (string expected, got \" .. type(v) .. \")\", 2)\nend\nif base < 2 or base > 36 then\nerror(\"bad argument #2 to 'tonumber' (base out of range)\", 2)\nend\nif base ~= 10 then\nerror(\"tonumber with a base other than 10 is not supported\", 2)\nend\nend\nif type(v) == \"number\" then return v end\nif type(v) ~= \"string\" then return nil end\nlocal ok, r = pcall(_tonum_conv, v)\nif not ok then return nil end\nreturn r\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -7841,6 +7843,13 @@ mod gateLow(fid: int, a: int, nargs: int) {
       }
       if cnt > MAXVALS {
         vmFail("too many results to select")
+      } else if cnt == 0 {
+        // An empty result list still has to leave the callee's own register
+        // nil: the compiler puts the local a call is assigned to in the slot
+        // the function was in, so `local c = select(2, ...)` read the select
+        // VALUE (type "function") where PUC reads nil.
+        vSet(a, 0, 0.0, "")
+        retCountV = 0
       } else {
         shiftDown(a, src, cnt)
         retCountV = cnt
@@ -8220,6 +8229,10 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
         if 3 <= cnt { tblFill(a + 2, tid, lo + 2) }
         if 2 <= cnt { tblFill(a + 1, tid, lo + 1) }
         if 1 <= cnt { tblFill(a, tid, lo) }
+        // An empty range answers no values, and PUC's empty result list still
+        // makes the callee's own register nil -- that is the slot the compiler
+        // puts the local in, so `local c = unpack(t, 2, 1)` read unpack itself.
+        if cnt == 0 { vSet(a, 0, 0.0, "") }
         retCountV = cnt
       }
     }
@@ -9593,6 +9606,10 @@ mod libIo(p: string) -> string {
       || srcUses(p, "io.lines") then LIB_io else ""
 }
 
+mod libTonumber(p: string) -> string {
+  return if srcUses(p, "tonumber") then LIB_tonumber else ""
+}
+
 // A closure being filled owns the whole tick: its cells go in one per tick and
 // the value is published at the end, and nothing may read it half-built. The
 // step lives here rather than in vmStep: measured in the old four-step burst,
@@ -9662,9 +9679,10 @@ on goParse {
   let libP = libStrPat(program)
   let libQ = libStrGsub(program)
   let libR = libStrGmatch(program)
+  let libS = libTonumber(program)
   let lib = libA .. libB .. libC .. libD .. libE .. libF .. libG
     .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO .. libP
-    .. libQ .. libR
+    .. libQ .. libR .. libS
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program
   llen = lsrc.Length()

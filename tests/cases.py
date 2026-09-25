@@ -48,6 +48,55 @@ TESTS = [
     ("lit-dot", "print(.5, 5.)", None, "run"),
     ("lit-exp-dot", "print(5.e3, 5.)", None, "run"),
     ("lit-hex", "print(0xff, 0X10, 0xFFFFFFFFFFFFFFFF)", None, "run"),
+    # tonumber is a piece over the arithmetic coercion (v + 0 is PUC's
+    # conversion), so these are really a second reading of the coercion rules:
+    # a number is itself, the whole string has to be a number, the tag follows
+    # the numeral's shape, and the inf/nan spellings are nil on both sides.
+    # Each case carries a tick budget: the piece costs 565 ticks of boot and 70
+    # per call, so a case with six calls needs more than the default.
+    ("tonum-num", "print(tonumber(3), tonumber(3.5), tonumber(-0.0))",
+     None, "run", {"ticks": 1600}),
+    ("tonum-str", "print(tonumber('10'), tonumber(' 42 '), tonumber('3.5'), "
+     "tonumber('1e3'), tonumber('.5'), tonumber('5.'))", None, "run",
+     {"ticks": 2400}),
+    ("tonum-nil", "print(tonumber('x'), tonumber(''), tonumber('10abc'), "
+     "tonumber(nil), tonumber({}), tonumber(true), tonumber('inf'), "
+     "tonumber('nan'))", None, "run", {"ticks": 2400}),
+    ("tonum-tag", "print(math.type(tonumber('3')), math.type(tonumber('3.0')), "
+     "math.type(tonumber(3)), math.type(tonumber(3.5)))", None, "run",
+     {"ticks": 2400}),
+    ("tonum-arith", "print(tonumber('3') + 1, tonumber('7') // 2, "
+     "-tonumber('2.5'))", None, "run", {"ticks": 1600}),
+    # The loader only installs the piece for a program that names tonumber, so
+    # this also proves the selection: a program that does not name it must not
+    # pay for it, and one that does must not be missing it inside a function.
+    ("tonum-in-fn", "local function half(s) return tonumber(s) / 2 end "
+     "print(half('7'), half(7))", None, "run", {"ticks": 1600}),
+    ("tonum-base10", "print(tonumber('42', 10), tonumber(' 42 ', 10))",
+     None, "run", {"ticks": 1600}),
+    ("tonum-noargs", "print(tonumber())", None, "runtimerr",
+     {"ticks": 1200,
+      "expect": {"err": "bad argument #1 to 'tonumber' (value expected)"}}),
+    ("tonum-base-type", "print(tonumber(3.5, 10))", None, "runtimerr",
+     {"ticks": 1200, "expect": {"err": "string expected, got number"}}),
+    ("tonum-base-range", "print(tonumber('10', 99))", None, "runtimerr",
+     {"ticks": 1200, "expect": {"err": "base out of range"}}),
+    # A base other than 10 is a documented gap: loud, never a wrong answer.
+    ("tonum-base-other", "print(tonumber('ff', 16))", None, "runtimerr",
+     {"ticks": 1200,
+      "expect": {"err": "base other than 10 is not supported"}}),
+    # A call with no results still has to leave the callee's own register nil,
+    # because that is the slot the compiler puts the local in.  select past the
+    # end and an empty unpack both answer nothing, and both used to leave the
+    # FUNCTION there: local c = select(2, ...) read type(c) == "function".
+    ("select-none", "local function f(...) local c = select(2, ...) "
+     "print(c, type(c)) end f('x')", None, "run"),
+    ("select-none-flat", "local x = select(2, 'a') local y, z = select(3, 'a') "
+     "print(x, type(x), y, type(y), z, type(z))", None, "run"),
+    ("unpack-empty", "local y = table.unpack({1, 2}, 2, 1) "
+     "print(y, type(y))", None, "run"),
+    ("unpack-empty-fn", "local function g(...) local z = table.unpack({1, 2}, 2, 1) "
+     "print(z, type(z)) end g('x')", None, "run"),
     ("int-arith", "print(7+8, 7-8, 7*8, -7, 2+2.0, 7/2)", None, "run"),
     # PUC coerces a string operand in arithmetic ('3' + 1 is 4) through the
     # host's ParseInt/ParseNumber gates.  The int/float split is the host's own
