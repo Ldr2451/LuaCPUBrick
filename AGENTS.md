@@ -320,6 +320,25 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   what the oracle's C library prints.)
 - **A value gate fed by a var the same mod writes reads the NEW value.** Fetch a
   character in one state, consume it in the next.
+- **Reading the VM register file from deep inside a micro-step is unreliable in
+  a function frame, and three shapes of workaround all fail the same way.** The
+  formatter's conversions read `vtag[fmtBase + 1 + fmtArgI]` four mods down
+  (`fmtStep` → `fmtConv` → `fmtConvInt` → `fmtArgAt`); at top level that is right
+  and inside a function every argument reads empty except the last, so
+  `string.format('%s%s%s', 'a', 'b', 'c')` inside a function printed `cnilnil`
+  and `return string.format('%d', 5)` answered "number expected, got nil". The
+  register *values* are all correct at the time (`tools/trace_pc.py` watching
+  `fmtBase,fmtArgs` and the registers shows them), so this is the read, not the
+  state. Tried and measured, all three behave identically: passing `fmtBase` into
+  `fmtArgAt` as a parameter; reading the base and index into locals before the
+  write to `fmtArgI`; and copying every argument into the machine's own arrays
+  (`fmtATag/fmtANum/fmtAStr`, the shape the pattern matcher uses successfully)
+  from the gate's own arm with each read spelled out as `vTag(vmBase + a + k)` —
+  in that last one slot 0 lands and slot 1 does not, *in a function only*. The
+  pattern matcher does not have the bug because it copies the same way and then
+  reads its own arrays, so the difference is the register file, not the depth.
+  `tests/cases.py`'s `fmt-in-fn-divergence` holds the place until someone finds
+  the shape that works; do not re-try these three without a new idea.
 - **A micro-step machine that a pcall dispatched in place must be completed by
   the machine, not by the call.** `_fmt`, `_pat` and `_gmatch` answer through a
   machine that runs for several ticks, and the CALL arm used to run `pcallEnd` on
