@@ -6,7 +6,7 @@ feature misbehaving -- they are the constructs around it.  Those used to be
 found by running the whole suite, which is a thirty-second wait for a
 two-second answer.  This runs the cheap half of the test matrix instead:
 
-  tools/audit.py       one build, then the three static facts: compiler
+  tools/chip/audit.py       one build, then the three static facts: compiler
                        _Unsupported placeholders (it silently gave up on an
                        expression, so the chip builds and reads 0), gate classes
                        the simulator has no handler for, and the node/wire count
@@ -38,8 +38,8 @@ from concurrent.futures import ThreadPoolExecutor
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CHECKS = [
-    ('audit', ['tools/audit.py'], '0 placeholder(s)'),
-    ('wswarn', ['tools/wswarn.py'], 'compiler warnings: 0'),
+    ('audit', ['tools/chip/audit.py'], '0 placeholder(s)'),
+    ('wswarn', ['tools/chip/wswarn.py'], 'compiler warnings: 0'),
     ('consistency', ['tests/test_consistency.py'], 'ALL-OK'),
     ('syntax', ['tests/syntax_check.py'], 'FAIL=0'),
 ]

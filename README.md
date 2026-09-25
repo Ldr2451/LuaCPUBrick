@@ -19,7 +19,7 @@ The compiler emits one flat bytecode program; function bodies are interleaved in
 the same instruction stream. Instruction `pc` is the tuple
 `(bop[pc], bpa[pc], bpb[pc], bpc[pc])`. The four arrays are parallel and every
 instruction occupies one position, including instructions with no operands.
-Jump targets are absolute bytecode indices. `tools/dump_vm.py` prints these
+Jump targets are absolute bytecode indices. `tools/chip/dump_vm.py` prints these
 raw tuples.
 
 The principal limits are 1,024 instructions, 4,096 tokens, 64 registers per
@@ -215,20 +215,20 @@ Iterating (each builds the chip once, ~6s, then runs many programs):
 | script | what it does |
 | --- | --- |
 | `tools/check.py "prog" "prog" ...` | run programs on the chip, diff against the oracle |
-| `tools/dump_vm.py "prog"` | dump the bytecode a program compiles to |
-| `tools/dump_vm.py --tokens "prog"` | dump the token stream and the prepended library source |
-| `tools/trace_pc.py "prog" "0,1,2"` | step the VM, printing pc, frame and chosen registers |
-| `tools/trace_exec.py "prog"` | which chip nodes execute, in order |
-| `tools/profile_sim.py "prog"` | where a run spends its ticks |
-| `tools/perfbench.py --baseline REV` | alternate a baseline and current IR chip across the benchmark battery |
+| `tools/chip/dump_vm.py "prog"` | dump the bytecode a program compiles to |
+| `tools/chip/dump_vm.py --tokens "prog"` | dump the token stream and the prepended library source |
+| `tools/chip/trace_pc.py "prog" "0,1,2"` | step the VM, printing pc, frame and chosen registers |
+| `tools/chip/trace_exec.py "prog"` | which chip nodes execute, in order |
+| `tools/chip/profile_sim.py "prog"` | where a run spends its ticks |
+| `tools/chip/perfbench.py --baseline REV` | alternate a baseline and current IR chip across the benchmark battery |
 
 Checks on the chip itself:
 
 | script | what it does |
 | --- | --- |
-| `tools/audit.py` | one build, then: compiler `_Unsupported` placeholders (a silent miscompile), gate classes the simulator has no handler for, and the node/wire count |
-| `tools/globals.py "prog"` | the global slot table after a run |
-| `tools/slots.py` | builtin ids and the global init arrays, from the source |
-| `tools/irdiff.py old.ws new.ws` | what a change costs in IR nodes, by kind |
-| `tools/gate_ports.py` | gate port catalogue the simulator implements |
+| `tools/chip/audit.py` | one build, then: compiler `_Unsupported` placeholders (a silent miscompile), gate classes the simulator has no handler for, and the node/wire count |
+| `tools/chip/globals.py "prog"` | the global slot table after a run |
+| `tools/chip/slots.py` | builtin ids and the global init arrays, from the source |
+| `tools/chip/irdiff.py old.ws new.ws` | what a change costs in IR nodes, by kind |
+| `tools/chip/gate_ports.py` | gate port catalogue the simulator implements |
 | `tools/fuzz.py` | seeded differential fuzzer against the oracle |

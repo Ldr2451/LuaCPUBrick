@@ -16,7 +16,7 @@
   interpreter is not the lever — the sim is an interpreter-bound pointer chase.
 - Port types: `float`, `int`, `bool`, `string`, `vector`, `color`, `entity` plus
   array forms, and a port-only `any`. **An object in WireScript is an `entity`.**
-  Ask the compiler with `python -u tools/porttypes.py [type ...]`.
+  Ask the compiler with `python -u tools/lib/porttypes.py [type ...]`.
 - Search with ripgrep, not the tool's own grep.
 
 ## Time every command, and bound it
@@ -68,7 +68,7 @@
   matter; the *else-if chains inside it* do: past ~16 arms the arms near the top
   stop taking effect (a 33-arm dispatch meant `%d` of 42 came out 00). Split a
   dispatch before the next arm, keeping states in named mods so the split is
-  mechanical. `python -u tools/chainmap.py` lists every chain.
+  mechanical. `python -u tools/chip/chainmap.py` lists every chain.
 - **PUC's own split decides where a library function belongs**: C in PUC → a gate
   (`_s`, `_m`, `_fmt`, `next`, `select`, `unpack`, the pattern matcher, the float
   conversions, `error`/`pcall`); Lua in PUC → a `LIB_*` source piece. A new
@@ -84,25 +84,25 @@
   and `s + 1` cannot disagree (they inherit the host's refusal of `inf`/`nan`,
   which PUC's also does). Cost: 760 escaped chars, 565 ticks of boot for a
   program that *names* it, 70 per call. The same reasoning already covers
-  `string.sub`/`byte`/`char`/`rep`, which PUC also has in C. `tools/libconst.py
+  `string.sub`/`byte`/`char`/`rep`, which PUC also has in C. `tools/lib/libconst.py
   lib/x.lua LIB_x --install` is how a piece lands, minified, and the piece's
-  cost is `tools/libconst.py lib/x.lua LIB_x`.
+  cost is `tools/lib/libconst.py lib/x.lua LIB_x`.
 - A piece may use another piece (gsub prepends `LIB_str_pat`); the shared one is
   paid once. A piece the loader does not install is not a load error — it is
   "attempt to call" on first use. `tests/test_consistency.py` proves every
   `const LIB_*` is installed by some `lib*` mod and reaches the `..` chain;
   `tools/check.py @file` proves a piece against PUC with an `_s`/`_m`/`_pat` shim.
 - One-off debug scripts are deleted once the finding is in; the tool that
-  reproduces it stays (`tools/unsup_where.py`, `tools/check.py`). **Before naming
+  reproduces it stays (`tools/lib/unsup_where.py`, `tools/check.py`). **Before naming
   a tool in this file, check it exists** — this file outlived `unsup.py` and
   `unhandled.py` for a long time after `audit.py` absorbed both, and a reference
   to a missing file costs the next reader the same hunt twice.
-- `tools/wswarn.py` and `tests/test_consistency.py` run in preflight and have
+- `tools/chip/wswarn.py` and `tests/test_consistency.py` run in preflight and have
   caught real bugs — keep them passing.
 
 ## Performance: three cost currencies
 - **`vmStep` is 70% of the chip, and the reason is the inlining, not the code.**
-  Measured by blanking one mod and rebuilding (`tools/modcost.py` — the only
+  Measured by blanking one mod and rebuilding (`tools/chip/modcost.py` — the only
   honest way to ask, since nothing in the graph records a source line and 91% of
   nodes carry no bind name): `vmStep` 76,877 of 110,017, `parseStep` 22,293,
   `lexStep` 6,692. The old `vmBurst` called `vmStep` four times and a mod is
@@ -114,7 +114,7 @@
 - **The opcode chain is small; builtin dispatch is big, but it is not the whole
   `vmStep`.** `gateHigh` is 13,217 nodes and `gateLow` 6,489 — together 19,706.
   The eleven buildable arms of `gateHigh` account for 10,734 of its 13,217
-  (`tools/armcost.py` blanks one arm and rebuilds; the biggest are `unpack`
+  (`tools/chip/armcost.py` blanks one arm and rebuilds; the biggest are `unpack`
   1,806, `pcall`/`xpcall` 1,779, `_pat` 1,412, `assert` 1,381,
   `_gmatch`/`_gmnext` 1,268). Latching CALL in `vmStep`, dispatching it once
   from `vmBurst`, then restoring four steps compiled at **79,133 nodes**, and
@@ -182,7 +182,7 @@
 - **Merging the two simple return arms is not smaller.** `RETURN` and
   `RETURN0` share their frame teardown in source, but one arm with a `count`
   value and a captured source cost 90 nodes and 256 wires more than the two
-  specialized arms. Reverted after `tools/audit.py`, not a correctness guess.
+  specialized arms. Reverted after `tools/chip/audit.py`, not a correctness guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
   After the unroll and parser/lexer cuts the chip is 38,187 nodes, of which the
   builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
@@ -223,7 +223,7 @@
   instead of wrapping forever. The exact decimal spelling still needs a parallel
   integer representation; `CHIP_LOG` is the honest list.
 - **Gates, ticks, and the clock are three different things.** Gates are
-  `tools/audit.py`; ticks are what `tools/check.py` prints. Sim wall time tracks
+  `tools/chip/audit.py`; ticks are what `tools/check.py` prints. Sim wall time tracks
   gates fired per tick, so fewer ticks with the same work costs the same sim
   time. **In-game a tick is 16.7ms of real time whatever the chip does**, so
   there only fewer ticks reaches the user. A change can halve one and double the
@@ -233,17 +233,17 @@
   ticks of boot on every run of a program that names it. **That count over 4 is
   the in-game number to argue about** — `LIB_str_gsub` is 2,783 escaped chars =
   696 ticks = 11.6s at 60 ticks/s, before the program runs one instruction.
-  `tools/libconst.py piece.lua LIB_x` prints the size; `--install` minifies
+  `tools/lib/libconst.py piece.lua LIB_x` prints the size; `--install` minifies
   (comments, indentation, blank lines out, nothing else — a line inside a long
   bracket string is data) and rewrites the const in `lua.ws`.
 - A boot cost is only reducible three ways: fewer characters, more chars per
   tick, or not parsing. The middle one is linear in gates (unrolling `lexStep`:
-  8 steps +6.5k nodes, 16 steps +19.6k — `tools/lexcost.py`). The cheap end is a
+  8 steps +6.5k nodes, 16 steps +19.6k — `tools/chip/lexcost.py`). The cheap end is a
   `Find`-based fast path for string literals and a run ladder for identifiers,
   which is where the ladder's zero-progress trap (below) bites.
 - **A piece's boot is its whole dependency chain, not its own characters — that
   is what decides whether a gate can become a piece.** Measured on `string.gmatch`
-  (`tools/piececost.py`, reference in `lib/gmatch.lua`): as two gates plus a
+  (`tools/chip/piececost.py`, reference in `lib/gmatch.lua`): as two gates plus a
   micro-step machine it was 1,053 nodes at 33 ticks a step, and the Lua piece
   saved exactly those 1,053 for **2,970 ticks of boot (26×)** — 1,469 escaped
   chars is 370 ticks, and the rest was the pieces it drags in (`string.find`,
@@ -344,8 +344,8 @@ falls out for free.
   vararg-stack read after a mod changes `vmBase` loses its later arms.
 
 ## WireScript traps
-Measured, not style. `tools/wswarn.py` flags the visible shapes;
-`tools/vargraph.py <name>` shows which gate fires each write.
+Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
+`tools/chip/vargraph.py <name>` shows which gate fires each write.
 - **The host's laws are in the compiler's source, on this machine, and are worth
   more than any inference from the oracle.** `irdump.WS_DIR` is the wirescript
   checkout the compiler came from (`%TEMP%\opencode\wirescript`), complete with
@@ -408,7 +408,7 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   write it; `select` past the end and `unpack` over an empty range did not, and
   `local c = select(2, ...)` read `type(c) == "function"`. It hides best in a
   **vararg function**, where the local cannot be the callee's register and the
-  compiler points ADJUST at the frame instead. `tools/wswarn.py` judges each
+  compiler points ADJUST at the frame instead. `tools/chip/wswarn.py` judges each
   `fid ==` **arm** separately for this (a mod-wide test sees `print`'s write and
   says nothing), and only in mods with a parameter named `a` — `patArm` and
   `pcallEnd` write an absolute register of their own and are not the shape.
@@ -503,7 +503,7 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   finished one.
 - **Reverting is not deleting.** Keep the reference implementation
   (`lib/str_format.lua`), the minimal repro as a case, and the measurement as a
-  tool (`tools/lexcost.py`, `tools/libconst.py`). A throwaway probe in a temp
+  tool (`tools/chip/lexcost.py`, `tools/lib/libconst.py`). A throwaway probe in a temp
   directory is the only thing allowed to disappear.
 
 ## Code clarity
@@ -559,7 +559,7 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   more expensive thing: the chip's own constants, the gates and the host's laws
   are not in the model, so a green model proves nothing about the chip — it
   proves the *rule* you are about to encode, which is what you want it for. The
-  two models live in `tools/` and run with `python -u tools/vmmodel.py`, which
+  two models live in `tools/` and run with `python -u tools/model/vmmodel.py`, which
   discovers quint, a JRE and Apalache and skips cleanly when one is missing; a
   model that cannot fail is no net, so each one says which line to delete to
   make it fail. **Two backends, and the split is measured:** Apalache carries

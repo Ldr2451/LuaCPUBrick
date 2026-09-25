@@ -502,7 +502,7 @@ TESTS = [
     # %f: the digits have to be the value's own, which is the whole difficulty.
     # 0.15 at one place is 0.1 and not 0.2, and 344.95 is 344.9 and not 345.0,
     # because the exact double sits just below the tie -- a single rounding puts
-    # it on the tie and cannot say which side.  tools/fmtsweep.py compares 3888
+    # it on the tie and cannot say which side.  tools/fmt/fmtsweep.py compares 3888
     # values at precisions 0..15 against the oracle; these are the cases that
     # made the algorithm what it is.
     ("fmt-f-default", "print(string.format('%f', 1.5), "
