@@ -318,27 +318,25 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   register. Model these gates from the laws above, not from Python's exception
   behaviour. (`_NAN` is the x86 default QNaN — sign bit set — because that is
   what the oracle's C library prints.)
+- **Register access comes in two forms and mixing them is invisible at top
+  level.** `vTag`/`vNum`/`vStr`/`vSet` take a register *relative* to the current
+  frame and add `vmBase` themselves; anything holding an *absolute* index
+  (`fmtBase`, `nxDst`, a `retAdjust` src) reads `vtag[]`/`vnum[]`/`vstr[]`
+  directly. `fmtArgAt()` builds `fmtBase + 1 + fmtArgI`, which is absolute, and
+  the conversions handed it to `vTag` — so `vmBase` was added twice. At top level
+  `vmBase` is 0 and every format call was right; inside a function every argument
+  but the last came from two registers too high, which is why
+  `return string.format('%s%s%s', 'a', 'b', 'c')` printed `cnilnil` and `%d` of a
+  number answered "number expected, got nil". **Three wrong turns were spent on
+  this before anyone read what `vTag` does with its argument**: passing `fmtBase`
+  as a parameter, reading the base and index into locals before the write, and
+  copying the arguments into the machine's own arrays. Each one changed the *shape*
+  of the read and none of them touched the arithmetic, so each failed identically.
+  When a read looks wrong in one context and right in another, write down the
+  index for both and subtract — the shape is not the variable. The fix was also 150
+  nodes *smaller*, because an array read beats a mod call that adds a base.
 - **A value gate fed by a var the same mod writes reads the NEW value.** Fetch a
   character in one state, consume it in the next.
-- **Reading the VM register file from deep inside a micro-step is unreliable in
-  a function frame, and three shapes of workaround all fail the same way.** The
-  formatter's conversions read `vtag[fmtBase + 1 + fmtArgI]` four mods down
-  (`fmtStep` → `fmtConv` → `fmtConvInt` → `fmtArgAt`); at top level that is right
-  and inside a function every argument reads empty except the last, so
-  `string.format('%s%s%s', 'a', 'b', 'c')` inside a function printed `cnilnil`
-  and `return string.format('%d', 5)` answered "number expected, got nil". The
-  register *values* are all correct at the time (`tools/trace_pc.py` watching
-  `fmtBase,fmtArgs` and the registers shows them), so this is the read, not the
-  state. Tried and measured, all three behave identically: passing `fmtBase` into
-  `fmtArgAt` as a parameter; reading the base and index into locals before the
-  write to `fmtArgI`; and copying every argument into the machine's own arrays
-  (`fmtATag/fmtANum/fmtAStr`, the shape the pattern matcher uses successfully)
-  from the gate's own arm with each read spelled out as `vTag(vmBase + a + k)` —
-  in that last one slot 0 lands and slot 1 does not, *in a function only*. The
-  pattern matcher does not have the bug because it copies the same way and then
-  reads its own arrays, so the difference is the register file, not the depth.
-  `tests/cases.py`'s `fmt-in-fn-divergence` holds the place until someone finds
-  the shape that works; do not re-try these three without a new idea.
 - **A micro-step machine that a pcall dispatched in place must be completed by
   the machine, not by the call.** `_fmt`, `_pat` and `_gmatch` answer through a
   machine that runs for several ticks, and the CALL arm used to run `pcallEnd` on

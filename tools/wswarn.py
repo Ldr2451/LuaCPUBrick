@@ -14,6 +14,10 @@ Two sources, one report:
       name collision         a mod and a var named x -> placeholder
       string ordering        `c >= "0"`             -> silently false
       string from a mod      its ToCharCode() is 0
+      index form             vTag takes a register RELATIVE to the frame and adds
+                             vmBase; handing it an absolute index counts vmBase
+                             twice, which is invisible at top level and wrong by
+                             exactly vmBase in a function
 
 A seventh trap -- an assignment at the bottom of a deep else-if chain silently
 not taking effect -- is not a shape, it is a structure, so the fix for it is one
@@ -97,8 +101,73 @@ for i, l in code:
 COPY = re.compile(r'^\s*(?:var\s+|let\s+)?(\w+)\s*=\s*(\w+)\s*$')
 MODHEAD = re.compile(r'^mod\s+(\w+)\(')
 
+# Register access comes in two forms and mixing them is the bug this catches.
+# vTag/vNum/vStr/vSet take a register RELATIVE to the current frame and add
+# vmBase themselves; a var holding an ABSOLUTE index has to read vtag[]/vnum[]/
+# vstr[] directly.  Handing an absolute index to the accessor counts vmBase twice:
+# invisible at top level, where vmBase is 0, and wrong by exactly vmBase inside a
+# function.  The formatter's conversions did it, so every argument but the last
+# came from two registers too high -- `return string.format('%s%s%s', 'a', 'b',
+# 'c')` printed `cnilnil`.  Three fixes that changed the *shape* of the read all
+# failed the same way before anyone read what vTag does with its argument, which
+# is why this is a shape check and not a comment.
+#
+# The carriers are these names and these mods, and a name that no longer exists is
+# itself a finding so the list cannot rot.  The check is per mod and follows the
+# value, because the bug arrives as a local: `let ab = fmtArgAt()` and then
+# `vTag(ab)`, which is why matching on the argument text alone finds nothing.
+# The converse -- a relative index read out of vtag[] -- is NOT visible here: the
+# two forms are the same text, and only the value's origin tells them apart.
+ABSOLUTE_VARS = ('fmtBase', 'nxDst')
+ABSOLUTE_FNS = ('fmtArgAt',)
+ACCESSOR = re.compile(r'\bv(?:Tag|Num|Str|Set|SetNum|SetInt|SetStr)\(\s*'
+                      r'([^()]*?)\s*\)')
+ASSIGN = re.compile(r'^\s*(?:var\s+|let\s+)?(\w+)\s*=\s*(?!=)(\S.*)$')
+
+
+def root_name(expr):
+    """The identifier an index expression starts from, if any."""
+    m = re.match(r'([A-Za-z_]\w*)', expr.strip())
+    return m.group(1) if m else None
+
+
+def is_absolute_expr(expr):
+    """Whether an expression yields an absolute register index."""
+    if 'vmBase' in expr:
+        return 'it already carries vmBase'
+    head = expr.strip()
+    for fn in ABSOLUTE_FNS:
+        if head.startswith(fn + '('):
+            return '%s returns an absolute index' % fn
+    r = root_name(head)
+    if r in ABSOLUTE_VARS:
+        return '%s is an absolute index' % r
+    return None
+
+
+def absolute_as_relative(body, mod_name):
+    """Accessor calls in one mod whose argument is an absolute index.
+
+    An assignment that *makes* a value absolute is how they are made, so only
+    the reads and writes through an accessor are reported."""
+    out, absolute = [], set()
+    for ln, line in body:
+        m = ASSIGN.match(line)
+        if m and is_absolute_expr(m.group(2)):
+            absolute.add(m.group(1))
+        for arg in ACCESSOR.findall(line):
+            why = is_absolute_expr(arg) if arg else None
+            if why is None and root_name(arg) in absolute:
+                why = 'it traces back to an absolute index'
+            if why:
+                out.append((ln, mod_name, arg, why))
+                break
+    return out
+
+
 filevars = set(re.findall(r'^var\s+(\w+)', src, re.M))
 hits_raw = []
+hits_abs = []
 lines = src.splitlines()
 i = 0
 while i < len(lines):
@@ -126,8 +195,15 @@ while i < len(lines):
                          r'(?:=|\+=|-=)\s*(?!=)', bl)
             if w and w.group(1) in filevars:
                 written.setdefault(w.group(1), ln)
+        hits_abs += absolute_as_relative(
+            [(ln, bl) for ln, bl in body if bl.strip()
+             and not bl.strip().startswith('//')], m.group(1))
         i = j
     i += 1
+
+for v in ABSOLUTE_VARS:
+    if not re.search(r'^var\s+%s\b' % re.escape(v), src, re.M):
+        hits_abs.append((0, 'list', v, '%s is in ABSOLUTE_VARS but is gone' % v))
 
 names = {}
 for m in re.finditer(r'^(?:var|mod|const)\s+(\w+)', src, re.M):
@@ -140,8 +216,9 @@ warn = [l.strip() for l in p.stderr.splitlines()
         if 'WARN' in l or '_Unsupported' in l]
 
 print('compiler warnings: %d, name collisions: %d, trap candidates: %d, '
-      'var rereads: %d, rc=%d'
-      % (len(warn), len(dups), len(hits), len(hits_raw), p.returncode))
+      'var rereads: %d, index forms: %d, rc=%d'
+      % (len(warn), len(dups), len(hits), len(hits_raw), len(hits_abs),
+         p.returncode))
 for l in warn[:12]:
     print('  WARN ' + l[:170])
 for k in dups:
@@ -151,9 +228,12 @@ for i, name, l in hits:
 for ln, mod_name, dst, src, wln, l in hits_raw:
     print('  cand %-21s lua.ws:%d  %s: %s = %s copies a var written at :%d'
           % ('var copy after write', ln, mod_name, dst, src, wln))
+for ln, mod_name, arg, why in hits_abs:
+    print('  cand %-21s lua.ws:%d  %s: accessor argument %r -- %s'
+          % ('absolute as relative', ln, mod_name, arg, why))
 if warn or dups:
     print('=> fix the compiler warnings and the collisions')
-elif hits or hits_raw:
+elif hits or hits_raw or hits_abs:
     print('=> trap candidates only: some shapes are false positives (the print')
     print('   handler concatenates mod calls fine), so read them and judge')
 sys.exit(1 if (warn or dups) else 0)

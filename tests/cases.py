@@ -364,15 +364,20 @@ TESTS = [
                           "string)"}}),
     ("fmt-err-noint", "print(string.format('%d', 1.5))", None, "runtimerr",
      {"expect": {"err": "number has no integer representation"}}),
-    # A known divergence, asserted as it stands so it stays visible: string.format
-    # called from inside a function reads its arguments through a stale base and
-    # answers "number expected, got nil" where PUC formats them.  The same call at
-    # top level is fine, which is what makes it a trap.  The fix is to hand the
-    # call's base register to the conversion mods as a parameter from a shallower
-    # inline context, or to shorten fmtStep's chain.
-    ("fmt-in-fn-divergence",
-     "local function f() return string.format('%d', 5) end print(f())",
-     None, "runtimerr", {"expect": {"err": "number expected, got nil"}}),
+    # string.format called from inside a function reads its arguments through
+    # an index that had vmBase in it twice, so every argument but the last came
+    # from two registers too high.  At top level vmBase is 0 and it worked, which
+    # is what made it look like an inlining problem rather than arithmetic.
+    ("fmt-in-fn", "local function f() return string.format('%d', 5) end "
+     "print(f())", None, "run"),
+    ("fmt-in-fn-args", "local function f() "
+     "return string.format('%s%s%s %5.2f', 'a', 'b', 'c', 3.14159) end "
+     "print(f())", None, "run"),
+    ("fmt-in-fn-param", "local function g(x, y) "
+     "return string.format('%s=%d', x, y) end print(g('k', 7))", None, "run"),
+    ("fmt-in-fn-error", "local ok, e = pcall(function() "
+     "return string.format('%d', 'x') end) "
+     "print(ok, e:find('got string') ~= nil)", None, "run"),
     ("fmt-err-nofmt", "print(string.format())", None, "runtimerr",
      {"expect": {"err": "bad argument #1 to 'format' (string expected, got no "
                           "value)"}}),

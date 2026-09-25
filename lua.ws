@@ -134,10 +134,6 @@
 ///   default QNaN has its sign bit set).  The sign of an invalid operation's
 ///   result is not reachable from arithmetic, and the oracle harness normalises
 ///   the two spellings to one, so the value is what is being compared.
-///   string.format called from inside a function reads its arguments empty for
-///   every one but the last: the conversion mods read the register file four
-///   mods down, and in a function frame that read comes back stale.  The same
-///   call at top level is right.  See tests/cases.py fmt-in-fn-divergence.
 ///   string.gmatch answers three values where PUC answers one (its iterator
 ///   ignores the arguments the generic for hands it); the chip's generic for
 ///   reads the walk's state out of the call.  See CHIP_LOG gmatch-arity.
@@ -4059,6 +4055,13 @@ mod cellAt(fid: int, k: int) -> int {
   return cell
 }
 
+// Register access, two ways, and mixing them is the bug this pair of comments
+// exists to stop.  vTag/vNum/vStr/vSet take a register RELATIVE to the current
+// frame and add vmBase themselves; anything that already holds an absolute index
+// (fmtBase, nxDst, a retAdjust src) reads vtag[]/vnum[]/vstr[] directly.  The
+// mistake is invisible at top level, where vmBase is 0, and wrong by exactly
+// vmBase inside a function -- which is how the formatter answered "number
+// expected, got nil" for `return string.format('%d', 5)`.
 mod vTag(r: int) -> int {
   return vtag[vmBase + r]
 }
@@ -4968,6 +4971,15 @@ mod nxStep() {
 // fmtArgI.  A mod because a write at the top of a mod is dropped, and an
 // expression in the middle of fmtConv's chain would be too deep for the same
 // reason.
+//
+// ABSOLUTE, and that is the whole point: vTag/vNum/vStr take a register relative
+// to the current frame and add vmBase themselves, so passing them an index built
+// from fmtBase counted vmBase twice.  At top level vmBase is 0 and it worked; in
+// a function every argument but the last read from two registers too high, which
+// is why `return string.format('%s%s%s', 'a', 'b', 'c')` printed `cnilnil` and
+// `%d` of a number answered "number expected, got nil".  The conversions read
+// vtag[]/vnum[]/vstr[] at this index for that reason, and it is also the smaller
+// shape: no vmBase to add.
 var fmtSrc: string = ""
 var fmtBase: int = 0          // the call's register base (absolute)
 var fmtArgs: int = 0
@@ -5270,8 +5282,8 @@ mod fmtConvStr(c: string) {
   if fmtArgI > fmtArgs {
     vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
   } else {
-    let t = vTag(ab)
-    fmtArg = fmtVal(t, vNum(ab), vStr(ab))
+    let t = vtag[ab]
+    fmtArg = fmtVal(t, vnum[ab], vstr[ab])
     if c == "q" && t == 2 {
       fmtBody = "\""
       fmtQPos = 0
@@ -5293,15 +5305,15 @@ mod fmtConvInt() {
   if fmtArgI > fmtArgs {
     vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
   } else {
-    let t = vTag(ab)
+    let t = vtag[ab]
     if t != 1 && t != 6 {
       vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
              .. typeName(t) .. ")")
-    } else if vNum(ab) != floor(vNum(ab)) {
+    } else if vnum[ab] != floor(vnum[ab]) {
       vmFail("number has no integer representation")
     } else {
-      fmtNeg = vNum(ab) < 0.0
-      fmtNum_ = if fmtNeg then 0.0 - vNum(ab) else vNum(ab)
+      fmtNeg = vnum[ab] < 0.0
+      fmtNum_ = if fmtNeg then 0.0 - vnum[ab] else vnum[ab]
       fmtBody = ""
       fmtState = 7
     }
@@ -5319,11 +5331,11 @@ mod fmtConvRadix() {
   if fmtArgI > fmtArgs {
     vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
   } else {
-    let t = vTag(ab)
+    let t = vtag[ab]
     if t != 1 && t != 6 {
       vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
              .. typeName(t) .. ")")
-    } else if vNum(ab) != floor(vNum(ab)) {
+    } else if vnum[ab] != floor(vnum[ab]) {
       vmFail("number has no integer representation")
     } else {
       if fmtCh == "o" {
@@ -5338,8 +5350,8 @@ mod fmtConvRadix() {
       } else {
         fmtUpper = false
       }
-      fmtNeg = vNum(ab) < 0.0
-      fmtNum_ = vNum(ab)
+      fmtNeg = vnum[ab] < 0.0
+      fmtNum_ = vnum[ab]
       fmtDigits = 0
       fmtBody = ""
       if fmtNeg {
@@ -5370,15 +5382,15 @@ mod fmtConvChar() {
   if fmtArgI > fmtArgs {
     vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
   } else {
-    let t = vTag(ab)
+    let t = vtag[ab]
     if t != 1 && t != 6 {
       vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
              .. typeName(t) .. ")")
-    } else if vNum(ab) != floor(vNum(ab)) {
+    } else if vnum[ab] != floor(vnum[ab]) {
       vmFail("number has no integer representation")
     } else {
-      fmtQ_ = toInt(vNum(ab) / 256.0)
-      let r = toInt(vNum(ab) - fmtQ_ * 256.0)
+      fmtQ_ = toInt(vnum[ab] / 256.0)
+      let r = toInt(vnum[ab] - fmtQ_ * 256.0)
       if r < 0 {
         fmtD_ = r + 256
       } else {
@@ -5432,16 +5444,16 @@ mod fmtConvG() {
   if fmtArgI > fmtArgs {
     vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
   } else {
-    let t = vTag(ab)
+    let t = vtag[ab]
     if t != 1 && t != 6 {
       vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
              .. typeName(t) .. ")")
     } else {
-      fmtNeg = vNum(ab) < 0.0
+      fmtNeg = vnum[ab] < 0.0
       if fmtNeg {
-        fmtV = 0.0 - vNum(ab)
+        fmtV = 0.0 - vnum[ab]
       } else {
-        fmtV = vNum(ab)
+        fmtV = vnum[ab]
       }
       // a precision of zero means one, which is C's rule and PUC's
       fmtP = if fmtPrec < 0 then 6 else if fmtPrec == 0 then 1 else fmtPrec
@@ -5530,16 +5542,16 @@ mod fmtConvExp() {
   if fmtArgI > fmtArgs {
     vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
   } else {
-    let t = vTag(ab)
+    let t = vtag[ab]
     if t != 1 && t != 6 {
       vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
              .. typeName(t) .. ")")
     } else {
-      fmtNeg = vNum(ab) < 0.0
+      fmtNeg = vnum[ab] < 0.0
       if fmtNeg {
-        fmtV = 0.0 - vNum(ab)
+        fmtV = 0.0 - vnum[ab]
       } else {
-        fmtV = vNum(ab)
+        fmtV = vnum[ab]
       }
       fmtP = if fmtPrec < 0 then 6 else fmtPrec
       fmtInt = ""
@@ -5915,16 +5927,16 @@ mod fmtConvFloat() {
   if fmtArgI > fmtArgs {
     vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
   } else {
-    let t = vTag(ab)
+    let t = vtag[ab]
     if t != 1 && t != 6 {
       vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
              .. typeName(t) .. ")")
     } else {
-      fmtNeg = vNum(ab) < 0.0
+      fmtNeg = vnum[ab] < 0.0
       if fmtNeg {
-        fmtV = 0.0 - vNum(ab)
+        fmtV = 0.0 - vnum[ab]
       } else {
-        fmtV = vNum(ab)
+        fmtV = vnum[ab]
       }
       fmtP = if fmtPrec < 0 then 6 else fmtPrec
       fmtInt = ""
