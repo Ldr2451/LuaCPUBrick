@@ -251,6 +251,15 @@
   re-ran its instruction to the tick cap. Using one would need the two-phase
   shape `_fmt`/`_pat` use — fire on one tick, read a captured output on the next —
   and a free-running stream would have to fire on every tick for every program.
+- **A printed line is capped at 64 characters, and the harness caps the oracle's
+  the same way.** `oracle_log` applies "the same caps the chip enforces" (one
+  tab-joined line per print, `line[:LOG_WIDTH - 1] + "\n"`, 32 appends), so a
+  long line matches PUC only up to the cap. Do not read a short line as a lost
+  message: check `string.len` on the value first, because the cap hides the
+  difference and a DIFF on a long line is usually one character at the
+  boundary, not data loss. Measured on `math.random(1.5)`'s 66-character error
+  message: whole in the register, chip line ends `...repres`, oracle's capped
+  line ends `...repre`.
 - **A gate that must call back into Lua is a separate mechanism nothing needs
   yet.** The only place the chip calls Lua on a gate's behalf is the pcall frame,
   and pcall-of-pcall is unsupported, so a machine cannot suspend mid-loop for a

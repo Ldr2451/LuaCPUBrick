@@ -100,12 +100,12 @@ CHIP_LOG = {
     "math-random-ten": "6,1,8,7,1\n",
     "math-random-interval":
         "false\tbad argument #2 to 'random' (interval is empty)\n",
-    # BUG, not a divergence: the message is WHOLE in the register (a case prints
-    # string.len(m) == 66 for it) but the line the chip prints is cut at 54
-    # characters, so the last twelve are lost.  A short message is unaffected,
-    # and print(s) alone is unaffected, so it is the pcall path's copy.  Keep the
-    # chip's answer here so the case is green and the bug stays visible; the
-    # entry goes away when the copy is fixed.
+    # NOT a lost message: the whole 66-character message is in the register (a
+    # case prints string.len(m) == 66).  Both sides cap a printed line at 64
+    # (oracle_log applies "the same caps the chip enforces"), and PUC's line is
+    # one character longer, so the oracle's capped line ends "...integer repre"
+    # where the chip's ends "...integer repres".  A one-character disagreement at
+    # the width boundary, not the pcall path losing anything.
     "math-random-noint":
         "false\tbad argument #1 to 'random' (number has no integer repres\n",
     # PUC 5.5's string.gmatch answers one value; the chip answers three because
