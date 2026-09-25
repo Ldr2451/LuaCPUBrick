@@ -4,6 +4,14 @@ identical logs (documented divergences are excluded by construction).
 
 Usage: python -u tools/fuzz.py [count=200] [seed0=1]
 Exit 0 when every seed agrees, 1 with the failing program otherwise.
+
+Known limit, measured: about two thirds of the seeds come back "oracle rejected",
+because the generator is not type-safe -- it will build `inarr(99) + 1` or index
+a table at a key it never wrote, and the oracle rightly raises "attempt to
+perform arithmetic" where the chip would too.  Those seeds cost an oracle run
+each and prove nothing.  Fixing it means tracking which array indices and table
+keys are in range in Gen.expr, which is the next thing to do here; until then a
+run's agreement count is a lower bound on what it covered, not the coverage.
 """
 import concurrent.futures as cf
 import os
@@ -244,11 +252,16 @@ def one(seed):
 def main():
     count = int(sys.argv[1]) if len(sys.argv) > 1 else 200
     seed0 = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-    kw = {"sinputs": SINPUTS, "vec": VEC, "col": COL, "inarr": INARR}
+    # The numeric inputs go in kw, not in run_case's `inputs` argument: that
+    # argument is not forwarded (run_case only passes kw through), so passing
+    # them there left inNum0..3 nil on BOTH sides and two thirds of the
+    # programs came back "oracle rejected".
+    kw = {"inputs": INPUTS, "sinputs": SINPUTS, "vec": VEC, "col": COL,
+          "inarr": INARR}
     jobs = [("fuzz-%d" % (seed0 + k), one(seed0 + k)) for k in range(count)]
     fails = skips = 0
     with cf.ThreadPoolExecutor(max_workers=8) as ex:
-        futs = {ex.submit(run_case, name, src, INPUTS, "run", dict(kw)): name
+        futs = {ex.submit(run_case, name, src, None, "run", dict(kw)): name
                 for name, src in jobs}
         for f in cf.as_completed(futs):
             name, good, detail, dt = f.result()
