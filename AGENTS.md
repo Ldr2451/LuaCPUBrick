@@ -93,7 +93,9 @@
   `const LIB_*` is installed by some `lib*` mod and reaches the `..` chain;
   `tools/check.py @file` proves a piece against PUC with an `_s`/`_m`/`_pat` shim.
 - One-off debug scripts are deleted once the finding is in; the tool that
-  reproduces it stays (`tools/unsup.py`, `tools/unhandled.py`, `tools/check.py`).
+  reproduces it stays (`tools/unsup_where.py`, `tools/check.py`). **Before naming
+  a tool in this file, check it exists** — a reference to a missing file costs
+  the next reader the same hunt twice.
 - `tools/wswarn.py` and `tests/test_consistency.py` run in preflight and have
   caught real bugs — keep them passing.
 
@@ -189,6 +191,20 @@
   parts that look like array access — the pattern matcher, the formatter — are
   micro-steps, which are mods, which are inlined. So the budget is a decision
   about the host, not a refactor of the CALL arm.
+- **Do not go gate-hunting one builtin at a time; the list is empty.** What is
+  left is `assert` at 284 nodes and `next` at 179 — 0.7% and 0.4% of the chip —
+  and both are *worse* as pieces: a `next` piece rescans the table per call
+  (O(n²) a traversal), and an `assert` piece would have to reach the number
+  formatter, which is a gate. The two structural items are measured dead:
+  `retAdjust` needs a loop or a dynamic index, and the host's array gates
+  (`ArrayVar_CopyFrom`, `ArrayVar_Slice`, both already used) move whole arrays,
+  not a range of one, so they cannot do a 16-slot register copy. And the unused
+  host gates are all exec gates (whose values cannot be read into a register in
+  the same instruction), game gates with no PUC counterpart, or `FormatText`,
+  which rounds floats to 3 decimals. This host build has no `BitwiseXOR`,
+  `BitwiseNOT` or `BitwiseShiftLeft` at all, so `~` stays negate-and-add.
+  **A gate cut has to come from a host primitive that does not exist yet; until
+  one does, the dispatch's 19,706 is the floor.**
 - **Exact implicit float printing is host-bound, not a formatter bug, and the
   host's law is now read rather than inferred.** The `..` gate converts a float
   operand with `if !f.is_finite() || *f == 0.0 { "0" } else { format!("{f}") }`

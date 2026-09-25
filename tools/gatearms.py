@@ -8,7 +8,8 @@ mtSelf, tailN, nbase, np and the caller's `advanced` flag.
 
 This is the measurement that decides the signatures, so it prints the source of
 every arm with the locals it touches marked, and nothing is written.  The move
-itself is done by tools/gatesplit.py once the signatures are settled.
+itself is done: the chain is now two named mods, `gateHigh` and `gateLow`, so
+this reports the arms as they are rather than proposing them.
 
 Usage: python -u tools/gatearms.py [--src N]
 """
