@@ -94,8 +94,9 @@
   `tools/check.py @file` proves a piece against PUC with an `_s`/`_m`/`_pat` shim.
 - One-off debug scripts are deleted once the finding is in; the tool that
   reproduces it stays (`tools/unsup_where.py`, `tools/check.py`). **Before naming
-  a tool in this file, check it exists** — a reference to a missing file costs
-  the next reader the same hunt twice.
+  a tool in this file, check it exists** — this file outlived `unsup.py` and
+  `unhandled.py` for a long time after `audit.py` absorbed both, and a reference
+  to a missing file costs the next reader the same hunt twice.
 - `tools/wswarn.py` and `tests/test_consistency.py` run in preflight and have
   caught real bugs — keep them passing.
 
