@@ -7847,7 +7847,8 @@ mod gateLow(fid: int, a: int, nargs: int) {
         // An empty result list still has to leave the callee's own register
         // nil: the compiler puts the local a call is assigned to in the slot
         // the function was in, so `local c = select(2, ...)` read the select
-        // VALUE (type "function") where PUC reads nil.
+        // VALUE (type "function") where PUC reads nil.  tools/wswarn.py's
+        // "empty result" check watches for exactly this arm.
         vSet(a, 0, 0.0, "")
         retCountV = 0
       } else {

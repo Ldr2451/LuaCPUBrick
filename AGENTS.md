@@ -74,6 +74,19 @@
   conversions, `error`/`pcall`); Lua in PUC → a `LIB_*` source piece. A new
   builtin must earn its gates against the piece alternative, and the answer
   changes with the piece's size.
+- **The split is about the primitive; a thin wrapper over an existing gate is a
+  piece however PUC wrote it.** `tonumber` is C in PUC, so the split points at a
+  gate, and as a gate it is a new fid, a 13th `gateHigh` arm and an inlined copy
+  of the parse: about 70 nodes. But the *primitive* the rule calls a gate — the
+  float conversion — is the one the arithmetic coercion already uses, so the
+  whole of `tonumber` is `pcall(function() return v + 0 end)`: **0 nodes**, and
+  one copy of PUC's numeral rules in the chip instead of two, so `tonumber(s) + 1`
+  and `s + 1` cannot disagree (they inherit the host's refusal of `inf`/`nan`,
+  which PUC's also does). Cost: 760 escaped chars, 565 ticks of boot for a
+  program that *names* it, 70 per call. The same reasoning already covers
+  `string.sub`/`byte`/`char`/`rep`, which PUC also has in C. `tools/libconst.py
+  lib/x.lua LIB_x --install` is how a piece lands, minified, and the piece's
+  cost is `tools/libconst.py lib/x.lua LIB_x`.
 - A piece may use another piece (gsub prepends `LIB_str_pat`); the shared one is
   paid once. A piece the loader does not install is not a load error — it is
   "attempt to call" on first use. `tests/test_consistency.py` proves every
@@ -335,6 +348,17 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   When a read looks wrong in one context and right in another, write down the
   index for both and subtract — the shape is not the variable. The fix was also 150
   nodes *smaller*, because an array read beats a mod call that adds a base.
+- **A call that answers no values still has to nil the callee's own register.**
+  A call's results land in the register the function was in, and that is the
+  register the compiler puts the local in, so PUC's empty result list is a nil
+  there. `print`, `setvec`, `setcol`, `outarr` and `_s`'s byte-out-of-range all
+  write it; `select` past the end and `unpack` over an empty range did not, and
+  `local c = select(2, ...)` read `type(c) == "function"`. It hides best in a
+  **vararg function**, where the local cannot be the callee's register and the
+  compiler points ADJUST at the frame instead. `tools/wswarn.py` judges each
+  `fid ==` **arm** separately for this (a mod-wide test sees `print`'s write and
+  says nothing), and only in mods with a parameter named `a` — `patArm` and
+  `pcallEnd` write an absolute register of their own and are not the shape.
 - **A value gate fed by a var the same mod writes reads the NEW value.** Fetch a
   character in one state, consume it in the next.
 - **A micro-step machine that a pcall dispatched in place must be completed by

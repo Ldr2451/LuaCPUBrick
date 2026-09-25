@@ -165,9 +165,50 @@ def absolute_as_relative(body, mod_name):
     return out
 
 
+def empty_result_slots(head, body, mod_name):
+    """A gate arm that can answer NO values without nil-ing the callee slot.
+
+    A call's results land in the register the function was in, and that is the
+    register the compiler puts the local in, so an empty result list has to
+    leave a nil there -- PUC's `local c = select(2, ...)` is nil.  print, setvec,
+    setcol, outarr and _s's byte-out-of-range all write it; select and unpack
+    did not, and `type(c)` read "function".
+
+    The unit is the ARM, not the mod: print nils its own register and select did
+    not, and a mod-wide test sees print's write and says nothing.  So the body is
+    cut at the `} else if fid ==` boundaries and each arm is judged on its own
+    text.  Only mods with a parameter named `a` are read at all -- that is the
+    call's own register, which is what gateLow and gateHigh hand their arms;
+    patArm and pcallEnd write an absolute register of their own (the machine's
+    dst, the pcall marker) and are not this shape.
+    """
+    if not re.search(r'\(\s*[^)]*\ba\s*:\s*int', head):
+        return []
+    arm, arms = [], []
+    for ln, bl in body:
+        if re.match(r'\s*\}\s*else\s+if\s+fid\s*==', bl) and arm:
+            arms.append(arm)
+            arm = []
+        arm.append((ln, bl))
+    if arm:
+        arms.append(arm)
+    out = []
+    for seg in arms:
+        text = "\n".join(bl for _, bl in seg)
+        m = re.search(r'retCountV\s*=\s*(?:0|cnt|0\s*-\s*n\b)', text)
+        if not m:
+            continue
+        if re.search(r'vSet\(\s*\w+\s*,\s*0\s*,|vtag\[[^\]]*\]\s*=\s*0\b',
+                     text):
+            continue
+        out.append((seg[0][0], mod_name, m.group(0)))
+    return out
+
+
 filevars = set(re.findall(r'^var\s+(\w+)', src, re.M))
 hits_raw = []
 hits_abs = []
+hits_empty = []
 lines = src.splitlines()
 i = 0
 while i < len(lines):
@@ -198,6 +239,11 @@ while i < len(lines):
         hits_abs += absolute_as_relative(
             [(ln, bl) for ln, bl in body if bl.strip()
              and not bl.strip().startswith('//')], m.group(1))
+        mod_ln = i + 1
+        for ln, mn, what in empty_result_slots(
+                lines[i], [(ln, bl) for ln, bl in body if bl.strip()
+                           and not bl.strip().startswith('//')], m.group(1)):
+            hits_empty.append((ln, mn, what))
         i = j
     i += 1
 
@@ -216,9 +262,9 @@ warn = [l.strip() for l in p.stderr.splitlines()
         if 'WARN' in l or '_Unsupported' in l]
 
 print('compiler warnings: %d, name collisions: %d, trap candidates: %d, '
-      'var rereads: %d, index forms: %d, rc=%d'
+      'var rereads: %d, index forms: %d, empty results: %d, rc=%d'
       % (len(warn), len(dups), len(hits), len(hits_raw), len(hits_abs),
-         p.returncode))
+         len(hits_empty), p.returncode))
 for l in warn[:12]:
     print('  WARN ' + l[:170])
 for k in dups:
@@ -231,9 +277,12 @@ for ln, mod_name, dst, src, wln, l in hits_raw:
 for ln, mod_name, arg, why in hits_abs:
     print('  cand %-21s lua.ws:%d  %s: accessor argument %r -- %s'
           % ('absolute as relative', ln, mod_name, arg, why))
+for ln, mod_name, what in hits_empty:
+    print('  cand %-21s lua.ws:%d  %s: %s with no nil written to the '
+          'callee slot' % ('empty result', ln, mod_name, what))
 if warn or dups:
     print('=> fix the compiler warnings and the collisions')
-elif hits or hits_raw or hits_abs:
+elif hits or hits_raw or hits_abs or hits_empty:
     print('=> trap candidates only: some shapes are false positives (the print')
     print('   handler concatenates mod calls fine), so read them and judge')
 sys.exit(1 if (warn or dups) else 0)
