@@ -9155,10 +9155,18 @@ mod parseJobStart() {
 
 // Lex one chunk per call; the driver loops these across ticks.
 mod lexChunk() {
+  // Two lexStep calls per tick, not four.  Same inlining as vmBurst and
+  // parseChunk: four calls compiled the lexer four times over, 6,692 nodes for
+  // what is one step's work at four copies.  Two is the middle of the road --
+  // one call is 5,019 nodes cheaper again but costs 83% more boot, and boot is
+  // what a library piece is charged in (its escaped characters over 4).
+  //
+  // Measured: a gsub program ran 2,400 ticks with four calls, 3,067 with two,
+  // 4,401 with one.  Two takes a third of the available saving for half the
+  // boot cost, and the string Find fast path already cut the piece's own boot
+  // from 692 to 617 ticks, so the rate is not the whole story any more.
   lexStep()
-  lexStep()
-  lexStep()
-  lexStep()
+  if !lerr { lexStep() }
 }
 
 mod parseChunk() {
