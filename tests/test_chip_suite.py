@@ -102,6 +102,13 @@ TICKS_OVERRIDES = {
     # budget moves with the chip: anything that was near the cap before gets
     # room now.
     "long-sum": 24000,
+    # The case was written for a CALL landing mid-burst, which one step per tick
+    # cannot do, so the burst timing it was written for is no longer covered by
+    # anything.  The probes in lib_callchain.lua still all run (the tail of the
+    # output was being cut by the cap, hence the budget), and restoring the
+    # multi-step burst is part of the performance work that comes last: if the
+    # burst comes back, this case's reason for existing comes with it.
+    "call-chain": 20000,
 }
 TIMEOUT_OVERRIDES = {
     "func-fib": 300,

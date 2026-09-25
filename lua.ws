@@ -9162,7 +9162,16 @@ mod lexChunk() {
 }
 
 mod parseChunk() {
-  parseStep()
+  // One parseStep per tick rather than two, for the same reason vmBurst makes
+  // one vmStep call: a mod is inlined at its call site, so two calls compiled
+  // the parser twice over.  parseStep is 22,293 of the chip's 52,386 nodes, and
+  // one call is 11,143 fewer.
+  //
+  // Measured beside it: a gsub program went from 2,400 ticks to 3,084, so boot
+  // is 28% longer.  That is a smaller price than the vmStep change (a program
+  // takes 3.6x the ticks to *run*) because parsing is a one-pass pipeline over
+  // the source and the extra cost is bounded by the program's length, while the
+  // library piece is charged by the lexer's rate, which this does not touch.
   parseStep()
 }
 
