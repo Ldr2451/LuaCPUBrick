@@ -862,6 +862,12 @@ TESTS = [
     ("gmatch-three-values", "local f, s, c = string.gmatch('a1b2', '(%a)(%d)') "
      "print(select('#', f, s, c)) print(f(s, c)) print(f(s, c)) print(f(s, c))",
      None, "run"),
+    # PUC 5.5's gmatch answers ONE value (its iterator ignores the arguments the
+    # generic for hands it); this one answers three, because the generic for has
+    # to get the walk's state out of the call and there are no closures here to
+    # hold it.  Recorded so the difference is visible rather than accidental.
+    ("gmatch-arity", "print(string.gmatch('a b', '%a')) "
+     "print(select('#', string.gmatch('a b', '%a')))", None, "run"),
     # PUC's iterator ignores its arguments; this one falls back to the last walk
     ("gmatch-junk-argument", "local f, s, c = string.gmatch('a1b2', '(%a)(%d)') "
      "print(f('junk'))", None, "run"),

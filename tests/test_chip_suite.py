@@ -92,6 +92,9 @@ CHIP_LOG = {
     "math-pi": "3.141592653589793\n",
     "math-log": "4.605170185988092\n",
     "math-modf": "3\t0.7000000000000002\n",
+    # PUC 5.5's string.gmatch answers one value; the chip answers three because
+    # its generic for reads the walk's state out of the call.
+    "gmatch-arity": "function\t0\tnil\n3\n",
     "tab-del": "1\tnil\t3\t3\n",
     # error's message carries the chunk and line of whatever called error, and
     # pcall hands that message on as a value.  The chip has no line at run time
