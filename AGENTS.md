@@ -94,20 +94,34 @@
   nodes per call**, measured by building with 1, 2, 3 and 4 calls (110,017 /
   90,807 / 71,597 / 52,386). A chain past ~16 arms is where arms near the top
   stop taking effect, so this is a correctness risk as well as a size one.
+- **The size is not the opcode chain, it is the builtin dispatch.** `gateHigh`
+  is 13,217 nodes and `gateLow` 6,489 — together 19,706, which is the whole
+  19,210 per-call cost. The eleven buildable arms of `gateHigh` account for
+  10,734 of its 13,217 (`tools/armcost.py` blanks one arm and rebuilds; the
+  biggest are `unpack` 1,806, `pcall`/`xpcall` 1,779, `_pat` 1,412, `assert`
+  1,381, `_gmatch`/`_gmnext` 1,268). So a 43-arm opcode chain costs a few
+  hundred nodes and the dispatch *behind one CALL instruction* costs 19.7k, paid
+  four times.
+- **"Make the dispatch a gate" is blocked by a host primitive, not by effort.**
+  A gate is a hardware node with named ports; it cannot be handed a register
+  index and left to index a register file, because that is exactly what the host
+  has no primitive for. Every gate in this chip takes values on ports and
+  returns values on ports, and the parts that look like array access — the
+  pattern matcher, the formatter — are micro-steps, which are mods, which are
+  inlined. So the dispatch has to be WireScript, and WireScript mods are inlined
+  at their call site. Reaching 20k needs the compiler to grow a gate that can
+  index a register file by a runtime value; it is not a refactor of the CALL arm.
 - **Splitting the chain does not shrink it, and that is worth knowing before
   anyone tries.** Moving ops 34..40 (floor division and the bitwise operators)
   into their own mod and calling it from the same place measured **+20 nodes**,
   not fewer: the helper is inlined at the same call site, so the seven arms
   became seven arms plus a dispatch. The only two things that reduce this are
-  **fewer `vmStep` calls per tick** and **less work inside the dispatcher** — a
-  body split, not an extraction. Before promising a node reduction, measure
-  which of the two the change is.
+  **fewer `vmStep` calls per tick** and **a host primitive that is not there**.
 - **The 20k budget is not reachable by tuning.** One `vmStep` call per tick
   already costs 52,386 nodes, and the four-call burst costs 76,877 of the chip's
-  110,017. Getting under 20k means the dispatcher cannot be inlined even once,
-  which means it has to become a gate or the burst has to stop unrolling — and
-  both are design changes with a CPU-latency cost to measure, not a refactor.
-  Treat the budget as a decision to take with numbers, not a target to grind at.
+  110,017. Getting under 20k means the dispatch cannot be inlined even once,
+  which needs a host primitive the compiler does not have. Treat the budget as a
+  decision to take with numbers, not a target to grind at.
 - **The one measurement that settles it, both chips built and alternated in one
   process** (a 200-iteration loop, so the two runs share the machine's drift):
 
