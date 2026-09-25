@@ -1209,6 +1209,20 @@ TESTS = [
     ("syn-locnum", "local 5 = 1", None, "synfail"),
     ("syn-anonstmt", "function() end", None, "synfail"),
     ("syn-break", "break", None, "synfail"),
+    # A LINE NUMBER, which no case here checked.  The library is prepended to the
+    # program, so the source the lexer and the parser see counts the library's
+    # lines: the parser's error path never subtracted them, so any syntax error in
+    # a program that pulled in a piece reported a line tens of lines too high --
+    # "line 50" for an error on line 2.  The lexer's path did subtract them, and
+    # did it in a `let` it then assigned, which the compiler rejected (WS007) and
+    # mis-lowered: the graph gained 7 nodes when that became a `var`.  Both paths
+    # now go through one userLine mod, and the number is spelled as an int because
+    # a computed whole number in WireScript is a float (fmtNum would say "2.0").
+    ("syn-line-nolib", "local x = = 3", None, "synfail", {"errline": 1}),
+    ("syn-line-parser-lib", "print(math.random ~= nil)\nlocal x = = 3", None,
+     "synfail", {"errline": 2}),
+    ("syn-line-lexer-lib", "print(tonumber('1'))\nlocal s = 'abc", None,
+     "synfail", {"errline": 2}),
     ("run-callstr", "print('before') ('x')()", None, "haltfail"),
     ("run-addstr", "print('before') print(1+'x')", None, "haltfail"),
     ("run-ltstr", "print('before') print('a'<1)", None, "haltfail"),

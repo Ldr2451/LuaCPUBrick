@@ -9643,6 +9643,23 @@ mod libIo(p: string) -> string {
       || srcUses(p, "io.lines") then LIB_io else ""
 }
 
+// The library is prepended to the program, so a line in the source the lexer
+// and the parser see counts the library's lines as well.  Both error paths undo
+// that here, because two copies of one subtraction is one copy waiting to be
+// wrong -- and the parser's was missing, so every syntax error in a program that
+// pulled in a piece reported a line number tens of lines too high.
+//
+// It answers a STRING, not a number, because the int/float distinction lives in
+// the register's tag and a line number is an int: fmtNum is the FLOAT formatter
+// and always spells a whole number "2.0" (which is right for 2.0 and wrong for a
+// line).  The int spelling is the one fmtVal uses for the integer tag.
+mod userLine(raw: float) -> string {
+  let l = toInt(raw)
+  var u = l
+  if libLines < l { u = l - libLines } else { u = 1 }
+  return "" .. (u | 0)
+}
+
 mod libTonumber(p: string) -> string {
   return if srcUses(p, "tonumber") then LIB_tonumber else ""
 }
@@ -9740,9 +9757,7 @@ on goParse {
   } else {
     if lerr {
       progOkV = false
-      let el = lerrLine | 0
-      if libLines < el { el = el - libLines } else { el = 1 }
-      errV = "line " .. el .. ": " .. lerrMsg
+      errV = "line " .. userLine(lerrLine) .. ": " .. lerrMsg
       vmHalted = true
       jobBusy = false
     } else {
@@ -9767,8 +9782,8 @@ on goParse2 {
       // vmReset clears errV, so report the failure after it; cpos sits at
       // (or just past) the offending token in nearly every perr path
       let epos = if cpos >= tl.length() then tl.length() - 1 else cpos
-      let eline = if epos < 0 then lline else tl[epos]
-      errV = "line " .. (eline | 0) .. ": " .. perrMsg
+      errV = "line " .. userLine(if epos < 0 then lline else tl[epos])
+        .. ": " .. perrMsg
     }
   }
 }
