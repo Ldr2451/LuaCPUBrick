@@ -86,6 +86,63 @@ def _as_float(v, default=0.0):
         return default
 
 
+# --- float gates, IEEE rather than Python -----------------------------------
+# Python raises where a float gate returns a value: 1.0/0.0 is ZeroDivisionError
+# (a gate divides to inf), math.log(0) and math.sqrt(-1) are ValueError (gates
+# answer -inf and nan), and (-8.0)**0.5 is a *complex number* (a gate answers
+# nan).  Every one of those was caught and answered 0.0, so the chip printed
+# 0.0 for `1/0`, 0.0 for `1/(0.0*-1)` instead of -inf, and a complex for
+# `(-8)^0.5`.  The oracle is PUC Lua on IEEE doubles, and it is the reference.
+_NAN = math.copysign(float("nan"), -1.0)   # the x86 default QNaN, sign bit set
+_INF = float("inf")
+
+
+def _signed_inf(neg: bool) -> float:
+    return -_INF if neg else _INF
+
+
+def _fdiv(a: float, b: float) -> float:
+    if b == 0.0:
+        if a == 0.0 or a != a:
+            return _NAN
+        return _signed_inf(math.copysign(1.0, a) * math.copysign(1.0, b) < 0)
+    return a / b
+
+
+def _fpow(a: float, b: float) -> float:
+    if a != a or b != b:
+        return _NAN
+    if a == 0.0:
+        if b < 0.0:
+            return _signed_inf(math.copysign(1.0, a) < 0)
+        return 1.0 if b == 0.0 else 0.0
+    if a < 0.0 and b != math.floor(b):
+        return _NAN
+    try:
+        return float(a ** b)
+    except (OverflowError, ValueError):
+        return _INF
+
+
+def _fsqrt(a: float) -> float:
+    return _NAN if a < 0.0 else math.sqrt(a)
+
+
+def _fln(a: float) -> float:
+    if a > 0.0:
+        return math.log(a)
+    return -_INF if a == 0.0 else _NAN
+
+
+def _fmod(a: float, b: float, floored: bool) -> float:
+    if b == 0.0 or a != a or b != b:
+        return _NAN
+    r = math.fmod(a, b)
+    if floored and r != 0.0 and (r < 0.0) != (b < 0.0):
+        r += b
+    return r
+
+
 def _as_int(v, default=0):
     try:
         return int(_as_float(v, float(default)))
@@ -583,7 +640,7 @@ class Sim:
         elif "Expr_MathMultiply" in cls:
             self._do_arith(nid, nq, lambda a, b: a * b)
         elif "Expr_MathDivide" in cls:
-            self._do_arith(nid, nq, lambda a, b: 0.0 if b == 0 else a / b)
+            self._do_arith(nid, nq, _fdiv)
         elif "Expr_MathPow" in cls:
             self._do_pow(nid, nq)
         elif "Expr_MathNegate" in cls:
@@ -614,7 +671,7 @@ class Sim:
         elif "Expr_BitwiseShiftRight" in cls:
             self._do_bitwise(nid, nq, lambda a, b: a >> b if b >= 0 else 0)
         elif "Expr_MathSqrt" in cls:
-            self._do_unary(nid, nq, lambda a: math.sqrt(a) if a >= 0 else 0.0)
+            self._do_unary(nid, nq, _fsqrt)
         elif "Expr_MathSin" in cls:
             self._do_unary(nid, nq, math.sin)
         elif "Expr_MathCos" in cls:
@@ -622,9 +679,9 @@ class Sim:
         elif "Expr_MathTan" in cls:
             self._do_unary(nid, nq, math.tan)
         elif "Expr_MathAsin" in cls:
-            self._do_unary(nid, nq, lambda a: math.asin(a) if -1.0 <= a <= 1.0 else 0.0)
+            self._do_unary(nid, nq, lambda a: math.asin(a) if -1.0 <= a <= 1.0 else _NAN)
         elif "Expr_MathAcos" in cls:
-            self._do_unary(nid, nq, lambda a: math.acos(a) if -1.0 <= a <= 1.0 else 0.0)
+            self._do_unary(nid, nq, lambda a: math.acos(a) if -1.0 <= a <= 1.0 else _NAN)
         elif "Expr_MathAtan2" in cls:
             y = _as_float(self._in_val(nid, "Y", 0))
             x = _as_float(self._in_val(nid, "X", 0))
@@ -757,11 +814,11 @@ class Sim:
                                              _as_float(self._in_val(nid, "InputB", 0))))
         elif "Expr_MathLn" in cls:
             x = _as_float(self._in_val(nid, "Input", 1))
-            self._out_val(nid, "Output", math.log(x) if x > 0 else 0.0)
+            self._out_val(nid, "Output", _fln(x))
         elif "Expr_MathLogBase" in cls:
             x = _as_float(self._in_val(nid, "Input", 1))
             b = _as_float(self._in_val(nid, "Base", 10))
-            self._out_val(nid, "Output", math.log(x, b) if x > 0 and b > 0 and b != 1 else 0.0)
+            self._out_val(nid, "Output", _fdiv(_fln(x), _fln(b)))
         elif "Expr_MathSign" in cls or "Expr_MathSgn" in cls:
             x = _as_float(self._in_val(nid, "Input", 0))
             self._out_val(nid, "Output", 0.0 if x == 0 else (1.0 if x > 0 else -1.0))
@@ -776,9 +833,11 @@ class Sim:
         elif "Expr_MathAsinh" in cls:
             self._do_unary(nid, nq, math.asinh)
         elif "Expr_MathAcosh" in cls:
-            self._do_unary(nid, nq, lambda v: math.acosh(v) if v >= 1 else 0.0)
+            self._do_unary(nid, nq,
+                           lambda v: math.acosh(v) if v >= 1.0 else _NAN)
         elif "Expr_MathAtanh" in cls:
-            self._do_unary(nid, nq, lambda v: math.atanh(v) if -1 < v < 1 else 0.0)
+            self._do_unary(nid, nq,
+                           lambda v: math.atanh(v) if -1.0 < v < 1.0 else _NAN)
         elif "Expr_MathDegreesToRadians" in cls:
             self._do_unary(nid, nq, math.radians)
         elif "Expr_MathRadiansToDegrees" in cls:
@@ -980,10 +1039,7 @@ class Sim:
     def _do_pow(self, nid: int, nq: set):
         a = _as_float(self._in_val(nid, "Input", 0))
         b = _as_float(self._in_val(nid, "Exponent", 0))
-        try:
-            self._out_val(nid, "Output", a ** b)
-        except (TypeError, ValueError, ZeroDivisionError):
-            self._out_val(nid, "Output", 0.0)
+        self._out_val(nid, "Output", _fpow(a, b))
 
     def _do_unary(self, nid: int, nq: set, op):
         a = _as_float(self._in_val(nid, "Input", 0))
@@ -1542,14 +1598,7 @@ class Sim:
     def _do_modulo(self, nid: int, nq: set, floored: bool):
         a = _as_float(self._in_val(nid, "InputA", 0))
         b = _as_float(self._in_val(nid, "InputB", 0))
-        if b == 0:
-            # gate behaviour: x % 0 yields 0 (no inf/nan), matching divide
-            self._out_val(nid, "Output", 0.0)
-            return
-        r = math.fmod(a, b)
-        if floored and r != 0 and (r < 0) != (b < 0):
-            r += b
-        self._out_val(nid, "Output", r)
+        self._out_val(nid, "Output", _fmod(a, b, floored))
 
     def _do_endswith(self, nid: int, nq: set):
         s = _as_str(self._in_val(nid, "Input", ""))

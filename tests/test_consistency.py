@@ -180,14 +180,14 @@ handled = set(int(x) for x in re.findall(r"op == (\d+)", vm))
 if re.search(r"op >= 8 && op <= 13", vm):
     handled |= set(range(8, 14))
 emitted = set(int(x) for x in re.findall(r"bEmit\((\d+)", WS))
-check("opcodes-0-49-handled", handled >= set(range(50)),
-      f"missing {[o for o in range(50) if o not in handled]}")
-check("no-op-50", max(emitted | {0}) <= 49,
+check(f"opcodes-0-{m.N_OPS - 1}-handled", handled >= set(range(m.N_OPS)),
+      f"missing {[o for o in range(m.N_OPS) if o not in handled]}")
+check(f"no-op-{m.N_OPS}", max(emitted | {0}) <= m.N_OPS - 1,
       f"max emitted {max(emitted)}")
-check("spec-50-ops", m.N_OPS == 50 and m.HALT == 0 and m.RETURNM == 42
+check(f"spec-{m.N_OPS}-ops", m.N_OPS == 51 and m.HALT == 0 and m.RETURNM == 42
       and m.CALLM == 41 and m.ADJUST == 43 and m.TAPPEND == 44
       and m.VARARG == 45 and m.GETUP == 46 and m.SETUP == 47
-      and m.GETCLO == 48 and m.GEN == 49)
+      and m.GETCLO == 48 and m.GEN == 49 and m.FOREND == 50)
 readme = open(os.path.join(os.path.dirname(HERE), "README.md"),
              encoding="utf-8").read()
 missing_docs = [name for i, name in enumerate(m.OP_NAMES)

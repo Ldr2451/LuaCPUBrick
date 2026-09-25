@@ -176,12 +176,15 @@
   parts that look like array access — the pattern matcher, the formatter — are
   micro-steps, which are mods, which are inlined. So the budget is a decision
   about the host, not a refactor of the CALL arm.
-- **Exact implicit float printing is host-bound, not a formatter bug.** The
-  host's concat gate exposes only its shortest round-trip conversion and has no
-  precision knob; PUC's oracle emits 17 significant digits and a three-digit
-  exponent. A synchronous 17-digit replacement tried in `fmtNum` expanded at
-  every call site and lowered 231 unsupported gates, so do not retry it without
-  first changing the host or making the conversion non-inlined.
+- **Exact implicit float printing is host-bound, not a formatter bug, and the
+  host's law is now read rather than inferred.** The `..` gate converts a float
+  operand with `if !f.is_finite() || *f == 0.0 { "0" } else { format!("{f}") }`
+  (see "the host's laws" below), so the chip's shortest round trip *is* the
+  host-faithful spelling and PUC's 17-digit `%.14g` output is the divergence;
+  there is no precision knob to ask for. A synchronous 17-digit replacement tried
+  in `fmtNum` expanded at every call site and lowered 231 unsupported gates, so do
+  not retry it without first changing the host or making the conversion
+  non-inlined.
 - **Integer precision and integer overflow are separate.** Every numeric register
   is a float, so a literal above 2^53 is wrong before `fmtVal` sees it. Wrap
   behaviour does not need the exact value: integer literals saturate to the two
@@ -277,8 +280,57 @@ falls out for free.
 ## WireScript traps
 Measured, not style. `tools/wswarn.py` flags the visible shapes;
 `tools/vargraph.py <name>` shows which gate fires each write.
+- **The host's laws are in the compiler's source, on this machine, and are worth
+  more than any inference from the oracle.** `irdump.WS_DIR` is the wirescript
+  checkout the compiler came from (`%TEMP%\opencode\wirescript`), complete with
+  `docs/` and the *certified* gate laws — the ones whose comments say they were
+  replayed against the game's own output. Ask there before guessing a gate's
+  behaviour, and before trusting a branch in `irsims.py`. What it says today:
+  - **Arithmetic is IEEE f64.** `float` is documented as 64-bit
+    (`docs/src/types.md`), and the compiler's own constant folder is
+    `MathDivide => x / y`, `MathModulo => x % y`, `MathLn => a.ln()`,
+    `MathSqrt => a.sqrt()`, `MathPow => a.powf(b)`
+    (`crates/wirescript/src/lower/fold/eval.rs`). So `1/0` is `inf`, `0/0` and
+    `sqrt(-1)` are `nan`, `log(0)` is `-inf`, `0.0^-1` is `inf`, and `x % y` is
+    Rust's *truncated* remainder. The folder refusing to bake a non-finite
+    result is a folding rule, not a semantic one, and divide-by-zero is still
+    unprobed in-game — the Rust model is the best evidence available, and it is
+    IEEE. The chip deliberately diverges where Lua differs (`%` and `//` are
+    floored, and done in the chip). Negation is the host's `MathNegate`, so
+    `-v`, not `0.0 - v`: IEEE negation of `0.0` is `-0.0` and `0.0 - 0.0` is
+    `+0.0`, which is how `print(-0.0)` printed `0.0`.
+  - **Text gates are lossy in ways that matter.** `..` is
+    `if !f.is_finite() || *f == 0.0 { "0" } else { format!("{f}") }`; `FormatText`
+    rounds floats to 3 decimals (ties to even), comma-groups the integer part,
+    drops trailing zeros, renders bools as `"1"`/`"0"`, renders
+    rotator/color/quat as `""`, and renders non-finite and `-0.0` as `"0"`. So a
+    *raw float* operand never prints as `inf`, `nan` or `-0.0` in game. The chip
+    is spared that because it formats its own numbers (`fmtNum`, and `_fmt` as a
+    micro-step) and hands the host strings — which is also why the 3-decimal
+    rounding never reaches Lua output.
+- **A numeric sim gate that catches an exception and answers `0.0` is a bug, and
+  `except` around arithmetic hides it.** Python raises where the host returns a
+  value: `1.0/0.0` is `ZeroDivisionError` (the gate divides to `inf`),
+  `math.log(0)`/`math.sqrt(-1)` are `ValueError` (`-inf`/`nan`), and
+  `(-8.0)**0.5` is a **complex number** (the gate answers `nan`). `_do_arith`
+  caught all three and answered `0.0`, so the chip printed `0.0` for `1/0` and
+  `0.0` for `1/(0.0*-1)` instead of `-inf`, and a complex reached a float
+  register. Model these gates from the laws above, not from Python's exception
+  behaviour. (`_NAN` is the x86 default QNaN — sign bit set — because that is
+  what the oracle's C library prints.)
 - **A value gate fed by a var the same mod writes reads the NEW value.** Fetch a
   character in one state, consume it in the next.
+- **A micro-step machine that a pcall dispatched in place must be completed by
+  the machine, not by the call.** `_fmt`, `_pat` and `_gmatch` answer through a
+  machine that runs for several ticks, and the CALL arm used to run `pcallEnd` on
+  the tick that *started* it: the protected call was over before the work ran,
+  the marker was gone, and the failure that work raised a tick later ended the
+  program instead of answering `false, message`. All five completion sites now go
+  through `nxDone`, and the unwind abandons the machine (it used to keep ticking
+  and fail a second time, this time with `pcallDepth` at 0). Two neighbours of
+  this trap cost the same fix: every var a machine reads must be reset when the
+  *next* call starts, or a call that raised leaves it poisoned — `fmtTo` left on
+  4 made the following `string.format` answer its own format text as a literal.
 - **A condition on a file-level `var`, nested inside another `if`, silently
   loses where the mod is inlined more than once.** The old four-copy `vmStep`
   shared one Get per var across the copies. Hoist the test to the top of the mod
@@ -375,6 +427,18 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   minimum bar for a change.
 - After changing the sim or the runner, prove the fast path equals the slow one
   (`CHIP_BATCH=1` must give the same OK/FAIL counts).
+- **A model of the loop state finds what a diff cannot, and it is cheap.** The
+  loop/frame depth invariant (`forDepth` is 0 whenever no numeric loop is live)
+  has no repro short of writing one: `break`, a `return` out of a loop and an
+  error unwinding through a `pcall` each corrupt a *later* loop, and the suite
+  had 552 green cases over it. Encoding the machine as a small transition system
+  and asking for an invariant violation gave the counterexample in minutes — and
+  the corrected model then bounds the nesting depth instead of growing an array
+  forever. Reach for it when the bug is "the state is wrong later", not "this
+  program prints the wrong thing". A model of the *chip* is a different and much
+  more expensive thing: the chip's own constants, the gates and the host's laws
+  are not in the model, so a green model proves nothing about the chip — it
+  proves the *rule* you are about to encode, which is what you want it for.
 
 ## Workflow
 - Keep a todo list for multi-step work, exactly one `in_progress` at a time, and

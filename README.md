@@ -112,6 +112,7 @@ In the table, `R` means a frame-relative register. Unless an instruction writes
 | 47 | `SETUP` | `A=Rsource, B=descriptor, C=kind` | Write a captured local and mirror current-frame writes into its register. |
 | 48 | `GETCLO` | `A=Rdst` | Read the current closure number, used by recursive local functions. |
 | 49 | `GEN` | none | Advance the loop-round generation used to give closure cells fresh identities. |
+| 50 | `FOREND` | none | Pop numeric-loop state on a `break` or zero-trip exit that skipped `FORLOOP`. |
 
 ### Operand encoding
 

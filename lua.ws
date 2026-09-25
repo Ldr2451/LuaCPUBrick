@@ -262,7 +262,7 @@ const LIB_math_int = "math = math or {}\nmath.floor = function(x) return _m(1, x
 const LIB_math_trig = "math = math or {}\nmath.sin = function(x) return _m(4, x, 0) end\nmath.cos = function(x) return _m(5, x, 0) end\nmath.tan = function(x) return _m(6, x, 0) end\nmath.asin = function(x) return _m(7, x, 0) end\nmath.acos = function(x) return _m(8, x, 0) end\nmath.atan = function(y, x) return _m(9, y, x or 1) end\n"
 const LIB_math_exp = "math = math or {}\nmath.exp = function(x) return _m(10, x, 0) end\nmath.log = function(x, b)\n  if b == nil then return _m(11, x, 0) end\n  if b == 10 then return _m(12, x, 0) end\n  return _m(11, x, 0) / _m(11, b, 0)\nend\n"
 const LIB_math_misc = "math = math or {}\nmath.max = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v > m then m = v end end\n  return m\nend\nmath.min = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v < m then m = v end end\n  return m\nend\nmath.fmod = function(a, b)\n  local r = a % b\n  if r ~= 0 and (a < 0) ~= (b < 0) then r = r - b end\n  return r\nend\nmath.modf = function(x) local i = (x >= 0 and _m(1, x, 0)) or _m(2, x, 0) return i, x - i end\n"
-const LIB_tab_ins = "table = table or {}\ntable.insert = function(t, ...)\n  local n = #t\n  local c = select('#', ...)\n  if c == 1 then\n    t[n + 1] = (...)\n  elseif c == 2 then\n    local pos, v = ...\n    for i = n, pos, -1 do t[i + 1] = t[i] end\n    t[pos] = v\n  end\nend\ntable.remove = function(t, pos)\n  local n = #t\n  if pos == nil then pos = n end\n  local v = t[pos]\n  for i = pos, n - 1 do t[i] = t[i + 1] end\n  t[n] = nil\n  return v\nend\n"
+const LIB_tab_ins = "table = table or {}\ntable.insert = function(t, ...)\n  local n = #t\n  local c = select('#', ...)\n  if c == 1 then\n    t[n + 1] = (...)\n  elseif c == 2 then\n    local pos, v = ...\n    for i = n, pos, -1 do t[i + 1] = t[i] end\n    t[pos] = v\n  end\nend\ntable.remove = function(t, pos)\n  local n = #t\n  if pos == nil then pos = n end\n  if pos ~= n and (pos < 1 or n + 1 < pos) then error(\"bad argument #2 to 'remove' (position out of bounds)\", 2) end\n  local v = t[pos]\n  local i = pos\n  while i < n do t[i] = t[i + 1] i = i + 1 end\n  t[i] = nil\n  return v\nend\n"
 const LIB_tab_list = "table = table or {}\ntable.unpack = unpack\ntable.pack = function(...) local t = {...} t.n = select('#', ...) return t end\ntable.move = function(a1, f, e, t, a2)\n  a2 = a2 or a1\n  if e >= f then\n    if t > e or t <= f or a1 ~= a2 then\n      for i = 0, e - f do a2[t + i] = a1[f + i] end\n    else\n      for i = e - f, 0, -1 do a2[t + i] = a1[f + i] end\n    end\n  end\n  return a2\nend\n"
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, j)\n  sep = sep or \"\"\n  i = i or 1\n  j = j or #t\n  local r = \"\"\n  for k = i, j do\n    local v = t[k]\n    if k > i then r = r .. sep end\n    r = r .. v\n  end\n  return r\nend\n"
 const LIB_tab_sort = "table = table or {}\n_lt = function(a, b) return a < b end\ntable.sort = function(t, cmp)\n  local lt = cmp or _lt\n  for i = 2, #t do\n    local v = t[i]\n    local j = i - 1\n    while j >= 1 and lt(v, t[j]) do t[j + 1] = t[j] j = j - 1 end\n    t[j + 1] = v\n  end\nend\n"
@@ -300,6 +300,7 @@ mod truthyOf(tag: int, num: float) -> bool {
 mod fmtNum(v: float) -> string {
   return if v != v then "nan"
     else if v != 0.0 && 2.0 * v == v then if v > 0.0 then "inf" else "-inf"
+    else if v == 0.0 then if 1.0 / v < 0.0 then "-0.0" else "0.0"
     else if v == floor(v) && abs(v) < 1e15 then ("" .. (v | 0)) .. ".0"
     else "" .. v
 }
@@ -1313,6 +1314,7 @@ mod parseInit() {
   lkRaw = false
   pdHead = -1
   pdThen = 0
+  pdTarget = -1
   pDone = false
   expectOperand = true
   popMode = 0
@@ -2757,6 +2759,10 @@ var ctlG: int[]
 var ctlLoop: int = -1
 var pdHead: int = -1
 var pdThen: int = 0
+// where a pending patch list points, when the target is not simply "wherever the
+// code ends by the time the list is drained" (a numeric loop's break list points
+// at the FOREND it has to run, which is one instruction before that)
+var pdTarget: int = -1
 var tmpSStk: string[]
 // field name of a `function M.f()` definition, popped when its body closes
 var fnKey: string[]
@@ -3487,8 +3493,9 @@ mod pdDrain() {
       ctlLoop = tmpC
     }
     pdThen = 0
+    pdTarget = -1
   } else {
-    bPatch(pdHead, bop.length())
+    bPatch(pdHead, if pdTarget == -1 then bop.length() else pdTarget)
     pdHead = plNext[pdHead]
   }
 }
@@ -3537,6 +3544,8 @@ mod doBlockClose() {
       blkExit()
       tmpC = ctlD[n]
       bEmit(33, ctlA[n], ctlE[n], ctlF[n])
+      bEmit(50, 0, 0, 0)
+      pdTarget = bop.length() - 1
       bPatch(ctlB[n], bop.length())
       pdHead = ctlC[n]
       pdThen = 1
@@ -3856,6 +3865,7 @@ var fRetBase: int[]
 var fRetPC: int[]
 var fRetN: int[]
 var fVaB: int[]
+var fForDepth: int[]
 // vararg values as one flat stack; each frame records its base in fVaB and
 // vaTop is the number of live entries
 var vaTag: int[]
@@ -4183,6 +4193,7 @@ mod vmReset() {  tmap.clear()
   fRetPC.clear()
   fRetN.clear()
   fVaB.clear()
+  fForDepth.clear()
   vaTag.clear()
   vaNum.clear()
   vaStr.clear()
@@ -4274,6 +4285,7 @@ mod vmReset() {  tmap.clear()
   fRetPC.push(-1)
   fRetN.push(-1)
   fVaB.push(0)
+  fForDepth.push(0)
 }
 
 // pcall, which PUC has in C and is a gate here for the same reason.
@@ -4303,6 +4315,22 @@ var pcallBad: int[]            // whether that dispatch raised: an array, becaus
                                // a mod's write to a file variable is not read
                                // back reliably inside the same step
 var pcallGo: bool = false      // and pcallEnter has a frame to push
+
+// A micro-step gate is finished: its results are at nxDst and retCountV counts
+// them.  Normally the instruction steps past itself.  A gate a pcall dispatched
+// in place hands them to pcallEnd instead, which moves them up one and writes
+// the pcall's own true (or its handler's false) below -- so the protected call
+// is only completed here, once the work is actually done.  The other outcome
+// never arrives: a machine that raises goes to the unwind with pcallBad set, and
+// pcallStep answers false, message.
+mod nxDone() {
+  if pcallRan {
+    pcallRan = false
+    pcallEnd(nxDst, if 0 <= retCountV then retCountV else 0, 0)
+  } else {
+    vmPc = nxPc + 1
+  }
+}
 var pcallFid: int = 0          // which function
 var pcallA: int = 0            // the pcall's own register
 var pcallNArgs: int = 0        // how many arguments it was given
@@ -4329,6 +4357,19 @@ mod vmFail(msg: string) {
 // the chip -- but this one is a tick of its own per frame, so a deep stack costs
 // a deep stack in ticks and nothing else.
 mod pcallStep() {
+  // A caught error abandons whatever machine raised it.  A gate that answers
+  // through a micro-step (_fmt, _pat, _gmatch) leaves that machine running with
+  // its state mid-conversion, and the unwind does not stop it: the next tick
+  // carried on from there, failed again -- this time with pcallDepth back at
+  // zero, so the second failure ended the program and lost the false, message
+  // the first one had already produced.  The pcall latches go with it, or the
+  // gate would be dispatched again after the unwind finished.
+  nxActive = false
+  fmtGo = false
+  patGo = false
+  pcallGate = false
+  pcallGo = false
+  pcallRan = false
   let popped = fFunc[fFunc.length() - 1]
   // the marker's own return, read before the pops take it off the stack: these
   // are where the false and the message (or the handler's results) go
@@ -4349,6 +4390,7 @@ mod pcallStep() {
   fRetPC.pop()
   fRetN.pop()
   vaTop = fVaB.pop().Value
+  forDepth = fForDepth.pop()
   if popped == PCALL_MARK {
     pcallUnwind = false
     vmFailed = false
@@ -4375,6 +4417,7 @@ mod pcallStep() {
       fRetPC.push(rpc)
       fRetN.push(want)
       fVaB.push(vaTop)
+      fForDepth.push(forDepth)
       let ht = pcallHT
       let hn = pcallH
       let hid = toInt(hn)
@@ -4447,6 +4490,7 @@ mod pcallEnd(src: int, k: int, extra: int) {
   fRetPC.pop()
   fRetN.pop()
   vaTop = fVaB.pop().Value
+  forDepth = fForDepth.pop()
   pcallDepth = pcallDepth - 1
   // The values move up one register, into the space after the call's own, and
   // the call's own register gets true or false: true for the protected call
@@ -4543,6 +4587,7 @@ mod pcallEnter() {
     fRetBase.push(base)
     fRetPC.push(vmPc + 1)
     fRetN.push(-2)
+    fForDepth.push(forDepth)
     vmBase = nbase
     vmPc = fStart[inner]
   }
@@ -4986,7 +5031,7 @@ mod fmtDone() {
   vstr[nxDst] = fmtOut
   retCountV = 1
   nxActive = false
-  vmPc = nxPc + 1
+  nxDone()
 }
 
 // The quoted form of one byte: PUC 5.5 writes a backslash and a real newline
@@ -5461,7 +5506,8 @@ mod fmtGStrip() {
 // The entry, as %f's: the argument, the sign, the precision.  14 is the ceiling
 // and not an arbitrary one -- the mantissa is p+1 digits read as one integer,
 // and ten of them is past 2^53.
-mod fmtConvExp() {  fmtArgI = fmtArgI + 1
+mod fmtConvExp() {
+  fmtArgI = fmtArgI + 1
   let ab = fmtArgAt()
   if fmtArgI > fmtArgs {
     vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
@@ -7335,7 +7381,7 @@ mod patDone() {
     vstr[nxDst] = patSrc.Substring(patStart, patI - patStart)
     retCountV = 1
     nxActive = false
-    vmPc = nxPc + 1
+    nxDone()
   } else if MAXVALS < patNCap {
     patErr = "too many captures to return"
     patSt = 8
@@ -7373,7 +7419,7 @@ mod patAnswer() {
   if patNCap < patAn {
     retCountV = patAOff + patNCap
     nxActive = false
-    vmPc = nxPc + 1
+    nxDone()
   } else {
     patSt = 16
   }
@@ -7388,7 +7434,7 @@ mod patNone() {
   // one nil is a value, and a for-in that gets one calls the iterator for ever
   retCountV = if patMode == 3 then 0 else 1
   nxActive = false
-  vmPc = nxPc + 1
+  nxDone()
 }
 
 // This attempt failed, so the next start position, unless the pattern is
@@ -7731,7 +7777,7 @@ mod gmStep() {
     vstr[nxDst + 2] = ""
     retCountV = 3
     nxActive = false
-    vmPc = nxPc + 1
+    nxDone()
   } else {
     patSrc = patGmS[patGmId]
     patPat = patGmP[patGmId]
@@ -7748,7 +7794,7 @@ mod gmStep() {
     patArm(pos, 3, nxDst, patGmId)
     if patMode == -1 {
       nxActive = false
-      vmPc = nxPc + 1
+      nxDone()
     }
   }
 }
@@ -8003,6 +8049,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
       fRetPC.push(vmPc + 1)
       fRetN.push(if mtSelf then -2 else 1)
       fVaB.push(vaTop)
+      fForDepth.push(forDepth)
       pcallDepth = pcallDepth + 1
       pcallMode = 0
       pcallBase = vmBase
@@ -8097,6 +8144,11 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
         fmtArgI = 0
         fmtPos = 0
         fmtQPos = 0
+        // fmtTo is where the next fetch goes, and a call that raised leaves it
+        // on whatever the last conversion asked for: the next call's first fetch
+        // then jumped straight into a conversion and the whole format came back
+        // as literal text.
+        fmtTo = 0
         fmtOut = ""
         fmtBody = ""
         fmtPre = ""
@@ -8191,7 +8243,9 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
     // register, and a falsey one raises with the message or PUC's
     // default.  The shift is retAdjust's job: copying forward would
     // overwrite each value with the one below it.
-    if vTag(a + 1) == 0 || vTag(a + 1) == 3 && vNum(a + 1) == 0.0 {
+    if nargs < 1 {
+      vmFail("bad argument #1 to 'assert' (value expected)")
+    } else if vTag(a + 1) == 0 || vTag(a + 1) == 3 && vNum(a + 1) == 0.0 {
       if 1 < nargs {
         let t2 = vTag(a + 2)
         vmFail(fmtVal(t2, vNum(a + 2), vStr(a + 2)))
@@ -8427,6 +8481,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
         fRetBase.push(vmBase)
         fRetPC.push(vmPc + 1)
         fRetN.push(if mtSelf then -2 else 1)
+        fForDepth.push(forDepth)
         vmBase = nbase
         vmPc = fStart[fid]
         advanced = true
@@ -8564,17 +8619,17 @@ mod vmStep() {
             vSetNum(a, x * y)
           }
         } else if op == 11 {
-          if y == 0.0 {
-            vSetNum(a, 0.0)
-          } else {
-            vSetNum(a, x / y)
-          }
+          // A zero divisor is not special-cased: the host's divide gate is
+          // `x / y` on a 64-bit float, so 1/0 is inf and 0/0 is nan, which is
+          // what PUC prints too.  A guard here answered 0.0 for both, and
+          // 1/(0.0*-1) with it.
+          vSetNum(a, x / y)
         } else if op == 12 {
           if y == 0.0 {
             if ii {
-              vSet(a, 6, 0.0, "")
+              vmFail("attempt to perform 'n%0'")
             } else {
-              vSetNum(a, 0.0)
+              vSetNum(a, x % y)
             }
           } else {
             // floored quotient: the floor gate truncates toward zero,
@@ -8594,12 +8649,14 @@ mod vmStep() {
         }
       }
     } else if op == 14 {
+      // -v, not 0.0 - v: IEEE negation of 0.0 is -0.0, and 0.0 - 0.0 is +0.0,
+      // which is how `print(-0.0)` came out "0.0".
       if vTag(b) == 6 {
-        vSetInt(a, 0.0 - vNum(b))
+        vSetInt(a, -vNum(b))
       } else if vTag(b) != 1 {
         vmFail("attempt to negate")
       } else {
-        vSetNum(a, 0.0 - vNum(b))
+        vSetNum(a, -vNum(b))
       }
     } else if op == 15 {
       if truthyOf(vTag(b), vNum(b)) {
@@ -8704,11 +8761,18 @@ mod vmStep() {
           let fid = if cid < cloBase then cid else cloF[cid]
           gateHigh(fid, a, nargs, mtSelf, cid)
         }
-        if pcallRan && pcallBad[0] == 0 {
+        if pcallRan && pcallBad[0] == 0 && !nxActive {
           // a gate dispatched in place by a pcall: its results are at the
           // pcall's own register, so they move up one and the true goes below.
           // A gate that raised does not come here: the error is the value, and
           // the unwind finds the marker with the message in it.
+          //
+          // Nor does one still running: _fmt, _pat and _gmatch answer through a
+          // micro-step, so the gate arm leaves nxActive set and this
+          // instruction re-runs once the machine is done.  Completing the
+          // protected call here would pop the marker and drop pcallDepth to 0
+          // before the work ran, and the failure that work raises -- one tick
+          // later -- would end the program instead of answering false, message.
           pcallRan = false
           pcallEnd(vmBase + a, if 0 <= retCountV then retCountV else 0, 0)
           advanced = true
@@ -8763,6 +8827,7 @@ mod vmStep() {
       fRetPC.pop()
       fRetN.pop()
       vaTop = fVaB.pop().Value
+      forDepth = fForDepth.pop()
       if fFunc.length() == 0 {
         resultV = fmtVal(rv, rn, rs)
         vmHalted = true
@@ -8786,6 +8851,7 @@ mod vmStep() {
       fRetPC.pop()
       fRetN.pop()
       vaTop = fVaB.pop().Value
+      forDepth = fForDepth.pop()
       if fFunc.length() == 0 {
         resultV = ""
         vmHalted = true
@@ -8818,6 +8884,7 @@ mod vmStep() {
       fRetPC.pop()
       fRetN.pop()
       vaTop = fVaB.pop().Value
+      forDepth = fForDepth.pop()
       let have = if 0 <= retCountV then retCountV else 0
       let n = if want == -2 then have else 1
       let k = if have < n then have else n
@@ -8883,6 +8950,7 @@ mod vmStep() {
         fRetPC.pop()
         fRetN.pop()
         vaTop = fVaB.pop().Value
+        forDepth = fForDepth.pop()
         let n = if want == -2 then cnt + tail else 1
         let k = if cnt + tail < n then cnt + tail else n
         if fFunc.length() == 0 {
@@ -8971,6 +9039,8 @@ mod vmStep() {
       vSet(a, 4, curClo(), "")
     } else if op == 49 {
       iterGen = iterGen + 1
+    } else if op == 50 {
+      forDepth = forDepth - 1
     } else if op == 28 {
       if tCount >= MAX_TABLES {
         vmFail("too many tables")
@@ -9070,11 +9140,15 @@ mod vmStep() {
       let lim = vNum(b)
       if (stp > 0.0 && ctrl <= lim) || (stp < 0.0 && ctrl >= lim) {
         let rem = floor((lim - ctrl) / stp) + 1.0
-        forCtrl[forDepth] = a
-        forRem[forDepth] = rem
-        forDepth = forDepth + 1
-        vmPc = vmPc + 2
-        advanced = true
+        if 16 <= forDepth {
+          vmFail("too many nested numeric loops")
+        } else {
+          forCtrl[forDepth] = a
+          forRem[forDepth] = rem
+          forDepth = forDepth + 1
+          vmPc = vmPc + 2
+          advanced = true
+        }
       } else {
         advanced = false
       }
@@ -9095,6 +9169,8 @@ mod vmStep() {
         advanced = true
       } else {
         forDepth = forDepth - 1
+        vmPc = vmPc + 2
+        advanced = true
       }
     } else if op == 34 {
       let lt = vTag(b)
@@ -9104,7 +9180,11 @@ mod vmStep() {
       let x = vNum(b)
       let y = vNum(c)
       if y == 0.0 {
-        if lt == 6 { vSetInt(a, 0) } else { vSetNum(a, 0.0) }
+        if lt == 6 && rt == 6 {
+          vmFail("attempt to divide by zero")
+        } else {
+          vSetNum(a, x / y)
+        }
       } else if lt == 6 && rt == 6 {
         let q = x / y
         let t = q | 0
