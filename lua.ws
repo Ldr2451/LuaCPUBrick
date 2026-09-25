@@ -99,8 +99,14 @@
 ///              or a %e or %g of a value below 10^(p-14), is an error rather
 ///              than an approximation
 ///   compare    == and ~= work on all types without coercion (tables by identity);
-///              < > <= >= work on numbers or lexicographically on strings;
-///              arithmetic never coerces strings
+///              < > <= >= work on numbers or lexicographically on strings, and a
+///              string against a number is an error
+///   coercion   arithmetic coerces a string operand the way PUC does, through
+///              the host's ParseInt/ParseNumber gates: '3' + 1 is 4, '  2.5  ' * 2
+///              is 5.0, '1e3' + 0 is 1000.0, -'3' is -3, and a string that is not
+///              a number raises the operator's own message ("attempt to add a
+///              'string' with a 'number'"), while a table or a nil says
+///              "attempt to perform arithmetic on a <type> value"
 ///   divzero    IEEE, like PUC: 1/0 is inf, -1/0 is -inf, 0/0 is nan, and the host's
 ///              divide gate is a plain divide on a 64-bit float, so this is what the
 ///              gate does in game.  x%0 and x//0 RAISE for two integers and are nan/inf
@@ -121,6 +127,18 @@
 ///                             whole number, 1 == 1.0, and 64-bit wraparound is
 ///                             absent beyond 2^53
 ///   non-integer number keys  a runtime error on write, nil on read
+///   tonumber                 not a builtin and no library piece, so a program
+///                             that calls it gets an attempt to call.  The
+///                             primitive it needs already exists (the host's
+///                             ParseInt/ParseNumber gates, used by the coercion
+///                             above); what is missing is a fid to reach it from
+///                             Lua, and gateHigh is at the arm count where the
+///                             arms near the top stop taking effect
+///   hex numerals in text     the host's parse is Rust's f64/i64 FromStr, which
+///                             takes no "0x10", so '0x10' + 0 raises where PUC
+///                             says 16.  The gates are the host's only
+///                             string-to-number, so this is a host limit, and it
+///                             is loud rather than a wrong answer
 ///
 /// Other differences from PUC-Lua 5.5
 ///   error's message has no "chunk:line:" prefix: the chip has no line at run
@@ -4609,6 +4627,66 @@ mod numArg(t: int, v: float) -> float {
   return if t == 0 then 0.0 else v
 }
 
+// PUC's string-to-number coercion, which the chip did not have at all: '3' + 1
+// is 4, ' 2.5 ' * 2 is 5.0, '0x10' + 0 is 16, '1e3' + 0 is 1000.0, -'3' is -3,
+// and a string that is not a number raises with the operator's own wording.
+// The host's ParseInt/ParseNumber gates are the primitive: each answers a value
+// and a Success flag, and the simulator models them with int(s)/float(s) and
+// that flag, so '10abc' fails (PUC wants the whole string) while '  2.5  '
+// parses.  ParseInt is tried first, which is also PUC's order and is what makes
+// '2' an integer and '2.0' a float: a fraction or an exponent in the numeral
+// makes ParseInt fail, so the answer takes the float path.
+//
+// It is two mods with one latch each, not one mod with one latch, and not an
+// if-expression.  A mod call in a VALUE position runs whether the arm runs or
+// not -- the trap that made math.type('x') raise through numArg -- and a `let`
+// taken from a var the same mod writes is re-derived at its next use, so a
+// shared latch would answer with the RIGHT operand's kind.  A latch per operand
+// side-steps that: nothing overwrites it after its call, so a re-derivation
+// reads the same value.
+//
+// The kind is what the caller needs for PUC's integer/float split: 0 the
+// operand was not a string, 1 a string that converted to an integer, 2 one that
+// converted to a float, 3 a string that is not a number at all.
+var coerceL: int = 0
+var coerceR: int = 0
+
+mod arithValL(t: int, v: float, s: string) -> float {
+  coerceL = 0
+  if t == 2 {
+    let i = s.ParseInt()
+    if i.Success {
+      coerceL = 1
+      return i
+    }
+    let p = s.ParseNumber()
+    if p.Success {
+      coerceL = 2
+      return p
+    }
+    coerceL = 3
+  }
+  return v
+}
+
+mod arithValR(t: int, v: float, s: string) -> float {
+  coerceR = 0
+  if t == 2 {
+    let i = s.ParseInt()
+    if i.Success {
+      coerceR = 1
+      return i
+    }
+    let p = s.ParseNumber()
+    if p.Success {
+      coerceR = 2
+      return p
+    }
+    coerceR = 3
+  }
+  return v
+}
+
 mod toInt(v: float) -> int {
   return v | 0
 }
@@ -7987,35 +8065,43 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
     // be written in Lua.  1 floor 2 ceil 3 sqrt 4 sin 5 cos 6 tan 7 asin
     // 8 acos 9 atan2 10 exp 11 ln 12 log10 13 tointeger 14 math.type
     let mo = toInt(vNum(a + 1))
-    let x = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
-    let y = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
-    if mo == 1 || mo == 2 || mo == 13 {
-      // the floor gate truncates toward zero, so step to the right for
-      // negatives (floor) or positives (ceil)
-      let t = x | 0
-      let fl = if x < 0.0 && x != t + 0.0 then t - 1 else t
-      let ce = if 0 < x && x != t + 0.0 then t + 1 else t
-      if mo == 1 {
-        // Lua's floor/ceil return integers; the chip tags whole numbers
-        // apart from fractions so they print and compare the same way
-        if abs(fl) < 9.2e18 { vSetInt(a, fl) } else { vSetNum(a, fl + 0.0) }
-      } else if mo == 2 {
-        if abs(ce) < 9.2e18 { vSetInt(a, ce) } else { vSetNum(a, ce + 0.0) }
-      } else if x == fl + 0.0 && abs(x) < 9.2e18 {
-        vSetInt(a, fl)
-      } else {
-        vSet(a, 0, 0.0, "")
-      }
-    } else if mo == 14 {
+    // math.type answers for a value of any type, so it must not go through the
+    // number check at all.  It cannot be guarded in place: a mod call in an if
+    // expression's VALUE position runs whether the arm runs or not, so
+    // `let x = if mo == 14 then xv else numArg(...)` still raised "bad argument
+    // (number expected)" for math.type('x').  Putting the arm first and the
+    // check in the other branch is what keeps the two apart.
+    if mo == 14 {
       vSet(a, 2, 0.0, if vTag(a + 2) == 6 then "integer"
         else if vTag(a + 2) == 1 then "float" else "nil")
     } else {
-      vSetNum(a, if mo == 3 then sqrt(x) else if mo == 4 then sin(x)
-        else if mo == 5 then cos(x) else if mo == 6 then tan(x)
-        else if mo == 7 then asin(x) else if mo == 8 then acos(x)
-        else if mo == 9 then atan2(x, y)
-        else if mo == 10 then exp(x) else if mo == 11 then ln(x)
-        else log(x, 10.0))
+      let x = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
+      let y = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
+      if mo == 1 || mo == 2 || mo == 13 {
+        // the floor gate truncates toward zero, so step to the right for
+        // negatives (floor) or positives (ceil)
+        let t = x | 0
+        let fl = if x < 0.0 && x != t + 0.0 then t - 1 else t
+        let ce = if 0 < x && x != t + 0.0 then t + 1 else t
+        if mo == 1 {
+          // Lua's floor/ceil return integers; the chip tags whole numbers
+          // apart from fractions so they print and compare the same way
+          if abs(fl) < 9.2e18 { vSetInt(a, fl) } else { vSetNum(a, fl + 0.0) }
+        } else if mo == 2 {
+          if abs(ce) < 9.2e18 { vSetInt(a, ce) } else { vSetNum(a, ce + 0.0) }
+        } else if x == fl + 0.0 && abs(x) < 9.2e18 {
+          vSetInt(a, fl)
+        } else {
+          vSet(a, 0, 0.0, "")
+        }
+      } else {
+        vSetNum(a, if mo == 3 then sqrt(x) else if mo == 4 then sin(x)
+          else if mo == 5 then cos(x) else if mo == 6 then tan(x)
+          else if mo == 7 then asin(x) else if mo == 8 then acos(x)
+          else if mo == 9 then atan2(x, y)
+          else if mo == 10 then exp(x) else if mo == 11 then ln(x)
+          else log(x, 10.0))
+      }
     }
     retCountV = 1
   } else if fid == 18 || fid == 19 {
@@ -8611,26 +8697,44 @@ mod vmStep() {
       let immPack = if immK then (-1 - c) | 0 else 0
       let bt = vTag(b)
       let ct = if immK then (if (immPack & 1) == 1 then 6 else 1) else vTag(c)
-      if !((bt == 1 || bt == 6) && (ct == 1 || ct == 6)) {
-        vmFail("attempt to perform arithmetic")
+      // String operands go through PUC's coercion (arithValL/arithValR), and
+      // the failure message is PUC's: a string that will not convert names the
+      // operator and both operand types ("attempt to add a 'string' with a
+      // 'number'"), while any other non-number names the offending operand
+      // ("attempt to perform arithmetic on a table value").  Both are built in
+      // the failing branch, so neither concat runs on arithmetic that succeeds.
+      let x = arithValL(bt, vNum(b), vStr(b))
+      let y = arithValR(ct, if immK then constNum[immPack >> 1] else vNum(c), if immK then "" else vStr(c))
+      let badL = coerceL == 3
+      let badR = coerceR == 3
+      if badL || badR || !((bt == 1 || bt == 6 || bt == 2) && (ct == 1 || ct == 6 || ct == 2)) {
+        let opn = if op == 8 then "add" else if op == 9 then "sub"
+          else if op == 10 then "mul" else if op == 11 then "div"
+          else if op == 12 then "mod" else "pow"
+        if badL || badR {
+          vmFail("attempt to " .. opn .. " a '" .. typeName(bt) .. "' with a '" .. typeName(ct) .. "'")
+        } else {
+          vmFail("attempt to perform arithmetic on a " .. typeName(if bt != 1 && bt != 6 then bt else ct) .. " value")
+        }
       } else {
-        let x = vNum(b)
-        let y = if immK then constNum[immPack >> 1] else vNum(c)
-        let ii = bt == 6 && ct == 6
+        // A string that converted is an integer only when ParseInt took it, so
+        // '2' + 1 is 3 where '2.0' + 1 is 3.0 and 2.0 + 1 is 3.0.
+        let ii = if bt == 6 then true else if bt == 2 then coerceL == 1 else false
+        let ij = if ct == 6 then true else if ct == 2 then coerceR == 1 else false
         if op == 8 {
-          if ii {
+          if ii && ij {
             vSetInt(a, x + y)
           } else {
             vSetNum(a, x + y)
           }
         } else if op == 9 {
-          if ii {
+          if ii && ij {
             vSetInt(a, x - y)
           } else {
             vSetNum(a, x - y)
           }
         } else if op == 10 {
-          if ii {
+          if ii && ij {
             vSetInt(a, x * y)
           } else {
             vSetNum(a, x * y)
@@ -8643,7 +8747,7 @@ mod vmStep() {
           vSetNum(a, x / y)
         } else if op == 12 {
           if y == 0.0 {
-            if ii {
+            if ii && ij {
               vmFail("attempt to perform 'n%0'")
             } else {
               vSetNum(a, x % y)
@@ -8655,7 +8759,7 @@ mod vmStep() {
             let t = q | 0
             let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
             let flf = fl + 0.0
-            if ii {
+            if ii && ij {
               vSetInt(a, x - flf * y)
             } else {
               vSetNum(a, x - flf * y)
@@ -8668,12 +8772,21 @@ mod vmStep() {
     } else if op == 14 {
       // -v, not 0.0 - v: IEEE negation of 0.0 is -0.0, and 0.0 - 0.0 is +0.0,
       // which is how `print(-0.0)` came out "0.0".
-      if vTag(b) == 6 {
-        vSetInt(a, -vNum(b))
-      } else if vTag(b) != 1 {
-        vmFail("attempt to negate")
+      let nt = vTag(b)
+      let nx = arithValL(nt, vNum(b), vStr(b))
+      let nbad = coerceL == 3
+      if nbad {
+        // PUC names the operand twice for a unary op: attempt to unm a 'string'
+        // with a 'string'
+        vmFail("attempt to unm a '" .. typeName(nt) .. "' with a '" .. typeName(nt) .. "'")
+      } else if nt != 1 && nt != 6 && nt != 2 {
+        vmFail("attempt to perform arithmetic on a " .. typeName(nt) .. " value")
       } else {
-        vSetNum(a, -vNum(b))
+        if nt == 6 || coerceL == 1 {
+          vSetInt(a, -nx)
+        } else {
+          vSetNum(a, -nx)
+        }
       }
     } else if op == 15 {
       if truthyOf(vTag(b), vNum(b)) {
@@ -9192,26 +9305,39 @@ mod vmStep() {
     } else if op == 34 {
       let lt = vTag(b)
       let rt = vTag(c)
-      if lt != 6 && lt != 1 { vmFail("attempt to perform floor division") }
-      if rt != 6 && rt != 1 { vmFail("attempt to perform floor division") }
-      let x = vNum(b)
-      let y = vNum(c)
-      if y == 0.0 {
-        if lt == 6 && rt == 6 {
-          vmFail("attempt to divide by zero")
-        } else {
-          vSetNum(a, x / y)
-        }
-      } else if lt == 6 && rt == 6 {
-        let q = x / y
-        let t = q | 0
-        let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
-        vSetInt(a, fl)
+      // // coerces like the other arithmetic operators (PUC: '10' // 3 is 3), and
+      // a string that will not convert says "attempt to idiv a 'string' with a
+      // 'number'" where anything else says "on a <type> value".
+      let lx = arithValL(lt, vNum(b), vStr(b))
+      let rx = arithValR(rt, vNum(c), vStr(c))
+      let lbad = coerceL == 3
+      let rbad = coerceR == 3
+      if lbad || rbad {
+        vmFail("attempt to idiv a '" .. typeName(lt) .. "' with a '" .. typeName(rt) .. "'")
+      } else if lt != 6 && lt != 1 && lt != 2 || rt != 6 && rt != 1 && rt != 2 {
+        vmFail("attempt to perform arithmetic on a " .. typeName(if lt != 1 && lt != 6 && lt != 2 then lt else rt) .. " value")
       } else {
-        let q = x / y
-        let t = q | 0
-        let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
-        vSetNum(a, fl)
+        let li = lt == 6 || coerceL == 1
+        let ri = rt == 6 || coerceR == 1
+        let x = lx
+        let y = rx
+        if y == 0.0 {
+          if li && ri {
+            vmFail("attempt to divide by zero")
+          } else {
+            vSetNum(a, x / y)
+          }
+        } else if li && ri {
+          let q = x / y
+          let t = q | 0
+          let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+          vSetInt(a, fl)
+        } else {
+          let q = x / y
+          let t = q | 0
+          let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+          vSetNum(a, fl)
+        }
       }
     } else if op == 35 {
       let lt = vTag(b)

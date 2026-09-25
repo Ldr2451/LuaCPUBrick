@@ -49,6 +49,52 @@ TESTS = [
     ("lit-exp-dot", "print(5.e3, 5.)", None, "run"),
     ("lit-hex", "print(0xff, 0X10, 0xFFFFFFFFFFFFFFFF)", None, "run"),
     ("int-arith", "print(7+8, 7-8, 7*8, -7, 2+2.0, 7/2)", None, "run"),
+    # PUC coerces a string operand in arithmetic ('3' + 1 is 4) through the
+    # host's ParseInt/ParseNumber gates.  The int/float split is the host's own
+    # rule -- an integer numeral with no '.', 'e' or 'E' is tagged an integer --
+    # so '2' + 1 is 3 and '2.0' + 1 is 3.0, and the operand register itself is
+    # not rewritten (type(s) is still "string" afterwards).
+    ("coerce-int", "print('3' + 1, 1 + '3', '10' - '4', '3' * '4', "
+     "'7' // 2, -'7' // 2, -'3')", None, "run"),
+    ("coerce-float", "print('  2.5  ' * 2, '1e3' + 0, '2' ^ '3', '2' + 1, "
+     "'2.0' + 1, '2e0' + 1)", None, "run"),
+    ("coerce-keep", "local s = '3' local n = s + 1 print(s, n, type(s), "
+     "math.type(n))", None, "run"),
+    ("coerce-var", "local function half(t) return t .. ' / 2 = ' .. (t / 2) end "
+     "print(half('7'), half(7))", None, "run"),
+    # A string that is not a number raises with the operator's own wording, and
+    # anything else names the offending operand: PUC's two forms.  One case for
+    # the whole rule, so the recorded chip log is the only place the messages are
+    # spelled out.  PUC prefixes each with its chunk and line; the chip has no line.
+    ("coerce-err-msgs", "print(pcall(function() return 'x' + 1 end), "
+     "pcall(function() return 'x' - 1 end), "
+     "pcall(function() return 1 - 'x' end), "
+     "pcall(function() return 'x' * 1 end), "
+     "pcall(function() return 'x' / 1 end), "
+     "pcall(function() return 'x' % 1 end), "
+     "pcall(function() return 'x' // 1 end), "
+     "pcall(function() return 'x' ^ 1 end), "
+     "pcall(function() return -'x' end), "
+     "pcall(function() return {} + 1 end), "
+     "pcall(function() return 1 / nil end), "
+     "pcall(function() return '10abc' + 0 end))", None, "run"),
+    # Comparison and the bitwise operators do NOT coerce in PUC, and the chip
+    # must not start to.  Only the failure is asserted, not the wording, so the
+    # case does not depend on the message text (which differs: the chip says
+    # "attempt to compare" where PUC says "attempt to compare number with
+    # string").
+    ("coerce-nocmp", "local ok, err = pcall(function() return '3' < 5 end) "
+     "print(ok, type(err))", None, "run"),
+    ("coerce-nobits", "local ok, err = pcall(function() return '3' & 1 end) "
+     "print(ok, type(err))", None, "run"),
+    ("coerce-nocmp2", "local ok = pcall(function() return '3' == 3 end) "
+     "print(ok)", None, "run"),
+    # The host's parse is Rust's FromStr, which takes no "0x10", so this raises
+    # where PUC says 16: a host limit, so the case asserts the chip is loud and
+    # the header records the gap.
+    ("coerce-hex", "print('0x10' + 0)", None,
+     "runtimerr", {"expect": {"err": "attempt to add a 'string' with a 'number'"}}),
+
     ("int-mod", "print(7%3, -7%3, 7%-3, 7.5%2)", None, "run"),
     ("int-eq", "print(1 == 1.0, 1 < 1.5, 2 > 1.9, 0 == false)", None, "run"),
     ("int-wrap", "print(math.maxinteger + 1 == math.mininteger, "
@@ -969,6 +1015,19 @@ TESTS = [
     # spelling, and the chip prints the shortest round-trip form of the
     # fraction where PUC prints 17 digits.
     ("math-modf", "print(math.modf(3.7))", None, "run"),
+    # math.type answers for a value of ANY type -- "integer"/"float" for a
+    # number and nil for everything else -- so it must not go through the
+    # number check the other _m modes share.  There was no case for it at all,
+    # which is why it raised "bad argument (number expected)" for a string and
+    # a table at every level of the call stack.
+    ("math-type", "print(math.type(3), math.type(3.5), math.type(0/1))", None,
+     "run"),
+    ("math-type-nonnum", "print(math.type('x'), math.type({}), "
+     "math.type(nil), math.type(true))", None, "run"),
+    ("math-type-in-fn", "local function f(v) return math.type(v) end "
+     "print(f(7), f(7.5), f('s'))", None, "run"),
+    ("math-tointeger", "print(math.tointeger(3.0), math.tointeger(3.5), "
+     "math.tointeger(2^70))", None, "run"),
     # table library
     ("tbl-insert", "local t = {1,2} table.insert(t, 3) table.insert(t, 1, 0) "
      "print(#t, t[1], t[2], t[3], t[4])", None, "run"),

@@ -1345,7 +1345,21 @@ class Sim:
                       _as_str(self._in_val(nid, "Input", "")).strip())
 
     def _do_parsenum(self, nid: int, nq: set):
-        s = _as_str(self._in_val(nid, "Input", ""))
+        # The host's law, from the compiler's own constant folder
+        # (crates/wirescript/src/lower/fold/eval.rs, string_parse_number, marked
+        # certified): parse through f64 after trimming, and REFUSE the
+        # "inf"/"infinity"/"nan" spellings -- Rust's f64::from_str takes them, but
+        # the game was never probed on them and folding them in would be a
+        # divergence.  Python's float() takes both, so asking Python here would
+        # have the chip parse text the gate will not.
+        s = _as_str(self._in_val(nid, "Input", "")).strip()
+        low = s.lower()
+        if low[:1] in ("+", "-"):
+            low = low[1:]
+        if low in ("inf", "infinity", "nan"):
+            self._out_val(nid, "Value", 0.0)
+            self._out_val(nid, "bSuccess", False)
+            return
         try:
             self._out_val(nid, "Value", float(s))
             self._out_val(nid, "bSuccess", True)
@@ -1354,7 +1368,16 @@ class Sim:
             self._out_val(nid, "bSuccess", False)
 
     def _do_parseint(self, nid: int, nq: set):
-        s = _as_str(self._in_val(nid, "Input", ""))
+        # The host's ParseInt is `s.trim().parse::<i64>()`: an optional sign and
+        # decimal digits, nothing else.  Python's int() also takes "1_0", so the
+        # underscore is what has to be refused here -- and "0x10" is refused by
+        # both, which is a real host limit (see the header's hex note).
+        s = _as_str(self._in_val(nid, "Input", "")).strip()
+        body = s[1:] if s[:1] in ("+", "-") else s
+        if "_" in body or not body.isdigit():
+            self._out_val(nid, "Value", 0)
+            self._out_val(nid, "bSuccess", False)
+            return
         try:
             self._out_val(nid, "Value", int(s))
             self._out_val(nid, "bSuccess", True)

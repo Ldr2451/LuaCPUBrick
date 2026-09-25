@@ -496,9 +496,20 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   to spawning one itself, which is the hang to avoid.
 
 ## Workflow
+- **A compacted session starts with `git status` and `git diff`.** The summary
+  that arrives with it is written by the agent that was working, so it describes
+  intent, not the tree: an edit it was mid-way through is uncommitted, and its
+  `lua.ws` may hold a half-finished restructure that compiles and still answers
+  the wrong thing (the `math.type` arm that only looked guarded was exactly
+  that). Read the diff before trusting any claim about what is on disk, and
+  before running a suite that would only tell you the tree passes.
 - Keep a todo list for multi-step work, exactly one `in_progress` at a time, and
   update it as steps finish.
-- Commit only when explicitly asked; commit often when asked, with a message
-  that says what changed and why.
+- **Commit a change as soon as it is clear and tested, without waiting to be
+  asked.** A commit is the cheapest way to revert, to compare two chips with
+  `git diff`, and to see what an edit actually changed. Commit when the
+  narrowest check that proves the change passes, and say what changed and why.
+  Leave a half-finished edit uncommitted *on purpose* when it is worth keeping
+  as a record of a tried shape, and say so in the message.
 - Keep this file to rules that earn their place. When a finding is recorded,
   fold it into an existing rule or replace an older one — it is not a log.
