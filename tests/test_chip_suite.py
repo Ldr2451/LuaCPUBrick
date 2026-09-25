@@ -220,6 +220,13 @@ def chip_ports(r):
 def compare(name, mode, kw, r, dt):
     c = chip_ports(r)
     exp = (kw.get("expect") or {}) if isinstance(kw, dict) else {}
+    # Structural first, and for every mode: a lost push or pop shows up as
+    # plausible output several frames later, so the cases that could see it are
+    # the wrong place to look.  The sim checks these itself (see
+    # Sim.state_invariants) and this is every case's one chance to read them.
+    bad = r.get("invariants") or []
+    if bad:
+        return (name, False, "state invariant: " + "; ".join(bad), dt)
     if mode == "run":
         o = OR.oracle_run(r["src"], inputs=kw.get("inputs"),
                           sinputs=kw.get("sinputs"), vec=kw.get("vec"),
@@ -460,6 +467,8 @@ def run_in_sim(sim, p):
         "src": src,
         "secs": time.time() - t_case,
         "finished": bool(sim.finished),
+        "invariants": sim.state_invariants(
+            bool(sim.finished) and not og.get("err")),
         "lifecycle": lifecycle,
         "state": state,
         "log": r["log"],

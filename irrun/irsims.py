@@ -220,6 +220,13 @@ class Sim:
                     _nd.props.get("_label", ("raw", ""))) == "logLines":
                 self._loglines_id = _nid
                 break
+        # Label -> node, for the structural invariants below and for anything
+        # else that wants to read a chip var by name.
+        self._by_label: dict[str, int] = {}
+        for _nid, _nd in self.nodes.items():
+            _lbl = _extract(_nd.props.get("_label", ("raw", "")))
+            if isinstance(_lbl, str) and _lbl:
+                self._by_label.setdefault(_lbl, _nid)
         self._pure_ids: set[int] = set(
             nid for nid, nd in self.nodes.items()
             if ("Expr_" in nd.cls and "ChangeDetector" not in nd.cls)
@@ -419,6 +426,63 @@ class Sim:
                 if self._in_val(nid, pname, None) is not None:
                     return True
         return False
+
+    def state_invariants(self, clean: bool = True) -> list[str]:
+        """Structural invariants that must hold in every state; [] means clean.
+
+        These are the ones a case cannot express, because the damage shows up
+        LATER: the frame arrays are pushed and popped in pairs, so one missing
+        push or pop leaves every later frame reading the wrong slot, and the
+        program still prints plausible output.  The loop-depth bug lived here for
+        552 green cases, and fForDepth was added to that group by hand and could
+        just as easily have been left out of it.
+
+        So they are checked in the simulator, for every case, rather than as
+        cases of their own:
+
+          * the eight frame arrays are the same length (one push, one pop, each)
+          * pcallDepth counts the pcall markers actually on the frame stack
+          * after a CLEAN finish: no loop, no protected call and no micro-step
+            machine is left live.  A program that halted *with an error* is
+            except, and has to be: it stops exactly where the error hit it, so
+            the 16 loops of a "too many nested numeric loops" and the half-read
+            format of a bad %d are both still in flight when it halts.  That was
+            this check's first version being wrong rather than the chip.
+        """
+        bad = []
+        arrays = ("fFunc", "fBase", "fRetA", "fRetBase", "fRetPC", "fRetN",
+                  "fVaB", "fForDepth")
+        sizes = {}
+        for name in arrays:
+            nid = self._by_label.get(name)
+            if nid is None:
+                bad.append("no node labelled %s" % name)
+                continue
+            sizes[name] = len(self._arr_list(self._arr_id(nid)))
+        if sizes and len(set(sizes.values())) != 1:
+            bad.append("frame arrays out of step: %s"
+                       % ", ".join("%s=%d" % kv for kv in sorted(sizes.items())))
+
+        def var(name, default=None):
+            nid = self._by_label.get(name)
+            return default if nid is None else self.vars.get(nid)
+
+        fn = self._by_label.get("fFunc")
+        if fn is not None:
+            marks = sum(1 for v in self._arr_list(self._arr_id(fn)) if v == 99)
+            depth = var("pcallDepth", 0)
+            if marks != depth:
+                bad.append("pcallDepth=%s but %d pcall marker(s) on the stack"
+                           % (depth, marks))
+        if clean:
+            for name, why in (("forDepth", "numeric loop"),
+                              ("pcallDepth", "protected call"),
+                              ("nxActive", "micro-step machine")):
+                v = var(name)
+                if v:
+                    bad.append("finished with %s=%s (%s still live)"
+                               % (name, v, why))
+        return bad
 
     def capture(self):
         og = self._out_globals()

@@ -439,6 +439,22 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
 ## Verification
 - Verify by execution, never by reasoning alone. All cases run unless a filter
   narrows them: `python -u tests/test_chip_suite.py [filter]`.
+- **The structural invariants live in the simulator, not in cases, because the
+  damage shows up later.** `Sim.state_invariants` is called for every case and
+  its verdict is the first thing `compare()` looks at: the eight frame arrays
+  must be the same length, `pcallDepth` must equal the number of pcall markers
+  actually on the frame stack, and after a *clean* finish no loop, protected
+  call or micro-step machine may still be live. A lost push or pop leaves the
+  output looking right and corrupts something several frames later — the
+  loop-depth bug sat there for 552 green cases, and `fForDepth` was added to that
+  group by hand and could just as easily have been left out of it. Deleting one
+  `fForDepth.pop()` is caught by 12 cases with the divergence spelled out
+  (`fForDepth=465` after fib, one slot per call), none of which the log
+  comparison would have seen. "Clean" matters: a program that halted *with an
+  error* stops exactly where the error hit it, so the 16 loops of "too many
+  nested numeric loops" and the half-read format of a bad `%d` are both still in
+  flight — the first version of this check flagged those fourteen and was wrong,
+  not the chip.
 - `python -u tools/preflight.py` runs the four cheap structural nets (audit,
   wswarn, consistency, syntax) in parallel — that plus one suite run is the
   minimum bar for a change.
