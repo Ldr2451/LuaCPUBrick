@@ -148,6 +148,16 @@
   parts that look like array access — the pattern matcher, the formatter — are
   micro-steps, which are mods, which are inlined. So the budget is a decision
   about the host, not a refactor of the CALL arm.
+- **Exact implicit float printing and int64 are host-bound, not formatter
+  bugs.** The host's concat gate exposes only its shortest round-trip conversion
+  and has no precision knob; PUC's oracle emits 17 significant digits and a
+  three-digit exponent. A synchronous 17-digit replacement tried in `fmtNum`
+  expanded at every call site and lowered 231 unsupported gates, so do not retry
+  it without first changing the host or making the conversion non-inlined.
+  Integers have the companion problem: every numeric register is a float, so a
+  literal above 2^53 is wrong before `fmtVal` sees it. Both are user-visible
+  breaking gaps, but both need a representation/host change rather than a local
+  patch; `CHIP_LOG` is the honest list until then.
 - **Gates, ticks, and the clock are three different things.** Gates are
   `tools/audit.py`; ticks are what `tools/check.py` prints. Sim wall time tracks
   gates fired per tick, so fewer ticks with the same work costs the same sim

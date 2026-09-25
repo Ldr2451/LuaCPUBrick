@@ -70,10 +70,13 @@ TIMEOUT_OVERRIDES = {
 }
 
 # Documented chip-only behaviors (chip diverges, oracle differs). Keep this list
-# short: an entry here is a real incompatibility, and most of these trace to one
-# place -- fmtNum prints the shortest round-trip form where PUC prints %.14g
-# plus a digit when that does not round-trip. Fixing that formatting would
-# retire fmt-*, math-pi, math-log and math-modf at once.
+# short: an entry here is a real incompatibility. The float-printing entries are
+# host-bound: concat exposes only the host's shortest round-trip form and no
+# configurable 17-digit formatter; a synchronous in-chip replacement expands at
+# every fmtNum call site and does not lower. Exact int64 is the same boundary in
+# the value model: registers hold floats, so integers past 2^53 have already lost
+# their value before printing. Fixing either needs a host primitive or a parallel
+# integer representation, not another formatter patch.
 # - lit-hex / int-wrap / math-maxinteger: exact ints past +/-2^53 float-round.
 # - tab-del: #{1,nil,3} is undefined in Lua (hole length); the chip
 #   keeps the allocated length while PUC Lua reports 1.
