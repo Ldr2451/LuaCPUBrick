@@ -224,6 +224,20 @@
   8 steps +6.5k nodes, 16 steps +19.6k — `tools/lexcost.py`). The cheap end is a
   `Find`-based fast path for string literals and a run ladder for identifiers,
   which is where the ladder's zero-progress trap (below) bites.
+- **A piece's boot is its whole dependency chain, not its own characters — that
+  is what decides whether a gate can become a piece.** Measured on `string.gmatch`
+  (`tools/piececost.py`, reference in `lib/gmatch.lua`): as two gates plus a
+  micro-step machine it was 1,053 nodes at 33 ticks a step, and the Lua piece
+  saved exactly those 1,053 for **2,970 ticks of boot (26×)** — 1,469 escaped
+  chars is 370 ticks, and the rest was the pieces it drags in (`string.find`,
+  `string.sub`, `table.pack` pull in the pattern wrapper, the string-index piece
+  and the table-list piece). Per step it was 119 ticks against 33, and a
+  capture-free fast path with no `table.pack`/`table.unpack` measured *worse*, so
+  the per-step cost is the Lua call and the micro-step dispatch, not the
+  variadic plumbing. **So: a piece is viable when everything it needs is already
+  a gate** (`pairs`/`ipairs` qualify — they need `next` and nothing else); a piece
+  that needs another piece does not pay. Convert on that test, not on the node
+  count alone.
 - **A gate that must call back into Lua is a separate mechanism nothing needs
   yet.** The only place the chip calls Lua on a gate's behalf is the pcall frame,
   and pcall-of-pcall is unsupported, so a machine cannot suspend mid-loop for a
