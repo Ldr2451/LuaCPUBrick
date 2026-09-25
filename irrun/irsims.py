@@ -221,12 +221,21 @@ class Sim:
                 self._loglines_id = _nid
                 break
         # Label -> node, for the structural invariants below and for anything
-        # else that wants to read a chip var by name.
+        # else that wants to read a chip var by name.  Arrays and scalars get
+        # their own maps, and each prefers the node that actually HOLDS the
+        # value: a label like fVaB or vaTop also names the gates that read and
+        # write it, and asking one of those for the value gives the wrong node.
         self._by_label: dict[str, int] = {}
+        self._arr_by_label: dict[str, int] = {}
+        self._var_by_label: dict[str, int] = {}
         for _nid, _nd in self.nodes.items():
             _lbl = _extract(_nd.props.get("_label", ("raw", "")))
             if isinstance(_lbl, str) and _lbl:
                 self._by_label.setdefault(_lbl, _nid)
+                if "ArrayVar" in _nd.cls:
+                    self._arr_by_label.setdefault(_lbl, _nid)
+                elif _nd.cls == "WireGraphPseudo_Var":
+                    self._var_by_label.setdefault(_lbl, _nid)
         self._pure_ids: set[int] = set(
             nid for nid, nd in self.nodes.items()
             if ("Expr_" in nd.cls and "ChangeDetector" not in nd.cls)
@@ -427,6 +436,24 @@ class Sim:
                     return True
         return False
 
+    def chip_var(self, name, default=None):
+        """The value of a named chip var, read from the node that holds it."""
+        nid = self._var_by_label.get(name) or self._by_label.get(name)
+        return default if nid is None else self.vars.get(nid, default)
+
+    def set_chip_var(self, name, value):
+        """Write a named chip var.  For probes: the invariants read the same way,
+        so damaging state this way is how each of them is proved live."""
+        nid = self._var_by_label.get(name) or self._by_label.get(name)
+        if nid is not None:
+            self.vars[nid] = value
+        return nid
+
+    def chip_array(self, name):
+        """A named chip array, as the Python list the sim keeps for it."""
+        nid = self._arr_by_label.get(name) or self._by_label.get(name)
+        return None if nid is None else self._arr_list(self._arr_id(nid))
+
     def state_invariants(self, clean: bool = True) -> list[str]:
         """Structural invariants that must hold in every state; [] means clean.
 
@@ -442,6 +469,10 @@ class Sim:
 
           * the eight frame arrays are the same length (one push, one pop, each)
           * pcallDepth counts the pcall markers actually on the frame stack
+          * the vararg pointer is at or above the current frame's vararg base, so
+            a call cannot leave it below where the callee starts
+          * the arenas stay in range: the table counters, every table's length,
+            and the closure fill's cursor
           * after a CLEAN finish: no loop, no protected call and no micro-step
             machine is left live.  A program that halted *with an error* is
             except, and has to be: it stops exactly where the error hit it, so
@@ -450,30 +481,52 @@ class Sim:
             this check's first version being wrong rather than the chip.
         """
         bad = []
+        var = self.chip_var
+        arr = self.chip_array
+
         arrays = ("fFunc", "fBase", "fRetA", "fRetBase", "fRetPC", "fRetN",
                   "fVaB", "fForDepth")
         sizes = {}
         for name in arrays:
-            nid = self._by_label.get(name)
-            if nid is None:
-                bad.append("no node labelled %s" % name)
+            a = arr(name)
+            if a is None:
+                bad.append("no array labelled %s" % name)
                 continue
-            sizes[name] = len(self._arr_list(self._arr_id(nid)))
+            sizes[name] = len(a)
         if sizes and len(set(sizes.values())) != 1:
             bad.append("frame arrays out of step: %s"
                        % ", ".join("%s=%d" % kv for kv in sorted(sizes.items())))
 
-        def var(name, default=None):
-            nid = self._by_label.get(name)
-            return default if nid is None else self.vars.get(nid)
-
-        fn = self._by_label.get("fFunc")
+        fn = arr("fFunc")
         if fn is not None:
-            marks = sum(1 for v in self._arr_list(self._arr_id(fn)) if v == 99)
+            marks = sum(1 for v in fn if v == 99)
             depth = var("pcallDepth", 0)
             if marks != depth:
                 bad.append("pcallDepth=%s but %d pcall marker(s) on the stack"
                            % (depth, marks))
+        vab = arr("fVaB")
+        if vab and var("vaTop", 0) < vab[-1]:
+            bad.append("vaTop=%s is below the frame's vararg base %s"
+                       % (var("vaTop"), vab[-1]))
+        # the arenas: a leak shows up as "out of memory" many operations later,
+        # which is the same "wrong later" shape as the frame stacks.  The limits
+        # are the array lengths, because the chip resizes them to its own consts
+        # at reset -- so a counter past one is writing outside its own storage.
+        tlen, tprev = arr("tLen"), arr("tPrev")
+        tcount, theap = var("tCount"), var("tHeap")
+        if tlen and tcount is not None and tcount > len(tlen):
+            bad.append("tCount=%s past the %d tables the chip sized"
+                       % (tcount, len(tlen)))
+        if tprev and theap is not None and theap > len(tprev):
+            bad.append("tHeap=%s past the %d entries the chip sized"
+                       % (theap, len(tprev)))
+        if tlen and tcount is not None:
+            over = [(i, v) for i, v in enumerate(tlen[:int(tcount)])
+                    if v > (len(tprev) if tprev else 0)]
+            if over:
+                bad.append("table lengths out of range: %s" % over[:4])
+        if var("cloK") is not None and var("cloK", 0) > var("cloN", 0):
+            bad.append("cloK=%s past cloN=%s" % (var("cloK"), var("cloN")))
         if clean:
             for name, why in (("forDepth", "numeric loop"),
                               ("pcallDepth", "protected call"),

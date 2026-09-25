@@ -457,12 +457,9 @@ def run_in_sim(sim, p):
     og = r["outGlobals"]
     state = {}
     if p["mode"] == "state":
-        from irsims import _extract
         wanted = p["kw"].get("expect", {}).get("state", {})
-        for nid, node in sim.nodes.items():
-            label = _extract(node.props.get("_label", ("raw", "")))
-            if label in wanted:
-                state[label] = sim.vars.get(nid)
+        for label in wanted:
+            state[label] = sim.chip_var(label)
     return {
         "src": src,
         "secs": time.time() - t_case,

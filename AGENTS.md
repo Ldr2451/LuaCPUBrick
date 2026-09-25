@@ -454,7 +454,17 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   error* stops exactly where the error hit it, so the 16 loops of "too many
   nested numeric loops" and the half-read format of a bad `%d` are both still in
   flight — the first version of this check flagged those fourteen and was wrong,
-  not the chip.
+  not the chip. Also checked, because they are the same "wrong later" shape: the
+  vararg pointer is at or above the current frame's vararg base, and the arenas
+  stay in range (`tCount`, `tHeap`, every table's length, and the closure fill's
+  cursor) with the limits taken from the array lengths, because the chip resizes
+  them to its own consts. **Each one is proved by damaging the state and reading
+  what it says** — `sim.chip_var(name, value)` writes a named var the way a lost
+  update would, and the checker reads the same way. Two of those reads have to go
+  through `chip_var`/`chip_array` rather than a label map: `fVaB` and `vaTop` also
+  name the gates that read them, and asking one of those gives an empty array or
+  the wrong node, which is how the first version of the vararg check silently
+  never fired.
 - `python -u tools/preflight.py` runs the four cheap structural nets (audit,
   wswarn, consistency, syntax) in parallel — that plus one suite run is the
   minimum bar for a change.
