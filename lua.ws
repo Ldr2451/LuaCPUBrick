@@ -145,6 +145,11 @@
 ///   error's message has no "chunk:line:" prefix: the chip has no line at run
 ///   time, so the text goes through as it is, and a protected call hands that
 ///   text on as a value.
+///   a math PIECE given a string that is not a number raises the arithmetic
+///   message ("attempt to add a 'string' with a 'number'") where PUC names the
+///   function ("bad argument #1 to 'abs' (number expected, got string)").  The
+///   pieces convert with `x + 0.0`, and that is the raise; the _m gate gets the
+///   PUC wording right because it does the conversion itself.  Loud, never wrong
 ///   a builtin passed to pcall as a VALUE names itself by its short name where
 ///   PUC names it by its library path: pcall(string.format, '%d', 'x') says
 ///   "to 'format'", PUC says "to 'string.format'".  A named call agrees with
@@ -291,10 +296,10 @@ const LIB_str_gmatch = "string = string or {}\nstring.gmatch = _gmatch\n"
 const LIB_str_case = "string = string or {}\nstring.upper = function(s) return _s(2, s) end\nstring.lower = function(s) return _s(3, s) end\n"
 const LIB_str_misc = "string = string or {}\nstring.rep = function(s, n, sep)\n  if n <= 0 then return \"\" end\n  sep = sep or \"\"\n  local r = s\n  for i = 2, n do r = r .. sep .. s end\n  return r\nend\nstring.reverse = function(s)\n  local r = \"\"\n  for i = #s, 1, -1 do r = r .. _s(1, s, i - 1, 1) end\n  return r\nend\n"
 const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775808\n"
-const LIB_math_int = "math = math or {}\nmath.floor = function(x) return _m(1, x, 0) end\nmath.ceil = function(x) return _m(2, x, 0) end\nmath.tointeger = function(x) return _m(13, x, 0) end\nmath.type = function(x) return _m(14, x, 0) end\nmath.abs = function(x) if x < 0 then return -x end return x end\nmath.sqrt = function(x) return _m(3, x, 0) end\n"
+const LIB_math_int = "math = math or {}\nmath.floor = function(x) return _m(1, x, 0) end\nmath.ceil = function(x) return _m(2, x, 0) end\nmath.tointeger = function(x) return _m(13, x, 0) end\nmath.type = function(x) return _m(14, x, 0) end\nmath.abs = function(x) if type(x) == \"string\" then x = x + 0.0 end if x < 0 then return -x end return x end\nmath.sqrt = function(x) return _m(3, x, 0) end\n"
 const LIB_math_trig = "math = math or {}\nmath.sin = function(x) return _m(4, x, 0) end\nmath.cos = function(x) return _m(5, x, 0) end\nmath.tan = function(x) return _m(6, x, 0) end\nmath.asin = function(x) return _m(7, x, 0) end\nmath.acos = function(x) return _m(8, x, 0) end\nmath.atan = function(y, x) return _m(9, y, x or 1) end\n"
 const LIB_math_exp = "math = math or {}\nmath.exp = function(x) return _m(10, x, 0) end\nmath.log = function(x, b)\n  if b == nil then return _m(11, x, 0) end\n  if b == 10 then return _m(12, x, 0) end\n  return _m(11, x, 0) / _m(11, b, 0)\nend\n"
-const LIB_math_misc = "math = math or {}\nmath.max = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v > m then m = v end end\n  return m\nend\nmath.min = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v < m then m = v end end\n  return m\nend\nmath.fmod = function(a, b)\n  local r = a % b\n  if r ~= 0 and (a < 0) ~= (b < 0) then r = r - b end\n  return r\nend\nmath.modf = function(x) local i = (x >= 0 and _m(1, x, 0)) or _m(2, x, 0) return i, x - i end\n"
+const LIB_math_misc = "math = math or {}\nmath.max = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v > m then m = v end end\n  return m\nend\nmath.min = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v < m then m = v end end\n  return m\nend\nmath.fmod = function(a, b)\n  if type(a) == \"string\" then a = a + 0.0 end\n  if type(b) == \"string\" then b = b + 0.0 end\n  local r = a % b\n  if r ~= 0 and (a < 0) ~= (b < 0) then r = r - b end\n  return r\nend\nmath.modf = function(x) if type(x) == \"string\" then x = x + 0.0 end local i = (x >= 0 and _m(1, x, 0)) or _m(2, x, 0) return i, x - i end\n"
 const LIB_tab_ins = "table = table or {}\ntable.insert = function(t, ...)\n  local n = #t\n  local c = select('#', ...)\n  if c == 1 then\n    t[n + 1] = (...)\n  elseif c == 2 then\n    local pos, v = ...\n    for i = n, pos, -1 do t[i + 1] = t[i] end\n    t[pos] = v\n  end\nend\ntable.remove = function(t, pos)\n  local n = #t\n  if pos == nil then pos = n end\n  if pos ~= n and (pos < 1 or n + 1 < pos) then error(\"bad argument #2 to 'remove' (position out of bounds)\", 2) end\n  local v = t[pos]\n  local i = pos\n  while i < n do t[i] = t[i + 1] i = i + 1 end\n  t[i] = nil\n  return v\nend\n"
 const LIB_tab_list = "table = table or {}\ntable.unpack = unpack\ntable.pack = function(...) local t = {...} t.n = select('#', ...) return t end\ntable.move = function(a1, f, e, t, a2)\n  a2 = a2 or a1\n  if e >= f then\n    if t > e or t <= f or a1 ~= a2 then\n      for i = 0, e - f do a2[t + i] = a1[f + i] end\n    else\n      for i = e - f, 0, -1 do a2[t + i] = a1[f + i] end\n    end\n  end\n  return a2\nend\n"
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, j)\n  sep = sep or \"\"\n  i = i or 1\n  j = j or #t\n  local r = \"\"\n  for k = i, j do\n    local v = t[k]\n    if k > i then r = r .. sep end\n    r = r .. v\n  end\n  return r\nend\n"
@@ -8085,8 +8090,37 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
       vSet(a, 2, 0.0, if vTag(a + 2) == 6 then "integer"
         else if vTag(a + 2) == 1 then "float" else "nil")
     } else {
-      let x = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
-      let y = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
+      // PUC's math functions take luaL_checknumber, which COERCES a string:
+      // math.floor('3') is 3, math.floor(' 2.5 ') is 2, math.sqrt('9') is 3.0,
+      // math.tointeger('10') is 10, and a string that is not a number says
+      // "bad argument #1 to 'floor' (number expected, got string)".  The
+      // conversion is the arithmetic one (arithValL/arithValR), so PUC's numeral
+      // rules stay in one place in the chip -- and so 'inf' is nil here too.
+      //
+      // The second argument is only converted where the mode reads it: PUC's
+      // math.floor('3', 'x') is 3, because the extra argument is ignored, so
+      // converting y unconditionally would raise where PUC does not.
+      let mt = if 1 < nargs then vTag(a + 2) else 0
+      let mx = arithValL(mt, if 1 < nargs then vNum(a + 2) else 0.0, if 1 < nargs then vStr(a + 2) else "")
+      let yt = if 2 < nargs then vTag(a + 3) else 0
+      let yx = arithValR(yt, if 2 < nargs then vNum(a + 3) else 0.0, if 2 < nargs then vStr(a + 3) else "")
+      if coerceL == 3 || mo == 9 && coerceR == 3 {
+        // The two pieces of the message are locals first: the host cannot lower
+        // an if-expression inside a binary operation, only variable + variable,
+        // and an `if` written straight into the `..` is a placeholder.
+        let argn = if coerceL == 3 then "1" else "2"
+        let fname = if mo == 1 then "floor" else if mo == 2 then "ceil"
+          else if mo == 3 then "sqrt" else if mo == 4 then "sin"
+          else if mo == 5 then "cos" else if mo == 6 then "tan"
+          else if mo == 7 then "asin" else if mo == 8 then "acos"
+          else if mo == 9 then "atan" else if mo == 10 then "exp"
+          else if mo == 11 then "log" else if mo == 12 then "log10"
+          else "tointeger"
+        vmFail("bad argument #" .. argn .. " to '" .. fname
+          .. "' (number expected, got string)")
+      } else {
+      let x = numArg(if mt == 2 then 1 else mt, mx)
+      let y = numArg(if yt == 2 then 1 else yt, yx)
       if mo == 1 || mo == 2 || mo == 13 {
         // the floor gate truncates toward zero, so step to the right for
         // negatives (floor) or positives (ceil)
@@ -8111,6 +8145,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
           else if mo == 9 then atan2(x, y)
           else if mo == 10 then exp(x) else if mo == 11 then ln(x)
           else log(x, 10.0))
+      }
       }
     }
     retCountV = 1

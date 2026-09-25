@@ -1060,6 +1060,31 @@ TESTS = [
     ("math-maxinteger", "print(math.maxinteger)", None, "run"),
     ("math-fmod", "print(math.fmod(7, 3), math.fmod(-7, 3), math.fmod(7, -3))",
      None, "run"),
+    # PUC's math functions take luaL_checknumber, so they COERCE a string:
+    # math.floor('3') is 3, math.sqrt('9') is 3.0, math.tointeger('10') is 10.
+    # The conversion is the arithmetic one, so the numeral rules stay in one
+    # place, and an ignored extra argument is still ignored: math.floor('3','x')
+    # is 3, not an error.
+    ("math-coerce", "print(math.floor('3'), math.floor(' 2.5 '), "
+     "math.ceil('3.2'), math.sqrt('9'), math.tointeger('10'))", None, "run"),
+    ("math-coerce-pieces", "print(math.abs('-3'), math.abs('2.5'), "
+     "math.fmod('7', '3'))", None, "run"),
+    ("math-coerce-extra", "print(math.floor('3', 'x'))", None, "run"),
+    # A coerced string keeps PUC's type: math.abs(-3) is the integer 3 and
+    # math.abs('-3') the float 3.0, so the pieces must not force a float.
+    ("math-abs-type", "print(math.abs(-3), math.abs(-3.5), math.fmod(7, 3), "
+     "math.type(math.abs(-3)))", None, "run"),
+    # The gate names the function, as PUC's luaL_argerror does.  A runtimerr
+    # rather than a run: PUC prefixes the message with its chunk and line, which
+    # the chip has no way to name.
+    ("math-coerce-bad", "print(math.floor('x'))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'floor' "
+                         "(number expected, got string)"}}),
+    # A math PIECE given a string that is not a number gets the arithmetic
+    # message, not PUC's "bad argument #1 to 'abs'": the piece converts with
+    # `x + 0.0` and that is the raise.  Loud, and the value is never wrong.
+    ("math-coerce-bad-piece", "print(math.abs('x'))", None, "runtimerr",
+     {"expect": {"err": "attempt to add a 'string' with a 'number'"}}),
     # modf returns floats, so the integral part prints with the chip's float
     # spelling, and the chip prints the shortest round-trip form of the
     # fraction where PUC prints 17 digits.
