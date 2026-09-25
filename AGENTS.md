@@ -118,6 +118,7 @@
   | one, one, two | 37,899 | 527 ticks | 3,751 |
   | one, one, two + constant folds | 38,153 | 345 ticks | 3,701 |
   | the same chip after the pcall repairs | 38,536 | 345 ticks | 3,701 |
+  | after signed 64-bit wraparound | 38,898 | 345 ticks | 3,701 |
   | two, one, two, no folds | 57,082 | 313 ticks | 3,265 |
 
   The folds recover about half the loop-tick regression for 254 nodes; a second
@@ -140,7 +141,7 @@
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
   the sixteen arms. Attempted, reverted rather than committed as a guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
-  After the unroll and parser/lexer cuts the chip is 38,536 nodes, of which the
+  After the unroll and parser/lexer cuts the chip is 38,898 nodes, of which the
   builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
   stop being inlined, and **that is a host primitive the compiler does not
   have**: a gate takes values on named ports and cannot index a register file by
@@ -148,16 +149,19 @@
   parts that look like array access — the pattern matcher, the formatter — are
   micro-steps, which are mods, which are inlined. So the budget is a decision
   about the host, not a refactor of the CALL arm.
-- **Exact implicit float printing and int64 are host-bound, not formatter
-  bugs.** The host's concat gate exposes only its shortest round-trip conversion
-  and has no precision knob; PUC's oracle emits 17 significant digits and a
-  three-digit exponent. A synchronous 17-digit replacement tried in `fmtNum`
-  expanded at every call site and lowered 231 unsupported gates, so do not retry
-  it without first changing the host or making the conversion non-inlined.
-  Integers have the companion problem: every numeric register is a float, so a
-  literal above 2^53 is wrong before `fmtVal` sees it. Both are user-visible
-  breaking gaps, but both need a representation/host change rather than a local
-  patch; `CHIP_LOG` is the honest list until then.
+- **Exact implicit float printing is host-bound, not a formatter bug.** The
+  host's concat gate exposes only its shortest round-trip conversion and has no
+  precision knob; PUC's oracle emits 17 significant digits and a three-digit
+  exponent. A synchronous 17-digit replacement tried in `fmtNum` expanded at
+  every call site and lowered 231 unsupported gates, so do not retry it without
+  first changing the host or making the conversion non-inlined.
+- **Integer precision and integer overflow are separate.** Every numeric register
+  is a float, so a literal above 2^53 is wrong before `fmtVal` sees it. Wrap
+  behaviour does not need the exact value: integer literals saturate to the two
+  boundary sentinels, `vSetInt` wraps results, and a numeric `for` stores a
+  remaining-iteration count so `maxinteger..maxinteger` ends after one body
+  instead of wrapping forever. The exact decimal spelling still needs a parallel
+  integer representation; `CHIP_LOG` is the honest list.
 - **Gates, ticks, and the clock are three different things.** Gates are
   `tools/audit.py`; ticks are what `tools/check.py` prints. Sim wall time tracks
   gates fired per tick, so fewer ticks with the same work costs the same sim

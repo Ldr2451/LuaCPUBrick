@@ -83,11 +83,10 @@ TIMEOUT_OVERRIDES = {
 # - io-int-coerce is a chip feature, not a divergence: outInt0 is a typed int
 #   port, so an integral float is stored as an integer.
 CHIP_LOG = {
-    "lit-hex": "255\t16\t18446744073709551616\n",
-    "int-wrap": "9.223372036854778e+18\t9.223372036854778e+18\n",
+    "lit-hex": "255\t16\t9223372036854775808\n",
     "fmt-div3": "0.3333333333333333\n",
     "fmt-big": "1.2676506002282294e+30\t1e+20\n",
-    "math-maxinteger": "9223372036854777856\n",
+    "math-maxinteger": "9223372036854775808\n",
     "math-pi": "3.141592653589793\n",
     "math-log": "4.605170185988092\n",
     "math-modf": "3.0\t0.7000000000000002\n",
@@ -228,7 +227,7 @@ def compare(name, mode, kw, r, dt):
             return (name, None, "SKIP unrecorded deviation", dt)
         if not c["progOk"]:
             return (name, False, "chip rejected: %r" % c["err"], dt)
-        if c["log"] != want:
+        if OR.norm_val(c["log"]) != want:
             return (name, False, "log mismatch chip=%r lua=%r" % (c["log"], want), dt)
         return (name, True, "", dt)
     if mode == "modelio":

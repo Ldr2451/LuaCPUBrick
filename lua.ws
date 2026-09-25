@@ -256,7 +256,7 @@ const LIB_str_pat = "string = string or {}\nstring.find = function(...) return _
 const LIB_str_gmatch = "string = string or {}\nstring.gmatch = _gmatch\n"
 const LIB_str_case = "string = string or {}\nstring.upper = function(s) return _s(2, s) end\nstring.lower = function(s) return _s(3, s) end\n"
 const LIB_str_misc = "string = string or {}\nstring.rep = function(s, n, sep)\n  if n <= 0 then return \"\" end\n  sep = sep or \"\"\n  local r = s\n  for i = 2, n do r = r .. sep .. s end\n  return r\nend\nstring.reverse = function(s)\n  local r = \"\"\n  for i = #s, 1, -1 do r = r .. _s(1, s, i - 1, 1) end\n  return r\nend\n"
-const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775807 - 1\n"
+const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775808\n"
 const LIB_math_int = "math = math or {}\nmath.floor = function(x) return _m(1, x, 0) end\nmath.ceil = function(x) return _m(2, x, 0) end\nmath.tointeger = function(x) return _m(13, x, 0) end\nmath.type = function(x) return _m(14, x, 0) end\nmath.abs = function(x) if x < 0 then return -x end return x end\nmath.sqrt = function(x) return _m(3, x, 0) end\n"
 const LIB_math_trig = "math = math or {}\nmath.sin = function(x) return _m(4, x, 0) end\nmath.cos = function(x) return _m(5, x, 0) end\nmath.tan = function(x) return _m(6, x, 0) end\nmath.asin = function(x) return _m(7, x, 0) end\nmath.acos = function(x) return _m(8, x, 0) end\nmath.atan = function(y, x) return _m(9, y, x or 1) end\n"
 const LIB_math_exp = "math = math or {}\nmath.exp = function(x) return _m(10, x, 0) end\nmath.log = function(x, b)\n  if b == nil then return _m(11, x, 0) end\n  if b == 10 then return _m(12, x, 0) end\n  return _m(11, x, 0) / _m(11, b, 0)\nend\n"
@@ -308,7 +308,7 @@ mod fmtVal(tag: int, num: float, s: string) -> string {
     else if tag == 3 then if num == 0.0 then "false" else "true"
     else if tag == 2 then s
     else if tag == 4 then "function"
-    else if tag == 5 then "table"
+    else if tag == 5 then "table: 0x" .. (num | 0)
     else if tag == 6 then "" .. (num | 0)
     else fmtNum(num)
 }
@@ -1233,6 +1233,7 @@ mod parseInit() {
   opB.clear()
   opC.clear()
   forCtrl.clear()
+  forRem.clear()
   ctorStk.clear()
   itBase.clear()
   itKey.clear()
@@ -3924,6 +3925,7 @@ var latchCA: float = 0.0
 var latchI0: int = 0
 var forDepth: int = 0
 var forCtrl: int[]
+var forRem: float[]
 
 // ---------------------------------------------------------------- closures
 // A function value (tag 4) holds a *closure* number, not a prototype.  Below
@@ -4156,6 +4158,7 @@ mod vmReset() {  tmap.clear()
   vnum.resize(2048, 0.0)
   vstr.resize(2048, "")
   forCtrl.resize(16, 0)
+  forRem.resize(16, 0.0)
   forDepth = 0
   fFunc.clear()
   fBase.clear()
@@ -4586,14 +4589,36 @@ mod syncOuts() {
   oS5 = if gtag[slotOutLatch + 5] == 0 then "" else fmtVal(gtag[slotOutLatch + 5], gnum[slotOutLatch + 5], gstr[slotOutLatch + 5])
 }
 
-// Store an integer-valued float with the int tag when exactly
-// representable (chip ints are precise inside +/-2^53); otherwise float.
-mod vSetInt(a: int, v: float) {
-  if v == floor(v) && abs(v) <= 9007199254740992.0 {
-    vSet(a, 6, v, "")
-  } else {
-    vSetNum(a, v)
+const INT64_LIMIT = 9223372036854775808.0
+const INT64_WRAP = 18446744073709551616.0
+
+mod intWrap(v: float) -> float {
+  var w = v
+  if w + INT64_LIMIT < 0.0 {
+    w = w + INT64_WRAP
+  } else if INT64_LIMIT <= w {
+    w = w - INT64_WRAP
   }
+  return w
+}
+
+mod vSetInt(a: int, v: float) {
+  let w = intWrap(v)
+  if w == floor(w) && 0.0 <= w + INT64_LIMIT && w < INT64_LIMIT {
+    vSet(a, 6, w, "")
+  } else {
+    vSetNum(a, w)
+  }
+}
+
+mod vSetIntSat(a: int, v: float) {
+  var w = v
+  if w + INT64_LIMIT < 0.0 {
+    w = 0.0 - INT64_LIMIT
+  } else if INT64_LIMIT <= w {
+    w = INT64_LIMIT
+  }
+  vSet(a, 6, w, "")
 }
 
 mod cmpFinish(v: bool) {
@@ -8467,7 +8492,7 @@ mod vmStep() {
       vSet(a, 0, 0.0, "")
     } else if op == 2 {
       if c == 1 {
-        vSet(a, 6, constNum[b], "")
+        vSetIntSat(a, constNum[b])
       } else {
         vSetNum(a, constNum[b])
       }
@@ -8974,7 +8999,9 @@ mod vmStep() {
         }
       } else if vTag(b) != 5 {
         vmFail("attempt to index a non-table value")
-      } else if kt == 0 || (kt == 1 && vNum(c) != floor(vNum(c))) {
+      } else if kt == 0 {
+        vmFail("table index is nil")
+      } else if kt == 1 && vNum(c) != floor(vNum(c)) {
         vSet(a, 0, 0.0, "")
       } else {
         let r = tmap.get(tkey(toInt(vNum(b)), kt, vNum(c), vStr(c)))
@@ -9042,24 +9069,28 @@ mod vmStep() {
       forDepth = forDepth + 1
       let ctrl = vNum(a)
       let lim = vNum(b)
+      var rem = 0.0
       if (stp > 0.0 && ctrl <= lim) || (stp < 0.0 && ctrl >= lim) {
+        rem = floor((lim - ctrl) / stp) + 1.0
         vmPc = vmPc + 2
         advanced = true
       } else {
         advanced = false
       }
+      forRem[forDepth - 1] = rem
     } else if op == 33 {
       let ctrl_reg = forCtrl[forDepth - 1]
       let ctrl = vNum(ctrl_reg)
-      let lim = vNum(b)
       let stp = vNum(c)
       let newCtrl = ctrl + stp
+      let rem = forRem[forDepth - 1] - 1.0
       if vTag(ctrl_reg) == 6 {
         vSetInt(ctrl_reg, newCtrl)
       } else {
         vSetNum(ctrl_reg, newCtrl)
       }
-      if (stp > 0.0 && newCtrl <= lim) || (stp < 0.0 && newCtrl >= lim) {
+      forRem[forDepth - 1] = rem
+      if 0.0 < rem {
         vmPc = a
         advanced = true
       } else {

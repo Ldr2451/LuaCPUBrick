@@ -37,7 +37,7 @@ DEMO_LOG = ("arith\t2.25\t7.0\n"
             "inputs\t6.0\t1.875\t10.0\n"
             "inputs2\t30.0\tnil\tnil\n"
             "outs\t7\t79\n"
-            "outs2\tfoo-bar!|foo\t21.75/table\n"
+            "outs2\tfoo-bar!|foo\t21.75/table: 0x0\n"
             "\n"
             "check\t55\tfoo-bar!\t2.25\n")
 
@@ -51,8 +51,13 @@ TESTS = [
     ("int-arith", "print(7+8, 7-8, 7*8, -7, 2+2.0, 7/2)", None, "run"),
     ("int-mod", "print(7%3, -7%3, 7%-3, 7.5%2)", None, "run"),
     ("int-eq", "print(1 == 1.0, 1 < 1.5, 2 > 1.9, 0 == false)", None, "run"),
-    ("int-wrap", "print(9223372036854775807+1, -(-9223372036854775808))",
+    ("int-wrap", "print(math.maxinteger + 1 == math.mininteger, "
+     "math.mininteger // -1 == math.mininteger, "
+     "-math.mininteger == math.mininteger, math.type(math.maxinteger + 1))",
      None, "run"),
+    ("int-for-wrap", "local a = 0 for i = math.maxinteger, math.maxinteger "
+     "do a = a + 1 end local b = 0 for i = math.mininteger, "
+     "math.mininteger, -1 do b = b + 1 end print(a, b)", None, "run"),
     ("int-type", "print(type(3), type(3.0), type(3 .. ''))", None, "run"),
     ("int-key", "t = {} t[1] = 'a' print(t[1.0])", None, "run"),
     ("fmt-add", "print(0.1+0.2)", None, "run"),
@@ -1085,7 +1090,7 @@ TESTS = [
     ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
      {"expect": {"log": DEMO_LOG,
                  "outGlobals": [7.0, 79.0, 61.875, 11.0,
-                                "foo-bar!|foo", "21.75/table", 0],
+                                "foo-bar!|foo", "21.75/table: 0x0", 0],
                  "outArr": [55.0, 6.0] + [0.0] * 61 + [-1.0],
                  "outVec": [2.0, 4.0, 6.0],
                  "outCol": [0.5, 0.25, 0.125, 1.0],
@@ -1139,17 +1144,19 @@ TESTS = [
     ("tab-chain-store", "t = {a = {}} t.a[1] = 'x' print(t.a[1])", None,
      "run"),
     ("tab-paren-index", "print(({5, 6})[2])", None, "run"),
-    ("tab-tostring", "print(type({}), tostring({1}))", None, "modelio",
-     {"expect": {"log": "table\ttable\n"}}),
+    ("tab-tostring", "print(type({}), tostring({1}))", None, "run"),
+    ("tab-tostring-shape", "local t = {} local s = tostring(t) "
+     "print(s:match('^table: ') ~= nil, s ~= 'table')", None, "run"),
     ("tab-missing", "t = {} print(t.nope, t[99])", None, "run"),
     ("tab-speckeys", "t = {} t['a#b'] = 1 t['a$b'] = 2 "
      "t['k@v'] = 3 t['x:y'] = 4 "
      "print(t['a#b'], t['a$b'], t['k@v'], t['x:y'])", None, "run"),
-    ("tab-getnil-diff", "t = {} print(t[nil])", None, "modelio",
-     {"expect": {"log": "nil\n"}}),
+    ("tab-getnil-diff", "t = {} print(t[nil])", None, "runtimerr",
+     {"expect": {"err": "table index is nil"}}),
     ("tab-set-nonint", "t = {} t[1.5] = 1", None, "runtimerr",
      {"expect": {"err": "non-integer number keys"}}),
-    ("tab-set-nil-key", "t = {} t[nil] = 1", None, "haltfail"),
+    ("tab-set-nil-key", "t = {} t[nil] = 1", None, "runtimerr",
+     {"expect": {"err": "table index is nil"}}),
     ("tab-idx-nontable", "x = 5 print(x[1])", None, "haltfail"),
     ("tab-len-nontable", "print(#5)", None, "haltfail"),
     ("tab-toomany", "t = {} i = 0 while i < 65 do t[#t+1] = {} "
