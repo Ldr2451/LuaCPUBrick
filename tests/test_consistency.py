@@ -188,6 +188,12 @@ check("spec-50-ops", m.N_OPS == 50 and m.HALT == 0 and m.RETURNM == 42
       and m.CALLM == 41 and m.ADJUST == 43 and m.TAPPEND == 44
       and m.VARARG == 45 and m.GETUP == 46 and m.SETUP == 47
       and m.GETCLO == 48 and m.GEN == 49)
+readme = open(os.path.join(os.path.dirname(HERE), "README.md"),
+             encoding="utf-8").read()
+missing_docs = [name for i, name in enumerate(m.OP_NAMES)
+                if not re.search(rf"\| {i} \| `{re.escape(name)}` \|", readme)]
+check("readme-opcodes-0-49", not missing_docs,
+      f"missing {missing_docs}")
 
 # 7. keyword coverage --------------------------------------------------------
 model_kw = set(m.KEYWORDS)

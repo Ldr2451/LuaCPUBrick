@@ -16,16 +16,12 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, 'irrun'))
+sys.path.insert(0, os.path.join(ROOT, 'tests'))
 from irdump import dump_source, resolve_prog
 from irsims import Sim, Wire, ChipRunner, _extract
+from spec import OP_NAMES
 
-NAMES = {0:'HALT',1:'LOADNIL',2:'LOADNUM',3:'LOADSTR',4:'LOADBOOL',5:'LOADGLOBAL',
-         6:'STOREGLOBAL',7:'MOV',8:'ADD',9:'SUB',10:'MUL',11:'DIV',12:'MOD',13:'POW',
-         14:'UNM',15:'NOT',16:'CONCAT',17:'EQ',18:'LT',19:'LE',20:'JMP',21:'JMPF',
-         22:'JMPT',23:'CALL',24:'RETURN',25:'LOADFUNC',26:'RETURN0',27:'RETURNV',
-         28:'NEWTABLE',29:'GETFIELD',30:'SETFIELD',31:'LEN',32:'FORPREP',33:'FORLOOP',
-         34:'IDIV',35:'BAND',36:'BOR',37:'BXOR',38:'BNOT',39:'SHL',40:'SHR',
-         41:'CALLM',42:'RETURNM'}
+NAMES = dict(enumerate(OP_NAMES))
 # kind 4 is a keyword, identified by its sub code
 KWSUBS = {1:'and',2:'break',3:'do',4:'else',5:'elseif',6:'end',7:'false',8:'function',
           9:'if',10:'local',11:'nil',12:'not',13:'or',14:'return',15:'then',16:'true',
