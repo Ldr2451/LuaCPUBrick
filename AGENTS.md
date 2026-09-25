@@ -85,6 +85,42 @@
   caught real bugs — keep them passing.
 
 ## Performance: three cost currencies
+- **`vmStep` is 70% of the chip, and the reason is the inlining, not the code.**
+  Measured by blanking one mod and rebuilding (`tools/modcost.py` — the only
+  honest way to ask, since nothing in the graph records a source line and 91% of
+  nodes carry no bind name): `vmStep` 76,877 of 110,017, `parseStep` 22,293,
+  `lexStep` 6,692. `vmBurst` calls `vmStep` four times and a mod is inlined at
+  its call site, so the 43-arm opcode chain is compiled four times over: **19,210
+  nodes per call**, measured by building with 1, 2, 3 and 4 calls (110,017 /
+  90,807 / 71,597 / 52,386). A chain past ~16 arms is where arms near the top
+  stop taking effect, so this is a correctness risk as well as a size one.
+- **Splitting the chain does not shrink it, and that is worth knowing before
+  anyone tries.** Moving ops 34..40 (floor division and the bitwise operators)
+  into their own mod and calling it from the same place measured **+20 nodes**,
+  not fewer: the helper is inlined at the same call site, so the seven arms
+  became seven arms plus a dispatch. The only two things that reduce this are
+  **fewer `vmStep` calls per tick** and **less work inside the dispatcher** — a
+  body split, not an extraction. Before promising a node reduction, measure
+  which of the two the change is.
+- **The 20k budget is not reachable by tuning.** One `vmStep` call per tick
+  already costs 52,386 nodes, and the four-call burst costs 76,877 of the chip's
+  110,017. Getting under 20k means the dispatcher cannot be inlined even once,
+  which means it has to become a gate or the burst has to stop unrolling — and
+  both are design changes with a CPU-latency cost to measure, not a refactor.
+  Treat the budget as a decision to take with numbers, not a target to grind at.
+- **The one measurement that settles it, both chips built and alternated in one
+  process** (a 200-iteration loop, so the two runs share the machine's drift):
+
+  | | nodes | ticks | instructions/sec |
+  |---|---|---|---|
+  | 4 `vmStep` per tick (as built) | 110,017 | 403 | 1,972 |
+  | 1 `vmStep` per tick | 52,386 | 1,459 | 1,292 |
+
+  So halving the unrolling to a quarter saves 57,631 nodes and costs **35% of
+  the chip's throughput** — every program gets 3.6x longer, and the chip is
+  *still* over the 20k budget at 52k. The 20k goal and the current VM speed are
+  not compatible; that is a decision for whoever wants the speed, and it should
+  be taken with these two numbers rather than discovered later.
 - **Gates, ticks, and the clock are three different things.** Gates are
   `tools/audit.py`; ticks are what `tools/check.py` prints. Sim wall time tracks
   gates fired per tick, so fewer ticks with the same work costs the same sim
