@@ -182,6 +182,7 @@ python -u tests/iter_check.py                 # iteration library, oracle diff
 python -u tests/multi_check.py                # multiple returns, oracle diff
 python -u tests/vararg_check.py               # varargs/select, oracle diff
 python -u tests/stdlib_check.py                # standard-library family battery
+python -u tests/cpu_comms_check.py             # self-read and two-CPU port handoff
 python -u tools/fuzz.py 200                   # random programs, oracle diff
 ```
 
