@@ -94,51 +94,58 @@
   nodes per call**, measured by building with 1, 2, 3 and 4 calls (110,017 /
   90,807 / 71,597 / 52,386). A chain past ~16 arms is where arms near the top
   stop taking effect, so this is a correctness risk as well as a size one.
-- **The size is not the opcode chain, it is the builtin dispatch.** `gateHigh`
-  is 13,217 nodes and `gateLow` 6,489 — together 19,706, which is the whole
-  19,210 per-call cost. The eleven buildable arms of `gateHigh` account for
-  10,734 of its 13,217 (`tools/armcost.py` blanks one arm and rebuilds; the
-  biggest are `unpack` 1,806, `pcall`/`xpcall` 1,779, `_pat` 1,412, `assert`
-  1,381, `_gmatch`/`_gmnext` 1,268). So a 43-arm opcode chain costs a few
-  hundred nodes and the dispatch *behind one CALL instruction* costs 19.7k, paid
-  four times.
-- **The unrolls are the whole lever, and they have been taken.** Building with
-  1/2/3/4 `vmStep` calls per tick gives 52,386 / 71,597 / 90,807 / 110,017 — the
-  per-call cost is 19,210, and `parseChunk` (2→1) and `lexChunk` (4→2) are the
-  same trade one level up. Where the chip stands: **37,899 nodes**, down from
-  110,017, with a measured cost of about 22% more time on a loop and on a gsub
-  (both chips built and alternated in one process, identical output):
+- **The opcode chain is small; builtin dispatch is big, but it is not the whole
+  `vmStep`.** `gateHigh` is 13,217 nodes and `gateLow` 6,489 — together 19,706.
+  The eleven buildable arms of `gateHigh` account for 10,734 of its 13,217
+  (`tools/armcost.py` blanks one arm and rebuilds; the biggest are `unpack`
+  1,806, `pcall`/`xpcall` 1,779, `_pat` 1,412, `assert` 1,381,
+  `_gmatch`/`_gmnext` 1,268). Latching CALL in `vmStep`, dispatching it once
+  from `vmBurst`, then restoring four steps compiled at **79,133 nodes**, and
+  the first gsub call ended in `attempt to call`: the rest of each copy is not
+  free, so moving the dispatch does not turn the other 13k into 500 nodes.
+- **Unrolls are the size lever; constant folds are the tick lever.** Building
+  with 1/2/3/4 `vmStep` calls per tick gives 52,386 / 71,597 / 90,807 / 110,017
+  before the parser and lexer cuts. `parseChunk` (2→1) and `lexChunk` (4→2) are
+  the same trade one level up. The chip then folds a temporary numeric load into
+  the arithmetic or comparison that consumes it, and a constant `<=` used
+  directly as a branch runs the comparison and skips its now-unreachable JMPF.
+  Both chips were built and alternated in one process with identical output:
 
   | | nodes | loop-60 | gsub |
   |---|---|---|---|
   | four `vmStep`, two `parseStep`, four `lexStep` | 110,017 | 157 ticks | 1,672 |
   | one, one, two | 37,899 | 527 ticks | 3,751 |
+  | one, one, two + constant folds | 38,153 | 345 ticks | 3,701 |
+  | two, one, two, no folds | 57,082 | 313 ticks | 3,265 |
 
-  A one-liner got *faster* (9 ticks to 18 is fewer instructions, not more — the
-  chip is small enough that the parse dominates and the parse is now shorter per
-  tick than the four-step burst it replaced). **The remaining throughput is the
-  last step of the plan**, and the target is the loop column: 3.4x the ticks for
-  a program that does nothing but arithmetic.
+  The folds recover about half the loop-tick regression for 254 nodes; a second
+  `vmStep` costs 19,194 to recover a little more. A one-liner got *faster* (9
+  ticks to 18 is fewer instructions, not more — parse dominates and the parse
+  is shorter per tick than the burst it replaced). The direct branch leaves the
+  JMPF in the bytecode and skips it so no jump target or control-stack position
+  has to move. **Only a temporary may be folded:** its register must be above
+  `cfMaxLoc[fnDepth]`; a local initialiser can be the immediately preceding
+  LOADNUM in the same register, and treating that as an operand lost the
+  initial value in a `repeat` body.
 - **A mod is inlined at its call site, so extracting a chain does not shrink
   it.** Moving ops 34..40 (floor division and the bitwise operators) into their
   own mod and calling it from the same place measured **+20 nodes**, not fewer.
-  Splitting a chain into mods is a no-op for size; fewer calls per tick is the
-  only lever that works without a host primitive.
+  Splitting a chain into mods is a no-op for size. The levers that work without
+  a host primitive are fewer calls per tick and more useful work per bytecode
+  instruction.
 - **`retAdjust` cannot be made cheap either.** It is sixteen unconditional `if`s
   inlined at ten call sites (3,004 nodes), and an early-exit ladder is the
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
   the sixteen arms. Attempted, reverted rather than committed as a guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
-  One `vmStep` call per tick already costs 52,386 nodes, so the four unrolls
-  together were never going to get there: 37,899 is what is left after taking
-  every one of them, and the dispatch behind one CALL instruction is 19,706 of
-  that. Going under 20k needs the dispatch to stop being inlined even once, and
-  **that is a host primitive the compiler does not have**: a gate takes values
-  on named ports and cannot index a register file by a runtime value, which is
-  exactly what a register VM's dispatch needs. The parts that look like array
-  access — the pattern matcher, the formatter — are micro-steps, which are
-  mods, which are inlined. So the budget is a decision about the host, not a
-  refactor of the CALL arm.
+  After the unroll and parser/lexer cuts the chip is 38,153 nodes, of which the
+  builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
+  stop being inlined, and **that is a host primitive the compiler does not
+  have**: a gate takes values on named ports and cannot index a register file by
+  a runtime value, which is exactly what a register VM's dispatch needs. The
+  parts that look like array access — the pattern matcher, the formatter — are
+  micro-steps, which are mods, which are inlined. So the budget is a decision
+  about the host, not a refactor of the CALL arm.
 - **Gates, ticks, and the clock are three different things.** Gates are
   `tools/audit.py`; ticks are what `tools/check.py` prints. Sim wall time tracks
   gates fired per tick, so fewer ticks with the same work costs the same sim

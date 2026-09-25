@@ -1142,6 +1142,10 @@ var presCallPos: int = -1
 
 mod bPatch(pos: int, target: int) {
   bpa[pos] = target
+  if bop[pos] == 21 && 0 < pos && bop[pos - 1] == 19
+     && bpc[pos - 1] < 0 && bpa[pos - 1] == bpb[pos] {
+    bpa[pos - 1] = -1 - target
+  }
   lastPatchTarget = target
 }
 
@@ -1852,7 +1856,23 @@ mod applyPop() {
     let sw = (fl & 2) != 0
     let L = if sw then rr else ll
     let R = if sw then ll else rr
-    bEmit(opc, res, L, R)
+    if (opc == 17 || opc == 18 || opc == 19 || (opc >= 8 && opc <= 13))
+       && 0 < bop.length() && bop[bop.length() - 1] == 2
+       && bpa[bop.length() - 1] == R && bpa[bop.length() - 1] > cfMaxLoc[fnDepth] {
+      let constIx = bpb[bop.length() - 1]
+      let intBit = if bpc[bop.length() - 1] == 1 then 1 else 0
+      bop.pop()
+      bpa.pop()
+      bpb.pop()
+      bpc.pop()
+      if opc >= 17 {
+        bEmit(opc, res, L, -1 - constIx)
+      } else {
+        bEmit(opc, res, L, -1 - 2 * constIx - intBit)
+      }
+    } else {
+      bEmit(opc, res, L, R)
+    }
     if (fl & 4) != 0 {
       bEmit(15, res, res, 0)
     }
@@ -8493,13 +8513,15 @@ mod vmStep() {
     } else if op == 7 {
       vSet(a, vTag(b), vNum(b), vStr(b))
     } else if op >= 8 && op <= 13 {
+      let immK = c < 0
+      let immPack = if immK then (-1 - c) | 0 else 0
       let bt = vTag(b)
-      let ct = vTag(c)
+      let ct = if immK then (if (immPack & 1) == 1 then 6 else 1) else vTag(c)
       if !((bt == 1 || bt == 6) && (ct == 1 || ct == 6)) {
         vmFail("attempt to perform arithmetic")
       } else {
         let x = vNum(b)
-        let y = vNum(c)
+        let y = if immK then constNum[immPack >> 1] else vNum(c)
         let ii = bt == 6 && ct == 6
         if op == 8 {
           if ii {
@@ -8574,31 +8596,40 @@ mod vmStep() {
         vmFail("attempt to concatenate")
       }
     } else if op == 17 || op == 18 || op == 19 {
+      let immK = c < 0
+      let immConst = if immK then -1 - c else 0
       let lt = vTag(b)
-      let rt = vTag(c)
+      let rt = if immK then 1 else vTag(c)
+      let rv = if immK then constNum[immConst] else vNum(c)
       let ln = lt == 1 || lt == 6
       let rn = rt == 1 || rt == 6
       if op == 17 {
         if ln && rn {
-          vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
+          vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
         } else if lt != rt {
           vSet(a, 3, 0.0, "")
         } else if lt == 1 {
-          vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
+          vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
         } else if lt == 2 {
           vSet(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0, "")
         } else if lt == 3 {
-          vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
+          vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
         } else if lt == 4 || lt == 5 {
-          vSet(a, 3, if vNum(b) == vNum(c) then 1.0 else 0.0, "")
+          vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
         } else {
           vSet(a, 3, 1.0, "")
         }
       } else if ln && rn {
-        if op == 18 {
-          vSet(a, 3, if vNum(b) < vNum(c) then 1.0 else 0.0, "")
+        let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
+        if a < 0 && op == 19 {
+          if hit {
+            vmPc = vmPc + 2
+          } else {
+            vmPc = -1 - a
+          }
+          advanced = true
         } else {
-          vSet(a, 3, if vNum(b) <= vNum(c) then 1.0 else 0.0, "")
+          vSet(a, 3, if hit then 1.0 else 0.0, "")
         }
       } else if lt == 2 && rt == 2 {
         // lexicographic string order cannot use the MathCompare gate
