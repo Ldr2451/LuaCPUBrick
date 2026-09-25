@@ -43,12 +43,9 @@ math = math or {}
 local _rs = 12345
 
 local _rand = function(m, n)
-  -- Compute the draw into a LOCAL and only then write the upvalue.  Read the
-  -- upvalue again in this same body and the chip answers the value from before
-  -- the write (measured: a piece-level closure that writes a captured local and
-  -- reads it later in the same body re-reads the seed, so the LCG never
-  -- advances).  The same shape in a program's own chunk is correct, so this is
-  -- about the library chunk's cells, not about closures in general.
+  -- Compute the draw into a local, then write the upvalue from it.  Writing the
+  -- upvalue from the expression directly also works; this is the shape PUC's own
+  -- libmath uses, and it keeps the value the scaling below reads in a register.
   local v = (_rs * 1664525 + 1013904223) & 0xFFFFFFFF
   _rs = v
   if m == nil then

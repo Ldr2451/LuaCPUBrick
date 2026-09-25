@@ -1089,6 +1089,34 @@ TESTS = [
     # spelling, and the chip prints the shortest round-trip form of the
     # fraction where PUC prints 17 digits.
     ("math-modf", "print(math.modf(3.7))", None, "run"),
+    # math.random is a Lua piece, so it is the one builtin whose NUMBERS are not
+    # PUC's: PUC seeds xoshiro256** on a 64-bit state and the chip runs a 32-bit
+    # LCG, so the same seed gives a different sequence and no program can tell
+    # the difference except by comparing against PUC's own output.  The API, the
+    # ranges and the float's interval ARE PUC's, so the property cases below
+    # compare against the oracle and only the two sequences are pinned here.
+    ("math-random-seed42",
+     "math.randomseed(42) print(math.random(1, 6), math.random(1, 6), "
+     "math.random(1, 6))", None, "run"),
+    ("math-random-ten",
+     "math.randomseed(7) local t = {} for i = 1, 5 do t[i] = math.random(10) "
+     "end print(table.concat(t, ','))", None, "run"),
+    # a draw advances the state, so two draws of a million-wide interval differ
+    ("math-random-advances",
+     "math.randomseed(1) print(math.random(1000000) == math.random(1000000))",
+     None, "run"),
+    # a one-wide interval is that value, and randomseed answers the two numbers
+    # it seeded with, which is PUC's own return
+    ("math-random-narrow", "print(math.random(2, 2), math.randomseed(3))", None,
+     "run"),
+    ("math-random-float",
+     "math.randomseed(0) print(math.random() >= 0 and math.random() < 1)", None,
+     "run"),
+    # PUC's two range errors, wording and argument number included.  A Lua piece
+    # raises without the "file:line:" prefix a C function gets, which is the same
+    # divergence every other piece has, so only the prefix differs here.
+    ("math-random-interval", "print(pcall(math.random, 5, 1))", None, "run"),
+    ("math-random-noint", "print(pcall(math.random, 1.5))", None, "run"),
     # math.type answers for a value of ANY type -- "integer"/"float" for a
     # number and nil for everything else -- so it must not go through the
     # number check the other _m modes share.  There was no case for it at all,

@@ -251,16 +251,6 @@
   re-ran its instruction to the tick cap. Using one would need the two-phase
   shape `_fmt`/`_pat` use — fire on one tick, read a captured output on the next —
   and a free-running stream would have to fire on every tick for every program.
-- **A closure in a library piece that writes a captured local and reads it again
-  in the same body reads the value from BEFORE the write.** Measured with
-  `math.random`: the float draw advanced the state, the integer draw did not, and
-  the integer path then re-ran to the tick cap. Every equivalent shape in a
-  program's own chunk is correct (`s = s + 1 return s` → 2 3 3, also with a gate,
-  with `&`, and through a second closure), so this is the library chunk's cells,
-  not closures in general, and computing into a local before writing the upvalue
-  does **not** fix it. The reference piece and the probe are
-  `lib/math_random.lua`. It blocks any piece with mutable state, so it is a bug
-  in its own right, not a math.random detail.
 - **A gate that must call back into Lua is a separate mechanism nothing needs
   yet.** The only place the chip calls Lua on a gate's behalf is the pcall frame,
   and pcall-of-pcall is unsupported, so a machine cannot suspend mid-loop for a
