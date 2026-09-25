@@ -219,6 +219,7 @@ Iterating (each builds the chip once, ~6s, then runs many programs):
 | `tools/trace_pc.py "prog" "0,1,2"` | step the VM, printing pc, frame and chosen registers |
 | `tools/trace_exec.py "prog"` | which chip nodes execute, in order |
 | `tools/profile_sim.py "prog"` | where a run spends its ticks |
+| `tools/perfbench.py --baseline REV` | alternate a baseline and current IR chip across the benchmark battery |
 
 Checks on the chip itself:
 
