@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(ROOT, "irrun"))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
 from irsims import ChipRunner, _extract
+from spec import OP_NAMES
 from timing import Elapsed
 
 PROGRAMS = {
@@ -46,8 +47,11 @@ def measure(runner, src, ticks):
     sim.reset()
     labels = labels_by_id(sim)
     prog_ok = labels.get("progOkV")
+    vm_pc = labels.get("vmPc")
+    bop_id = labels.get("bop")
     compiled = [None]
     gate_fires = [0]
+    op_counts = [0] * len(OP_NAMES)
     original_exec = sim._exec_node
 
     def counted_exec(nid, node, next_queue):
@@ -55,8 +59,16 @@ def measure(runner, src, ticks):
         return original_exec(nid, node, next_queue)
 
     def on_tick(sim_now, tick):
-        if compiled[0] is None and sim_now.vars.get(prog_ok):
+        if not sim_now.vars.get(prog_ok):
+            return
+        if compiled[0] is None:
             compiled[0] = tick + 1
+        bop = sim_now.arrays.get(bop_id, [])
+        pc = int(sim_now.vars.get(vm_pc, 0))
+        if 0 <= pc < len(bop):
+            op = int(bop[pc])
+            if 0 <= op < len(op_counts):
+                op_counts[op] += 1
 
     sim.inputs = {"program": src, "run": True}
     sim._exec_node = counted_exec
@@ -78,6 +90,7 @@ def measure(runner, src, ticks):
         "gates": gate_fires[0],
         "source_chars": len(src),
         "bytecode": sum(1 for op in bop if op),
+        "op_counts": op_counts,
         "log": result.get("log", ""),
     }
 
@@ -90,6 +103,11 @@ def baseline_source(rev):
     with os.fdopen(fd, "wb") as f:
         f.write(proc.stdout)
     return path
+
+
+def top_opcodes(counts, limit=5):
+    ranked = sorted(enumerate(counts), key=lambda item: (-item[1], item[0]))
+    return [(OP_NAMES[op], count) for op, count in ranked[:limit] if count]
 
 
 def main():
@@ -150,6 +168,14 @@ def main():
                       before["gates"] / before["ticks"],
                       current["gates"] / current["ticks"],
                       before["wall"] * 1000, current["wall"] * 1000, ratio))
+            before_ops = dict(top_opcodes(before["op_counts"]))
+            current_ops = dict(top_opcodes(current["op_counts"]))
+            names = [name for name, _ in top_opcodes(before["op_counts"])]
+            names += [name for name, _ in top_opcodes(current["op_counts"])
+                      if name not in names]
+            print("           vm ops " + " ".join(
+                "%s=%d/%d" % (name, before_ops.get(name, 0),
+                              current_ops.get(name, 0)) for name in names))
     finally:
         os.unlink(baseline_path)
     return 0
