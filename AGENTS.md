@@ -130,6 +130,14 @@
   `cfMaxLoc[fnDepth]`; a local initialiser can be the immediately preceding
   LOADNUM in the same register, and treating that as an operand lost the
   initial value in a `repeat` body.
+- **The frame-switch hold died with the four-step burst.** `vmHold` spent one VM
+  tick after every base change so later copies in the old burst agreed on the new
+  base. The current burst executes one step, so the next tick already observes it.
+  Removing the state and all writes cut 17 nodes and, against the same commit in
+  one process, changed calls 313→271 ticks / 93,927→88,067 gates, closures
+  380→336 / 118,529→112,385, and pcall 523→483 / 143,734→137,780. Pcall still
+  switches frames through its own micro-state; only the redundant empty slots
+  went. The full call/return, vararg, closure, method, and pcall batteries pass.
 - **A mod is inlined at its call site, so extracting a chain does not shrink
   it.** Moving ops 34..40 (floor division and the bitwise operators) into their
   own mod and calling it from the same place measured **+20 nodes**, not fewer.
@@ -141,7 +149,7 @@
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
   the sixteen arms. Attempted, reverted rather than committed as a guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
-  After the unroll and parser/lexer cuts the chip is 39,062 nodes, of which the
+  After the unroll and parser/lexer cuts the chip is 39,045 nodes, of which the
   builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
   stop being inlined, and **that is a host primitive the compiler does not
   have**: a gate takes values on named ports and cannot index a register file by

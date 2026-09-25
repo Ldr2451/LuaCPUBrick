@@ -3912,9 +3912,6 @@ var nxPc: int = 0
 var nxMode: int = 0
 // One micro-step per burst. vmBurst raises this and the first step consumes it.
 var fmtGo: bool = false
-// A frame push or pop changes vmBase inside a mod. The next vmStep consumes
-// this before reading any register against the new frame.
-var vmHold: bool = false
 var lenChase: bool = false
 var lenTid: int = 0
 var latchN0: float = 0.0
@@ -4404,7 +4401,6 @@ mod pcallStep() {
       vnum[rb + ra + 1] = 0.0
       vstr[rb + ra + 1] = pcallMsg
       vmBase = rb
-      vmHold = true
       vmPc = rpc
       retCountV = 2
     }
@@ -4469,7 +4465,6 @@ mod pcallEnd(src: int, k: int, extra: int) {
   }
   let cnt = if want == -2 then m else if want < m then want else m
   vmBase = rb
-  vmHold = true
   vmPc = rpc
   retCountV = cnt
 }
@@ -4491,9 +4486,6 @@ mod pcallEndJoin(src: int, fixed: int, tailSrc: int, tail: int) {
   pcallEnd(src, fixed, tailKeep)
 }
 
-// The call itself, on the step after pcall's arm. A mod's vmBase write is read
-// reliably on the next step, so pcallEnter switches the frame and raises vmHold
-// before the callee can run.
 mod pcallEnter() {
   let cid = pcallFid
   let inner = if cid < cloBase then cid else cloF[cid]
@@ -4537,7 +4529,6 @@ mod pcallEnter() {
     fRetPC.push(vmPc + 1)
     fRetN.push(-2)
     vmBase = nbase
-    vmHold = true
     vmPc = fStart[inner]
   }
 }
@@ -4855,10 +4846,6 @@ mod nxStep() {
 //     expected)".  Choose the tag and the value first, then hand numArg those:
 //     `numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3)
 //     else 0.0)`, which is what setvec and setcol already did.
-//   - a frame change ends the burst.  Under the old four-step burst, the copy of
-//     vmStep that pushed or popped a frame and the copies after it disagreed
-//     about vmBase. vmHold is raised by every base change and spent by the next
-//     step, which does nothing.
 //   - a write at the top of a mod, followed by an else-if chain that deep with
 //     mod calls in it, is silently dropped: fmtPos = fmtPos + 1 at the top of
 //     fmtConv never happened, so the conversion was re-read as a literal.  The
@@ -8426,7 +8413,6 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
         fRetPC.push(vmPc + 1)
         fRetN.push(if mtSelf then -2 else 1)
         vmBase = nbase
-        vmHold = true
         vmPc = fStart[fid]
         advanced = true
       }
@@ -8488,12 +8474,7 @@ mod vmStep() {
     let b = bpb[vmPc]
     let c = bpc[vmPc]
     var advanced = false
-    if vmHold {
-      // the previous step in this burst changed the frame base: spend this slot
-      // on nothing so the next instruction reads the base that is now current
-      vmHold = false
-      advanced = true
-    } else if op == 0 {
+    if op == 0 {
       vmHalted = true
       advanced = true
     } else if op == 1 {
@@ -8774,7 +8755,6 @@ mod vmStep() {
         pcallEnd(vmBase + a, 1, 0)
       } else {
         vmBase = rb
-        vmHold = true
         vSet(ra, rv, rn, rs)
         vmPc = rpc
         retCountV = 1
@@ -8798,7 +8778,6 @@ mod vmStep() {
         pcallEnd(vmBase + a, 0, 0)
       } else {
         vmBase = rb
-        vmHold = true
         vSet(ra, 0, 0.0, "")
         vmPc = rpc
         retCountV = 0
@@ -8849,7 +8828,6 @@ mod vmStep() {
           vSet(ra, 0, 0.0, "")
         }
         vmBase = rb
-        vmHold = true
         vmPc = rpc
         retCountV = n
       }
