@@ -143,6 +143,16 @@
   nil that it immediately replaced. A direct absolute-register copy removed 428
   nodes and 1,223 wires; successful pcall stayed at 483 ticks / 137,780 gates,
   and all pcall/xpcall cases still pass.
+- **Three `retAdjust` callers know `k == n`.** Protected-call completion, a
+  pcall'd gate's argument shift, and a successful `assert` can use a copy-only
+  16-slot helper with no nil-fill arms. It removed 400 nodes and 1,040 wires;
+  pcall stayed at 483 ticks / 137,780 gates and its battery plus every `assert`
+  case passed.
+- **An unread array is not necessarily dead to the compiler.** `fRegs` has no
+  read anywhere, but deleting it and its writes produced three `_Unsupported`
+  placeholders, so it stays. Four genuinely unread scalar parser flags
+  (`pMode`, `blkHadCap`, `popLeft`, `pendLeft`) did lower cleanly, by 30 nodes
+  and 52 wires.
 - **A mod is inlined at its call site, so extracting a chain does not shrink
   it.** Moving ops 34..40 (floor division and the bitwise operators) into their
   own mod and calling it from the same place measured **+20 nodes**, not fewer.
@@ -154,7 +164,7 @@
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
   the sixteen arms. Attempted, reverted rather than committed as a guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
-  After the unroll and parser/lexer cuts the chip is 38,617 nodes, of which the
+  After the unroll and parser/lexer cuts the chip is 38,187 nodes, of which the
   builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
   stop being inlined, and **that is a host primitive the compiler does not
   have**: a gate takes values on named ports and cannot index a register file by

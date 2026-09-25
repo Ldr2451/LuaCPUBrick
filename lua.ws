@@ -920,7 +920,6 @@ mod lexStep() {
 var cpos: int = 0
 var perr: bool = false
 var perrMsg: string = ""
-var pMode: int = 0
 var presReg: int = 0
 var presIsCall: bool = false
 
@@ -989,7 +988,6 @@ var blkCapGen: int[]
 // is emitted in front of the condition and this says so, or the block exit
 // would add a second one outside the loop.
 var blkGenDone: bool = false
-var blkHadCap: bool = false
 var selfName: string[]
 var selfClean: bool[]
 var selfFid: int[]
@@ -1036,10 +1034,8 @@ var opBase: int[]
 var expectOperand: bool = true
 var popMode: int = 0
 var popPrec: int = 0
-var popLeft: bool = true
 var pendKind: int = -1
 var pendPrec: int = 0
-var pendLeft: bool = true
 var pendSub: int = 0
 var pendAux: int = 0
 var closeMode: int = 0
@@ -1967,24 +1963,20 @@ mod binArrive(opc: int, prec: int, fl: int) {
   }
   pendKind = 0
   pendPrec = prec
-  pendLeft = (fl & 1) == 1
   pendSub = opc
   pendAux = fl
   popMode = 1
   popPrec = prec
-  popLeft = (fl & 1) == 1
 }
 
 // and/or arrival: pops drain first, then the frame goes up with its jump.
 mod andOrArrive(isOr: bool) {
   pendKind = if isOr then 5 else 4
   pendPrec = if isOr then 0 else 1
-  pendLeft = true
   pendSub = 0
   pendAux = 0
   popMode = 1
   popPrec = if isOr then 0 else 1
-  popLeft = true
 }
 
 // Push the pending operator frame once precedence pops have drained.
@@ -4074,6 +4066,25 @@ mod retAdjust(src: int, dst: int, k: int, n: int) {
   if 16 <= k { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] } else if 16 <= n { vtag[dst+15] = 0 vnum[dst+15] = 0.0 vstr[dst+15] = "" }
 }
 
+mod retCopy(src: int, dst: int, n: int) {
+  if 1 <= n { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] }
+  if 2 <= n { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] }
+  if 3 <= n { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] }
+  if 4 <= n { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] }
+  if 5 <= n { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] }
+  if 6 <= n { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] }
+  if 7 <= n { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] }
+  if 8 <= n { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] }
+  if 9 <= n { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] }
+  if 10 <= n { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] }
+  if 11 <= n { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] }
+  if 12 <= n { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] }
+  if 13 <= n { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] }
+  if 14 <= n { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] }
+  if 15 <= n { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] }
+  if 16 <= n { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] }
+}
+
 mod vSet(r: int, tag: int, num: float, s: string) {
   vtag[vmBase + r] = tag
   vnum[vmBase + r] = num
@@ -4446,7 +4457,7 @@ mod pcallEnd(src: int, k: int, extra: int) {
   // anything, which copying down would.
   var m = 1
   if pcallMode == 0 {
-    retAdjust(src, rb + ra + 1, k, k)
+    retCopy(src, rb + ra + 1, k)
     vtag[rb + ra] = 3
     vnum[rb + ra] = 1.0
     vstr[rb + ra] = "true"
@@ -8011,7 +8022,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
         // a mod's write to a file variable is only read back reliably at the top
         // of vmStep.  The gate's argument count is a1 and not a1 + 1: f moved
         // into the call's own register, so it is no longer an argument.
-        retAdjust(vmBase + a + 1, vmBase + a, a1 + 1, a1 + 1)
+        retCopy(vmBase + a + 1, vmBase + a, a1 + 1)
         pcallGateArgs = a1
         pcallGate = true
       } else {
@@ -8189,7 +8200,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
       }
     } else {
       if 0 < nargs {
-        retAdjust(vmBase + a + 1, vmBase + a, nargs, nargs)
+        retCopy(vmBase + a + 1, vmBase + a, nargs)
         retCountV = nargs
       } else {
         vSet(a, 0, 0.0, "")
