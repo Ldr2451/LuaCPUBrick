@@ -39,7 +39,7 @@ MAX_REGS = 64
 MAX_FUNCS = 96
 MAX_GLOBALS = 96
 MAX_CALLS = 32
-MAX_TABLES = 64
+MAX_TABLES = 68
 MAX_HEAP = 512
 MAXVALS = 16       # values one call/return/statement can carry
 LOG_LINES = 32     # lines kept in the log before the oldest are dropped
@@ -78,4 +78,5 @@ GSLOT_ORDER = ["outNum0", "outNum1", "outNum2", "outNum3", "outStr0",
                "incolb", "incola", "print", "type", "tostring", "setvec",
                "setcol", "clock", "inarr", "outarr", "select", "next", "_s",
                "_m", "unpack", "_fmt", "_rd", "_wr", "error", "assert", "pcall",
-               "xpcall", "_pat", "_gmatch", "_gmnext", "inInt0", "outInt0"]
+               "xpcall", "_pat", "_gmatch", "_gmnext", "inInt0", "outInt0",
+               "math", "string", "table", "io"]

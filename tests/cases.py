@@ -37,7 +37,7 @@ DEMO_LOG = ("arith\t2.25\t7.0\n"
             "inputs\t6.0\t1.875\t10.0\n"
             "inputs2\t30.0\tnil\tnil\n"
             "outs\t7\t79\n"
-            "outs2\tfoo-bar!|foo\t21.75/table: 0x0\n"
+            "outs2\tfoo-bar!|foo\t21.75/table: 0x4\n"
             "\n"
             "check\t55\tfoo-bar!\t2.25\n")
 
@@ -225,6 +225,8 @@ TESTS = [
     ("type-all", "print(type(1), type('s'), type(true), type(nil), "
      "type(print))", None, "run"),    ("tostring-all", "print(tostring(2.5), tostring('s'), "
      "tostring(false), tostring(nil))", None, "run"),
+    ("stdlib-tables", "print(type(math), type(string), type(table), type(io))",
+     None, "run"),
     ("print-shadow", "print = 5 print(print)", None, "haltfail"),
     ("str-call-sugar", "print 'hi'", None, "run"),
     # iteration library (prepended Lua source over the next() primitive)
@@ -232,6 +234,7 @@ TESTS = [
      "do s = s + v end print(s, i)", None, "run"),
     ("iter-pairs", "local t = {a=1, b=2, c=3} local s = 0 for k, v in pairs(t) "
      "do s = s + v end print(s)", None, "run"),
+    ("iter-pairs-arity", "print(select('#', pairs({})))", None, "run"),
     # PUC walks the array part in index order, but string keys come out in hash
     # order, which is unspecified -- compare those as a set instead.
     ("iter-order", "local t = {30, 10, 20} local o = '' for i, v in ipairs(t) "
@@ -270,6 +273,8 @@ TESTS = [
      None, "run"),
     ("meth-call", "M = {} M.g = function(self, a, b) return a * b end "
      "print(M:g(3, 4), M.g(M, 3, 4))", None, "run"),
+    ("meth-multi-return", "local t = {} function t:f(a, b) return a, b end "
+     "print(t:f(1, 4))", None, "run"),
     ("meth-def", "M = {} function M:f(x) return x + 1 end "
      "function M:g(a, b) return a - b end print(M:f(1), M:g(9, 4), M.f(M, 1))",
      None, "run"),
@@ -1097,7 +1102,7 @@ TESTS = [
     ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
      {"expect": {"log": DEMO_LOG,
                  "outGlobals": [7.0, 79.0, 61.875, 11.0,
-                                "foo-bar!|foo", "21.75/table: 0x0", 0],
+                                "foo-bar!|foo", "21.75/table: 0x4", 0],
                  "outArr": [55.0, 6.0] + [0.0] * 61 + [-1.0],
                  "outVec": [2.0, 4.0, 6.0],
                  "outCol": [0.5, 0.25, 0.125, 1.0],

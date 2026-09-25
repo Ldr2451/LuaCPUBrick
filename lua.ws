@@ -123,35 +123,36 @@
 ///   error's message has no "chunk:line:" prefix: the chip has no line at run
 ///   time, so the text goes through as it is, and a protected call hands that
 ///   text on as a value.
-///   tostring of a table is "table" (PUC prints an address). t[nil] reads nil (PUC
-///   errors). outNum0..outNum3 only take numbers/booleans/nil and outArr only
-///   numbers (PUC tables take anything; fixed-size float storage is a gate
-///   limitation). The log keeps the last 32 lines at 64 chars each (about 2 KB).
+///   tostring of a table is address-shaped (PUC's exact address is unstable).
+///   t[nil] reads and writes raise "table index is nil". outNum0..outNum3 only
+///   take numbers/booleans/nil and outArr only numbers (PUC tables take
+///   anything; fixed-size float storage is a gate limitation). The log keeps
+///   the last 32 lines at 64 chars each (about 2 KB).
 ///
 /// Limits (compile error past them, progOk = false)
-///   1024 tokens, 512 bytecode instructions, 64 registers per function, 32 functions,
-///   64 globals (27 pre-registered), 256 numeric and 256 string constants, 16 call
-///   arguments, 32 nested calls, 16 upvalues per function. At run time: 64 tables,
-///   512 table entries, 256 closures and 1024 upvalue cells in total.
+///   4096 tokens, 1024 bytecode instructions, 64 registers per function, 96 functions,
+///   96 globals (48 pre-registered), 256 numeric and 256 string constants, 16 values
+///   per expanded call/return/statement, 32 nested calls, 16 upvalues per function.
+///   At run time: 64 program tables plus four library tables, 512 table entries,
+///   256 closures and 1024 upvalue cells.
 ///
 /// Speed and gate count
 ///   Everything is unrolled per tick, so gates buy speed. Approximate cost of one extra
 ///   copy: vmStep 2.5k gates, parseStep 6k, lexStep 1k.
-///   Execution   vmBurst() = 4 vmStep() calls, fired by the Clock at STEP_INTERVAL
-///               (0.01 s, so at most once per tick): up to about 240 VM instructions per
+///   Execution   vmBurst() = 1 vmStep() call, fired by the Clock at STEP_INTERVAL
+///               (0.01 s, so at most once per tick): up to about 60 VM instructions per
 ///               second at 60 ticks per second. Whether the game really fires the Clock
 ///               that fast has not been measured; time a loop with clock() to check.
 ///               Rough sizes: an 8 element bubble sort is ~740 instructions, 16 elements
 ///               ~2600, 32 elements ~9400.
-///   Parsing     lexChunk() = 4 characters per tick, parseChunk() = 2 parser steps per
+///   Parsing     lexChunk() = 4 characters per tick, parseChunk() = 1 parser step per
 ///               tick. A few hundred characters take a few seconds. Add or remove calls in
 ///               lexChunk / parseChunk / vmBurst to trade gates for speed.
 ///
-/// Verification: differential tests against real Lua 5.4 (about 190 hand-written programs
-/// plus a 200-seed random differential fuzz, all matching apart from the documented
-/// differences), structural model<->chip consistency checks (builtin ids, global slots,
-/// limits, ports, opcode and keyword coverage, re-parse/restart clearing), and simulated
-/// handler tests for run, the log, inarr/outarr, outNum/outStr and error reporting.
+/// Verification: differential tests against real Lua 5.5, structural model<->chip
+/// consistency checks (builtin ids, global slots, limits, ports, opcode and keyword
+/// coverage, re-parse/restart clearing), and simulated handler tests for run, the log,
+/// inarr/outarr, outNum/outStr and error reporting.
 /// It has not been run inside Brickadia.
 
 @layout("cube")
@@ -208,7 +209,7 @@ const MAX_FUNCS = 96
 // builtin slots, and it should stay well clear of what a real program declares.
 const MAX_GLOBALS = 96
 const MAX_CALLS = 32
-const MAX_TABLES = 64
+const MAX_TABLES = 68
 const MAX_HEAP = 512
 // live vararg values across all active frames
 const MAX_VA = 256
@@ -244,8 +245,8 @@ const NB = 23
 // string function pays for one family, not for all eight.
 // Library functions are written as field assignments, not `function string.f`:
 // the parser does not take a dotted name on `function` yet.
-const LIB_iter = "function _ipairs_iter(t, i) i = i + 1 local v = t[i] if v ~= nil then return i, v end end\nfunction ipairs(t) return _ipairs_iter, t, 0 end\nfunction pairs(t) return next, t, nil end\n"
-const LIB_str_index = "string = string or {}\nstring.len = function(s) return #s end\nstring.sub = function(s, i, j)\n  local l = #s\n  i = i or 1\n  j = j or -1\n  if i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end\n  if j < 0 then j = l + j + 1 elseif j > l then j = l end\n  if i > j then return \"\" end\n  return _s(1, s, i - 1, j - i + 1)\nend\nstring.byte = function(s, i, j)\n  i = i or 1\n  j = j or i\n  if i < 0 then i = #s + i + 1 end\n  if j < 0 then j = #s + j + 1 end\n  if i < 1 then i = 1 end\n  if j > #s then j = #s end\n  if i > j then return end\n  if i == j then return _s(4, s, i - 1, 0) end\n  return _s(4, s, i - 1, 0), string.byte(s, i + 1, j)\nend\nstring.char = function(...)\n  local r = \"\"\n  for i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\n  return r\nend\n"
+const LIB_iter = "function _ipairs_iter(t, i) i = i + 1 local v = t[i] if v ~= nil then return i, v end end\nfunction ipairs(t) return _ipairs_iter, t, 0 end\nfunction pairs(t) return next, t, nil, nil end\n"
+const LIB_str_index = "string = string or {}\nstring.len = function(s) return #s end\nstring.sub = function(s, i, j)\n  local l = #s\n  i = i or 1\n  j = j or -1\n  if i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end\n  if j < 0 then j = l + j + 1 elseif j > l then j = l end\n  if i > j then return \"\" end\n  return _s(1, s, i - 1, j - i + 1)\nend\nstring.byte = function(s, i, j)\n  i = i or 1\n  j = j or i\n  if i < 0 then i = #s + i + 1 end\n  if j < 0 then j = #s + j + 1 end\n  if i < 1 then i = 1 end\n  if j > #s then j = #s end\n  if i > j then return end\n  if i == j then return _s(4, s, i - 1, 0) end\n  local r = {}\n  for k = i, j do r[#r + 1] = _s(4, s, k - 1, 0) end\n  return unpack(r, 1, #r)\nend\nstring.char = function(...)\n  local r = \"\"\n  for i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\n  return r\nend\n"
 const LIB_str_fmt = "string = string or {}\nstring.format = _fmt\n"
 // The wrappers pass their arguments straight through rather than naming them:
 // a named parameter pads a missing one with nil, and PUC's "got no value" and
@@ -260,7 +261,7 @@ const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.hug
 const LIB_math_int = "math = math or {}\nmath.floor = function(x) return _m(1, x, 0) end\nmath.ceil = function(x) return _m(2, x, 0) end\nmath.tointeger = function(x) return _m(13, x, 0) end\nmath.type = function(x) return _m(14, x, 0) end\nmath.abs = function(x) if x < 0 then return -x end return x end\nmath.sqrt = function(x) return _m(3, x, 0) end\n"
 const LIB_math_trig = "math = math or {}\nmath.sin = function(x) return _m(4, x, 0) end\nmath.cos = function(x) return _m(5, x, 0) end\nmath.tan = function(x) return _m(6, x, 0) end\nmath.asin = function(x) return _m(7, x, 0) end\nmath.acos = function(x) return _m(8, x, 0) end\nmath.atan = function(y, x) return _m(9, y, x or 1) end\n"
 const LIB_math_exp = "math = math or {}\nmath.exp = function(x) return _m(10, x, 0) end\nmath.log = function(x, b)\n  if b == nil then return _m(11, x, 0) end\n  if b == 10 then return _m(12, x, 0) end\n  return _m(11, x, 0) / _m(11, b, 0)\nend\n"
-const LIB_math_misc = "math = math or {}\nmath.max = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v > m then m = v end end\n  return m\nend\nmath.min = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v < m then m = v end end\n  return m\nend\nmath.fmod = function(a, b)\n  local r = a % b\n  if r ~= 0 and (a < 0) ~= (b < 0) then r = r - b end\n  return r\nend\nmath.modf = function(x) local i = (x >= 0 and _m(1, x, 0)) or _m(2, x, 0) return i + 0.0, x - i end\n"
+const LIB_math_misc = "math = math or {}\nmath.max = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v > m then m = v end end\n  return m\nend\nmath.min = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v < m then m = v end end\n  return m\nend\nmath.fmod = function(a, b)\n  local r = a % b\n  if r ~= 0 and (a < 0) ~= (b < 0) then r = r - b end\n  return r\nend\nmath.modf = function(x) local i = (x >= 0 and _m(1, x, 0)) or _m(2, x, 0) return i, x - i end\n"
 const LIB_tab_ins = "table = table or {}\ntable.insert = function(t, ...)\n  local n = #t\n  local c = select('#', ...)\n  if c == 1 then\n    t[n + 1] = (...)\n  elseif c == 2 then\n    local pos, v = ...\n    for i = n, pos, -1 do t[i + 1] = t[i] end\n    t[pos] = v\n  end\nend\ntable.remove = function(t, pos)\n  local n = #t\n  if pos == nil then pos = n end\n  local v = t[pos]\n  for i = pos, n - 1 do t[i] = t[i + 1] end\n  t[n] = nil\n  return v\nend\n"
 const LIB_tab_list = "table = table or {}\ntable.unpack = unpack\ntable.pack = function(...) local t = {...} t.n = select('#', ...) return t end\ntable.move = function(a1, f, e, t, a2)\n  a2 = a2 or a1\n  if e >= f then\n    if t > e or t <= f or a1 ~= a2 then\n      for i = 0, e - f do a2[t + i] = a1[f + i] end\n    else\n      for i = e - f, 0, -1 do a2[t + i] = a1[f + i] end\n    end\n  end\n  return a2\nend\n"
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, j)\n  sep = sep or \"\"\n  i = i or 1\n  j = j or #t\n  local r = \"\"\n  for k = i, j do\n    local v = t[k]\n    if k > i then r = r .. sep end\n    r = r .. v\n  end\n  return r\nend\n"
@@ -1362,6 +1363,10 @@ mod parseInit() {
   gDeclare("_gmnext")
   gDeclare("inInt0")
   gDeclare("outInt0")
+  gDeclare("math")
+  gDeclare("string")
+  gDeclare("table")
+  gDeclare("io")
   // The runtime wires the latches and outputs straight into these slots, so
   // take the numbers from the declarations instead of repeating them: adding a
   // builtin used to leave a stale literal behind and overwrite its id.
@@ -2491,13 +2496,16 @@ mod closeAction() {
       } else {
         let wasCall = topFlag()
         let arg = popVal()
-        bEmit(7, fr + 1 + nargs, arg, 0)
-        cfNext[fnDepth] = fr + nargs + 2
-        // this argument is the last one of the call being closed, so a call
-        // used as that argument expands all of its results
+        let dst = fr + 1 + nargs
         if wasCall {
+          bEmit(7, dst, arg, 0)
+          bEmit(43, arg + 1, dst + 1, MAXVALS - 1)
+          bumpMax(dst + MAXVALS)
           patchMultiTail()
+        } else {
+          bEmit(7, dst, arg, 0)
         }
+        cfNext[fnDepth] = dst + 1
         let p = bEmit(23, fr, nargs + 1, if wasCall then 1 else 0)
         lastCallPos = p
         bumpMax(fr + nargs + 3)
@@ -4102,9 +4110,9 @@ mod gSet(gi: int, tag: int, num: float, s: string) {
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
 // (inputs filled from the latches), 19..39 builtins (print, type, tostring,
 // setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall, _pat, _gmatch, _gmnext) as
-// functions with ids 0..NB-1, then the two int globals.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0]
+// functions with ids 0..NB-1, the two int globals, and the four library tables.
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 5, 5, 5, 5]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
 
 // One-time setup when a parsed program starts running: closure numbering, and
 // the main chunk's slot table.  The main chunk runs with no frame on the stack
@@ -4132,7 +4140,7 @@ mod vmReset() {  tmap.clear()
   tLen.resize(MAX_TABLES, 0)
   tFree.clear()
   tHeap = 0
-  tCount = 0
+  tCount = 4
   tOwner.clear()
   tOwner.resize(MAX_HEAP, -1)
   tKeyTag.clear()

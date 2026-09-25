@@ -91,7 +91,7 @@ CHIP_LOG = {
     "math-maxinteger": "9223372036854775808\n",
     "math-pi": "3.141592653589793\n",
     "math-log": "4.605170185988092\n",
-    "math-modf": "3.0\t0.7000000000000002\n",
+    "math-modf": "3\t0.7000000000000002\n",
     "tab-del": "1\tnil\t3\t3\n",
     # error's message carries the chunk and line of whatever called error, and
     # pcall hands that message on as a value.  The chip has no line at run time

@@ -23,8 +23,9 @@ Jump targets are absolute bytecode indices. `tools/dump_vm.py` prints these
 raw tuples.
 
 The principal limits are 1,024 instructions, 4,096 tokens, 64 registers per
-function, 96 functions, 96 globals, 32 active call frames, 64 tables, 512 table
-entries, and 16 values in one expanded call, return, or statement. Numeric and
+function, 96 functions, 96 globals, 32 active call frames, 64 program tables
+plus four library tables, 512 table entries, and 16 values in one expanded call,
+return, or statement. Numeric and
 string constant pools each hold at most 256 entries.
 
 ### Values and registers
@@ -180,6 +181,7 @@ python -u tests/syntax_check.py               # parser stress, oracle diff
 python -u tests/iter_check.py                 # iteration library, oracle diff
 python -u tests/multi_check.py                # multiple returns, oracle diff
 python -u tests/vararg_check.py               # varargs/select, oracle diff
+python -u tests/stdlib_check.py                # standard-library family battery
 python -u tools/fuzz.py 200                   # random programs, oracle diff
 ```
 

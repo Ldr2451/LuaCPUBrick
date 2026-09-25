@@ -16,7 +16,7 @@ CASES = [
     'function f(a, ...) print(a, select("#", ...)) end f(1, 2, 3)',
     'function f(...) print((...)) end f(9)',
     'function outer() return 1, 2 end function f(...) print(...) end f(outer())',
-    'function f(...) for i = 1, select("#", ...) do io_write(tostring((select(i, ...)))) end end f(1,2,3)',
+    'function f(...) for i = 1, select("#", ...) do io.write(tostring((select(i, ...)))) end end f(1,2,3)',
     # --- select ---
     'print(select("#", 1, 2, 3))',
     'print(select(2, "a", "b", "c"))',

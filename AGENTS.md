@@ -141,7 +141,7 @@
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
   the sixteen arms. Attempted, reverted rather than committed as a guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
-  After the unroll and parser/lexer cuts the chip is 38,898 nodes, of which the
+  After the unroll and parser/lexer cuts the chip is 39,062 nodes, of which the
   builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
   stop being inlined, and **that is a host primitive the compiler does not
   have**: a gate takes values on named ports and cannot index a register file by
