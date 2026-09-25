@@ -4568,16 +4568,6 @@ mod syncOuts() {
   oS5 = if gtag[slotOutLatch + 5] == 0 then "" else fmtVal(gtag[slotOutLatch + 5], gnum[slotOutLatch + 5], gstr[slotOutLatch + 5])
 }
 
-mod vmNum2(op: int, b: int, c: int) -> bool {
-  let bt = vTag(b)
-  let ct = vTag(c)
-  let ok = (bt == 1 || bt == 6) && (ct == 1 || ct == 6)
-  if !ok {
-    vmFail("attempt to perform arithmetic")
-  }
-  return ok
-}
-
 // Store an integer-valued float with the int tag when exactly
 // representable (chip ints are precise inside +/-2^53); otherwise float.
 mod vSetInt(a: int, v: float) {
@@ -8503,10 +8493,14 @@ mod vmStep() {
     } else if op == 7 {
       vSet(a, vTag(b), vNum(b), vStr(b))
     } else if op >= 8 && op <= 13 {
-      if vmNum2(op, b, c) {
+      let bt = vTag(b)
+      let ct = vTag(c)
+      if !((bt == 1 || bt == 6) && (ct == 1 || ct == 6)) {
+        vmFail("attempt to perform arithmetic")
+      } else {
         let x = vNum(b)
         let y = vNum(c)
-        let ii = vTag(b) == 6 && vTag(c) == 6
+        let ii = bt == 6 && ct == 6
         if op == 8 {
           if ii {
             vSetInt(a, x + y)
