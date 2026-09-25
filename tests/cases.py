@@ -484,6 +484,8 @@ TESTS = [
     # answer and that the program carries on, not the exact wording.
     ("pcall-fmt-gate-error", "local ok, e = pcall(string.format, '%d', 'x') "
      "print(ok, e:find('number expected') ~= nil) print('after')", None, "run"),
+    # ... and this one the whole message, position prefix and name included.
+    ("pcall-gate-name", "print(pcall(string.format, '%d', 'x'))", None, "run"),
     ("pcall-fmt-gate-ok", "print(pcall(string.format, '%d', 5))", None, "run"),
     ("pcall-fmt-gate-ok2", "print(pcall(string.format, '%s=%d', 'a', 2))", None,
      "run"),

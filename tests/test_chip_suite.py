@@ -95,6 +95,10 @@ CHIP_LOG = {
     # PUC 5.5's string.gmatch answers one value; the chip answers three because
     # its generic for reads the walk's state out of the call.
     "gmatch-arity": "function\t0\tnil\n3\n",
+    # A builtin reached as a VALUE through pcall names itself by its short name
+    # where PUC names it by its library path.  A named call agrees with PUC.
+    "pcall-gate-name": "false\tbad argument #2 to 'format' "
+                       "(number expected, got string)\n",
     "tab-del": "1\tnil\t3\t3\n",
     # error's message carries the chunk and line of whatever called error, and
     # pcall hands that message on as a value.  The chip has no line at run time

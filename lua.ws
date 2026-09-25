@@ -101,7 +101,10 @@
 ///   compare    == and ~= work on all types without coercion (tables by identity);
 ///              < > <= >= work on numbers or lexicographically on strings;
 ///              arithmetic never coerces strings
-///   divzero    x/0, x%0 and 0/0 yield 0 (Brickadia gate behavior, unlike Lua inf/nan)
+///   divzero    IEEE, like PUC: 1/0 is inf, -1/0 is -inf, 0/0 is nan, and the host's
+///              divide gate is a plain divide on a 64-bit float, so this is what the
+///              gate does in game.  x%0 and x//0 RAISE for two integers and are nan/inf
+///              with a float operand (math.fmod and the divide)
 ///   errors     error(msg [, level]) raises with msg as the message, assert is its
 ///              conditional form (a truthy first argument returns *all* of them, a
 ///              falsey one raises), and pcall(f, ...) / xpcall(f, handler, ...)
@@ -111,7 +114,7 @@
 /// Not implemented yet (each is a loud error, never a wrong answer)
 ///   metatables               no setmetatable, no __index, no operator metamethods
 ///   goto and labels          a compile error
-///   coroutines, modules, bitwise operators
+///   coroutines, modules
 ///   pcall of pcall/xpcall    those are the builtins that push a frame and the
 ///                             in-place dispatch has one result slot
 ///   integers as a type       one number type: math.type reports "integer" for a
@@ -123,6 +126,21 @@
 ///   error's message has no "chunk:line:" prefix: the chip has no line at run
 ///   time, so the text goes through as it is, and a protected call hands that
 ///   text on as a value.
+///   a builtin passed to pcall as a VALUE names itself by its short name where
+///   PUC names it by its library path: pcall(string.format, '%d', 'x') says
+///   "to 'format'", PUC says "to 'string.format'".  A named call agrees with
+///   PUC, and the chip cannot tell which form it was reached through.
+///   tostring of a nan is "nan" where PUC's C library writes "-nan" (the x86
+///   default QNaN has its sign bit set).  The sign of an invalid operation's
+///   result is not reachable from arithmetic, and the oracle harness normalises
+///   the two spellings to one, so the value is what is being compared.
+///   string.format called from inside a function reads its arguments empty for
+///   every one but the last: the conversion mods read the register file four
+///   mods down, and in a function frame that read comes back stale.  The same
+///   call at top level is right.  See tests/cases.py fmt-in-fn-divergence.
+///   string.gmatch answers three values where PUC answers one (its iterator
+///   ignores the arguments the generic for hands it); the chip's generic for
+///   reads the walk's state out of the call.  See CHIP_LOG gmatch-arity.
 ///   tostring of a table is address-shaped (PUC's exact address is unstable).
 ///   t[nil] reads and writes raise "table index is nil". outNum0..outNum3 only
 ///   take numbers/booleans/nil and outArr only numbers (PUC tables take
