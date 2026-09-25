@@ -489,8 +489,15 @@ TESTS = [
     ("arg-fn-paren-call", "print((function() return 1, 2 end)())", None, "run"),
     ("arg-fn-table", "local t = {function() return 1, 2 end} print(t[1]())", None,
      "run"),
-    ("xpcall-tostring", "function f() error('b') end "
-     "local ok = xpcall(f, tostring) print(ok)", None, "run"),
+    # A gate as xpcall's message handler, and a handler that returns nothing.
+    # Both are the pcall-gate-handler / pcall-gate-args SKIPs: the compile is
+    # proven correct (nargs=2) and the loss is in the runtime re-dispatch, which
+    # routes a gate handler back through the xpcall instruction.  xpcall-catch and
+    # xpcall-catch-targets are the shapes that pass, with a function handler.
+    ("xpcall-gate-handler", "function f() error('b') end "
+     "print(xpcall(f, type))", None, "run"),
+    ("xpcall-gate-handler-nil", "function f() error('b') end "
+     "local ok, v = xpcall(f, print) print(ok, v)", None, "run"),
     # string.find and string.match, which PUC also has in C: a backtracking
     # matcher wants a stack and a loop, so it is a gate machine here and the
     # library piece around it is three lines of Lua.  The cases below are the

@@ -48,22 +48,7 @@ TICKS = 6000
 # Cases the tick sim cannot reach, or that fail for a reason still open.  Every
 # entry here says what was measured, so the next attempt starts from evidence.
 SKIP = {
-    # A call with tostring as its second argument lowers correctly and then fails
-    # at RUN time: `tools/check.py` shows the handler's own output reaching the
-    # log, then "attempt to call" from a stale register.  Measured, not guessed:
-    # driving the parse with `run` false and reading the bytecode directly shows
-    # the CALL is emitted with nargs=2 in every variant, so the compiler is right
-    # and a dump taken *after* a run is not evidence about the compile -- the
-    # pcall re-dispatch patches the instruction (vmStep's pcallGate arm writes
-    # bpb[pcallGatePc] = pcallGateArgs) and the dump shows the patched count.
-    # Two fixes were tried against that read and neither changed the outcome: a
-    # separate pc for the handler's re-dispatch, and saving/restoring the
-    # borrowed count.  So the loss is elsewhere on the gate path (most likely the
-    # handler's results landing in registers the caller then re-reads), and until
-    # it is found the SKIP stays.  Note `xpcall(f, print)` fails the same way, so
-    # it is not about tostring: any gate handler does it.
-    "xpcall-tostring": "a gate message handler loses its result (compile is correct; runtime path)",
-    # A pcall of a library wrapper that then calls a gate loses an argument:
+    # pcall of a library wrapper that then calls a gate loses an argument:
     # `pcall(string.find, "abc")` reports argument #1 where PUC reports #2, and
     # `pcall(string.find, "ab", "b", 1)` finds nothing because the init is read
     # one register early.  The pcall frame is one level deep (pcall of pcall is
@@ -71,6 +56,40 @@ SKIP = {
     # the count patched into the bytecode, so the arguments move but the reads
     # do not follow.  It is a path of its own, not the matcher's.
     "pcall-gate-args": "pcall of a wrapper that calls a gate loses an argument",
+    # A GATE as xpcall's message handler always comes back nil, where a function
+    # handler with the same body returns its value: xpcall(f, type) gives
+    # "string" in PUC and nil here, and pcall-of-a-gate (the SKIP above) is the
+    # same shape.  Measured, not guessed:
+    #
+    #   - the compile is correct.  Driving the parse with `run` false and reading
+    #     the bytecode shows the CALL emitted with nargs=2 in every variant, so a
+    #     bytecode dump taken *after* a run is not evidence about the compile --
+    #     the pcall re-dispatch patches the instruction in place
+    #     (bpb[pcallGatePc] = pcallGateArgs) and the dump shows the patched count.
+    #   - a per-tick trace of the result slots (Sim.run's on_tick hook) shows
+    #     pcallMode = 2 and pcallRan = true, i.e. pcallEnd's handler branch *is*
+    #     reached, and it is handed k=2 for a gate that produced at most one
+    #     value.
+    #
+    # The cause is structural, not a missing line: a protected call is re-run by
+    # moving f into the instruction's own register and letting the dispatch read
+    # the gate out of it, but pcallStep leaves the *xpcall* in that register, so
+    # a gate handler's re-dispatch comes back as xpcall again and the handler
+    # never runs.  Writing the handler's id into that register first (tried) does
+    # not help on its own, because the dispatch also re-enters the pcall arm and
+    # pushes a second marker.  Four fixes were attempted and measured, none of
+    # which changed the outcome -- a separate pc for the handler, saving and
+    # restoring the borrowed count, substituting PUC's "<no error object>", and
+    # writing the handler id into the dispatch register.  The real fix is to give
+    # a gate handler a dispatch that does not go through the xpcall instruction
+    # at all, which is a change to the pcall design rather than a patch on it.
+    "xpcall-gate-handler": "a gate message handler is re-dispatched as the xpcall around it",
+    # PUC substitutes "<no error object>" when the handler returns no value; the
+    # chip hands back nil.  Same root cause as the SKIP above (the gate handler's
+    # result never lands), so it is fixed with it rather than separately: pcallEnd
+    # is reached and is handed the right count, but by then the slot holds nil
+    # because the gate never ran.
+    "xpcall-gate-handler-nil": "a handler with no result gives nil, PUC gives <no error object>",
 }
 
 # Extra VM ticks / timeouts for heavy but reachable cases.
