@@ -361,7 +361,6 @@ var lnumExpSeen: bool = false
 var lidBuf: string = ""
 var lescDec: int = 0
 var lescCount: int = 0
-var lescHex: string = ""
 
 var tk: int[]
 var ts: int[]
@@ -1092,12 +1091,6 @@ mod popVal() -> int {
   valCall.pop()
   valPrefix.pop()
   return valStk.pop()
-}
-
-mod popFlag() -> bool {
-  let had = valCall.length() > 0
-  let v = valCall.pop().Value
-  return had && v
 }
 
 mod topFlag() -> bool {
@@ -2802,11 +2795,6 @@ mod ctlTop() -> int {
 mod lstAppendB(pos: int) {
   plNext[pos] = ctlB[ctlB.length() - 1]
   ctlB[ctlB.length() - 1] = pos
-}
-
-mod lstAppendC(pos: int) {
-  plNext[pos] = ctlC[ctlC.length() - 1]
-  ctlC[ctlC.length() - 1] = pos
 }
 
 // Start an expression unit ending in the given continuation.
@@ -5411,7 +5399,6 @@ mod fmtConvChar() {
 // relative to the point.  The mantissa is those p+1 digits read as one integer,
 // so a carry out of them is +1 on the exponent rather than a walk back through
 // the digits.  See the note above fmtConvFloat for why this is its own shape.
-var fmtFrac0: float = 0.0    // the fraction, before any scaling
 var fmtAll: string = ""      // the integer's and the fraction's together
 var fmtK: int = 0            // the decimal exponent
 var fmtS: int = 0            // the index of the first significant digit
@@ -5581,9 +5568,9 @@ mod fmtConvExp() {
         fmtNz = 0
         fmtLz = -1
         // The walk below multiplies whatever pair it finds, so the fraction has
-        // to be in it before the first state, and it cannot go through fmtFrac0:
-        // a var this state writes is not what a later line of the same state
-        // reads, so every fraction digit of 1.5 came out 0.
+        // to be in it before the first state, and it has to be written into
+        // fmtDd directly: a var this state writes is not what a later line of
+        // the same state reads, so every fraction digit of 1.5 came out 0.
         fmtDd[0] = fmtV - floor(fmtV)
         fmtDd[1] = 0.0
         fmtNxt = 21
