@@ -949,7 +949,14 @@ TESTS = [
     # about the loop running at all, not about how many times, and `over-cap` and
     # `func-fib` are the cases that buy scale when someone wants to pay for it.
     ("long-sum", "local s = 0 local i = 1 while i<=2000 do "
-     "s = s+i i = i+1 end print(s)", None, "run"),
+     "s = s+i i = i+1 end print(s)", None, "run",
+     {"expect": {"finished": True}}),
+    ("life-proc", "local function spin(n) print('start') while true do "
+     "n = n + 1 outNum0 = n end end spin(0)", None, "lifecycle",
+     {"expect": {"log": "start\n", "checkpoints": [300, 600, 900]}}),
+    ("life-prog", "local n = 0 print('start') while true do "
+     "n = n + 1 outNum0 = n end", None, "lifecycle",
+     {"expect": {"log": "start\n", "checkpoints": [300, 600, 900]}}),
     ("long-string", "print([[hello]])", None, "run"),
     ("long-string-nest", 'print([=[a]=])', None, "run"),
     ("long-comment", "--[[this is a comment]]print(1)", None, "run"),

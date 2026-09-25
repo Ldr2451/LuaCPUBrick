@@ -64,6 +64,8 @@ TICKS_OVERRIDES = {
     # lib_callchain.lua still exercise the call paths, and this case remains a
     # useful deep-chain and cap check.
     "call-chain": 20000,
+    "life-proc": 1200,
+    "life-prog": 1200,
 }
 TIMEOUT_OVERRIDES = {
     "func-fib": 300,
@@ -227,8 +229,60 @@ def compare(name, mode, kw, r, dt):
             return (name, None, "SKIP unrecorded deviation", dt)
         if not c["progOk"]:
             return (name, False, "chip rejected: %r" % c["err"], dt)
+        if "finished" in exp and bool(r.get("finished")) != exp["finished"]:
+            return (name, False, "finished got=%r want=%r" % (
+                r.get("finished"), exp["finished"]), dt)
         if OR.norm_val(c["log"]) != want:
             return (name, False, "log mismatch chip=%r lua=%r" % (c["log"], want), dt)
+        return (name, True, "", dt)
+    if mode == "lifecycle":
+        life = r.get("lifecycle")
+        if not isinstance(life, dict):
+            return (name, False, "missing lifecycle result", dt)
+        want_finished = exp.get("finished", False)
+        want_log = exp.get("log")
+        checkpoints = exp.get("checkpoints", [])
+        for run_name in ("first", "second"):
+            run = life.get(run_name, {})
+            if not run.get("progOk"):
+                return (name, False, "%s chip rejected: %r" % (
+                    run_name, run.get("err")), dt)
+            if run.get("err"):
+                return (name, False, "%s error: %r" % (
+                    run_name, run.get("err")), dt)
+            if run.get("finished") != want_finished:
+                return (name, False, "%s finished got=%r want=%r" % (
+                    run_name, run.get("finished"), want_finished), dt)
+            if run.get("tick") != run.get("budget", 0) - 1:
+                return (name, False, "%s stopped at tick %r/%r" % (
+                    run_name, run.get("tick"), run.get("budget", 0) - 1), dt)
+            if want_log is not None and run.get("log") != want_log:
+                return (name, False, "%s log got=%r want=%r" % (
+                    run_name, run.get("log"), want_log), dt)
+            samples = run.get("samples", [])
+            sample_ticks = [sample.get("tick") for sample in samples]
+            want_ticks = list(checkpoints) + [run.get("budget", 0) - 1]
+            if sample_ticks != want_ticks:
+                return (name, False, "%s samples got=%r want=%r" % (
+                    run_name, sample_ticks, want_ticks), dt)
+            values = [sample.get("outNum0", 0.0) for sample in samples]
+            if not values or values[0] <= 0.0 or any(
+                    left >= right for left, right in zip(values, values[1:])):
+                return (name, False, "%s no progress: %r" % (run_name, values), dt)
+            if any(sample.get("finished") != want_finished or
+                   not sample.get("busy") for sample in samples):
+                return (name, False, "%s invalid sample state: %r" % (
+                    run_name, samples), dt)
+        baseline = life.get("baseline", {})
+        reset = life.get("reset", {})
+        if baseline.get("tick") != 0 or baseline.get("finished") or \
+                baseline.get("log") or baseline.get("deferred"):
+            return (name, False, "bad initial reset: %r" % baseline, dt)
+        if reset != baseline:
+            return (name, False, "dirty reset: got=%r want=%r" % (
+                reset, baseline), dt)
+        if life["first"] != life["second"]:
+            return (name, False, "restart differs", dt)
         return (name, True, "", dt)
     if mode == "state":
         if not c["progOk"]:
@@ -295,16 +349,7 @@ def compare(name, mode, kw, r, dt):
     return (name, False, "bad mode %r" % mode, dt)
 
 
-def run_in_sim(sim, p):
-    """Run one case against a loaded Sim and return the result the comparison reads.
-
-    Every path into a sim goes through here: the pool, the batch worker and the
-    one-case retry, so a case cannot behave differently depending on how it was
-    scheduled.
-    """
-    src, kw, ticks = p["src"], p["kw"], p["ticks"]
-    t_case = time.time()
-    sim.reset()
+def sim_inputs(src, kw):
     si = {"program": src, "run": True}
     for k, v in enumerate(kw.get("inputs") or []):
         si["inNum%d" % k] = float(v)
@@ -318,8 +363,83 @@ def run_in_sim(sim, p):
         si["inArr"] = [float(v) for v in kw["inarr"]]
     if kw.get("inint") is not None:
         si["inInt0"] = int(kw["inint"])
-    sim.inputs = si
-    r = sim.run(ticks)
+    return si
+
+
+def lifecycle_sample(sim_, tick):
+    og = sim_.capture()["outGlobals"]
+    return {
+        "tick": tick,
+        "finished": bool(sim_.finished),
+        "log": sim_.log,
+        "outNum0": float(og.get("outNum0", 0.0)),
+        "busy": bool(og.get("busy", False)),
+        "err": og.get("err") or "",
+        "progOk": bool(og.get("progOk", False)),
+    }
+
+
+def lifecycle_window(sim_, si, ticks, checkpoints):
+    sim_.reset()
+    sim_.inputs = si
+    wanted = set(checkpoints)
+    samples = []
+
+    def on_tick(sim_now, tick):
+        if tick in wanted:
+            samples.append(lifecycle_sample(sim_now, tick))
+
+    sim_.run(ticks, on_tick=on_tick)
+    samples.append(lifecycle_sample(sim_, sim_.tick))
+    return {"budget": ticks, "samples": samples,
+            **samples[-1]}
+
+
+def lifecycle_reset_state(sim_):
+    return {
+        "tick": sim_.tick,
+        "finished": bool(sim_.finished),
+        "log": sim_.log,
+        "queued": len(sim_.exec_queue),
+        "deferred": len(sim_._deferred),
+    }
+
+
+def run_lifecycle(sim_, p):
+    kw = p["kw"]
+    si = sim_inputs(p["src"], kw)
+    ticks = p["ticks"]
+    checkpoints = kw.get("expect", {}).get("checkpoints", [])
+    sim_.reset()
+    baseline = lifecycle_reset_state(sim_)
+    first = lifecycle_window(sim_, si, ticks, checkpoints)
+    sim_.reset()
+    reset = lifecycle_reset_state(sim_)
+    second = lifecycle_window(sim_, si, ticks, checkpoints)
+    return baseline, first, reset, second
+
+
+def run_in_sim(sim, p):
+    """Run one case against a loaded Sim and return the result the comparison reads.
+
+    Every path into a sim goes through here: the pool, the batch worker and the
+    one-case retry, so a case cannot behave differently depending on how it was
+    scheduled.
+    """
+    src, kw, ticks = p["src"], p["kw"], p["ticks"]
+    t_case = time.time()
+    lifecycle = None
+    if p["mode"] == "lifecycle":
+        baseline, first, reset, second = run_lifecycle(sim, p)
+        lifecycle = {"baseline": baseline, "first": first,
+                     "reset": reset, "second": second}
+        r = {"log": first["log"], "outGlobals": {
+            "outNum0": first["outNum0"], "err": first["err"],
+            "progOk": first["progOk"]}}
+    else:
+        sim.reset()
+        sim.inputs = sim_inputs(src, kw)
+        r = sim.run(ticks)
     og = r["outGlobals"]
     state = {}
     if p["mode"] == "state":
@@ -332,6 +452,8 @@ def run_in_sim(sim, p):
     return {
         "src": src,
         "secs": time.time() - t_case,
+        "finished": bool(sim.finished),
+        "lifecycle": lifecycle,
         "state": state,
         "log": r["log"],
         "outGlobals": {
