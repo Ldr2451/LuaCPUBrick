@@ -52,6 +52,7 @@ def measure(runner, src, ticks):
     compiled = [None]
     gate_fires = [0]
     op_counts = [0] * len(OP_NAMES)
+    pending_op = [None]
     original_exec = sim._exec_node
 
     def counted_exec(nid, node, next_queue):
@@ -63,12 +64,15 @@ def measure(runner, src, ticks):
             return
         if compiled[0] is None:
             compiled[0] = tick + 1
+        if pending_op[0] is not None:
+            op_counts[pending_op[0]] += 1
         bop = sim_now.arrays.get(bop_id, [])
         pc = int(sim_now.vars.get(vm_pc, 0))
+        pending_op[0] = None
         if 0 <= pc < len(bop):
             op = int(bop[pc])
             if 0 <= op < len(op_counts):
-                op_counts[op] += 1
+                pending_op[0] = op
 
     sim.inputs = {"program": src, "run": True}
     sim._exec_node = counted_exec
