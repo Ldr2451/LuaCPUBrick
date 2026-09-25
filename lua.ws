@@ -569,10 +569,31 @@ mod lexStep() {
           lpos = lpos + 1
         }
       } else if cp == 34 || cp == 39 {
-        lstrDelim = ch
-        lidBuf = ""
-        lstage = 4
-        lpos = lpos + 1
+        // A literal with no escape in it is the common case, and one string
+        // search finds where it ends: the closing delimiter, unless a backslash
+        // or a newline comes first, which means the per-character path below
+        // (an escape, or the unterminated-string error).  PUC's lexer is C and
+        // scans the same way, and a library piece is mostly string literals --
+        // this is the cheap half of the boot cost, with no ladder in it.
+        let e = lsrc.Find(ch, true, lpos + 1)
+        if 0 <= e {
+          let bs = lsrc.Find("\\", true, lpos + 1)
+          let nl = lsrc.Find("\n", true, lpos + 1)
+          if (bs < 0 || e < bs) && (nl < 0 || e < nl) {
+            emitTok(2, 0, 0.0, lsrc.Substring(lpos + 1, e - lpos - 1))
+            lpos = e + 1
+          } else {
+            lstrDelim = ch
+            lidBuf = ""
+            lstage = 4
+            lpos = lpos + 1
+          }
+        } else {
+          lstrDelim = ch
+          lidBuf = ""
+          lstage = 4
+          lpos = lpos + 1
+        }
       } else if isAlpha {
         lidBuf = ch
         lstage = 6
