@@ -266,7 +266,7 @@ const LIB_tab_list = "table = table or {}\ntable.unpack = unpack\ntable.pack = f
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, j)\n  sep = sep or \"\"\n  i = i or 1\n  j = j or #t\n  local r = \"\"\n  for k = i, j do\n    local v = t[k]\n    if k > i then r = r .. sep end\n    r = r .. v\n  end\n  return r\nend\n"
 const LIB_tab_sort = "table = table or {}\n_lt = function(a, b) return a < b end\ntable.sort = function(t, cmp)\n  local lt = cmp or _lt\n  for i = 2, #t do\n    local v = t[i]\n    local j = i - 1\n    while j >= 1 and lt(v, t[j]) do t[j + 1] = t[j] j = j - 1 end\n    t[j + 1] = v\n  end\nend\n"
 const LIB_io = "io = io or {}\nio.read = function(...) if select('#', ...) == 0 then return _rd('*l') end return _rd((...)) end\nio.write = function(...) for i = 1, select('#', ...) do _wr(tostring((select(i, ...)))) end end\n_io_next = function() local l = _rd('*l') if l == nil then return nil end return l end\nio.lines = function() _rd('*r') return _io_next end\n"
-const LIB_str_gsub = "string = string or {}\nstring.gsub = function(s, p, r, n)\nif type(s) == \"number\" then s = tostring(s) end\nlocal sl, out, pos, cnt, last = #s, \"\", 1, 0, -1\nlocal anch = _s(1, p, 0, 1) == \"^\"\nlocal rt = type(r)\nif r == nil then error(\"bad argument #3 to 'gsub' (string/function/table expected, got no value)\", 2) end\nif rt == \"number\" then r = tostring(r) rt = \"string\" end\nlocal add = function(v)\nlocal tv = type(v)\nif tv == \"string\" then return v end\nif tv == \"number\" then return tostring(v) end\nif tv == \"boolean\" then error(\"invalid replacement value (a boolean)\", 2) end\nerror(\"invalid replacement value (a \" .. tv .. \")\", 2)\nend\nlocal rep = function(kt, kr, add, res, m)\nif kt == \"function\" then\nlocal v, w\nif res[3] == 0 then v, w = kr(m) else v, w = kr(unpack(res, 4, 3 + res[3])) end\nif v == nil or v == false then return m end\nif w == nil or w == false then return add(v) end\nreturn add(v) .. add(w)\nelseif kt == \"table\" then\nlocal k = m\nif res[3] > 0 then k = res[4] end\nlocal v = kr[k]\nif v == nil or v == false then return m end\nreturn add(v)\nelse\nlocal o, i, rl = \"\", 1, #kr\nwhile i <= rl do\nlocal j = string.find(kr, \"%\", i, true)\nif j == nil then o = o .. _s(1, kr, i - 1, rl - i + 1) break end\nif i < j then o = o .. _s(1, kr, i - 1, j - i) end\nif j == rl then error(\"invalid use of '%' in replacement string\", 2) end\nlocal d = _s(1, kr, j, 1)\nif d == \"%\" then o = o .. \"%\"\nelseif d == \"0\" then o = o .. m\nelse\nlocal q = _s(4, d, 0, 0) - 48\nif q < 1 or 9 < q then error(\"invalid use of '%' in replacement string\", 2) end\nif 1 < q and res[3] < q then error(\"invalid capture index %\" .. d, 2) end\nif q == 1 and res[3] == 0 then o = o .. m else o = o .. add(res[q + 3]) end\nend\ni = j + 2\nend\nreturn o\nend\nend\nif rt ~= \"string\" and rt ~= \"table\" and rt ~= \"function\" then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got \" .. rt .. \")\", 2) end\nif n == nil then n = sl + 1 end\nif type(n) ~= \"number\" then error(\"bad argument #4 to 'string.gsub' (number expected, got \" .. type(n) .. \")\", 2) end\nn = _m(13, n, 0)\nif n == nil then error(\"bad argument #4 to 'gsub' (number has no integer representation)\", 2) end\nif n < 1 then return s, 0 end\nwhile cnt < n do\nlocal res = {_pat(2, s, p, pos)}\nif res[1] == nil then break end\nlocal a, b = res[1], res[2]\nif b == last then\nif pos <= sl then out = out .. _s(1, s, pos - 1, 1) pos = pos + 1 else break end\nelse\nif pos < a then out = out .. _s(1, s, pos - 1, a - pos) end\nout = out .. rep(rt, r, add, res, _s(1, s, a - 1, b - a + 1))\ncnt = cnt + 1\npos = b + 1\nend\nlast = b\nif anch then break end\nend\nreturn out .. _s(1, s, pos - 1, sl - pos + 1), cnt\nend\n"
+const LIB_str_gsub = "string = string or {}\nstring.gsub = function(s, p, r, n)\nif type(s) == \"number\" then s = tostring(s) end\nlocal sl, out, pos, cnt, last = #s, \"\", 1, 0, -1\nlocal anch = _s(1, p, 0, 1) == \"^\"\nlocal rt = type(r)\nif r == nil then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got no value)\", 2) end\nif rt == \"number\" then r = tostring(r) rt = \"string\" end\nlocal add = function(v)\nlocal tv = type(v)\nif tv == \"string\" then return v end\nif tv == \"number\" then return tostring(v) end\nif tv == \"boolean\" then error(\"invalid replacement value (a boolean)\", 2) end\nerror(\"invalid replacement value (a \" .. tv .. \")\", 2)\nend\nlocal rep = function(kt, kr, add, res, m)\nif kt == \"function\" then\nlocal v, w\nif res[3] == 0 then v, w = kr(m) else v, w = kr(unpack(res, 4, 3 + res[3])) end\nif v == nil or v == false then return m end\nif w == nil or w == false then return add(v) end\nreturn add(v) .. add(w)\nelseif kt == \"table\" then\nlocal k = m\nif res[3] > 0 then k = res[4] end\nlocal v = kr[k]\nif v == nil or v == false then return m end\nreturn add(v)\nelse\nlocal o, i, rl = \"\", 1, #kr\nwhile i <= rl do\nlocal j = string.find(kr, \"%\", i, true)\nif j == nil then o = o .. _s(1, kr, i - 1, rl - i + 1) break end\nif i < j then o = o .. _s(1, kr, i - 1, j - i) end\nif j == rl then error(\"invalid use of '%' in replacement string\", 2) end\nlocal d = _s(1, kr, j, 1)\nif d == \"%\" then o = o .. \"%\"\nelseif d == \"0\" then o = o .. m\nelse\nlocal q = _s(4, d, 0, 0) - 48\nif q < 1 or 9 < q then error(\"invalid use of '%' in replacement string\", 2) end\nif 1 < q and res[3] < q then error(\"invalid capture index %\" .. d, 2) end\nif q == 1 and res[3] == 0 then o = o .. m else o = o .. add(res[q + 3]) end\nend\ni = j + 2\nend\nreturn o\nend\nend\nif rt ~= \"string\" and rt ~= \"table\" and rt ~= \"function\" then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got \" .. rt .. \")\", 2) end\nif n == nil then n = sl + 1 end\nif type(n) ~= \"number\" then error(\"bad argument #4 to 'string.gsub' (number expected, got \" .. type(n) .. \")\", 2) end\nn = _m(13, n, 0)\nif n == nil then error(\"bad argument #4 to 'string.gsub' (number has no integer representation)\", 2) end\nif n < 1 then return s, 0 end\nwhile cnt < n do\nlocal res = {_pat(2, s, p, pos)}\nif res[1] == nil then break end\nlocal a, b = res[1], res[2]\nif b == last then\nif pos <= sl then out = out .. _s(1, s, pos - 1, 1) pos = pos + 1 else break end\nelse\nif pos < a then out = out .. _s(1, s, pos - 1, a - pos) end\nout = out .. rep(rt, r, add, res, _s(1, s, a - 1, b - a + 1))\ncnt = cnt + 1\npos = b + 1\nend\nlast = b\nif anch then break end\nend\nreturn out .. _s(1, s, pos - 1, sl - pos + 1), cnt\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -3901,24 +3901,10 @@ var nxSlot: int = 0
 var nxDst: int = 0
 var nxPc: int = 0
 var nxMode: int = 0
-// One micro-step per burst.  vmBurst calls vmStep four times, so the whole VM
-// body -- and this state machine with it -- is inlined four times and entered up
-// to four times in one tick.  Extra hops are harmless for next()'s walk but not
-// for a state machine: each inlined copy reads the state the earlier copies wrote
-// in an order the graph does not define, and the walk takes a wrong branch (the
-// spec's conversion character came out as a literal).  vmBurst raises this, the
-// first copy consumes it.
+// One micro-step per burst. vmBurst raises this and the first step consumes it.
 var fmtGo: bool = false
-// Raised by a frame push or pop, and the reason the rest of that burst's steps
-// do nothing: vmBase is a file-level var, vmStep is inlined four times and the
-// compiler shares one Get per var across the copies, so the copy that changes
-// the base and the copy that reads it in the same tick disagree.  That is not a
-// theory -- it is the call-path bug: a CALL that landed third in a burst was
-// followed by the callee's first instruction in the *same* tick, which read the
-// caller's base and wrote the callee's frame one register low, so the second of
-// two calls in one print died on "bad argument (number expected)" while the
-// first (whose CALL was the burst's last step) was right.  The latch is the
-// other half of the fmtGo rule above: one state change per burst.
+// A frame push or pop changes vmBase inside a mod. The next vmStep consumes
+// this before reading any register against the new frame.
 var vmHold: bool = false
 var lenChase: bool = false
 var lenTid: int = 0
@@ -4301,9 +4287,6 @@ var pcallGo: bool = false      // and pcallEnter has a frame to push
 var pcallFid: int = 0          // which function
 var pcallA: int = 0            // the pcall's own register
 var pcallNArgs: int = 0        // how many arguments it was given
-var pcallArgOff: int = 1       // and where they start: past f for pcall, past
-                               // f and the handler for xpcall, and in place (the
-                               // message is already written) for a handler call
 
 // An error inside a pcall is a value, not the end of the program.  vmFailed is
 // set either way, because the arms that check it after a possible failure must
@@ -4402,7 +4385,6 @@ mod pcallStep() {
         pcallBase = rb
         pcallA = ra + 1
         pcallNArgs = 2
-        pcallArgOff = 0
         pcallGo = true
       }
     } else {
@@ -4435,7 +4417,7 @@ mod pcallStep() {
 // header warns about.  Every call site passes the same thing -- the results are
 // at vmBase + a -- because a frame starts at the very register its results go
 // to, so that is where they are in all four return forms and in a gate.
-mod pcallEnd(src: int, k: int) {
+mod pcallEnd(src: int, k: int, extra: int) {
   let ra = fRetA[fRetA.length() - 1]
   let rb = fRetBase[fRetBase.length() - 1]
   let rpc = fRetPC[fRetPC.length() - 1]
@@ -4461,9 +4443,14 @@ mod pcallEnd(src: int, k: int) {
     vtag[rb + ra] = 3
     vnum[rb + ra] = 1.0
     vstr[rb + ra] = "true"
-    m = if 1 <= k then k + 1 else 1
+    m = (if 1 <= k then k else 0) + extra + 1
   } else {
     retAdjust(src, rb + ra + 1, if 1 <= k then 1 else 0, 1)
+    if k < 1 {
+      vtag[rb + ra + 1] = 2
+      vnum[rb + ra + 1] = 0.0
+      vstr[rb + ra + 1] = "<no error object>"
+    }
     vtag[rb + ra] = 3
     vnum[rb + ra] = 0.0
     vstr[rb + ra] = "false"
@@ -4476,16 +4463,26 @@ mod pcallEnd(src: int, k: int) {
   retCountV = cnt
 }
 
-// The call itself, on the step after pcall's arm.  A frame switch from inside
-// a mod is the one thing that cannot be done where it is written: vmStep is
-// inlined four times and the copies share one Get per var, so a copy that reads
-// the base the mod has just changed disagrees with the copy that wrote it, and
-// the callee's first instruction lands in the caller's registers.  The inline
-// call path gets away with it because vmHold spends the next step; a mod needs
-// the same thing a step later, which is what every other micro-step here does
-// (lenChase, nxActive, fmtGo).  pcallEnter is that step, and it clears pcallGo
-// before it does anything so the rest of the burst sees the new base and the
-// hold.
+mod pcallEndJoin(src: int, fixed: int, tailSrc: int, tail: int) {
+  let dst = fRetBase[fRetBase.length() - 1] + fRetA[fRetA.length() - 1] + 1
+  let want = fRetN[fRetN.length() - 1]
+  let have = fixed + tail
+  let keep = if want == -2 then have else if want < have then want else have
+  let fixedKeep = if fixed < keep then fixed else keep
+  let tailKeep = keep - fixedKeep
+  let save = vaTop
+  if 0 < tail {
+    vaSpill(tailSrc, save, tail)
+  }
+  if 0 < tailKeep {
+    vaFill(save, dst + fixedKeep, tailKeep)
+  }
+  pcallEnd(src, fixed, tailKeep)
+}
+
+// The call itself, on the step after pcall's arm. A mod's vmBase write is read
+// reliably on the next step, so pcallEnter switches the frame and raises vmHold
+// before the callee can run.
 mod pcallEnter() {
   let cid = pcallFid
   let inner = if cid < cloBase then cid else cloF[cid]
@@ -4498,6 +4495,7 @@ mod pcallEnter() {
   let nbase = if pcallMode == 0 then base + a + 1 else base + a
   let np = fParams[inner]
   let nslots = 3 * fUpSlotN[inner] + 1
+  let argSrc = if pcallMode != 0 then nbase else if pcallIsX then base + a + 3 else base + a + 2
   if 8 < np {
     vmFail("too many parameters")
   } else if vaTop + nslots > MAX_VA {
@@ -4507,12 +4505,12 @@ mod pcallEnter() {
   } else {
     // the parameters land in the new frame from one past the pcall's own
     // register, and retAdjust's nil-fill is what a missing argument is
-    retAdjust(base + a + 1 + pcallArgOff, nbase, a1, np)
+    retAdjust(argSrc, nbase, a1, np)
     let nva = if fVar[inner] && np < a1 then a1 - np else 0
     frameSeq = frameSeq + 1
     let slotB = vaTop
     vaNum[slotB] = frameSeq
-    vaSpill(base + a + 1 + pcallArgOff + np, slotB + nslots, nva)
+    vaSpill(nbase + np, slotB + nslots, nva)
     fVaB.push(slotB + nslots)
     vaTop = slotB + nslots + nva
     fFunc.push(cid)
@@ -4809,15 +4807,13 @@ mod nxStep() {
 //   - a condition on a file-level var, NESTED inside another if, is unreliable
 //     where the mod around it is inlined more than once: fmtPadStep's
 //     `if fmtPadLeft` chose the else arm whatever the var held, and swapping the
-//     two arms changed nothing.  vmStep is inlined four times and the compiler
-//     shares one Get per var across the copies; the lexer's chain has the same
+//     two arms changed nothing.  The old four-step burst inlined vmStep four
+//     times and the compiler shared one Get per var across the copies; the lexer's chain has the same
 //     shape and works, because lexChunk inlines it once.  So the rule of thumb
 //     is to hoist the test to the top of the mod or take the flag as a
 //     parameter, and tools/wswarn.py flags the shape as a candidate.
-//   - one micro-step per burst.  vmBurst calls vmStep four times, so this whole
-//     machine is inlined four times and entered up to four times in one tick;
-//     fmtGo is raised by vmBurst and consumed by the first copy, so a state sees
-//     one write per tick.
+//   - one micro-step per burst.  The old four-step burst inlined and entered this
+//     machine up to four times in one tick; fmtGo kept one write per tick.
 //   - a mod call in a conditional's VALUE position is evaluated whether the arm
 //     runs or not; only exec statements (a mod call that writes a var) are
 //     guarded.  So `let y = if 2 < nargs then numArg(vTag(a + 3), ...) else 0.0`
@@ -4826,12 +4822,10 @@ mod nxStep() {
 //     expected)".  Choose the tag and the value first, then hand numArg those:
 //     `numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3)
 //     else 0.0)`, which is what setvec and setcol already did.
-//   - a frame change ends the burst.  vmBase is a file-level var read through the
-//     same shared Get as everything else, so the copy of vmStep that pushes or
-//     pops a frame and the copies after it in the same tick disagree about the
-//     base: the callee's first instructions wrote the caller's registers and the
-//     frame came out one register low.  vmHold is raised by every base change
-//     and spent by the next step, which does nothing.
+//   - a frame change ends the burst.  Under the old four-step burst, the copy of
+//     vmStep that pushed or popped a frame and the copies after it disagreed
+//     about vmBase. vmHold is raised by every base change and spent by the next
+//     step, which does nothing.
 //   - a write at the top of a mod, followed by an else-if chain that deep with
 //     mod calls in it, is silently dropped: fmtPos = fmtPos + 1 at the top of
 //     fmtConv never happened, so the conversion was re-read as a literal.  The
@@ -7562,9 +7556,9 @@ mod vaFill(base: int, dst: int, n: int) {
 }
 
 // The low half of the gate dispatch: fids 0..8.  The chain was one of
-// seventeen arms inside vmStep, which is inlined four times, and the
-// documented edge for a chain is about sixteen -- past it the arms near
-// the top stop taking effect, silently.  tools/chainmap.py counts them.
+// seventeen arms inside the old four-copy vmStep, and the documented edge for
+// a chain is about sixteen -- past it the arms near the top stop taking effect,
+// silently.  tools/chainmap.py counts them.
 
 mod gateLow(fid: int, a: int, nargs: int) {
   if fid == 0 {
@@ -7985,7 +7979,6 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
       pcallH = if pcallIsX then vNum(a + 2) else 0.0
       pcallA = a
       pcallNArgs = nargs
-      pcallArgOff = if pcallIsX then 2 else 1
       pcallGatePc = vmPc
       if pcallFid < NB {
         // A gate has no frame and reads its function from the call's own
@@ -8186,7 +8179,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
     // is the machine at the top of vmStep, which writes its answers into this
     // call's own registers the way the _fmt machine does.
     let mode = toInt(numArg(vTag(a + 1), vNum(a + 1)))
-    let nm = if mode == 0 then "find" else if mode == 1 then "match" else "gsub"
+    let nm = if mode == 0 then "string.find" else if mode == 1 then "string.match" else "string.gsub"
     // Only the arguments that were actually passed may be read: a register past
     // nargs still holds whatever the caller's previous call left in it, and a
     // find whose init came from there is a find with a boolean init.
@@ -8688,7 +8681,8 @@ mod vmStep() {
           // A gate that raised does not come here: the error is the value, and
           // the unwind finds the marker with the message in it.
           pcallRan = false
-          pcallEnd(vmBase + a, if 0 <= retCountV then retCountV else 0)
+          pcallEnd(vmBase + a, if 0 <= retCountV then retCountV else 0, 0)
+          advanced = true
         } else if vmPc != pc0 {
           // a gate that changed the frame moved vmPc; one that did not falls
           // through to the caller's vmPc + 1, as every other arm here does
@@ -8744,7 +8738,7 @@ mod vmStep() {
         resultV = fmtVal(rv, rn, rs)
         vmHalted = true
       } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
-        pcallEnd(vmBase + a, 1)
+        pcallEnd(vmBase + a, 1, 0)
       } else {
         vmBase = rb
         vmHold = true
@@ -8768,7 +8762,7 @@ mod vmStep() {
         resultV = ""
         vmHalted = true
       } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
-        pcallEnd(vmBase + a, 0)
+        pcallEnd(vmBase + a, 0, 0)
       } else {
         vmBase = rb
         vmHold = true
@@ -8808,7 +8802,7 @@ mod vmStep() {
         }
         vmHalted = true
       } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
-        pcallEnd(vmBase + a, k)
+        pcallEnd(vmBase + a, k, 0)
       } else {
         if want == -2 {
           // forward every value the call produced (absolute indices, so this
@@ -8869,7 +8863,7 @@ mod vmStep() {
           resultV = if 1 <= k then fmtVal(vTag(a), vNum(a), vStr(a)) else ""
           vmHalted = true
         } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
-          pcallEnd(vmBase + a, k)
+          pcallEndJoin(vmBase + a, cnt, vmBase + tailSrc, tail)
         } else {
           if 0 < tail {
             // The call's values sit in this frame and the fixed ones are copied
@@ -9346,31 +9340,17 @@ mod libIo(p: string) -> string {
 }
 
 // A closure being filled owns the whole tick: its cells go in one per tick and
-// the value is published at the end, and nothing may read it half-built.  The
-// step lives here rather than in vmStep's micro-step arm because vmStep is
-// inlined four times and a rarely-taken path does not belong in the four copies
-// of the hottest code in the chip -- measured: as a vmStep arm it cost every
-// program about a fifth of its per-tick time, closures or not.
+// the value is published at the end, and nothing may read it half-built. The
+// step lives here rather than in vmStep: measured in the old four-step burst,
+// the rare arm cost every program about a fifth of its per-tick time.
 mod vmBurst() {
   fmtGo = true
   patGo = true
   if cloActive {
     cloStep()
   } else {
-    // One vmStep per tick, not four.  A mod is inlined at its call site, so
-    // four calls compiled the opcode dispatch four times over: vmStep measured
-    // 76,877 of the chip's 110,017 nodes, and 19,210 of them per copy.  The
-    // dispatch behind one CALL instruction (gateHigh + gateLow = 19,706) is
-    // where that weight is -- the 43-arm opcode chain beside it is a few
-    // hundred -- so this is the only lever that halves it without a host
-    // primitive a gate cannot provide (a gate takes values on ports and cannot
-    // index a register file by a runtime value).
-    //
-    // The cost is a quarter of the instructions per tick: a program that ran in
-    // 403 ticks takes 1,459, and measured instructions/second fell 1,972 to
-    // 1,292.  That is the trade this change makes on purpose.  The vmHold latch
-    // is still what a frame change spends the next step on, and with one call
-    // per tick the conditionals the three extra calls needed are gone.
+    // One vmStep per tick. Four calls cost 57,612 extra nodes; the compiler's
+    // constant folds recover half the lost loop ticks for a few hundred nodes.
     vmStep()
   }
 }

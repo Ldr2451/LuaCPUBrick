@@ -89,8 +89,9 @@
   Measured by blanking one mod and rebuilding (`tools/modcost.py` — the only
   honest way to ask, since nothing in the graph records a source line and 91% of
   nodes carry no bind name): `vmStep` 76,877 of 110,017, `parseStep` 22,293,
-  `lexStep` 6,692. `vmBurst` calls `vmStep` four times and a mod is inlined at
-  its call site, so the 43-arm opcode chain is compiled four times over: **19,210
+  `lexStep` 6,692. The old `vmBurst` called `vmStep` four times and a mod is
+  inlined at its call site, so the 43-arm opcode chain was compiled four times
+  over: **19,210
   nodes per call**, measured by building with 1, 2, 3 and 4 calls (110,017 /
   90,807 / 71,597 / 52,386). A chain past ~16 arms is where arms near the top
   stop taking effect, so this is a correctness risk as well as a size one.
@@ -116,6 +117,7 @@
   | four `vmStep`, two `parseStep`, four `lexStep` | 110,017 | 157 ticks | 1,672 |
   | one, one, two | 37,899 | 527 ticks | 3,751 |
   | one, one, two + constant folds | 38,153 | 345 ticks | 3,701 |
+  | the same chip after the pcall repairs | 38,536 | 345 ticks | 3,701 |
   | two, one, two, no folds | 57,082 | 313 ticks | 3,265 |
 
   The folds recover about half the loop-tick regression for 254 nodes; a second
@@ -138,7 +140,7 @@
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
   the sixteen arms. Attempted, reverted rather than committed as a guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
-  After the unroll and parser/lexer cuts the chip is 38,153 nodes, of which the
+  After the unroll and parser/lexer cuts the chip is 38,536 nodes, of which the
   builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
   stop being inlined, and **that is a host primitive the compiler does not
   have**: a gate takes values on named ports and cannot index a register file by
@@ -155,8 +157,8 @@
 - **A library piece is charged by the character**: source is spliced in front of
   the program and the lexer runs at 4 chars/tick, so C characters cost `C/4`
   ticks of boot on every run of a program that names it. **That count over 4 is
-  the in-game number to argue about** — `LIB_str_gsub` is 2,769 escaped chars =
-  692 ticks = 11.5s at 60 ticks/s, before the program runs one instruction.
+  the in-game number to argue about** — `LIB_str_gsub` is 2,783 escaped chars =
+  696 ticks = 11.6s at 60 ticks/s, before the program runs one instruction.
   `tools/libconst.py piece.lua LIB_x` prints the size; `--install` minifies
   (comments, indentation, blank lines out, nothing else — a line inside a long
   bracket string is data) and rewrites the const in `lua.ws`.
@@ -168,7 +170,7 @@
 - **A gate that must call back into Lua is a separate mechanism nothing needs
   yet.** The only place the chip calls Lua on a gate's behalf is the pcall frame,
   and pcall-of-pcall is unsupported, so a machine cannot suspend mid-loop for a
-  call. That is why gsub stays a piece: a gate would not pay the 692 ticks, but
+  call. That is why gsub stays a piece: a gate would not pay the 696 ticks, but
   its replacement can be a Lua function, so the gate needs the hook *first* — and
   the matcher cost is the same micro-step either way, so the gate would buy the
   boot and nothing else. Do not build it unless a gate that must call Lua
@@ -177,10 +179,10 @@
   gates). WireScript has no loop statement, so a gate-side loop is a hand-unrolled
   ladder (gates, ~2.5 nodes per arm) or a micro-step (ticks). String-heavy work
   belongs in Lua; tight per-call arithmetic belongs in a gate.
-- **A rarely-taken path does not belong in `vmStep`** — it is inlined four times
-  and fires every tick. A closure cell-fill there cost every program 20% of its
-  per-tick time; moved to `vmBurst` (once per tick) it cost 2,133 nodes instead
-  of 3,054 and the tick-bound cases went back to normal.
+- **A rarely-taken path does not belong in `vmStep`** — it fires every tick,
+  and the old burst inlined it four times. A closure cell-fill there cost every
+  program 20% of its per-tick time; moved to `vmBurst` it cost 2,133 nodes
+  instead of 3,054 and the tick-bound cases went back to normal.
 - Time the *program*, not just the harness: a case going 0.2s → 2s in the suite
   is a user-visible regression, and the suite prints per-case seconds so it
   cannot hide.
@@ -219,6 +221,17 @@ falls out for free.
   with `if !advanced && !vmHalted { vmPc = vmPc + 1 }`, so an arm that steps over
   its own instruction must write `vmPc = vmPc + 1` *and* set `advanced = true`:
   one alone stalls forever, the other double-advances.
+- **A protected frame has three argument origins, not one.** `pcallEnter` copies a
+  protected call's arguments from `a + 2`, xpcall's from `a + 3` because its
+  handler is in between, and a message handler's from the new frame's base. After
+  that copy, varargs come from `nbase + np`; using the old source plus `np` again
+  drops the first vararg and `pcall(string.find, s, p, init)` loses its init. A
+  gate handler that returns to a CALL must set `advanced = true` after
+  `pcallEnd`, because pcallEnd has already moved the pc onto the following ADJUST;
+  otherwise the second result is read from an unadjusted register. RETURNM with a
+  protected marker joins fixed and vararg results through `pcallEndJoin`: copy the
+  tail before the frame switch and pass its kept count into `pcallEnd`, because a
+  vararg-stack read after a mod changes `vmBase` loses its later arms.
 
 ## WireScript traps
 Measured, not style. `tools/wswarn.py` flags the visible shapes;
@@ -226,9 +239,9 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
 - **A value gate fed by a var the same mod writes reads the NEW value.** Fetch a
   character in one state, consume it in the next.
 - **A condition on a file-level `var`, nested inside another `if`, silently
-  loses where the mod is inlined more than once.** `vmStep` is inlined four
-  times and the compiler shares one Get per var across the copies. Hoist the
-  test to the top of the mod or pass it in.
+  loses where the mod is inlined more than once.** The old four-copy `vmStep`
+  shared one Get per var across the copies. Hoist the test to the top of the mod
+  or pass it in.
 - **A ladder that can report zero progress is an infinite loop, not a slow
   path.** An identifier ladder in `lexStep` hung `print('hello')` past 120s: the
   arms past the first read their character through a nested `if` in a mod
@@ -241,10 +254,10 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
   than the ladder itself.** The two are different bugs: a 9-character name
   against an 8-character ladder failed while short names and exact multiples
   passed, so the "exactly full" and "past the end" arms need their own proof.
-- **A ladder cannot hand its work to a later step of the same mod.** `lexStep`
-  is called four times a tick, so a name longer than the ladder cannot set a
-  "keep reading" stage and let the next call finish it: the next call sees the
-  full buffer and resolves the keyword on the first eight characters, emitting
+- **A ladder cannot hand its work to a later step of the same mod.** In the old
+  four-step `lexChunk`, a name longer than the ladder could not set a "keep
+  reading" stage and let the next call finish it: the next call saw the full
+  buffer and resolved the keyword on the first eight characters, emitting
   `abcdefgh` and `i` as two names. A ladder that runs past its own width has to
   finish the token in the call that started it, which means straight-line code
   (there is no loop in WireScript) and one test per extra character — which is
@@ -267,9 +280,9 @@ Measured, not style. `tools/wswarn.py` flags the visible shapes;
 - **`floor()` truncates toward zero, it is not a floor** (Lua's `math.floor` is
   the `_m` gate and does floor, so it proves nothing about the host's). Negative
   floor division has to be done by hand.
-- `vmBurst` is four `vmStep` calls in one tick, so cross-instruction state inside
-  `vmStep` is entered up to four times: harmless for `next`, fatal for a state
-  machine, which needs a one-per-burst latch (`fmtGo`).
+- The old four-step `vmBurst` needed a one-per-burst latch (`fmtGo`) for
+  cross-instruction state in `vmStep`; the current one-step burst still uses the
+  latch so restoring an unroll cannot make a state machine run several times.
 
 ## Fixing bugs
 - Fix the **class**, not the instance: ask what made it possible and make it

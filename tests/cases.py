@@ -446,6 +446,17 @@ TESTS = [
     ("pcall-deep-error",
      "function d(n) if n == 0 then error('bottom') end return d(n - 1) end "
      "print(pcall(d, 5))", None, "run"),
+    ("pcall-varargs",
+     "function f(...) print(select('#', ...), ...) end "
+     "pcall(f, 'ab', 'b', 1)", None, "run"),
+    ("pcall-varargs-fixed",
+     "function f(a, ...) return a, select('#', ...), ... end "
+     "print(pcall(f, 'ab', 'b', 1))", None, "run"),
+    ("pcall-varargs-return",
+     "function f(...) return select('#', ...), ... end "
+     "print(pcall(f, 'ab', 'b', 1))", None, "run"),
+    ("pcall-gate-args-init", "print(pcall(string.find, 'ab', 'b', 1))", None,
+     "run"),
     ("pcall-statement", "function f() return 1 end pcall(f) print('after')",
      None, "run"),
     # The one thing pcall cannot do here: pcall of pcall.  pcall is the only
@@ -454,13 +465,12 @@ TESTS = [
     ("pcall-of-pcall", "function f() return 1 end print(pcall(pcall, f))",
      None, "runtimerr",
      {"expect": {"err": "pcall of pcall is not supported on this chip"}}),
-    # xpcall, which PUC also has in C.  The one thing to measure before writing
-    # it: PUC 5.5 returns false *plus* whatever the handler returned, not the
-    # handler's results alone -- the false is there even when the handler
-    # returns a truthy thing of its own.  The handler is a variable rather than
-    # a register, because the protected call's own frame is written over the
-    # register the handler was in.  The cases use named functions: a function
-    # literal in an argument list loses its returns (see SKIP in the suite).
+    # xpcall, which PUC also has in C.  PUC 5.5 returns false *plus* whatever
+    # the handler returned, not the handler's results alone -- the false is
+    # there even when the handler returns a truthy thing of its own.  The
+    # handler is kept in pcallH/pcallHT because the protected call's frame is
+    # written over the register the handler was in, and it gets the error object
+    # as its first argument even when the frame it starts in overlaps that slot.
     ("xpcall-ok", "function f() return 1, 2 end function h() end "
      "print(xpcall(f, h))", None, "run"),
     ("xpcall-targets", "function f() return 1, 2 end function h() end "
@@ -480,6 +490,13 @@ TESTS = [
                         "got number)"}}),
     ("xpcall-not-a-function", "function h() end print(xpcall(42, h))", None,
      "run"),
+    ("xpcall-handler-message",
+     "function f() error(7) end print(xpcall(f, function(e) return e end))",
+     None, "run"),
+    ("xpcall-handler-varargs",
+     "function f() error(7) end "
+     "print(xpcall(f, function(...) return select('#', ...), ... end))", None,
+     "run"),
     # A function literal as a call argument, in the shapes where the enclosing
     # call's marker is still open: these are what the two comma-scope bugs in
     # closeAction looked like from the outside.
@@ -489,14 +506,13 @@ TESTS = [
     ("arg-fn-paren-call", "print((function() return 1, 2 end)())", None, "run"),
     ("arg-fn-table", "local t = {function() return 1, 2 end} print(t[1]())", None,
      "run"),
-    # A gate as xpcall's message handler, and a handler that returns nothing.
-    # Both are the pcall-gate-handler / pcall-gate-args SKIPs: the compile is
-    # proven correct (nargs=2) and the loss is in the runtime re-dispatch, which
-    # routes a gate handler back through the xpcall instruction.  xpcall-catch and
-    # xpcall-catch-targets are the shapes that pass, with a function handler.
-    ("xpcall-gate-handler", "function f() error('b') end "
-     "print(xpcall(f, type))", None, "run"),
-    ("xpcall-gate-handler-nil", "function f() error('b') end "
+    # A gate as xpcall's message handler, and a gate handler that returns no
+    # value.  The number keeps PUC's error object free of a source position, so
+    # this measures the handler and the substitution rather than error()'s
+    # documented divergence.
+    ("xpcall-gate-handler", "function f() error(7) end "
+     "print(xpcall(f, tostring))", None, "run"),
+    ("xpcall-gate-handler-nil", "function f() error(7) end "
      "local ok, v = xpcall(f, print) print(ok, v)", None, "run"),
     # string.find and string.match, which PUC also has in C: a backtracking
     # matcher wants a stack and a loop, so it is a gate machine here and the
@@ -632,21 +648,21 @@ TESTS = [
      "()()()()()()()()()()()()()()()" + "'))", None, "runtimerr",
      {"expect": {"err": "too many captures to return"}}),
     ("pat-no-subject", "print(string.find('hello'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'find' (string expected, got no "
+     {"expect": {"err": "bad argument #2 to 'string.find' (string expected, got no "
                         "value)"}}),
     ("pat-no-pattern-match", "print(string.match('hello'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'match' (string expected, got no "
+     {"expect": {"err": "bad argument #2 to 'string.match' (string expected, got no "
                         "value)"}}),
     ("pat-nil-pattern", "print(string.find('hello', nil))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'find' (string expected, got nil)"}}),
+     {"expect": {"err": "bad argument #2 to 'string.find' (string expected, got nil)"}}),
     ("pat-bad-subject", "print(string.find({}, 'l'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'find' (string expected, got "
+     {"expect": {"err": "bad argument #1 to 'string.find' (string expected, got "
                         "table)"}}),
     ("pat-number-subject", "print(string.find(5, 'l'), string.find('a1b', "
      "'%d'))", None, "run"),
     ("pat-bad-init", "print(string.find('hello', 'l', 'x'))", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #3 to 'find' (number expected, got "
+     {"expect": {"err": "bad argument #3 to 'string.find' (number expected, got "
                          "string)"}}),
     # gsub is a library loop over the matcher: the gate answers one match at a
     # time and the loop is PUC's own.  Three things in that loop are the whole
@@ -704,11 +720,10 @@ TESTS = [
     ("gsub-number-replacement", "print(string.gsub('abc', 'a', 5), "
      "string.gsub(42, '%d', 'x'), string.gsub('abc', 'a', 'x', 2.0))", None,
      "run"),
-    # The two error wordings differ: no value at all is the C function's own
-    # check and says 'gsub', a value of the wrong type is luaL_argexpected and
-    # says 'string.gsub'.
+    # Both the missing and wrong-type replacement errors use PUC's qualified
+    # function name.
     ("gsub-no-replacement", "print(string.gsub('abc', 'a'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #3 to 'gsub' (string/function/table "
+     {"expect": {"err": "bad argument #3 to 'string.gsub' (string/function/table "
                         "expected, got no value)"}}),
     ("gsub-bad-replacement", "print(string.gsub('abc', 'a', true))", None,
      "runtimerr",
@@ -720,7 +735,7 @@ TESTS = [
                         "got string)"}}),
     ("gsub-fractional-limit", "print(string.gsub('abc', 'a', 'b', 1.9))", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #4 to 'gsub' (number has no integer "
+     {"expect": {"err": "bad argument #4 to 'string.gsub' (number has no integer "
                         "representation)"}}),
     ("gsub-bad-percent", "print(string.gsub('abc', 'a', '%'))", None,
      "runtimerr",
@@ -1049,9 +1064,9 @@ TESTS = [
      "function() return 1 end return g() end print(t.f())", None, "run"),
     ("nested-local-function-plain", "local function outer() local function g() "
      "return 1 end return g() end print(outer())", None, "run"),
-    # pcall of a library wrapper that calls a gate: the argument count is one
-    # short, so the error names the wrong argument and a call that should find
-    # something finds nothing.  See the pcall-gate-args SKIP.
+    # pcall of a library wrapper that calls a gate: the wrapper is variadic, so
+    # this covers both the argument the gate names in an error and the last one
+    # it reads as the init.
     ("pcall-gate-args", "print(pcall(string.find, 'abc'))", None, "run"),
     ("callarg-temp", "local s = 'abcdef' print('x', s, #s, s .. '!')",
      None, "run"),

@@ -29,7 +29,7 @@ string.gsub = function(s, p, r, n)
   local sl, out, pos, cnt, last = #s, "", 1, 0, -1
   local anch = _s(1, p, 0, 1) == "^"
   local rt = type(r)
-  if r == nil then error("bad argument #3 to 'gsub' (string/function/table expected, got no value)", 2) end
+  if r == nil then error("bad argument #3 to 'string.gsub' (string/function/table expected, got no value)", 2) end
   if rt == "number" then r = tostring(r) rt = "string" end
   local add = function(v)
     local tv = type(v)
@@ -76,7 +76,7 @@ string.gsub = function(s, p, r, n)
   if n == nil then n = sl + 1 end
   if type(n) ~= "number" then error("bad argument #4 to 'string.gsub' (number expected, got " .. type(n) .. ")", 2) end
   n = _m(13, n, 0)
-  if n == nil then error("bad argument #4 to 'gsub' (number has no integer representation)", 2) end
+  if n == nil then error("bad argument #4 to 'string.gsub' (number has no integer representation)", 2) end
   if n < 1 then return s, 0 end
   while cnt < n do
     local res = {_pat(2, s, p, pos)}
