@@ -250,13 +250,14 @@ def run_batch(cases_in):
 
 def chip_ports(r):
     og = r["outGlobals"]
+    # five numbers then two strings: the numeric outputs are all float now, so
+    # there is no separate int to carry and this list has one shape fewer
     return {
         "log": r["log"],
-                "outCol": list(og.get("outCol", [0.0] * 4)),
         "outGlobals": [og.get("outNum0", 0.0), og.get("outNum1", 0.0),
                        og.get("outNum2", 0.0), og.get("outNum3", 0.0),
-                       og.get("outStr0", ""), og.get("outStr1", ""),
-                       og.get("outInt0", 0)],
+                       og.get("outNum4", 0.0),
+                       og.get("outStr0", ""), og.get("outStr1", "")],
         "outArr": list(og.get("outArr", [0.0] * 64)),
         "result": og.get("result", ""),
         "err": og.get("err") or "",
@@ -480,7 +481,7 @@ def lifecycle_sample(sim_, tick):
     }
 
 
-def lifecycle_window(sim_, si, ticks, checkpoints, phases=None):
+def lifecycle_window(sim_, si, ticks, checkpoints, phases=None, steps=None):
     sim_.reset()
     sim_.inputs = si
     # A SCHEDULE of run levels, because "the first run edge does nothing" is a
@@ -511,12 +512,15 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None):
     # one value, so this is the closest analogue of a host that fills the port
     # over time -- and the shape a case could not ask about before the sim
     # re-read its ports.
-    for st in (si.get("steps") or []):
+    for st in (steps or []):
         program_at.append(st)
     if program_at:
         si = dict(si, program=program_at[0]["src"])
 
     if phases:
+        # a schedule keeps clocking past an error, because that is what a host
+        # does and it is the only way to see whether the chip recovers
+        sim_.keep_going = True
         # The FIRST phase is the level the run starts at, not an edge.  Every
         # later phase's level arrives at the END of the one before it, so the
         # boundary is the running total BEFORE this phase is added.  Getting
@@ -593,10 +597,12 @@ def run_lifecycle(sim_, p):
     checkpoints = kw.get("expect", {}).get("checkpoints", [])
     sim_.reset()
     baseline = lifecycle_reset_state(sim_)
-    first = lifecycle_window(sim_, si, ticks, checkpoints, phases)
+    first = lifecycle_window(sim_, si, ticks, checkpoints, phases,
+                             kw.get("steps"))
     sim_.reset()
     reset = lifecycle_reset_state(sim_)
-    second = lifecycle_window(sim_, si, ticks, checkpoints, phases)
+    second = lifecycle_window(sim_, si, ticks, checkpoints, phases,
+                              kw.get("steps"))
     return baseline, first, reset, second
 
 

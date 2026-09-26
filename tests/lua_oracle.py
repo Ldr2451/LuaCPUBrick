@@ -130,7 +130,6 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     for k in range(4):
         v = float(inputs[k]) if inputs and k < len(inputs) else 0.0
         pre.append(f"inNum{k} = {lua_num_lit(v)}")
-    pre.append(f"inInt0 = {int(inint) if inint is not None else 0}")
     for k in (0, 1):
         s = sinputs.get(k, "")
         pre.append(f"inStr{k} = {lua_str_lit(s)}")
@@ -165,7 +164,6 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     pre.append("outarr = function() end")
     pre.append("outnum = function() end")
     pre.append("outstr = function() end")
-    pre.append("outint = function() end")
     vv = vec or (0.0, 0.0, 0.0)
     for name, v in zip(("invecx", "invecy", "invecz"), vv):
         pre.append(f"{name} = {lua_num_lit(float(v))}")

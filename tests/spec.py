@@ -72,7 +72,7 @@ BUILTINS = (("print", 0), ("type", 1), ("tostring", 2),
              # the output setters: writing outside the chip is a call, so it
              # reads as an action rather than as editing its state.  fid 4 was
              # outvec and stays reserved (see test_consistency's RESERVED_FIDS).
-             ("outnum", 23), ("outstr", 24), ("outint", 25))
+             ("outnum", 23), ("outstr", 24))
 
 
 # first id available to the program's own functions.  NOT len(BUILTINS):
@@ -88,7 +88,6 @@ GSLOT_ORDER = [    "inNum0",
     "inStr1",
     "outnum",
     "outstr",
-    "outint",
     "print",
     "type",
     "tostring",
@@ -110,8 +109,6 @@ GSLOT_ORDER = [    "inNum0",
     "_pat",
     "_gmatch",
     "_gmnext",
-    "inInt0",
-    "outInt0",
     "math",
     "string",
     "table",

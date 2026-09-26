@@ -5,7 +5,7 @@
 /// The program is lexed, parsed to flat bytecode, then executed on a register VM.
 /// Numbers go in through inNum0..inNum3, strings through inStr0..inStr1, a whole array
 /// through inArr, and the program itself in the log; outNum0..outNum3, outStr0..outStr1,
-/// outInt0 and outArr come back out
+/// outArr comes back out
 /// are writable from Lua.
 ///
 /// Ports
@@ -24,7 +24,7 @@
 ///                         tab-separated plus a newline, capped at 64 chars), an
 ///                         io.write is its raw text with no tab and no newline; the
 ///                         last 32 appends are kept, cleared on restart
-///   out outNum0..outNum3: float  written by outnum(i, v), i 1..4 (nil writes 0.0;
+///   out outNum0..outNum4: float  written by outnum(i, v), i 1..5 (nil writes 0.0;
 ///                         writing a string/table/function is a runtime error)
 ///   out outStr0..outStr1: string  written by outstr(i, v), i 1..2, Lua-formatted
 ///                                (nil writes "")
@@ -239,14 +239,13 @@
 @left in inStr0: string
 @left in inStr1: string
 @left in inArr: float[]
-@left in inInt0: int
 
 @right out log: string = logV.Value
 @right out outNum0: float = oF0.Value
 @right out outNum1: float = oF1.Value
 @right out outNum2: float = oF2.Value
 @right out outNum3: float = oF3.Value
-@right out outInt0: int = oI0.Value
+@right out outNum4: float = oF4.Value
 @right out outStr0: string = oS4.Value
 @right out outStr1: string = oS5.Value
 @right out outArr: float[] = outArrV
@@ -304,7 +303,7 @@ const MAXVALS = 16
 // at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
 // means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
 // the dispatch case.  test_ws_consistency.py checks all four line up.
-const NB = 26
+const NB = 25
 
 // Library sources, prepended on demand (see libIter and friends).  These are
 // ordinary Lua: the parser sees them exactly like the user's program.  They are
@@ -347,7 +346,7 @@ var oF0: float = 0.0
 var oF1: float = 0.0
 var oF2: float = 0.0
 var oF3: float = 0.0
-var oI0: int = 0
+var oF4: float = 0.0
 var oS4: string = ""
 var oS5: string = ""
 var outArrV: float[]
@@ -445,7 +444,6 @@ var gmap: Map<string, int>
 var gslotNext: int = 0
 // global slots the runtime wires directly, resolved by name in parseInit
 var slotInLatch: int = 0
-var slotInInt0: int = 0
 var fnDepth: int = 0
 var cfNext: int[]
 var cfMax: int[]
@@ -679,7 +677,6 @@ var latchN2: float = 0.0
 var latchN3: float = 0.0
 var latchS0: string = ""
 var latchS1: string = ""
-var latchI0: int = 0
 var forDepth: int = 0
 var forCtrl: int[]
 var forRem: float[]
@@ -720,15 +717,15 @@ var cloN: int = 0
 var cloDst: int = 0
 var cloActive: bool = false
 
-// Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
+// Pre-registered globals: 0..4 outNum0..outNum4 (numbers), 5..6 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z (the inputs
 // filled from the latches), 15..35 builtins (print, type, tostring, outvec,
 // clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error,
 // assert, pcall, xpcall, _pat, _gmatch, _gmnext) as functions with their own ids,
-// then inInt0, outInt0, and the four library tables.  There is no colour port:
+// and the four library tables.  There is no colour port:
 // incol r/g/b/a used to hold 15..18 and the ids below them moved when it went.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 5, 5, 5, 5]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 23.0, 24.0, 25.0, 0.0, 1.0, 2.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 23.0, 24.0, 0.0, 1.0, 2.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 1.0, 2.0, 3.0]
 
 // pcall, which PUC has in C and is a gate here for the same reason.
 //
@@ -1929,7 +1926,6 @@ mod vmReset() {  tmap.clear()
   gnum[slotInLatch + 3] = latchN3
   gstr[slotInLatch + 4] = latchS0
   gstr[slotInLatch + 5] = latchS1
-  gnum[slotInInt0] = latchI0 + 0.0
   vmPc = 0
   vmBase = 0
   vmHalted = bop.length() == 0
@@ -1961,7 +1957,7 @@ mod vmReset() {  tmap.clear()
   oF1 = 0.0
   oF2 = 0.0
   oF3 = 0.0
-  oI0 = 0
+  oF4 = 0.0
   oS4 = ""
   oS5 = ""
   outArrV.clear()
@@ -3217,7 +3213,6 @@ mod parseInit() {
   gDeclare("inStr1")
   gDeclare("outnum")
   gDeclare("outstr")
-  gDeclare("outint")
   gDeclare("print")
   gDeclare("type")
   gDeclare("tostring")
@@ -3239,8 +3234,6 @@ mod parseInit() {
   gDeclare("_pat")
   gDeclare("_gmatch")
   gDeclare("_gmnext")
-  gDeclare("inInt0")
-  gDeclare("outInt0")
   gDeclare("math")
   gDeclare("string")
   gDeclare("table")
@@ -3249,7 +3242,6 @@ mod parseInit() {
   // take the numbers from the declarations instead of repeating them: adding a
   // builtin used to leave a stale literal behind and overwrite its id.
   slotInLatch = gLookup("inNum0")
-  slotInInt0 = gLookup("inInt0")
 }
 
 // Claim register slots up to n.  Both the frame size and the allocator move:
@@ -8807,7 +8799,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
     }
     retCountV = 1
   } else if fid == 23 {
-    // outnum(i, v): write one of the four numeric output ports.  A call, not an
+    // outnum(i, v): write one of the five numeric output ports.  A call, not an
     // assignment, so writing to the world reads as an action.  The index is
     // 1-BASED like every table a Lua program can already see, so outnum(1, v)
     // and outarr(1, v) are the same slot and neither has an off-by-one to
@@ -8815,8 +8807,8 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
     let oi = if 0 < nargs then toInt(vNum(a + 1)) else -1
     let ot = if 1 < nargs then vTag(a + 2) else 0
     let ov = if 1 < nargs then vNum(a + 2) else 0.0
-    if oi < 1 || oi > 4 {
-      vmFail("outnum index must be 1..4")
+    if oi < 1 || oi > 5 {
+      vmFail("outnum index must be 1..5")
     } else if ot != 1 && ot != 6 && ot != 0 && ot != 3 {
       vmFail("cannot convert to number (outnum takes numbers)")
     } else if oi == 1 {
@@ -8825,8 +8817,10 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
       oF1 = if ot == 0 then 0.0 else ov
     } else if oi == 3 {
       oF2 = if ot == 0 then 0.0 else ov
-    } else {
+    } else if oi == 4 {
       oF3 = if ot == 0 then 0.0 else ov
+    } else {
+      oF4 = if ot == 0 then 0.0 else ov
     }
     vSet(a, 0, 0.0, "")
     retCountV = 0
@@ -8846,21 +8840,6 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
       if si == 1 { oS4 = sv } else { oS5 = sv }
     } else {
       vmFail("cannot convert to string (outstr takes a string, number or nil)")
-    }
-    vSet(a, 0, 0.0, "")
-    retCountV = 0
-  } else if fid == 25 {
-    // outint(v): the one integer output port; an integral float converts
-    let it = if 0 < nargs then vTag(a + 1) else 0
-    let iv = if 0 < nargs then vNum(a + 1) else 0.0
-    if it == 0 {
-      oI0 = 0
-    } else if it == 6 || it == 3 {
-      oI0 = toInt(iv)
-    } else if it == 1 && iv == floor(iv) {
-      oI0 = toInt(iv)
-    } else {
-      vmFail("cannot convert to integer (outint takes integers)")
     }
     vSet(a, 0, 0.0, "")
     retCountV = 0
@@ -9115,7 +9094,7 @@ mod vmStep() {
     } else if op == 5 {
       vSet(a, gTag(b), gNum(b), gStr(b))
     } else if op == 6 {
-      // The output ports are written by outnum/outstr/outint now, not by
+      // The output ports are written by outnum/outstr now, not by
       // assigning a global, so a store to a global is just a store.
       gSet(a, vTag(b), vNum(b), vStr(b))
     } else if op == 7 {
@@ -9983,13 +9962,6 @@ on Change(inNum3) {
   }
 }
 
-on Change(inInt0) {
-  latchI0 = inInt0
-  if run && progOkV && !jobBusy {
-    vmReset()
-  }
-}
-
 on Change(inStr0) {
   latchS0 = inStr0
   if run && progOkV && !jobBusy {
@@ -10045,7 +10017,7 @@ on Clock(interval = STEP_INTERVAL) {
 // 13. print feeds one multiline log port (one tab-separated line per call, last 32 lines
 //    at 64 chars each, cleared on restart) instead of 8 slots; the 16-way slot dispatch
 //    is gone, lines stream through a small array plus a string mirror.
-// 14. outNum0..outNum3 are writable numeric globals, outStr0..outStr1 writable string
+// 14. the outputs are written by outnum/outstr calls, not by assigning globals
 //    globals (mirrored to their ports once per tick); inarr/outarr bridge 1-based
 //    float arrays.
 // 18. Number/string ports renamed by type: inNum0..inNum3, inStr0..inStr1,

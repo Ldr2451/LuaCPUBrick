@@ -1282,7 +1282,25 @@ TESTS = [
      {"phases": [{"ticks": 1800, "run": False, "jitter": "inNum0"},
                  {"ticks": 600, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
-    # The host reads the chip again every time it syncs, and the chip's handler
+    # The program text arriving in PIECES.  The sim delivers a string in one
+    # value, so this is the closest analogue of a host that fills a long string
+    # port over time - and each piece is a Change(program), which asks for a
+    # parse.  Two things matter and they are different tests: a FRAGMENT must be
+    # rejected (a half-written program is not a program), and the chip must
+    # RECOVER when the real program arrives after a rejected one - otherwise a
+    # typo in game leaves the chip dead until it is power-cycled.
+    ("prog-fragment-rejected", "print('", None, "reject", {"errline": 1}),
+    ("life-program-recovers", "print('hi')", None, "lifecycle",
+     {"steps": [{"ticks": 300, "src": "print('"},
+                {"ticks": 300, "src": "print('hi')"}],
+      "phases": [{"ticks": 2400, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # and the same while stopped, so the recovery does not depend on run
+    ("life-program-recovers-stopped", "print('hi')", None, "lifecycle",
+     {"steps": [{"ticks": 600, "src": "print('"},
+                {"ticks": 600, "src": "print('hi')"}],
+      "phases": [{"ticks": 600, "run": False}, {"ticks": 1800, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
     # for that asks for a PARSE.  So a second parse can start while the first is
     # still running, and the two share the parser's arrays.  grid_every=1 is the
     # worst case a sync-every-tick host would produce; 8 is a lazier one.
@@ -1486,8 +1504,8 @@ TESTS = [
      "print(h(41))", None, "run"),
      ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
       {"expect": {"log": DEMO_LOG,
-                  "outGlobals": [7.0, 79.0, 608.0, 11.0,
-                                 "foo-bar!|foo", "21.75/table: 0x4", 0],
+                  "outGlobals": [7.0, 79.0, 608.0, 11.0, 0.0,
+                                 "foo-bar!|foo", "21.75/table: 0x4"],
                   "outArr": [55.0, 6.0, 3.0] + [0.0] * 58 + [-1.0, -2.0, -3.0],
                   "outVec": [2.0, 4.0, 6.0],
                   "result": "done-55"}}),
@@ -1677,22 +1695,25 @@ TESTS = [
     # the output ports, written by CALL: writing outside the chip reads as an
     # action rather than as editing its state, so none of these are globals and a
     # program cannot read one back
-    ("out-nums", "outnum(1, 1) outnum(2, 2.5) outnum(3, true) outnum(4, nil)",
+    ("out-nums", "outnum(1, 1) outnum(2, 2.5) outnum(3, true) outnum(4, nil) "
+     "outnum(5, -3.5)",
      None, "modelio",
-     {"expect": {"outGlobals": [1.0, 2.5, 1.0, 0.0, "", "", 0]}}),
+     {"expect": {"outGlobals": [1.0, 2.5, 1.0, 0.0, -3.5, "", ""]}}),
     ("out-strs", "outstr(1, 'hi') outstr(2, 3)", None, "modelio",
-     {"expect": {"outGlobals": [0.0, 0.0, 0.0, 0.0, "hi", "3", 0]}}),
-    ("io-int", "outint(inInt0 * 2 + 1) print('done')", None, "modelio",
-     {"inint": 5,
+     {"expect": {"outGlobals": [0.0, 0.0, 0.0, 0.0, 0.0, "hi", "3"]}}),
+    ("io-int", "outnum(5, inNum0 * 2 + 1) print('done')", None, "modelio",
+     {"inputs": [5],
       "expect": {"log": "done\n",
-                 "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 11]}}),
+                 "outGlobals": [0.0, 0.0, 0.0, 0.0, 11.0, "", ""]}}),
     # outInt0 is a typed int port: an integral float is stored as an integer
-    ("io-int-coerce", "outint(7.0) print('done')", None, "modelio",
+    # there is no int type: 7.0 and 7 are one number, so outnum(5, 7.0) puts
+    # 7.0 on a float port and the program reads 7.0 back
+    ("io-int-coerce", "outnum(5, 7.0) print('done')", None, "modelio",
      {"expect": {"log": "done\n",
-                 "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 7]}}),
-    ("io-int-bad", "outint(7.5)", None, "runtimerr",
+                 "outGlobals": [0.0, 0.0, 0.0, 0.0, 7.0, "", ""]}}),
+    ("io-int-bad", "outnum(5, 'x')", None, "runtimerr",
      {"expect": {"err": "cannot convert"}}),
-    ("inputs-int", "print(inInt0 + 1)", None, "run", {"inint": 41}),
+    ("inputs-int", "print(inNum3 + 1)", None, "run", {"inputs": [0, 0, 0, 41]}),
     # an output is not readable: there is no global to read, so a program that
     # wants the value back has to keep it
     ("out-not-readable", "outnum(1, 5) print(outNum0)", None, "run"),
@@ -1700,27 +1721,29 @@ TESTS = [
      {"expect": {"err": "cannot convert"}}),
     ("out-badnum2", "outnum(2, {})", None, "runtimerr",
      {"expect": {"err": "cannot convert"}}),
-    ("out-badindex", "outnum(5, 1)", None, "runtimerr",
-     {"expect": {"err": "index must be 1..4"}}),
+    ("out-badindex", "outnum(6, 1)", None, "runtimerr",
+     {"expect": {"err": "index must be 1..5"}}),
+    ("out-badindex-str", "outstr(3, 'x')", None, "runtimerr",
+     {"expect": {"err": "index must be 1..2"}}),
     ("out-nil-str", "outstr(1, nil) print('done')", None, "modelio",
      {"expect": {"log": "done\n",
-                 "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 0]}}),
+                 "outGlobals": [0.0, 0.0, 0.0, 0.0, 0, "", ""]}}),
     # STICKINESS: a value written to a port stays there until it is written
     # again, because whoever reads the chip may not be looking this tick.  The
     # loop spins real ticks after the write, and the port is read at the end.
     ("out-sticky-num",
      "outnum(1, 42) for i = 1, 30 do local x = i end print('done')", None,
      "modelio", {"expect": {"log": "done\n",
-                            "outGlobals": [42.0, 0.0, 0.0, 0.0, "", "", 0]}}),
+                            "outGlobals": [42.0, 0.0, 0.0, 0.0, 0.0, "", ""]}}),
     ("out-sticky-str",
      "outstr(2, 'held') local s = 0 for i = 1, 30 do s = s + i end print('done')",
      None, "modelio", {"expect": {"log": "done\n",
-                                  "outGlobals": [0.0, 0.0, 0.0, 0.0, "",
-                                                 "held", 0]}}),
+                                  "outGlobals": [0.0, 0.0, 0.0, 0.0, 0.0,
+                                                 "", "held"]}}),
     ("out-sticky-int",
-     "outint(7) local s = 0 for i = 1, 30 do s = s + i end print('done')", None,
+     "outnum(5, 7) local s = 0 for i = 1, 30 do s = s + i end print('done')", None,
      "modelio", {"expect": {"log": "done\n",
-                            "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 7]}}),
+                            "outGlobals": [0.0, 0.0, 0.0, 0.0, 7.0, "", ""]}}),
     # every index is 1-BASED, the same as a Lua table, so outnum(1, v) and
     # outarr(1, v) are the same slot.  Both are pinned here rather than left to
     # a comment, and a Lua program cannot tell the difference between them.
@@ -1731,7 +1754,7 @@ TESTS = [
     # and a restart clears them, which is the other half: sticky, not permanent
     ("out-cleared-on-restart", "outnum(1, 42) print('done')", None, "modelio",
      {"expect": {"log": "done\n",
-                 "outGlobals": [42.0, 0.0, 0.0, 0.0, "", "", 0]}}),
+                 "outGlobals": [42.0, 0.0, 0.0, 0.0, 0.0, "", ""]}}),
     # line numbers on compile failure
     ("errline-stmt", "print(1)\nprint(2)\nend\n", None, "synfail",
      {"errline": 3}),

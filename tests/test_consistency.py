@@ -133,7 +133,7 @@ outs = re.findall(r"@right out (\w+)(?:: (\S+))? = (\S+)", WS)
 outs_d = {n: (t, b) for n, t, b in outs}
 for port, typ in [("log", "string"), ("outNum0", "float"),
                   ("outNum1", "float"), ("outNum2", "float"),
-                  ("outNum3", "float"), ("outInt0", "int"),
+                  ("outNum3", "float"), ("outNum4", "float"),
                   ("outStr0", "string"),
                   ("outStr1", "string"), ("outArr", "float[]"),
                   ("result", "string"), ("err", "string"),
@@ -144,7 +144,7 @@ for port, typ in [("log", "string"), ("outNum0", "float"),
         check(f"port-{port}-type", outs_d[port][0] == typ,
               f"got {outs_d[port][0]}")
 for port, bindvar in [("log", "logV"), ("outNum0", "oF0"),
-                      ("outInt0", "oI0"),
+                      ("outNum4", "oF4"),
                       ("outStr0", "oS4"), ("result", "resultV"),
                       ("err", "errV"), ("progOk", "progOkV")]:
     check(f"port-{port}-bound", re.search(
@@ -175,7 +175,7 @@ for where, body in (("parseInit", pi), ("vmReset", vr)):
         check(f"clear-target-{tgt}-{where}", tgt in decls_arr,
               "clears undeclared array")
 # restart resets outputs, log and error text
-for var in ["logV", "oF0", "oI0", "oS4",
+for var in ["logV", "oF0", "oF4", "oS4",
             "resultV", "errV"]:
     check(f"reset-{var}", re.search(rf"\b{var} = ", vr) is not None)
 check("reset-logLines", "logLines.clear()" in vr)

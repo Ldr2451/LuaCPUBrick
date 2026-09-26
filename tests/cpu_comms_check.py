@@ -45,12 +45,12 @@ def main():
         # that actually has to work
         self_out = run_cpu(
             "self-output", cpu_a,
-            "outnum(1, 5) outstr(1, 'self') outint(7) "
+            "outnum(1, 5) outstr(1, 'self') outnum(5, 7) "
             "outarr(1, 41) print('A3')")
         require(self_out["log"] == "A3\n", "the program did not finish")
         require(self_out["outGlobals"]["outNum0"] == 5.0, "outNum0 was not written")
         require(self_out["outGlobals"]["outStr0"] == "self", "outStr0 was not written")
-        require(self_out["outGlobals"]["outInt0"] == 7.0, "outInt0 was not written")
+        require(self_out["outGlobals"]["outNum4"] == 7.0, "outNum4 was not written")
         require(self_out["outArr"][0] == 41.0, "outArr[1] was not written")
 
         self_in = run_cpu(

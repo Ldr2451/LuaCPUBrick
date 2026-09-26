@@ -337,6 +337,10 @@ class Sim:
         # table counts and the frame depth) was right about the stuck case and
         # wrong about fib, which is the failure mode that matters.
         self.finished = False
+        # set by a harness that drives a schedule: a host keeps clocking a chip
+        # that reported an error, so stopping on the error would hide everything
+        # that happens after it
+        self.keep_going = False
         self._seed_inputs()
 
     def run(self, max_ticks: int = MAX_TICKS, on_tick=None):
@@ -439,17 +443,33 @@ class Sim:
             # queue meant a chip under observation never counted as finished -
             # the run burned its whole budget and every case that watched a
             # finished program fail.  Reading a chip is not pending work.
+            observed = self.grid_ids + self.port_nodes
             if self._halted_id is not None and self.vars.get(self._halted_id):
-                observed = self.grid_ids + self.port_nodes
+                # a halt the chip took because of an ERROR is not a program that
+                # ran to completion, so it must not end the run through this
+                # branch: that made a rejected program end the run at once, and
+                # the error branch below (which keep_going governs) is the one
+                # that should decide
+                errored = bool(self._err_id is not None
+                               and self.vars.get(self._err_id))
                 pending = {q for q in self.exec_queue if q[0] not in observed}
-                if not pending and not self._deferred:
+                if not errored and not pending and not self._deferred:
                     self.finished = True
                     break
             # A program that has an error is finished, whatever the clock is
             # doing, and the queue does not necessarily drain after one: a
             # source too long to lex errored and still ran its whole 200k-tick
             # budget, 63 seconds for a program that had already given up.
-            if self._err_id is not None and self.vars.get(self._err_id):
+            #
+            # UNLESS the harness asked to keep clocking.  A host does not stop
+            # ticking a chip that reported an error - it keeps running, and a new
+            # program on the port re-parses.  So a case that drives a SCHEDULE has
+            # to be able to watch what happens after the error, and stopping here
+            # made "does it recover from a rejected program?" unanswerable: the
+            # run ended at tick 5, before the good program had even been
+            # delivered.
+            if (self._err_id is not None and self.vars.get(self._err_id)
+                    and not self.keep_going):
                 self.finished = True
                 break
         return self.capture()

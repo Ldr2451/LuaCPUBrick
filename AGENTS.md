@@ -460,7 +460,18 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   checkout the compiler came from (`%TEMP%\opencode\wirescript`), complete with
   `docs/` and the *certified* gate laws — the ones whose comments say they were
   replayed against the game's own output. Ask there before guessing a gate's
-  behaviour, and before trusting a branch in `irsims.py`. What it says today:
+  behaviour, and before trusting a branch in `irsims.py`.
+  - **`docs/src/best-practices.md` is the host maintainers' own measured guide to
+    gate cost, and it outranks anything we work out ourselves.** Read it before
+    optimising: *"What actually costs anything: measured"*, *"Where gates actually
+    go"*, *"Gates and ticks are one currency"*, *"Size is usually the real
+    constraint"*, and the §1 rule that **every call site is a copy** (so a `mod` is
+    inlined and a `chip` is not a shared subroutine). Its other files are worth the
+    same: `types.md` (int is a real primitive, i32, and `float` is f64), `builtins.md`
+    (the whole gate catalogue), `folding.md` (what the constant folder will and
+    will not bake), `exec-context.md` (why an exec gate's value cannot land in a
+    register in the same instruction).
+  - What it says today:
   - **Arithmetic is IEEE f64.** `float` is documented as 64-bit
     (`docs/src/types.md`), and the compiler's own constant folder is
     `MathDivide => x / y`, `MathModulo => x % y`, `MathLn => a.ln()`,
