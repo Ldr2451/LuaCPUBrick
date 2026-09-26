@@ -126,6 +126,17 @@ check(f"log-width-{m.LOG_WIDTH}",
       and f"Substring(0, {m.LOG_WIDTH - 1})" in WS)
 check(f"outarr-{m.OUTARR}",
       f"outArrV.resize({m.OUTARR}, 0.0)" in WS)
+# The inArr/outArr index warnings need the width while PARSING, and an input port
+# cannot be read then - it empties every program's log - so the width is a const.
+# That makes two rules that have to agree, and a comment is not a check: this one
+# is, and it also fails if the warnings go back to reading the array or a literal.
+_m_arr = re.search(r"const ARR_SLOTS = (\d+)", WS)
+check("arr-slots-declared", _m_arr is not None, "no ARR_SLOTS const in lua.ws")
+if _m_arr:
+    check(f"arr-slots-{m.OUTARR}", int(_m_arr.group(1)) == m.OUTARR,
+          f"ws={_m_arr.group(1)} spec={m.OUTARR}")
+check("arr-slots-used", "v > ARR_SLOTS" in WS,
+      "the index warnings must compare against the const, not a literal")
 check("call-params-8", "max 8 in-gate" in WS)
 
 # 4. ports ------------------------------------------------------------------

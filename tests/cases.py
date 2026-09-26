@@ -1346,7 +1346,15 @@ TESTS = [
     # input PORT cannot be read during codegen (see the note in noteIndex).  The
     # behaviour is pinned; progDebug is deliberately NOT asserted, because a case
     # that locks in a warning the chip does not emit is worse than no case.
-    ("index-inarr-past-end", "print(inarr(65))", None, "state", {"expect": {"log": "nil\n"}}),
+    # inArr is bounded by the same 64 as outArr, and a bad index there gives a
+    # SILENT nil rather than a failure, so it is the one a user would never see
+    # otherwise.  The bound is a chip const because the port cannot be read while
+    # parsing; test_consistency ties that const to spec.OUTARR.
+    ("index-inarr-past-end", "print(inarr(65))", None, "state",
+     {"expect": {"log": "nil\n", "progDebug": "inarr reads past the end"}}),
+    # ... and in range is silent, including the last slot.
+    ("index-inarr-inrange-ok", "print(inarr(1)) print(inarr(64))", None, "state",
+     {"expect": {"noProgDebug": "inarr reads past the end"}}),
     # One issue per line is the port's whole contract, and a substring assertion
     # cannot see it: an earlier outarr warning ended in an escaped backslash rather
     # than a newline and its case still passed.  Two findings that really exist, so

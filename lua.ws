@@ -262,6 +262,12 @@ const MAX_INSTR = 1024
 // the prepended library plus a full program; the token arrays are sized from
 // this, so raising it costs gates (see tools/gatecount.py)
 const MAX_TOKENS = 4096
+// Entries in the inArr and outArr ports.  A const rather than inArr.length()
+// because an input PORT cannot be read during codegen - it empties every
+// program's log - and the width is needed while parsing.  test_consistency
+// checks this against spec.OUTARR, which is what actually sizes the array, so
+// the two cannot drift without the suite going red.
+const ARR_SLOTS = 64
 const MAX_REGS = 64
 // function slots: the reserved builtins, the prepended library, and the
 // program's own functions.  The arrays grow on demand, so this is a bound, not
@@ -1543,9 +1549,19 @@ mod noteIndex(name: string) {
     // taken.  outArrV.length() is safe because that is a chip-side array var.  The
     // width has to come from a constant, and no such constant exists yet.
     if name == "outarr" {
-      if v != floor(v) || v < 1.0 || v > outArrV.length() {
+      if v != floor(v) || v < 1.0 || v > ARR_SLOTS {
         nameWarn = nameWarn
           .. "warn: array index out of range, and outarr is 1-based over the outArr slots\n"
+      }
+    }
+    // Same bound, different consequence: a bad inArr index substitutes nil and the
+    // program carries on, so there is no crash - which is exactly why it is worth
+    // saying, because a silent nil is the worse of the two failures.  PUC agrees
+    // (t[65] over 64 slots is nil), so this is advice and not a divergence.
+    if name == "inarr" {
+      if v != floor(v) || v < 1.0 || v > ARR_SLOTS {
+        nameWarn = nameWarn
+          .. "warn: inarr reads past the end of inArr and gives nil, silently, as in PUC\n"
       }
     }
   }
