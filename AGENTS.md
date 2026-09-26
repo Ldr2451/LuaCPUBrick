@@ -206,20 +206,28 @@
   parts that look like array access — the pattern matcher, the formatter — are
   micro-steps, which are mods, which are inlined. So the budget is a decision
   about the host, not a refactor of the CALL arm.
-- **Do not go gate-hunting one builtin at a time; the list is empty.** What is
-  left is `assert` at 284 nodes and `next` at 179 — 0.7% and 0.4% of the chip —
-  and both are *worse* as pieces: a `next` piece rescans the table per call
-  (O(n²) a traversal), and an `assert` piece would have to reach the number
-  formatter, which is a gate. The two structural items are measured dead:
-  `retAdjust` needs a loop or a dynamic index, and the host's array gates
-  (`ArrayVar_CopyFrom`, `ArrayVar_Slice`, both already used) move whole arrays,
-  not a range of one, so they cannot do a 16-slot register copy. And the unused
-  host gates are all exec gates (whose values cannot be read into a register in
-  the same instruction), game gates with no PUC counterpart, or `FormatText`,
-  which rounds floats to 3 decimals. This host build has no `BitwiseXOR`,
-  `BitwiseNOT` or `BitwiseShiftLeft` at all, so `~` stays negate-and-add.
-  **A gate cut has to come from a host primitive that does not exist yet; until
-  one does, the dispatch's 19,706 is the floor.**
+- **Do not go gate-hunting one builtin at a time; the list is empty, and the ISA
+  is already RISC where it can be.** What is left is `assert` at 284 nodes and
+  `next` at 179 — 0.7% and 0.4% of the chip — and both are *worse* as pieces: a
+  `next` piece rescans the table per call (O(n²) a traversal), and an `assert`
+  piece would have to reach the number formatter, which is a gate. The ISA itself
+  is not the problem either: measured per opcode family by blanking it
+  (`tools/chip/armcost.py vmStep 8,9,10,11,12,13`), **arithmetic is already ONE
+  arm (8..13) and comparisons are already ONE arm (17,18,19)** — 568 nodes for the
+  seven loads, 178 for all three comparisons, 35 for the three jumps, 126 for
+  concat, 54 each for `len` and `loadfunc`. The three big ones are `CALL` 5,467
+  (which is where the builtin dispatch is inlined, not call mechanics), `TAPPEND`
+  2,475, and the four return arms 2,417 — and merging the returns, which share
+  their frame teardown in source, was measured at **+90 nodes** (see above), so the
+  one merge that looked free is not. `retAdjust` needs a loop or a dynamic index,
+  and the host's array gates (`ArrayVar_CopyFrom`, `ArrayVar_Slice`, both already
+  used) move whole arrays, not a range of one, so they cannot do a 16-slot
+  register copy. The unused host gates are all exec gates (whose values cannot be
+  read into a register in the same instruction), game gates with no PUC
+  counterpart, or `FormatText`, which rounds floats to 3 decimals. This host build
+  has no `BitwiseXOR`, `BitwiseNOT` or `BitwiseShiftLeft` at all, so `~` stays
+  negate-and-add. **A gate cut has to come from a host primitive that does not
+  exist yet; until one does, the dispatch's 19,706 is the floor.**
 - **Exact implicit float printing is host-bound, not a formatter bug, and the
   host's law is now read rather than inferred.** The `..` gate converts a float
   operand with `if !f.is_finite() || *f == 0.0 { "0" } else { format!("{f}") }`
