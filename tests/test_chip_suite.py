@@ -573,7 +573,17 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None, steps=None):
     def on_tick(sim_now, tick):
         while pending and tick + 1 >= pending[0][0]:
             _at, level, jitter, text = pending.pop(0)
-            sim_now.inputs = dict(si, run=level)
+            # A phase edge resets the other inputs to the baseline, but it must
+            # NOT rewind `program`.  It used to, because `si` holds the INITIAL
+            # program, so every run-level change silently rewound the program port
+            # to its first value and the chip dutifully re-parsed the old text.
+            # That made "edit the program, then change the run level" impossible to
+            # express, which is why no case ever covered that shape - and it
+            # produced a convincing false bug report before it was caught.  The
+            # live program is carried across unless a step delivers a new one.
+            sim_now.inputs = dict(
+                si, run=level,
+                program=sim_now.inputs.get("program", si.get("program")))
             if text is not None:
                 sim_now.inputs = dict(sim_now.inputs, program=text)
             # jitter belongs to the PHASE it is declared on: a case that jitters
@@ -600,6 +610,20 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None, steps=None):
             samples.append(lifecycle_sample(sim_now, tick))
 
     sim_.run(ticks, on_tick=on_tick)
+    # SELF-CHECK.  The harness must end holding the LAST program it was told to
+    # deliver.  It did not, for a long time: a phase edge restored the initial
+    # program, so any schedule that edited the program and then changed the run
+    # level silently lost the edit, and the resulting failure looked exactly like
+    # a chip bug - a stale program, reported as a real defect, chased for a while.
+    # A harness that quietly changes a port it was not asked to change is the
+    # dangerous kind, because every symptom it produces is a lie about the chip.
+    if steps:
+        _want = prog_edges[-1][1] if prog_edges else steps[0]["src"]
+        _got = sim_.inputs.get("program")
+        if _got != _want:
+            raise AssertionError(
+                "lifecycle harness lost the program: delivered %r, sim holds %r"
+                % (_want, _got))
     samples.append(lifecycle_sample(sim_, sim_.tick))
     return {"budget": ticks, "samples": samples,
             **samples[-1]}

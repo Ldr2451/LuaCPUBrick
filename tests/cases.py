@@ -1253,6 +1253,27 @@ TESTS = [
      "lifecycle",
      {"phases": [{"ticks": 1200, "run": False}, {"ticks": 600, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # Editing the program WHILE STOPPED, then starting it, found in game: the log
+    # could come back with the new line printed TWICE.  Both programs are valid, so
+    # nothing here is a rejection - the shape is the order of the two edges, where
+    # the program arrives while run is low and the parse may still be in flight when
+    # run goes high, so the start and the parse-completion can both act.
+    ("life-edit-while-stopped", "print(2)", None, "lifecycle",
+     {"steps": [{"ticks": 300, "src": "print(1)"},
+                {"ticks": 300, "src": "print(2)"}],
+      "phases": [{"ticks": 600, "run": False}, {"ticks": 1800, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "2\n"}}),
+    # The same shape with the run edge landing AFTER the parse has finished, which
+    # is the ordinary case and is BROKEN: the chip runs the previous program and
+    # prints 1.  Swept with the suite's own harness, run high at edit+0..+10 gives
+    # '2' and edit+15..+255 gives '1', so the boundary is the parse duration - the
+    # run edge has to arrive while the parse is in flight for the new program to
+    # take effect at all.  Found in game as an intermittent doubled/odd log line.
+    ("life-edit-then-run-later", "print(2)", None, "lifecycle",
+     {"steps": [{"ticks": 200, "src": "print(1)"},
+                {"ticks": 200, "src": "print(2)"}],
+      "phases": [{"ticks": 500, "run": False}, {"ticks": 1800, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "2\n"}}),
     # the control: the same program with run high from tick zero, which is what
     # every other case in the suite does and what used to be the only shape
     ("life-run-high-from-boot", "print('hi') outnum(1, 7)", None,
