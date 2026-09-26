@@ -515,6 +515,7 @@ var expectOperand: bool = true
 var popMode: int = 0
 var popPrec: int = 0
 var pendKind: int = -1
+var traceDbg: bool = false        // TEMP DEBUG: trace the expression compiler
 var pendPrec: int = 0
 var pendSub: int = 0
 var pendAux: int = 0
@@ -3380,15 +3381,24 @@ mod applyPop() {
     }
     pushVal(res, false, false)
   } else if k == 4 || k == 5 {
+    // `and`/`or` are a branch, not an opcode, so the LEFT operand's register is
+    // already on the value stack (pushPending put it there) and the result lands
+    // in that same register.  The old code popped the right operand and pushed the
+    // result, which left the left operand's entry underneath: the stack went
+    // [5 4 1] -> [4 4 1] instead of [5 4 1] -> [4 1].  A call's `)` drains to the
+    // depth its `(` recorded and takes ONE value, so the leftover made it read
+    // two arguments where there was one, and the enclosing comparison's operands
+    // came out as (4, 2) -- the argument and the call -- instead of (2, 1).
     let rr = popVal()
-    regFree(rr)
     let R = opA[opA.length() - 1]
     let pp = opB[opB.length() - 1]
+    popVal()
     opKind.pop()
     opPrec.pop()
     opA.pop()
     opB.pop()
     opC.pop()
+    regFree(rr)
     bEmit(7, R, rr, 0)
     bPatch(pp, bop.length())
     pushVal(R, false, false)
@@ -6147,6 +6157,7 @@ mod closeAction() {
           perrMsg = "trailing comma"
         }
       } else {
+        // TEMP DEBUG: what is on the value stack at a call's close
         let wasCall = topFlag()
         let arg = popVal()
         let dst = fr + 1 + nargs
@@ -6340,6 +6351,22 @@ mod closeAction() {
 }
 
 mod exprMicro() {
+  if traceDbg {
+    var t = "T" .. (cpos | 0) .. " pop" .. (popMode | 0) .. " cl"
+      .. (closeMode | 0) .. " pend" .. (pendKind | 0) .. " ops"
+      .. (opKind.length() | 0) .. ":["
+    if 0 < opKind.length() { t = t .. (opKind[opKind.length() - 1] | 0) .. "/" .. (opA[opKind.length() - 1] | 0) .. "/" .. (opC[opKind.length() - 1] | 0) }
+    if 1 < opKind.length() { t = t .. " " .. (opKind[opKind.length() - 2] | 0) .. "/" .. (opA[opKind.length() - 2] | 0) .. "/" .. (opC[opKind.length() - 2] | 0) }
+    if 2 < opKind.length() { t = t .. " " .. (opKind[opKind.length() - 3] | 0) .. "/" .. (opA[opKind.length() - 3] | 0) .. "/" .. (opC[opKind.length() - 3] | 0) }
+    t = t .. "] vs" .. (valStk.length() | 0) .. ":["
+    if 0 < valStk.length() { t = t .. (valStk[valStk.length() - 1] | 0) }
+    if 1 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 2] | 0) }
+    if 2 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 3] | 0) }
+    if 3 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 4] | 0) }
+    if 4 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 5] | 0) }
+    if 5 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 6] | 0) }
+    logPush(t .. "]")
+  }
   if !perr {
     if popMode != 0 {
       let tk0 = opTopKind()

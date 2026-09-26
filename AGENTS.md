@@ -360,34 +360,24 @@ falls out for free.
 ## WireScript traps
 Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
 `tools/chip/vargraph.py <name>` shows which gate fires each write.
-- **OPEN BUG, and it is in the chip's OWN Lua compiler, not in wirescript.**
-  `print("a" < (tostring(false or false)))` raises "attempt to compare" where
-  PUC answers `true`, and `print(1 + tostring(false or false))` says it is adding
-  a boolean to a string. The shape is **a call whose argument is an `and`/`or`,
-  anywhere inside a larger expression**; hoisting the call into a local is the
-  verified workaround (`local s = tostring(false or false) print("a" < s)` works,
-  as does `print("a" < tostring(1))`, `print("a" < (tostring(1)))` and
-  `print(#tostring(false or false))`). The compiler is WireScript's, and
-  WireScript cannot even parse the shape — `tostring(false or false)` compiles to
-  `_Unsupported` placeholders — so this is the code in `lua.ws` that compiles a
-  *program* to bytecode.
-  The bytecode says exactly what goes wrong: for the failing program it emits
-  `LOADSTR a=1` (the `"a"`), then the call's argument chain, then `CALL a=2 b=1`,
-  then **`LT a=2 b=4`** — it compares the call's result (register 2) against
-  register 4, which is the call's *argument*, the register the folded `or` left
-  behind. The working program emits `LT a=2 b=2` with both operands where they
-  belong. So the pending binary operator's operand register is lost across the
-  argument list: `applyPop` and `pushPending` (lua.ws, around 3320 and 3402) move
-  values on and off `valStk` around the `and`/`or` branch form, and the call's
-  `)` close (`closeMode == 1`, around 6117) drains to the depth the `(` recorded.
-  The value stack balances in each of those pieces on its own; the interaction
-  does not. Do not "fix" it by making the comparison arms tolerant — the add case
-  shows the wrong *register* is read, not a wrong tag, so there is nothing sound
-  to recover at run time. `lua.ws` itself no longer contains the shape (three
-  error-message sites were rewritten to hoist it), so the deliverable is clean;
-  what remains is a program-compiler bug. Found by `tools/fuzz.py` seed 1358,
-  which could not have found it while the generator was skipping two thirds of
-  its seeds.
+- **The `and`/`or` branch form is the one operator whose pop is not a pop-and-push.**
+  `and`/`or` compile to a jump, so `pushPending` puts the LEFT operand's register
+  on `valStk` and the pop writes the result back into that same register — the
+  pop has to **consume the left entry as well as the right** (pop 2, push 1), or
+  the left entry is left underneath. It was not, and the leftover is invisible
+  until a call's `)` drains to the depth its `(` recorded and takes ONE value:
+  then it reads two arguments where there was one, and the enclosing
+  comparison's operands come out as (the argument, the call) instead of (the
+  call, the other operand). Measured: `print("a" < tostring(false or false))`
+  raised "attempt to compare" where PUC answers `true`, and the trace of the
+  value stack went `[5 4 1]` → `[4 4 1]` at the `or`. Found by `tools/fuzz.py`
+  seed 1358, which could not find it while the generator was skipping two thirds
+  of its seeds. **A value stack that grows by one entry per `and`/`or` is this
+  bug**; when you see an operand that is a call's argument, look here first.
+  The other half of the lesson: WireScript cannot parse `tostring(false or
+  false)` at all — it compiles to `_Unsupported` placeholders — so a shape that
+  fails only in a *program* is this compiler (the code in `lua.ws` that compiles
+  Lua), never the host.
 - **A seed is expensive, so the fuzzer is not an edit-loop tool.** Measured: 150
   seeds 2.5 min, 400 seeds 6 min, one seed 5 s. Its default is 40 for that
   reason; the suite and `tools/check.py @file` are the fast paths, and a big
