@@ -34,26 +34,20 @@ A WireScript chip is wires, so everything a program can see or change is a port.
 `program` carries the source in, the chip runs it, and the results come back out:
 
 ```
-                                                                                         
-program    the source text      ----     log        print, io.write
-run        high runs, low stops ----     outNum0    outNum0 .. outNum3
-inNum0     inNum0 .. inNum3     ----     outNum1    
-inNum1                          ----     outNum2    
-inNum2                          ----     outNum3    
-inNum3                          ----     outInt0    a whole number
-inStr0     inStr0 .. inStr1     ----     outStr0    outStr0 .. outStr1
-                                ---------------------            
-                                ----  Lua 5.5  ----            
-                                ---------------------            
-inStr1                          ----     outStr1    
-inVec      invecx .. invecz     ----     outArr     outarr(i, v, ...)
-inArr      inarr(i), inarr(i,k) ----     outVec     outvec(x, y, z)
-inInt0     a whole number       ----     result     the top-level return
-                                ----     err        runtime error text
-                                ----     progOk     false if it did not compile
-                                ----     busy       true while it works
-                                                                                         
-
+program   ----------------- log
+run       ----------------- outNum0
+inNum0    ----------------- outNum1
+inNum1    ----------------- outNum2
+inNum2    ----------------- outNum3
+inNum3    --|           |-- outInt0
+inStr0    --+-----------+-- outStr0
+inStr1    --|   Lua 5.5   |-- outStr1
+inVec     --+-----------+-- outArr
+inArr     --|           |-- outVec
+inInt0    ----------------- result
+          ----------------- err
+          ----------------- progOk
+          ----------------- busy
 ```
 
 `run` is the only one that decides anything: high runs the program, low stops it
