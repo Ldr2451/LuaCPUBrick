@@ -39,10 +39,16 @@
 -- selects those from the PROGRAM's text and a program that only says
 -- "math.random" would not get math's pieces.  `_m` is a declared builtin, so it
 -- is always there.
+--
+-- The generator is INLINED into math.random rather than being a third function,
+-- and that is a measured choice, not a style one: a piece's boot is its
+-- characters PLUS about 280 ticks for every function it defines (measured on
+-- three pieces), because each one is a closure the chip has to create and fill.
+-- randomseed does not draw, so it needs none of this.
 math = math or {}
 local _rs = 12345
 
-local _rand = function(m, n)
+math.random = function(m, n)
   -- Compute the draw into a local, then write the upvalue from it.  Writing the
   -- upvalue from the expression directly also works; this is the shape PUC's own
   -- libmath uses, and it keeps the value the scaling below reads in a register.
@@ -51,11 +57,19 @@ local _rand = function(m, n)
   if m == nil then
     return v / 4294967296.0
   end
+  if type(m) == "string" then m = m + 0 end
+  if _m(13, m, 0) == nil then
+    error("bad argument #1 to 'random' (number has no integer representation)", 2)
+  end
   local lo, hi
   local argn = "1"
   if n == nil then
     lo, hi = 1, m
   else
+    if type(n) == "string" then n = n + 0 end
+    if _m(13, n, 0) == nil then
+      error("bad argument #2 to 'random' (number has no integer representation)", 2)
+    end
     lo, hi = m, n
     argn = "2"
   end
@@ -65,24 +79,6 @@ local _rand = function(m, n)
   -- _m(1, x, 0) is math.floor, and x is never negative here, so the high bits
   -- of the draw are what scale it
   return lo + _m(1, v / 4294967296.0 * (hi - lo + 1), 0)
-end
-
-math.random = function(m, n)
-  if m == nil then
-    return _rand()
-  end
-  if type(m) == "string" then m = m + 0 end
-  if _m(13, m, 0) == nil then
-    error("bad argument #1 to 'random' (number has no integer representation)", 2)
-  end
-  if n == nil then
-    return _rand(m)
-  end
-  if type(n) == "string" then n = n + 0 end
-  if _m(13, n, 0) == nil then
-    error("bad argument #2 to 'random' (number has no integer representation)", 2)
-  end
-  return _rand(m, n)
 end
 
 math.randomseed = function(x, y)

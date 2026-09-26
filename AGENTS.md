@@ -242,14 +242,30 @@
   time. **In-game a tick is 16.7ms of real time whatever the chip does**, so
   there only fewer ticks reaches the user. A change can halve one and double the
   other; say which one you moved.
-- **A library piece is charged by the character**: source is spliced in front of
-  the program and the lexer runs at 4 chars/tick, so C characters cost `C/4`
-  ticks of boot on every run of a program that names it. **That count over 4 is
-  the in-game number to argue about** — `LIB_str_gsub` is 2,783 escaped chars =
-  696 ticks = 11.6s at 60 ticks/s, before the program runs one instruction.
+- **A library piece is charged by the character AND by every function it
+  defines.** Source is spliced in front of the program and the lexer runs at
+  4 chars/tick, so `C/4` ticks is the lexing; on top of that each `function` in
+  a piece is a closure the chip has to create and fill, measured at about **280
+  ticks each** (tonumber: 760 chars, 2 functions, 583 ticks = 190 + 2×197;
+  math.random before this was inlined: 1,140 chars, 3 functions, 1,130 ticks =
+  285 + 3×282; string.gsub: 2,783 chars and 2,933 ticks, which fits ~8
+  functions). **That count over 4 is the in-game number to argue about** -
+  `LIB_str_gsub` is 2,783 escaped chars = 696 ticks = 11.6s at 60 ticks/s,
+  before the program runs one instruction and before the closures on top of it.
+  So a piece's first question is how many functions it needs, not how long it
+  is: inlining `math.random`'s generator into it (randomseed does not draw) took
+  the piece from 3 functions to 2 and its boot from 1,130 ticks to 989, and 141
+  ticks is 2.3s at 60 ticks/s for a program that names it once.
   `tools/lib/libconst.py piece.lua LIB_x` prints the size; `--install` minifies
-  (comments, indentation, blank lines out, nothing else — a line inside a long
+  (comments, indentation, blank lines out, nothing else - a line inside a long
   bracket string is data) and rewrites the const in `lua.ws`.
+- **A gate can be dearer at boot than the piece it would replace.** Measured:
+  naming `math.abs` or `math.floor` costs about 474 ticks of boot and
+  `math.maxinteger` 923, because `libMathInt` and `libMathConst` are pieces the
+  loader pulls in on the name - while `math.random`, a whole piece of its own,
+  costs 989. So "a gate is cheaper" has to be argued about ticks per call
+  against the piece's boot, never about gates being free.
+
 - A boot cost is only reducible three ways: fewer characters, more chars per
   tick, or not parsing. The middle one is linear in gates (unrolling `lexStep`:
   8 steps +6.5k nodes, 16 steps +19.6k — `tools/chip/lexcost.py`). The cheap end is a
