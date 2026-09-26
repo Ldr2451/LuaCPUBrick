@@ -23,8 +23,8 @@ states. Neither belongs here.
 The headline limits, because a program meets them: 1,024 instructions, 4,096
 tokens, 64 registers per function, 96 functions, 96 globals, 32 active call
 frames, 512 table entries, and 16 values in one expanded call, return, or
-statement. Exceeding one is a **compile error on the `err` port with the line
-that asked for too much**, never a wrong answer.
+statement. Exceeding one is a **`progDebug` line naming the line that asked for
+too much**, never a wrong answer.
 
 
 
@@ -42,10 +42,9 @@ A WireScript chip is wires, so everything a program can see or change is a port.
            inNum3 --|           |-- outNum4
            inStr0 --|___________|-- outStr0
            inStr1 --|           |-- outStr1
-             inArr --|           |-- outArr
-                                 |-- result
-                                 |-- err
-
+            inArr --|           |-- outArr
+                                |-- result
+                                |-- err
                                 |-- progDebug
                                 |-- busy
 ```

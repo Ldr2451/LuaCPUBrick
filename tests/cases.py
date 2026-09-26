@@ -1290,6 +1290,13 @@ TESTS = [
     # RECOVER when the real program arrives after a rejected one - otherwise a
     # typo in game leaves the chip dead until it is power-cycled.
     ("prog-fragment-rejected", "print('", None, "reject", {"errline": 1}),
+    # A `warn:` line is ADVICE, not a refusal, and that is the whole reason the
+    # two channels are separate.  The program compiles, runs, and prints what it
+    # printed before the call that cannot work - PUC accepts setmetatable and
+    # fails at RUN time, so refusing here would be a divergence, and calling it a
+    # rejection would report a running program as rejected.
+    ("warn-metatables", "print(7) setmetatable({}, {})", None, "state",
+     {"log": "7\n", "progDebug": "warn: no metatables"}),
     ("life-program-recovers", "print('hi')", None, "lifecycle",
      {"steps": [{"ticks": 300, "src": "print('"},
                 {"ticks": 300, "src": "print('hi')"}],

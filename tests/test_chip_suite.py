@@ -400,6 +400,10 @@ def compare(name, mode, kw, r, dt):
         if want_log is not None and c["log"] != want_log:
             return (name, False, "log mismatch got=%r want=%r" % (
                 c["log"], want_log), dt)
+        want_dbg = exp.get("progDebug")
+        if want_dbg is not None and want_dbg not in c["progDebug"]:
+            return (name, False, "progDebug missing %r: got %r" % (
+                want_dbg, c["progDebug"]), dt)
         for key, value in exp.get("state", {}).items():
             got = r.get("state", {}).get(key)
             if got != value:
