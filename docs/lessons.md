@@ -96,3 +96,22 @@ and `||` fold against a certified constant. Nothing in the chip's hot path sits
 behind a compile-time-constant condition - the expensive arms are all behind
 `op == N` - so that one is available but unused, and worth remembering if a future
 arm ever gets a constant guard.
+
+## The duplicate read is already shared - measured, twice
+
+Following up the exec-context note, the same hoist was tried the other way too,
+as a real \let\ in front of the condition, in the comparison arm (the best site:
+it is in vmStepFast, so five times a tick):
+
+    let bv = vNum(b)
+    let hit = if op == 18 then bv < rv else bv <= rv
+
+which is 675,312 -> 678,330 bytes. Bigger, not smaller: the \let\ costs more than
+the read it removes, so the compiler is already sharing the two \Num(b)\ reads.
+
+So both routes to that saving are dead - a wrapper mod because a mod is inlined
+at its call site, and a \let\ because the read was never duplicated in the graph.
+The apparent redundancy in the SOURCE is not redundancy in the gates, and the
+lesson is the same one the register-accessor numbers teach: measure before
+believing a shape is expensive. Reverted, and recorded here so the next person
+does not spend an hour on it.
