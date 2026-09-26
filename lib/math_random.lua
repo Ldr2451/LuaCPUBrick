@@ -48,7 +48,13 @@
 math = math or {}
 local _rs = 12345
 
-math.random = function(m, n)
+math.random = function(m, n, ...)
+  -- PUC takes 0, 1 or 2 arguments and says "wrong number of arguments" otherwise.
+  -- A Lua function ignores extras, so the count has to be asked for: select is a
+  -- gate, so the check costs no source.
+  if select("#", m, n, ...) > 2 then
+    error("wrong number of arguments", 2)
+  end
   -- Compute the draw into a local, then write the upvalue from it.  Writing the
   -- upvalue from the expression directly also works; this is the shape PUC's own
   -- libmath uses, and it keeps the value the scaling below reads in a register.
@@ -62,7 +68,6 @@ math.random = function(m, n)
     error("bad argument #1 to 'random' (number has no integer representation)", 2)
   end
   local lo, hi
-  local argn = "1"
   if n == nil then
     lo, hi = 1, m
   else
@@ -74,7 +79,9 @@ math.random = function(m, n)
     argn = "2"
   end
   if hi < lo then
-    error("bad argument #" .. argn .. " to 'random' (interval is empty)", 2)
+    -- PUC names argument 1 here, not the upper bound's index: asked of the
+    -- oracle, math.random(9, 1) answers "bad argument #1 ... (interval is empty)"
+    error("bad argument #1 to 'random' (interval is empty)", 2)
   end
   -- _m(1, x, 0) is math.floor, and x is never negative here, so the high bits
   -- of the draw are what scale it

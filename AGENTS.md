@@ -343,6 +343,22 @@
   gates). WireScript has no loop statement, so a gate-side loop is a hand-unrolled
   ladder (gates, ~2.5 nodes per arm) or a micro-step (ticks). String-heavy work
   belongs in Lua; tight per-call arithmetic belongs in a gate.
+- **The array ports are already whole-array on the wire; only the Lua-side call
+  is per element, so batch it by widening the call, not with a machine.**
+  `outArr` is `@right out outArr: float[] = outArrV`, so the whole array reaches
+  the port every tick however it was filled, and `inarr(i)` is a live
+  `inArr[toInt(iv) - 1]` — one index and one tag write, with no per-element copy
+  to remove. Measured (dump compiled once): a 64-slot fill is 367 ticks against
+  205 for the same empty loop, so **about 5 ticks per element** and a whole
+  64-slot write is 6.1s in game at 60 ticks/s; `inarr` over 64 costs 672, and
+  building a 64-entry table costs 193. A whole-array setter would have to walk a
+  Lua table in a micro-step machine, which is 1 tick per element at best: 64
+  slots go 367 → ~270, a **26% cut for a new state machine**, where a bounded
+  `outarr(i, v1..vk)` writing k consecutive slots in one call leaves the loop's
+  205 ticks and cuts the call overhead k-fold (~220 ticks, a 40% cut) for
+  100-150 nodes in one arm and no new state. A whole-array `inarr` read is a
+  **loss** for any program that reads fewer than 64, since it pays a table build
+  (193) to save ~2 ticks an element the caller's own loop was going to spend.
 - **A rarely-taken path does not belong in `vmStep`** — it fires every tick,
   and the old burst inlined it four times. A closure cell-fill there cost every
   program 20% of its per-tick time; moved to `vmBurst` it cost 2,133 nodes

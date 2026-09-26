@@ -1145,6 +1145,15 @@ TESTS = [
     # divergence every other piece has, so only the prefix differs here.
     ("math-random-interval", "print(pcall(math.random, 5, 1))", None, "run"),
     ("math-random-noint", "print(pcall(math.random, 1.5))", None, "run"),
+    # PUC's math.random takes 0, 1 or 2 arguments and answers "wrong number of
+    # arguments" otherwise; a Lua function ignores the extras, so the piece has to
+    # ask for the count itself.  Asked of the oracle, the argument INDEX in
+    # math.random's own messages is #1 for the lower bound and for an empty
+    # interval (not the upper bound's), and #2 for a non-integer upper bound.
+    ("math-random-arity", "print(pcall(math.random, 1, 9, 1))", None, "run"),
+    ("math-random-argidx",
+     "print(pcall(math.random, 1, 1.5), pcall(math.random, 1.5, 3), "
+     "pcall(math.random, 9, 1))", None, "run"),
     # math.type answers for a value of ANY type -- "integer"/"float" for a
     # number and nil for everything else -- so it must not go through the
     # number check the other _m modes share.  There was no case for it at all,

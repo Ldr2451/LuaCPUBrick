@@ -117,7 +117,7 @@ CHIP_LOG = {
     "math-random-seed42": "1\t6\t3\n",
     "math-random-ten": "6,1,8,7,1\n",
     "math-random-interval":
-        "false\tbad argument #2 to 'random' (interval is empty)\n",
+        "false\tbad argument #1 to 'random' (interval is empty)\n",
     # NOT a lost message: the whole 66-character message is in the register (a
     # case prints string.len(m) == 66).  Both sides cap a printed line at 64
     # (oracle_log applies "the same caps the chip enforces"), and PUC's line is
@@ -133,6 +133,14 @@ CHIP_LOG = {
     # where PUC names it by its library path.  A named call agrees with PUC.
     "pcall-gate-name": "false\tbad argument #2 to 'format' "
                        "(number expected, got string)\n",
+    # Three math.random messages in one line, and BOTH divergences at once: the
+    # piece raises under pcall so the name is the short 'random' where PUC says
+    # 'math.random', and PUC's text is three characters longer before the
+    # 64-character log cap, so its line is cut earlier ("...interval is" against
+    # "...interval is empt").  The argument INDEXES agree -- that is the rule
+    # this case is for, and the index is the thing the piece used to get wrong.
+    "math-random-argidx":
+        "false\tfalse\tfalse\tbad argument #1 to 'random' (interval is empt\n",
     "tab-del": "1\tnil\t3\t3\n",
     # error's message carries the chunk and line of whatever called error, and
     # pcall hands that message on as a value.  The chip has no line at run time
