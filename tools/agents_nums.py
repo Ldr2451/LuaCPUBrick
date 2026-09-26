@@ -13,6 +13,10 @@ allowed to rewrite, and a number that vanishes is a measurement nobody can check
 again.  A number that is ADDED is listed too -- a new measurement is fine, a
 replacement one is not, because two numbers for one fact is how a file starts
 lying.
+
+Material that was MOVED out of AGENTS.md into a doc is still context the next
+session may not read, so the companion files are searched too and a number counts
+as kept if it is in any of them.  That list is where a move has to be declared.
 """
 import io
 import re
@@ -22,6 +26,8 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGENTS = os.path.join(ROOT, "AGENTS.md")
+# a move is not a loss, but the number must exist somewhere reachable
+COMPANIONS = ["docs/vm-isa.md", "tools/model/README.md"]
 
 # a number, its separators, and the unit that makes it a measurement
 NUM = re.compile(
@@ -67,9 +73,19 @@ def old_text(ref):
     return p.stdout
 
 
+def new_text():
+    """AGENTS.md plus any file material was moved into."""
+    out = io.open(AGENTS, encoding="utf-8").read()
+    for rel in COMPANIONS:
+        p = os.path.join(ROOT, rel.replace("/", os.sep))
+        if os.path.isfile(p):
+            out += "\n" + io.open(p, encoding="utf-8").read()
+    return out
+
+
 def main():
     ref = sys.argv[1] if len(sys.argv) > 1 else None
-    new = io.open(AGENTS, encoding="utf-8").read()
+    new = new_text()
     old = old_text(ref)
     if not old:
         print("no reference text (git show %s failed?)" % (ref or "HEAD"))

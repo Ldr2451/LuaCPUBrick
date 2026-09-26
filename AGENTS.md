@@ -251,19 +251,18 @@
   defines.** Source is spliced in front of the program and the lexer runs at
   4 chars/tick, so `C/4` ticks is the lexing; on top of that each `function` in
   a piece is a closure the chip has to create and fill, measured at about **280
-  ticks each** (tonumber: 760 chars, 2 functions, 583 ticks = 190 + 2×197;
-  math.random before this was inlined: 1,140 chars, 3 functions, 1,130 ticks =
-  285 + 3×282; string.gsub: 2,783 chars and 2,933 ticks, which fits ~8
-  functions). **That count over 4 is the in-game number to argue about** -
-  `LIB_str_gsub` is 2,783 escaped chars = 696 ticks = 11.6s at 60 ticks/s,
-  before the program runs one instruction and before the closures on top of it.
-  So a piece's first question is how many functions it needs, not how long it
-  is: inlining `math.random`'s generator into it (randomseed does not draw) took
-  the piece from 3 functions to 2 and its boot from 1,130 ticks to 989, and 141
-  ticks is 2.3s at 60 ticks/s for a program that names it once.
-  `tools/lib/libconst.py piece.lua LIB_x` prints the size; `--install` minifies
-  (comments, indentation, blank lines out, nothing else - a line inside a long
-  bracket string is data) and rewrites the const in `lua.ws`.
+  ticks each** (tonumber 760 chars/2 functions = 583 ticks = 190 + 2×197;
+  math.random before this was inlined 1,140/3 = 1,130 = 285 + 3×282; string.gsub
+  2,783 chars and 2,933 ticks, which fits ~8 functions). **That count over 4 is
+  the in-game number to argue about** - `LIB_str_gsub` is 2,783 escaped chars =
+  696 ticks = 11.6s at 60 ticks/s, before the program runs one instruction and
+  before the closures on top of it. So a piece's first question is how many
+  functions it needs, not how long it is: inlining `math.random`'s generator
+  (randomseed does not draw) took it from 3 functions to 2 and its boot from 1,130
+  ticks to 989, and 141 ticks is 2.3s at 60 ticks/s for a program that names it
+  once. `tools/lib/libconst.py piece.lua LIB_x` prints the size; `--install`
+  minifies (comments, indentation, blank lines out, nothing else - a line inside a
+  long bracket string is data) and rewrites the const in `lua.ws`.
 - **A gate can be dearer at boot than the piece it would replace.** Measured:
   naming `math.abs` or `math.floor` costs about 474 ticks of boot and
   `math.maxinteger` 923, because `libMathInt` and `libMathConst` are pieces the
@@ -311,26 +310,6 @@
   boundary, not data loss. Measured on `math.random(1.5)`'s 66-character error
   message: whole in the register, chip line ends `...repres`, oracle's capped
   line ends `...repre`.
-- **A model of the *toolchain* comes first, because a model that never ran is not
-  a model.** `tools/model/vmmodel.py` looked for quint as an npm shim and for
-  java as `JAVA_HOME`, and this machine has neither: quint is the standalone
-  `quint-*.exe` release and the JRE is a Temurin zip unpacked into the scratch
-  dir, so every model check had been quietly skipping. Both are discovered now, in
-  the order `irdump` uses for the compiler, and the docstring's claim is finally
-  true. What cost the most time was the two languages' syntax, so write these down
-  before the next model: in Quint `if (c) x else y` has **no `then`**, a `val`
-  body is a single expression (a multi-line `and` does not parse), a `def` cannot
-  recurse, and `nondet` binds only as `action a = { nondet x = oneOf(S)  all { ... } }`
-  — `oneOf` outside a `nondet` binding is an error, and a primed name after
-  `nondet` does not parse. In Apalache **a dynamic range is rejected**
-  (`0.to(pc - 1)` is an input error, so "the executed set is the prefix" has to be
-  `executed.size() == pc and executed.forall(i => i < pc)`) and **every
-  top-level `val` is passed as an invariant**, so a helper `val` among them makes
-  Apalache's parser fail with `key not found` rather than anything that names
-  the cause. A model earns its place by finding a wrong assumption in the model:
-  the checker found that with `errored` set the pc still advanced and a line was
-  still printed, because nothing stopped the instruction actions — exactly what
-  `noErrorAccumulation` says.
 - **A gate that must call back into Lua is a separate mechanism nothing needs
   yet.** The only place the chip calls Lua on a gate's behalf is the pcall frame,
   and pcall-of-pcall is unsupported, so a machine cannot suspend mid-loop for a
@@ -667,30 +646,15 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   keep them passing rather than skipping them to get a green run.
 - After changing the sim or the runner, prove the fast path equals the slow one
   (`CHIP_BATCH=1` must give the same OK/FAIL counts).
-- **A model of the loop state finds what a diff cannot, and it is cheap.** The
-  loop/frame depth invariant (`forDepth` is 0 whenever no numeric loop is live)
-  has no repro short of writing one: `break`, a `return` out of a loop and an
-  error unwinding through a `pcall` each corrupt a *later* loop, and the suite
-  had 552 green cases over it. Encoding the machine as a small transition system
-  and asking for an invariant violation gave the counterexample in minutes — and
-  the corrected model then bounds the nesting depth instead of growing an array
-  forever. Reach for it when the bug is "the state is wrong later", not "this
-  program prints the wrong thing". A model of the *chip* is a different and much
-  more expensive thing: the chip's own constants, the gates and the host's laws
-  are not in the model, so a green model proves nothing about the chip — it
-  proves the *rule* you are about to encode, which is what you want it for. The
-  two models live in `tools/` and run with `python -u tools/model/vmmodel.py`, which
-  discovers quint, a JRE and Apalache and skips cleanly when one is missing; a
-  model that cannot fail is no net, so each one says which line to delete to
-  make it fail. **Two backends, and the split is measured:** Apalache carries
-  both models (`--backend=tlc` is TLC, which checks the pcall model's *whole*
-  graph — 28 states, depth 4, queue empty — in 2.7s), while TLC cannot carry
-  `loopmodel` at all: it explores states explicitly, the loop model's lists put it
-  out of reach, and it was still running after ten minutes at max-steps 8 and
-  again at 5 where Apalache takes 42s. TLC also still needs the Apalache
-  *server*, because it compiles the spec to TLA+ with it
-  ("[TLC] Compiling to TLA+ (via Apalache)") — with no server up quint falls back
-  to spawning one itself, which is the hang to avoid.
+- **A model of the loop state finds what a diff cannot, and it is cheap** — the
+  rules, the two backends' measured split and the syntax traps are all in
+  `tools/model/README.md`, so read that before writing one and do not re-derive
+  them here. What belongs here is the judgement: a model earns its place by
+  finding a wrong assumption in the model, a model that cannot fail is no net
+  (each says which line to delete to make it fail), and **a model of the *chip*
+  is a different and much more expensive thing** — the chip's constants, the gates
+  and the host's laws are not in it, so a green model proves the *rule* you were
+  about to encode and nothing about the chip.
 
 ## Workflow
 - **A compacted session starts with `git status` and `git diff`.** The summary
