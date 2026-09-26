@@ -59,63 +59,49 @@ and a correctness question that has to be answered before any of it can land.
 `tools/chip/modcost.py` and `tools/chip/armcost.py` are how the cost half was
 measured; the correctness half needs the two failing cases as the spec.
 
-## The partial unroll: the design, and the trap that makes the obvious shape wrong
+## The partial unroll - LANDED
 
-Copying the *whole* chain is what makes four steps cost 64,603 nodes, and the
-chain is wildly unequal. A `vmStepFast` that carries only the cheap arms would be
-about 1,073 nodes per copy, so four copies plus one full `vmStep` is ~44,000
-against the 103,908 the full unroll reaches.
+Copying the whole 42-arm chain is what makes four steps cost 64,603 nodes, and the
+expensive arms are why: they drag retCopy, retAdjust, tblSetKey and vmFail into
+every copy. A fast step with only the cheap arms never reaches any of them.
 
-**The trap: omitting an arm silently skips its instruction.** The tail is
+    | 1x        | 4x full    | partial      |
+    | 620,027   | 1,598,905  | 675,312      |
+    | 39,305    | 104,949    | 43,321       |
+    | 197 ticks | 96 ticks   | 127 ticks    |
+    | no answer | 15,782     | 25,189       |
+    | ok        | 222 ticks  | 391 ticks    |
 
-```
-if !advanced && !vmHalted {
-  vmPc = vmPc + 1
-  if vmPc >= bop.length() { vmHalted = true }
-}
-```
++10% nodes over the 1x chip instead of +167%, 1.55x on a loop, and fib(18) answers
+where at 1x it never finished: the call falls through the four cheap steps to the
+full one, so its arithmetic still gets five dispatches a tick.
 
-`advanced` is set by the arms that move the pc themselves, so a step that matches
-no arm leaves it false — and the tail then advances the pc **past an instruction
-that never ran**. A fast step therefore cannot share that tail. It needs its own
-`handled` flag, set only by the arms it actually contains:
+**vmStepFast carries** loads and stores (0-7), arithmetic and unary (8-15),
+comparisons and jumps (17-22), and the numeric for (50). Left out on purpose:
+CALL, the return arms, TAPPEND and the gate dispatch.
 
-```
-mod vmStepFast() {
-  if vmHalted { return }
-  let op = bop[vmPc]
-  let a = bpa[vmPc]
-  let b = bpb[vmPc]
-  let c = bpc[vmPc]
-  var handled = false
-  if op == 1 { ...; handled = true }
-  else if op <= 7 { ...; handled = true }
-  ...                                   // only the cheap families
-  if handled && !advanced && !vmHalted {
-    vmPc = vmPc + 1
-    if vmPc >= bop.length() { vmHalted = true }
-  }
-}
-```
+**Three traps, each found by doing it rather than by reasoning.**
 
-and `vmBurst` becomes four `vmStepFast()` calls and one `vmStep()`, so a `CALL` or
-a `RETURN` falls through all four and is executed by the full step, while loads,
-arithmetic, comparisons, jumps, unary and the numeric `for` get four dispatches
-for the price of one arm each.
+1. *The pc must not advance past an arm the step does not have.* The shared tail
+   is if !advanced && !vmHalted { vmPc = vmPc + 1; ... }, which is safe only
+   because vmStep holds every arm. The fast step tests the opcode range itself:
+   op <= 15 || (17 <= op && op <= 22) || op == 50.
+2. *Do not set a flag by inserting a statement into each arm.* That was the first
+   attempt and the compiler answered WS003 then is string, else is bool three
+   arms later: an arm body whose last statement is a single expression gives the
+   block its value, so the insertion changed a type. The range test touches no arm
+   body at all.
+3. *A fast step must stand aside when a machine owns the tick.* The first working
+   compile came back 654/38, every failure an mt-* case with truncated output,
+   because vmStepFast dispatched straight past string.format's micro-step machine -
+   the same shape as the closure bug one level up. The fix is mBusy(), ONE
+   predicate over the routing flags that both steps read: a copied list is what let
+   the format machine be missed, and a shared one means a machine added later is
+   added in one place.
 
-The arms to carry, with the measured cost each contributes: loads 1-7 (568),
-comparisons 17-19 (178), jumps 20-22 (35), unary 14-15 (142), numeric `for` 32/33
-and 50 (150), and arithmetic 8-13, which is already a single arm and so is the
-biggest win per node in the set. Left single-copy on purpose: `CALL` 23/41 (5,467),
-the four return arms (2,417), `TAPPEND` 44 (2,507) and the gate dispatch itself.
-
-**Two things this does not solve.** It shares the closure hazard with the full
-unroll — `upvalue-read` and `upvalue-write` come back with an empty log at two
-steps, and that has to be understood first, because a partial unroll still
-dispatches twice in a tick. And the call-heavy case gets nothing from it:
-`fib(18)` only finishes at four full steps, and `CALL` is deliberately not in the
-fast set. So the honest pitch is *loop and straight-line speed at ~7% of the full
-unroll's price*, not "the 4x, cheaper".
+And the mechanical one: the extracted chain comes out one block short, because the
+} closing the last kept arm lives in the next arm's } else if header and is
+dropped along with the arms after it.
 
 ## Where the 4x actually went: the node census
 
