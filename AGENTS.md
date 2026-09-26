@@ -360,16 +360,21 @@ falls out for free.
 ## WireScript traps
 Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
 `tools/chip/vargraph.py <name>` shows which gate fires each write.
-- **OPEN BUG: three temps in one comparison operand can leave the wrong tag.**
+- **OPEN BUG, and it is in the COMPILER: a call whose argument is a folded `or`,
+  used inline in a comparison, leaves the wrong tag in the result register.**
   `print("a" < (tostring(false or false)))` raises "attempt to compare" where PUC
   answers `true`. Every near miss is right — `print("a" < tostring(1))`,
   `print("a" < (tostring(1)))`, `print("a" < ("b"))`, `print("a" < (s))` for a
-  local, `print(tostring(false or false))` and its `type` — so it is not string
-  comparison, not `tostring`, not `or` and not the parentheses: it is the
-  combination, which makes it a temp-allocation collision in one instruction
-  rather than a wrong comparison. Found by `tools/fuzz.py` seed 1358, which is
-  only comparable now that the generator is scope-correct (below): it had been
-  skipping two thirds of its seeds, so it could not have found this.
+  local, and `local q = tostring(false or false) print("a" < q)` — and both
+  `tostring(false or 1)` and `tostring(1 or false)` fail, so it is the folded `or`
+  as the *argument* plus the call being *inline* in the comparison operand. The
+  value is a string when it goes through a local, so the tag is lost in register
+  allocation, not at run time: the comparison arm only reads the tags it is given
+  and correctly rejects a pair that is neither two strings nor two numbers. There
+  is nothing to fix in `lua.ws` — hoist the call into a local, which is the
+  workaround, and file it against `wirescript`. Found by `tools/fuzz.py` seed
+  1358, which is only comparable now that the generator is scope-correct (below):
+  it had been skipping two thirds of its seeds, so it could not have found this.
 - **A seed is expensive, so the fuzzer is not an edit-loop tool.** Measured: 150
   seeds 2.5 min, 400 seeds 6 min, one seed 5 s. Its default is 40 for that
   reason; the suite and `tools/check.py @file` are the fast paths, and a big
