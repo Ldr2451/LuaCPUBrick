@@ -128,16 +128,34 @@ TESTS = [
      "pcall(function() return 1 / nil end), "
      "pcall(function() return '10abc' + 0 end))", None, "run"),
     # Comparison and the bitwise operators do NOT coerce in PUC, and the chip
-    # must not start to.  Only the failure is asserted, not the wording, so the
-    # case does not depend on the message text (which differs: the chip says
-    # "attempt to compare" where PUC says "attempt to compare number with
-    # string").
+    # must not start to.  The four type-error messages used to be a bare "attempt
+    # to compare" / "attempt to perform 'bitwise'" / "attempt to get length" /
+    # "attempt to concatenate" with no type in them; PUC names the operand (or
+    # both), so the cases below assert the wording, which is why they are
+    # runtimerr cases with an expected message rather than log comparisons.
     ("coerce-nocmp", "local ok, err = pcall(function() return '3' < 5 end) "
      "print(ok, type(err))", None, "run"),
     ("coerce-nobits", "local ok, err = pcall(function() return '3' & 1 end) "
      "print(ok, type(err))", None, "run"),
     ("coerce-nocmp2", "local ok = pcall(function() return '3' == 3 end) "
      "print(ok)", None, "run"),
+    # PUC's four messages, read off the oracle rather than guessed: the compare
+    # names both types unquoted, the other three name the offending operand, and
+    # the bitwise one adds "(constant 'x')" when the operand is a literal, which
+    # the chip cannot know and deliberately stops short of.
+    ("err-cmp-types", "print(1 < 'x')", None, "runtimerr",
+     {"expect": {"err": "attempt to compare number with string"}}),
+    ("err-cmp-types2", "print('a' < 1)", None, "runtimerr",
+     {"expect": {"err": "attempt to compare string with number"}}),
+    ("err-bitwise", "print(1 & 'x')", None, "runtimerr",
+     {"expect": {"err": "attempt to perform bitwise operation on a string "
+                         "value"}}),
+    ("err-length", "print(#nil)", None, "runtimerr",
+     {"expect": {"err": "attempt to get length of a nil value"}}),
+    ("err-length-fn", "print(#print)", None, "runtimerr",
+     {"expect": {"err": "attempt to get length of a function value"}}),
+    ("err-concat", "print(1 .. {})", None, "runtimerr",
+     {"expect": {"err": "attempt to concatenate a table value"}}),
     # The host's parse is Rust's FromStr, which takes no "0x10", so this raises
     # where PUC says 16: a host limit, so the case asserts the chip is loud and
     # the header records the gap.

@@ -5748,7 +5748,9 @@ mod doCont() {
                                     let r15 = regAlloc()
                                     if 15 < n {
                                       bEmit(7, br + 15, tmpRegs[15], 0)
-                                    }
+}
+
+
                                     bEmit(7, br + 14, tmpRegs[14], 0)
                                   }
                                   bEmit(7, br + 13, tmpRegs[13], 0)
@@ -6422,6 +6424,23 @@ mod vmFail(msg: string) {
   } else {
     errV = msg
     vmHalted = true
+  }
+}
+
+// PUC's bitwise message names the FIRST operand that is not an integer -- the
+// left one when that is the bad one, the right otherwise -- and the five checks
+// that used to raise a bare "attempt to perform 'bitwise'" all want that one
+// answer, so it is built here.  It is called for every bitwise op, so with two
+// good operands it does nothing.  PUC adds "(constant 'x')" when the operand is
+// a literal; the chip knows the register but not that it came from a literal, so
+// that note is the one part of these messages that stays.
+mod bitFail(lt: int, lv: float, rt: int, rv: float) {
+  if lt != 6 && !(lt == 1 && lv == floor(lv)) {
+    vmFail("attempt to perform bitwise operation on a " .. typeName(lt)
+      .. " value")
+  } else if rt != 6 && !(rt == 1 && rv == floor(rv)) {
+    vmFail("attempt to perform bitwise operation on a " .. typeName(rt)
+      .. " value")
   }
 }
 
@@ -9127,7 +9146,8 @@ mod vmStep() {
         let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. (vNum(c) | 0) else fmtNum(vNum(c))
         vSet(a, 2, 0.0, ls .. rs)
       } else {
-        vmFail("attempt to concatenate")
+        vmFail("attempt to concatenate a "
+          .. typeName(if lct == 1 || lct == 6 then rct else lct) .. " value")
       }
     } else if op == 17 || op == 18 || op == 19 {
       let immK = c < 0
@@ -9176,7 +9196,8 @@ mod vmStep() {
         cmpOp = if op == 19 then 1 else 0
         advanced = true
       } else {
-        vmFail("attempt to compare")
+        // PUC names both types, unquoted: "attempt to compare number with string"
+        vmFail("attempt to compare " .. typeName(lt) .. " with " .. typeName(rt))
       }
     } else if op == 20 {
       vmPc = a
@@ -9585,7 +9606,10 @@ mod vmStep() {
       } else if bt == 2 {
         vSet(a, 6, vStr(b).Length() + 0.0, "")
       } else {
-        vmFail("attempt to get length")
+        // PUC also names the value: "attempt to get length of a nil value", plus
+        // "(global 'print')" when it is a named one, which needs a descriptor the
+        // length operator does not carry
+        vmFail("attempt to get length of a " .. typeName(bt) .. " value")
       }
     } else if op == 32 {
       let stp = vNum(c)
@@ -9674,8 +9698,7 @@ mod vmStep() {
     } else if op == 35 {
       let lt = vTag(b)
       let rt = vTag(c)
-      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
-      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      bitFail(lt, vNum(b), rt, vNum(c))
       let na = 0.0 - vNum(b) - 1.0
       let nb = 0.0 - vNum(c) - 1.0
       let nob = na | nb
@@ -9683,14 +9706,12 @@ mod vmStep() {
     } else if op == 36 {
       let lt = vTag(b)
       let rt = vTag(c)
-      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
-      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      bitFail(lt, vNum(b), rt, vNum(c))
       vSetInt(a, vNum(b) | vNum(c))
     } else if op == 37 {
       let lt = vTag(b)
       let rt = vTag(c)
-      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
-      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      bitFail(lt, vNum(b), rt, vNum(c))
       let na = 0.0 - vNum(b) - 1.0
       let nb = 0.0 - vNum(c) - 1.0
       let nob = na | nb
@@ -9698,19 +9719,19 @@ mod vmStep() {
       vSetInt(a, vNum(b) + vNum(c) - 2.0 * band)
     } else if op == 38 {
       let vt = vTag(b)
-      if vt != 6 && !(vt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
+      if vt != 6 && !(vt == 1 && vNum(b) == floor(vNum(b))) {
+        vmFail("attempt to perform bitwise operation on a " .. typeName(vt) .. " value")
+      }
       vSetInt(a, -(vNum(b)) - 1.0)
     } else if op == 39 {
       let lt = vTag(b)
       let rt = vTag(c)
-      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
-      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      bitFail(lt, vNum(b), rt, vNum(c))
       vSetInt(a, vNum(b) * (2.0 ** vNum(c)))
     } else if op == 40 {
       let lt = vTag(b)
       let rt = vTag(c)
-      if lt != 6 && !(lt == 1 && vNum(b) == floor(vNum(b))) { vmFail("attempt to perform 'bitwise'") }
-      if rt != 6 && !(rt == 1 && vNum(c) == floor(vNum(c))) { vmFail("attempt to perform 'bitwise'") }
+      bitFail(lt, vNum(b), rt, vNum(c))
       vSetInt(a, floor(vNum(b) / (2.0 ** vNum(c))))
     }
     if !advanced && !vmHalted {
