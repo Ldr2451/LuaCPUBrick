@@ -2,14 +2,20 @@
 -- Inputs:  inNum0=3 inNum1=1 inNum2=4 inNum3=1.5
 --          inStr0="foo" inStr1="bar" inVec=(1,2,3)
 --          inCol=(0.5,0.25,0.125,1) inArr=[10,20,30]
--- Every line below exercises a feature; the ports at the end depend on all
--- of them, so any mismatch means something broke. Expected values are in
--- the DEMO_EXPECT comment block at the bottom (verified against Lua 5.5).
+-- Every group below exercises a feature and the ports at the end depend on all
+-- of them, so any mismatch means something broke.  The expected log is NOT here:
+-- it is tests/cases.py's DEMO_LOG, checked against Lua 5.5 on every suite run.
+-- Kept small on purpose -- the lexer runs at 4 chars/tick, so source is boot
+-- time -- and it names no string./math./table./io. function, because the loader
+-- prepends that library's source and the program gate is about 4 KB.
 
--- arithmetic, precedence, unary minus, power, modulo, concat
+-- arithmetic, precedence, unary minus, power, floored % and //, concat
 local a = (inNum0 + inNum1 * inNum2 - inNum3 / 2) % 4
 local b = 2 ^ 3 ^ 1 + -inNum1
-print("arith", a, b)
+print("arith", a, b, -7 // 2, 7 // -2, 7.5 % -2)
+
+-- bitwise on whole numbers: and or xor not(=-x-1) shifts
+print("bits", inNum0 & 1, inNum0 | 8, inNum0 ~ 5, ~0, inNum2 << 2, 255 >> 4)
 
 -- strings, escapes, length, lexicographic compare
 local s = inStr0 .. "-" .. inStr1 .. "!"
@@ -32,7 +38,7 @@ print("tab", #t, t[5], t.name)
 print("tab2", t[3], t[true], t.nested.v)
 print("tab3", t == t, t ~= {})
 
--- functions: named recursion, anonymous, higher-order, extra args
+-- functions: named recursion, anonymous, higher-order, extra args dropped
 local function fact(n)
   if n <= 1 then return 1 else return n * fact(n - 1) end
 end
@@ -41,6 +47,43 @@ local function apply(f, x) return f(x) end
 print("func", fact(5), apply(dbl, 21))
 print("func2", t.fn(7), dbl(5, 99))
 
+-- varargs: ... in a return, its count through select, a call in the last slot
+local function va(...) return select('#', ...), ... end
+print("vararg", va(7, 8, 9))
+print("vararg2", va(1, 2, 3))
+
+-- closures: two closures over one local share it, and n outlives mk
+local function mk()
+  local n = 0
+  return function() n = n + 1 return n end, function() return n end
+end
+local tick, peek = mk()
+tick() tick()
+print("closure", peek(), tick(), mk())
+
+-- errors: error raises, pcall reports, xpcall hands back the handler's value
+-- only the boolean: PUC prefixes error's message with chunk:line: and the
+-- chip has no run-time line, so the text is a recorded divergence
+print("pcall", (pcall(function() error("boom") end)))
+print("pcall2", pcall(error, "raw"), pcall(assert, false, "nope"))
+print("xpcall", xpcall(function() error("x") end, function() return "handled" end))
+print("assert", assert(fact(3), "unreached"))
+
+-- loops: numeric for with a step, generic for over a hand-written iterator,
+-- repeat..until, break out of a while, and the loop's own scope
+local acc = 0
+for i = 1, 10, 2 do acc = acc + i end
+local function iter(list, i)
+  i = i + 1
+  local v = list[i]
+  if v then return i, v end
+end
+local seen = ""
+for i, v in iter, {"p", "q"}, 0 do seen = seen .. i .. v end
+local k = 0
+repeat k = k + 1 until k >= 3
+print("loops", acc, seen, k, k * 10 % 7)
+
 -- shadowing, elseif, call-sugar statement
 do local tmp = "inner" print("shadow", tmp) end
 local grade = "F"
@@ -48,7 +91,7 @@ if a > 3 then grade = "A" elseif a > 2 then grade = "B" else grade = "C" end
 print 'sugared'
 print("grade", grade)
 
--- loops, break inside if, parallel assign, swap, right-to-left dup
+-- while, break inside if, parallel assign, swap, right-to-left dup
 local sum = 0
 local i = 1
 while true do
@@ -87,35 +130,3 @@ print("outs2", outStr0, outStr1)
 print()
 print("check", sum, s, t[5])
 return "done-" .. sum
-
--- DEMO_EXPECT (model log + ports for the inputs above; `log` port shows
--- the log, `result` shows the return, everything else as labelled):
--- log:
---   arith  2.25  7.0
---   str  foo-bar!  8.0
---   cmp  false  a
---   b
---   logic  2.0  dflt
---   logic2  false  nil  function
---   tab  3.0  2.25  foo
---   tab2  1.0  yes  7.0
---   tab3  true  true
---   func  120.0  42.0
---   func2  14.0  10.0
---   shadow  inner
---   sugared
---   grade  B
---   flow  55.0  2.0  1.0  second
---   inputs  6.0  1.875  10.0
---   inputs2  30.0  nil  nil
---   outs  7.0  79.0
---   outs2  foo-bar!|foo  21.75/table
---   (empty line from print())
---   check  55.0  foo-bar!  2.25
---   (values in one line are tab-separated; outNum0 reads 7.0: the duplicate
---   store kept the FIRST value, i.e. right-to-left assignment works)
--- outNum0..3 = 7.0, 79.0, 61.875, 11.0
--- outStr0 = "foo-bar!|foo", outStr1 = "21.75/table"
--- outArr[1] = 55.0, outArr[2] = 6.0, outArr[64] = -1.0, rest 0.0
--- outVec = (2, 4, 6), outCol = (0.5, 0.25, 0.125, 1)
--- result = "done-55", err = "", progOk = true, busy = false (when done)

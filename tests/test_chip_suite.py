@@ -17,6 +17,7 @@ per-case subprocess.  Exit 0 when all green.
 import concurrent.futures as cf
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -33,6 +34,23 @@ from timing import Elapsed
 from irdump import resolve_prog
 
 WS_PATH = os.path.join(TINYLUA, "lua.ws")
+
+# PUC prints an address after a table/function/thread/userdata and the chip
+# prints its own, so a log line can carry either spelling and only the type is
+# being compared.  oracle_log already folds the reference's side; this folds the
+# chip's, on both sides of the comparison, so a case may hold either.  It also
+# drops one trailing newline, because oracle_log joins lines and the chip's log
+# ends with the last print's own -- a case that took its expectation from the
+# reference would otherwise be one character long.  It is applied to the log
+# only: the writable-output globals are chip ports with no reference counterpart,
+# and a case that spells one out means the value it saw.
+_ADDR = re.compile(r"\b(table|function|thread|userdata): 0x[0-9a-fA-F]+")
+
+
+def norm_log(s):
+    if not isinstance(s, str):
+        return s
+    return _ADDR.sub(r"\1", s).rstrip("\n")
 
 WORKERS = int(os.environ.get("CHIP_WORKERS", "12"))
 # The chip is compiled once for the whole run and every worker loads that dump,
@@ -353,9 +371,11 @@ def compare(name, mode, kw, r, dt):
     if mode == "modelio":
         for key in ("log", "outVec", "outCol", "outGlobals", "outArr",
                     "result"):
-            if key in exp and c[key] != exp[key]:
+            got, want_v = c[key], exp.get(key)
+            if key in exp and (norm_log(got) if key == "log" else got) != (
+                    norm_log(want_v) if key == "log" else want_v):
                 return (name, False, "%s mismatch got=%r want=%r" % (
-                    key, c[key], exp[key]), dt)
+                    key, got, want_v), dt)
         return (name, True, "", dt)
     if mode == "reject":
         if c["progOk"]:

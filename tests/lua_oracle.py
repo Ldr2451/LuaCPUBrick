@@ -141,7 +141,16 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     pre.append("      and i >= 1 and i <= #ARR then return ARR[i] end")
     pre.append("  return nil")
     pre.append("end")
+    # The port writers are no-ops: the reference has no ports, so their values
+    # are the chip's to check and the log is the part PUC can decide.  setvec
+    # and setcol belong here beside outarr for the same reason -- WITHOUT them
+    # the model raised "attempt to call a nil value (global 'setvec')" on any
+    # program that writes a vector or a colour, which is every demo, and the
+    # demo's expected log had been written by hand because the reference could
+    # never run the file at all.
     pre.append("outarr = function() end")
+    pre.append("setvec = function() end")
+    pre.append("setcol = function() end")
     vv = vec or (0.0, 0.0, 0.0)
     for name, v in zip(("invecx", "invecy", "invecz"), vv):
         pre.append(f"{name} = {lua_num_lit(float(v))}")
