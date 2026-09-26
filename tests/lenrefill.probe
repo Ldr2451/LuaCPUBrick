@@ -1,9 +1,0 @@
-t = {1,2,3} t[2] = nil t[2] = 9 print(#t)
-%%
-t = {1,2,3} t[2] = nil t[2] = 9 local x = 0 for i = 1, 5 do x = x + 1 end print(#t)
-%%
-t = {1,2,3} t[2] = nil print(#t) t[2] = 9 print(#t)
-%%
-t = {1,2,3,4,5} t[2] = nil t[2] = 9 print(#t)
-%%
-t = {1,2,3} t[4] = 4 print(#t)

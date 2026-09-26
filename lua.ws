@@ -167,13 +167,10 @@
 ///   string.gmatch answers three values where PUC answers one (its iterator
 ///   ignores the arguments the generic for hands it); the chip's generic for
 ///   reads the walk's state out of the call.  See CHIP_LOG gmatch-arity.
-///   #t is the FIRST nil minus one, and the cached border follows a delete: with
-///   t[2] = nil, {1,2,3} is 1 here and 1 in PUC, t[1] = nil is 0, and a key above
-///   the border leaves it alone.  What it does NOT do is extend across a gap that
-///   is filled later: t = {} t[1] = 1 t[3] = 3 t[2] = 2 is 2 here and 3 in PUC,
-///   and five ticks in between change nothing, so it is not a timing question --
-///   the chase machine that would extend it never fires.  So an append and a
-///   delete are right and a bridge is short.  CHIP_LOG len-hole-bridge.
+///   #t is the FIRST nil minus one, and the cached border agrees with it on all
+///   three of the ways a border can move: an append, a delete at or below it
+///   (t[2] = nil on {1,2,3} is 1, t[1] = nil is 0, a key above it changes
+///   nothing), and a fill that bridges a gap ({} t[1]=1 t[3]=3 t[2]=2 is 3).
 ///   a float PRINTS with the host's shortest round trip (the `..` gate's
 ///   format!("{f}"), so where PUC writes 17 significant digits the chip writes
 ///   the shortest string that reads back the same: 1/3 is 0.3333333333333333 here
@@ -2071,9 +2068,22 @@ mod cmpFinish(v: bool) {
   }
 }
 
+// Is there an entry for this key?  Two things learned the hard way, both about
+// asking the question at all:
+//  - tmap.has never fired on a key built by string concatenation here, which made
+//    the border chase dead code; tmap.get(key).Found works, and it is what the
+//    five working lookups use.
+//  - the key must be built by tkey(), the one function that owns the format.  A
+//    probe that re-implements it with `tid .. "#" .. n` agrees with the format on
+//    paper and misses in the map, and nothing but a failing case tells you.
+mod tblHas(tid: int, idx: int) -> bool {
+  let r = tmap.get(tkey(tid, 6, idx + 0.0, ""))
+  return r.Found
+}
+
 // After t[len+1] was filled, keep extending the border while t[len+1] exists.
 mod lenStep() {
-  if tmap.has(lenTid .. "#" .. (tLen[lenTid] + 1)) {
+  if tblHas(lenTid, tLen[lenTid] + 1) {
     tLen[lenTid] = tLen[lenTid] + 1
   } else {
     lenChase = false
@@ -6913,7 +6923,7 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
       tvStr[sl] = vs
       if kt == 6 && kint == tLen[tid] + 1 {
         tLen[tid] = kint
-        if tmap.has(tid .. "#" .. (kint + 1)) {
+        if tblHas(tid, kint + 1) {
           lenChase = true
           lenTid = tid
         }
@@ -6950,7 +6960,7 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
     tmap.set(key, sl)
     if kt == 6 && kint == tLen[tid] + 1 {
       tLen[tid] = kint
-      if tmap.has(tid .. "#" .. (kint + 1)) {
+      if tblHas(tid, kint + 1) {
         lenChase = true
         lenTid = tid
       }
@@ -9697,12 +9707,10 @@ mod vmStep() {
     } else if op == 31 {
       let bt = vTag(b)
       if bt == 5 {
-        // The cached border.  It follows an append and it moves down when an
-        // array element at or below it is deleted, but a fill that BRIDGES a gap
-        // does not extend it, because the chase machine that would (lenChase /
-        // lenStep) never fires -- its tmap.has(tid .. "#" .. n) probe is false
-        // even when t[n] reads back its value, so {} t[1]=1 t[3]=3 t[2]=2 is 2
-        // here and 3 in PUC.  See AGENTS.md and CHIP_LOG len-hole-bridge.
+        // The cached border: it follows an append, it follows a delete, and it
+        // extends across a gap that is filled later, because tblHas asks the map
+        // the way the rest of the table code does.  All three were measured
+        // against PUC; see AGENTS.md.
         vSet(a, 6, tLen[toInt(vNum(b))] + 0.0, "")
       } else if bt == 2 {
 
