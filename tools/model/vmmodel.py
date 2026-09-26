@@ -232,13 +232,31 @@ def main(argv):
         for m in models:
             code, secs, out = verify(quint, m, steps, endpoint, extra,
                                     java_dir)
-            bad = code != 0 or "counterexample" in out.lower() \
-                or "invariant violated" in out.lower()
-            print("%-10s %s  %.1fs" % (m, "FAIL" if bad else "OK", secs))
+            low = out.lower()
+            # A violation and a TOOL FAILURE are different facts and must not
+            # read the same.  The exit code alone cannot tell them apart: a JVM
+            # hiccup or a server that died under the loop model's ~43s run exits
+            # non-zero with no counterexample, and reporting that as FAIL says
+            # "the model found a bug" when nothing was checked at all.  So the
+            # markers decide, and a non-zero exit without one is an ERROR.
+            violated = "counterexample" in low or "invariant violated" in low
+            if violated:
+                verdict = "FAIL"
+                rc = 1
+            elif code != 0:
+                verdict = "ERROR (tool exit %d, no counterexample: nothing was"
+                verdict += " proved)"
+                rc = 1
+            else:
+                verdict = "OK"
+            print("%-10s %s  %.1fs" % (m, verdict, secs))
             for line in out.splitlines():
                 if line.strip():
                     print("    " + line)
-            rc = rc or (1 if bad else 0)
+            if code != 0 and not violated:
+                for line in out.splitlines()[-6:]:
+                    if line.strip():
+                        print("    | %s" % line.strip()[:100])
     finally:
         if server is not None:
             server.terminate()

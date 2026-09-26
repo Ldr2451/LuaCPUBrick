@@ -69,3 +69,30 @@ So: before adding a reset line, find the owner. If the owner already resets it,
 you have found a duplicate assignment, which is a smell that the ownership is
 unclear. That is worth more than the 520 bytes, and it is the same rule as
 "delete cleverness the moment it proves unreliable".
+
+## A read in exec context costs a gate; the same read in pure context does not
+
+From the host docs, `docs/src/exec-context.md`:
+
+> Even pure expressions like `x * 2` use a `Var_Get` gate (exec) to read `x` when
+> inside an exec context. [...] In pure context, `x` reads directly from the
+> PseudoVar's `Value` port (no exec gate).
+
+`vmStep` is exec context, so every `vNum(b)` / `vTag(b)` / `vStr(b)` inside an arm
+spawns its own `Var_Get`. The four register accessors are 8,008 nodes and they are
+the third largest group in the census, so this is where a source-level change pays:
+an arm that reads the same register three times should read it once into a `let`
+and use that, because the `let` is one gate and the three reads are three.
+
+This is the shape to look for in the expensive arms, and it is measurable with
+`tools/chip/armcost.py` on the arm and then on the hoisted version. It is also the
+same family as everything else in this file: a second source of truth - three reads
+that should be one - failing silently, in this case as gates rather than as a wrong
+answer.
+
+The related folding lever, from `docs/src/folding.md`, is annihilators: `if false
+{ heavy() }` drops the whole exec chain including anything inlined there, and `&&`
+and `||` fold against a certified constant. Nothing in the chip's hot path sits
+behind a compile-time-constant condition - the expensive arms are all behind
+`op == N` - so that one is available but unused, and worth remembering if a future
+arm ever gets a constant guard.
