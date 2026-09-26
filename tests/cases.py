@@ -1295,61 +1295,66 @@ TESTS = [
     # printed before the call that cannot work - PUC accepts setmetatable and
     # fails at RUN time, so refusing here would be a divergence, and calling it a
     # rejection would report a running program as rejected.
-    ("warn-metatables", "print(7) setmetatable({}, {})", None, "state",
-     {"log": "7\n", "progDebug": "warn: no metatables"}),
+    # A port builtin called with NO arguments cannot do anything.  The count is one
+    # token test - the lexer emits `)` as sub 15 - and not a value-stack read,
+    # which is what made the first version warn on outnum(i, i).
+    ("arity-zero-outnum", "outnum()", None, "state",
+     {"expect": {"progDebug": "outnum() takes an index and a value"}}),
+    ("arity-zero-inarr", "print(inarr())", None, "state",
+     {"expect": {"progDebug": "inarr() takes an index from 1"}}),
+    # ... and the near miss: real arguments must stay silent, including inside a
+    # for body, which is exactly where the value-stack version cried wolf.
+    # ... and the near miss: real arguments must stay silent, including inside a
+    # for body, which is exactly where the value-stack version cried wolf.
+    ("arity-args-ok", "for i=1,2 do outnum(i, i) outstr(i, 'x') outarr(i, i) end",
+     None, "state", {"expect": {"noProgDebug": "and was given none"}}),    ("warn-metatables", "print(7) setmetatable({}, {})", None, "state",
+     {"expect": {"log": "7\n", "progDebug": "warn: no metatables"}}),
     # A name the compiler had to invent is a typo far more often than a global
     # the program meant to define, and PUC cannot say so because PUC has no ports
     # to mistype.  It stays ADVICE: the read is still nil, exactly as PUC.
     ("unknown-name-typo", "print(in0)", None, "state",
-     {"log": "nil\n", "progDebug": "'in0'"}),
+     {"expect": {"log": "nil\n", "progDebug": "'in0'"}}),
     # ... and the other direction, which is the one that would make the warning
     # noise: a global the program DEFINES is not a typo.  PUC gives it nil before
     # the assignment and the value after, so warning here would be wrong.
     ("unknown-name-assigned", "count = 0 count = count + 1 print(count)", None,
-     "state", {"log": "1\n", "noProgDebug": "count"}),
+     "state", {"expect": {"log": "1\n", "noProgDebug": "count"}}),
     # A call to one of the chip's own builtins with too few arguments cannot do
     # anything, and the COUNT is known while parsing - it is already the CALL's
     # argument count.  Still advice: the call goes through as it would have.
-    ("arity-outnum", "outnum(2)", None, "state",
-     {"progDebug": "outnum(i, v) needs an index and a value"}),
-    ("arity-inarr", "print(inarr())", None, "state",
-     {"progDebug": "inarr(i) needs an index from 1"}),
-    # ... and the near miss that must stay SILENT: a computed index is not this
-    # check's business.  A warning that fires on outnum(i, v) would be noise on
-    # every loop in every program, which is worse than missing a real one.
-    ("arity-computed-ok", "for i=1,3 do outnum(i, i) end", None, "state",
-     {"noProgDebug": "outnum(i, v) needs"}),
     # A LITERAL index the chip would refuse at run time, said at parse time
     # instead - the argument has not been parsed yet at the call site, so this is
     # the actual value and not a guess from the text.  The wording is the
     # runtime's own, so the two cannot disagree.
     ("index-literal-outnum", "outnum(0, 1)", None, "state",
-     {"progDebug": "outnum index must be 1..5"}),
+     {"expect": {"progDebug": "outnum index must be 1..5"}}),
     ("index-literal-outstr", "outstr(3, 'x')", None, "state",
-     {"progDebug": "outstr index must be 1..2"}),
+     {"expect": {"progDebug": "outstr index must be 1..2"}}),
     # ... and a literal IN range is silent, which is the half that matters: a
     # check that fired on every outnum(1, v) in every program would be noise.
     ("index-literal-inrange-ok", "outnum(1, 1) outnum(5, 5)", None, "state",
-     {"noProgDebug": "outnum index must be"}),
+     {"expect": {"noProgDebug": "outnum index must be"}}),
     # outarr IS bounded - 64 slots - so a literal past the end is a real failure
     # with a real runtime message, and the guard's bound is read from the array
     # rather than written as 64 so the two cannot drift.
     ("index-literal-outarr", "outarr(65, 1)", None, "state",
-     {"progDebug": "array index out of range"}),
+     {"expect": {"progDebug": "array index out of range"}}),
     ("index-literal-outarr-ok", "outarr(64, 1)", None, "state",
-     {"noProgDebug": "array index out of range"}),
+     {"expect": {"noProgDebug": "array index out of range"}}),
     # inArr is bounded by the same 64 as outArr and a bad index there gives a
     # SILENT nil, which is worth warning about - but it is not implemented: an
     # input PORT cannot be read during codegen (see the note in noteIndex).  The
     # behaviour is pinned; progDebug is deliberately NOT asserted, because a case
     # that locks in a warning the chip does not emit is worse than no case.
-    ("index-inarr-past-end", "print(inarr(65))", None, "state", {"log": "nil\n"}),
+    ("index-inarr-past-end", "print(inarr(65))", None, "state", {"expect": {"log": "nil\n"}}),
     # One issue per line is the port's whole contract, and a substring assertion
     # cannot see it: an earlier outarr warning ended in an escaped backslash rather
     # than a newline and its case still passed.  Two findings that really exist, so
     # the separator is load-bearing and the literal backslash cannot reappear.
     ("progdebug-one-per-line", "outarr(65, 1) print(setmetatable)", None, "state",
-     {"progDebug": "array index out of range\nwarn: no metatables"}),
+     {"expect": {"progDebug":
+                  "array index out of range, and outarr is 1-based over the outArr slots"
+                  "\nwarn: 'setmetatable' is not a port or a builtin"}}),
     ("life-program-recovers", "print('hi')", None, "lifecycle",
      {"steps": [{"ticks": 300, "src": "print('"},
                 {"ticks": 300, "src": "print('hi')"}],

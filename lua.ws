@@ -1496,6 +1496,35 @@ mod gDeclare(name: string) -> int {
 // job and this chip is not going to disagree with it at parse time.
 // The index argument of a port call, when it is a literal.  Value-based, like
 // the runtime check it mirrors, so outnum(2.5, v) is caught too.
+// A port builtin called with NO arguments.  The count comes from the token, not
+// from valStk: at the call site this call's arguments have not been pushed yet,
+// so valStk counts the enclosing expression and an earlier version warned on
+// outnum(i, i).
+//
+// The lexer emits `)` as sub 15 (`(` 14, `,` 16, `;` 17), so after cpos moves past
+// the paren and the callee, the current token is `)` exactly when the call had no
+// arguments at all.  That is the realistic typo and it is one comparison.
+//
+// The general count - outnum(2), one argument where two are needed - needs a scan
+// to the MATCHING paren, and this language has no loop, so it would have to be a
+// hand-unrolled ladder.  Left for later rather than guessed at.
+mod noteArity(name: string) {
+  if curKind() == 5 && curSub() == 15 {
+    if name == "outnum" {
+      nameWarn = nameWarn .. "warn: outnum() takes an index and a value, i in 1..5, and was given none\n"
+    }
+    if name == "outstr" {
+      nameWarn = nameWarn .. "warn: outstr() takes an index and a value, i in 1..2, and was given none\n"
+    }
+    if name == "outarr" {
+      nameWarn = nameWarn .. "warn: outarr() takes an index and at least one value, and was given none\n"
+    }
+    if name == "inarr" {
+      nameWarn = nameWarn .. "warn: inarr() takes an index from 1, and was given none\n"
+    }
+  }
+}
+
 mod noteIndex(name: string) {
   if curKind() == 1 {
     let v = curNum()
@@ -1519,21 +1548,6 @@ mod noteIndex(name: string) {
           .. "warn: array index out of range, and outarr is 1-based over the outArr slots\n"
       }
     }
-  }
-}
-
-mod noteArity(name: string, n: int) {
-  if name == "outnum" && n < 2 {
-    nameWarn = nameWarn .. "warn: outnum(i, v) needs an index and a value, i in 1..5\n"
-  }
-  if name == "outstr" && n < 2 {
-    nameWarn = nameWarn .. "warn: outstr(i, v) needs an index and a value, i in 1..2\n"
-  }
-  if name == "outarr" && n < 2 {
-    nameWarn = nameWarn .. "warn: outarr(i, v, ...) needs an index and at least one value, i from 1\n"
-  }
-  if name == "inarr" && n < 1 {
-    nameWarn = nameWarn .. "warn: inarr(i) needs an index from 1, and inarr(i, k) returns k of them\n"
   }
 }
 
@@ -5305,12 +5319,15 @@ mod exprPushName(callParen: bool, callSugar: bool) {
       bEmit(5, fr, gRef(name), 0)
     }
     if callParen {
-      if lkKind == 0 {
-        noteArity(name, valStk.length())
-      }
       pushOp(2, -1, fr, 0, valStk.length())
       cpos = cpos + 2
+      // The peek reads the CURRENT TOKEN, which is the first argument, so it is not
+      // affected by the value stack.  valStk.length() cannot be used for an arity
+      // count here: this call's arguments are not pushed yet at this point, which
+      // is what made an earlier arity check warn on outnum(i, i).
+      //
       if lkKind == 0 {
+        noteArity(name)
         noteIndex(name)
       }
       expectOperand = true
