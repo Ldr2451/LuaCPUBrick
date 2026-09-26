@@ -1240,6 +1240,36 @@ TESTS = [
     ("stress-instr", "STRESS", None, "run"),
     ("over-cap", "OVERCAP", None, "reject"),
     # error-class tests
+    # LOCKSTEP.  Two equal chips, one program, the same start: the output has to be
+    # the same AT EVERY TICK, not merely the same at the end.  The chip is a
+    # network of gates that re-evaluates when an input changes, so if two copies
+    # could drift, a program that read a port mid-run would be one scheduling
+    # accident away from a different answer on the second copy -- and every diff
+    # this suite produces would then be a diff against a coin toss.  Measured over
+    # nine programs with tools/chip/lockstep.py: identical tick counts and
+    # identical logs at every tick.
+    ("lockstep-hello", "print('hello')", None, "lockstep",
+     {"expect": {"log": "hello\n"}}),
+    ("lockstep-loop", "local s = 0 for i = 1, 20 do s = s + i end print(s)",
+     None, "lockstep", {"expect": {"log": "210\n"}}),
+    ("lockstep-calls", "local function f(n) if n == 0 then return 0 end "
+     "return f(n - 1) + 1 end print(f(12))", None, "lockstep",
+     {"expect": {"log": "12\n"}}),
+    ("lockstep-tables", "local t = {} for i = 1, 8 do t[i] = i * 2 end "
+     "local s = 0 for _, v in pairs(t) do s = s + v end print(s)", None,
+     "lockstep", {"expect": {"log": "72\n"}}),
+    ("lockstep-closures", "local function c() local n = 0 return function() "
+     "n = n + 1 return n end end local f = c() for i = 1, 10 do f() end "
+     "print(f())", None, "lockstep", {"expect": {"log": "11\n"}}),
+    ("lockstep-pcall", "local s = 0 for i = 1, 6 do local ok, v = "
+     "pcall(function() s = s + i return s end) end print(s)", None, "lockstep",
+     {"expect": {"log": "6\n"}}),
+    ("lockstep-string", "print(string.format('%d/%s', 42, string.rep('ab', 3)))",
+     None, "lockstep", {"expect": {"log": "42/ababab\n"}}),
+    ("lockstep-ports", "print(inStr0, inNum0, #tostring(inNum1))", None,
+     "lockstep", {"sinputs": {0: "hi"}, "inputs": [0.0, 7.0],
+                  "expect": {"log": "hi\t0.0\t3\n"}}),
+    ("lockstep-error", "print(1 + {})", None, "lockstep", {}),
     ("syn-unterm", "print('abc)", None, "synfail"),
     ("syn-end", "print(1) end", None, "synfail"),
     ("syn-numconcat", "print(5..3)", None, "synfail"),

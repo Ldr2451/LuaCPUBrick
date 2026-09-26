@@ -314,6 +314,29 @@ def compare(name, mode, kw, r, dt):
         if life["first"] != life["second"]:
             return (name, False, "restart differs", dt)
         return (name, True, "", dt)
+    if mode == "lockstep":
+        lk = r.get("lockstep") or {}
+        if not lk:
+            return (name, False, "no lockstep result", dt)
+        if lk["ticksA"] != lk["ticksB"]:
+            return (name, False, "tick count differs %r vs %r" % (
+                lk["ticksA"], lk["ticksB"]), dt)
+        if not lk["sameLog"]:
+            return (name, False, "output diverged at tick %r: %r vs %r" % (
+                lk["firstDiff"], lk["logA"][:60], lk["logB"][:60]), dt)
+        if lk["errA"] != lk["errB"]:
+            return (name, False, "one chip errored: %r vs %r" % (
+                lk["errA"], lk["errB"]), dt)
+        if lk["okA"] != lk["okB"]:
+            return (name, False, "one chip rejected the program", dt)
+        # Nothing else: a program that raises is still one the two must agree
+        # about, and whether it was supposed to print anything is the case's own
+        # expectation, which the check below reads.
+        want = exp.get("log")
+        if want is not None and lk["finalA"] != want:
+            return (name, False, "log got=%r want=%r" % (
+                lk["finalA"], want), dt)
+        return (name, True, "", dt)
     if mode == "state":
         if not c["progOk"]:
             return (name, False, "chip rejected: %r" % c["err"], dt)
@@ -449,7 +472,18 @@ def run_lifecycle(sim_, p):
     return baseline, first, reset, second
 
 
-def run_in_sim(sim, p):
+def run_trace(sim, src, kw, ticks):
+    """Run one program on a chip and keep the log after every tick."""
+    marks = []
+    sim.reset()
+    sim.inputs = sim_inputs(src, kw)
+    r = sim.run(ticks, on_tick=lambda s, tick: marks.append(s.log))
+    return {"log": marks, "ticks": sim.tick, "err": (r["outGlobals"].get("err")
+                                                     or ""),
+            "progOk": bool(r["outGlobals"].get("progOk", False))}
+
+
+def run_in_sim(sim, p, sim2=None):
     """Run one case against a loaded Sim and return the result the comparison reads.
 
     Every path into a sim goes through here: the pool, the batch worker and the
@@ -459,6 +493,7 @@ def run_in_sim(sim, p):
     src, kw, ticks = p["src"], p["kw"], p["ticks"]
     t_case = time.time()
     lifecycle = None
+    lockstep = None
     if p["mode"] == "lifecycle":
         baseline, first, reset, second = run_lifecycle(sim, p)
         lifecycle = {"baseline": baseline, "first": first,
@@ -466,6 +501,30 @@ def run_in_sim(sim, p):
         r = {"log": first["log"], "outGlobals": {
             "outNum0": first["outNum0"], "err": first["err"],
             "progOk": first["progOk"]}}
+    elif p["mode"] == "lockstep":
+        # Two equal chips, the same program, the same start: the output must be the
+        # same AT EVERY TICK, not merely the same at the end, or a program that
+        # read a port mid-run could see different bytes on the two copies.  The
+        # second chip is a SEPARATE Sim built from the same graph, not a reset of
+        # the first: a reset would leave the objects that carry state between runs
+        # shared, which is the thing that has to be ruled out.
+        other = sim2 if sim2 is not None else sim
+        a, b = run_trace(sim, src, kw, ticks), run_trace(other, src, kw, ticks)
+        first_diff = next((i for i in range(min(len(a["log"]), len(b["log"])))
+                           if a["log"][i] != b["log"][i]), None)
+        lockstep = {"ticksA": a["ticks"], "ticksB": b["ticks"],
+                    "sameLog": a["log"] == b["log"],
+                    "firstDiff": first_diff,
+                    "logA": a["log"][first_diff] if first_diff is not None else "",
+                    "logB": b["log"][first_diff] if first_diff is not None else "",
+                    "finalA": a["log"][-1] if a["log"] else "",
+                    "finalB": b["log"][-1] if b["log"] else "",
+                    # A program that raises is still a program the two chips must
+                    # agree about, so the error is compared rather than refused.
+                    "errA": a["err"], "errB": b["err"],
+                    "okA": a["progOk"], "okB": b["progOk"]}
+        r = {"log": a["log"][-1] if a["log"] else "",
+             "outGlobals": {"err": a["err"], "progOk": a["progOk"]}}
     else:
         sim.reset()
         sim.inputs = sim_inputs(src, kw)
@@ -483,6 +542,7 @@ def run_in_sim(sim, p):
         "invariants": sim.state_invariants(
             bool(sim.finished) and not og.get("err")),
         "lifecycle": lifecycle,
+        "lockstep": lockstep,
         "state": state,
         "log": r["log"],
         "outGlobals": {
@@ -546,8 +606,21 @@ def worker(ws_path, payload, irpkl=None):
         sim = Sim(nodes, [Wire(*w) for w in wires])
     # One graph build for the whole batch: compiling the chip and indexing its
     # wires costs more than most cases run for.
+    # A lockstep case needs a SECOND, independent chip built from the same graph,
+    # so one is made here rather than per case.
+    sim2 = None
+    if any(p.get("mode") == "lockstep" for p in batch):
+        if irpkl:
+            from irsims import sim_from_dump
+            sim2 = sim_from_dump(irpkl)
+        else:
+            from irdump import dump_source
+            from irgraph import Wire
+            from irsims import Sim
+            nodes, wires, _ = dump_source(ws_path)
+            sim2 = Sim(nodes, [Wire(*w) for w in wires])
     for p in batch:
-        sys.stdout.write(json.dumps(run_in_sim(sim, p)) + "\n")
+        sys.stdout.write(json.dumps(run_in_sim(sim, p, sim2)) + "\n")
         sys.stdout.flush()
 
 
