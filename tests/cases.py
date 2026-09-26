@@ -1166,6 +1166,25 @@ TESTS = [
     ("deep-expr", "print(1+2*3-4/2%3^2)", None, "run"),
     ("or-chain", "print(nil or false or 0 or 'd')", None, "run"),
     ("and-chain", "print(true and 1 and 2)", None, "run"),
+    # `and`/`or` compile to a jump, so their pop has to consume the LEFT operand's
+    # entry as well as the right one.  It did not, and the leftover was only read
+    # by a call's `)`, which drains to the depth its `(` recorded and takes ONE
+    # value: the call then read two arguments where there was one and the
+    # enclosing comparison's operands came out as (the argument, the call).  Every
+    # one of these answers PUC only because the pop is fixed, so if it regresses
+    # they all break at once.
+    ("logic-arg-cmp", "print('a' < tostring(false or false))", None, "run"),
+    ("logic-arg-cmp-and", "print('a' < tostring(false and true))", None, "run"),
+    ("logic-arg-cmp-noquote",
+     "print(('a') < (tostring(false or false)))", None, "run"),
+    ("logic-arg-cmp-local",
+     "local s = 'a' print(s < tostring(false or false))", None, "run"),
+    ("logic-arg-len", "print(#tostring(false or false))", None, "run"),
+    ("logic-arg-add", "print(1 + (tostring(false or false) and 1 or 2))", None,
+     "run"),
+    ("logic-arg-nested",
+     "print('a' < tostring(1 and 2 or 3) .. tostring(false or 1))", None,
+     "run"),
     ("not-chain", "print(not not 5, not '')", None, "run"),
     ("while-zero", "while false do print(1) end print(0)", None, "run"),
     ("if-noelse", "if false then print(1) end print(2)", None, "run"),
