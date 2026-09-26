@@ -9170,6 +9170,38 @@ mod vmBusy() -> bool {
 // two hand-kept copies of the same semantics, which drift, and the drift would
 // be a loop that miscounts under one dispatch path only.  A mod inlines at its
 // call sites, so this is the same node count as the copy and one source instead.
+// RETURN (op 24), ONE body for both dispatch paths, for the reason vmForLoop
+// documents: vmBurst's four fast steps and one full step mean both must handle
+// every op, and two hand-kept copies would drift - which for a frame teardown
+// would be a popped frame under one dispatch path only.
+mod vmReturn(a: int) {
+  let rv = vTag(a)
+  let rn = vNum(a)
+  let rs = vStr(a)
+  let ra = fRetA[fRetA.length() - 1]
+  let rb = fRetBase[fRetBase.length() - 1]
+  let rpc = fRetPC[fRetPC.length() - 1]
+  fFunc.pop()
+  fBase.pop()
+  fRetA.pop()
+  fRetBase.pop()
+  fRetPC.pop()
+  fRetN.pop()
+  vaTop = fVaB.pop().Value
+  forDepth = fForDepth.pop()
+  if fFunc.length() == 0 {
+    resultV = fmtVal(rv, rn, rs)
+    vmHalted = true
+  } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
+    pcallEnd(vmBase + a, 1, 0)
+  } else {
+    vmBase = rb
+    vSet(ra, rv, rn, rs)
+    vmPc = rpc
+    retCountV = 1
+  }
+}
+
 mod vmForLoop(a: int, c: int) {
   let ctrl_reg = forCtrl[forDepth - 1]
   let ctrl = vNum(ctrl_reg)
@@ -9540,31 +9572,7 @@ mod vmStep() {
       }
       retCountV = want
     } else if op == 24 {
-      let rv = vTag(a)
-      let rn = vNum(a)
-      let rs = vStr(a)
-      let ra = fRetA[fRetA.length() - 1]
-      let rb = fRetBase[fRetBase.length() - 1]
-      let rpc = fRetPC[fRetPC.length() - 1]
-      fFunc.pop()
-      fBase.pop()
-      fRetA.pop()
-      fRetBase.pop()
-      fRetPC.pop()
-      fRetN.pop()
-      vaTop = fVaB.pop().Value
-      forDepth = fForDepth.pop()
-      if fFunc.length() == 0 {
-        resultV = fmtVal(rv, rn, rs)
-        vmHalted = true
-      } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
-        pcallEnd(vmBase + a, 1, 0)
-      } else {
-        vmBase = rb
-        vSet(ra, rv, rn, rs)
-        vmPc = rpc
-        retCountV = 1
-      }
+      vmReturn(a)
       advanced = true
     } else if op == 26 {
       let ra = fRetA[fRetA.length() - 1]
@@ -9731,6 +9739,14 @@ mod vmStep() {
     } else if op == 46 {
       // GETUP a, b=descriptor, c=0 this frame's own cell for the local or
       // c=1 the enclosing closure's cell for it
+      //
+      // NOT on the fast path, and measured: a fast arm here cost 364 nodes and
+      // saved ZERO ticks, because GETUP only runs inside closure code and
+      // vmStepFast returns early when vmBusy() - and cloActive is exactly what
+      // makes GETUP frequent.  The fast path and the micro-step machines are
+      // mutually exclusive, so a fast arm can only ever help an op that runs in
+      // PLAIN execution.  That is the whole reason FORLOOP gained a tick per
+      // iteration and this did not.
       let cell = cellRead(curFid(), b, c == 1)
       if 0 < cell {
         vSet(a, uTag[cell], uNum[cell], uStr[cell])
@@ -10204,6 +10220,9 @@ mod vmStepFast() {
       vmPc = a
       advanced = true
     }
+  } else if op == 24 {
+    vmReturn(a)
+    advanced = true
   } else if op == 33 {
     // Here for POSITION, not for what it does: the body is fifteen-odd gates with
     // no error path, but op 33 sits near the end of vmStep's 33-arm chain, so the
@@ -10214,7 +10233,8 @@ mod vmStepFast() {
   } else if op == 50 {
     forDepth = forDepth - 1
   }
-  if (op <= 15 || (17 <= op && op <= 22) || op == 33 || op == 50) && !advanced && !vmHalted {
+  if (op <= 15 || (17 <= op && op <= 22) || op == 24 || op == 33 || op == 50)
+    && !advanced && !vmHalted {
     vmPc = vmPc + 1
     if vmPc >= bop.length() {
       vmHalted = true
