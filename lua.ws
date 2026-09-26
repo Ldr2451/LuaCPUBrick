@@ -393,6 +393,9 @@ mod fmtNum(v: float) -> string {
 //   9 z-skip, 10 comment, 99 done.
 
 var lsrc: string = ""
+// One `warn: ` line per name the compiler had to invent, built while parsing and
+// handed to staticAdvice, which prefixes the rest.  Cleared with the program.
+var nameWarn: string = ""
 var llen: int = 0
 var lpos: int = 0
 var lstage: int = 0
@@ -1468,9 +1471,38 @@ mod gDeclare(name: string) -> int {
   return if r.Found then r.Value else gslotNext - 1
 }
 
+// A global the program only READS and that nothing has declared.  The chip makes
+// a slot and the read yields nil, which is exactly what PUC does, so this is NOT
+// an error and must never stop the program.  But a name that resolves to nothing
+// is nearly always a typo - `in0` for `inNum0` - and PUC cannot say so because
+// PUC has no ports to mistype.  Recorded once per name while compiling and
+// reported on progDebug as advice, which is the only thing that catches a typo
+// the chip cannot enumerate.
+//
+// A name the source ASSIGNS is not a typo, it is a global the program defines,
+// and PUC is right to give it nil before the assignment and the value after.  So
+// an assignment anywhere in the source suppresses the warning, which is why this
+// cannot be a text scan of the whole program up front: only the name the
+// compiler actually had to invent says anything.
+mod noteUnknown(name: string) {
+  if !srcUses(lsrc, name .. " =") && !srcUses(lsrc, name .. "=")
+    && !srcUses(nameWarn, name) {
+    nameWarn = nameWarn .. "warn: '" .. name
+      .. "' is not a port or a builtin, and the program never assigns it, so it reads as nil"
+      .. "\n"
+  }
+}
+
 mod gLookup(name: string) -> int {
   let r = gmap.get(name)
   return if r.Found then r.Value else -1
+}
+
+mod gRef(name: string) -> int {
+  if gLookup(name) < 0 {
+    noteUnknown(name)
+  }
+  return gDeclare(name)
 }
 
 // ---------------------------------------------------------------- registers + scope
@@ -5217,7 +5249,7 @@ mod exprPushName(callParen: bool, callSugar: bool) {
     } else if lkKind == 1 {
       bEmit(7, fr, lkReg, 0)
     } else {
-      bEmit(5, fr, gDeclare(name), 0)
+      bEmit(5, fr, gRef(name), 0)
     }
     if callParen {
       pushOp(2, -1, fr, 0, valStk.length())
@@ -5246,7 +5278,7 @@ mod exprPushName(callParen: bool, callSugar: bool) {
       } else if lkKind == 3 {
         bEmit(46, r, lkReg, upKind())
       } else {
-        bEmit(5, r, gDeclare(name), 0)
+        bEmit(5, r, gRef(name), 0)
       }
       pushVal(r, false, true)
     }
@@ -10102,6 +10134,8 @@ mod vmBurst() {
 }
 
 on Change(program) {
+  // with the text, like every other finding: nameWarn is built while parsing
+  nameWarn = ""
   wantParse = true
   emit sched
 }
@@ -10196,7 +10230,7 @@ on goParse {
 // `in0` for `inNum0` - and it does so without the chip knowing every typo
 // anyone can make.
 mod staticAdvice(p: string) -> string {
-  var h = ""
+  var h = nameWarn
   if srcUses(p, "setmetatable") || srcUsesField(p, "setmetatable")
     || srcUses(p, "getmetatable") || srcUses(p, "rawget") || srcUses(p, "rawset")
     || srcUses(p, "rawequal") || srcUses(p, "rawlen") || srcUsesField(p, "metatable") {

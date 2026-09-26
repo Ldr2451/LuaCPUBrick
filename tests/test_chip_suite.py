@@ -404,6 +404,10 @@ def compare(name, mode, kw, r, dt):
         if want_dbg is not None and want_dbg not in c["progDebug"]:
             return (name, False, "progDebug missing %r: got %r" % (
                 want_dbg, c["progDebug"]), dt)
+        no_dbg = exp.get("noProgDebug")
+        if no_dbg is not None and no_dbg in c["progDebug"]:
+            return (name, False, "progDebug should not mention %r: got %r" % (
+                no_dbg, c["progDebug"]), dt)
         for key, value in exp.get("state", {}).items():
             got = r.get("state", {}).get(key)
             if got != value:

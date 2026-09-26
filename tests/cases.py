@@ -1297,6 +1297,16 @@ TESTS = [
     # rejection would report a running program as rejected.
     ("warn-metatables", "print(7) setmetatable({}, {})", None, "state",
      {"log": "7\n", "progDebug": "warn: no metatables"}),
+    # A name the compiler had to invent is a typo far more often than a global
+    # the program meant to define, and PUC cannot say so because PUC has no ports
+    # to mistype.  It stays ADVICE: the read is still nil, exactly as PUC.
+    ("unknown-name-typo", "print(in0)", None, "state",
+     {"log": "nil\n", "progDebug": "'in0'"}),
+    # ... and the other direction, which is the one that would make the warning
+    # noise: a global the program DEFINES is not a typo.  PUC gives it nil before
+    # the assignment and the value after, so warning here would be wrong.
+    ("unknown-name-assigned", "count = 0 count = count + 1 print(count)", None,
+     "state", {"log": "1\n", "noProgDebug": "count"}),
     ("life-program-recovers", "print('hi')", None, "lifecycle",
      {"steps": [{"ticks": 300, "src": "print('"},
                 {"ticks": 300, "src": "print('hi')"}],
