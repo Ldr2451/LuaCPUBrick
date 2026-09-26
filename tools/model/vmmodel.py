@@ -45,6 +45,12 @@ def find_quint():
              os.path.join(os.path.expanduser("~"), "AppData", "Roaming",
                           "npm", "quint.cmd"),
              os.path.join(usr_local_bin(), "quint")]
+    # the standalone release is a single .exe, and where it lands depends on who
+    # unzipped it: the temp scratch dir this repo works in, or the home dir
+    for pat in ("quint-*.exe", "quint.exe", "quint"):
+        cands.extend(sorted(glob.glob(os.path.join(
+            os.environ.get("TEMP", "/tmp"), "opencode", pat)), reverse=True))
+        cands.append(os.path.join(os.path.expanduser("~"), pat))
     for c in cands:
         if c and os.path.isfile(c):
             return os.path.abspath(c)
@@ -57,12 +63,25 @@ def usr_local_bin():
 
 def find_java():
     """The java executable, or None."""
+    exe = "java.exe" if os.name == "nt" else "java"
     home = os.environ.get("JAVA_HOME")
     if home:
-        p = os.path.join(home, "bin", "java.exe" if os.name == "nt" else "java")
+        p = os.path.join(home, "bin", exe)
         if os.path.isfile(p):
             return p
-    return shutil.which("java")
+    which = shutil.which("java")
+    if which:
+        return which
+    # a JRE unpacked into the scratch dir, which is where it lands when nobody
+    # installs one: a zip named for the release next to the extracted directory
+    for pat in ("temurin*", "jdk*", "jre*", "*jre*"):
+        for root in sorted(glob.glob(os.path.join(
+                os.environ.get("TEMP", "/tmp"), "opencode", pat)), reverse=True):
+            hit = glob.glob(os.path.join(root, "**", "bin", exe),
+                            recursive=True)
+            if hit:
+                return hit[0]
+    return None
 
 
 def find_apalache():
