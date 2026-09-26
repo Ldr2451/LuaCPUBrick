@@ -1,7 +1,7 @@
 -- Tiny Lua full-feature smoke test. Paste into `program`, set `run` high.
 -- Inputs:  inNum0=3 inNum1=1 inNum2=4 inNum3=1.5
 --          inStr0="foo" inStr1="bar" inVec=(1,2,3)
---          inCol=(0.5,0.25,0.125,1) inArr=[10,20,30]
+--          inArr=[10,20,30]
 -- Every group below exercises a feature and the ports at the end depend on all
 -- of them, so any mismatch means something broke.  The expected log is NOT here:
 -- it is tests/cases.py's DEMO_LOG, checked against Lua 5.5 on every suite run.
@@ -106,21 +106,20 @@ p, q = q, p
 local dup, dup = "first", "second"
 print("flow", sum, p, q, dup)
 
--- vector/color/array inputs (inarr(9) is out of range -> nil)
+-- vector/array inputs (inarr(9) is out of range -> nil)
 local vlen = invecx + invecy + invecz
-local cren = incolr + incolg + incolb + incola
 local mixed = (a + b) * inNum0 - 24 / 4
-print("inputs", vlen, cren, inarr(1))
+print("inputs", vlen, inarr(1), inarr(2))
 -- inarr(i, k) reads a run of slots in one call.  Only a call in the LAST slot
 -- expands all of them, so that is where the three values appear; slot 9 is past
 -- the end of the array and reads nil, and the middle call is cut to one value
 -- exactly as PUC cuts it.
 print("inputs2", inarr(9), type(inarr(9)), inarr(1, 3))
 
--- writable outputs: dup store leaves 7, strings format, array/vec/col
+-- writable outputs: dup store leaves 7, strings format, array and vector
 outNum0, outNum0 = 7, 8
 outNum1 = sum + fact(4)
-outNum2 = vlen * 10 + cren
+outNum2 = vlen * 10 + #s
 outNum3 = #t + #s
 outStr0 = s .. "|" .. t.name
 outStr1 = tostring(mixed) .. "/" .. tostring(t)
@@ -130,7 +129,6 @@ outStr1 = tostring(mixed) .. "/" .. tostring(t)
 outarr(1, sum, fact(3), #t)
 outarr(62, -1, -2, -3)
 outvec(invecx * 2, invecy * 2, invecz * 2)
-outcol(incolr, incolg, incolb, 1)
 print("outs", outNum0, outNum1)
 print("outs2", outStr0, outStr1)
 print()

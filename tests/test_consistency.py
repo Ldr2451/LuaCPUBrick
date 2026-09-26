@@ -54,9 +54,17 @@ def _braced(prefix):
 
 
 # 1. builtins: ids, reserved slots, fid dispatch ---------------------------
+# An id may be RESERVED with no builtin behind it: fid 4 was outcol and the
+# colour port is gone, and renumbering the twenty-two builtins above it would
+# move every one of them for no gain, so the hole stays.  The rule is therefore
+# "contiguous with declared holes", and a hole has to be deliberate -- which is
+# what RESERVED_FIDS is for.
+RESERVED_FIDS = {4}
 n_builtin = len(m.BUILTINS)
 ids = sorted(fid for _, fid in m.BUILTINS)
-check("builtin-ids-contiguous", ids == list(range(n_builtin)), f"got {ids}")
+expected = [i for i in range(max(ids) + 1) if i not in RESERVED_FIDS]
+check("builtin-ids-contiguous", ids == expected,
+      f"got {ids}, want {expected} with {sorted(RESERVED_FIDS)} reserved")
 nb_ws = re.search(r"const NB = (\d+)", WS)
 check("nb-const-present", nb_ws is not None, "no `const NB` in lua.ws")
 if nb_ws:
@@ -70,7 +78,7 @@ vm = mod_body("vmStep")
 # of them all was seventeen inside a mod inlined four times; the call site picks
 # between the two on the fid and the generic Lua call is gateHigh's last arm
 gate = mod_body("gateLow") + mod_body("gateHigh")
-for fid in range(n_builtin):
+for _name, fid in sorted(m.BUILTINS, key=lambda kv: kv[1]):
     check(f"fid-{fid}-dispatched",
           re.search(rf"fid == {fid}\b", gate) is not None)
 check("fid-user-else", "} else {" in mod_body("gateHigh"))
@@ -145,7 +153,7 @@ check("no-halted-port", "out halted" not in WS)
 check("no-proglen-port", "out progLen" not in WS)
 check("no-nprint-port", "out nPrint" not in WS)
 for hw, port in [("inarr", "inArr"), ("outarr", "outArr"),
-                 ("outvec", "outVec"), ("outcol", "outCol"),
+                 ("outvec", "outVec"),
                  ("print", "log")]:
     check(f"hw-{hw}-{port}", re.search(
         rf"@(?:left|right) (?:in|out) {port}\b", WS) is not None)
@@ -168,7 +176,7 @@ for where, body in (("parseInit", pi), ("vmReset", vr)):
         check(f"clear-target-{tgt}-{where}", tgt in decls_arr,
               "clears undeclared array")
 # restart resets outputs, log and error text
-for var in ["logV", "oF0", "oI0", "oS4", "outVecV", "outColV",
+for var in ["logV", "oF0", "oI0", "oS4", "outVecV",
             "resultV", "errV"]:
     check(f"reset-{var}", re.search(rf"\b{var} = ", vr) is not None)
 check("reset-logLines", "logLines.clear()" in vr)

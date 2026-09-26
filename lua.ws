@@ -4,8 +4,7 @@
 /// Wire a Lua program into `program` (a string variable gate) and drive `run` high.
 /// The program is lexed, parsed to flat bytecode, then executed on a register VM.
 /// Numbers go in through inNum0..inNum3, strings through inStr0..inStr1, a vector through inVec,
-/// a color through inCol and a float array through inArr. Printed values accumulate
-/// in the log; outNum0..outNum3, outStr0..outStr1, outArr, outVec and outCol
+/// in the log; outNum0..outNum3, outStr0..outStr1, outArr and outVec
 /// are writable from Lua.
 ///
 /// Ports
@@ -17,7 +16,6 @@
 ///   in  inNum0..inNum3: float   sticky numeric inputs, readable as globals inNum0..inNum3
 ///   in  inStr0..inStr1: string  sticky string inputs, readable as globals inStr0..inStr1
 ///   in  inVec: vector     Lua reads invecx / invecy / invecz
-///   in  inCol: color      Lua reads incolr / incolg / incolb / incola
 ///   in  inArr: float[]    Lua reads it 1-based via inarr(i); out-of-range reads nil.
 ///                         inarr(i, k) reads k of them into k results (k is 1..8, and
 ///                         a slot past the end reads nil), so a run of adjacent slots
@@ -34,7 +32,6 @@
 ///                         so a run of adjacent slots costs one call instead of k; a
 ///                         call with more values than that writes the first 8
 ///   out outVec: vector    written by outvec(x, y, z)
-///   out outCol: color     written by outcol(r, g, b, a)
 ///   out result: string    top-level return value, "" when none
 ///   out err: string       runtime error text, "" when none; compile failures read
 ///                         "line N: message"
@@ -242,7 +239,6 @@
 @left in inStr0: string
 @left in inStr1: string
 @left in inVec: vector
-@left in inCol: color
 @left in inArr: float[]
 @left in inInt0: int
 
@@ -256,7 +252,6 @@
 @right out outStr1: string = oS5.Value
 @right out outArr: float[] = outArrV
 @right out outVec: vector = outVecV.Value
-@right out outCol: color = outColV.Value
 @right out result: string = resultV.Value
 @right out err: string = errV.Value
 @right out progOk: bool = progOkV.Value
@@ -311,7 +306,7 @@ const MAXVALS = 16
 // at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
 // means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
 // the dispatch case.  test_ws_consistency.py checks all four line up.
-const NB = 23
+const NB = 22
 
 // Library sources, prepended on demand (see libIter and friends).  These are
 // ordinary Lua: the parser sees them exactly like the user's program.  They are
@@ -359,7 +354,6 @@ var oS4: string = ""
 var oS5: string = ""
 var outArrV: float[]
 var outVecV: vector = Vec(0.0, 0.0, 0.0)
-var outColV: color = Color(0.0, 0.0, 0.0, 0.0)
 var resultV: string = ""
 var errV: string = ""
 var progOkV: bool = false
@@ -693,10 +687,6 @@ var latchS1: string = ""
 var latchVX: float = 0.0
 var latchVY: float = 0.0
 var latchVZ: float = 0.0
-var latchCR: float = 0.0
-var latchCG: float = 0.0
-var latchCB: float = 0.0
-var latchCA: float = 0.0
 var latchI0: int = 0
 var forDepth: int = 0
 var forCtrl: int[]
@@ -739,12 +729,14 @@ var cloDst: int = 0
 var cloActive: bool = false
 
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
-// 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
-// (inputs filled from the latches), 19..39 builtins (print, type, tostring,
-// outvec, outcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall, _pat, _gmatch, _gmnext) as
-// functions with ids 0..NB-1, the two int globals, and the four library tables.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 5, 5, 5, 5]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
+// 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z (the inputs
+// filled from the latches), 15..35 builtins (print, type, tostring, outvec,
+// clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error,
+// assert, pcall, xpcall, _pat, _gmatch, _gmnext) as functions with their own ids,
+// then inInt0, outInt0, and the four library tables.  There is no colour port:
+// incol r/g/b/a used to hold 15..18 and the ids below them moved when it went.
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 5, 5, 5, 5]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
 
 // pcall, which PUC has in C and is a gate here for the same reason.
 //
@@ -1283,7 +1275,7 @@ var presCallPos: int = -1
 //     register held from an earlier call, and died on "bad argument (number
 //     expected)".  Choose the tag and the value first, then hand numArg those:
 //     `numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3)
-//     else 0.0)`, which is what outvec and outcol already did.
+//     else 0.0)`, which is what outvec already did.
 //   - a write at the top of a mod, followed by an else-if chain that deep with
 //     mod calls in it, is silently dropped: fmtPos = fmtPos + 1 at the top of
 //     fmtConv never happened, so the conversion was re-read as a literal.  The
@@ -1948,10 +1940,6 @@ mod vmReset() {  tmap.clear()
   gnum[slotInLatch + 6] = latchVX
   gnum[slotInLatch + 7] = latchVY
   gnum[slotInLatch + 8] = latchVZ
-  gnum[slotInLatch + 9] = latchCR
-  gnum[slotInLatch + 10] = latchCG
-  gnum[slotInLatch + 11] = latchCB
-  gnum[slotInLatch + 12] = latchCA
   gnum[slotInInt0] = latchI0 + 0.0
   vmPc = 0
   vmBase = 0
@@ -1990,7 +1978,6 @@ mod vmReset() {  tmap.clear()
   outArrV.clear()
   outArrV.resize(64, 0.0)
   outVecV = Vec(0.0, 0.0, 0.0)
-  outColV = Color(0.0, 0.0, 0.0, 0.0)
   resultV = ""
   errV = ""
   fFunc.push(mainFid)
@@ -3249,15 +3236,10 @@ mod parseInit() {
   gDeclare("invecx")
   gDeclare("invecy")
   gDeclare("invecz")
-  gDeclare("incolr")
-  gDeclare("incolg")
-  gDeclare("incolb")
-  gDeclare("incola")
   gDeclare("print")
   gDeclare("type")
   gDeclare("tostring")
   gDeclare("outvec")
-  gDeclare("outcol")
   gDeclare("clock")
   gDeclare("inarr")
   gDeclare("outarr")
@@ -8031,14 +8013,9 @@ mod gateLow(fid: int, a: int, nargs: int) {
     outVecV = Vec(x, y, z)
     vSet(a, 0, 0.0, "")
     retCountV = 0
-  } else if fid == 4 {
-    let r = numArg(if 0 < nargs then vTag(a + 1) else 0, if 0 < nargs then vNum(a + 1) else 0.0)
-    let g = numArg(if 1 < nargs then vTag(a + 2) else 0, if 1 < nargs then vNum(a + 2) else 0.0)
-    let bl = numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3) else 0.0)
-    let al = numArg(if 3 < nargs then vTag(a + 4) else 0, if 3 < nargs then vNum(a + 4) else 0.0)
-    outColV = Color(r, g, bl, al)
-    vSet(a, 0, 0.0, "")
-    retCountV = 0
+  // fid 4 was outcol(r, g, b, a); the colour port is gone and the id stays
+  // RESERVED, because renumbering the builtins above it would move every
+  // one of them and a dead slot costs nothing.
   } else if fid == 5 {
     if nargs != 0 {
       vmFail("wrong number of arguments to clock")
@@ -10031,15 +10008,6 @@ on Change(inVec) {
   }
 }
 
-on Change(inCol) {
-  latchCR = inCol.r
-  latchCG = inCol.g
-  latchCB = inCol.b
-  latchCA = inCol.a
-  if run && progOkV && !jobBusy {
-    vmReset()
-  }
-}
 
 on Clock(interval = STEP_INTERVAL) {
   if run && progOkV && !vmHalted && !jobBusy {

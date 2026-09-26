@@ -44,7 +44,7 @@ DEMO_LOG = ("arith\t2.25\t7.0\t-4\t-4\t-0.5\n"
              "sugared\n"
              "grade\tB\n"
              "flow\t55\t2\t1\tsecond\n"
-             "inputs\t6.0\t1.875\t10.0\n"
+             "inputs\t6.0\t10.0\t20.0\n"
              "inputs2\tnil\tnil\t10.0\t20.0\t30.0\n"
              "outs\t7\t79\n"
              "outs2\tfoo-bar!|foo\t21.75/table\n"
@@ -257,22 +257,17 @@ TESTS = [
     ("inputs-sum", "print(inNum0+inNum1+inNum2+inNum3)",
      [1, 2, 3, 4], "run"),
     ("inputs-each", "print(inNum0, inNum1, inNum2, inNum3, inStr0, inStr1, invecx, invecy, "
-     "invecz, incolr, incolg, incolb, incola)",
+     "invecz)",
      [8, 7, 6, 5], "run",
-     {"sinputs": {0: "a", 1: "b"}, "vec": (1, 2, 3),
-      "col": (0.5, 0.25, 0.125, 1)}),
+     {"sinputs": {0: "a", 1: "b"}, "vec": (1, 2, 3)}),
     ("inputs-expr", "print(inNum0*2, inStr0 .. '!', inNum3%inNum1)",
      [10, 3, 0, 7], "run", {"sinputs": {0: "hey"}}),
     ("inputs-vec", "print(invecx+invecy+invecz)", None, "run",
      {"vec": (1.5, 2.5, 3.0)}),
-    ("inputs-col", "print(incolr, incolg, incolb, incola)", None, "run",
-     {"col": (1, 0.5, 0.25, 1)}),
     ("io-outvec", "outvec(1, 2, 3)", None, "modelio",
      {"expect": {"outVec": [1.0, 2.0, 3.0]}}),
     ("io-outvec-partial", "outvec(inNum0)", [9], "modelio",
      {"expect": {"outVec": [9.0, 0.0, 0.0]}}),
-    ("io-outcol", "outcol(1, 0.5, 0.25, 1)", None, "modelio",
-     {"expect": {"outCol": [1.0, 0.5, 0.25, 1.0]}}),
     ("io-strings", "print(inStr0 .. inStr1)", None, "run",
      {"sinputs": {0: "foo", 1: "bar"}}),
     # clock() is the server uptime, which the sim models as tick * 0.01 -- it
@@ -1433,15 +1428,14 @@ TESTS = [
      {"expect": {"outArr": [12.0] + [0.0] * 63, "log": ""}}),
     ("func-main-first", "print('start') function h(x) return x + 1 end "
      "print(h(41))", None, "run"),
-    ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
-     {"expect": {"log": DEMO_LOG,
-                 "outGlobals": [7.0, 79.0, 61.875, 11.0,
-                                "foo-bar!|foo", "21.75/table: 0x4", 0],
+     ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
+      {"expect": {"log": DEMO_LOG,
+                  "outGlobals": [7.0, 79.0, 68.0, 11.0,
+                                 "foo-bar!|foo", "21.75/table: 0x4", 0],
                   "outArr": [55.0, 6.0, 3.0] + [0.0] * 58 + [-1.0, -2.0, -3.0],
+                  "outVec": [2.0, 4.0, 6.0],
+                  "result": "done-55"}}),
 
-                 "outVec": [2.0, 4.0, 6.0],
-                 "outCol": [0.5, 0.25, 0.125, 1.0],
-                 "result": "done-55"}}),
     # regression: the original progOk bug (hello world must compile)
     ("hello", "print(\"Hello, World!\")", None, "run"),
     ("fmt-int", "print(7)", None, "run"),

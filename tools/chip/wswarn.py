@@ -172,7 +172,7 @@ def empty_result_slots(head, body, mod_name):
     A call's results land in the register the function was in, and that is the
     register the compiler puts the local in, so an empty result list has to
     leave a nil there -- PUC's `local c = select(2, ...)` is nil.  print, outvec,
-    outcol, outarr and _s's byte-out-of-range all write it; select and unpack
+    outarr and _s's byte-out-of-range all write it; select and unpack
     did not, and `type(c)` read "function".
 
     The unit is the ARM, not the mod: print nils its own register and select did

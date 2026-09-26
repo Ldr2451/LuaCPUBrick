@@ -32,8 +32,8 @@ TABLE = {"lbaselib.c": "", "lstrlib.c": "string.", "ltablib.c": "table.",
 # the chip's own host ports: the game drives the chip through these, so they are
 # not "PUC does not have it" candidates -- they are the point of the chip
 HOST_IO = ("clock", "inNum0", "inNum1", "inNum2", "inNum3", "inStr0", "inStr1",
-           "invecx", "invecy", "invecz", "incolr", "incolg", "incolb",
-           "incola", "inarr", "outarr", "outvec", "outcol", "inInt0",
+           "invecx", "invecy", "invecz",
+           "inarr", "outarr", "outvec", "inInt0",
            "outNum0", "outNum1", "outNum2", "outNum3", "outStr0", "outStr1",
            "outInt0", "last")
 

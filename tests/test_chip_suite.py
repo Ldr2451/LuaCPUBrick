@@ -451,8 +451,6 @@ def sim_inputs(src, kw):
         si["inStr%d" % int(k)] = v
     if kw.get("vec"):
         si["inVec"] = tuple(kw["vec"])
-    if kw.get("col"):
-        si["inCol"] = tuple(kw["col"])
     if kw.get("inarr") is not None:
         si["inArr"] = [float(v) for v in kw["inarr"]]
     if kw.get("inint") is not None:
