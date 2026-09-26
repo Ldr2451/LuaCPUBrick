@@ -9164,6 +9164,32 @@ mod vmBusy() -> bool {
       || cmpActive
 }
 
+// FORLOOP, ONE body for both dispatch paths.  vmBurst runs four fast steps and
+// then one full step, so any op can be the one vmStep dispatches and vmStep must
+// handle FORLOOP too - the duplication is structural.  What is not acceptable is
+// two hand-kept copies of the same semantics, which drift, and the drift would
+// be a loop that miscounts under one dispatch path only.  A mod inlines at its
+// call sites, so this is the same node count as the copy and one source instead.
+mod vmForLoop(a: int, c: int) {
+  let ctrl_reg = forCtrl[forDepth - 1]
+  let ctrl = vNum(ctrl_reg)
+  let stp = vNum(c)
+  let newCtrl = ctrl + stp
+  let rem = forRem[forDepth - 1] - 1.0
+  if vTag(ctrl_reg) == 6 {
+    vSetInt(ctrl_reg, newCtrl)
+  } else {
+    vSetNum(ctrl_reg, newCtrl)
+  }
+  forRem[forDepth - 1] = rem
+  if 0.0 < rem {
+    vmPc = a
+  } else {
+    forDepth = forDepth - 1
+    vmPc = vmPc + 2
+  }
+}
+
 mod vmStep() {
   if cloActive {
     // A closure being filled owns the WHOLE tick: its cells go in one per tick
@@ -9866,25 +9892,8 @@ mod vmStep() {
         advanced = false
       }
     } else if op == 33 {
-      let ctrl_reg = forCtrl[forDepth - 1]
-      let ctrl = vNum(ctrl_reg)
-      let stp = vNum(c)
-      let newCtrl = ctrl + stp
-      let rem = forRem[forDepth - 1] - 1.0
-      if vTag(ctrl_reg) == 6 {
-        vSetInt(ctrl_reg, newCtrl)
-      } else {
-        vSetNum(ctrl_reg, newCtrl)
-      }
-      forRem[forDepth - 1] = rem
-      if 0.0 < rem {
-        vmPc = a
-        advanced = true
-      } else {
-        forDepth = forDepth - 1
-        vmPc = vmPc + 2
-        advanced = true
-      }
+      vmForLoop(a, c)
+      advanced = true
     } else if op == 34 {
       let lt = vTag(b)
       let rt = vTag(c)
@@ -10195,10 +10204,17 @@ mod vmStepFast() {
       vmPc = a
       advanced = true
     }
+  } else if op == 33 {
+    // Here for POSITION, not for what it does: the body is fifteen-odd gates with
+    // no error path, but op 33 sits near the end of vmStep's 33-arm chain, so the
+    // slow path spent thirty-odd failed comparisons reaching it and this arm is the
+    // sixth.  On this chip a hot op costs mostly where it SITS in the chain.
+    vmForLoop(a, c)
+    advanced = true
   } else if op == 50 {
     forDepth = forDepth - 1
   }
-  if (op <= 15 || (17 <= op && op <= 22) || op == 50) && !advanced && !vmHalted {
+  if (op <= 15 || (17 <= op && op <= 22) || op == 33 || op == 50) && !advanced && !vmHalted {
     vmPc = vmPc + 1
     if vmPc >= bop.length() {
       vmHalted = true
