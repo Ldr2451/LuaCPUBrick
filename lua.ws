@@ -3090,12 +3090,13 @@ mod parseInit() {
   lerrMsg = ""
   lerrLine = 1
   lline = 1
-  // The lexer's own state machine starts at the beginning too.  A parse that
-  // failed MID-TOKEN left lstage where it had reached, and the next parse
-  // resumed from there with lpos back at 0, so the half-read token completed
-  // against the wrong characters.  No case fails without this line - the
-  // recovery cases pass either way and the artifact is byte-identical - so it
-  // is correctness by inspection, not by proof; it costs nothing.
+  // The lexer's state machine starts at the beginning too.  Kept for the SIZE:
+  // with the reset the chip is 619,507 bytes, without it 620,027 - the folder can
+  // fold 520 bytes of the first lex tick once lstage is provably 0.  It is NOT
+  // there for correctness: six rejections that die mid-token (in-string at stage
+  // 4, mid-hex at stage 11, mid-exponent, long-string, after-dot, mid-name) all
+  // recover with or without it, so the hole it looks like it closes is not one
+  // the chip has.
   lstage = 0
   lastPatchTarget = -1
   lastCallPos = -1

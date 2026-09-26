@@ -627,6 +627,39 @@ def run_trace(sim, src, kw, ticks):
             "progOk": bool(r["outGlobals"].get("progOk", False))}
 
 
+def _assert_graph_is_this_chip(sim):
+    """A worker must be running the graph THIS lua.ws compiles to.
+
+    Four cases read outNum4 as 0.0 for a whole session while a direct probe of the
+    same program read -3.5, and the graph the suite was running still had outCol
+    and outInt0 - ports deleted days earlier.  A stale graph is a silent wrong
+    answer that looks exactly like a chip bug, so the port set a worker actually
+    has is compared with the source's, once per process, and the mismatch is said
+    out loud instead of being discovered four cases later.
+    """
+    global _GRAPH_CHECKED
+    if _GRAPH_CHECKED:
+        return
+    _GRAPH_CHECKED = True
+    try:
+        src = open(WS_PATH, encoding="utf-8").read()
+        want = set(re.findall(r"@right\s+out\s+(\w+)\s*:", src))
+        got = set()
+        for nid, nd in sim.nodes.items():
+            if "Internal_MicrochipOutput" in nd.cls:
+                lab = nd.props.get("PortLabel", ("raw", ""))
+                lab = lab[0] if isinstance(lab, tuple) else lab
+                if isinstance(lab, str) and lab:
+                    got.add(lab)
+        if got != want:
+            print("WARNING: this worker is running a DIFFERENT chip: graph has %s,"
+                  " source has %s" % (sorted(got - want), sorted(want - got)),
+                  file=sys.stderr, flush=True)
+    except Exception as e:  # never silent
+        print("WARNING: could not check the graph against lua.ws: %r" % (e,),
+              file=sys.stderr, flush=True)
+
+
 def run_in_sim(sim, p, sim2=None):
     """Run one case against a loaded Sim and return the result the comparison reads.
 

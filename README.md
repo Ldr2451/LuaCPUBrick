@@ -42,8 +42,10 @@ A WireScript chip is wires, so everything a program can see or change is a port.
            inNum3 --|           |-- outNum4
            inStr0 --|___________|-- outStr0
            inStr1 --|           |-- outStr1
-            inArr --|           |-- outArr
-                                |-- err
+             inArr --|           |-- outArr
+                                 |-- result
+                                 |-- err
+
                                 |-- progOk
                                 |-- busy
 ```

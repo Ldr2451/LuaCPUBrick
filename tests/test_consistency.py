@@ -300,6 +300,39 @@ _diag = subprocess.run(
 check("readme-port-diagram", _diag.returncode == 0,
       (_diag.stdout + _diag.stderr).strip()[:160])
 
+# The graph the tests RUN must be the graph this lua.ws compiles to.  Four cases
+# read outNum4 as 0.0 for a whole session while a direct probe of the same program
+# read -3.5, and the reason was that the suite's graph still had outCol and
+# outInt0 - ports deleted days earlier - and no outNum4.  Nothing said so: a
+# stale graph is a silent wrong answer, and it looks exactly like a chip bug.
+# So the port sets are compared, here, by compiling the source and asking the
+# resulting Sim what ports it has.
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "irrun"))
+    sys.path.insert(0, HERE)
+    from irsims import Sim, Wire, _extract  # noqa: E402
+    from irdump import dump_source  # noqa: E402
+    _ws_path = os.path.join(os.path.dirname(HERE), "lua.ws")
+    _src = open(_ws_path, encoding="utf-8").read()
+    _want_in = set(re.findall(r"@left\s+in\s+(\w+)\s*:", _src))
+    _want_out = set(re.findall(r"@right\s+out\s+(\w+)\s*:", _src))
+    _nodes, _wires, _ = dump_source(_ws_path)
+    _sim = Sim(_nodes, [Wire(*w) for w in _wires])
+    _got_in = set(_sim.port_label.values())
+    _got_out = {_extract(nd.props.get("PortLabel", ("raw", "")))
+                for _nid, nd in _sim.nodes.items()
+                if "Internal_MicrochipOutput" in nd.cls}
+    _got_out = {g for g in _got_out if isinstance(g, str) and g}
+    check("graph-inputs-match-source", _got_in == _want_in,
+          "source %s vs graph %s" % (sorted(_want_in - _got_in),
+                                     sorted(_got_in - _want_in)))
+    check("graph-outputs-match-source", _got_out == _want_out,
+          "source %s vs graph %s; THE TESTS ARE RUNNING A DIFFERENT CHIP"
+          % (sorted(_want_out - _got_out), sorted(_got_out - _want_out)))
+except Exception as _e:
+    check("graph-ports-match-source", False,
+          "the check itself failed: %r" % (_e,))
+
 try:
     sys.path.insert(0, HERE)
     import cases as _cases
