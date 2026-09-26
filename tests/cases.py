@@ -1312,6 +1312,14 @@ TESTS = [
     # A name the compiler had to invent is a typo far more often than a global
     # the program meant to define, and PUC cannot say so because PUC has no ports
     # to mistype.  It stays ADVICE: the read is still nil, exactly as PUC.
+    # A port-list line used to be appended to every finding, as a catch-all for a
+    # typo the chip could not name.  It is gone: the general rule names every
+    # unresolved name exactly, so one specific finding means ONE line.  A second
+    # vague line per finding answers nothing, and it was a hand-written mirror of
+    # the port set besides.
+    ("unknown-name-single-line", "print(in1)", None, "state",
+     {"expect": {"log": "nil\n", "progDebug": "'in1' is not a port or a builtin",
+                 "noProgDebug": "the ports are"}}),
     ("unknown-name-typo", "print(in0)", None, "state",
      {"expect": {"log": "nil\n", "progDebug": "'in0'"}}),
     # ... and the other direction, which is the one that would make the warning

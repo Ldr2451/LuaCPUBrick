@@ -10317,10 +10317,10 @@ on goParse {
 // library pieces prepended and those are the chip's text, not the program's.
 //
 // A finding is advice, never a refusal: PUC also lets an undefined global read
-// as nil, so the program still runs and still prints what PUC would print.  The
-// port list at the end is what catches a typo, which is the common case -
-// `in0` for `inNum0` - and it does so without the chip knowing every typo
-// anyone can make.
+// as nil, so the program still runs and still prints what PUC would print.  A
+// typo is the common case - `in0` for `inNum0` - and it is caught by the general
+// rule in gRef rather than by anything listed here, because that names every
+// unresolved name instead of the ones somebody thought to write down.
 mod staticAdvice(p: string) -> string {
   var h = nameWarn
   if srcUses(p, "setmetatable") || srcUsesField(p, "setmetatable")
@@ -10350,9 +10350,12 @@ mod staticAdvice(p: string) -> string {
     || srcUsesField(p, "incol") || srcUsesField(p, "outcol") {
     h = h .. "warn: there is no colour port\n"
   }
-  if h != "" {
-    h = h .. "warn: the ports are program, run, inNum0..inNum3, inStr0, inStr1, inArr going in, and log, outNum0..outNum4, outStr0, outStr1, outArr, result, err, progDebug, busy going out\n"
-  }
+  // No listing of the ports here on purpose.  It was a catch-all for a typo the
+  // chip could not name, back when the only findings were a fixed list of known
+  // absent names; the general rule now names every unresolved name exactly, so
+  // `in1` and `prrint` each get one precise line.  A second vague line per
+  // finding answers nothing, and a port list written out by hand is a mirror free
+  // to drift from the ports the chip actually has.
   return h
 }
 

@@ -1,6 +1,7 @@
 # Lua 5.5 on a Brickadia chip
 
-`lua.ws` is a Lua 5.5 interpreter built as a Brickadia WireScript chip: a lexer, a
+`lua.ws` is a Lua 5.5 interpreter built as a
+[Brickadia WireScript](https://github.com/Meshiest/wirescript) chip: a lexer, a
 compiler, a register VM and the standard library, all in one net. `irrun/`
 simulates it a tick at a time, and `tests/` compares the chip against the real
 `lua5.5` binary, which is the only authority on what the chip should do.
