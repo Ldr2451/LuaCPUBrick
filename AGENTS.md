@@ -247,9 +247,16 @@
   time. **In-game a tick is 16.7ms of real time whatever the chip does**, so
   there only fewer ticks reaches the user. A change can halve one and double the
   other; say which one you moved.
+- **The scan floor is 2 chars/tick, and parsing costs 4× that.** Measured at a
+  fixed 1,600 characters: whitespace 811 ticks and a comment 815 — identical, so
+  the floor is the raw scan, `0.507` ticks/char, and 4 chars/tick was stale
+  (`lexChunk` was unrolled 4→2 without the figure following). Real code at the
+  same length cost 4,015, so **parsing adds ~2.0 ticks/char, about 80% of
+  compiling anything real**. So a boot-cost argument is a *parse* argument, and
+  the lexer is the smaller half — inverting the obvious guess.
 - **A library piece is charged by the character AND by every function it
   defines.** Source is spliced in front of the program and the lexer runs at
-  4 chars/tick, so `C/4` ticks is the lexing; on top of that each `function` in
+  2 chars/tick, so `C/2` ticks is the lexing; on top of that each `function` in
   a piece is a closure the chip has to create and fill, measured at about **280
   ticks each** (tonumber 760 chars/2 functions = 583 ticks = 190 + 2×197;
   math.random before this was inlined 1,140/3 = 1,130 = 285 + 3×282; string.gsub
