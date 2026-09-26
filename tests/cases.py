@@ -1269,16 +1269,33 @@ TESTS = [
     # such a change restarts the program, so this shape can restart forever and
     # never print anything -- which is what an input wired to something live
     # looks like in game, and it is the shape a case could not ask about until
-    # the sim re-read its ports.
-    ("life-input-jitter-restarts", "print('hi')", None, "lifecycle",
+    # the sim re-read its ports.  The expectation is the CONTRACT, not a wish:
+    # an unstable input means an unstable program.
+    ("life-input-jitter-while-running", "print('hi')", None, "lifecycle",
      {"phases": [{"ticks": 1200, "run": False},
                  {"ticks": 900, "run": True, "jitter": "inNum0"}],
-      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
-    # the same jitter while run is low must change nothing: the program is not
-    # running, so there is nothing to restart
+      "expect": {"progress": False, "finished": False, "log": ""}}),
+    # the same jitter while run is low must not break the next start: the program
+    # is not running, so there is nothing to restart, and the first high after it
+    # has to work like any other
     ("life-input-jitter-while-stopped", "print('hi')", None, "lifecycle",
      {"phases": [{"ticks": 1800, "run": False, "jitter": "inNum0"},
                  {"ticks": 600, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # The host reads the chip again every time it syncs, and the chip's handler
+    # for that asks for a PARSE.  So a second parse can start while the first is
+    # still running, and the two share the parser's arrays.  grid_every=1 is the
+    # worst case a sync-every-tick host would produce; 8 is a lazier one.
+    ("life-grid-read-every-tick", "print('hi')", None, "lifecycle",
+     {"phases": [{"ticks": 2400, "run": True, "grid_every": 1}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    ("life-grid-read-slow", "print('hi')", None, "lifecycle",
+     {"phases": [{"ticks": 2400, "run": True, "grid_every": 8}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # and a read storm while the program is stopped, then one run edge
+    ("life-grid-read-then-run", "print('hi')", None, "lifecycle",
+     {"phases": [{"ticks": 1200, "run": False, "grid_every": 1},
+                 {"ticks": 1200, "run": True, "grid_every": 1}],
       "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
     # run goes high BEFORE the program arrives, so the edge lands while there is
     # nothing to run: the paste is the start, and the log must still appear

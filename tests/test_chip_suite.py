@@ -494,6 +494,12 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None):
     edges = []
     live_now = [None]
     program_at = []
+    # grid_every: re-fire ReadBrickGrid every N ticks, which is what a host does
+    # when it syncs the chip and is the only thing that reaches the chip's
+    # `on ReadBrickGrid` handler after the first tick.  That handler asks for a
+    # parse, so this is the shape that can start a second parse while the first
+    # is still running.
+    grid_every = [0]
 
     def set_live(name):
         live_now[0] = [0.0, name] if name else None
@@ -526,6 +532,9 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None):
             at += int(ph["ticks"])
         sim_.inputs = dict(si, run=bool(phases[0]["run"]))
         set_live(phases[0].get("jitter"))
+    for ph in (phases or []):
+        if ph.get("grid_every"):
+            grid_every[0] = int(ph["grid_every"])
     pending = list(edges)
 
     def on_tick(sim_now, tick):
@@ -534,6 +543,11 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None):
             sim_now.inputs = dict(si, run=level)
             if text is not None:
                 sim_now.inputs = dict(sim_now.inputs, program=text)
+            # jitter belongs to the PHASE it is declared on: a case that jitters
+            # while stopped and then raises run is asking whether the stopped-time
+            # activity broke the next start, and it cannot also be asking the
+            # running-time question in the same run
+            set_live(jitter)
         # `jitter` changes one input EVERY tick, which is what an input wired to
         # something live does in game.  The chip restarts the program on a scalar
         # input change while run is high, so this is the shape that can restart
@@ -543,6 +557,9 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None):
             live[0] += 1.0
             sim_now.inputs = dict(sim_now.inputs)
             sim_now.inputs[live[1]] = live[0]
+        if grid_every[0] and tick % grid_every[0] == 0:
+            for nid in sim_now.grid_ids:
+                sim_now.exec_queue.add((nid, "RER_Output"))
         if tick in wanted:
             samples.append(lifecycle_sample(sim_now, tick))
 

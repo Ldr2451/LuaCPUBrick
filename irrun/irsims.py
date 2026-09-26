@@ -269,6 +269,15 @@ class Sim:
                 self.port_nodes.append(nid)
                 self.port_label[nid] = label if isinstance(label, str) else str(label)
         self.port_seen: dict[int, object] = {}
+        # The grid reads the chip again whenever it syncs, so Internal_ReadBrickGrid
+        # is an event the HOST repeats, not one the chip sees once.  It was seeded
+        # with the other inputs and then never fired again, which hid the one thing
+        # it does: it asks for a parse.  A case asks for the repeats with
+        # grid_every, so the default single read stays the default.
+        self.grid_ids: list[int] = []
+        for nid, nd in self.nodes.items():
+            if "Internal_ReadBrickGrid" in nd.cls:
+                self.grid_ids.append(nid)
         for w in wires:
             dn = self.nodes.get(w.src_id)
             if dn and dn.kind == "Input":
@@ -423,8 +432,17 @@ class Sim:
             # The clock keeps ticking after a program finishes, which used to
             # burn the rest of the tick budget (1.9s for a one-line program).
             # vmHalted is the chip's own "nothing left to do" flag.
+            #
+            # "Nothing left to do" must EXCLUDE being read.  A host syncs the
+            # chip whenever it likes, and a grid read (or an input changing)
+            # leaves work in the queue on every single tick, so testing the raw
+            # queue meant a chip under observation never counted as finished -
+            # the run burned its whole budget and every case that watched a
+            # finished program fail.  Reading a chip is not pending work.
             if self._halted_id is not None and self.vars.get(self._halted_id):
-                if not self.exec_queue and not self._deferred:
+                observed = self.grid_ids + self.port_nodes
+                pending = {q for q in self.exec_queue if q[0] not in observed}
+                if not pending and not self._deferred:
                     self.finished = True
                     break
             # A program that has an error is finished, whatever the clock is
