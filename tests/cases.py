@@ -1437,7 +1437,8 @@ TESTS = [
      {"expect": {"log": DEMO_LOG,
                  "outGlobals": [7.0, 79.0, 61.875, 11.0,
                                 "foo-bar!|foo", "21.75/table: 0x4", 0],
-                 "outArr": [55.0, 6.0] + [0.0] * 61 + [-1.0],
+                  "outArr": [55.0, 6.0, 3.0] + [0.0] * 58 + [-1.0, -2.0, -3.0],
+
                  "outVec": [2.0, 4.0, 6.0],
                  "outCol": [0.5, 0.25, 0.125, 1.0],
                  "result": "done-55"}}),
@@ -1548,6 +1549,47 @@ TESTS = [
      {"expect": {"outArr": [0.0] * 64}}),
     ("arr-missing", "print(inarr())", None, "modelio",
      {"expect": {"log": "nil\n"}}),
+    # The bounded forms: outarr(i, v, ...) writes one slot per extra value and
+    # inarr(i, k) returns k of them, so a run of adjacent slots costs one call.
+    # The port was never the cost -- outArr is @right out, so the whole array
+    # reaches it every tick -- so this is about the CALL, measured at 5 ticks an
+    # element for a write.
+    ("arr-multi-write", "outarr(1, 5, 6, 7) outarr(4, 8, 9)", None, "modelio",
+     {"expect": {"outArr": [5.0, 6.0, 7.0, 8.0, 9.0] + [0.0] * 59,
+                 "log": ""}}),
+    ("arr-multi-mixed", "outarr(1, 1, nil, true)", None, "modelio",
+     {"expect": {"outArr": [1.0, 0.0, 1.0] + [0.0] * 61, "log": ""}}),
+    # a call with more values than the width writes the first 8, the way the
+    # two-value form ignored whatever came after the second
+    ("arr-multi-wide", "outarr(1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)", None,
+     "modelio", {"expect": {"outArr": [float(i) for i in range(1, 9)] + [0.0] * 56,
+                            "log": ""}}),
+    ("arr-multi-oob", "outarr(62, 1, 2, 3, 4)", None, "runtimerr",
+     {"expect": {"err": "array index out of range"}}),
+    # the last run of four that fits: slots 61..64.  This is the case the
+    # off-by-one in the value count broke, because it asked for one slot too many
+    ("arr-multi-last4", "outarr(61, 1, 2, 3, 4) print('ok')", None, "modelio",
+     {"expect": {"outArr": [0.0] * 60 + [1.0, 2.0, 3.0, 4.0], "log": "ok\n"}}),
+    ("arr-multi-badval", "outarr(1, 1, 1, {})", None, "runtimerr",
+     {"expect": {"err": "array element must be a number"}}),
+    ("arr-multi-read", "local a, b, c, d = inarr(4, 4) print(a, b, c, d)", None,
+     "modelio", {"inarr": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+                 "expect": {"log": "4.0\t5.0\t6.0\t7.0\n"}}),
+    # a slot past the end of the array reads nil, the same rule inarr(65) has
+    ("arr-multi-read-edge", "print(inarr(62, 4))", None, "modelio",
+     {"inarr": [float(i) for i in range(1, 65)],
+      "expect": {"log": "62.0\t63.0\t64.0\tnil\n"}}),
+    # the count is a count, not an index: 0, 9 and 1.5 all raise.  Each case sets
+    # inarr, because the INDEX is checked first: with an empty array inarr(1, 9)
+    # answers nil and never reaches the count.
+    ("arr-multi-count0", "print(inarr(1, 0))", None, "runtimerr",
+     {"inarr": [1.0], "expect": {"err": "count out of range"}}),
+    ("arr-multi-count9", "print(inarr(1, 9))", None, "runtimerr",
+     {"inarr": [1.0], "expect": {"err": "count out of range"}}),
+    ("arr-multi-countfrac", "print(inarr(1, 1.5))", None, "runtimerr",
+     {"inarr": [1.0], "expect": {"err": "count out of range"}}),
+    ("arr-multi-read1", "print(inarr(1, 1))", None, "modelio",
+     {"inarr": [3.5], "expect": {"log": "3.5\n"}}),
     # writable output globals
     ("out-nums", "outNum0 = 1 outNum1 = 2.5 outNum2 = true outNum3 = nil", None,
      "modelio",

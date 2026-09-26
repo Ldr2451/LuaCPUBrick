@@ -18,7 +18,10 @@
 ///   in  inStr0..inStr1: string  sticky string inputs, readable as globals inStr0..inStr1
 ///   in  inVec: vector     Lua reads invecx / invecy / invecz
 ///   in  inCol: color      Lua reads incolr / incolg / incolb / incola
-///   in  inArr: float[]    Lua reads it 1-based via inarr(i); out-of-range reads nil
+///   in  inArr: float[]    Lua reads it 1-based via inarr(i); out-of-range reads nil.
+///                         inarr(i, k) reads k of them into k results (k is 1..8, and
+///                         a slot past the end reads nil), so a run of adjacent slots
+///                         costs one call instead of k
 ///   out log: string       print and io.write output: a print call is one line (args
 ///                         tab-separated plus a newline, capped at 64 chars), an
 ///                         io.write is its raw text with no tab and no newline; the
@@ -26,7 +29,10 @@
 ///   out outNum0..outNum3: float  writable numeric globals (nil writes 0.0;
 ///                         writing a string/table/function is a runtime error)
 ///   out outStr0..outStr1: string  writable globals, Lua-formatted (nil writes "")
-///   out outArr: float[] 64 slots, written 1-based via outarr(i, v) (nil writes 0.0)
+///   out outArr: float[] 64 slots, written 1-based via outarr(i, v) (nil writes 0.0).
+///                         outarr(i, v, ...) writes one slot per extra value, up to 8,
+///                         so a run of adjacent slots costs one call instead of k; a
+///                         call with more values than that writes the first 8
 ///   out outVec: vector    written by setvec(x, y, z)
 ///   out outCol: color     written by setcol(r, g, b, a)
 ///   out result: string    top-level return value, "" when none
@@ -3602,6 +3608,13 @@ mod pcallEnd(src: int, k: int, extra: int) {
   vmBase = rb
   vmPc = rpc
   retCountV = cnt
+}
+
+// outarr's value test, in one place because eight call sites have to agree: a
+// number (1), a float (6), nil (0) and a boolean (3) may be stored, and nil
+// stores 0.0.  Anything else is a table, a string or a function.
+mod arrNumOk(tag: int) -> bool {
+  return tag == 1 || tag == 6 || tag == 0 || tag == 3
 }
 
 mod vSetInt(a: int, v: float) {
@@ -8003,27 +8016,88 @@ mod gateLow(fid: int, a: int, nargs: int) {
       retCountV = 1
     }
   } else if fid == 6 {
+    // inarr(i) reads one slot; inarr(i, k) reads k of them into k results, so a
+    // run of adjacent slots costs one call instead of k.  k is capped at 8: the
+    // results go into consecutive registers and MAXVALS is 16, and a wider read
+    // wants a table, which is a different question (see AGENTS.md on inarr).
     let it = if 0 < nargs then vTag(a + 1) else 0
     let iv = if 0 < nargs then vNum(a + 1) else 0.0
-    if (it == 1 || it == 6) && iv == floor(iv) && iv >= 1.0 && iv <= inArr.length() {
-      vSetNum(a, inArr[toInt(iv) - 1])
-    } else {
+    let kv = if 1 < nargs then vNum(a + 2) else 1.0
+    if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > inArr.length() {
       vSet(a, 0, 0.0, "")
+      retCountV = 1
+    } else if kv != floor(kv) || kv < 1.0 || kv > 8.0 {
+      vmFail("bad argument #2 to 'inarr' (count out of range)")
+    } else {
+      // i and k are captured into locals BEFORE any result is written: the
+      // results land in the registers the arguments are in, so reading them after
+      // the first write would read the new value (see AGENTS.md).
+      let w = toInt(iv) - 1
+      let cnt = toInt(kv)
+      if 0 < cnt {
+        if w < inArr.length() { vSetNum(a, inArr[w]) } else { vSet(a, 0, 0.0, "") }
+      }
+      if 1 < cnt {
+        if w + 1 < inArr.length() { vSetNum(a + 1, inArr[w + 1]) } else { vSet(a + 1, 0, 0.0, "") }
+      }
+      if 2 < cnt {
+        if w + 2 < inArr.length() { vSetNum(a + 2, inArr[w + 2]) } else { vSet(a + 2, 0, 0.0, "") }
+      }
+      if 3 < cnt {
+        if w + 3 < inArr.length() { vSetNum(a + 3, inArr[w + 3]) } else { vSet(a + 3, 0, 0.0, "") }
+      }
+      if 4 < cnt {
+        if w + 4 < inArr.length() { vSetNum(a + 4, inArr[w + 4]) } else { vSet(a + 4, 0, 0.0, "") }
+      }
+      if 5 < cnt {
+        if w + 5 < inArr.length() { vSetNum(a + 5, inArr[w + 5]) } else { vSet(a + 5, 0, 0.0, "") }
+      }
+      if 6 < cnt {
+        if w + 6 < inArr.length() { vSetNum(a + 6, inArr[w + 6]) } else { vSet(a + 6, 0, 0.0, "") }
+      }
+      if 7 < cnt {
+        if w + 7 < inArr.length() { vSetNum(a + 7, inArr[w + 7]) } else { vSet(a + 7, 0, 0.0, "") }
+      }
+      retCountV = cnt
     }
-    retCountV = 1
   } else if fid == 7 {
+    // outarr(i, v, ...) writes i and the next slots, one per extra value, up to
+    // 8.  A call with more values writes the first 8, the same way the two-value
+    // form ignored whatever came after the second.  The port is @right out, so the
+    // whole array reaches it every tick however it was filled: what this saves is
+    // the CALL, and 8 values to a call is the cheap way to pay less of it.
     let it = if 0 < nargs then vTag(a + 1) else 0
     let iv = if 0 < nargs then vNum(a + 1) else 0.0
-    let vt = if 1 < nargs then vTag(a + 2) else 0
-    let vv = if 1 < nargs then vNum(a + 2) else 0.0
     if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > outArrV.length() {
       vmFail("array index out of range")
-    } else if vt == 1 || vt == 6 || vt == 0 || vt == 3 {
-      outArrV[toInt(iv) - 1] = if vt == 0 then 0.0 else vv
-      vSet(a, 0, 0.0, "")
-      retCountV = 0
     } else {
-      vmFail("array element must be a number")
+      let w = toInt(iv) - 1
+      // one value per extra argument, so the count is nargs - 1 and not nargs:
+      // counting the index made outarr(64, -1) ask for slot 65, which the demo
+      // caught because it writes the last slot
+      let cnt = if nargs < 9 then nargs - 1 else 8
+      if w + cnt > outArrV.length() {
+        vmFail("array index out of range")
+      } else {
+        if 1 < nargs && !arrNumOk(vTag(a + 2)) { vmFail("array element must be a number") }
+        if 1 < nargs { outArrV[w] = if vTag(a + 2) == 0 then 0.0 else vNum(a + 2) }
+        if 2 < nargs && !arrNumOk(vTag(a + 3)) { vmFail("array element must be a number") }
+        if 2 < nargs { outArrV[w + 1] = if vTag(a + 3) == 0 then 0.0 else vNum(a + 3) }
+        if 3 < nargs && !arrNumOk(vTag(a + 4)) { vmFail("array element must be a number") }
+        if 3 < nargs { outArrV[w + 2] = if vTag(a + 4) == 0 then 0.0 else vNum(a + 4) }
+        if 4 < nargs && !arrNumOk(vTag(a + 5)) { vmFail("array element must be a number") }
+        if 4 < nargs { outArrV[w + 3] = if vTag(a + 5) == 0 then 0.0 else vNum(a + 5) }
+        if 5 < nargs && !arrNumOk(vTag(a + 6)) { vmFail("array element must be a number") }
+        if 5 < nargs { outArrV[w + 4] = if vTag(a + 6) == 0 then 0.0 else vNum(a + 6) }
+        if 6 < nargs && !arrNumOk(vTag(a + 7)) { vmFail("array element must be a number") }
+        if 6 < nargs { outArrV[w + 5] = if vTag(a + 7) == 0 then 0.0 else vNum(a + 7) }
+        if 7 < nargs && !arrNumOk(vTag(a + 8)) { vmFail("array element must be a number") }
+        if 7 < nargs { outArrV[w + 6] = if vTag(a + 8) == 0 then 0.0 else vNum(a + 8) }
+        if 8 < nargs && !arrNumOk(vTag(a + 9)) { vmFail("array element must be a number") }
+        if 8 < nargs { outArrV[w + 7] = if vTag(a + 9) == 0 then 0.0 else vNum(a + 9) }
+        vSet(a, 0, 0.0, "")
+        retCountV = 0
+      }
     }
   } else if fid == 8 {
     // select('#', ...) counts the extra arguments; select(n, ...) returns

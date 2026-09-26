@@ -120,9 +120,11 @@ outNum2 = vlen * 10 + cren
 outNum3 = #t + #s
 outStr0 = s .. "|" .. t.name
 outStr1 = tostring(mixed) .. "/" .. tostring(t)
-outarr(1, sum)
-outarr(2, fact(3))
-outarr(64, -1)
+-- one call writes a run of adjacent slots (up to 8 values); inarr(i, k) reads
+-- them back the same way, but the reference has no inarr so the demo cannot
+-- print that one -- tests/cases.py's arr-multi-read is where it is checked
+outarr(1, sum, fact(3), #t)
+outarr(62, -1, -2, -3)
 setvec(invecx * 2, invecy * 2, invecz * 2)
 setcol(incolr, incolg, incolb, 1)
 print("outs", outNum0, outNum1)

@@ -348,17 +348,25 @@
   `outArr` is `@right out outArr: float[] = outArrV`, so the whole array reaches
   the port every tick however it was filled, and `inarr(i)` is a live
   `inArr[toInt(iv) - 1]` — one index and one tag write, with no per-element copy
-  to remove. Measured (dump compiled once): a 64-slot fill is 367 ticks against
-  205 for the same empty loop, so **about 5 ticks per element** and a whole
-  64-slot write is 6.1s in game at 60 ticks/s; `inarr` over 64 costs 672, and
-  building a 64-entry table costs 193. A whole-array setter would have to walk a
-  Lua table in a micro-step machine, which is 1 tick per element at best: 64
-  slots go 367 → ~270, a **26% cut for a new state machine**, where a bounded
-  `outarr(i, v1..vk)` writing k consecutive slots in one call leaves the loop's
-  205 ticks and cuts the call overhead k-fold (~220 ticks, a 40% cut) for
-  100-150 nodes in one arm and no new state. A whole-array `inarr` read is a
-  **loss** for any program that reads fewer than 64, since it pays a table build
-  (193) to save ~2 ticks an element the caller's own loop was going to spend.
+  to remove. So the cost is the CALL: a 64-slot fill is 367 ticks against 205 for
+  the same empty loop, **about 5 ticks per element**, and a whole 64-slot write
+  is 6.1s in game at 60 ticks/s. `outarr(i, v...)` therefore writes one slot per
+  extra value (up to 8) and `inarr(i, k)` returns k of them, and **measured on a
+  64-slot fill that is 367 → 257 ticks, a 30% cut, for 7,272 bytes of chip and no
+  new state** — 4.3s in game instead of 6.1s. The read side is much weaker: 544
+  → 521, a 4% cut, because a loop that consumes each value spends its ticks on
+  the `or` and the add, not on the call. A whole-array setter instead of a wider
+  call would have to walk a Lua table in a micro-step machine at 1 tick per
+  element: 367 → ~270, a *smaller* cut than the wide call for a new state
+  machine, so do not build it. A whole-array `inarr` read is a **loss** for any
+  program that reads fewer than 64, since it pays a table build (193 ticks) to
+  save ~2 ticks an element the caller's own loop was going to spend.
+- **A value count is not an index, and the index is checked first.** The wide
+  `outarr`'s range check counts the values, so it is `nargs - 1`: counting the
+  index made `outarr(64, -1)` ask for slot 65 and raise, which the demo caught
+  because it writes the last slot. And `inarr(1, 9)` with an *empty* array
+  answers nil and never reaches the count guard, so a case for the count has to
+  set `inarr` — two mistakes that each looked like a chip bug and were not.
 - **A rarely-taken path does not belong in `vmStep`** — it fires every tick,
   and the old burst inlined it four times. A closure cell-fill there cost every
   program 20% of its per-tick time; moved to `vmBurst` it cost 2,133 nodes
