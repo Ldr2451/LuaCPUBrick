@@ -9633,7 +9633,12 @@ mod vmStep() {
           vSet(a, 0, 0.0, "")
         }
       } else if vTag(b) != 5 {
-        vmFail("attempt to index a non-table value")
+        // PUC says WHICH kind.  Indexing nil is the common case -- a field off a
+        // nil return, a typo'd global, `coroutine.create` on a build with no
+        // coroutines -- and "non-table" sends the reader hunting for a number or
+        // a string when the value is nil.
+        vmFail(if vTag(b) == 0 then "attempt to index a nil value"
+          else "attempt to index a " .. typeName(vTag(b)) .. " value")
       } else if kt == 0 {
         vmFail("table index is nil")
       } else if kt == 1 && vNum(c) != floor(vNum(c)) {
