@@ -307,6 +307,28 @@
   boundary, not data loss. Measured on `math.random(1.5)`'s 66-character error
   message: whole in the register, chip line ends `...repres`, oracle's capped
   line ends `...repre`.
+- **A model of the *toolchain* comes first, because a model that never ran is not
+  a model.** `tools/model/vmmodel.py` looked for quint as an npm shim and for
+  java as `JAVA_HOME`, and this machine has neither: quint is the standalone
+  `quint-*.exe` release and the JRE is a Temurin zip unpacked into the scratch
+  dir, so every model check had been quietly skipping. Both are discovered now, in
+  the order `irdump` uses for the compiler, and the docstring's claim is finally
+  true. What cost the most time was Quint's syntax: `if (c) x else y` has **no
+  `then`**, a `val` body is a single expression (a multi-line `and` does not
+  parse), a `def` cannot recurse, and `nondet` binds only as
+  `action a = { nondet x = oneOf(S)  all { ... } }` — `oneOf` outside a `nondet`
+  binding is an error, and a primed name after `nondet` does not parse. Two
+  Apalache limits are worth knowing before writing a model: **a dynamic range is
+  rejected** (`0.to(pc - 1)` is an input error, so "the executed set is the
+  prefix" has to be `executed.size() == pc and executed.forall(i => i < pc)`), and
+  **every top-level `val` is passed as an invariant**, so a helper `val` among them
+  makes Apalache's parser fail with `key not found` rather than anything that
+  names the cause. The new model is `execmodel.qnt` (termination, determinism
+  without rand, no error accumulation, no corrupted register, IO follows the
+  input, only the needed instructions, one log entry per print, one read), and the
+  checker immediately found a wrong assumption in the model itself: with `errored`
+  set the pc still advanced and a line was still printed, because nothing stopped
+  the instruction actions — which is exactly what `noErrorAccumulation` is about.
 - **A gate that must call back into Lua is a separate mechanism nothing needs
   yet.** The only place the chip calls Lua on a gate's behalf is the pcall frame,
   and pcall-of-pcall is unsupported, so a machine cannot suspend mid-loop for a

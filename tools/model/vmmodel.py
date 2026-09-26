@@ -25,7 +25,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-MODELS = ("loopmodel", "pcallmodel")
+MODELS = ("loopmodel", "pcallmodel", "execmodel")
 # Enough steps to nest two frames, run a loop in each and leave both: the shapes
 # the bugs lived in.  Deeper grows the state space fast and proves no more.
 MAX_STEPS = 8
