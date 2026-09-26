@@ -492,6 +492,24 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None):
     wanted = set(checkpoints)
     samples = []
     edges = []
+    live_now = [None]
+    program_at = []
+
+    def set_live(name):
+        live_now[0] = [0.0, name] if name else None
+
+    # `program` is a string PORT, and a string that arrives in pieces is several
+    # CHANGES, each of which asks for a parse.  steps is [{"ticks": n, "src":
+    # text}, ...]: the first entry is the initial text and each later one is
+    # delivered at the end of the phase before it.  The sim delivers a string in
+    # one value, so this is the closest analogue of a host that fills the port
+    # over time -- and the shape a case could not ask about before the sim
+    # re-read its ports.
+    for st in (si.get("steps") or []):
+        program_at.append(st)
+    if program_at:
+        si = dict(si, program=program_at[0]["src"])
+
     if phases:
         # The FIRST phase is the level the run starts at, not an edge.  Every
         # later phase's level arrives at the END of the one before it, so the
@@ -501,15 +519,30 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None):
         at = 0
         for i, ph in enumerate(phases):
             if i:
-                edges.append((at, bool(ph["run"])))
+                text = None
+                if program_at and len(program_at) > i:
+                    text = program_at[i]["src"]
+                edges.append((at, bool(ph["run"]), ph.get("jitter"), text))
             at += int(ph["ticks"])
         sim_.inputs = dict(si, run=bool(phases[0]["run"]))
+        set_live(phases[0].get("jitter"))
     pending = list(edges)
 
     def on_tick(sim_now, tick):
         while pending and tick + 1 >= pending[0][0]:
-            _at, level = pending.pop(0)
+            _at, level, jitter, text = pending.pop(0)
             sim_now.inputs = dict(si, run=level)
+            if text is not None:
+                sim_now.inputs = dict(sim_now.inputs, program=text)
+        # `jitter` changes one input EVERY tick, which is what an input wired to
+        # something live does in game.  The chip restarts the program on a scalar
+        # input change while run is high, so this is the shape that can restart
+        # forever -- and until the sim re-read its ports, no case could ask.
+        live = live_now[0]
+        if live is not None:
+            live[0] += 1.0
+            sim_now.inputs = dict(sim_now.inputs)
+            sim_now.inputs[live[1]] = live[0]
         if tick in wanted:
             samples.append(lifecycle_sample(sim_now, tick))
 

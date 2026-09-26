@@ -1265,6 +1265,21 @@ TESTS = [
      {"phases": [{"ticks": 1200, "run": False}, {"ticks": 300, "run": True},
                  {"ticks": 100, "run": False}, {"ticks": 600, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # A scalar input that changes EVERY tick while run is high.  The header says
+    # such a change restarts the program, so this shape can restart forever and
+    # never print anything -- which is what an input wired to something live
+    # looks like in game, and it is the shape a case could not ask about until
+    # the sim re-read its ports.
+    ("life-input-jitter-restarts", "print('hi')", None, "lifecycle",
+     {"phases": [{"ticks": 1200, "run": False},
+                 {"ticks": 900, "run": True, "jitter": "inNum0"}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # the same jitter while run is low must change nothing: the program is not
+    # running, so there is nothing to restart
+    ("life-input-jitter-while-stopped", "print('hi')", None, "lifecycle",
+     {"phases": [{"ticks": 1800, "run": False, "jitter": "inNum0"},
+                 {"ticks": 600, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
     # run goes high BEFORE the program arrives, so the edge lands while there is
     # nothing to run: the paste is the start, and the log must still appear
     ("life-run-high-before-program", "print('hi') outnum(1, 7)", None,
