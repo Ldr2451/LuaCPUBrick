@@ -1,43 +1,44 @@
-// The run/parse/start handshake: can a program print twice for one start?
+// The run/parse/start handshake, with a tick granular enough to catch the bug.
 //
-// The bug reported from in game: run low, edit the program, run high, and
-// SOMETIMES the log shows the new line twice.  Two prints with no log clear
-// between them, so whatever caused it rewound the program counter WITHOUT going
-// through vmReset - because vmReset clears the log as well as the pc.  That is
-// the shape this model asks about, and it is why no tick sweep found it: the
-// interleaving that does it is narrow, and sampling the ticks walks past it.
+// v1 of this model treated a tick as ATOMIC - `vmPrint` did the whole print in one
+// action.  That was the flaw, and it is the same shape of mistake as the harness
+// rewinding the program port: the model was more coarse than the thing it
+// modelled, so it proved a rule that the real chip does not obey.  The chip's
+// vmBurst dispatches up to FIVE instructions across separate handler
+// invocations, so a vmReset from goParse2 can land BETWEEN two instructions of the
+// same call.  A model that cannot express that will always agree with a bug.
 //
-// The rules encoded here are the chip's, read off lua.ws:
-//   Change(program)  wantParse = true; emit sched
-//   sched            if !jobBusy { if wantParse { wantParse = false;
-//                    jobBusy = true; emit goParse } }
-//   parse completes  progOk = true; jobBusy = false; vmReset(); vmClosures()
-//   Change(run) up   if run && progOk && !jobBusy { vmReset() }
-//   a tick           if run && progOk && !jobBusy && !vmHalted { one instruction }
-//   vmReset          log := ""; pc := 0; vmHalted := false
+// So a tick is ONE instruction here, and the print is three of them:
+//   opLoadGlobal   callee := "func"        (LOADGLOBAL print)
+//   opLoadConst                        (LOADK 2)
+//   opCall         prints the callee OR fails the way PUC fails
+// and a parse can complete between any two of them.
 //
-// The environment is deliberately UNDISCIPLINED: it may write `run` and
-// `program` at any time, as often as it likes, and may write the same value
-// again.  Whether a host fires a Change on an unchanged value is a host question
-// the sim answers one way, so the model does not rely on it.
+// THE BUG, as reported from in game: run low, edit the program, run high, and
+// SOMETIMES the log shows the line twice - and sometimes an "attempt to call"
+// error instead.  Both are the same thing, and this model is where that shows up.
+// opCall reading a callee that vmReset already cleared IS "attempt to call", and
+// it is the same interleaving that otherwise restarts the program and prints
+// twice.  The non-determinism is which of the two you land on.
 //
-// A model that cannot fail is not a net: `parseStep` without the vmReset is the
-// old shape, and prints is unbounded under it.
+// A model that cannot fail is not a net: the two properties below are violated by
+// simply deleting the reset from parseStep, and by clearing the callee in
+// parseStep instead of vmReset.
 module LifecycleHandshake {
   var runLevel: bool
-  // loadedProg is which text the parse pipeline holds: 1 = the original,
-  // 2 = the edit.  progOk says a parse COMPLETED, so it describes loadedProg.
   var loadedProg: int
   var progOk: bool
   var jobBusy: bool
   var wantParse: bool
   var vmHalted: bool
-  // prints counts executions of the CURRENTLY LOADED program since the last
-  // vmReset.  vmReset zeroes it, which is the whole reason a double print needs
-  // a pc rewind that skips vmReset.
   var prints: int
-  // The host may write each port at most twice, which is enough to express the
-  // reported sequence (low, edit, high) and one redundant write.
+  // callee is the register a CALL reads: "none" before the LOADGLOBAL, "func"
+  // once it has run, and "nil" once vmReset has cleared the register file.
+  var pc: int
+  var callee: str
+  // errored records PUC's "attempt to call a nil value", i.e. a CALL whose
+  // callee register was cleared before the CALL dispatched.
+  var errored: bool
   var runWrites: int
   var progWrites: int
   var gridReads: int
@@ -50,19 +51,19 @@ module LifecycleHandshake {
     wantParse' = false,
     vmHalted' = true,
     prints' = 0,
+    pc' = 0,
+    callee' = "none",
+    errored' = false,
     runWrites' = 0,
     progWrites' = 0,
     gridReads' = 0,
   }
 
-  // ---- host actions
+  // ---------------- host
 
-  // The program port is written with new text: Change(program) requests a parse.
-  // Writing the SAME text again still fires the handler, because only the host
-  // knows whether it suppressed an unchanged write.
   action hostWriteProgram = all {
-    gridReads' = gridReads,    runWrites' = runWrites,
-    progWrites' = progWrites,    progWrites < 4,
+    pc' = pc,    progWrites < 4,
+    progWrites' = progWrites + 1,
     wantParse' = true,
     runLevel' = runLevel,
     loadedProg' = 2,
@@ -70,12 +71,14 @@ module LifecycleHandshake {
     jobBusy' = jobBusy,
     vmHalted' = vmHalted,
     prints' = prints,
+    callee' = callee,
+    errored' = errored,
+    runWrites' = runWrites,
+    gridReads' = gridReads,
   }
 
-  // The run port is written; the level applied is chosen nondeterministically, so
-  // a redundant write of the same level is in the state space.
-  action hostWriteRun = all {
-    gridReads' = gridReads,    progWrites' = progWrites,    runWrites < 5,
+  action hostRaiseRun = all {
+    pc' = pc,    runWrites < 5,
     runWrites' = runWrites + 1,
     runLevel' = true,
     loadedProg' = loadedProg,
@@ -84,10 +87,14 @@ module LifecycleHandshake {
     wantParse' = wantParse,
     vmHalted' = vmHalted,
     prints' = prints,
+    callee' = callee,
+    errored' = errored,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
   action hostLowerRun = all {
-    gridReads' = gridReads,    progWrites' = progWrites,    runWrites < 5,
+    pc' = pc,    runWrites < 5,
     runWrites' = runWrites + 1,
     runLevel' = false,
     loadedProg' = loadedProg,
@@ -96,16 +103,32 @@ module LifecycleHandshake {
     wantParse' = wantParse,
     vmHalted' = vmHalted,
     prints' = prints,
+    callee' = callee,
+    errored' = errored,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
-  // ---- chip actions
+  action gridRead = all {
+    pc' = pc,    gridReads < 3,
+    gridReads' = gridReads + 3 - 3,
+    wantParse' = true,
+    runLevel' = runLevel,
+    loadedProg' = loadedProg,
+    progOk' = progOk,
+    jobBusy' = jobBusy,
+    vmHalted' = vmHalted,
+    prints' = prints,
+    callee' = callee,
+    errored' = errored,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+  }
 
-  // on sched with a parse already in flight: the request is NOT consumed.  This
-  // is the chip's real rule and the reason a program edit can be lost - kept as
-  // its own action rather than a conditional, because Quint's `if` is an action.
+  // ---------------- chip: the parse request
+
   action schedBusy = all {
-    gridReads' = gridReads,    runWrites' = runWrites,
-    progWrites' = progWrites,    jobBusy,
+    pc' = pc,    jobBusy,
     jobBusy' = jobBusy,
     wantParse' = wantParse,
     runLevel' = runLevel,
@@ -113,12 +136,15 @@ module LifecycleHandshake {
     progOk' = progOk,
     vmHalted' = vmHalted,
     prints' = prints,
+    callee' = callee,
+    errored' = errored,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
-  // on sched with an idle parser: the request is consumed and the parse starts.
   action schedGo = all {
-    gridReads' = gridReads,    runWrites' = runWrites,
-    progWrites' = progWrites,    not(jobBusy),
+    pc' = pc,    not(jobBusy),
     wantParse,
     jobBusy' = true,
     wantParse' = false,
@@ -127,12 +153,15 @@ module LifecycleHandshake {
     progOk' = progOk,
     vmHalted' = vmHalted,
     prints' = prints,
+    callee' = callee,
+    errored' = errored,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
-  // on sched with nothing pending: nothing happens.
   action schedIdle = all {
-    gridReads' = gridReads,    runWrites' = runWrites,
-    progWrites' = progWrites,    not(jobBusy),
+    pc' = pc,    not(jobBusy),
     not(wantParse),
     jobBusy' = jobBusy,
     wantParse' = wantParse,
@@ -141,120 +170,205 @@ module LifecycleHandshake {
     progOk' = progOk,
     vmHalted' = vmHalted,
     prints' = prints,
+    callee' = callee,
+    errored' = errored,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
-  // The parse finishes: this is the ONLY place the loaded program becomes the
-  // running one, and it carries a full vmReset.
+  // ---------------- chip: the parse finishing, and the resets
+
+  // THE SUSPECT.  goParse2 ends with an unconditional vmReset() and
+  // vmClosures() whenever a parse completes.  If it completes while the VM is
+  // between the LOADGLOBAL and the CALL, that reset clears the callee register
+  // the CALL is about to read.
   action parseStep = all {
-    gridReads' = gridReads,    runWrites' = runWrites,
-    progWrites' = progWrites,    jobBusy,
+    jobBusy,
     jobBusy' = false,
     progOk' = true,
     vmHalted' = false,
     prints' = 0,
+    pc' = 0,
+    callee' = "nil",
     runLevel' = runLevel,
     loadedProg' = loadedProg,
     wantParse' = wantParse,
+    errored' = errored,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
-  // Change(run) on a rising edge: guarded, and a full vmReset when it fires.
   action runEdge = all {
-    gridReads' = gridReads,    runWrites' = runWrites,
-    progWrites' = progWrites,    runLevel,
+    runLevel,
     progOk,
     not(jobBusy),
     vmHalted' = false,
     prints' = 0,
+    pc' = 0,
+    callee' = "nil",
     runLevel' = runLevel,
     loadedProg' = loadedProg,
     progOk' = progOk,
     jobBusy' = jobBusy,
     wantParse' = wantParse,
+    errored' = errored,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
-  // A tick of work: the print instruction runs, then the program halts.
-  action vmPrint = all {
-    gridReads' = gridReads,    runWrites' = runWrites,
-    progWrites' = progWrites,    runLevel,
+  action inputWrite = all {
+    runLevel,
+    progOk,
+    not(jobBusy),
+    vmHalted' = false,
+    prints' = 0,
+    pc' = 0,
+    callee' = "nil",
+    runLevel' = runLevel,
+    loadedProg' = loadedProg,
+    progOk' = progOk,
+    jobBusy' = jobBusy,
+    wantParse' = wantParse,
+    errored' = errored,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
+  }
+
+  // ---------------- chip: ONE instruction per tick
+
+  action opLoadGlobal = all {
+    pc' = pc,    runLevel,
     progOk,
     not(jobBusy),
     not(vmHalted),
-    vmHalted' = true,
-    prints' = prints + 1,
+    pc == 0,
+    callee' = "func",
     runLevel' = runLevel,
     loadedProg' = loadedProg,
     progOk' = progOk,
     jobBusy' = jobBusy,
     wantParse' = wantParse,
+    vmHalted' = vmHalted,
+    prints' = prints,
+    errored' = errored,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
+  }
+
+  // The CALL, when the callee register still holds the function.
+  action opCallOk = all {
+    pc' = pc,    runLevel,
+    progOk,
+    not(jobBusy),
+    not(vmHalted),
+    pc == 2,
+    callee == "func",
+    callee' = callee,
+    errored' = false,
+    prints' = prints + 1,
+    vmHalted' = true,
+    runLevel' = runLevel,
+    loadedProg' = loadedProg,
+    progOk' = progOk,
+    jobBusy' = jobBusy,
+    wantParse' = wantParse,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
+  }
+
+  // The CALL, when a vmReset already cleared the callee register.  This is PUC's
+  // "attempt to call a nil value" - the OTHER symptom of the same interleaving.
+  action opCallBad = all {
+    pc' = pc,    runLevel,
+    progOk,
+    not(jobBusy),
+    not(vmHalted),
+    pc == 2,
+    callee != "func",
+    callee' = callee,
+    errored' = true,
+    prints' = prints,
+    vmHalted' = true,
+    runLevel' = runLevel,
+    loadedProg' = loadedProg,
+    progOk' = progOk,
+    jobBusy' = jobBusy,
+    wantParse' = wantParse,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
   action stutter = all {
-    gridReads' = gridReads,    runWrites' = runWrites,
-    progWrites' = progWrites,    runLevel' = runLevel,
+    pc' = pc,    runLevel' = runLevel,
     loadedProg' = loadedProg,
     progOk' = progOk,
     jobBusy' = jobBusy,
     wantParse' = wantParse,
     vmHalted' = vmHalted,
     prints' = prints,
-  }
-
-  // A grid read.  on ReadBrickGrid also sets wantParse and emits sched, so this
-  // can start a parse at ANY point in the sequence - including while the program
-  // is running, which is the case most likely to produce a second start.  Not
-  // modelled until now, and the chip really does restart on grid reads.
-  action gridRead = all {
-    gridReads < 3,
-    gridReads' = gridReads + 1,
-    wantParse' = true,
-    runLevel' = runLevel,
-    loadedProg' = loadedProg,
-    progOk' = progOk,
-    jobBusy' = jobBusy,
-    vmHalted' = vmHalted,
-    prints' = prints,
+    callee' = callee,
+    errored' = errored,
     runWrites' = runWrites,
     progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
-  // A scalar input changing.  Same guard and same full vmReset as the run edge,
-  // but the host can do it with `run` already high and nothing else changing.
-  action inputWrite = all {
-    gridReads' = gridReads,    runLevel,
+  // The LOADK between the two.  It is here so the pc can only reach the CALL by
+  // dispatching the instructions in between, rather than jumping straight there.
+  action opLoadConst = all {
+    runLevel,
     progOk,
     not(jobBusy),
-    vmHalted' = false,
-    prints' = 0,
+    not(vmHalted),
+    pc == 1,
+    pc == 1,
+    pc' = 2,
     runLevel' = runLevel,
     loadedProg' = loadedProg,
     progOk' = progOk,
     jobBusy' = jobBusy,
     wantParse' = wantParse,
+    vmHalted' = vmHalted,
+    prints' = prints,
+    callee' = callee,
+    errored' = errored,
     runWrites' = runWrites,
     progWrites' = progWrites,
+    gridReads' = gridReads,
   }
 
   action step = any {
     hostWriteProgram,
-    hostWriteRun,
+    hostRaiseRun,
     hostLowerRun,
+    gridRead,
     schedBusy,
     schedGo,
     schedIdle,
-    gridRead,
-    inputWrite,
     parseStep,
     runEdge,
-    vmPrint,
+    inputWrite,
+    opLoadGlobal,
+    opLoadConst,
+    opLoadConst,
+    opCallOk,
+    opCallBad,
     stutter,
   }
 
-  // THE PROPERTY.  One start runs the program once: the log can never come back
-  // with the same line twice.  A violation is the reported bug.
+  // PROPERTY 1, the reported symptom: one start runs the program once.
   val noDoublePrint = prints <= 1
 
-  // Sanity, so a violation cannot be an artefact of a nonsense state: a completed
-  // parse always leaves nothing in flight, and the host never edits the program
-  // without asking for a parse.
-  val parseNotBusy = not(progOk) implies not(jobBusy) or wantParse
+  // PROPERTY 2, the other reported symptom, and the one that says WHY: a program
+  // must not fail with "attempt to call" purely because of when a parse happened
+  // to complete.  This is the assertion the atomic version of this model could not
+  // even express.
+  val noCorruptCall = not(errored)
 }
