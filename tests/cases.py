@@ -1307,6 +1307,30 @@ TESTS = [
     # the assignment and the value after, so warning here would be wrong.
     ("unknown-name-assigned", "count = 0 count = count + 1 print(count)", None,
      "state", {"log": "1\n", "noProgDebug": "count"}),
+    # A call to one of the chip's own builtins with too few arguments cannot do
+    # anything, and the COUNT is known while parsing - it is already the CALL's
+    # argument count.  Still advice: the call goes through as it would have.
+    ("arity-outnum", "outnum(2)", None, "state",
+     {"progDebug": "outnum(i, v) needs an index and a value"}),
+    ("arity-inarr", "print(inarr())", None, "state",
+     {"progDebug": "inarr(i) needs an index from 1"}),
+    # ... and the near miss that must stay SILENT: a computed index is not this
+    # check's business.  A warning that fires on outnum(i, v) would be noise on
+    # every loop in every program, which is worse than missing a real one.
+    ("arity-computed-ok", "for i=1,3 do outnum(i, i) end", None, "state",
+     {"noProgDebug": "outnum(i, v) needs"}),
+    # A LITERAL index the chip would refuse at run time, said at parse time
+    # instead - the argument has not been parsed yet at the call site, so this is
+    # the actual value and not a guess from the text.  The wording is the
+    # runtime's own, so the two cannot disagree.
+    ("index-literal-outnum", "outnum(0, 1)", None, "state",
+     {"progDebug": "outnum index must be 1..5"}),
+    ("index-literal-outstr", "outstr(3, 'x')", None, "state",
+     {"progDebug": "outstr index must be 1..2"}),
+    # ... and a literal IN range is silent, which is the half that matters: a
+    # check that fired on every outnum(1, v) in every program would be noise.
+    ("index-literal-inrange-ok", "outnum(1, 1) outnum(5, 5)", None, "state",
+     {"noProgDebug": "outnum index must be"}),
     ("life-program-recovers", "print('hi')", None, "lifecycle",
      {"steps": [{"ticks": 300, "src": "print('"},
                 {"ticks": 300, "src": "print('hi')"}],

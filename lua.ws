@@ -1484,6 +1484,39 @@ mod gDeclare(name: string) -> int {
 // an assignment anywhere in the source suppresses the warning, which is why this
 // cannot be a text scan of the whole program up front: only the name the
 // compiler actually had to invent says anything.
+// A call to one of the chip's own builtins with too few arguments to do
+// anything.  Advice, not a refusal: the call still goes through exactly as it
+// would have, because deciding what an absent argument reads as is the runtime's
+// job and this chip is not going to disagree with it at parse time.
+// The index argument of a port call, when it is a literal.  Value-based, like
+// the runtime check it mirrors, so outnum(2.5, v) is caught too.
+mod noteIndex(name: string) {
+  if curKind() == 1 {
+    let v = curNum()
+    if name == "outnum" && !(1.0 <= v && v <= 5.0) {
+      nameWarn = nameWarn .. "warn: outnum index must be 1..5, and this call is out of range\n"
+    }
+    if name == "outstr" && !(1.0 <= v && v <= 2.0) {
+      nameWarn = nameWarn .. "warn: outstr index must be 1..2, and this call is out of range\n"
+    }
+  }
+}
+
+mod noteArity(name: string, n: int) {
+  if name == "outnum" && n < 2 {
+    nameWarn = nameWarn .. "warn: outnum(i, v) needs an index and a value, i in 1..5\n"
+  }
+  if name == "outstr" && n < 2 {
+    nameWarn = nameWarn .. "warn: outstr(i, v) needs an index and a value, i in 1..2\n"
+  }
+  if name == "outarr" && n < 2 {
+    nameWarn = nameWarn .. "warn: outarr(i, v, ...) needs an index and at least one value, i from 1\n"
+  }
+  if name == "inarr" && n < 1 {
+    nameWarn = nameWarn .. "warn: inarr(i) needs an index from 1, and inarr(i, k) returns k of them\n"
+  }
+}
+
 mod noteUnknown(name: string) {
   if !srcUses(lsrc, name .. " =") && !srcUses(lsrc, name .. "=")
     && !srcUses(nameWarn, name) {
@@ -5252,8 +5285,14 @@ mod exprPushName(callParen: bool, callSugar: bool) {
       bEmit(5, fr, gRef(name), 0)
     }
     if callParen {
+      if lkKind == 0 {
+        noteArity(name, valStk.length())
+      }
       pushOp(2, -1, fr, 0, valStk.length())
       cpos = cpos + 2
+      if lkKind == 0 {
+        noteIndex(name)
+      }
       expectOperand = true
     } else {
       let ar = regAlloc()
