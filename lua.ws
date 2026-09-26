@@ -7924,7 +7924,11 @@ mod gateLow(fid: int, a: int, nargs: int) {
       vmFail("wrong number of arguments")
     } else if fid == 1 {
       let t = vTag(a + 1)
-      vSet(a, 2, 0.0, if t == 0 then "nil" else if t == 1 || t == 6 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else "table")
+      // the name is chosen with a folded || in the chain, so it is built first
+      // and the call takes a plain register: a call whose argument is a folded
+      // && or || loses the operand's tag in the compiler's register allocation
+      let tn = if t == 0 then "nil" else if t == 1 || t == 6 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else "table"
+      vSet(a, 2, 0.0, tn)
       retCountV = 1
     } else {
       vSet(a, 2, 0.0, fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)))
@@ -9005,7 +9009,10 @@ mod vmStep() {
         if badL || badR {
           vmFail("attempt to " .. opn .. " a '" .. typeName(bt) .. "' with a '" .. typeName(ct) .. "'")
         } else {
-          vmFail("attempt to perform arithmetic on a " .. typeName(if bt != 1 && bt != 6 then bt else ct) .. " value")
+          // hoisted out of the call for the same reason as the LT arm: a folded
+          // && as a call argument costs the operand its tag
+          let badT = if bt != 1 && bt != 6 then bt else ct
+          vmFail("attempt to perform arithmetic on a " .. typeName(badT) .. " value")
         }
       } else {
         // A string that converted is an integer only when ParseInt took it, so
@@ -9608,7 +9615,12 @@ mod vmStep() {
       if lbad || rbad {
         vmFail("attempt to idiv a '" .. typeName(lt) .. "' with a '" .. typeName(rt) .. "'")
       } else if lt != 6 && lt != 1 && lt != 2 || rt != 6 && rt != 1 && rt != 2 {
-        vmFail("attempt to perform arithmetic on a " .. typeName(if lt != 1 && lt != 6 && lt != 2 then lt else rt) .. " value")
+        // the tag choice is hoisted out of the call: a call whose argument is a
+        // folded && or || loses the operand's tag in the compiler's register
+        // allocation, and a message that names the wrong type is worse than no
+        // message.  compute, use, write last.
+        let badT = if lt != 1 && lt != 6 && lt != 2 then lt else rt
+        vmFail("attempt to perform arithmetic on a " .. typeName(badT) .. " value")
       } else {
         let li = lt == 6 || coerceL == 1
         let ri = rt == 6 || coerceR == 1
