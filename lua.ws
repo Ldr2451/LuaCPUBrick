@@ -3090,14 +3090,6 @@ mod parseInit() {
   lerrMsg = ""
   lerrLine = 1
   lline = 1
-  // The lexer's state machine starts at the beginning too.  Kept for the SIZE:
-  // with the reset the chip is 619,507 bytes, without it 620,027 - the folder can
-  // fold 520 bytes of the first lex tick once lstage is provably 0.  It is NOT
-  // there for correctness: six rejections that die mid-token (in-string at stage
-  // 4, mid-hex at stage 11, mid-exponent, long-string, after-dot, mid-name) all
-  // recover with or without it, so the hole it looks like it closes is not one
-  // the chip has.
-  lstage = 0
   lastPatchTarget = -1
   lastCallPos = -1
   presCallPos = -1
