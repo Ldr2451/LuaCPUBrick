@@ -1354,8 +1354,13 @@ TESTS = [
      {"expect": {"log": "6\n"}}),
     ("lockstep-string", "print(string.format('%d/%s', 42, string.rep('ab', 3)))",
      None, "lockstep", {"expect": {"log": "42/ababab\n"}}),
-    ("lockstep-ports", "print(inStr0, inNum0, #tostring(inNum1))", None,
-     "lockstep", {"sinputs": {0: "hi"}, "inputs": [0.0, 7.0],
+    # The numeric inputs live in the tuple's THIRD slot, which is where the suite
+    # reads them from; the suite copies that slot over any `inputs` in the kw, so
+    # an `inputs` written in the kw is silently discarded and the case stops
+    # testing what it looks like it tests.  test_consistency.py's
+    # case-inputs-in-the-inputs-slot is the net.
+    ("lockstep-ports", "print(inStr0, inNum0, #tostring(inNum1))", [0.0, 7.0],
+     "lockstep", {"sinputs": {0: "hi"},
                   "expect": {"log": "hi\t0.0\t3\n"}}),
     ("lockstep-error", "print(1 + {})", None, "lockstep", {}),
     ("syn-unterm", "print('abc)", None, "synfail"),
@@ -1701,9 +1706,9 @@ TESTS = [
      {"expect": {"outGlobals": [1.0, 2.5, 1.0, 0.0, -3.5, "", ""]}}),
     ("out-strs", "outstr(1, 'hi') outstr(2, 3)", None, "modelio",
      {"expect": {"outGlobals": [0.0, 0.0, 0.0, 0.0, 0.0, "hi", "3"]}}),
-    ("io-int", "outnum(5, inNum0 * 2 + 1) print('done')", None, "modelio",
-     {"inputs": [5],
-      "expect": {"log": "done\n",
+    ("io-int", "outnum(5, inNum0 * 2 + 1) print('done')", [5],
+     "modelio",
+     {"expect": {"log": "done\n",
                  "outGlobals": [0.0, 0.0, 0.0, 0.0, 11.0, "", ""]}}),
     # outInt0 is a typed int port: an integral float is stored as an integer
     # there is no int type: 7.0 and 7 are one number, so outnum(5, 7.0) puts
@@ -1713,7 +1718,7 @@ TESTS = [
                  "outGlobals": [0.0, 0.0, 0.0, 0.0, 7.0, "", ""]}}),
     ("io-int-bad", "outnum(5, 'x')", None, "runtimerr",
      {"expect": {"err": "cannot convert"}}),
-    ("inputs-int", "print(inNum3 + 1)", None, "run", {"inputs": [0, 0, 0, 41]}),
+    ("inputs-int", "print(inNum3 + 1)", [0, 0, 0, 41], "run", {}),
     # an output is not readable: there is no global to read, so a program that
     # wants the value back has to keep it
     ("out-not-readable", "outnum(1, 5) print(outNum0)", None, "run"),

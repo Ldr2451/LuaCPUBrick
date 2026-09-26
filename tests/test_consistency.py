@@ -300,6 +300,25 @@ _diag = subprocess.run(
 check("readme-port-diagram", _diag.returncode == 0,
       (_diag.stdout + _diag.stderr).strip()[:160])
 
+# The suite reads a case's numeric inputs from the tuple's THIRD slot and copies
+# that slot over any `inputs` in the kw, so a case that carries `inputs` in the kw
+# has them silently discarded.  Three cases did, and it cost a session: one went
+# red for a reason that had nothing to do with the chip, and one - inputs-int -
+# went on PASSING VACUOUSLY, because the chip and the oracle were both given no
+# inputs and agreed with each other.  A silently dropped input is worse than a
+# wrong one, because it turns a test off without saying so.
+try:
+    sys.path.insert(0, HERE)
+    import cases as _c2
+    _misplaced = [t[0] for t in _c2.TESTS
+                  if len(t) > 4 and isinstance(t[4], dict)
+                  and "inputs" in t[4] and t[2] is None]
+    check("case-inputs-in-the-inputs-slot", not _misplaced,
+          "these carry `inputs` in the kw, which the suite overwrites with the "
+          "third slot (None): %s" % (_misplaced,))
+except Exception as _e:
+    check("case-inputs-in-the-inputs-slot", False, "the check failed: %r" % (_e,))
+
 # The graph the tests RUN must be the graph this lua.ws compiles to.  Four cases
 # read outNum4 as 0.0 for a whole session while a direct probe of the same program
 # read -3.5, and the reason was that the suite's graph still had outCol and
