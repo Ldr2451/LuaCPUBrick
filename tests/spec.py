@@ -56,8 +56,8 @@ TIMEOUT = 90       # seconds per case before the worker is killed
 # is Lua source prepended to the program on demand (see libIter/libString in
 # lua.ws).  A program's own functions get ids from NB upward, and NB has to
 # match the `const NB` in lua.ws.
-BUILTINS = (("print", 0), ("type", 1), ("tostring", 2), ("setvec", 3),
-            ("setcol", 4), ("clock", 5), ("inarr", 6), ("outarr", 7),
+BUILTINS = (("print", 0), ("type", 1), ("tostring", 2), ("outvec", 3),
+            ("outcol", 4), ("clock", 5), ("inarr", 6), ("outarr", 7),
             ("select", 8), ("next", 9), ("_s", 10), ("_m", 11), ("unpack", 12),
              ("_fmt", 13),
              ("_rd", 14),
@@ -76,8 +76,8 @@ NB = len(BUILTINS)  # first id available to the program's own functions
 GSLOT_ORDER = ["outNum0", "outNum1", "outNum2", "outNum3", "outStr0",
                "outStr1", "inNum0", "inNum1", "inNum2", "inNum3", "inStr0",
                "inStr1", "invecx", "invecy", "invecz", "incolr", "incolg",
-               "incolb", "incola", "print", "type", "tostring", "setvec",
-               "setcol", "clock", "inarr", "outarr", "select", "next", "_s",
+               "incolb", "incola", "print", "type", "tostring", "outvec",
+               "outcol", "clock", "inarr", "outarr", "select", "next", "_s",
                "_m", "unpack", "_fmt", "_rd", "_wr", "error", "assert", "pcall",
                "xpcall", "_pat", "_gmatch", "_gmnext", "inInt0", "outInt0",
                "math", "string", "table", "io"]

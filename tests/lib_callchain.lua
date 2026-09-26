@@ -62,7 +62,7 @@
 --     `let y = if 2 < nargs then numArg(vTag(a + 3), ...) else 0.0` still ran
 --     numArg on the slot, which held a string from the previous call, and raised
 --     "bad argument (number expected)" on an argument that did not exist.  The
---     fix is the idiom setvec already used: choose the tag and the value first,
+--     fix is the idiom outvec already used: choose the tag and the value first,
 --     then hand numArg those.
 --
 -- So both causes are fixed and the case in tests/cases.py pins all of it: the

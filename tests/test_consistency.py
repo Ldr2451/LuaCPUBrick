@@ -145,7 +145,7 @@ check("no-halted-port", "out halted" not in WS)
 check("no-proglen-port", "out progLen" not in WS)
 check("no-nprint-port", "out nPrint" not in WS)
 for hw, port in [("inarr", "inArr"), ("outarr", "outArr"),
-                 ("setvec", "outVec"), ("setcol", "outCol"),
+                 ("outvec", "outVec"), ("outcol", "outCol"),
                  ("print", "log")]:
     check(f"hw-{hw}-{port}", re.search(
         rf"@(?:left|right) (?:in|out) {port}\b", WS) is not None)
@@ -211,6 +211,38 @@ check("tl-push", "tl.push(lline)" in WS)
 check("tl-clear", "tl.clear()" in pi)
 check("tl-read", "tl[epos]" in WS)
 check("lex-line-tracked", "lerrLine = lline" in WS)
+
+# 10. every builtin the chip declares must be accounted for in the oracle model --
+#     the rot that let outvec/outcol go missing for the whole life of the demo, so
+#     that any program touching a vector or a colour made the MODEL raise and the
+#     demo's expected log had to be written by hand (and could not fail).
+# spec.BUILTINS is the source of truth: it is the function builtins, and the
+# checks above already hold it against the chip's ids.  Adding a builtin therefore
+# forces a decision, and the decision is the point:
+#   modelled    the prelude provides it, so a differential case can call it;
+#   puc_native  PUC itself has it, so the model needs no shim;
+#   chip_only   the reference cannot have it -- an internal gate, a fixed-arity
+#               helper PUC spells differently, ServerUptime.
+PUC_NATIVE = {"print", "type", "tostring", "next", "select", "error", "assert",
+              "pcall", "xpcall", "pairs", "ipairs", "tonumber", "math", "string",
+              "table", "io"}
+CHIP_ONLY = {"_s", "_m", "_fmt", "_pat", "_gmatch", "_gmnext", "_rd", "_wr",
+             "unpack", "clock"}
+
+declared_builtins = set(name for name, _fid in m.BUILTINS)
+prelude = open(os.path.join(HERE, "lua_oracle.py"), encoding="utf-8").read()
+# the shims the prelude installs: "name = function", and the loop that installs
+# the writable output globals
+shims = set(re.findall(r'pre\.append\("(\w+) = function', prelude))
+unmodelled = sorted(declared_builtins - shims - PUC_NATIVE - CHIP_ONLY)
+check("declared-builtins-modelled", not unmodelled,
+      f"neither modelled nor accounted for: {unmodelled}")
+
+# and the other direction: a shim for a builtin the chip does not have is rot too
+stale = sorted(s_ for s_ in shims
+               if s_ not in declared_builtins and s_ not in PUC_NATIVE)
+check("no-stale-prelude-shims", not stale,
+      f"the model shims builtins the chip does not declare: {stale}")
 
 # 9. library pieces: every piece is installed, and every installer is called ---
 # A piece is Lua source the chip prepends, chosen by a mod that looks at the

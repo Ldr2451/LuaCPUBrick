@@ -33,8 +33,8 @@
 ///                         outarr(i, v, ...) writes one slot per extra value, up to 8,
 ///                         so a run of adjacent slots costs one call instead of k; a
 ///                         call with more values than that writes the first 8
-///   out outVec: vector    written by setvec(x, y, z)
-///   out outCol: color     written by setcol(r, g, b, a)
+///   out outVec: vector    written by outvec(x, y, z)
+///   out outCol: color     written by outcol(r, g, b, a)
 ///   out result: string    top-level return value, "" when none
 ///   out err: string       runtime error text, "" when none; compile failures read
 ///                         "line N: message"
@@ -741,7 +741,7 @@ var cloActive: bool = false
 // Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
 // 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
 // (inputs filled from the latches), 19..39 builtins (print, type, tostring,
-// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall, _pat, _gmatch, _gmnext) as
+// outvec, outcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall, _pat, _gmatch, _gmnext) as
 // functions with ids 0..NB-1, the two int globals, and the four library tables.
 var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 5, 5, 5, 5]
 var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
@@ -1283,7 +1283,7 @@ var presCallPos: int = -1
 //     register held from an earlier call, and died on "bad argument (number
 //     expected)".  Choose the tag and the value first, then hand numArg those:
 //     `numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3)
-//     else 0.0)`, which is what setvec and setcol already did.
+//     else 0.0)`, which is what outvec and outcol already did.
 //   - a write at the top of a mod, followed by an else-if chain that deep with
 //     mod calls in it, is silently dropped: fmtPos = fmtPos + 1 at the top of
 //     fmtConv never happened, so the conversion was re-read as a literal.  The
@@ -3256,8 +3256,8 @@ mod parseInit() {
   gDeclare("print")
   gDeclare("type")
   gDeclare("tostring")
-  gDeclare("setvec")
-  gDeclare("setcol")
+  gDeclare("outvec")
+  gDeclare("outcol")
   gDeclare("clock")
   gDeclare("inarr")
   gDeclare("outarr")
