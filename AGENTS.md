@@ -111,32 +111,29 @@
   a tool in this file, check it exists** — this file outlived `unsup.py` and
   `unhandled.py` for a long time after `audit.py` absorbed both, and a reference
   to a missing file costs the next reader the same hunt twice.
-- `tools/chip/wswarn.py` and `tests/test_consistency.py` run in preflight and have
-  caught real bugs — keep them passing.
 
 ## Performance: three cost currencies
 - **`vmStep` is 70% of the chip, and the reason is the inlining, not the code.**
   Measured by blanking one mod and rebuilding (`tools/chip/modcost.py` — the only
   honest way to ask, since nothing in the graph records a source line and 91% of
   nodes carry no bind name): `vmStep` 76,877 of 110,017, `parseStep` 22,293,
-  `lexStep` 6,692. The old `vmBurst` called `vmStep` four times and a mod is
-  inlined at its call site, so the 43-arm opcode chain was compiled four times
-  over: **19,210
-  nodes per call**, measured by building with 1, 2, 3 and 4 calls (110,017 /
-  90,807 / 71,597 / 52,386). A chain past ~16 arms is where arms near the top
-  stop taking effect, so this is a correctness risk as well as a size one.
+  `lexStep` 6,692. A mod is inlined at its call site, so the old four-call
+  `vmBurst` compiled the 43-arm opcode chain four times over: **19,210 nodes per
+  call**, measured by building with 1, 2, 3 and 4 calls (110,017 / 90,807 /
+  71,597 / 52,386). A chain past ~16 arms is where arms near the top stop taking
+  effect, so this is a correctness risk as well as a size one.
 - **The opcode chain is small; builtin dispatch is big, but it is not the whole
   `vmStep`.** `gateHigh` is 13,217 nodes and `gateLow` 6,489 — together 19,706.
   The eleven buildable arms of `gateHigh` account for 10,734 of its 13,217
   (`tools/chip/armcost.py` blanks one arm and rebuilds; the biggest are `unpack`
   1,806, `pcall`/`xpcall` 1,779, `_pat` 1,412, `assert` 1,381,
-  `_gmatch`/`_gmnext` 1,268). Latching CALL in `vmStep`, dispatching it once
-  from `vmBurst`, then restoring four steps compiled at **79,133 nodes**, and
-  the first gsub call ended in `attempt to call`: the rest of each copy is not
-  free, so moving the dispatch does not turn the other 13k into 500 nodes.
+  `_gmatch`/`_gmnext` 1,268). Latching CALL in `vmStep` and dispatching it once
+  from `vmBurst` still compiled at **79,133 nodes** and the first gsub call ended
+  in `attempt to call`: the rest of each copy is not free, so moving the dispatch
+  does not turn the other 13k into 500 nodes.
 - **Unrolls are the size lever; constant folds are the tick lever.** Building
   with 1/2/3/4 `vmStep` calls per tick gives 52,386 / 71,597 / 90,807 / 110,017
-  before the parser and lexer cuts. `parseChunk` (2→1) and `lexChunk` (4→2) are
+  before the parser and lexer cuts; `parseChunk` (2→1) and `lexChunk` (4→2) are
   the same trade one level up. The chip then folds a temporary numeric load into
   the arithmetic or comparison that consumes it, and a constant `<=` used
   directly as a branch runs the comparison and skips its now-unreachable JMPF.
@@ -160,29 +157,19 @@
   `cfMaxLoc[fnDepth]`; a local initialiser can be the immediately preceding
   LOADNUM in the same register, and treating that as an operand lost the
   initial value in a `repeat` body.
-- **The frame-switch hold died with the four-step burst.** `vmHold` spent one VM
-  tick after every base change so later copies in the old burst agreed on the new
-  base. The current burst executes one step, so the next tick already observes it.
-  Removing the state and all writes cut 17 nodes and, against the same commit in
-  one process, changed calls 313→271 ticks / 93,927→88,067 gates, closures
-  380→336 / 118,529→112,385, and pcall 523→483 / 143,734→137,780. Pcall still
-  switches frames through its own micro-state; only the redundant empty slots
-  went. The full call/return, vararg, closure, method, and pcall batteries pass.
-- **A one-value protected handler does not need the 16-value copier.** The
-  error-handler branch of `pcallEnd` used `retAdjust` for either one value or a
-  nil that it immediately replaced. A direct absolute-register copy removed 428
-  nodes and 1,223 wires; successful pcall stayed at 483 ticks / 137,780 gates,
-  and all pcall/xpcall cases still pass.
-- **Three `retAdjust` callers know `k == n`.** Protected-call completion, a
-  pcall'd gate's argument shift, and a successful `assert` can use a copy-only
-  16-slot helper with no nil-fill arms. It removed 400 nodes and 1,040 wires;
-  pcall stayed at 483 ticks / 137,780 gates and its battery plus every `assert`
-  case passed.
-- **An unread array is not necessarily dead to the compiler.** `fRegs` has no
-  read anywhere, but deleting it and its writes produced three `_Unsupported`
-  placeholders, so it stays. Four genuinely unread scalar parser flags
-  (`pMode`, `blkHadCap`, `popLeft`, `pendLeft`) did lower cleanly, by 30 nodes
-  and 52 wires.
+- **Three results that are banked, kept because each one is a rule about the next
+  change.** (1) The frame-switch hold died with the four-step burst: `vmHold` spent
+  one VM tick after every base change so later copies in a burst agreed, and the
+  one-step burst already observes it — removing the state cut 17 nodes and took
+  calls 313→271 ticks / 93,927→88,067 gates, closures 380→336 / 118,529→112,385,
+  pcall 523→483 / 143,734→137,780. (2) A one-value protected handler does not need
+  the 16-value copier, and three `retAdjust` callers know `k == n`, so both use a
+  copy-only path: 428 nodes / 1,223 wires and 400 nodes / 1,040 wires, with pcall
+  unmoved at 483 ticks / 137,780 gates. (3) An unread array is not necessarily
+  dead to the compiler — `fRegs` has no read anywhere, but deleting it and its
+  writes produced three `_Unsupported` placeholders, while four genuinely unread
+  scalar parser flags (`pMode`, `blkHadCap`, `popLeft`, `pendLeft`) did lower, by
+  30 nodes and 52 wires.
 - **A mod is inlined at its call site, so extracting a chain does not shrink
   it.** Moving ops 34..40 (floor division and the bitwise operators) into their
   own mod and calling it from the same place measured **+20 nodes**, not fewer.
@@ -211,15 +198,25 @@
   `next` at 179 — 0.7% and 0.4% of the chip — and both are *worse* as pieces: a
   `next` piece rescans the table per call (O(n²) a traversal), and an `assert`
   piece would have to reach the number formatter, which is a gate. The ISA itself
-  is not the problem either: measured per opcode family by blanking it
-  (`tools/chip/armcost.py vmStep 8,9,10,11,12,13`), **arithmetic is already ONE
-  arm (8..13) and comparisons are already ONE arm (17,18,19)** — 568 nodes for the
-  seven loads, 178 for all three comparisons, 35 for the three jumps, 126 for
-  concat, 54 each for `len` and `loadfunc`. The three big ones are `CALL` 5,467
-  (which is where the builtin dispatch is inlined, not call mechanics), `TAPPEND`
-  2,475, and the four return arms 2,417 — and merging the returns, which share
-  their frame teardown in source, was measured at **+90 nodes** (see above), so the
-  one merge that looked free is not. `retAdjust` needs a loop or a dynamic index,
+  is not the problem either, measured per opcode family by blanking it
+  (`tools/chip/armcost.py vmStep 8,9,10,11,12,13`):
+
+  | family | nodes | family | nodes |
+  |---|---|---|---|
+  | `CALL` 23/41 | 5,467 | `field` 29/30 | 384 |
+  | `TAPPEND` 44 | 2,475 | `vararg` 45 | 356 |
+  | returns 24/26/27/42 | 2,417 | `adjust` 43 | 279 |
+  | loads 1-7 | 568 | `idiv` 34 | 215 |
+  | closures 46/47/48 | 216 | comparisons 17-19 | 178 |
+  | for 32/33/50 | 150 | unary 14/15 | 142 |
+  | concat 16 | 126 | newtable 28 | 123 |
+  | len 31 / loadfunc 25 | 54 each | jumps 20/21/22 | 35 |
+  | `gen` 49 | 1 | | |
+
+  **Arithmetic is already ONE arm (8..13) and comparisons are already ONE arm
+  (17,18,19)**, so the three big ones are `CALL` — which is where the builtin
+  dispatch is inlined, not call mechanics — `TAPPEND`, and the four return arms,
+  whose merge is the +90 nodes above. `retAdjust` needs a loop or a dynamic index,
   and the host's array gates (`ArrayVar_CopyFrom`, `ArrayVar_Slice`, both already
   used) move whole arrays, not a range of one, so they cannot do a 16-slot
   register copy. The unused host gates are all exec gates (whose values cannot be
@@ -273,7 +270,6 @@
   loader pulls in on the name - while `math.random`, a whole piece of its own,
   costs 989. So "a gate is cheaper" has to be argued about ticks per call
   against the piece's boot, never about gates being free.
-
 - A boot cost is only reducible three ways: fewer characters, more chars per
   tick, or not parsing. The middle one is linear in gates (unrolling `lexStep`:
   8 steps +6.5k nodes, 16 steps +19.6k — `tools/chip/lexcost.py`). The cheap end is a
@@ -321,22 +317,20 @@
   `quint-*.exe` release and the JRE is a Temurin zip unpacked into the scratch
   dir, so every model check had been quietly skipping. Both are discovered now, in
   the order `irdump` uses for the compiler, and the docstring's claim is finally
-  true. What cost the most time was Quint's syntax: `if (c) x else y` has **no
-  `then`**, a `val` body is a single expression (a multi-line `and` does not
-  parse), a `def` cannot recurse, and `nondet` binds only as
-  `action a = { nondet x = oneOf(S)  all { ... } }` — `oneOf` outside a `nondet`
-  binding is an error, and a primed name after `nondet` does not parse. Two
-  Apalache limits are worth knowing before writing a model: **a dynamic range is
-  rejected** (`0.to(pc - 1)` is an input error, so "the executed set is the
-  prefix" has to be `executed.size() == pc and executed.forall(i => i < pc)`), and
-  **every top-level `val` is passed as an invariant**, so a helper `val` among them
-  makes Apalache's parser fail with `key not found` rather than anything that
-  names the cause. The new model is `execmodel.qnt` (termination, determinism
-  without rand, no error accumulation, no corrupted register, IO follows the
-  input, only the needed instructions, one log entry per print, one read), and the
-  checker immediately found a wrong assumption in the model itself: with `errored`
-  set the pc still advanced and a line was still printed, because nothing stopped
-  the instruction actions — which is exactly what `noErrorAccumulation` is about.
+  true. What cost the most time was the two languages' syntax, so write these down
+  before the next model: in Quint `if (c) x else y` has **no `then`**, a `val`
+  body is a single expression (a multi-line `and` does not parse), a `def` cannot
+  recurse, and `nondet` binds only as `action a = { nondet x = oneOf(S)  all { ... } }`
+  — `oneOf` outside a `nondet` binding is an error, and a primed name after
+  `nondet` does not parse. In Apalache **a dynamic range is rejected**
+  (`0.to(pc - 1)` is an input error, so "the executed set is the prefix" has to be
+  `executed.size() == pc and executed.forall(i => i < pc)`) and **every
+  top-level `val` is passed as an invariant**, so a helper `val` among them makes
+  Apalache's parser fail with `key not found` rather than anything that names
+  the cause. A model earns its place by finding a wrong assumption in the model:
+  the checker found that with `errored` set the pc still advanced and a line was
+  still printed, because nothing stopped the instruction actions — exactly what
+  `noErrorAccumulation` says.
 - **A gate that must call back into Lua is a separate mechanism nothing needs
   yet.** The only place the chip calls Lua on a gate's behalf is the pcall frame,
   and pcall-of-pcall is unsupported, so a machine cannot suspend mid-loop for a
@@ -626,7 +620,8 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   never fired.
 - `python -u tools/preflight.py` runs the four cheap structural nets (audit,
   wswarn, consistency, syntax) in parallel — that plus one suite run is the
-  minimum bar for a change.
+  minimum bar for a change. `wswarn` and `consistency` have caught real bugs, so
+  keep them passing rather than skipping them to get a green run.
 - After changing the sim or the runner, prove the fast path equals the slow one
   (`CHIP_BATCH=1` must give the same OK/FAIL counts).
 - **A model of the loop state finds what a diff cannot, and it is cheap.** The
@@ -672,3 +667,10 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   as a record of a tried shape, and say so in the message.
 - Keep this file to rules that earn their place. When a finding is recorded,
   fold it into an existing rule or replace an older one — it is not a log.
+- **Trimming it is an edit with a proof attached: the sentences may go, the
+  measurements may not.** A number with a unit *is* the technical information
+  here — nobody can re-measure a reverted experiment — so
+  `python -u tools/agents_nums.py` compares the working tree against HEAD and
+  prints any numeric value that disappeared (`LOST VALUES none` is the bar; it
+  also separates a reflow into a table cell, which costs a unit token but no
+  value). Cut the story around a rule, never the rule's number.
