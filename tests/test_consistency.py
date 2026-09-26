@@ -188,11 +188,15 @@ check(f"spec-{m.N_OPS}-ops", m.N_OPS == 51 and m.HALT == 0 and m.RETURNM == 42
       and m.CALLM == 41 and m.ADJUST == 43 and m.TAPPEND == 44
       and m.VARARG == 45 and m.GETUP == 46 and m.SETUP == 47
       and m.GETCLO == 48 and m.GEN == 49 and m.FOREND == 50)
-readme = open(os.path.join(os.path.dirname(HERE), "README.md"),
-             encoding="utf-8").read()
+# The opcode table lives in docs/vm-isa.md, not in the README: the README says
+# what the project is, and a reference table of 51 opcodes is not that.  The
+# invariant is unchanged -- every opcode in the spec must be documented -- it
+# just follows the documentation where it went.
+isa_doc = open(os.path.join(os.path.dirname(HERE), "docs", "vm-isa.md"),
+               encoding="utf-8").read()
 missing_docs = [name for i, name in enumerate(m.OP_NAMES)
-                if not re.search(rf"\| {i} \| `{re.escape(name)}` \|", readme)]
-check("readme-opcodes-0-49", not missing_docs,
+                if not re.search(rf"\| {i} \| `{re.escape(name)}` \|", isa_doc)]
+check("isa-doc-opcodes-0-50", not missing_docs,
       f"missing {missing_docs}")
 
 # 7. keyword coverage --------------------------------------------------------
