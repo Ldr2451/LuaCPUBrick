@@ -58,3 +58,61 @@ So the unroll is two problems, not one: the size (measured above, 2.56x at four)
 and a correctness question that has to be answered before any of it can land.
 `tools/chip/modcost.py` and `tools/chip/armcost.py` are how the cost half was
 measured; the correctness half needs the two failing cases as the spec.
+
+## The partial unroll: the design, and the trap that makes the obvious shape wrong
+
+Copying the *whole* chain is what makes four steps cost 64,603 nodes, and the
+chain is wildly unequal. A `vmStepFast` that carries only the cheap arms would be
+about 1,073 nodes per copy, so four copies plus one full `vmStep` is ~44,000
+against the 103,908 the full unroll reaches.
+
+**The trap: omitting an arm silently skips its instruction.** The tail is
+
+```
+if !advanced && !vmHalted {
+  vmPc = vmPc + 1
+  if vmPc >= bop.length() { vmHalted = true }
+}
+```
+
+`advanced` is set by the arms that move the pc themselves, so a step that matches
+no arm leaves it false — and the tail then advances the pc **past an instruction
+that never ran**. A fast step therefore cannot share that tail. It needs its own
+`handled` flag, set only by the arms it actually contains:
+
+```
+mod vmStepFast() {
+  if vmHalted { return }
+  let op = bop[vmPc]
+  let a = bpa[vmPc]
+  let b = bpb[vmPc]
+  let c = bpc[vmPc]
+  var handled = false
+  if op == 1 { ...; handled = true }
+  else if op <= 7 { ...; handled = true }
+  ...                                   // only the cheap families
+  if handled && !advanced && !vmHalted {
+    vmPc = vmPc + 1
+    if vmPc >= bop.length() { vmHalted = true }
+  }
+}
+```
+
+and `vmBurst` becomes four `vmStepFast()` calls and one `vmStep()`, so a `CALL` or
+a `RETURN` falls through all four and is executed by the full step, while loads,
+arithmetic, comparisons, jumps, unary and the numeric `for` get four dispatches
+for the price of one arm each.
+
+The arms to carry, with the measured cost each contributes: loads 1-7 (568),
+comparisons 17-19 (178), jumps 20-22 (35), unary 14-15 (142), numeric `for` 32/33
+and 50 (150), and arithmetic 8-13, which is already a single arm and so is the
+biggest win per node in the set. Left single-copy on purpose: `CALL` 23/41 (5,467),
+the four return arms (2,417), `TAPPEND` 44 (2,507) and the gate dispatch itself.
+
+**Two things this does not solve.** It shares the closure hazard with the full
+unroll — `upvalue-read` and `upvalue-write` come back with an empty log at two
+steps, and that has to be understood first, because a partial unroll still
+dispatches twice in a tick. And the call-heavy case gets nothing from it:
+`fib(18)` only finishes at four full steps, and `CALL` is deliberately not in the
+fast set. So the honest pitch is *loop and straight-line speed at ~7% of the full
+unroll's price*, not "the 4x, cheaper".
