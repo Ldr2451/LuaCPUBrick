@@ -61,6 +61,20 @@
 ## Layout
 - `lua.ws` is the chip; `irrun/` simulates it; `tests/` holds the suite and the
   oracle diffs; `tools/` holds the tools. Keep the root to the chip and the docs.
+- **`lua.brz` is the deliverable, and the compiler writes no artifact when it has
+  diagnostics.** It prints the IR, exits non-zero and leaves the previous `lua.brz`
+  sitting there looking current — so a build that does not check the exit code can
+  "succeed" and ship yesterday's chip. `python -u tools/buildbrz.py` is the build
+  and refuses to claim success unless `rc == 0`; `irdump.dump_source` now raises on
+  a non-zero `rc` too, which is what makes preflight catch the regression. This is
+  not hypothetical: `lua.ws` carried 53 diagnostics for a long time (46 mods called
+  above their own declaration, a parameter assigned, a var read above its
+  declaration) and **629 cases were green throughout**, because the graph those
+  diagnostics still produce is a working graph and nobody looked at `rc`. Hoist a
+  declaration rather than leaving a call above it, and remember that a mod is
+  *inlined at its call site*, so a mod may write a name that belongs to the mod it
+  is inlined into — that is how `gateHigh` set `advanced` — but the scope check runs
+  before inlining and calls it unknown. Answer it as a return value instead.
 - **The oracle is the reference and nothing else.** Real Lua 5.5 decides what
   correct means; a diff against it is the only proof. There is no second chip
   source.

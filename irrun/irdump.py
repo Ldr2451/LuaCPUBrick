@@ -224,14 +224,15 @@ def dump_source(path, brz_out=None):
                         "--dump-ir-full"],
                        capture_output=True, text=True, cwd=WS_DIR,
                        encoding="utf-8", errors="replace")
-    # The compiler exits non-zero on this chip and always has: the file is one
-    # long chain of mods that call each other below their own declarations, which
-    # is WS021, plus a `let ini` the tools never write.  Those diagnostics cost the
-    # exit code but not the graph, so the return code is NOT the test -- a missing
-    # IR dump is.  WS_STRICT=1 turns them into an error for whoever wants to see
-    # them, and a partial graph is caught by the node count, which audit prints.
-    if p.returncode != 0 and os.environ.get("WS_STRICT"):
-        errs = [l.strip() for l in p.stderr.splitlines() if "Error" in l]
+    # rc=0 is the test, and it is a real test now: lua.ws used to exit 1 with 53
+    # diagnostics -- 46 mods called above their declaration, a parameter assigned,
+    # a var read above its declaration -- and the compiler writes NO artifact when
+    # it has diagnostics, so the game-loadable lua.brz could not be built at all.
+    # 626 cases had been running against the graph those diagnostics still
+    # produced, because the dump was parsed and the exit code never looked at.
+    if p.returncode != 0:
+        errs = [l.strip() for l in (p.stdout + p.stderr).splitlines()
+                if "WS" in l and "Error" in l]
         raise RuntimeError("the compiler rejected %s (rc=%d): %s"
                            % (os.path.basename(path), p.returncode,
                               " | ".join(errs[:4]) or p.stderr[-500:]))

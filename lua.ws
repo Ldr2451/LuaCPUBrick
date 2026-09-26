@@ -345,16 +345,6 @@ mod fmtNum(v: float) -> string {
     else "" .. v
 }
 
-mod fmtVal(tag: int, num: float, s: string) -> string {
-  return if tag == 0 then "nil"
-    else if tag == 3 then if num == 0.0 then "false" else "true"
-    else if tag == 2 then s
-    else if tag == 4 then "function"
-    else if tag == 5 then "table: 0x" .. (num | 0)
-    else if tag == 6 then "" .. (num | 0)
-    else fmtNum(num)
-}
-
 // ---------------------------------------------------------------- lexer state
 // token kinds: 1 NUM, 2 STR, 3 NAME, 4 KW, 5 SYM, 6 EOF
  // KW ids: and1 break2 do3 else4 elseif5 end6 false7 function8 if9 local10
@@ -394,14 +384,2662 @@ var tn: float[]
 var tt: string[]
 var tl: int[]
 
+// printable ASCII table for \ddd / \xXX escapes (32..126 only)
+const PRINTABLES = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+
+mod hexVal(cp: int) -> int {
+  return if cp >= 48 && cp <= 57 then cp - 48
+    else if cp >= 97 && cp <= 102 then cp - 87
+    else if cp >= 65 && cp <= 70 then cp - 55
+    else -1
+}
+
+mod closerFor(level: int) -> string {
+  return if level == 0 then "]]" else if level == 1 then "]=]" else if level == 2 then "]==]"
+    else if level == 3 then "]===]" else if level == 4 then "]====]" else "]=====]"
+}
+var perr: bool = false
+var perrMsg: string = ""
+var presReg: int = 0
+var presIsCall: bool = false
+
+var bop: int[]
+var bpa: int[]
+var bpb: int[]
+var bpc: int[]
+var constNum: float[]
+var constStr: string[]
+var fStart: int[]
+var fParams: int[]
+var fRegs: int[]
+var fVar: bool[]
+var mainFid: int = 0
+var gmap: Map<string, int>
+var gslotNext: int = 0
+// global slots the runtime wires directly, resolved by name in parseInit
+var slotOutLatch: int = 0
+var slotInLatch: int = 0
+var slotInInt0: int = 0
+var slotOutInt0: int = 0
+var fnDepth: int = 0
+var cfNext: int[]
+var cfMax: int[]
+var cfBase: int[]
+var cfMaxLoc: int[]
+var locName: string[]
+var locReg: int[]
+var locDepth: int[]
+// has anything captured this local?  Then the function that declares it reads
+// and writes the *cell* from the capture on, not the register: the cell is
+// what closures see, and the register only holds the value the cell was
+// seeded from.  A statement between the declaration and the first closure
+// over it still goes through the register, which is right because in those
+// instructions no closure exists yet.
+var locCap: bool[]
+var locLen: int = 0
+// Upvalues.  fUpN[fid] is how many descriptors the prototype has, and the two
+// arrays strided by MAX_UP say what each one is: fUpSrc >= 0 is the captured
+// local's register in that frame (instack), < 0 is -(1 + the same local's
+// index in the *enclosing* function), which is how a local two levels out
+// becomes a one-level read of the enclosing closure's cell; fUpSlot is where
+// that frame keeps the cell for an instack one.
+// upIdx interns (prototype, local entry) -> descriptor index.  Keying on the
+// entry and not the name is what makes shadowing right: a function may
+// capture its own `x` and an enclosing `x` in one body, and they are
+// different cells.
+var fUpN: int[]
+var fUpSrc: int[]
+var fUpSlot: int[]
+var fUpSlotN: int[]
+var upIdx: Map<string, int>
+// the prototype each compile depth is on, so a capture can be walked up the
+// chain of enclosing functions
+var fidAt: int[]
+// A loop whose body contains a capture has to bump the generation once per
+// iteration, so each round gets its own cells the way PUC's close-at-block-end
+// does.  capGen counts captures; a block stamps it on the way in and compares
+// on the way out, which is how "this body contains a capture" is answered
+// without walking the block tree: a capture inside a nested function still
+// leaves the outer loop's body stamped, which is right, because the captured
+// local's block is the outer body and PUC re-opens it every round.
+var capGen: int = 0
+var blkCapGen: int[]
+// A repeat's block ends *after* its until condition, so its one-per-round bump
+// is emitted in front of the condition and this says so, or the block exit
+// would add a second one outside the loop.
+var blkGenDone: bool = false
+var selfName: string[]
+var selfClean: bool[]
+var selfFid: int[]
+// is the function being compiled variadic?  `...` outside one is an error, and
+// the VM keeps the same flag per function id in fVar
+var fnVar: bool[]
+// `function M:f(...)` compiles as `M.f = function(M, ...)`: the receiver name
+// is not written, so the parameter list has to be told to declare it first.
+// Per depth, because a function head and its parameter list are parsed at
+// different times and a global would not survive a nested head.
+var fnSelfArg: bool[]
+var valStk: int[]
+var valCall: bool[]
+var valPrefix: bool[]
+var opKind: int[]
+var opPrec: int[]
+var opA: int[]
+var opB: int[]
+var ctlKind: int[]
+var ctlA: int[]
+var ctlB: int[]
+var ctlC: int[]
+var plNext: int[]
+var lkKind: int = 0
+var lkReg: int = -1
+var lkFid: int = -1
+var lkDone: bool = false
+var lkRaw: bool = false
+// which live local the name matched, so the one test after the ladder can tell
+// a local of this function from a capture without each of the 32 arms asking
+var lkIx: int = -1
+var blkLen: int[]
+var blkNext: int[]
+var opBase: int[]
+
+// ---------------------------------------------------------------- expression machine state
+// Shunting-yard, direct-emit. expectOperand tracks prefix/infix position.
+// popMode 0 none, 1 precedence pops, 2 drain to marker. closeMode records a
+// pending `)`/`,`/terminator close to finish once pops drain.
+// opKind: 0 binop (opA=bytecode op, opB=1 left-assoc), 1 unary (opA 0=UNM
+//   1=NOT), 2 call (opA=fr, opB=nargs, opC=valDepth), 3 group (opA=valDepth),
+//   4 and / 5 or (opA=result reg, opB=patch pos).
+
+var expectOperand: bool = true
+var popMode: int = 0
+var popPrec: int = 0
+var pendKind: int = -1
+var pendPrec: int = 0
+var pendSub: int = 0
+var pendAux: int = 0
+var closeMode: int = 0
+var exprDone: bool = false
+var closeTrig: int = 0
+var opC: int[]
+var openCtor: int = 0
+var ctorStk: int[]
+var itBase: int[]
+var itKey: int[]
+
+var lastPatchTarget: int = -1
+// Position of the most recently emitted CALL whose result count is still
+// undecided.  Lua only expands a call's results when the call sits in the LAST
+// argument position of an enclosing call (or feeds a fixed-arity target list),
+// and that is not known when the call itself closes: `f()` ends before the
+// enclosing `print(...)` does.  So record the call, then patch its C operand to
+// 1 once we learn it was in tail position.
+var lastCallPos: int = -1
+
+// ---------------------------------------------------------------- statement machine state
+// parseStep runs one micro-step: expression micro-ops while inExpr, else one
+// statement action. contKind resumes after a unit: 1 expr-stmt, 2 if-cond,
+// 3 elif-cond, 4 while-cond, 5 return, 6 local-values, 7 assign-values,
+// 10 for-init, 11 for-limit, 12 for-step, 13 repeat-until-cond.
+// stState tracks multi-step constructs. Control frames: 1 if (A=fpos,
+// B=ends), 2 while (A=top, B=false, C=breaks, D=savedLoop), 3 func
+// (A=fid, B=skip, C=resume, D=savedLoop, E=extra), 4 do,
+// 5 for (A=body, B=entry-jmp, C=breaks, D=savedLoop, E=limit, F=step),
+// 6 repeat (A=body-top, C=breaks, D=savedLoop).
+
+var inExpr: bool = false
+var contKind: int = 0
+var stState: int = 0
+var tmpA: int = 0
+var tmpB: int = 0
+var tmpC: int = 0
+var tmpS: string = ""
+var forName: string = ""
+var forInit: int = -1
+var forLimit: int = -1
+var forStep: int = -1
+var forNames: string[]
+var tmpNames: string[]
+var tmpRegs: int[]
+// saveTmp's parking lot: counts and values of the scratch arrays
+var svC: int[]
+var svI: int[]
+var svS: string[]
+var ctlD: int[]
+var ctlE: int[]
+var ctlF: int[]
+var ctlG: int[]
+var ctlLoop: int = -1
+var pdHead: int = -1
+var pdThen: int = 0
+// where a pending patch list points, when the target is not simply "wherever the
+// code ends by the time the list is drained" (a numeric loop's break list points
+// at the FOREND it has to run, which is one instruction before that)
+var pdTarget: int = -1
+var tmpSStk: string[]
+// field name of a `function M.f()` definition, popped when its body closes
+var fnKey: string[]
+var funcEntryLoc: int[]
+var pDone: bool = false
+
+// ---------------------------------------------------------------- VM state
+// Flat register file (pre-sized; frames share it by base offsets) and
+// parallel frame stacks. Value tags match fmtVal: 0 nil, 1 num, 2 str,
+// 3 bool, 4 func.
+
+var vtag: int[]
+var vnum: float[]
+var vstr: string[]
+var fFunc: int[]
+var fBase: int[]
+var fRetA: int[]
+var fRetBase: int[]
+var fRetPC: int[]
+var fRetN: int[]
+var fVaB: int[]
+var fForDepth: int[]
+// vararg values as one flat stack; each frame records its base in fVaB and
+// vaTop is the number of live entries
+var vaTag: int[]
+var vaNum: float[]
+var vaStr: string[]
+var vaTop: int = 0
+var gtag: int[]
+var gnum: float[]
+var gstr: string[]
+var vmPc: int = 0
+var vmBase: int = 0
+var vmHalted: bool = true
+var vmFailed: bool = false
+var retCountV: int = -1
+var cmpActive: bool = false
+var cmpAA: int = 0
+var cmpBB: int = 0
+var cmpDst: int = 0
+var cmpI: int = 0
+var cmpOp: int = 0
+var tmap: Map<string, int>
+var tvTag: int[]
+var tvNum: float[]
+var tvStr: string[]
+var tLen: int[]
+var tFree: int[]
+var tHeap: int = 0
+var tCount: int = 0
+// per-slot insertion-order chain: tOwner/tKey* describe the entry, tPrev/tNext
+// link it, and tFirst/tLast are each table's ends (so pairs/next can walk in
+// insertion order).  -2 marks a free (unlinked) slot, -1 the end of a chain.
+var tOwner: int[]
+var tKeyTag: int[]
+var tKeyNum: float[]
+var tKeyStr: string[]
+var tPrev: int[]
+var tNext: int[]
+var tFirst: int[]
+var tLast: int[]
+// pending next() walk: nxSlot is the candidate entry, nxDst the absolute
+// destination register, nxPc the call's pc (advanced when the walk finishes)
+var nxActive: bool = false
+var nxSlot: int = 0
+var nxDst: int = 0
+var nxPc: int = 0
+var nxMode: int = 0
+// One micro-step per burst. vmBurst raises this and the first step consumes it.
+var fmtGo: bool = false
+var lenChase: bool = false
+var lenTid: int = 0
+var latchN0: float = 0.0
+var latchN1: float = 0.0
+var latchN2: float = 0.0
+var latchN3: float = 0.0
+var latchS0: string = ""
+var latchS1: string = ""
+var latchVX: float = 0.0
+var latchVY: float = 0.0
+var latchVZ: float = 0.0
+var latchCR: float = 0.0
+var latchCG: float = 0.0
+var latchCB: float = 0.0
+var latchCA: float = 0.0
+var latchI0: int = 0
+var forDepth: int = 0
+var forCtrl: int[]
+var forRem: float[]
+
+// ---------------------------------------------------------------- closures
+// A function value (tag 4) holds a *closure* number, not a prototype.  Below
+// cloBase a closure is its own prototype -- cloF is only written for the
+// records above it -- so every builtin and every function with no upvalues
+// works exactly as it did, and PUC's rule that two evaluations of one literal
+// are the same value when nothing was captured falls out of that.  A function
+// *with* upvalues gets a record per evaluation, and cloU is its cell list,
+// strided by MAX_UP.
+var cloBase: int = 0
+var cloTop: int = 0
+var cloF: int[]
+var cloU: int[]
+// Upvalue cells: one value each, out of a fixed arena, never reclaimed.  That
+// is the same bargain the table heap makes and it is what a collector would
+// fix -- a loop that makes a closure per iteration spends a cell per iteration.
+// Cell 0 is the "none" marker, so a slot needs no clearing to start empty.
+var uTag: int[]
+var uNum: float[]
+var uStr: string[]
+var uTop: int = 1
+// A frame's slot table -- three words per captured local: the cell, the frame
+// that made it, the loop round it was made in -- sits in the vararg stack just
+// below that frame's varargs, and the word below *it* is the frame's own
+// sequence number.  The stamps are what stop a new frame adopting the last
+// one's cells (the table is scratch space) and what give each round of a loop
+// its own, which is what PUC gets by closing the cells at the end of the block.
+var frameSeq: int = 0
+var iterGen: int = 0
+// cloStep's state: one cell per tick, driven from vmBurst.
+var cloCur: int = 0
+var cloCid: int = 0
+var cloK: int = 0
+var cloN: int = 0
+var cloDst: int = 0
+var cloActive: bool = false
+
+// Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
+// 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
+// (inputs filled from the latches), 19..39 builtins (print, type, tostring,
+// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall, _pat, _gmatch, _gmnext) as
+// functions with ids 0..NB-1, the two int globals, and the four library tables.
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 5, 5, 5, 5]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
+
+// pcall, which PUC has in C and is a gate here for the same reason.
+//
+// The shape is a marker frame: a sentinel fid on the same fFunc stack the calls
+// use, carrying the pcall's own return.  pcall pushes the marker and then makes
+// the call to f itself with that call's results one register past the pcall's
+// own, so `true` has a register of its own and the values land beside it.  The
+// marker is what makes nesting work: a pcall inside a pcall has its own, and
+// the innermost one is what an error unwinds to.
+const PCALL_MARK = 99
+var pcallH: float = 0.0         // xpcall's message handler, as a value: it has
+var pcallHT: int = 0            // to be a variable, because the protected call's
+                               // own frame is written over its register
+var pcallMsg: string = ""      // the error a protected call caught
+var pcallUnwind: bool = false  // and that there is one to unwind
+var pcallDepth: int = 0        // markers on the stack: above zero, an error is a value
+var pcallIsX: bool = false     // and the call is xpcall, so an error goes to a handler
+var pcallMode: int = 0         // 0 the protected call itself, 1 its message handler
+var pcallBase: int = 0         // the frame the call was made from: a caught error
+                               // leaves vmBase wherever it got to
+var pcallGate: bool = false    // a gate is waiting to run at pcallGatePc
+var pcallGatePc: int = 0       // which is the protected call's own instruction
+var pcallGateArgs: int = 0     // and how many arguments it should be given
+var pcallRan: bool = false     // and the dispatch now under way is that gate
+var pcallBad: int[]            // whether that dispatch raised: an array, because
+                               // a mod's write to a file variable is not read
+                               // back reliably inside the same step
+var pcallGo: bool = false      // and pcallEnter has a frame to push
+var pcallFid: int = 0          // which function
+var pcallA: int = 0            // the pcall's own register
+var pcallNArgs: int = 0        // how many arguments it was given
+
+// PUC's string-to-number coercion, which the chip did not have at all: '3' + 1
+// is 4, ' 2.5 ' * 2 is 5.0, '0x10' + 0 is 16, '1e3' + 0 is 1000.0, -'3' is -3,
+// and a string that is not a number raises with the operator's own wording.
+// The host's ParseInt/ParseNumber gates are the primitive: each answers a value
+// and a Success flag, and the simulator models them with int(s)/float(s) and
+// that flag, so '10abc' fails (PUC wants the whole string) while '  2.5  '
+// parses.  ParseInt is tried first, which is also PUC's order and is what makes
+// '2' an integer and '2.0' a float: a fraction or an exponent in the numeral
+// makes ParseInt fail, so the answer takes the float path.
+//
+// It is two mods with one latch each, not one mod with one latch, and not an
+// if-expression.  A mod call in a VALUE position runs whether the arm runs or
+// not -- the trap that made math.type('x') raise through numArg -- and a `let`
+// taken from a var the same mod writes is re-derived at its next use, so a
+// shared latch would answer with the RIGHT operand's kind.  A latch per operand
+// side-steps that: nothing overwrites it after its call, so a re-derivation
+// reads the same value.
+//
+// The kind is what the caller needs for PUC's integer/float split: 0 the
+// operand was not a string, 1 a string that converted to an integer, 2 one that
+// converted to a float, 3 a string that is not a number at all.
+var coerceL: int = 0
+var coerceR: int = 0
+
+mod toInt(v: float) -> int {
+  return v | 0
+}
+
+const INT64_LIMIT = 9223372036854775808.0
+const INT64_WRAP = 18446744073709551616.0
+
+// One VM instruction (ISA in spec.py).
+// Composite map key for table `tid`: kt is the key's value tag.
+mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
+  return if kt == 1 || kt == 6 then tid .. "#" .. (kn | 0)
+    else if kt == 2 then tid .. "$" .. ks
+    else tid .. "@" .. kt .. ":" .. (kn | 0)
+}
+
+mod keyTag(t: int, v: float) -> int {
+  return if t == 1 && v == floor(v) then 6 else t
+}
+var fmtBase: int = 0          // the call's register base (absolute)
+var fmtArgs: int = 0
+var fmtArgI: int = 0
+var fmtPos: int = 0
+var fmtOut: string = ""
+var fmtBody: string = ""
+var fmtPre: string = ""       // the sign or 0x prefix, kept ahead of zero padding
+var fmtPadAcc: string = ""
+var fmtArg: string = ""
+var fmtNum_: float = 0.0
+var fmtWidth: int = 0
+var fmtPrec: int = 0
+// one int per flag rather than a bitmask: WireScript has no bitwise and, and
+// fmtMinus / fmtZero / ... say what they are
+var fmtMinus: int = 0
+var fmtPlus: int = 0
+var fmtSpace: int = 0
+var fmtHash: int = 0
+var fmtZero: int = 0
+var fmtState: int = 0
+var fmtPad: int = 0
+var fmtNeg: bool = false
+// the padding side and fill are bools, not the 0/1 ints the flags are: an int
+// flag var read in a condition compares through a placeholder that reads 0, and
+// %-6d silently came out right-justified
+var fmtPadLeft: bool = false
+var fmtPadZero: bool = false
+var fmtCh: string = ""
+var fmtEof: bool = false
+var fmtTo: int = 0
+// the quoted walk has its own cursor: it used to share fmtPos with the spec walk
+// and reset it to 0, so after %q the spec was read from the start again and the
+// conversion ran twice ("%q" of "" asked for argument #3)
+var fmtQPos: int = 0
+var fmtBase_: float = 10.0
+var fmtBaseI: int = 10
+var fmtQ_: int = 0
+var fmtD_: int = 0
+var fmtUpper: bool = false
+var fmtDigits: int = 0
+var fmtDigitsMax: int = 0
+var fmtSpec: string = ""
+const HEXDIG = "0123456789abcdef"
+const HEXDIG_U = "0123456789ABCDEF"
+const ZEROS16 = "0000000000000000"
+
+// The name of a value tag, for error messages: PUC says "got string" for a
+// wrong argument and "got no value" for a missing one, so the caller passes the
+// tag it would have read and says "no value" itself when there is none.
+mod typeName(t: int) -> string {
+  return if t == 0 then "nil" else if t == 1 || t == 6 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else if t == 5 then "table" else "userdata"
+}
+
+// The quoted form of one byte: PUC 5.5 writes a backslash and a real newline
+// for a newline, not "\n", so a quoted multi-line string stays one pasteable
+// literal; a tab is a numeric escape.  The digits are written without a loop:
+// anything below 32 is one or two digits, and 127 is the only three-digit one.
+mod fmtQuoteByte(b: int) -> string {
+  if b == 34 {
+    return "\\\""
+  } else if b == 92 {
+    return "\\\\"
+  } else if b == 10 {
+    return "\\\n"
+  } else if b == 13 {
+    return "\\r"
+  } else if b == 0 {
+    return "\\0"
+  } else if b == 127 {
+    return "\\127"
+  } else if b < 10 {
+    let one = b
+    let ch1 = FromCharCode(48 + one).Character
+    return "\\" .. ch1
+  } else if b < 32 {
+    // no `%` operator in WireScript, so the tens digit is a floor division
+    let tens = floor(b / 10.0)
+    let ones = b - tens * 10.0
+    let ch2 = FromCharCode(48 + tens).Character
+    let ch3 = FromCharCode(48 + ones).Character
+    return "\\" .. ch2 .. ch3
+  } else {
+    return FromCharCode(b).Character
+  }
+}
+
+// %e.  The mantissa is the value divided by 10^k, and no division by ten is
+// exact -- 1/10 is not representable -- so this cannot be %f with a different
+// exponent bolted on.  It is a digit stream instead: the integer part's digits
+// come off one division at a time, the fraction's off a double-double multiplied
+// by ten per digit, and the exponent is where the first nonzero digit sits
+// relative to the point.  The mantissa is those p+1 digits read as one integer,
+// so a carry out of them is +1 on the exponent rather than a walk back through
+// the digits.  See the note above fmtConvFloat for why this is its own shape.
+var fmtAll: string = ""      // the integer's and the fraction's together
+var fmtK: int = 0            // the decimal exponent
+var fmtS: int = 0            // the index of the first significant digit
+var fmtPt: int = 0           // how many digits sit before the point
+var fmtM: float = 0.0        // the mantissa's p+1 digits, as one integer
+var fmtMI: int = 0           // the cursor while they are read
+var fmtNz: int = 0           // the fraction digits taken so far
+var fmtLz: int = -1          // where the first nonzero one is, -1 until it is
+var fmtLead: int = 0         // the mantissa's first digit, once they are read
+var fmtExp: string = ""      // the exponent's digits, separate from the value's
+var fmtUpperE: bool = false  // %E, which is the same number with an E
+var fmtSticky: bool = false // something nonzero follows the round digit
+var fmtSI: int = 0           // the cursor for that scan
+var fmtENum: int = 0         // the exponent while it is written out
+
+// %g, which is %e or %f chosen by the exponent, and then has its trailing zeros
+// taken off.  The choice needs the exponent first, so it runs %e's digit walk
+// to get it and then goes back through one arm or the other: %e's, with the
+// precision one lower, or %f's, with p-1-k places and no exponent at all.  The
+// digits are already in fmtAll either way, so the %f arm is string surgery on
+// them rather than a second conversion.
+var fmtIsG: bool = false     // this conversion is %g, not %e
+var fmtG0: int = 0           // %g's own precision, before either arm changes it
+var fmtStrip: bool = false   // and it drops trailing zeros (# says keep them)
+var fmtGToExp: bool = false  // and its stripped form wants the exponent after
+
+// %f: the value scaled by its precision and rounded to an integer, which is
+// then read out one digit per tick with the point put back.  The scale is the
+// whole difficulty: a double times a power of ten is not the exact product
+// (0.15 * 10 is 1.5, and the exact product is 1.4999999999999999944..., so the
+// one-rounding version prints 0.2 where PUC prints 0.1), and a rounded product
+// cannot say which side of a .5 it landed on.  So the product is carried in a
+// double-double: two doubles holding 106 bits, and the tie is read off the sign
+// of the half the single multiply dropped.  tools/fmtdiff.py measures what the
+// cheap version costs: 0.17% of the values that fit come out with the wrong
+// last digit, and they are 0.05, 0.15, 344.95 -- the values programs format.
+var fmtV: float = 0.0         // |the argument|
+var fmtDd: float[]           // the double-double: [0] the high half, [1] the low
+var fmtIP: float = 0.0        // the integer part, exact while it is below 2^53
+var fmtF: float = 0.0         // the fraction scaled by the precision
+var fmtInt: string = ""       // its digits, least significant first
+var fmtFr: string = ""        // and the fraction's
+var fmtP: int = 0             // the precision in force, %f's 6 when none given
+var fmtNxt: int = 17          // where the integer digit walk goes when it ends
+
+// ==================================================================== patterns
+//
+// string.find, string.match and string.gmatch are C in PUC (lstrlib.c) and are
+// gates here for the same reason: a backtracking matcher wants a stack and a
+// loop, and a Lua program gets neither without a coroutine per match.  gsub's
+// *matcher* is the same gate, called one match at a time by mode 2, but gsub's
+// loop is a library piece (LIB_str_gsub): its replacement can be a Lua function
+// and a gate cannot call one, so the part that has to call back into Lua stays
+// in Lua.  The library piece around find and match is ordinary Lua too (see
+// libStrPat), which is the split PUC itself makes.
+//
+// The shape is the _fmt machine: the gate arm sets the subject, the pattern and
+// where the answers go, raises patGo, and the steps below run one piece per
+// tick until the registers hold PUC's answer.  What is PUC's is the algorithm:
+// lstrlib's match() is recursive, and the recursion here is an explicit stack
+// of continuations (patSl, four ints per entry -- kind, pattern position,
+// subject position, and one spare for %b's depth).
+//
+// The stack holds only what a flat pattern needs:
+//
+//   1  a class item under + or *: the subject position before the item, so a
+//      failed rest can consume one more character and try again
+//   2  a ?: the pattern position past the ?, to carry on with the item skipped
+//   3  %b: the balance depth, to keep counting from where it was
+//
+// Captures work the way PUC's do_match recursion does, with a flat machine
+// keeping what the recursion gets for free.  A capture's number is how many the
+// attempt has opened, and its depth is how many are open now: "(a)(b)" closes the
+// first before it opens the second, so the number is not the depth, and the
+// number of the innermost *open* capture is neither -- that one is a stack,
+// patCapIx.  A quantifier inside a capture gives a character back and runs the
+// ) again, so the ) records that it closed and the rewind opens it again.  A (
+// followed by ) is PUC 5.5's position capture, whose value is where it stands,
+// as a number.
+//
+// Four traps this part paid for, all general enough to be here:
+//   - An int[] does not keep a negative value.  The capture ends were sentinels
+//     of -1 for "open" and -2 for a position capture, and every one of them read
+//     back as 0, so every capture looked like an empty match.  The ends are
+//     stored plus one, with the position case in a flag of its own.
+//   - A local computed from a var the same mod writes is re-derived at its next
+//     use, so patOpen's n = patCapN + 1 became n + 1 when it reached the push
+//     and the first capture's entry pointed at the second one's slot.  Compute
+//     it, use it, and write the var last.
+//   - A quantifier with no item in front of it is PUC's own dead end rather than
+//     an error: max_expand wants at least one match of the character it names.
+//     That is why "(%d+)-" still finds its minus and "a??b" finds nothing.
+//   - A capture's answer does not fit an expression's registers past MAXVALS, so
+//     a find with more captures than that is refused rather than written over
+//     the values after it.
+//
+// The cost is ticks, not gates, and it is worth knowing which is which before
+// making this faster.  The library piece is 130 characters, so a program that
+// names find or match pays about 33 ticks of lexing on every run (4 chars a
+// tick) and two function literals to parse; a find that matches near the front
+// is then five or six states, one tick each.  What costs is the retry: a find
+// that fails tries every start position, and a quantifier that gives characters
+// back walks the pattern again for each one, so a failing find over a long
+// subject is O(n) states and a subject of a few hundred characters is a
+// program's worth of ticks.  The fix when that matters is more states per tick
+// -- call patStep several times in the arm at the top of vmStep, the way
+// lexChunk calls lexStep four times -- not fewer gates.
+//
+// Two more from the first pass, also general:
+//   - A gate may read only the arguments it was given.  A register past nargs
+//     still holds whatever the caller's previous call left in it, so reading
+//     a+4 for an init that was never passed gave a find a boolean init and an
+//     error about argument #3.  Every argument read is guarded by its count.
+//   - An array read that FOLLOWS a var write inside a nested arm loses its Exec
+//     chain when the mod is inlined this many times, and the writes fed by it
+//     quietly never happen: patBack popped an entry and then read its four slots
+//     into patI, patItemP and patQEnd, and only the pop landed.  The slots are
+//     read into locals at the top of the mod now, before anything is written.
+//
+// Mode 2 is the gsub shape: the same answer find gives, plus the capture count
+// in the third register so the loop knows how many of the next nine it must
+// read, and plus the whole match in the first when the pattern captured
+// nothing.  gsub's own loop is PUC's and three of its rules are not the
+// matcher's, which is where the time went when this was ported:
+//   - The unmatched text between one match and the next is copied when the
+//     match lands, not before it, so a find's a can be past the loop's cursor.
+//     A step that does not match copies exactly one character and does not count
+//     as a replacement.
+//   - The loop stops when a match ends where the last one ended, which is
+//     because lstrlib compares e with lastmatch and not because the matcher
+//     refuses the end of the subject: find("abc", "a*", 4) is 4 3, and "aaa" on
+//     "a*" is one replacement for the same reason.
+//   - A leading ^ gives one match: the loop breaks after it, whatever the limit.
+// A function replacement gets the captures, or the whole match when there are
+// none, and not the match and then the captures; a table replacement is keyed
+// by the first capture or by the whole match, and a nil or false value from
+// either keeps the matched text rather than dropping it.  Those last two are
+// lstrlib's push_captures and add_table, measured, not remembered.
+
+const PAT_STACK = 200
+// How many gmatch walks can be live at once: each is a slot in three arrays, and
+// the nesting a program can write is the nesting a chip can afford.  The list
+// resets between programs, so this is not a total-iterations budget.
+const PAT_WALKS = 16
+
+var patGo: bool = false      // one pattern step per burst, like fmtGo
+var patMode: int = 0         // 0 find, 1 match, 2 gsub's one match at a time
+var patSrc: string = ""      // the subject
+var patPat: string = ""      // the pattern, with a leading ^ already skipped
+var patPEnd: int = 0         // and its length
+var patLen: int = 0
+var patI: int = 0            // subject cursor, 0-based
+var patP: int = 0            // pattern cursor, 0-based
+var patStart: int = 0        // where this attempt began
+var patR: int = 0            // the start to try after this one fails
+var patAnchor: bool = false  // the pattern began with ^
+var patPSkip: int = 0        // and the ^ is not part of the pattern proper
+var patPlain: bool = false   // the pattern is a literal
+var patQ: int = 0            // the item's quantifier: 0 none, 1 *, 2 +, 3 -, 4 ?
+var patItemP: int = 0        // where the item under test starts
+var patItemE: int = 0        // and just past it
+var patQEnd: int = 0         // just past the quantifier
+var patQS: int = 0           // the subject position before the item
+var patHit: bool = false     // the last item's verdict
+var patSetP: int = 0         // the set scan's cursor, just past its [
+var patSetC: int = 0         // the character it is testing
+var patSetAny: bool = false  // whether that character is in the set so far
+var patSetSeen: bool = false // whether the set has any text yet
+var patSetPrev: int = 0      // the previous character, for a range
+var patSetHasPrev: bool = false
+var patSetNeg: bool = false  // [^...]
+var patBOpen: string = ""    // %b's two delimiters
+var patBClose: string = ""
+var patBC: int = 0           // and its balance
+var patBFirst: bool = false  // and whether the opening delimiter is still ahead
+var patFPrev: bool = false   // %f's previous-character test
+var patCapS: int[]           // a capture's start, by number
+var patCapE: int[]           // its end plus one, so a zero means "no end yet"
+var patCapP: int[]           // and 1 for a position capture, whose value is where
+                             // it stands rather than what it covers.  None of
+                             // these hold a negative: an int[] does not keep one,
+                             // which is what sentinels of -1 and -2 turned into
+                             // plain zeroes and left every capture reading as an
+                             // empty match.  Zero-plus-one is the encoding that
+                             // works.
+var patCapIx: int[]          // the numbers of the captures open right now, as a
+                             // stack: the innermost one is not a counter, since
+                             // "(a)(b)" closes the first before it opens the
+                             // second, and "((a))" does not
+var patNCap: int = 0         // how many captures this attempt has opened
+var patCapN: int = 0         // and how many are open at this point
+var patAOff: int = 0         // where the answer's captures start
+var patAn: int = 0           // and which one is being written
+var patAdv: int = 1          // how far the item under test moved the cursor:
+                             // one character for everything but a backreference
+var patSp: int = 0           // the backtrack stack's pointer, in ints
+var patSl: int[]
+var patErr: string = ""      // a malformed pattern's message
+var patTid: int = 0          // gmatch's state slot, and how far the walk is
+var patLastTid: int = 0      // the last one made, for an iterator called with
+                             // something that is not a number: PUC's gmatch
+                             // ignores its arguments entirely, so this is the
+                             // closest answer to "f(junk)" when one walk is live
+var patGmS: string[]         // each walk's subject, pattern and cursor
+var patGmP: string[]
+var patGmPos: int[]
+var patGmId: int = 0          // the walk this call is about
+var patGmPhase: int = 0       // 0 make the walk, 1 take a step
+var patGmIni: int = 1         // where the walk starts: gmatch takes an init
+var patAfter: int = 0        // where a finished set scan goes on a match
+var patFailTo: int = 0       // and on a miss
+var patSt: int = 0
+
+// The classes PUC's %a %c %d %g %l %p %s %u %w %x mean, on the codes
+// themselves: the host's isalpha is not a gate, and the lexer spells digit and
+// letter out the same way.  A letter that names no class is the character
+// itself, which is how %. and %b and %q work, and an uppercase letter negates.
+mod patClassHit(c: int, code: int, neg: bool) -> bool {
+  if code == 97 {
+    let hit = (65 <= c && c <= 90) || (97 <= c && c <= 122)
+    return if neg then !hit else hit
+  } else if code == 99 {
+    let hit = c < 32 || c == 127
+    return if neg then !hit else hit
+  } else if code == 100 {
+    let hit = 48 <= c && c <= 57
+    return if neg then !hit else hit
+  } else if code == 103 {
+    let hit = 33 <= c && c <= 126
+    return if neg then !hit else hit
+  } else if code == 108 {
+    let hit = 97 <= c && c <= 122
+    return if neg then !hit else hit
+  } else if code == 112 {
+    let hit = 33 <= c && c <= 126 && !(48 <= c && c <= 57) && !(65 <= c && c <= 90)
+      && !(97 <= c && c <= 122)
+    return if neg then !hit else hit
+  } else if code == 115 {
+    let hit = c == 32 || (9 <= c && c <= 13)
+    return if neg then !hit else hit
+  } else if code == 117 {
+    let hit = 65 <= c && c <= 90
+    return if neg then !hit else hit
+  } else if code == 119 {
+    let hit = (48 <= c && c <= 57) || (65 <= c && c <= 90) || (97 <= c && c <= 122)
+    return if neg then !hit else hit
+  } else if code == 120 {
+    let hit = (48 <= c && c <= 57) || (97 <= c && c <= 102) || (65 <= c && c <= 70)
+    return if neg then !hit else hit
+  }
+  let lit = c == code
+  return if neg then !lit else lit
+}
+
+// ==================================================================== io: stdin
+//
+// The text in the inStr0 port is the program's standard input, and two gate
+// builtins plus a library piece give it PUC's io.read / io.write / io.lines.
+// inStr0 rather than a port of its own: it is already a string input, the
+// harness already sets it, and a ninth input port is API surface for nothing.
+//
+//   _rd(fmt)  fmt is a byte count, "*a" (the rest), "*l" (a line, the newline
+//            eaten, a trailing CR not part of the line) or "*r" (rewind, which is
+//            what io.lines() needs to start at the beginning).  PUC's "*n" is not
+//            here: it needs a string-to-number scan and the chip has no such
+//            primitive, so a program that wants a number cannot get one yet.
+//   _wr(s)    append to the log with no tab and no newline, which is the whole
+//            point of io.write; print's line handling is not what a program
+//            writing a report wants.  The order with print is kept because both
+//            go through logPush, and the 32-append cap is the same one.
+var rdText: string = ""
+var rdPos: int = 0
+var rdBuf: string = ""
+var rdGot: bool = false
+
+// ---------------------------------------------------------------- jobs + events
+
+let sched: exec
+let goParse: exec
+let goParse2: exec
+
+var jobBusy: bool = false
+var wantParse: bool = false
+
+// ---------------------------------------------------------------- stdlib
+//
+// The library is plain Lua source, prepended to the program before it is
+// lexed, and only the pieces a program actually names are included: parsing is
+// a tick-bounded job, so an unused library would cost every run.  Only the
+// handful of operations Lua cannot express at all (next, select, the _s/_m
+// string and math primitives) live in the VM; everything else is Lua.
+
+// Does p name this library entry?  A plain substring test, like the reference
+// chip: it never misses a word the program actually uses, and the worst a
+// needless match can do is parse a little more library.
+mod srcUses(p: string, name: string) -> bool {
+  return p.Find(name, true, 0) >= 0
+}
+
+// ---------------------------------------------------------------- parser/codegen state
+// Bytecode: parallel bop/bpa/bpb/bpc (opcodes in spec.py;
+// JMPF/JMPT carry target in pa and test reg in pb; CALL carries nargs in pb
+// and multi-tail bit in pc). Functions: fStart/fParams/fRegs. Constants:
+// constNum/constStr. Globals: gmap name->slot plus gslotNext. Compile frames
+// (one per nested function, depth-indexed): cfNext/cfMax/cfBase/cfMaxLoc.
+// Locals: locName/locReg/locDepth with locLen (truncate to exit scopes).
+// Self-recursion per depth: selfName/selfClean/selfFid. Shunting-yard:
+// valStk/valCall, opKind/opPrec/opA/opB. Control stack: ctlKind/ctlA/B/C.
+// Patch lists thread through plNext. Parse cursor cpos, error perr/perrMsg.
+
+var cpos: int = 0
+// Position of the CALL that produced the value currently in presReg, or -1 if
+// that value is not a call.  It outlives lastCallPos (which only tracks the
+// most recent emission) so the consumers of a finished value â€” `return f()`,
+// a target list, a constructor's last element â€” can still mark the call as
+// returning all of its results.
+var presCallPos: int = -1
+
+// ================================================================= _fmt
+//
+// string.format as a WireScript micro-step: one character of the spec, or one
+// digit, per tick, stepped from nxStep like next() is.  This hunk is installed
+// and the suite covers it; lib/fmt_gate_draft.txt is the extracted copy of it,
+// with the findings that took the builds to get:
+//
+//   python -u tools/fmtdraft.py --check      what lua.ws has
+//   python -u tools/fmtdraft.py --extract    save this hunk back to the draft
+//
+// Why a gate and not the library: the PUC-verified Lua implementation of this
+// function is lib/str_format.lua, 10769 characters, and the lexer runs at four
+// characters per tick, so prepending it cost 2692 ticks of boot per program --
+// about 45 seconds in-game.  As a gate it costs +3,308 nodes and +6,026 wires
+// (68,134 -> 71,442) and 0 boot ticks, and a "%d" format call runs in 0.2s of
+// sim time where the Lua version took 9.4s.
+//
+// State: %d %i %u %s %q %x %X %o %c %%, every flag (- + space # 0), width,
+// precision, the per-conversion flag table and the error messages all match
+// lua5.5, case by case, in the fmt-* suite cases.  Not yet: %f %e %g (and %a),
+// for which lib/str_format.lua has the algorithm and the notes on why the
+// rounding needs a Dekker two-product.
+//
+// The rules this shape follows, each one learned by getting it wrong:
+//
+//   - fetch a character in a state of its own, consume it in the next.  A value
+//     gate fed by a variable the same mod writes reads the NEW value, so a state
+//     that read the character at fmtPos and then advanced fmtPos walked one
+//     character ahead of the spec: every conversion came out as its own
+//     conversion character ("%d" -> "d", "%s|%s" -> "s|s").
+//   - the walk enters at the fetch state, never at the literal state, or the
+//     first character is skipped.
+//   - a state that hands back to the walk goes through the fetch, because
+//     fmtCh still holds the character the previous state consumed: going straight
+//     to the literal state appended it ("%d" -> "42d").
+//   - a condition on a file-level var, NESTED inside another if, is unreliable
+//     where the mod around it is inlined more than once: fmtPadStep's
+//     `if fmtPadLeft` chose the else arm whatever the var held, and swapping the
+//     two arms changed nothing.  The old four-step burst inlined vmStep four
+//     times and the compiler shared one Get per var across the copies; the lexer's chain has the same
+//     shape and works, because lexChunk inlines it once.  So the rule of thumb
+//     is to hoist the test to the top of the mod or take the flag as a
+//     parameter, and tools/wswarn.py flags the shape as a candidate.
+//   - one micro-step per burst.  The old four-step burst inlined and entered this
+//     machine up to four times in one tick; fmtGo kept one write per tick.
+//   - a mod call in a conditional's VALUE position is evaluated whether the arm
+//     runs or not; only exec statements (a mod call that writes a var) are
+//     guarded.  So `let y = if 2 < nargs then numArg(vTag(a + 3), ...) else 0.0`
+//     still ran numArg on an argument the call never passed, on whatever the
+//     register held from an earlier call, and died on "bad argument (number
+//     expected)".  Choose the tag and the value first, then hand numArg those:
+//     `numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3)
+//     else 0.0)`, which is what setvec and setcol already did.
+//   - a write at the top of a mod, followed by an else-if chain that deep with
+//     mod calls in it, is silently dropped: fmtPos = fmtPos + 1 at the top of
+//     fmtConv never happened, so the conversion was re-read as a literal.  The
+//     advance is repeated in every arm instead.
+//   - an int flag var read in a condition compares through a placeholder that
+//     reads 0, so fmtPadLeft/fmtPadZero are bools and every assignment that
+//     depends on a comparison is written as an if/else.
+//   - `floor()` TRUNCATES toward zero, it is not a floor: `floor(-1.0 / 16.0)`
+//     is 0, so a digit loop that divides with it never goes negative and %x of -1
+//     came out as fifteen zeros.  Floor division is done by hand in fmtRadixDigit
+//     (truncate, then carry a negative remainder into the digit and off the
+//     quotient).  Lua's math.floor is a different code path -- the _m gate -- and
+//     does floor, which is why math.floor(-2.7) is -3 and this is not.
+//
+// WireScript traps measured while building this, all of them in tools/wswarn.py
+// now, and all of them worth knowing before writing any more WireScript:
+//   - `%`, `for`, and a mod call on the right of `..` all leave a placeholder
+//     that reads 0, or fail as "attempt to call"
+//   - a string `+`, and a chain mixing `..` with `+` -> placeholder
+//   - `x = a == b` -> placeholder (assign a constant and set it in an if)
+//   - a mod and a var sharing a name (fmtNum, fmtZero) -> placeholder
+//   - `c >= "0"` on strings -> compiles, reads false; compare codepoints
+//   - a string returned from a mod: equal by ==, but ToCharCode() reads 0, so
+//     read characters into a var and test the var in a later state
+//   - an assignment at the bottom of a deep else-if chain silently does not take
+//     effect: fmtState = 7 in the %d branch never ran.  One mod per state is
+//     the fix, and the reason fmtLit/fmtFlag/fmtWidthStep/... exist separately.
+//   - tools/vargraph.py is what settled the rest: it lists the var nodes behind
+//     a name, how many write it, and what fires each write.
+//
+// ---------------------------------------------------------------- _fmt
+//
+// string.format as a micro-step: one character of the spec, or one digit, per
+// tick.  The library is prepended Lua source and the lexer runs at four
+// characters per tick, so the PUC-verified Lua implementation of this function
+// (kept as lib/str_format.lua) cost 10769 characters -- 2692 ticks of boot, about
+// 45 seconds in-game, before the program so much as started.  A gate pays
+// nothing for the source and one state machine covers the loops, so this is the
+// cheaper host by two orders of magnitude.  The semantics are settled by that
+// reference: 107 of 108 cases match lua5.5 byte for byte.
+// The argument register of the call being formatted, absolute: fmtBase + 1 +
+// fmtArgI.  A mod because a write at the top of a mod is dropped, and an
+// expression in the middle of fmtConv's chain would be too deep for the same
+// reason.
+//
+// ABSOLUTE, and that is the whole point: vTag/vNum/vStr take a register relative
+// to the current frame and add vmBase themselves, so passing them an index built
+// from fmtBase counted vmBase twice.  At top level vmBase is 0 and it worked; in
+// a function every argument but the last read from two registers too high, which
+// is why `return string.format('%s%s%s', 'a', 'b', 'c')` printed `cnilnil` and
+// `%d` of a number answered "number expected, got nil".  The conversions read
+// vtag[]/vnum[]/vstr[] at this index for that reason, and it is also the smaller
+// shape: no vmBase to add.
+var fmtSrc: string = ""
+
 mod lexFail(msg: string) {
   lerr = true
   lerrMsg = msg
   lerrLine = lline
 }
 
-// printable ASCII table for \ddd / \xXX escapes (32..126 only)
-const PRINTABLES = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+// level of a long bracket ([[, [=[, ...) starting at pos, or -1
+mod longLevel(pos: int) -> int {
+  let seg = lsrc.Substring(pos, 8)
+  return if seg.StartsWith("[[", true) then 0
+    else if seg.StartsWith("[=[", true) then 1
+    else if seg.StartsWith("[==[", true) then 2
+    else if seg.StartsWith("[===[", true) then 3
+    else if seg.StartsWith("[====[", true) then 4
+    else if seg.StartsWith("[=====[", true) then 5
+    else -1
+}
+
+mod curKind() -> int {
+  return if cpos >= tk.length() then 6 else tk[cpos]
+}
+
+mod curSub() -> int {
+  return if cpos >= tk.length() then 0 else ts[cpos]
+}
+
+mod curNum() -> float {
+  return if cpos >= tk.length() then 0.0 else tn[cpos]
+}
+
+mod curStr() -> string {
+  return if cpos >= tk.length() then "" else tt[cpos]
+}
+
+mod pushVal(r: int, isCall: bool, isPrefix: bool) {
+  valStk.push(r)
+  valCall.push(isCall)
+  valPrefix.push(isPrefix)
+}
+
+mod popVal() -> int {
+  if valStk.length() == 0 {
+    perr = true
+    perrMsg = "operand stack underflow"
+  }
+  valCall.pop()
+  valPrefix.pop()
+  return valStk.pop()
+}
+
+mod topFlag() -> bool {
+  return if valCall.length() == 0 then false else valCall[valCall.length() - 1]
+}
+
+mod topPrefix() -> bool {
+  return if valPrefix.length() == 0 then false else valPrefix[valPrefix.length() - 1]
+}
+
+mod setTopFlag(v: bool) {
+  if valCall.length() > 0 {
+    valCall[valCall.length() - 1] = v
+  }
+}
+
+mod setTopPrefix(v: bool) {
+  if valPrefix.length() > 0 {
+    valPrefix[valPrefix.length() - 1] = v
+  }
+}
+
+// ---------------------------------------------------------------- expression machine
+// One micro-op per call: pops, closes, or a single token action. Operands
+// push (reg, isCall); calls close with multi-tail from the last arg flag.
+
+mod bEmit(op: int, a: int, b: int, c: int) -> int {
+  bop.push(op)
+  bpa.push(a)
+  bpb.push(b)
+  bpc.push(c)
+  if bop.length() > MAX_INSTR {
+    perr = true
+    perrMsg = "program too long"
+  }
+  return bop.length() - 1
+}
+
+
+mod bPatch(pos: int, target: int) {
+  bpa[pos] = target
+  if bop[pos] == 21 && 0 < pos && bop[pos - 1] == 19
+     && bpc[pos - 1] < 0 && bpa[pos - 1] == bpb[pos] {
+    bpa[pos - 1] = -1 - target
+  }
+  lastPatchTarget = target
+}
+
+mod cNum(v: float) -> int {
+  let r = constNum.find(v)
+  if !r.Found {
+    if constNum.length() >= 256 {
+      perr = true
+      perrMsg = "too many numeric constants"
+    } else {
+      constNum.push(v)
+    }
+  }
+  return if r.Found then r.Index else constNum.length() - 1
+}
+
+mod cStr(s: string) -> int {
+  let r = constStr.find(s)
+  if !r.Found {
+    if constStr.length() >= 256 {
+      perr = true
+      perrMsg = "too many string constants"
+    } else {
+      constStr.push(s)
+    }
+  }
+  return if r.Found then r.Index else constStr.length() - 1
+}
+
+mod gDeclare(name: string) -> int {
+  let r = gmap.get(name)
+  if !r.Found {
+    if gslotNext >= MAX_GLOBALS {
+      perr = true
+      perrMsg = "too many globals"
+    } else {
+      gmap.set(name, gslotNext)
+      gslotNext = gslotNext + 1
+    }
+  }
+  return if r.Found then r.Value else gslotNext - 1
+}
+
+mod gLookup(name: string) -> int {
+  let r = gmap.get(name)
+  return if r.Found then r.Value else -1
+}
+
+// ---------------------------------------------------------------- registers + scope
+
+mod regAlloc() -> int {
+  let r = cfNext[fnDepth]
+  if r >= MAX_REGS {
+    perr = true
+    perrMsg = "too many registers"
+  }
+  cfNext[fnDepth] = r + 1
+  if r + 1 > cfMax[fnDepth] {
+    cfMax[fnDepth] = r + 1
+  }
+  return r
+}
+
+mod regFree(r: int) {
+  if r > cfMaxLoc[fnDepth] && r == cfNext[fnDepth] - 1 {
+    cfNext[fnDepth] = r
+  }
+}
+
+mod dirtySelf(name: string) {
+  if selfName[fnDepth] == name {
+    selfClean[fnDepth] = false
+  }
+}
+
+mod locBind(name: string, r: int) {
+  if locLen < locName.length() {
+    locName[locLen] = name
+    locReg[locLen] = r
+    locDepth[locLen] = fnDepth
+    locCap[locLen] = false
+  } else {
+    locName.push(name)
+    locReg.push(r)
+    locDepth.push(fnDepth)
+    locCap.push(false)
+  }
+  locLen = locLen + 1
+  if r > cfMaxLoc[fnDepth] {
+    cfMaxLoc[fnDepth] = r
+  }
+}
+
+mod blkEnter() {
+  blkLen.push(locLen)
+  blkNext.push(cfNext[fnDepth])
+  blkCapGen.push(capGen)
+}
+
+mod regSync() {
+  let top = cfBase[fnDepth]
+  let m = cfMaxLoc[fnDepth] + 1
+  if m > top {
+    cfNext[fnDepth] = m
+  } else {
+    cfNext[fnDepth] = top
+  }
+}
+
+// The descriptor this function already has for one of its own locals, or -1.
+// A local that something captured is read and written through the cell from
+// then on: the cell is the value closures see, so a write from a nested
+// function has to be visible here without going through the register.
+mod upSelf(ix: int) -> int {
+  let r = upIdx.get(fidAt[fnDepth] .. "#" .. ix)
+  return if r.Found then r.Value else -1
+}
+
+// One link of a capture chain: the prototype at compile depth d gets a
+// descriptor for local entry ix, or finds the one it already has -- two
+// closures over one local must share its cell.  src >= 0 is the local's
+// register in that frame; src < 0 is -(1 + the same local's index in d's own
+// upvalues).  Keyed on the local *entry* and not the name because a function
+// can capture its own x and an enclosing x in one body, and those are two
+// different cells with one name.
+mod upStep(d: int, ix: int, src: int) -> int {
+  let p = fidAt[d]
+  let key = p .. "#" .. ix
+  let r = upIdx.get(key)
+  if r.Found {
+    return r.Value
+  }
+  let k = fUpN[p]
+  if MAX_UP <= k {
+    perr = true
+    perrMsg = "too many upvalues"
+    return 0
+  }
+  fUpN[p] = k + 1
+  fUpSrc[p * MAX_UP + k] = src
+  if 0 <= src {
+    fUpSlot[p * MAX_UP + k] = fUpSlotN[p]
+    fUpSlotN[p] = fUpSlotN[p] + 1
+    // the declaring function's own reads and writes go through this cell from
+    // here on, so a write from a nested function is visible to it
+    locCap[ix] = true
+  }
+  upIdx.set(key, k)
+  return k
+}
+
+mod pushOp(kind: int, prec: int, a: int, b: int, c: int) {
+  opKind.push(kind)
+  opPrec.push(prec)
+  opA.push(a)
+  opB.push(b)
+  opC.push(c)
+}
+
+mod opTopKind() -> int {
+  return if opKind.length() == 0 then -1 else opKind[opKind.length() - 1]
+}
+
+mod popIsLeft(k: int) -> bool {
+  return if k == 0 then (opB[opB.length() - 1] & 1) == 1
+    else if k == 1 then false
+    else true
+}
+
+mod nextKind() -> int {
+  return if cpos + 1 >= tk.length() then 6 else tk[cpos + 1]
+}
+
+mod nextSub() -> int {
+  return if cpos + 1 >= tk.length() then 0 else ts[cpos + 1]
+}
+
+// Apply one pending operator pop. Only binop/unary/and/or frames pop;
+// call and group markers stop all pops.
+mod curStrAhead() -> string {
+  return if cpos + 1 >= tk.length() then "" else tt[cpos + 1]
+}
+
+// and/or arrival: pops drain first, then the frame goes up with its jump.
+mod andOrArrive(isOr: bool) {
+  pendKind = if isOr then 5 else 4
+  pendPrec = if isOr then 0 else 1
+  pendSub = 0
+  pendAux = 0
+  popMode = 1
+  popPrec = if isOr then 0 else 1
+}
+
+// ---------------------------------------------------------------- codegen helpers
+
+// GETUP's c operand: 0 reads this frame's own cell for the local, 1 reads the
+// enclosing closure's cell.  Which one is a property of the descriptor, so it
+// is settled here rather than in the VM.
+mod upKind() -> int {
+  let src = fUpSrc[fidAt[fnDepth] * MAX_UP + lkReg]
+  return if 0 <= src then 0 else 1
+}
+
+// A function body runs its own statements, which reuse the statement-level
+// scratch arrays.  Park the outer statement's copy of them, or the body's first
+// `local` wipes the names the outer one still has to assign (the assignment then
+// silently vanished, taking `local f = function() local x ... end` with it).
+mod saveTmp() {
+  svC.push(tmpRegs.length())
+  svC.push(itBase.length())
+  svC.push(itKey.length())
+  svC.push(tmpNames.length())
+  svC.push(tmpA)
+  svI.append(tmpRegs)
+  svI.append(itBase)
+  svI.append(itKey)
+  svS.append(tmpNames)
+  tmpRegs.clear()
+  itBase.clear()
+  itKey.clear()
+  tmpNames.clear()
+}
+
+mod restoreTmp() {
+  tmpA = svC.pop().Value
+  let nN = svC.pop().Value
+  let nK = svC.pop().Value
+  let nB = svC.pop().Value
+  let nR = svC.pop().Value
+  tmpNames.slice(svS, svS.length() - nN, nN)
+  svS.resize(svS.length() - nN, "")
+  itKey.slice(svI, svI.length() - nK, nK)
+  svI.resize(svI.length() - nK, 0)
+  itBase.slice(svI, svI.length() - nB, nB)
+  svI.resize(svI.length() - nB, 0)
+  tmpRegs.slice(svI, svI.length() - nR, nR)
+  svI.resize(svI.length() - nR, 0)
+}
+
+mod newFunc() -> int {
+  fStart.push(-1)
+  fParams.push(0)
+  fRegs.push(-1)
+  fVar.push(false)
+  fUpN.push(0)
+  fUpSlotN.push(0)
+  let bad = fStart.length() > MAX_FUNCS
+  if bad {
+    perr = true
+    perrMsg = "too many functions"
+  }
+  return if bad then 0 else fStart.length() - 1
+}
+
+mod funcDepthInit(islocal: bool) {
+  cfNext[fnDepth] = 0
+  cfMax[fnDepth] = 0
+  cfBase[fnDepth] = 0
+  cfMaxLoc[fnDepth] = -1
+  selfClean[fnDepth] = true
+  selfFid[fnDepth] = -1
+  fnVar[fnDepth] = false
+  if islocal {
+    selfName[fnDepth] = tmpS
+    selfFid[fnDepth] = tmpB
+  } else {
+    selfName[fnDepth] = ""
+  }
+  funcEntryLoc[fnDepth] = locLen
+  fnSelfArg[fnDepth] = false
+  fidAt[fnDepth] = tmpB
+}
+
+// Shared function head: fid already created in tmpB, name in tmpS.
+// islocal: self-recursion enabled. resume: 0 statement, 1 expression.
+mod pushCtl(kind: int, a: int, b: int, c: int, d: int, e: int, f: int) {
+  ctlKind.push(kind)
+  ctlA.push(a)
+  ctlB.push(b)
+  ctlC.push(c)
+  ctlD.push(d)
+  ctlE.push(e)
+  ctlF.push(f)
+  ctlG.push(0)
+}
+
+mod popCtl() {
+  ctlKind.pop()
+  ctlA.pop()
+  ctlB.pop()
+  ctlC.pop()
+  ctlD.pop()
+  ctlE.pop()
+  ctlF.pop()
+  ctlG.pop()
+}
+
+mod ctlTop() -> int {
+  return if ctlKind.length() == 0 then -1 else ctlKind[ctlKind.length() - 1]
+}
+
+// Append a patch position to a control frame's patch list (kept in B/C).
+mod lstAppendB(pos: int) {
+  plNext[pos] = ctlB[ctlB.length() - 1]
+  ctlB[ctlB.length() - 1] = pos
+}
+
+// Start an expression unit ending in the given continuation.
+mod startUnit(cont: int) {
+  inExpr = true
+  contKind = cont
+  expectOperand = true
+  exprDone = false
+}
+
+// The prototype the running frame is executing, and the closure number it is
+// running as.  The main chunk is the one frame not on the stack (an empty
+// fFunc is how it halts), so it answers for itself.
+mod curFid() -> int {
+  if fFunc.length() == 0 {
+    return mainFid
+  }
+  let cid = fFunc[fFunc.length() - 1]
+  if cid < cloBase {
+    return cid
+  }
+  return cloF[cid]
+}
+
+mod curClo() -> int {
+  if fFunc.length() == 0 {
+    return mainFid
+  }
+  return fFunc[fFunc.length() - 1]
+}
+
+mod vNum(r: int) -> float {
+  return vnum[vmBase + r]
+}
+
+mod vStr(r: int) -> string {
+  return vstr[vmBase + r]
+}
+
+// Move a call's results across the frame boundary: copy k values from the
+// callee's frame (absolute src) into the caller's (absolute dst), then nil-fill
+// up to n so a fixed-arity caller sees nil for values the callee did not return.
+// k values are the ones actually produced; n is what the caller asked for.
+mod retAdjust(src: int, dst: int, k: int, n: int) {
+  if 1 <= k { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] } else if 1 <= n { vtag[dst] = 0 vnum[dst] = 0.0 vstr[dst] = "" }
+  if 2 <= k { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] } else if 2 <= n { vtag[dst+1] = 0 vnum[dst+1] = 0.0 vstr[dst+1] = "" }
+  if 3 <= k { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] } else if 3 <= n { vtag[dst+2] = 0 vnum[dst+2] = 0.0 vstr[dst+2] = "" }
+  if 4 <= k { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] } else if 4 <= n { vtag[dst+3] = 0 vnum[dst+3] = 0.0 vstr[dst+3] = "" }
+  if 5 <= k { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] } else if 5 <= n { vtag[dst+4] = 0 vnum[dst+4] = 0.0 vstr[dst+4] = "" }
+  if 6 <= k { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] } else if 6 <= n { vtag[dst+5] = 0 vnum[dst+5] = 0.0 vstr[dst+5] = "" }
+  if 7 <= k { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] } else if 7 <= n { vtag[dst+6] = 0 vnum[dst+6] = 0.0 vstr[dst+6] = "" }
+  if 8 <= k { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] } else if 8 <= n { vtag[dst+7] = 0 vnum[dst+7] = 0.0 vstr[dst+7] = "" }
+  if 9 <= k { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] } else if 9 <= n { vtag[dst+8] = 0 vnum[dst+8] = 0.0 vstr[dst+8] = "" }
+  if 10 <= k { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] } else if 10 <= n { vtag[dst+9] = 0 vnum[dst+9] = 0.0 vstr[dst+9] = "" }
+  if 11 <= k { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] } else if 11 <= n { vtag[dst+10] = 0 vnum[dst+10] = 0.0 vstr[dst+10] = "" }
+  if 12 <= k { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] } else if 12 <= n { vtag[dst+11] = 0 vnum[dst+11] = 0.0 vstr[dst+11] = "" }
+  if 13 <= k { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] } else if 13 <= n { vtag[dst+12] = 0 vnum[dst+12] = 0.0 vstr[dst+12] = "" }
+  if 14 <= k { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] } else if 14 <= n { vtag[dst+13] = 0 vnum[dst+13] = 0.0 vstr[dst+13] = "" }
+  if 15 <= k { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] } else if 15 <= n { vtag[dst+14] = 0 vnum[dst+14] = 0.0 vstr[dst+14] = "" }
+  if 16 <= k { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] } else if 16 <= n { vtag[dst+15] = 0 vnum[dst+15] = 0.0 vstr[dst+15] = "" }
+}
+
+mod retCopy(src: int, dst: int, n: int) {
+  if 1 <= n { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] }
+  if 2 <= n { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] }
+  if 3 <= n { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] }
+  if 4 <= n { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] }
+  if 5 <= n { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] }
+  if 6 <= n { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] }
+  if 7 <= n { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] }
+  if 8 <= n { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] }
+  if 9 <= n { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] }
+  if 10 <= n { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] }
+  if 11 <= n { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] }
+  if 12 <= n { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] }
+  if 13 <= n { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] }
+  if 14 <= n { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] }
+  if 15 <= n { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] }
+  if 16 <= n { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] }
+}
+
+mod vSet(r: int, tag: int, num: float, s: string) {
+  vtag[vmBase + r] = tag
+  vnum[vmBase + r] = num
+  vstr[vmBase + r] = s
+}
+
+mod vSetNum(r: int, v: float) {
+  vtag[vmBase + r] = 1
+  vnum[vmBase + r] = v
+}
+
+mod gTag(gi: int) -> int {
+  return gtag[gi]
+}
+
+mod gNum(gi: int) -> float {
+  return gnum[gi]
+}
+
+mod gStr(gi: int) -> string {
+  return gstr[gi]
+}
+
+mod gSet(gi: int, tag: int, num: float, s: string) {
+  gtag[gi] = tag
+  gnum[gi] = num
+  gstr[gi] = s
+}
+
+// One-time setup when a parsed program starts running: closure numbering, and
+// the main chunk's slot table.  The main chunk runs with no frame on the stack
+// (an empty fFunc is how it halts), so its vararg base and sequence number are
+// seeded here; every other frame gets both when it is entered.
+mod vmClosures() {
+  let base = fStart.length()
+  cloBase = base
+  cloTop = base
+  frameSeq = 1
+  let n = 3 * fUpSlotN[mainFid] + 1
+  vaNum[0] = 1.0
+  fVaB[0] = n
+  vaTop = n
+}
+
+mod vmReset() {  tmap.clear()
+  tvTag.clear()
+  tvNum.clear()
+  tvStr.clear()
+  tvTag.resize(MAX_HEAP, 0)
+  tvNum.resize(MAX_HEAP, 0.0)
+  tvStr.resize(MAX_HEAP, "")
+  tLen.clear()
+  tLen.resize(MAX_TABLES, 0)
+  tFree.clear()
+  tHeap = 0
+  tCount = 4
+  tOwner.clear()
+  tOwner.resize(MAX_HEAP, -1)
+  tKeyTag.clear()
+  tKeyTag.resize(MAX_HEAP, 0)
+  tKeyNum.clear()
+  tKeyNum.resize(MAX_HEAP, 0.0)
+  tKeyStr.clear()
+  tKeyStr.resize(MAX_HEAP, "")
+  tPrev.clear()
+  tPrev.resize(MAX_HEAP, -2)
+  tNext.clear()
+  tNext.resize(MAX_HEAP, -2)
+  tFirst.clear()
+  tFirst.resize(MAX_TABLES, -1)
+  tLast.clear()
+  tLast.resize(MAX_TABLES, -1)
+  nxActive = false
+  lenChase = false
+  vtag.clear()
+  vnum.clear()
+  vstr.clear()
+  vtag.resize(2048, 0)
+  vnum.resize(2048, 0.0)
+  vstr.resize(2048, "")
+  forCtrl.resize(16, 0)
+  forRem.resize(16, 0.0)
+  forDepth = 0
+  fFunc.clear()
+  fBase.clear()
+  fRetA.clear()
+  fRetBase.clear()
+  fRetPC.clear()
+  fRetN.clear()
+  fVaB.clear()
+  fForDepth.clear()
+  vaTag.clear()
+  vaNum.clear()
+  vaStr.clear()
+  vaTag.resize(MAX_VA, 0)
+  vaNum.resize(MAX_VA, 0.0)
+  vaStr.resize(MAX_VA, "")
+  vaTop = 0
+  cloF.clear()
+  cloF.resize(MAX_FUNCS + MAX_CLO, 0)
+  cloU.clear()
+  cloU.resize((MAX_FUNCS + MAX_CLO) * MAX_UP, 0)
+  uTag.clear()
+  uTag.resize(MAX_CELL, 0)
+  uNum.clear()
+  uNum.resize(MAX_CELL, 0.0)
+  uStr.clear()
+  uStr.resize(MAX_CELL, "")
+  uTop = 1
+  frameSeq = 0
+  iterGen = 0
+  gtag.clear()
+  gnum.clear()
+  gstr.clear()
+  gtag.resize(64, 0)
+  gnum.resize(64, 0.0)
+  gstr.resize(64, "")
+  gtag.copyFrom(GTAG_INIT)
+  gnum.copyFrom(GNUM_INIT)
+  gtag.resize(64, 0)
+  gnum.resize(64, 0.0)
+  gnum[slotInLatch + 0] = latchN0
+  gnum[slotInLatch + 1] = latchN1
+  gnum[slotInLatch + 2] = latchN2
+  gnum[slotInLatch + 3] = latchN3
+  gstr[slotInLatch + 4] = latchS0
+  gstr[slotInLatch + 5] = latchS1
+  gnum[slotInLatch + 6] = latchVX
+  gnum[slotInLatch + 7] = latchVY
+  gnum[slotInLatch + 8] = latchVZ
+  gnum[slotInLatch + 9] = latchCR
+  gnum[slotInLatch + 10] = latchCG
+  gnum[slotInLatch + 11] = latchCB
+  gnum[slotInLatch + 12] = latchCA
+  gnum[slotInInt0] = latchI0 + 0.0
+  vmPc = 0
+  vmBase = 0
+  vmHalted = bop.length() == 0
+  vmFailed = false
+  retCountV = -1
+  cmpActive = false
+  logV = ""
+  logLen = 0
+  logLines.clear()
+  fmtDd.clear()
+  pcallBad.clear()
+  patSl.clear()
+  patCapS.clear()
+  patCapE.clear()
+  patCapP.clear()
+  patCapIx.clear()
+  patGmS.clear()
+  patGmP.clear()
+  patGmPos.clear()
+  patTid = 0
+  patLastTid = 0
+  // the text in inStr0 is the program's standard input, and a run starts at its
+  // beginning; the cursors are state, so they go with everything else
+  rdText = inStr0
+  rdPos = 0
+  rdBuf = ""
+  rdGot = false
+  oF0 = 0.0
+  oF1 = 0.0
+  oF2 = 0.0
+  oF3 = 0.0
+  oI0 = 0
+  oS4 = ""
+  oS5 = ""
+  outArrV.clear()
+  outArrV.resize(64, 0.0)
+  outVecV = Vec(0.0, 0.0, 0.0)
+  outColV = Color(0.0, 0.0, 0.0, 0.0)
+  resultV = ""
+  errV = ""
+  fFunc.push(mainFid)
+  fBase.push(0)
+  fRetA.push(-1)
+  fRetBase.push(0)
+  fRetPC.push(-1)
+  fRetN.push(-1)
+  fVaB.push(0)
+  fForDepth.push(0)
+}
+
+mod arithValL(t: int, v: float, s: string) -> float {
+  coerceL = 0
+  if t == 2 {
+    let i = s.ParseInt()
+    if i.Success {
+      coerceL = 1
+      return i
+    }
+    let p = s.ParseNumber()
+    if p.Success {
+      coerceL = 2
+      return p
+    }
+    coerceL = 3
+  }
+  return v
+}
+
+mod arithValR(t: int, v: float, s: string) -> float {
+  coerceR = 0
+  if t == 2 {
+    let i = s.ParseInt()
+    if i.Success {
+      coerceR = 1
+      return i
+    }
+    let p = s.ParseNumber()
+    if p.Success {
+      coerceR = 2
+      return p
+    }
+    coerceR = 3
+  }
+  return v
+}
+
+mod logDrop(n: int) {
+  logV = logV.Substring(n, logLen - n)
+  logLen = logLen - n
+}
+
+mod intWrap(v: float) -> float {
+  var w = v
+  if w + INT64_LIMIT < 0.0 {
+    w = w + INT64_WRAP
+  } else if INT64_LIMIT <= w {
+    w = w - INT64_WRAP
+  }
+  return w
+}
+
+mod cmpFinish(v: bool) {
+  vtag[cmpDst] = 3
+  if v {
+    vnum[cmpDst] = 1.0
+  } else {
+    vnum[cmpDst] = 0.0
+  }
+  cmpActive = false
+  vmPc = vmPc + 1
+  if vmPc >= bop.length() {
+    vmHalted = true
+  }
+}
+
+// After t[len+1] was filled, keep extending the border while t[len+1] exists.
+mod lenStep() {
+  if tmap.has(lenTid .. "#" .. (tLen[lenTid] + 1)) {
+    tLen[lenTid] = tLen[lenTid] + 1
+  } else {
+    lenChase = false
+  }
+}
+
+// next()'s walk: the candidate is a tombstone or a nil value, so skip it and
+// look again -- that costs ticks but needs no loop.  Finishing writes key+value
+// (or a lone nil) and advances past the call.
+mod nxStep() {
+  if 0 <= nxSlot && (tvTag[nxSlot] == 0 || tNext[nxSlot] == -2) {
+    nxSlot = tNext[nxSlot]
+  } else {
+    if nxSlot < 0 {
+      vtag[nxDst] = 0
+      vnum[nxDst] = 0.0
+      vstr[nxDst] = ""
+      retCountV = 1
+    } else {
+      let kt = tKeyTag[nxSlot]
+      let kn = tKeyNum[nxSlot]
+      let ks = tKeyStr[nxSlot]
+      if kt == 6 || kt == 1 {
+        vtag[nxDst] = kt
+        vnum[nxDst] = kn
+        vstr[nxDst] = ""
+      } else if kt == 2 {
+        vtag[nxDst] = 2
+        vnum[nxDst] = 0.0
+        vstr[nxDst] = ks
+      } else if kt == 3 {
+        vtag[nxDst] = 3
+        vnum[nxDst] = kn
+        vstr[nxDst] = ""
+      } else if kt == 5 {
+        vtag[nxDst] = 5
+        vnum[nxDst] = kn
+        vstr[nxDst] = ks
+      } else {
+        vtag[nxDst] = 0
+        vnum[nxDst] = 0.0
+        vstr[nxDst] = ""
+      }
+      vtag[nxDst + 1] = tvTag[nxSlot]
+      vnum[nxDst + 1] = tvNum[nxSlot]
+      vstr[nxDst + 1] = tvStr[nxSlot]
+      retCountV = 2
+    }
+    nxActive = false
+    vmPc = nxPc + 1
+  }
+}
+
+// states: 0 literal, 1 flags, 2 width, 3 precision, 4 conversion, 5 padding,
+// 6 finish a conversion, 7 one integer digit, 8 one quoted byte, 9 one
+// precision zero
+// The character at a 1-based position is read inline at each use rather than
+// from a mod: a string returned from a mod compares equal to the right text but
+// its ToCharCode() reads 0, so a digit test on it never fires.
+mod fmtArgAt() -> int {
+  return fmtBase + 1 + fmtArgI
+}
+
+// The argument number for an error message.  Concatenating an int prints it as
+// a float, so "bad argument #5.0" would come out; the digits are spelled out.
+mod fmtArgName() -> string {
+  let n = 1 + fmtArgI
+  let tens = floor(n / 10.0)
+  let ones = n - tens * 10.0
+  let a = FromCharCode(48 + tens).Character
+  let b = FromCharCode(48 + ones).Character
+  return if n < 10 then b else a .. b
+}
+
+// The same fetch for the argument %q walks, which is not the spec.  fmtEof is a
+// flag rather than an empty fmtCh because %q of a string with a NUL in it must
+// escape it, not stop there.
+mod fmtQFetch() {
+  if fmtQPos < fmtArg.Length() {
+    fmtCh = fmtArg.Substring(fmtQPos, 1)
+    fmtEof = false
+  } else {
+    fmtCh = ""
+    fmtEof = true
+  }
+  fmtState = 8
+}
+
+mod fmtFlag() {
+  if fmtCh == "-" {
+    fmtMinus = 1
+    fmtSpec = fmtSpec .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else if fmtCh == "+" {
+    fmtPlus = 1
+    fmtSpec = fmtSpec .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else if fmtCh == " " {
+    fmtSpace = 1
+    fmtSpec = fmtSpec .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else if fmtCh == "#" {
+    fmtHash = 1
+    fmtSpec = fmtSpec .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else if fmtCh == "0" {
+    fmtZero = 1
+    fmtSpec = fmtSpec .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtState = 10
+  } else {
+    fmtTo = 2
+    fmtState = 10
+  }
+}
+
+mod fmtWidthStep() {
+  let cp = if 0 < fmtCh.Length() then fmtCh.ToCharCode().Codepoint else -1
+  if 48 <= cp && cp <= 57 {
+    fmtWidth = fmtWidth * 10 + (cp - 48)
+    fmtSpec = fmtSpec .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtTo = 2
+    fmtState = 10
+  } else if fmtCh == "." {
+    fmtSpec = fmtSpec .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtPrec = 0
+    fmtTo = 3
+    fmtState = 10
+  } else {
+    fmtTo = 4
+    fmtState = 10
+  }
+}
+
+mod fmtPrecStep() {
+  let cp = if 0 < fmtCh.Length() then fmtCh.ToCharCode().Codepoint else -1
+  if 48 <= cp && cp <= 57 {
+    fmtPrec = fmtPrec * 10 + (cp - 48)
+    fmtSpec = fmtSpec .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtTo = 3
+    fmtState = 10
+  } else {
+    fmtState = 4
+  }
+}
+
+// Which of the two forms, once the exponent is known: %e when it is below -4 or
+// at least the precision, %f otherwise.  Either way the precision the chosen
+// form runs at is one lower than %g's, because both forms spend one of the
+// digits on a leading zero or a point.
+// Which of the two forms, and this is after the rounding on purpose.  The
+// exponent C compares against the precision is the one the value has *after*
+// being rounded to that many digits, and 9.5 at one digit is 10, so its exponent
+// is 1, 1 is at the precision, and %g gives 1e+001 and not 10.  Deciding before
+// the rounding, with the exponent the digits had going in, gave 10.
+mod fmtGStyle() {
+  if fmtK < -4 || fmtG0 <= fmtK {
+    fmtGToExp = true
+    if fmtStrip {
+      fmtState = 36
+    } else {
+      fmtState = 29
+    }
+  } else {
+    fmtP = fmtG0 - 1 - fmtK
+    fmtGToExp = false
+    fmtInt = ""
+    fmtState = 15
+  }
+}
+
+
+// Trailing zeros off the fraction, and the point with them when nothing is left
+// after it: 1.2300 is 1.23 and 1.000 is 1.  Not the integer part -- %g of 100 is
+// 100, not 1 -- so the zeros stop at the point.
+mod fmtGStrip() {
+  let n = fmtBody.Length()
+  let last = fmtBody.Substring(n - 1, 1)
+  let dot = fmtBody.Find(".", true, 0)
+  if last == "0" && 0 <= dot && dot < n - 1 {
+    fmtBody = fmtBody.Substring(0, n - 1)
+  } else {
+    if last == "." {
+      fmtBody = fmtBody.Substring(0, n - 1)
+    }
+    fmtPre = ""
+    fmtState = if fmtGToExp then 29 else 6
+  }
+}
+
+// The exponent, and the string the digits are read from.  The first significant
+// digit is the integer part's first when there is one -- an integer part has no
+// leading zeros -- and otherwise the first nonzero fraction digit, which the
+// walk already counted, so nothing here has to scan.
+mod fmtEJoin() {
+  fmtAll = fmtInt .. fmtFr
+  fmtPt = fmtInt.Length()
+  if fmtInt == "" {
+    fmtS = fmtLz
+  } else {
+    fmtS = 0
+  }
+  fmtK = fmtPt - 1 - fmtS
+  if fmtLz < 0 {
+    fmtLz = fmtS
+  }
+  fmtMI = 0
+  fmtM = 0.0
+  // %g reads the same mantissa %e does, at one place fewer, and chooses its form
+  // once the rounding has given the exponent it compares against the precision
+  fmtState = 24
+}
+
+// One digit of the mantissa per state, the character in one and the number in
+// the next: a string returned from a mod compares equal to the right text and
+// its ToCharCode reads 0, so the code has to travel through a variable and a
+// tick.  The cursor counts from the first significant digit, and p+1 of them
+// make the mantissa.
+mod fmtEFetch() {
+  fmtD_ = fmtAll.Substring(fmtS + fmtMI, 1).ToCharCode().Codepoint - 48
+  fmtState = 25
+}
+
+mod fmtEBuild() {
+  fmtM = fmtM * 10.0 + fmtD_
+  fmtMI = fmtMI + 1
+  if fmtMI <= fmtP {
+    fmtState = 24
+  } else {
+    fmtSI = 0
+    fmtState = 32
+  }
+}
+
+// Whether anything nonzero follows the round digit, one character per state.
+// The double-double's leftover is not the whole answer: when the round digit is
+// still inside the integer part -- 916506699492 at two places rounds on the 5
+// and the 066 behind it are what say it is above the tie -- the walk stopped
+// before the fraction and the leftover is zero.  So the digits after the round
+// digit are read from the string as well, and either source is enough.
+mod fmtESticky() {
+  if fmtS + fmtP + 2 + fmtSI < fmtAll.Length() {
+    if fmtAll.Substring(fmtS + fmtP + 2 + fmtSI, 1) != "0" {
+      fmtSticky = true
+      fmtState = 26
+    } else {
+      fmtSI = fmtSI + 1
+    }
+  } else {
+    fmtState = 26
+  }
+}
+
+// The round digit is the one after the mantissa, and whether anything nonzero
+// follows it decides a tie.  A carry out of the mantissa is 10^p with the
+// exponent up by one, which is 9.999e5 becoming 1.000e6.
+mod fmtERound() {
+  let rd = fmtAll.Substring(fmtS + fmtP + 1, 1).ToCharCode().Codepoint - 48
+  let last = fmtM - floor(fmtM / 10.0) * 10.0
+  let odd = last - floor(last / 2.0) * 2.0
+  let sticky = fmtSticky || fmtDd[0] != 0.0 || fmtDd[1] != 0.0
+  if rd > 5 || (rd == 5 && (sticky || odd == 1.0)) {
+    fmtM = fmtM + 1.0
+    if 10.0 ** (fmtP + 1.0) <= fmtM {
+      fmtM = 10.0 ** (fmtP + 0.0)
+      fmtK = fmtK + 1
+    }
+  }
+  fmtNz = 0
+  // the mantissa's digits go into the same string the fraction's came out in,
+  // so it has to be emptied: left alone, %e of 1.5 printed thirteen zeros
+  fmtFr = ""
+  fmtState = 27
+}
+
+// The mantissa, the point and the sign.  The point goes after the leading
+// digit, which is what %e and %g's %e arm both want; %g's other arm is the %f
+// conversion with a precision of its own, not a different way of spelling this
+// one.  # keeps the point even with no places after it, so %#.0e of 1.5 is
+// 2.e+000 and not 2e+000.
+mod fmtEMantEnd() {
+  if fmtNeg {
+    fmtBody = "-" .. FromCharCode(48 + fmtLead).Character
+  } else if fmtPlus == 1 {
+    fmtBody = "+" .. FromCharCode(48 + fmtLead).Character
+  } else if fmtSpace == 1 {
+    fmtBody = " " .. FromCharCode(48 + fmtLead).Character
+  } else {
+    fmtBody = FromCharCode(48 + fmtLead).Character
+  }
+  if 0 < fmtP {
+    fmtBody = fmtBody .. "." .. fmtFr
+  } else if fmtHash == 1 {
+    fmtBody = fmtBody .. "."
+  }
+  fmtENum = if fmtK < 0 then 0 - fmtK else fmtK
+  fmtNz = 0
+  if fmtIsG {
+    fmtState = 34
+  } else {
+    fmtState = 29
+  }
+}
+
+mod fmtEExpEnd() {
+  // three digits, whatever the exponent: one is 00, two is 0N.  Two pads, since
+  // no double's exponent passes 308, and each pad is its own write so the second
+  // sees the first's result.
+  if fmtExp.Length() < 3 {
+    fmtExp = "0" .. fmtExp
+  }
+  if fmtExp.Length() < 3 {
+    fmtExp = "0" .. fmtExp
+  }
+  if fmtK < 0 {
+    fmtBody = fmtBody .. (if fmtUpperE then "E-" else "e-") .. fmtExp
+  } else {
+    fmtBody = fmtBody .. (if fmtUpperE then "E+" else "e+") .. fmtExp
+  }
+  fmtPre = ""
+  fmtState = 6
+}
+
+// Pad the fraction out to the precision, so %.2f of 0.4 is 0.40 and not 0.4.  The
+// zeros come from a constant with a Substring rather than a state: there are at
+// most sixteen of them and a state each would cost a tick apiece.
+mod fmtFPad() {
+  let n = fmtFr.Length()
+  if n < fmtP {
+    fmtFr = ZEROS16.Substring(0, fmtP - n) .. fmtFr
+  }
+  fmtState = 18
+}
+
+// The point between the two halves, the leading zero, and the sign.  A state of
+// its own because the lengths it reads are the ones the pad and the digit loops
+// have just written: a value gate fed by a variable the same mod writes reads
+// the new one, so doing this with them would splice the strings at the wrong
+// offsets.
+mod fmtFPoint() {
+  if fmtInt == "" {
+    fmtInt = "0"
+  }
+  if 0 < fmtP {
+    fmtBody = fmtInt .. "." .. fmtFr
+  } else {
+    fmtBody = fmtInt
+  }
+  if fmtNeg {
+    fmtBody = "-" .. fmtBody
+  } else if fmtPlus == 1 {
+    fmtBody = "+" .. fmtBody
+  } else if fmtSpace == 1 {
+    fmtBody = " " .. fmtBody
+  } else if fmtHash == 1 && fmtP == 0 {
+    // # keeps the point even with no places, on this arm as on %e's: %#.1g of
+    // 1.5 is 2. and not 2
+    fmtBody = fmtBody .. "."
+  }
+  fmtPre = ""
+  // %g's %f arm strips its trailing zeros on the way out
+  if fmtIsG && fmtStrip {
+    fmtState = 36
+  } else {
+    fmtState = 6
+  }
+}
+
+// Which flags each conversion takes, as PUC's table has it.  Returns 0 when the
+// spec is good, 1 for a flag the conversion does not take, 2 for a %q with any
+// modifier at all -- which PUC words differently, and without the spec text.
+//   - + space # 0  width  prec
+//   d i u           y y y   n y  y     y
+//   f e g           y y y   y y  y     y
+//   x X o           y n n   y y  y     y
+//   c               y n n   n n  y     n
+//   s               y n n   n y  y     y
+//   q               n n n   n n  n     n
+mod fmtSpecBad() -> int {
+  if fmtCh == "q" {
+    if fmtMinus == 1 || fmtPlus == 1 || fmtSpace == 1 || fmtHash == 1
+        || fmtZero == 1 || 0 < fmtWidth || 0 <= fmtPrec {
+      return 2
+    }
+  } else if fmtCh == "c" {
+    if fmtHash == 1 || fmtPlus == 1 || fmtSpace == 1 || fmtZero == 1 || 0 <= fmtPrec {
+      return 1
+    }
+  } else if fmtCh == "s" {
+    if fmtHash == 1 || fmtPlus == 1 || fmtSpace == 1 {
+      return 1
+    }
+  } else if fmtCh == "x" || fmtCh == "X" || fmtCh == "o" {
+    if fmtPlus == 1 || fmtSpace == 1 {
+      return 1
+    }
+  } else if fmtCh == "f" || fmtCh == "e" || fmtCh == "E" || fmtCh == "g"
+      || fmtCh == "G" {
+    // the three float conversions take every flag, and only the integer ones
+    // refuse #: this arm is why %#.0g was an invalid specification
+    return 0
+  } else if fmtHash == 1 {
+    return 1
+  }
+  return 0
+}
+
+// Prepend the digit the state before worked out.  A state of its own because the
+// digit and the quotient both come from one var, and a mod that writes that var
+// has its own expressions re-evaluated against the new value: with the character
+// built in the same state, %d of 42 came out 00, because the digit and the
+// quotient were both recomputed after fmtNum_ had become 4.  Nothing here is
+// derived from the var this writes.
+mod fmtDigitPut() {
+  let ch = if fmtBase_ == 16.0 then if fmtUpper then HEXDIG_U.Substring(fmtQ_, 1)
+    else HEXDIG.Substring(fmtQ_, 1) else FromCharCode(48 + fmtQ_).Character
+  fmtBody = ch .. fmtBody
+  fmtState = 7
+}
+
+// The top octal digit of a negative value, and the 0x / 0X / 0 prefix the # flag
+// asks for.  # adds nothing for a zero, in either base.
+mod fmtRadixPrefix() {
+  if fmtNeg && fmtCh == "o" {
+    fmtBody = "1" .. fmtBody
+  }
+  if fmtHash == 1 && fmtBody != "" && fmtBody != "0" {
+    if fmtCh == "o" {
+      fmtBody = "0" .. fmtBody
+    } else if fmtUpper {
+      fmtBody = "0X" .. fmtBody
+    } else {
+      fmtBody = "0x" .. fmtBody
+    }
+  }
+}
+
+// Split the sign or 0x prefix off the body, since zero padding goes after it,
+// and decide how the width is filled.
+mod fmtFinish() {
+  let c1 = if 0 < fmtBody.Length() then fmtBody.Substring(0, 1) else ""
+  if c1 == "-" || c1 == "+" || c1 == " " {
+    fmtPre = c1
+    fmtBody = fmtBody.Substring(1, fmtBody.Length() - 1)
+  } else {
+    fmtPre = ""
+  }
+  if fmtBody.Length() >= 2 {
+    let c2 = fmtBody.Substring(0, 2)
+    if c2 == "0x" || c2 == "0X" {
+      fmtPre = fmtPre .. c2
+      fmtBody = fmtBody.Substring(2, fmtBody.Length() - 2)
+    }
+  }
+  // the - flag wins over the 0 flag: %-06d pads with spaces on the right
+  if fmtMinus == 1 {
+    fmtPadLeft = true
+  } else {
+    fmtPadLeft = false
+  }
+  if fmtZero == 1 {
+    fmtPadZero = true
+  } else {
+    fmtPadZero = false
+  }
+  if fmtPadLeft {
+    fmtPadZero = false
+  }
+  fmtPadAcc = ""
+  fmtPad = fmtWidth - fmtPre.Length() - fmtBody.Length()
+  if fmtPad <= 0 {
+    fmtOut = fmtOut .. fmtPre .. fmtBody
+    // back to the walk through the fetch: fmtCh still holds the conversion
+    // character, and entering the literal state directly appended it
+    fmtTo = 0
+    fmtState = 10
+  } else {
+    fmtState = 5
+  }
+}
+
+// One padding character per tick.  Three sides, because the sign goes in a
+// different place in each: right-justified spaces go before it (%6d of -42 is
+// "   -42"), zero padding after it ("%06d" is "-00042"), and left justification
+// after the number.  The side is read at the top level of the mod and each arm
+// carries its own end-of-loop test, because a nested condition on a file-level
+// var is unreliable in a mod this inlined (see the header).
+mod fmtPadStep() {
+  fmtPad = fmtPad - 1
+  if fmtPadLeft {
+    fmtPadAcc = fmtPadAcc .. " "
+    if fmtPad <= 0 {
+      fmtOut = fmtOut .. fmtPre .. fmtBody .. fmtPadAcc
+      fmtTo = 0
+      fmtState = 10
+    }
+  } else if fmtPadZero {
+    fmtPadAcc = fmtPadAcc .. "0"
+    if fmtPad <= 0 {
+      fmtOut = fmtOut .. fmtPre .. fmtPadAcc .. fmtBody
+      fmtTo = 0
+      fmtState = 10
+    }
+  } else {
+    fmtPadAcc = fmtPadAcc .. " "
+    if fmtPad <= 0 {
+      fmtOut = fmtOut .. fmtPadAcc .. fmtPre .. fmtBody
+      fmtTo = 0
+      fmtState = 10
+    }
+  }
+}
+
+
+// Unlink a slot from its table's insertion chain.
+mod tblUnlink(tid: int, sl: int) {
+  let pv = tPrev[sl]
+  let nx = tNext[sl]
+  if pv != -1 {
+    tNext[pv] = nx
+  } else {
+    tFirst[tid] = nx
+  }
+  if nx != -1 {
+    tPrev[nx] = pv
+  } else {
+    tLast[tid] = pv
+  }
+}
+
+// A new attempt at patStart: an empty backtrack stack, the pattern back at its
+// first item, and no captures.  The captures go with the attempt, not with the
+// call: PUC's level is per match() and a second start begins with none, which
+// is why "()b" finds its one position capture on the second try and not two.
+mod patStartStep() {
+  patSp = 0
+  patP = patPSkip
+  patI = patStart
+  patNCap = 0
+  patCapN = 0
+  patSt = 1
+}
+
+// One continuation onto the backtrack stack, or false when it is full.  kind 1
+// is a greedy + or * that has taken at least one character: slot 1 is the
+// item, slot 2 the subject position the rest would resume from, slot 3 the
+// pattern position past the quantifier.  kind 2 is a ?'s matched item, kind 4 a
+// lazy - that has taken one.  A kind 1 entry is re-pushed as it is used, one
+// position further back, which is what makes the rest of the pattern try the
+// longer match first and the shorter ones after it.
+mod patPush(kind: int, p: int, s: int, x: int) -> bool {
+  if patSp + 4 > PAT_STACK {
+    return false
+  }
+  patSl[patSp] = kind
+  patSl[patSp + 1] = p
+  patSl[patSp + 2] = s
+  patSl[patSp + 3] = x
+  patSp = patSp + 4
+  return true
+}
+
+// %1 to %9: the subject has to carry the same text the capture did, and both
+// move on by the capture's length.  A position capture has no text to compare --
+// PUC's CAP_POSITION is not a length -- so it never matches, and PUC agrees that
+// "()%1" finds nothing.  A capture the pattern has not opened yet, or has not
+// closed, is PUC's "invalid capture index".
+mod patBackref(p: int, s: int, ci: int) -> int {
+  let ce = patCapE[ci]
+  let cp = patCapP[ci]
+  let cs = patCapS[ci]
+  if patNCap < ci || ce == 0 && cp == 0 {
+    patErr = "invalid capture index %" .. FromCharCode(48 + ci).Character
+    return 3
+  }
+  if cp == 1 {
+    return 0
+  }
+  // A quantifier on a backreference is PUC's own dead end: max_expand counts one
+  // subject character a repetition while the pattern steps over %N, so it never
+  // matches -- "aa" with "(a)%1*" finds nothing.
+  if p + 2 < patPEnd {
+    let q = patPat.Substring(p + 2, 1)
+    if q == "*" || q == "+" || q == "-" || q == "?" {
+      return 0
+    }
+  }
+  let len = ce - 1 - cs
+  if s + len > patLen {
+    return 0
+  }
+  if patSrc.Substring(s, len) != patSrc.Substring(cs, len) {
+    return 0
+  }
+  patItemE = p + 2
+  patAdv = len
+  return 1
+}
+
+// %bxy: the opening delimiter, the closing one, and the subject's balance.  PUC
+// does not backtrack this one -- matchbalance counts to the first return to zero
+// and either has its match or has not -- so nothing goes on the stack.  Returns
+// the state to run next: the scan, or the error.
+mod patBS() -> int {
+  if patP + 3 >= patPEnd {
+    patErr = "malformed pattern (missing arguments to '%b')"
+    return 8
+  }
+  patBOpen = patPat.Substring(patP + 2, 1)
+  patBClose = patPat.Substring(patP + 3, 1)
+  patQEnd = patP + 4
+  patBC = 0
+  patBFirst = true
+  return 3
+}
+
+mod patGreedyEnd() {
+  patP = patQEnd
+  patSt = 1
+}
+
+// %b's walk.  The opening delimiter has to be the character under the cursor --
+// PUC's matchbalance compares the subject with the pattern's first delimiter
+// before it counts anything -- and then one character per tick, counting up on
+// the opening delimiter and down on the closing one until the balance is back
+// where it started.  A subject that runs out is a miss, which is all
+// matchbalance can answer too.
+mod patBStep() {
+  if patBFirst {
+    patBFirst = false
+    if patI < patLen && patSrc.Substring(patI, 1) == patBOpen {
+      patBC = 1
+      patI = patI + 1
+      patSt = 3
+    } else {
+      patSt = 4
+    }
+  } else if patI >= patLen {
+    patSt = 4
+  } else {
+    let c = patSrc.Substring(patI, 1)
+    if c == patBOpen {
+      patBC = patBC + 1
+      patI = patI + 1
+      patSt = 3
+    } else if c == patBClose {
+      if patBC == 1 {
+        patI = patI + 1
+        patP = patQEnd
+        patSt = 1
+      } else {
+        patBC = patBC - 1
+        patI = patI + 1
+        patSt = 3
+      }
+    } else {
+      patI = patI + 1
+      patSt = 3
+    }
+  }
+}
+
+// %f's second test is done: a match is the transition from outside the set to
+// inside it, and it consumes nothing.
+mod patFCurStep() {
+  if !patFPrev && patHit {
+    patP = patItemE
+    patSt = 1
+  } else {
+    patSt = 4
+  }
+}
+
+// A set matched where the greedy quantifier is taking characters: one more,
+// and the entry's resume point moves with it.
+mod patSetHit() {
+  patSl[patSp - 2] = patI
+  patI = patI + 1
+  patSt = 11
+}
+
+// n bytes from the cursor, or whatever is left of them.
+mod rdTake(n: int) {
+  let avail = rdText.Length() - rdPos
+  let k = if n < avail then n else avail
+  rdBuf = if k <= 0 then "" else rdText.Substring(rdPos, k)
+  rdPos = rdPos + k
+  rdGot = rdBuf != ""
+}
+
+// One line, as PUC's "*l" gives it: no newline, and a trailing CR is not part of
+// the line.  rdGot is false at the end of the text, so io.lines terminates --
+// and a blank line in the middle is a line, not the end.
+mod rdLine() {
+  let nl = rdText.Find("\n", true, rdPos)
+  if rdPos >= rdText.Length() {
+    rdGot = false
+    rdBuf = ""
+  } else if nl < 0 {
+    rdBuf = rdText.Substring(rdPos, rdText.Length() - rdPos)
+    rdPos = rdText.Length()
+    rdGot = true
+  } else {
+    rdBuf = rdText.Substring(rdPos, nl - rdPos)
+    if rdBuf.Length() > 0 {
+      if rdBuf.Substring(rdBuf.Length() - 1, 1) == "\r" {
+        rdBuf = rdBuf.Substring(0, rdBuf.Length() - 1)
+      }
+    }
+    rdPos = nl + 1
+    rdGot = true
+  }
+}
+
+// Link a slot at the tail of its table's chain, so pairs/next walk entries in
+// insertion order (the order PUC-Lua uses, which the tests compare against).
+mod tblLink(tid: int, sl: int) {
+  let last = tLast[tid]
+  tPrev[sl] = last
+  tNext[sl] = -1
+  if last != -1 {
+    tNext[last] = sl
+  } else {
+    tFirst[tid] = sl
+  }
+  tLast[tid] = sl
+}
+
+// Copy up to MAXVALS values from the register file into the vararg stack.
+mod vaSpill(src: int, dst: int, n: int) {
+  if 1 <= n { vaTag[dst] = vtag[src] vaNum[dst] = vnum[src] vaStr[dst] = vstr[src] }
+  if 2 <= n { vaTag[dst+1] = vtag[src+1] vaNum[dst+1] = vnum[src+1] vaStr[dst+1] = vstr[src+1] }
+  if 3 <= n { vaTag[dst+2] = vtag[src+2] vaNum[dst+2] = vnum[src+2] vaStr[dst+2] = vstr[src+2] }
+  if 4 <= n { vaTag[dst+3] = vtag[src+3] vaNum[dst+3] = vnum[src+3] vaStr[dst+3] = vstr[src+3] }
+  if 5 <= n { vaTag[dst+4] = vtag[src+4] vaNum[dst+4] = vnum[src+4] vaStr[dst+4] = vstr[src+4] }
+  if 6 <= n { vaTag[dst+5] = vtag[src+5] vaNum[dst+5] = vnum[src+5] vaStr[dst+5] = vstr[src+5] }
+  if 7 <= n { vaTag[dst+6] = vtag[src+6] vaNum[dst+6] = vnum[src+6] vaStr[dst+6] = vstr[src+6] }
+  if 8 <= n { vaTag[dst+7] = vtag[src+7] vaNum[dst+7] = vnum[src+7] vaStr[dst+7] = vstr[src+7] }
+  if 9 <= n { vaTag[dst+8] = vtag[src+8] vaNum[dst+8] = vnum[src+8] vaStr[dst+8] = vstr[src+8] }
+  if 10 <= n { vaTag[dst+9] = vtag[src+9] vaNum[dst+9] = vnum[src+9] vaStr[dst+9] = vstr[src+9] }
+  if 11 <= n { vaTag[dst+10] = vtag[src+10] vaNum[dst+10] = vnum[src+10] vaStr[dst+10] = vstr[src+10] }
+  if 12 <= n { vaTag[dst+11] = vtag[src+11] vaNum[dst+11] = vnum[src+11] vaStr[dst+11] = vstr[src+11] }
+  if 13 <= n { vaTag[dst+12] = vtag[src+12] vaNum[dst+12] = vnum[src+12] vaStr[dst+12] = vstr[src+12] }
+  if 14 <= n { vaTag[dst+13] = vtag[src+13] vaNum[dst+13] = vnum[src+13] vaStr[dst+13] = vstr[src+13] }
+  if 15 <= n { vaTag[dst+14] = vtag[src+14] vaNum[dst+14] = vnum[src+14] vaStr[dst+14] = vstr[src+14] }
+  if 16 <= n { vaTag[dst+15] = vtag[src+15] vaNum[dst+15] = vnum[src+15] vaStr[dst+15] = vstr[src+15] }
+}
+
+// Copy up to MAXVALS values from the vararg stack into registers (VARARG).
+mod vaFill(base: int, dst: int, n: int) {
+  if 1 <= n { vtag[dst] = vaTag[base] vnum[dst] = vaNum[base] vstr[dst] = vaStr[base] }
+  if 2 <= n { vtag[dst+1] = vaTag[base+1] vnum[dst+1] = vaNum[base+1] vstr[dst+1] = vaStr[base+1] }
+  if 3 <= n { vtag[dst+2] = vaTag[base+2] vnum[dst+2] = vaNum[base+2] vstr[dst+2] = vaStr[base+2] }
+  if 4 <= n { vtag[dst+3] = vaTag[base+3] vnum[dst+3] = vaNum[base+3] vstr[dst+3] = vaStr[base+3] }
+  if 5 <= n { vtag[dst+4] = vaTag[base+4] vnum[dst+4] = vaNum[base+4] vstr[dst+4] = vaStr[base+4] }
+  if 6 <= n { vtag[dst+5] = vaTag[base+5] vnum[dst+5] = vaNum[base+5] vstr[dst+5] = vaStr[base+5] }
+  if 7 <= n { vtag[dst+6] = vaTag[base+6] vnum[dst+6] = vaNum[base+6] vstr[dst+6] = vaStr[base+6] }
+  if 8 <= n { vtag[dst+7] = vaTag[base+7] vnum[dst+7] = vaNum[base+7] vstr[dst+7] = vaStr[base+7] }
+  if 9 <= n { vtag[dst+8] = vaTag[base+8] vnum[dst+8] = vaNum[base+8] vstr[dst+8] = vaStr[base+8] }
+  if 10 <= n { vtag[dst+9] = vaTag[base+9] vnum[dst+9] = vaNum[base+9] vstr[dst+9] = vaStr[base+9] }
+  if 11 <= n { vtag[dst+10] = vaTag[base+10] vnum[dst+10] = vaNum[base+10] vstr[dst+10] = vaStr[base+10] }
+  if 12 <= n { vtag[dst+11] = vaTag[base+11] vnum[dst+11] = vaNum[base+11] vstr[dst+11] = vaStr[base+11] }
+  if 13 <= n { vtag[dst+12] = vaTag[base+12] vnum[dst+12] = vaNum[base+12] vstr[dst+12] = vaStr[base+12] }
+  if 14 <= n { vtag[dst+13] = vaTag[base+13] vnum[dst+13] = vaNum[base+13] vstr[dst+13] = vaStr[base+13] }
+  if 15 <= n { vtag[dst+14] = vaTag[base+14] vnum[dst+14] = vaNum[base+14] vstr[dst+14] = vaStr[base+14] }
+  if 16 <= n { vtag[dst+15] = vaTag[base+15] vnum[dst+15] = vaNum[base+15] vstr[dst+15] = vaStr[base+15] }
+}
+
+mod fmtVal(tag: int, num: float, s: string) -> string {
+  return if tag == 0 then "nil"
+    else if tag == 3 then if num == 0.0 then "false" else "true"
+    else if tag == 2 then s
+    else if tag == 4 then "function"
+    else if tag == 5 then "table: 0x" .. (num | 0)
+    else if tag == 6 then "" .. (num | 0)
+    else fmtNum(num)
+}
+
+// The mantissa's trailing p digits, least significant first as everywhere else,
+// then the point and the leading digit in the state after.
+mod fmtEMant() {
+  if fmtNz < fmtP {
+    let q = floor(fmtM / 10.0)
+    let d = toInt(fmtM - q * 10.0)
+    let ch = FromCharCode(48 + d).Character
+    fmtFr = ch .. fmtFr
+    fmtM = q
+    fmtNz = fmtNz + 1
+  } else {
+    fmtLead = toInt(fmtM)
+    fmtState = 28
+  }
+}
+
+// The exponent, three digits with a sign.  Three, not C's two: PUC 5.5 formats
+// the floats itself rather than through the platform's printf, and measures
+// %.3e of zero at ten characters, which is 0.000e+000.  Every double's exponent
+// fits in three digits -- the largest is 308 -- so the width is fixed and there
+// is no loop for it.
+// The exponent's digits, one per state, most significant first.  Each arm says
+// where to go before it does its work: a state write after a mod call in the
+// deepest arm of a chain this deep is dropped, and the walk then wrote its zero
+// over and over -- an exponent of zero came out as e+00000.  Two at a time
+// would be fewer states, but FromCharCode(48 + d) is one character, so an
+// exponent past 99 came out as e-1< and e-2w.
+mod fmtEExpDig() {
+  if fmtENum >= 10 {
+    fmtState = 29
+    let q = floor(fmtENum / 10.0)
+    let ch = FromCharCode(48 + toInt(fmtENum - q * 10.0)).Character
+    fmtExp = ch .. fmtExp
+    fmtENum = q
+  } else {
+    fmtState = 30
+    let ch1 = FromCharCode(48 + fmtENum).Character
+    fmtExp = ch1 .. fmtExp
+  }
+}
+
+// One fraction digit per tick, least significant first, as %d does.
+mod fmtFFDigits() {
+  if fmtF < 1.0 {
+    fmtState = 20
+  } else {
+    let q = floor(fmtF / 10.0)
+    let d = toInt(fmtF - q * 10.0)
+    fmtFr = FromCharCode(48 + d).Character .. fmtFr
+    fmtF = q
+  }
+}
+
+// One integer digit per tick.  The integer part of a double below 2^53 is exact
+// and each division by ten is exact too -- the quotient is at least 0.1 away
+// from a whole number, which is far more than the division's own rounding -- so
+// these are the value's digits and not approximations of them.  fmtNxt says
+// where to go when they run out: %f pads the fraction next, %e walks the
+// fraction's.  It cannot be a parameter, because a mod cannot write one to a
+// var -- four placeholders and a refusal to lower.
+mod fmtFNDigits() {
+  if fmtIP < 1.0 {
+    fmtState = fmtNxt
+  } else {
+    let q = floor(fmtIP / 10.0)
+    let d = toInt(fmtIP - q * 10.0)
+    fmtInt = FromCharCode(48 + d).Character .. fmtInt
+    fmtIP = q
+  }
+}
+
+// One pass through a set's text: a literal character, a %class, a range, or the
+// closing bracket.  The alternatives accumulate in patSetAny and patSetNeg
+// flips the answer at the end, so [^a-z] is one rule rather than a special
+// case per character.  A '-' with a character before it and one after it is a
+// range, which is why a leading or trailing '-' stays a literal.
+mod patSetStep() {
+  patAdv = 1
+  if patSetP >= patPEnd {
+    patErr = "malformed pattern (missing ']')"
+    patSt = 8
+  } else {
+    let sc = patPat.Substring(patSetP, 1)
+    if sc == "]" {
+      if patSetSeen {
+        patItemE = patSetP + 1
+        patHit = if patSetNeg then !patSetAny else patSetAny
+        patSetP = patSetP + 1
+        patSt = if patHit then patAfter else patFailTo
+      } else {
+        patErr = "malformed pattern (missing ']')"
+        patSt = 8
+      }
+    } else if sc == "%" && patSetP + 1 < patPEnd {
+      let code = patPat.Substring(patSetP + 1, 1).ToCharCode().Codepoint
+      let neg = 65 <= code && code <= 90
+      if (97 <= code && code <= 122) || (65 <= code && code <= 90) {
+        patSetAny = patSetAny || patClassHit(patSetC, if neg then code + 32 else code, neg)
+        patSetSeen = true
+        patSetP = patSetP + 2
+        patSt = 7
+      } else {
+        patSetAny = patSetAny || patSetC == code
+        patSetSeen = true
+        patSetP = patSetP + 2
+        patSt = 7
+      }
+    } else if sc == "-" && patSetHasPrev && patSetP + 1 < patPEnd
+        && patPat.Substring(patSetP + 1, 1) != "]" {
+      let hi = patPat.Substring(patSetP + 1, 1).ToCharCode().Codepoint
+      patSetAny = patSetAny || (patSetPrev <= patSetC && patSetC <= hi)
+      patSetSeen = true
+      patSetP = patSetP + 2
+      patSt = 7
+    } else {
+      patSetAny = patSetAny || patSetC == sc.ToCharCode().Codepoint
+      patSetSeen = true
+      patSetHasPrev = true
+      patSetPrev = sc.ToCharCode().Codepoint
+      patSetP = patSetP + 1
+      patSt = 7
+    }
+  }
+}
+
+// Library selection keys on the FIELD name, not on how the program spells it:
+// `s:upper()` never writes "string.upper", so matching the dotted form alone
+// left the string table unbuilt and the method call nil.  A colon is the
+// method-call signal; a match inside a string or comment only costs a piece
+// that goes unused.
+mod srcUsesField(p: string, name: string) -> bool {
+  let dotted = "string." .. name
+  let colon = ":" .. name
+  return srcUses(p, dotted) || srcUses(p, colon)
+}
+
+mod libIter(p: string) -> string {
+  return if srcUses(p, "ipairs") || srcUses(p, "pairs") then LIB_iter else ""
+}
+
+mod libMathConst(p: string) -> string {
+  return if srcUses(p, "math.pi") || srcUses(p, "math.huge")
+      || srcUses(p, "math.maxinteger") || srcUses(p, "math.mininteger")
+      then LIB_math_const else ""
+}
+
+mod libTabIns(p: string) -> string {
+  return if srcUses(p, "table.insert") || srcUses(p, "table.remove")
+      || srcUses(p, ":insert") || srcUses(p, ":remove")
+      then LIB_tab_ins else ""
+}
+
+mod libTabList(p: string) -> string {
+  return if srcUses(p, "table.unpack") || srcUses(p, "table.pack")
+      || srcUses(p, "table.move") then LIB_tab_list else ""
+}
+
+mod libTabConcat(p: string) -> string {
+  return if srcUses(p, "table.concat") then LIB_tab_concat else ""
+}
+
+mod libTabSort(p: string) -> string {
+  return if srcUses(p, "table.sort") then LIB_tab_sort else ""
+}
+
+mod libIo(p: string) -> string {
+  return if srcUses(p, "io.read") || srcUses(p, "io.write")
+      || srcUses(p, "io.lines") then LIB_io else ""
+}
+
+mod libTonumber(p: string) -> string {
+  return if srcUses(p, "tonumber") then LIB_tonumber else ""
+}
+
+mod libMathRandom(p: string) -> string {
+  return if srcUses(p, "math.random") then LIB_math_random else ""
+}
+
+// Register access, two ways, and mixing them is the bug this pair of comments
+// exists to stop.  vTag/vNum/vStr/vSet take a register RELATIVE to the current
+// frame and add vmBase themselves; anything that already holds an absolute index
+// (fmtBase, nxDst, a retAdjust src) reads vtag[]/vnum[]/vstr[] directly.  The
+// mistake is invisible at top level, where vmBase is 0, and wrong by exactly
+// vmBase inside a function -- which is how the formatter answered "number
+// expected, got nil" for `return string.format('%d', 5)`.
+mod vTag(r: int) -> int {
+  return vtag[vmBase + r]
+}
+
+// The one place the log grows, and the one place it shrinks.  logLen travels
+// with logV because a cap that computes a substring start from logV.Length() in
+// the same mod reads the NEW length -- the value gates are evaluated in a
+// fixpoint, not in source order -- so the start lands in the wrong place and the
+// log comes out empty.  Nothing writes logV except these two and vmReset.
+mod logAdd(s: string) {
+  logV = logV .. s
+  logLen = logLen + s.Length()
+}
+
+// Set up a set scan for the set whose text starts at p, testing the character
+// code.  The scan is one character of the set per tick and finishes in
+// patSetStep, so this only writes; the caller picks the states it ends in.
+mod patSetBegin(p: int, code: int) {
+  patSetP = p
+  patSetC = code
+  patSetAny = false
+  patSetSeen = false
+  patSetHasPrev = false
+  patSetPrev = 0
+  patSetNeg = false
+  if p < patPEnd && patPat.Substring(p, 1) == "^" {
+    patSetNeg = true
+    patSetP = p + 1
+  }
+}
 
 mod emitTok(kind: int, sub: int, num: float, text: string) {
   tk.push(kind)
@@ -412,6 +3050,1008 @@ mod emitTok(kind: int, sub: int, num: float, text: string) {
   if tk.length() > MAX_TOKENS {
     lexFail("too many tokens (max " .. (MAX_TOKENS | 0) .. ")")
   }
+}
+
+mod emitEscByte(v: int) {
+  if v >= 32 && v <= 126 {
+    lidBuf = lidBuf .. PRINTABLES.Substring(v - 32, 1)
+  } else {
+    lexFail("bad escape")
+  }
+}
+
+mod parseInit() {
+  tk.clear()
+  ts.clear()
+  tn.clear()
+  tt.clear()
+  tl.clear()
+  lerr = false
+  lerrMsg = ""
+  lerrLine = 1
+  lline = 1
+  lastPatchTarget = -1
+  lastCallPos = -1
+  presCallPos = -1
+  bop.clear()
+  bpa.clear()
+  bpb.clear()
+  bpc.clear()
+  constNum.clear()
+  constStr.clear()
+  fStart.clear()
+  fParams.clear()
+  fRegs.clear()
+  fVar.clear()
+  gmap.clear()
+  locName.clear()
+  locReg.clear()
+  locDepth.clear()
+  locCap.clear()
+  fUpN.clear()
+  fUpSlotN.clear()
+  valStk.clear()
+  valCall.clear()
+  valPrefix.clear()
+  opKind.clear()
+  opPrec.clear()
+  opA.clear()
+  opB.clear()
+  opC.clear()
+  forCtrl.clear()
+  forRem.clear()
+  ctorStk.clear()
+  itBase.clear()
+  itKey.clear()
+  openCtor = 0
+  ctlKind.clear()
+  ctlA.clear()
+  ctlB.clear()
+  ctlC.clear()
+  ctlD.clear()
+  ctlE.clear()
+  ctlF.clear()
+  ctlG.clear()
+  plNext.clear()
+  plNext.resize(MAX_INSTR, -1)
+  tmpNames.clear()
+  tmpRegs.clear()
+  svC.clear()
+  svI.clear()
+  svS.clear()
+  forNames.clear()
+  tmpSStk.clear()
+  blkLen.clear()
+  blkNext.clear()
+  blkCapGen.clear()
+  capGen = 0
+  upIdx.clear()
+  fUpSrc.clear()
+  fUpSrc.resize(MAX_FUNCS * MAX_UP, -1)
+  fUpSlot.clear()
+  fUpSlot.resize(MAX_FUNCS * MAX_UP, 0)
+  fidAt.clear()
+  fidAt.resize(33, -1)
+  cfNext.clear()
+  cfMax.clear()
+  cfBase.clear()
+  cfMaxLoc.clear()
+  selfName.clear()
+  selfClean.clear()
+  selfFid.clear()
+  funcEntryLoc.clear()
+  opBase.clear()
+  cfNext.resize(33, 0)
+  cfMax.resize(33, 0)
+  cfBase.resize(33, 0)
+  cfMaxLoc.resize(33, -1)
+  selfName.resize(33, "")
+  selfClean.resize(33, true)
+  fnVar.clear()
+  fnVar.resize(33, false)
+  fnSelfArg.clear()
+  fnSelfArg.resize(33, false)
+  selfFid.resize(33, -1)
+  funcEntryLoc.resize(33, 0)
+  opBase.resize(33, 0)
+  fnKey.clear()
+  gslotNext = 0
+  gDeclare("outNum0")
+  gDeclare("outNum1")
+  gDeclare("outNum2")
+  gDeclare("outNum3")
+  gDeclare("outStr0")
+  gDeclare("outStr1")
+  fnDepth = 0
+  locLen = 0
+  cpos = 0
+  perr = false
+  perrMsg = ""
+  inExpr = false
+  contKind = 0
+  stState = 0
+  tmpA = 0
+  tmpB = 0
+  tmpC = 0
+  tmpS = ""
+  forName = ""
+  forInit = -1
+  forLimit = -1
+  forStep = -1
+  ctlLoop = -1
+  lkRaw = false
+  pdHead = -1
+  pdThen = 0
+  pdTarget = -1
+  pDone = false
+  expectOperand = true
+  popMode = 0
+  closeMode = 0
+  exprDone = false
+  pendKind = -1
+  mainFid = 0
+  closeTrig = 0
+  gDeclare("inNum0")
+  gDeclare("inNum1")
+  gDeclare("inNum2")
+  gDeclare("inNum3")
+  gDeclare("inStr0")
+  gDeclare("inStr1")
+  gDeclare("invecx")
+  gDeclare("invecy")
+  gDeclare("invecz")
+  gDeclare("incolr")
+  gDeclare("incolg")
+  gDeclare("incolb")
+  gDeclare("incola")
+  gDeclare("print")
+  gDeclare("type")
+  gDeclare("tostring")
+  gDeclare("setvec")
+  gDeclare("setcol")
+  gDeclare("clock")
+  gDeclare("inarr")
+  gDeclare("outarr")
+  gDeclare("select")
+  gDeclare("next")
+  gDeclare("_s")
+  gDeclare("_m")
+  gDeclare("unpack")
+  gDeclare("_fmt")
+  gDeclare("_rd")
+  gDeclare("_wr")
+  gDeclare("error")
+  gDeclare("assert")
+  gDeclare("pcall")
+  gDeclare("xpcall")
+  gDeclare("_pat")
+  gDeclare("_gmatch")
+  gDeclare("_gmnext")
+  gDeclare("inInt0")
+  gDeclare("outInt0")
+  gDeclare("math")
+  gDeclare("string")
+  gDeclare("table")
+  gDeclare("io")
+  // The runtime wires the latches and outputs straight into these slots, so
+  // take the numbers from the declarations instead of repeating them: adding a
+  // builtin used to leave a stale literal behind and overwrite its id.
+  slotOutLatch = gLookup("outNum0")
+  slotInLatch = gLookup("inNum0")
+  slotInInt0 = gLookup("inInt0")
+  slotOutInt0 = gLookup("outInt0")
+}
+
+// Claim register slots up to n.  Both the frame size and the allocator move:
+// code that writes a block of registers outside regAlloc (call argument and
+// result windows, an expanded call's copies) must claim them here, or a later
+// regAlloc hands out a slot that is still live.
+mod bumpMax(n: int) {
+  if n > cfMax[fnDepth] {
+    cfMax[fnDepth] = n
+  }
+  if n > cfNext[fnDepth] {
+    cfNext[fnDepth] = n
+  }
+}
+
+mod locDeclare(name: string) -> int {
+  let r = regAlloc()
+  locBind(name, r)
+  return r
+}
+
+// A block that contains a capture ends with one GEN: a loop has to give each
+// round its own cells, and PUC gets that by closing them at the end of the
+// block, so a cell whose stamp is stale is simply replaced when the next
+// closure is made.  Emitted here rather than at each loop's back edge because
+// blkExit already knows the answer, and a `do` block that captures pays one
+// wasted tick -- harmless, since a bump only ever invalidates slots, and a
+// closure that outlived the block already holds the cell itself.
+mod blkExit() {
+  locLen = blkLen.pop().Value
+  cfNext[fnDepth] = blkNext.pop().Value
+  let had = blkCapGen.pop().Value != capGen
+  if blkGenDone {
+    blkGenDone = false
+  } else if had {
+    bEmit(49, 0, 0, 0)
+  }
+}
+
+// A local of an enclosing function is used here.  Every function from the one
+// that declares it up to this one gets a descriptor for it: the declaring
+// function's is instack (the local is in its own frame) and each one above
+// that is an upvalue of the closure below it.  So a capture two levels out is
+// two descriptors deep -- this function reads the enclosing closure's cell,
+// and that closure reads the cell in the frame the local lives in.  The chain
+// is a ladder because WireScript has no loop, and four links is the ceiling --
+// deeper is a loud error, never a wrong answer.
+mod resolveUp(ix: int) {
+  let ld = locDepth[ix]
+  let hops = fnDepth - ld
+  if 4 < hops {
+    perr = true
+    perrMsg = "too many nested functions to capture through"
+  } else {
+    let k0 = upStep(ld, ix, locReg[ix])
+    var k = k0
+    if 1 <= hops && !perr {
+      k = upStep(ld + 1, ix, -1 - k0)
+    }
+    if 2 <= hops && !perr {
+      k = upStep(ld + 2, ix, -1 - k)
+    }
+    if 3 <= hops && !perr {
+      k = upStep(ld + 3, ix, -1 - k)
+    }
+    if 4 <= hops && !perr {
+      k = upStep(ld + 4, ix, -1 - k)
+    }
+    if !perr {
+      lkKind = 3
+      lkReg = k
+      capGen = capGen + 1
+    }
+  }
+}
+
+// One expression token in operand position.
+mod applyPop() {
+  let k = opTopKind()
+  if k == 0 {
+    let rr = popVal()
+    let ll = popVal()
+    let opc = opA[opA.length() - 1]
+    let fl = opB[opB.length() - 1]
+    opKind.pop()
+    opPrec.pop()
+    opA.pop()
+    opB.pop()
+    opC.pop()
+    regFree(rr)
+    regFree(ll)
+    let res = regAlloc()
+    let sw = (fl & 2) != 0
+    let L = if sw then rr else ll
+    let R = if sw then ll else rr
+    if (opc == 17 || opc == 18 || opc == 19 || (opc >= 8 && opc <= 13))
+       && 0 < bop.length() && bop[bop.length() - 1] == 2
+       && bpa[bop.length() - 1] == R && bpa[bop.length() - 1] > cfMaxLoc[fnDepth] {
+      let constIx = bpb[bop.length() - 1]
+      let intBit = if bpc[bop.length() - 1] == 1 then 1 else 0
+      bop.pop()
+      bpa.pop()
+      bpb.pop()
+      bpc.pop()
+      if opc >= 17 {
+        bEmit(opc, res, L, -1 - constIx)
+      } else {
+        bEmit(opc, res, L, -1 - 2 * constIx - intBit)
+      }
+    } else {
+      bEmit(opc, res, L, R)
+    }
+    if (fl & 4) != 0 {
+      bEmit(15, res, res, 0)
+    }
+    pushVal(res, false, false)
+  } else if k == 1 {
+    let vv = popVal()
+    let pendOpA = opA[opA.length() - 1]
+    let isNot = pendOpA == 1
+    let isLen = pendOpA == 2
+    let isBnot = pendOpA == 38
+    opKind.pop()
+    opPrec.pop()
+    opA.pop()
+    opB.pop()
+    opC.pop()
+    regFree(vv)
+    let res = regAlloc()
+    if isNot {
+      bEmit(15, res, vv, 0)
+    } else if isLen {
+      bEmit(31, res, vv, 0)
+    } else if isBnot {
+      bEmit(38, res, vv, 0)
+    } else {
+      bEmit(14, res, vv, 0)
+    }
+    pushVal(res, false, false)
+  } else if k == 4 || k == 5 {
+    let rr = popVal()
+    regFree(rr)
+    let R = opA[opA.length() - 1]
+    let pp = opB[opB.length() - 1]
+    opKind.pop()
+    opPrec.pop()
+    opA.pop()
+    opB.pop()
+    opC.pop()
+    bEmit(7, R, rr, 0)
+    bPatch(pp, bop.length())
+    pushVal(R, false, false)
+  } else {
+    perr = true
+    perrMsg = "bad pop"
+  }
+}
+
+// Push the pending operator frame once precedence pops have drained.
+mod pushPending() {
+  if pendKind == 0 {
+    pushOp(0, pendPrec, pendSub, pendAux, valStk.length())
+  } else {
+    let ll = popVal()
+    let R = regAlloc()
+    bEmit(7, R, ll, 0)
+    if pendKind == 5 {
+      let pp = bEmit(22, 0, R, 0)
+      pushOp(5, pendPrec, R, pp, valStk.length() + 1)
+    } else {
+      let pp = bEmit(21, 0, R, 0)
+      pushOp(4, pendPrec, R, pp, valStk.length() + 1)
+    }
+    pushVal(R, false, false)
+  }
+  pendKind = -1
+}
+
+mod funcHeadAnon(fr: int) {
+  let skip = bEmit(20, 0, 0, 0)
+  pushCtl(3, tmpB, skip, 1, ctlLoop, fr, contKind)
+  ctlG[ctlG.length() - 1] = stState
+  tmpSStk.push("")
+  ctorStk.push(openCtor)
+  openCtor = 0
+  ctlLoop = -1
+  saveTmp()
+  fnDepth = fnDepth + 1
+  opBase[fnDepth] = opKind.length()
+  funcDepthInit(false)
+  if curKind() == 5 && curSub() == 14 {
+    cpos = cpos + 1
+    stState = 20
+    inExpr = false
+  } else {
+    perr = true
+    perrMsg = "expected ( after function"
+  }
+}
+
+// Post-unit continuations: 1 expr-stmt, 2 if-cond, 3 elif-cond,
+// 4 while-cond, 5 return, 6 local-values, 7 assign-values,
+// 10 for-init, 11 for-limit, 12 for-step, 13 repeat-until-cond.
+mod atStmtEnd() -> bool {
+  let k = curKind()
+  let s = curSub()
+  return if k == 6 then true
+    else if k == 5 && s == 17 then true
+    else if k == 4 && (s == 6 || s == 4 || s == 5 || s == 21) then true
+    else false
+}
+
+// ---------------------------------------------------------------- function definitions
+
+mod funcHead(islocal: bool, resume: int, fr: int) {
+  let fid = newFunc()
+  tmpB = fid
+  let skip = bEmit(20, 0, 0, 0)
+  if resume == 1 {
+    pushCtl(3, fid, skip, 1, ctlLoop, fr, contKind)
+  } else if islocal {
+    pushCtl(3, fid, skip, 0, ctlLoop, 1, 0)
+  } else {
+    // fr is 0 for a plain global function, or table-register+1 for `function M.f`
+    pushCtl(3, fid, skip, 0, ctlLoop, fr, 0)
+  }
+  ctlG[ctlG.length() - 1] = stState
+  tmpSStk.push(tmpS)
+  ctorStk.push(openCtor)
+  openCtor = 0
+  ctlLoop = -1
+  // Every kind-3 frame is closed by one restoreTmp(), so every kind-3 entry has
+  // to save.  Only the anonymous head did, which made a `local function` (or a
+  // named `function M.f`) inside a function literal pop the *literal's* saved
+  // state on its way out and leave the outer close popping an empty stack -- so
+  // `t.f = function() local function g() ... end end` lost the field store and
+  // read back nil.  The save is per-body state: the values a body pushes on
+  // tmpNames/tmpRegs belong to that body and must not leak outwards.
+  saveTmp()
+  fnDepth = fnDepth + 1
+  opBase[fnDepth] = opKind.length()
+  funcDepthInit(islocal)
+  if curKind() == 5 && curSub() == 14 {
+    cpos = cpos + 1
+    stState = 20
+  } else {
+    perr = true
+    perrMsg = "expected ( after function name"
+  }
+}
+
+// stState 10/11: gathering local/assign target names after a comma.
+mod stmtNameList(isLocal: bool) {
+  if curKind() == 3 {
+    tmpNames.push(curStr())
+    cpos = cpos + 1
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+    } else if curKind() == 5 && curSub() == 13 {
+      cpos = cpos + 1
+      startUnit(if isLocal then 6 else 7)
+    } else if isLocal {
+      // no values: nil-fill; the next token is validated by dispatch
+      tmpA = 0
+      stState = 12
+    } else {
+      perr = true
+      perrMsg = "expected , = or end of statement"
+    }
+  } else {
+    perr = true
+    perrMsg = "expected name"
+  }
+}
+
+mod pdDrain() {
+  if pdHead == -1 {
+    if pdThen == 1 {
+      ctlLoop = tmpC
+    }
+    pdThen = 0
+    pdTarget = -1
+  } else {
+    bPatch(pdHead, if pdTarget == -1 then bop.length() else pdTarget)
+    pdHead = plNext[pdHead]
+  }
+}
+
+// Where this frame's slot table starts, and the sequence number of the frame
+// that owns it (the word just below the table).
+mod slotBase() -> int {
+  return fVaB[fVaB.length() - 1] - 3 * fUpSlotN[curFid()]
+}
+
+// The protected call has come back and the marker is on top, so the pcall's
+// values are its own: the call's k results move up past the pcall's register,
+// `true` goes there, and the pcall's caller carries on with the count it asked
+// for.
+//
+// One mod, and one call site per return variant plus one for a gate, because
+// these are mods this size and a test in the middle of one is the trap the
+// header warns about.  Every call site passes the same thing -- the results are
+// at vmBase + a -- because a frame starts at the very register its results go
+// to, so that is where they are in all four return forms and in a gate.
+mod pcallEnd(src: int, k: int, extra: int) {
+  let ra = fRetA[fRetA.length() - 1]
+  let rb = fRetBase[fRetBase.length() - 1]
+  let rpc = fRetPC[fRetPC.length() - 1]
+  let want = fRetN[fRetN.length() - 1]
+  fFunc.pop()
+  fBase.pop()
+  fRetA.pop()
+  fRetBase.pop()
+  fRetPC.pop()
+  fRetN.pop()
+  vaTop = fVaB.pop().Value
+  forDepth = fForDepth.pop()
+  pcallDepth = pcallDepth - 1
+  // The values move up one register, into the space after the call's own, and
+  // the call's own register gets true or false: true for the protected call
+  // itself (mode 0), false for a message handler's results (modes 1 and 2 --
+  // PUC 5.5 returns false plus the handler's results, measured not assumed).
+  // A handler contributes one value even when it returns more: a handler
+  // returning 7, 8 gives false 7 and not false 7 8.  Copying up cannot overwrite
+  // anything, which copying down would.
+  var m = 1
+  if pcallMode == 0 {
+    retCopy(src, rb + ra + 1, k)
+    vtag[rb + ra] = 3
+    vnum[rb + ra] = 1.0
+    vstr[rb + ra] = "true"
+    m = (if 1 <= k then k else 0) + extra + 1
+  } else {
+    let one = rb + ra + 1
+    if 1 <= k {
+      vtag[one] = vtag[src]
+      vnum[one] = vnum[src]
+      vstr[one] = vstr[src]
+    } else {
+      vtag[one] = 2
+      vnum[one] = 0.0
+      vstr[one] = "<no error object>"
+    }
+    vtag[rb + ra] = 3
+    vnum[rb + ra] = 0.0
+    vstr[rb + ra] = "false"
+    m = 2
+  }
+  let cnt = if want == -2 then m else if want < m then want else m
+  vmBase = rb
+  vmPc = rpc
+  retCountV = cnt
+}
+
+mod vSetInt(a: int, v: float) {
+  let w = intWrap(v)
+  if w == floor(w) && 0.0 <= w + INT64_LIMIT && w < INT64_LIMIT {
+    vSet(a, 6, w, "")
+  } else {
+    vSetNum(a, w)
+  }
+}
+
+mod vSetIntSat(a: int, v: float) {
+  var w = v
+  if w + INT64_LIMIT < 0.0 {
+    w = 0.0 - INT64_LIMIT
+  } else if INT64_LIMIT <= w {
+    w = INT64_LIMIT
+  }
+  vSet(a, 6, w, "")
+}
+
+// One codepoint per call; prefix rules match Lua, order is by codepoint
+// (identical to byte order for ASCII).
+mod cmpStep() {
+  let sa = vstr[cmpAA]
+  let sb = vstr[cmpBB]
+  let la = sa.Length()
+  let lb = sb.Length()
+  if cmpI >= la && cmpI >= lb {
+    cmpFinish(cmpOp == 1)
+  } else if cmpI >= la {
+    cmpFinish(true)
+  } else if cmpI >= lb {
+    cmpFinish(false)
+  } else {
+    let ca = sa.Substring(cmpI, 1).ToCharCode().Codepoint
+    let cb = sb.Substring(cmpI, 1).ToCharCode().Codepoint
+    if ca != cb {
+      cmpFinish(ca < cb)
+    } else {
+      cmpI = cmpI + 1
+    }
+  }
+}
+
+mod tblFill(dst: int, tid: int, idx: int) {
+  let r = tmap.get(tkey(tid, 1, idx, ""))
+  if r.Found {
+    vSet(dst, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
+  } else {
+    vSet(dst, 0, 0.0, "")
+  }
+}
+
+// One digit of a radix conversion, with the division done by hand: the host's
+// floor truncates toward zero, so a negative quotient never goes negative and
+// %x of -1 came out as fifteen zeros.  The quotient is a truncating cast and a
+// negative remainder is carried into the digit and taken off the quotient, which
+// is floor division; the quotient then settles at -1 and the digit count is what
+// stops the loop, which is where the 64-bit two's complement comes from.
+// One digit of a radix conversion, with the division done by hand: the host's
+// floor truncates toward zero, so a negative quotient never goes negative and
+// %x of -1 came out as fifteen zeros.  The quotient is a truncating cast and a
+// negative remainder is carried into the digit and taken off the quotient, which
+// is floor division; the quotient then settles at -1 and the digit count is what
+// stops the loop, which is where the 64-bit two's complement comes from.  It
+// leaves the digit in fmtQ_ and fmtDigitPut turns it into a character.
+mod fmtRadixDigit() {
+  let q = toInt(fmtNum_ / fmtBase_)
+  let r = toInt(fmtNum_ - q * fmtBase_)
+  if r < 0 {
+    fmtQ_ = r + fmtBaseI
+    fmtNum_ = q - 1.0
+  } else {
+    fmtQ_ = r
+    fmtNum_ = q
+  }
+  fmtState = 33
+}
+
+// The sign for %d %i %u, and the 0x / 0X / 0 prefix for %x %X %o.  The radix
+// conversions have no sign -- they print the two's complement -- and # adds
+// nothing for a zero, in either base.
+mod fmtSign() {
+  if fmtBase_ == 10.0 {
+    if fmtNeg {
+      fmtBody = "-" .. fmtBody
+    } else if fmtPlus == 1 {
+      fmtBody = "+" .. fmtBody
+    } else if fmtSpace == 1 {
+      fmtBody = " " .. fmtBody
+    }
+  } else {
+    fmtRadixPrefix()
+  }
+  fmtPre = ""
+  fmtState = 6
+}
+
+// ( starts a capture, and a ( followed by ) is PUC's position capture: its value
+// is where it stands rather than what it covers, which is why find answers a
+// number there and not a string.  A capture's number is how many the attempt has
+// opened, and patCapN is how many are open *now*: the two are not the same, since
+// "(a)(b)" closes the first before it opens the second, and PUC numbers those one
+// and two.  Each records the start it had, so a rewind puts that back.  Returns
+// the state to run next.
+//
+// The two counters are written last, and n is read from patNCap first: a local
+// computed from a var the same mod writes is re-derived at its next use, so
+// patPush was handed n + 1 and the first capture's entry pointed at the second
+// one's slot.
+mod patOpen() -> int {
+  let n = patNCap + 1
+  let old = patCapS[n]
+  if 32 < n {
+    patErr = "too many captures"
+    return 8
+  }
+  if patP + 1 < patPEnd && patPat.Substring(patP + 1, 1) == ")" {
+    // the ) is part of the item, so it is consumed here and the capture is
+    // already closed: patCapN does not count it
+    if !patPush(6, n, old, 0) {
+      patErr = "pattern too complex"
+      return 8
+    }
+    patCapS[n] = patI
+    patCapE[n] = 0
+    patCapP[n] = 1
+    patP = patP + 2
+    patNCap = n
+  } else {
+    if !patPush(5, n, old, 0) {
+      patErr = "pattern too complex"
+      return 8
+    }
+    patCapS[n] = patI
+    patCapE[n] = 0
+    patCapP[n] = 0
+    patCapIx[patCapN] = n
+    patP = patP + 1
+    patNCap = n
+    patCapN = patCapN + 1
+  }
+  return 1
+}
+
+// ) closes the innermost open capture -- the one on top of patCapIx, whose
+// number is neither the depth nor the count in general -- and records that it
+// did: a quantifier inside the capture gives a character back and runs the )
+// again, which has to find the capture open the second time.  PUC's
+// start_capture is a recursive call and gets that from the recursion; a flat
+// machine has to write it down, and the entry carries the depth to put back.  A
+// ) reached once a capture has been opened is PUC's "invalid pattern capture",
+// and before any has, it is a character that matches nothing, which is where
+// PUC's answers for "a)" and ")" come from.
+mod patClose() -> int {
+  let d = patCapN - 1
+  let c = patCapIx[d]
+  let old = patCapE[c]
+  if !patPush(7, c, old, d + 1) {
+    patErr = "pattern too complex"
+    return 8
+  }
+  patCapE[c] = patI + 1
+  patCapN = d
+  patP = patP + 1
+  return 1
+}
+
+// The item's verdict is in patHit and its extent in patItemE, so this is where
+// the quantifier is read and where every alternative is recorded.  The order
+// matters: a greedy quantifier records the position the rest would resume from
+// and then consumes as many characters as it can, so the rest of the pattern
+// sees the longest match first; a lazy one records the position before the item
+// and tries the rest there first; ? records how to skip the item it matched, and
+// a quantifier whose item did not match records nothing, because there is no
+// longer alternative to come back to.
+mod patApply() {
+  let q = if patPlain then "" else if patItemE < patPEnd then patPat.Substring(patItemE, 1) else ""
+  patQ = if q == "*" then 1 else if q == "+" then 2 else if q == "-" then 3 else if q == "?" then 4 else 0
+  patQEnd = if patQ == 0 then patItemE else patItemE + 1
+  if patQ == 0 {
+    if patHit {
+      patI = patI + patAdv
+      patP = patQEnd
+      patSt = 1
+    } else {
+      patSt = 4
+    }
+  } else if patQ == 1 || patQ == 2 {
+    if !patHit {
+      // zero repetitions: + is the one quantifier that cannot have none
+      if patQ == 2 {
+        patSt = 4
+      } else {
+        patP = patQEnd
+        patSt = 1
+      }
+    } else if !patPush(1, patItemP, patI, patQEnd) {
+      patErr = "pattern too complex"
+      patSt = 8
+    } else {
+      patSt = 11
+    }
+  } else if patQ == 3 {
+    if patHit {
+      if !patPush(4, patItemP, patI, patQEnd) {
+        patErr = "pattern too complex"
+        patSt = 8
+      } else {
+        patP = patQEnd
+        patSt = 1
+      }
+    } else {
+      patP = patQEnd
+      patSt = 1
+    }
+  } else {
+    if patHit {
+      if patPush(2, patQEnd, 0, 0) {
+        patI = patI + 1
+        patP = patQEnd
+        patSt = 1
+      } else {
+        patErr = "pattern too complex"
+        patSt = 8
+      }
+    } else {
+      patP = patQEnd
+      patSt = 1
+    }
+  }
+}
+
+// A set matched on the way back up the stack: the lazy item takes one more
+// character and records where to take the next one from.
+mod patSetRetry() {
+  patI = patI + 1
+  if 0 <= patI {
+    patPush(4, patItemP, patI, patQEnd)
+  }
+  patP = patQEnd
+  patSt = 1
+}
+
+// The library is prepended to the program, so a line in the source the lexer
+// and the parser see counts the library's lines as well.  Both error paths undo
+// that here, because two copies of one subtraction is one copy waiting to be
+// wrong -- and the parser's was missing, so every syntax error in a program that
+// pulled in a piece reported a line number tens of lines too high.
+//
+// It answers a STRING, not a number, because the int/float distinction lives in
+// the register's tag and a line number is an int: fmtNum is the FLOAT formatter
+// and always spells a whole number "2.0" (which is right for 2.0 and wrong for a
+// line).  The int spelling is the one fmtVal uses for the integer tag.
+mod userLine(raw: float) -> string {
+  let l = toInt(raw)
+  var u = l
+  if libLines < l { u = l - libLines } else { u = 1 }
+  return "" .. (u | 0)
+}
+
+// Writable output globals live in gtag/gnum/gstr (slots 0..5); the ports
+// mirror them once per tick. Numeric outs read as numbers (nil -> 0.0),
+// string outs Lua-formatted (nil -> "").
+mod syncOuts() {
+  oF0 = if gtag[slotOutLatch + 0] == 0 then 0.0 else gnum[slotOutLatch + 0]
+  oF1 = if gtag[slotOutLatch + 1] == 0 then 0.0 else gnum[slotOutLatch + 1]
+  oF2 = if gtag[slotOutLatch + 2] == 0 then 0.0 else gnum[slotOutLatch + 2]
+  oF3 = if gtag[slotOutLatch + 3] == 0 then 0.0 else gnum[slotOutLatch + 3]
+  oI0 = if gtag[slotOutInt0] == 0 then 0 else toInt(gnum[slotOutInt0])
+  oS4 = if gtag[slotOutLatch + 4] == 0 then "" else fmtVal(gtag[slotOutLatch + 4], gnum[slotOutLatch + 4], gstr[slotOutLatch + 4])
+  oS5 = if gtag[slotOutLatch + 5] == 0 then "" else fmtVal(gtag[slotOutLatch + 5], gnum[slotOutLatch + 5], gstr[slotOutLatch + 5])
+}
+
+// The integer part's digits, then the fraction's.  One state to hand the digit
+// walk its next state, so the walk itself stays the one %f uses.
+mod fmtIntStart() {
+  fmtFNDigits()
+}
+
+mod libStrIndex(p: string) -> string {
+  return if srcUses(p, "string.len") || srcUses(p, "string.sub")
+      || srcUsesField(p, "len") || srcUsesField(p, "sub")
+      || srcUsesField(p, "byte") || srcUsesField(p, "char")
+      then LIB_str_index else ""
+}
+
+mod libStrCase(p: string) -> string {
+  return if srcUses(p, "string.upper") || srcUses(p, "string.lower")
+      || srcUsesField(p, "upper") || srcUsesField(p, "lower")
+      then LIB_str_case else ""
+}
+
+mod libStrFmt(p: string) -> string {
+  return if srcUses(p, "string.format") || srcUsesField(p, "format")
+      then LIB_str_fmt else ""
+}
+
+mod libStrGmatch(p: string) -> string {
+  return if srcUses(p, "string.gmatch") || srcUsesField(p, "gmatch")
+      then LIB_str_gmatch else ""
+}
+
+// gsub's replacement walk scans for '%' with string.find, so it brings the pat
+// piece with it; libStrPat then stands down so the program pays for it once.
+mod libStrPat(p: string) -> string {
+  return if (srcUses(p, "string.find") || srcUses(p, "string.match")
+      || srcUsesField(p, "find") || srcUsesField(p, "match"))
+      && !(srcUses(p, "string.gsub") || srcUsesField(p, "gsub"))
+      then LIB_str_pat else ""
+}
+
+mod libStrGsub(p: string) -> string {
+  return if srcUses(p, "string.gsub") || srcUsesField(p, "gsub")
+      then LIB_str_pat .. LIB_str_gsub else ""
+}
+
+mod libStrMisc(p: string) -> string {
+  return if srcUses(p, "string.rep") || srcUses(p, "string.reverse")
+      || srcUsesField(p, "rep") || srcUsesField(p, "reverse")
+      then LIB_str_misc else ""
+}
+
+mod libMathInt(p: string) -> string {
+  return if srcUses(p, "math.floor") || srcUses(p, "math.ceil")
+      || srcUses(p, "math.tointeger") || srcUses(p, "math.type")
+      || srcUses(p, "math.abs") || srcUses(p, "math.sqrt")
+      || srcUsesField(p, "floor") || srcUsesField(p, "ceil")
+      || srcUsesField(p, "abs") || srcUsesField(p, "sqrt")
+      || srcUsesField(p, "tointeger") || srcUsesField(p, "type")
+      then LIB_math_int else ""
+}
+
+mod libMathTrig(p: string) -> string {
+  return if srcUses(p, "math.sin") || srcUses(p, "math.cos")
+      || srcUses(p, "math.tan") || srcUses(p, "math.asin")
+      || srcUses(p, "math.acos") || srcUses(p, "math.atan")
+      || srcUsesField(p, "sin") || srcUsesField(p, "cos")
+      || srcUsesField(p, "tan") || srcUsesField(p, "asin")
+      || srcUsesField(p, "acos") || srcUsesField(p, "atan")
+      then LIB_math_trig else ""
+}
+
+mod libMathExp(p: string) -> string {
+  return if srcUses(p, "math.exp") || srcUses(p, "math.log")
+      || srcUsesField(p, "exp") || srcUsesField(p, "log")
+      then LIB_math_exp else ""
+}
+
+mod libMathMisc(p: string) -> string {
+  return if srcUses(p, "math.max") || srcUses(p, "math.min")
+      || srcUses(p, "math.fmod") || srcUses(p, "math.modf")
+      || srcUsesField(p, "max") || srcUsesField(p, "min")
+      || srcUsesField(p, "fmod") || srcUsesField(p, "modf")
+      then LIB_math_misc else ""
+}
+
+// Put the allocator back inside a window bumpMax already claimed.  A call's
+// arguments are parsed after its callee register is allocated, and they belong
+// in that window, so allocation resumes at reg+1 rather than past its end.
+mod rewindTo(r: int) {
+  if regAlloc() >= cfNext[fnDepth] {
+    perr = true
+    perrMsg = "too many registers"
+  }
+  cfNext[fnDepth] = r
+}
+
+// Record a binary operator arrival: pops run first, the frame is pushed
+// once they drain (see pushPending). fl packs assoc bit + swap/negate bits.
+mod binArrive(opc: int, prec: int, fl: int) {
+  let t = opTopKind()
+  if (opc == 17 || opc == 18 || opc == 19) && t == 0 {
+    let ta = opA[opA.length() - 1]
+    if ta == 17 || ta == 18 || ta == 19 {
+      perr = true
+      perrMsg = "chained comparison (like Lua)"
+      return
+    }
+  }
+  pendKind = 0
+  pendPrec = prec
+  pendSub = opc
+  pendAux = fl
+  popMode = 1
+  popPrec = prec
+}
+
+// One append to the log, by print or by io.write.  The caller has already made
+// the text what it wants -- print's line and its 64-character cap, or io.write's
+// raw chunk -- and the log keeps the last 32 appends, so the port stays a plain
+// string read and cannot grow without bound.  The 64-character cap is the
+// *caller's* because it is print's rule, not the log's: a write of 500 bytes is
+// one append here and 500 bytes of text, not eight dropped ones.
+mod logPush(line: string) {
+  logLines.push(line)
+  logAdd(line)
+  if logLines.length() > 32 {
+    let drop = logLines[0]
+    logDrop(drop.Length())
+    logLines.remove(0)
+  }
+}
+
+// Normalize integral floats to the int tag so 1 and 1.0 share one key.
+// Copy cnt values from src down to a.  The two ranges overlap, so fill from the
+// LOW end: writing a high slot first would overwrite a source value that a
+// lower slot still has to read.
+mod shiftDown(a: int, src: int, cnt: int) {
+  if 1 <= cnt { vSet(a, vTag(src), vNum(src), vStr(src)) }
+  if 2 <= cnt { vSet(a + 1, vTag(src + 1), vNum(src + 1), vStr(src + 1)) }
+  if 3 <= cnt { vSet(a + 2, vTag(src + 2), vNum(src + 2), vStr(src + 2)) }
+  if 4 <= cnt { vSet(a + 3, vTag(src + 3), vNum(src + 3), vStr(src + 3)) }
+  if 5 <= cnt { vSet(a + 4, vTag(src + 4), vNum(src + 4), vStr(src + 4)) }
+  if 6 <= cnt { vSet(a + 5, vTag(src + 5), vNum(src + 5), vStr(src + 5)) }
+  if 7 <= cnt { vSet(a + 6, vTag(src + 6), vNum(src + 6), vStr(src + 6)) }
+  if 8 <= cnt { vSet(a + 7, vTag(src + 7), vNum(src + 7), vStr(src + 7)) }
+  if 9 <= cnt { vSet(a + 8, vTag(src + 8), vNum(src + 8), vStr(src + 8)) }
+  if 10 <= cnt { vSet(a + 9, vTag(src + 9), vNum(src + 9), vStr(src + 9)) }
+  if 11 <= cnt { vSet(a + 10, vTag(src + 10), vNum(src + 10), vStr(src + 10)) }
+  if 12 <= cnt { vSet(a + 11, vTag(src + 11), vNum(src + 11), vStr(src + 11)) }
+  if 13 <= cnt { vSet(a + 12, vTag(src + 12), vNum(src + 12), vStr(src + 12)) }
+  if 14 <= cnt { vSet(a + 13, vTag(src + 13), vNum(src + 13), vStr(src + 13)) }
+  if 15 <= cnt { vSet(a + 14, vTag(src + 14), vNum(src + 14), vStr(src + 14)) }
+  if 16 <= cnt { vSet(a + 15, vTag(src + 15), vNum(src + 15), vStr(src + 15)) }
+}
+
+// %f[set]: the frontier, a transition into the set.  It needs two set tests, the
+// character before the cursor and the one at it, and patItemP is what brings the
+// second scan back to the set's text.  Returns the state to run next.
+mod patF() -> int {
+  if patP + 2 >= patPEnd || patPat.Substring(patP + 2, 1) != "[" {
+    patErr = "missing '[' after '%f' in pattern"
+    return 8
+  }
+  patItemP = patP
+  if patI == 0 {
+    // there is no character before the first one, so that test is vacuously
+    // true and only the one at the cursor is worth making
+    patFPrev = false
+    patAfter = 10
+    patFailTo = 4
+    patSetBegin(patP + 3, patSrc.Substring(patI, 1).ToCharCode().Codepoint)
+    return 7
+  }
+  patAfter = 9
+  patFailTo = 9
+  patSetBegin(patP + 3, patSrc.Substring(patI - 1, 1).ToCharCode().Codepoint)
+  return 7
+}
+
+// %f's previous-character test is done, whether it was in the set or not: the
+// frontier needs to know, so the test at the cursor runs either way.
+mod patFPrevStep() {
+  patFPrev = patHit
+  patAfter = 10
+  patFailTo = 4
+  patSetBegin(patItemP + 3, patSrc.Substring(patI, 1).ToCharCode().Codepoint)
+  patSt = 7
 }
 
 mod emitNum() {
@@ -455,30 +4095,6 @@ mod resolveKw() {
   lidBuf = ""
 }
 
-mod hexVal(cp: int) -> int {
-  return if cp >= 48 && cp <= 57 then cp - 48
-    else if cp >= 97 && cp <= 102 then cp - 87
-    else if cp >= 65 && cp <= 70 then cp - 55
-    else -1
-}
-
-// level of a long bracket ([[, [=[, ...) starting at pos, or -1
-mod longLevel(pos: int) -> int {
-  let seg = lsrc.Substring(pos, 8)
-  return if seg.StartsWith("[[", true) then 0
-    else if seg.StartsWith("[=[", true) then 1
-    else if seg.StartsWith("[==[", true) then 2
-    else if seg.StartsWith("[===[", true) then 3
-    else if seg.StartsWith("[====[", true) then 4
-    else if seg.StartsWith("[=====[", true) then 5
-    else -1
-}
-
-mod closerFor(level: int) -> string {
-  return if level == 0 then "]]" else if level == 1 then "]=]" else if level == 2 then "]==]"
-    else if level == 3 then "]===]" else if level == 4 then "]====]" else "]=====]"
-}
-
 // A long string or long comment starting at pos (its opening bracket has `level` equals equals signs).
 mod lexLong(pos: int, level: int, isComment: bool) {
   let closer = closerFor(level)
@@ -497,12 +4113,558 @@ mod lexLong(pos: int, level: int, isComment: bool) {
   }
 }
 
-mod emitEscByte(v: int) {
-  if v >= 32 && v <= 126 {
-    lidBuf = lidBuf .. PRINTABLES.Substring(v - 32, 1)
-  } else {
-    lexFail("bad escape")
+// Mark the instruction at `pos` as returning all of its values (a CALL's C
+// operand bit 1, or VARARG's B = 0), and reserve the result registers it may
+// write so a later regAlloc cannot land on a live result.
+mod patchAt(pos: int) {
+  if pos >= 0 && pos < bpc.length() {
+    if bop[pos] == 45 {
+      bpb[pos] = 0
+    } else {
+      bpc[pos] = bpc[pos] + 2
+    }
+    let fr = bpa[pos]
+    bumpMax(fr + MAXVALS)
   }
+}
+
+// lkKind: 0 none, 1 local reg, 2 self-recursion (GETCLO of the running
+// frame), 3 upvalue (lkReg = this function's descriptor index).  The ladder
+// only answers *which* live local the name is; one test after it decides
+// local or capture, because a mod call inside the arms would be inlined 32
+// times.  32 is the window, as before: a name with more live locals than that
+// in front of it reads as a global, which is the same hole the old ladder had.
+mod locFind(name: string) {
+  lkKind = 0
+  lkReg = -1
+  lkFid = -1
+  lkDone = false
+  lkIx = -1
+  if !lkRaw && selfName[fnDepth] == name && selfClean[fnDepth] {
+    lkKind = 2
+    lkFid = selfFid[fnDepth]
+    lkDone = true
+  }
+  var ix = locLen - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  if lkDone && lkKind == 0 {
+    if locDepth[lkIx] != fnDepth {
+      resolveUp(lkIx)
+    } else if locCap[lkIx] {
+      // this local of ours is captured, so from here on it lives in its cell
+      let k = upSelf(lkIx)
+      if 0 <= k {
+        lkKind = 3
+        lkReg = k
+      } else {
+        lkKind = 1
+        lkReg = locReg[lkIx]
+      }
+    } else {
+      lkKind = 1
+      lkReg = locReg[lkIx]
+    }
+  }
+}
+
+mod forDoHead() {
+  cpos = cpos + 1
+  blkEnter()
+  let ctrl = locDeclare(forName)
+  dirtySelf(forName)
+  if forInit != ctrl {
+    bEmit(7, ctrl, forInit, 0)
+    regFree(forInit)
+  }
+  if forStep == -1 {
+    forStep = regAlloc()
+    bEmit(2, forStep, cNum(1.0), 1)
+  }
+  // limit/step stay live across the whole body but are never locals;
+  // pin them under maxLoc so regSync cannot hand them to body temps.
+  if forLimit > cfMaxLoc[fnDepth] {
+    cfMaxLoc[fnDepth] = forLimit
+  }
+  if forStep > cfMaxLoc[fnDepth] {
+    cfMaxLoc[fnDepth] = forStep
+  }
+  bEmit(32, ctrl, forLimit, forStep)
+  let jp = bEmit(20, 0, 0, 0)
+  let bs = bop.length()
+  pushCtl(5, bs, jp, -1, ctlLoop, forLimit, forStep)
+  ctlLoop = ctlKind.length() - 1
+  forNames.push(forName)
+}
+
+// stState 20: parameter list.  `...` may appear last and makes the function
+// variadic: extra arguments land in the vararg stack (fVar marks the fid).
+mod funcParams() {
+  // `function M:f(a)` puts M in the first parameter slot, so `self` has to be
+  // the first local or every parameter shifts by one
+  if fnSelfArg[fnDepth] {
+    fnSelfArg[fnDepth] = false
+    locDeclare("self")
+  }
+  if curKind() == 5 && curSub() == 32 {
+    cpos = cpos + 1
+    fVar[tmpB] = true
+    if curKind() == 5 && curSub() == 15 {
+      cpos = cpos + 1
+      fParams[tmpB] = cfNext[fnDepth]
+      cfBase[fnDepth] = cfNext[fnDepth]
+      if selfName[fnDepth] != "" {
+        locDeclare(selfName[fnDepth])
+      }
+      fStart[tmpB] = bop.length()
+      fnVar[fnDepth] = true
+      stState = 0
+    } else {
+      perr = true
+      perrMsg = "expected ) after ..."
+    }
+  } else if curKind() == 3 {
+    locDeclare(curStr())
+    dirtySelf(curStr())
+    cpos = cpos + 1
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+    } else if curKind() == 5 && curSub() == 15 {
+      cpos = cpos + 1
+      fParams[tmpB] = cfNext[fnDepth]
+      cfBase[fnDepth] = cfNext[fnDepth]
+      if cfNext[fnDepth] > 8 {
+        perr = true
+        perrMsg = "too many parameters (max 8 in-gate)"
+      }
+      if selfName[fnDepth] != "" {
+        locDeclare(selfName[fnDepth])
+      }
+      fStart[tmpB] = bop.length()
+      stState = 0
+    } else {
+      perr = true
+      perrMsg = "expected , or ) in parameter list"
+    }
+  } else if curKind() == 5 && curSub() == 15 {
+    cpos = cpos + 1
+    fParams[tmpB] = cfNext[fnDepth]
+    cfBase[fnDepth] = cfNext[fnDepth]
+    if cfNext[fnDepth] > 8 {
+      perr = true
+      perrMsg = "too many parameters (max 8 in-gate)"
+    }
+    if selfName[fnDepth] != "" {
+      locDeclare(selfName[fnDepth])
+    }
+    fStart[tmpB] = bop.length()
+    stState = 0
+  } else {
+    perr = true
+    perrMsg = "expected parameter name"
+  }
+}
+
+// end / else / elseif handling against the control stack top.
+mod doBlockClose() {
+  let s = curSub()
+  if ctlKind.length() == 0 {
+    perr = true
+    perrMsg = "end without block"
+    return
+  }
+  let n = ctlKind.length() - 1
+  let kind = ctlKind[n]
+  if s == 6 {
+    if kind == 1 {
+      blkExit()
+      if ctlA[n] != -1 {
+        bPatch(ctlA[n], bop.length())
+      }
+      pdHead = ctlB[n]
+      pdThen = 2
+      popCtl()
+    } else if kind == 2 {
+      blkExit()
+      tmpC = ctlD[n]
+      let jtop = ctlA[n]
+      bEmit(20, jtop, 0, 0)
+      bPatch(ctlB[n], bop.length())
+      pdHead = ctlC[n]
+      pdThen = 1
+      popCtl()
+    } else if kind == 7 {
+      // generic-for tail: the control variable becomes this step's first
+      // result, then jump back to the loop head
+      blkExit()
+      bEmit(7, ctlE[n], ctlF[n], 0)
+      let back = bEmit(20, 0, 0, 0)
+      bPatch(back, ctlA[n])
+      bPatch(ctlB[n], bop.length())
+      pdHead = ctlC[n]
+      pdThen = 1
+      popCtl()
+      forNames.pop()
+    } else if kind == 5 {
+      blkExit()
+      tmpC = ctlD[n]
+      bEmit(33, ctlA[n], ctlE[n], ctlF[n])
+      bEmit(50, 0, 0, 0)
+      pdTarget = bop.length() - 1
+      bPatch(ctlB[n], bop.length())
+      pdHead = ctlC[n]
+      pdThen = 1
+      popCtl()
+      forNames.pop()
+    } else if kind == 3 {
+      let fid = ctlA[n]
+      let skip = ctlB[n]
+      let resume = ctlC[n]
+      let extra = ctlE[n]
+      let savedCont = ctlF[n]
+      let savedSt = ctlG[n]
+      bEmit(26, 0, 0, 0)
+      fRegs[fid] = cfMax[fnDepth]
+      locLen = funcEntryLoc[fnDepth]
+      fnDepth = fnDepth - 1
+      bPatch(skip, bop.length())
+      ctlLoop = ctlD[n]
+      tmpS = tmpSStk.pop().Value
+      restoreTmp()
+      openCtor = ctorStk.pop().Value
+      popCtl()
+      if resume == 1 {
+        // a function literal is a value, not a call: marking it as a call made
+        // the enclosing call treat it as an expanding tail argument
+        pushVal(extra, false, true)
+        expectOperand = false
+        inExpr = true
+        exprDone = false
+        contKind = savedCont
+        stState = savedSt
+      } else if extra == 1 {
+        let outer = locDeclare(tmpS)
+        bEmit(25, outer, fid, 0)
+      } else if extra >= 2 {
+        // function M.f(): the table register is extra-2, the field name the
+        // one the header pushed
+        let fr = regAlloc()
+        bEmit(25, fr, fid, 0)
+        // fnKey holds the field NAME, so it still needs interning: passing the
+        // name itself loaded whichever string const came first, which is how
+        // `function M.f` worked only until the program had another string
+        let nm = cStr(fnKey.pop().Value)
+        let kr = regAlloc()
+        bEmit(3, kr, nm, 0)
+        bEmit(30, extra - 2, kr, fr)
+        bumpMax(fr + 2)
+      } else {
+        let fr = regAlloc()
+        bEmit(25, fr, fid, 0)
+        bEmit(6, gDeclare(tmpS), fr, 0)
+      }
+    } else {
+      blkExit()
+      popCtl()
+    }
+    cpos = cpos + 1
+  } else if s == 4 {
+    if kind != 1 {
+      perr = true
+      perrMsg = "else without if"
+      return
+    }
+    blkExit()
+    let pos = bEmit(20, 0, 0, 0)
+    lstAppendB(pos)
+    bPatch(ctlA[n], bop.length())
+    ctlA[n] = -1
+    blkEnter()
+    cpos = cpos + 1
+  } else {
+    if kind != 1 {
+      perr = true
+      perrMsg = "elseif without if"
+      return
+    }
+    blkExit()
+    let pos = bEmit(20, 0, 0, 0)
+    lstAppendB(pos)
+    bPatch(ctlA[n], bop.length())
+    ctlA[n] = -1
+    cpos = cpos + 1
+    startUnit(3)
+  }
+}
+
+mod frameStamp() -> float {
+  return vaNum[slotBase() - 1]
+}
+
+// The cell a descriptor names.  GETUP and SETUP only look: the closure that
+// captured the local made the cell, so by the time either runs it is there,
+// and a parent descriptor's cell belongs to the enclosing closure.
+mod cellRead(fid: int, k: int, parent: bool) -> int {
+  if parent {
+    return cloU[curClo() * MAX_UP + k]
+  }
+  return toInt(vaNum[slotBase() + 3 * fUpSlot[fid * MAX_UP + k]])
+}
+
+mod pcallEndJoin(src: int, fixed: int, tailSrc: int, tail: int) {
+  let dst = fRetBase[fRetBase.length() - 1] + fRetA[fRetA.length() - 1] + 1
+  let want = fRetN[fRetN.length() - 1]
+  let have = fixed + tail
+  let keep = if want == -2 then have else if want < have then want else have
+  let fixedKeep = if fixed < keep then fixed else keep
+  let tailKeep = keep - fixedKeep
+  let save = vaTop
+  if 0 < tail {
+    vaSpill(tailSrc, save, tail)
+  }
+  if 0 < tailKeep {
+    vaFill(save, dst + fixedKeep, tailKeep)
+  }
+  pcallEnd(src, fixed, tailKeep)
+}
+
+// One digit per tick.  Digits come out least significant first and are
+// prepended, so no array is needed to reverse them.  Base 10 divides a
+// non-negative value; the radix bases divide the signed one.
+mod fmtDigit() {
+  if fmtBase_ == 10.0 {
+    if fmtNum_ < 1.0 {
+      fmtState = 13
+    } else {
+      let q = floor(fmtNum_ / 10.0)
+      fmtQ_ = toInt(fmtNum_ - q * 10.0)
+      fmtNum_ = q
+      fmtState = 33
+    }
+  } else if fmtNum_ > 0.0 || fmtDigits < fmtDigitsMax {
+    fmtDigits = fmtDigits + 1
+    fmtRadixDigit()
+  } else {
+    fmtState = 13
+  }
+}
+
+// The last digit: the zero a bare zero formats to (not with %.0), then the
+// precision zeros.  The # prefix and the sign are fmtSign's business, because the
+// prefix goes in front of the precision padding: %#.3x of 255 is 0x0ff, not 0xff.
+mod fmtDigitEnd() {
+  if fmtBody == "" && fmtPrec != 0 {
+    fmtBody = "0"
+  }
+  if 0 < fmtPrec && fmtPrec > fmtBody.Length() {
+    fmtPad = fmtPrec - fmtBody.Length()
+    fmtPadAcc = ""
+    fmtState = 9
+  } else {
+    fmtSign()
+  }
+}
+
+// One precision zero per tick: WireScript has no loop to unroll for it.  Named
+// for the state, not fmtZero: a mod and a var sharing a name silently
+// miscompiles, so this must not be called fmtZero.
+mod fmtPrecZero() {
+  fmtPad = fmtPad - 1
+  fmtPadAcc = fmtPadAcc .. "0"
+  if fmtPad <= 0 {
+    fmtBody = fmtPadAcc .. fmtBody
+    fmtSign()
+  }
+}
+
+mod parseJobStart() {
+  parseInit()
+  // One reserved function slot per gate builtin (ids 0..NB-1), so a program's
+  // own functions start at NB and can never collide with one.  The rest of the
+  // standard library is Lua source prepended to the program (see libIter etc).
+  pcallBad.resize(1, 0)
+  patSl.resize(PAT_STACK, 0)
+  patCapS.resize(33, 0)
+  patCapE.resize(33, 0)
+  patCapP.resize(33, 0)
+  patCapIx.resize(33, 0)
+  patGmS.resize(PAT_WALKS, "")
+  patGmP.resize(PAT_WALKS, "")
+  patGmPos.resize(PAT_WALKS, 1)
+  fStart.resize(NB, -1)
+  fParams.resize(NB, -1)
+  fRegs.resize(NB, -1)
+  fUpN.resize(NB, 0)
+  fUpSlotN.resize(NB, 0)
+  mainFid = newFunc()
+  fStart[mainFid] = 0
+  fParams[mainFid] = 0
+  // the main chunk is the outermost function, so a capture of one of its locals
+  // is a descriptor on it
+  fidAt[0] = mainFid
+}
+
+mod fmtEFracDig() {
+  let d = floor(fmtDd[0])
+  // the character is its own let, as fmtDigit does it: the right-hand side of an
+  // assignment is a value gate, and it sees the value the same mod has just
+  // written, so an inline FromCharCode(48 + d) re-read floor(fmtDd[0]) after
+  // fmtDd[0] had been reduced and every digit came out 0
+  let ch = FromCharCode(48 + d).Character
+  fmtDd[0] = fmtDd[0] - d
+  fmtFr = fmtFr .. ch
+  if fmtLz < 0 && d != 0 {
+    fmtLz = fmtNz
+  }
+  fmtNz = fmtNz + 1
+  fmtState = 31
 }
 
 mod lexStep() {
@@ -946,527 +5108,6 @@ mod lexStep() {
   }
 }
 
-// ---------------------------------------------------------------- parser/codegen state
-// Bytecode: parallel bop/bpa/bpb/bpc (opcodes in spec.py;
-// JMPF/JMPT carry target in pa and test reg in pb; CALL carries nargs in pb
-// and multi-tail bit in pc). Functions: fStart/fParams/fRegs. Constants:
-// constNum/constStr. Globals: gmap name->slot plus gslotNext. Compile frames
-// (one per nested function, depth-indexed): cfNext/cfMax/cfBase/cfMaxLoc.
-// Locals: locName/locReg/locDepth with locLen (truncate to exit scopes).
-// Self-recursion per depth: selfName/selfClean/selfFid. Shunting-yard:
-// valStk/valCall, opKind/opPrec/opA/opB. Control stack: ctlKind/ctlA/B/C.
-// Patch lists thread through plNext. Parse cursor cpos, error perr/perrMsg.
-
-var cpos: int = 0
-var perr: bool = false
-var perrMsg: string = ""
-var presReg: int = 0
-var presIsCall: bool = false
-
-var bop: int[]
-var bpa: int[]
-var bpb: int[]
-var bpc: int[]
-var constNum: float[]
-var constStr: string[]
-var fStart: int[]
-var fParams: int[]
-var fRegs: int[]
-var fVar: bool[]
-var mainFid: int = 0
-var gmap: Map<string, int>
-var gslotNext: int = 0
-// global slots the runtime wires directly, resolved by name in parseInit
-var slotOutLatch: int = 0
-var slotInLatch: int = 0
-var slotInInt0: int = 0
-var slotOutInt0: int = 0
-var fnDepth: int = 0
-var cfNext: int[]
-var cfMax: int[]
-var cfBase: int[]
-var cfMaxLoc: int[]
-var locName: string[]
-var locReg: int[]
-var locDepth: int[]
-// has anything captured this local?  Then the function that declares it reads
-// and writes the *cell* from the capture on, not the register: the cell is
-// what closures see, and the register only holds the value the cell was
-// seeded from.  A statement between the declaration and the first closure
-// over it still goes through the register, which is right because in those
-// instructions no closure exists yet.
-var locCap: bool[]
-var locLen: int = 0
-// Upvalues.  fUpN[fid] is how many descriptors the prototype has, and the two
-// arrays strided by MAX_UP say what each one is: fUpSrc >= 0 is the captured
-// local's register in that frame (instack), < 0 is -(1 + the same local's
-// index in the *enclosing* function), which is how a local two levels out
-// becomes a one-level read of the enclosing closure's cell; fUpSlot is where
-// that frame keeps the cell for an instack one.
-// upIdx interns (prototype, local entry) -> descriptor index.  Keying on the
-// entry and not the name is what makes shadowing right: a function may
-// capture its own `x` and an enclosing `x` in one body, and they are
-// different cells.
-var fUpN: int[]
-var fUpSrc: int[]
-var fUpSlot: int[]
-var fUpSlotN: int[]
-var upIdx: Map<string, int>
-// the prototype each compile depth is on, so a capture can be walked up the
-// chain of enclosing functions
-var fidAt: int[]
-// A loop whose body contains a capture has to bump the generation once per
-// iteration, so each round gets its own cells the way PUC's close-at-block-end
-// does.  capGen counts captures; a block stamps it on the way in and compares
-// on the way out, which is how "this body contains a capture" is answered
-// without walking the block tree: a capture inside a nested function still
-// leaves the outer loop's body stamped, which is right, because the captured
-// local's block is the outer body and PUC re-opens it every round.
-var capGen: int = 0
-var blkCapGen: int[]
-// A repeat's block ends *after* its until condition, so its one-per-round bump
-// is emitted in front of the condition and this says so, or the block exit
-// would add a second one outside the loop.
-var blkGenDone: bool = false
-var selfName: string[]
-var selfClean: bool[]
-var selfFid: int[]
-// is the function being compiled variadic?  `...` outside one is an error, and
-// the VM keeps the same flag per function id in fVar
-var fnVar: bool[]
-// `function M:f(...)` compiles as `M.f = function(M, ...)`: the receiver name
-// is not written, so the parameter list has to be told to declare it first.
-// Per depth, because a function head and its parameter list are parsed at
-// different times and a global would not survive a nested head.
-var fnSelfArg: bool[]
-var valStk: int[]
-var valCall: bool[]
-var valPrefix: bool[]
-var opKind: int[]
-var opPrec: int[]
-var opA: int[]
-var opB: int[]
-var ctlKind: int[]
-var ctlA: int[]
-var ctlB: int[]
-var ctlC: int[]
-var plNext: int[]
-var lkKind: int = 0
-var lkReg: int = -1
-var lkFid: int = -1
-var lkDone: bool = false
-var lkRaw: bool = false
-// which live local the name matched, so the one test after the ladder can tell
-// a local of this function from a capture without each of the 32 arms asking
-var lkIx: int = -1
-var blkLen: int[]
-var blkNext: int[]
-var opBase: int[]
-
-// ---------------------------------------------------------------- expression machine state
-// Shunting-yard, direct-emit. expectOperand tracks prefix/infix position.
-// popMode 0 none, 1 precedence pops, 2 drain to marker. closeMode records a
-// pending `)`/`,`/terminator close to finish once pops drain.
-// opKind: 0 binop (opA=bytecode op, opB=1 left-assoc), 1 unary (opA 0=UNM
-//   1=NOT), 2 call (opA=fr, opB=nargs, opC=valDepth), 3 group (opA=valDepth),
-//   4 and / 5 or (opA=result reg, opB=patch pos).
-
-var expectOperand: bool = true
-var popMode: int = 0
-var popPrec: int = 0
-var pendKind: int = -1
-var pendPrec: int = 0
-var pendSub: int = 0
-var pendAux: int = 0
-var closeMode: int = 0
-var exprDone: bool = false
-var closeTrig: int = 0
-var opC: int[]
-var openCtor: int = 0
-var ctorStk: int[]
-var itBase: int[]
-var itKey: int[]
-
-mod curKind() -> int {
-  return if cpos >= tk.length() then 6 else tk[cpos]
-}
-
-mod curSub() -> int {
-  return if cpos >= tk.length() then 0 else ts[cpos]
-}
-
-mod curNum() -> float {
-  return if cpos >= tk.length() then 0.0 else tn[cpos]
-}
-
-mod curStr() -> string {
-  return if cpos >= tk.length() then "" else tt[cpos]
-}
-
-mod pushVal(r: int, isCall: bool, isPrefix: bool) {
-  valStk.push(r)
-  valCall.push(isCall)
-  valPrefix.push(isPrefix)
-}
-
-mod popVal() -> int {
-  if valStk.length() == 0 {
-    perr = true
-    perrMsg = "operand stack underflow"
-  }
-  valCall.pop()
-  valPrefix.pop()
-  return valStk.pop()
-}
-
-mod topFlag() -> bool {
-  return if valCall.length() == 0 then false else valCall[valCall.length() - 1]
-}
-
-mod topPrefix() -> bool {
-  return if valPrefix.length() == 0 then false else valPrefix[valPrefix.length() - 1]
-}
-
-mod setTopFlag(v: bool) {
-  if valCall.length() > 0 {
-    valCall[valCall.length() - 1] = v
-  }
-}
-
-mod setTopPrefix(v: bool) {
-  if valPrefix.length() > 0 {
-    valPrefix[valPrefix.length() - 1] = v
-  }
-}
-
-// ---------------------------------------------------------------- expression machine
-// One micro-op per call: pops, closes, or a single token action. Operands
-// push (reg, isCall); calls close with multi-tail from the last arg flag.
-
-mod bEmit(op: int, a: int, b: int, c: int) -> int {
-  bop.push(op)
-  bpa.push(a)
-  bpb.push(b)
-  bpc.push(c)
-  if bop.length() > MAX_INSTR {
-    perr = true
-    perrMsg = "program too long"
-  }
-  return bop.length() - 1
-}
-
-var lastPatchTarget: int = -1
-// Position of the most recently emitted CALL whose result count is still
-// undecided.  Lua only expands a call's results when the call sits in the LAST
-// argument position of an enclosing call (or feeds a fixed-arity target list),
-// and that is not known when the call itself closes: `f()` ends before the
-// enclosing `print(...)` does.  So record the call, then patch its C operand to
-// 1 once we learn it was in tail position.
-var lastCallPos: int = -1
-// Position of the CALL that produced the value currently in presReg, or -1 if
-// that value is not a call.  It outlives lastCallPos (which only tracks the
-// most recent emission) so the consumers of a finished value â€” `return f()`,
-// a target list, a constructor's last element â€” can still mark the call as
-// returning all of its results.
-var presCallPos: int = -1
-
-
-mod bPatch(pos: int, target: int) {
-  bpa[pos] = target
-  if bop[pos] == 21 && 0 < pos && bop[pos - 1] == 19
-     && bpc[pos - 1] < 0 && bpa[pos - 1] == bpb[pos] {
-    bpa[pos - 1] = -1 - target
-  }
-  lastPatchTarget = target
-}
-
-mod cNum(v: float) -> int {
-  let r = constNum.find(v)
-  if !r.Found {
-    if constNum.length() >= 256 {
-      perr = true
-      perrMsg = "too many numeric constants"
-    } else {
-      constNum.push(v)
-    }
-  }
-  return if r.Found then r.Index else constNum.length() - 1
-}
-
-mod cStr(s: string) -> int {
-  let r = constStr.find(s)
-  if !r.Found {
-    if constStr.length() >= 256 {
-      perr = true
-      perrMsg = "too many string constants"
-    } else {
-      constStr.push(s)
-    }
-  }
-  return if r.Found then r.Index else constStr.length() - 1
-}
-
-mod gDeclare(name: string) -> int {
-  let r = gmap.get(name)
-  if !r.Found {
-    if gslotNext >= MAX_GLOBALS {
-      perr = true
-      perrMsg = "too many globals"
-    } else {
-      gmap.set(name, gslotNext)
-      gslotNext = gslotNext + 1
-    }
-  }
-  return if r.Found then r.Value else gslotNext - 1
-}
-
-mod gLookup(name: string) -> int {
-  let r = gmap.get(name)
-  return if r.Found then r.Value else -1
-}
-
-mod parseInit() {
-  tk.clear()
-  ts.clear()
-  tn.clear()
-  tt.clear()
-  tl.clear()
-  lerr = false
-  lerrMsg = ""
-  lerrLine = 1
-  lline = 1
-  lastPatchTarget = -1
-  lastCallPos = -1
-  presCallPos = -1
-  bop.clear()
-  bpa.clear()
-  bpb.clear()
-  bpc.clear()
-  constNum.clear()
-  constStr.clear()
-  fStart.clear()
-  fParams.clear()
-  fRegs.clear()
-  fVar.clear()
-  gmap.clear()
-  locName.clear()
-  locReg.clear()
-  locDepth.clear()
-  locCap.clear()
-  fUpN.clear()
-  fUpSlotN.clear()
-  valStk.clear()
-  valCall.clear()
-  valPrefix.clear()
-  opKind.clear()
-  opPrec.clear()
-  opA.clear()
-  opB.clear()
-  opC.clear()
-  forCtrl.clear()
-  forRem.clear()
-  ctorStk.clear()
-  itBase.clear()
-  itKey.clear()
-  openCtor = 0
-  ctlKind.clear()
-  ctlA.clear()
-  ctlB.clear()
-  ctlC.clear()
-  ctlD.clear()
-  ctlE.clear()
-  ctlF.clear()
-  ctlG.clear()
-  plNext.clear()
-  plNext.resize(MAX_INSTR, -1)
-  tmpNames.clear()
-  tmpRegs.clear()
-  svC.clear()
-  svI.clear()
-  svS.clear()
-  forNames.clear()
-  tmpSStk.clear()
-  blkLen.clear()
-  blkNext.clear()
-  blkCapGen.clear()
-  capGen = 0
-  upIdx.clear()
-  fUpSrc.clear()
-  fUpSrc.resize(MAX_FUNCS * MAX_UP, -1)
-  fUpSlot.clear()
-  fUpSlot.resize(MAX_FUNCS * MAX_UP, 0)
-  fidAt.clear()
-  fidAt.resize(33, -1)
-  cfNext.clear()
-  cfMax.clear()
-  cfBase.clear()
-  cfMaxLoc.clear()
-  selfName.clear()
-  selfClean.clear()
-  selfFid.clear()
-  funcEntryLoc.clear()
-  opBase.clear()
-  cfNext.resize(33, 0)
-  cfMax.resize(33, 0)
-  cfBase.resize(33, 0)
-  cfMaxLoc.resize(33, -1)
-  selfName.resize(33, "")
-  selfClean.resize(33, true)
-  fnVar.clear()
-  fnVar.resize(33, false)
-  fnSelfArg.clear()
-  fnSelfArg.resize(33, false)
-  selfFid.resize(33, -1)
-  funcEntryLoc.resize(33, 0)
-  opBase.resize(33, 0)
-  fnKey.clear()
-  gslotNext = 0
-  gDeclare("outNum0")
-  gDeclare("outNum1")
-  gDeclare("outNum2")
-  gDeclare("outNum3")
-  gDeclare("outStr0")
-  gDeclare("outStr1")
-  fnDepth = 0
-  locLen = 0
-  cpos = 0
-  perr = false
-  perrMsg = ""
-  inExpr = false
-  contKind = 0
-  stState = 0
-  tmpA = 0
-  tmpB = 0
-  tmpC = 0
-  tmpS = ""
-  forName = ""
-  forInit = -1
-  forLimit = -1
-  forStep = -1
-  ctlLoop = -1
-  lkRaw = false
-  pdHead = -1
-  pdThen = 0
-  pdTarget = -1
-  pDone = false
-  expectOperand = true
-  popMode = 0
-  closeMode = 0
-  exprDone = false
-  pendKind = -1
-  mainFid = 0
-  closeTrig = 0
-  gDeclare("inNum0")
-  gDeclare("inNum1")
-  gDeclare("inNum2")
-  gDeclare("inNum3")
-  gDeclare("inStr0")
-  gDeclare("inStr1")
-  gDeclare("invecx")
-  gDeclare("invecy")
-  gDeclare("invecz")
-  gDeclare("incolr")
-  gDeclare("incolg")
-  gDeclare("incolb")
-  gDeclare("incola")
-  gDeclare("print")
-  gDeclare("type")
-  gDeclare("tostring")
-  gDeclare("setvec")
-  gDeclare("setcol")
-  gDeclare("clock")
-  gDeclare("inarr")
-  gDeclare("outarr")
-  gDeclare("select")
-  gDeclare("next")
-  gDeclare("_s")
-  gDeclare("_m")
-  gDeclare("unpack")
-  gDeclare("_fmt")
-  gDeclare("_rd")
-  gDeclare("_wr")
-  gDeclare("error")
-  gDeclare("assert")
-  gDeclare("pcall")
-  gDeclare("xpcall")
-  gDeclare("_pat")
-  gDeclare("_gmatch")
-  gDeclare("_gmnext")
-  gDeclare("inInt0")
-  gDeclare("outInt0")
-  gDeclare("math")
-  gDeclare("string")
-  gDeclare("table")
-  gDeclare("io")
-  // The runtime wires the latches and outputs straight into these slots, so
-  // take the numbers from the declarations instead of repeating them: adding a
-  // builtin used to leave a stale literal behind and overwrite its id.
-  slotOutLatch = gLookup("outNum0")
-  slotInLatch = gLookup("inNum0")
-  slotInInt0 = gLookup("inInt0")
-  slotOutInt0 = gLookup("outInt0")
-}
-
-// ---------------------------------------------------------------- registers + scope
-
-mod regAlloc() -> int {
-  let r = cfNext[fnDepth]
-  if r >= MAX_REGS {
-    perr = true
-    perrMsg = "too many registers"
-  }
-  cfNext[fnDepth] = r + 1
-  if r + 1 > cfMax[fnDepth] {
-    cfMax[fnDepth] = r + 1
-  }
-  return r
-}
-
-mod regFree(r: int) {
-  if r > cfMaxLoc[fnDepth] && r == cfNext[fnDepth] - 1 {
-    cfNext[fnDepth] = r
-  }
-}
-
-// Claim register slots up to n.  Both the frame size and the allocator move:
-// code that writes a block of registers outside regAlloc (call argument and
-// result windows, an expanded call's copies) must claim them here, or a later
-// regAlloc hands out a slot that is still live.
-mod bumpMax(n: int) {
-  if n > cfMax[fnDepth] {
-    cfMax[fnDepth] = n
-  }
-  if n > cfNext[fnDepth] {
-    cfNext[fnDepth] = n
-  }
-}
-
-// Put the allocator back inside a window bumpMax already claimed.  A call's
-// arguments are parsed after its callee register is allocated, and they belong
-// in that window, so allocation resumes at reg+1 rather than past its end.
-mod rewindTo(r: int) {
-  if regAlloc() >= cfNext[fnDepth] {
-    perr = true
-    perrMsg = "too many registers"
-  }
-  cfNext[fnDepth] = r
-}
-
-// Mark the instruction at `pos` as returning all of its values (a CALL's C
-// operand bit 1, or VARARG's B = 0), and reserve the result registers it may
-// write so a later regAlloc cannot land on a live result.
-mod patchAt(pos: int) {
-  if pos >= 0 && pos < bpc.length() {
-    if bop[pos] == 45 {
-      bpb[pos] = 0
-    } else {
-      bpc[pos] = bpc[pos] + 2
-    }
-    let fr = bpa[pos]
-    bumpMax(fr + MAXVALS)
-  }
-}
-
 mod patchMultiTail() {
   patchAt(lastCallPos)
   lastCallPos = -1
@@ -1512,450 +5153,6 @@ mod expandTailCall() {
   }
 }
 
-mod dirtySelf(name: string) {
-  if selfName[fnDepth] == name {
-    selfClean[fnDepth] = false
-  }
-}
-
-mod locBind(name: string, r: int) {
-  if locLen < locName.length() {
-    locName[locLen] = name
-    locReg[locLen] = r
-    locDepth[locLen] = fnDepth
-    locCap[locLen] = false
-  } else {
-    locName.push(name)
-    locReg.push(r)
-    locDepth.push(fnDepth)
-    locCap.push(false)
-  }
-  locLen = locLen + 1
-  if r > cfMaxLoc[fnDepth] {
-    cfMaxLoc[fnDepth] = r
-  }
-}
-
-mod locDeclare(name: string) -> int {
-  let r = regAlloc()
-  locBind(name, r)
-  return r
-}
-
-mod blkEnter() {
-  blkLen.push(locLen)
-  blkNext.push(cfNext[fnDepth])
-  blkCapGen.push(capGen)
-}
-
-// A block that contains a capture ends with one GEN: a loop has to give each
-// round its own cells, and PUC gets that by closing them at the end of the
-// block, so a cell whose stamp is stale is simply replaced when the next
-// closure is made.  Emitted here rather than at each loop's back edge because
-// blkExit already knows the answer, and a `do` block that captures pays one
-// wasted tick -- harmless, since a bump only ever invalidates slots, and a
-// closure that outlived the block already holds the cell itself.
-mod blkExit() {
-  locLen = blkLen.pop().Value
-  cfNext[fnDepth] = blkNext.pop().Value
-  let had = blkCapGen.pop().Value != capGen
-  if blkGenDone {
-    blkGenDone = false
-  } else if had {
-    bEmit(49, 0, 0, 0)
-  }
-}
-
-mod regSync() {
-  let top = cfBase[fnDepth]
-  let m = cfMaxLoc[fnDepth] + 1
-  if m > top {
-    cfNext[fnDepth] = m
-  } else {
-    cfNext[fnDepth] = top
-  }
-}
-
-// lkKind: 0 none, 1 local reg, 2 self-recursion (GETCLO of the running
-// frame), 3 upvalue (lkReg = this function's descriptor index).  The ladder
-// only answers *which* live local the name is; one test after it decides
-// local or capture, because a mod call inside the arms would be inlined 32
-// times.  32 is the window, as before: a name with more live locals than that
-// in front of it reads as a global, which is the same hole the old ladder had.
-mod locFind(name: string) {
-  lkKind = 0
-  lkReg = -1
-  lkFid = -1
-  lkDone = false
-  lkIx = -1
-  if !lkRaw && selfName[fnDepth] == name && selfClean[fnDepth] {
-    lkKind = 2
-    lkFid = selfFid[fnDepth]
-    lkDone = true
-  }
-  var ix = locLen - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  ix = ix - 1
-  if !lkDone && 0 <= ix && locName[ix] == name {
-    lkIx = ix
-    lkDone = true
-  }
-  if lkDone && lkKind == 0 {
-    if locDepth[lkIx] != fnDepth {
-      resolveUp(lkIx)
-    } else if locCap[lkIx] {
-      // this local of ours is captured, so from here on it lives in its cell
-      let k = upSelf(lkIx)
-      if 0 <= k {
-        lkKind = 3
-        lkReg = k
-      } else {
-        lkKind = 1
-        lkReg = locReg[lkIx]
-      }
-    } else {
-      lkKind = 1
-      lkReg = locReg[lkIx]
-    }
-  }
-}
-
-// The descriptor this function already has for one of its own locals, or -1.
-// A local that something captured is read and written through the cell from
-// then on: the cell is the value closures see, so a write from a nested
-// function has to be visible here without going through the register.
-mod upSelf(ix: int) -> int {
-  let r = upIdx.get(fidAt[fnDepth] .. "#" .. ix)
-  return if r.Found then r.Value else -1
-}
-
-// A local of an enclosing function is used here.  Every function from the one
-// that declares it up to this one gets a descriptor for it: the declaring
-// function's is instack (the local is in its own frame) and each one above
-// that is an upvalue of the closure below it.  So a capture two levels out is
-// two descriptors deep -- this function reads the enclosing closure's cell,
-// and that closure reads the cell in the frame the local lives in.  The chain
-// is a ladder because WireScript has no loop, and four links is the ceiling --
-// deeper is a loud error, never a wrong answer.
-mod resolveUp(ix: int) {
-  let ld = locDepth[ix]
-  let hops = fnDepth - ld
-  if 4 < hops {
-    perr = true
-    perrMsg = "too many nested functions to capture through"
-  } else {
-    let k0 = upStep(ld, ix, locReg[ix])
-    var k = k0
-    if 1 <= hops && !perr {
-      k = upStep(ld + 1, ix, -1 - k0)
-    }
-    if 2 <= hops && !perr {
-      k = upStep(ld + 2, ix, -1 - k)
-    }
-    if 3 <= hops && !perr {
-      k = upStep(ld + 3, ix, -1 - k)
-    }
-    if 4 <= hops && !perr {
-      k = upStep(ld + 4, ix, -1 - k)
-    }
-    if !perr {
-      lkKind = 3
-      lkReg = k
-      capGen = capGen + 1
-    }
-  }
-}
-
-// One link of a capture chain: the prototype at compile depth d gets a
-// descriptor for local entry ix, or finds the one it already has -- two
-// closures over one local must share its cell.  src >= 0 is the local's
-// register in that frame; src < 0 is -(1 + the same local's index in d's own
-// upvalues).  Keyed on the local *entry* and not the name because a function
-// can capture its own x and an enclosing x in one body, and those are two
-// different cells with one name.
-mod upStep(d: int, ix: int, src: int) -> int {
-  let p = fidAt[d]
-  let key = p .. "#" .. ix
-  let r = upIdx.get(key)
-  if r.Found {
-    return r.Value
-  }
-  let k = fUpN[p]
-  if MAX_UP <= k {
-    perr = true
-    perrMsg = "too many upvalues"
-    return 0
-  }
-  fUpN[p] = k + 1
-  fUpSrc[p * MAX_UP + k] = src
-  if 0 <= src {
-    fUpSlot[p * MAX_UP + k] = fUpSlotN[p]
-    fUpSlotN[p] = fUpSlotN[p] + 1
-    // the declaring function's own reads and writes go through this cell from
-    // here on, so a write from a nested function is visible to it
-    locCap[ix] = true
-  }
-  upIdx.set(key, k)
-  return k
-}
-
-mod pushOp(kind: int, prec: int, a: int, b: int, c: int) {
-  opKind.push(kind)
-  opPrec.push(prec)
-  opA.push(a)
-  opB.push(b)
-  opC.push(c)
-}
-
-mod opTopKind() -> int {
-  return if opKind.length() == 0 then -1 else opKind[opKind.length() - 1]
-}
-
-mod popIsLeft(k: int) -> bool {
-  return if k == 0 then (opB[opB.length() - 1] & 1) == 1
-    else if k == 1 then false
-    else true
-}
-
-mod nextKind() -> int {
-  return if cpos + 1 >= tk.length() then 6 else tk[cpos + 1]
-}
-
-mod nextSub() -> int {
-  return if cpos + 1 >= tk.length() then 0 else ts[cpos + 1]
-}
-
-// Apply one pending operator pop. Only binop/unary/and/or frames pop;
-// call and group markers stop all pops.
-mod curStrAhead() -> string {
-  return if cpos + 1 >= tk.length() then "" else tt[cpos + 1]
-}
-
-// One expression token in operand position.
-mod applyPop() {
-  let k = opTopKind()
-  if k == 0 {
-    let rr = popVal()
-    let ll = popVal()
-    let opc = opA[opA.length() - 1]
-    let fl = opB[opB.length() - 1]
-    opKind.pop()
-    opPrec.pop()
-    opA.pop()
-    opB.pop()
-    opC.pop()
-    regFree(rr)
-    regFree(ll)
-    let res = regAlloc()
-    let sw = (fl & 2) != 0
-    let L = if sw then rr else ll
-    let R = if sw then ll else rr
-    if (opc == 17 || opc == 18 || opc == 19 || (opc >= 8 && opc <= 13))
-       && 0 < bop.length() && bop[bop.length() - 1] == 2
-       && bpa[bop.length() - 1] == R && bpa[bop.length() - 1] > cfMaxLoc[fnDepth] {
-      let constIx = bpb[bop.length() - 1]
-      let intBit = if bpc[bop.length() - 1] == 1 then 1 else 0
-      bop.pop()
-      bpa.pop()
-      bpb.pop()
-      bpc.pop()
-      if opc >= 17 {
-        bEmit(opc, res, L, -1 - constIx)
-      } else {
-        bEmit(opc, res, L, -1 - 2 * constIx - intBit)
-      }
-    } else {
-      bEmit(opc, res, L, R)
-    }
-    if (fl & 4) != 0 {
-      bEmit(15, res, res, 0)
-    }
-    pushVal(res, false, false)
-  } else if k == 1 {
-    let vv = popVal()
-    let pendOpA = opA[opA.length() - 1]
-    let isNot = pendOpA == 1
-    let isLen = pendOpA == 2
-    let isBnot = pendOpA == 38
-    opKind.pop()
-    opPrec.pop()
-    opA.pop()
-    opB.pop()
-    opC.pop()
-    regFree(vv)
-    let res = regAlloc()
-    if isNot {
-      bEmit(15, res, vv, 0)
-    } else if isLen {
-      bEmit(31, res, vv, 0)
-    } else if isBnot {
-      bEmit(38, res, vv, 0)
-    } else {
-      bEmit(14, res, vv, 0)
-    }
-    pushVal(res, false, false)
-  } else if k == 4 || k == 5 {
-    let rr = popVal()
-    regFree(rr)
-    let R = opA[opA.length() - 1]
-    let pp = opB[opB.length() - 1]
-    opKind.pop()
-    opPrec.pop()
-    opA.pop()
-    opB.pop()
-    opC.pop()
-    bEmit(7, R, rr, 0)
-    bPatch(pp, bop.length())
-    pushVal(R, false, false)
-  } else {
-    perr = true
-    perrMsg = "bad pop"
-  }
-}
-
 // Finish one constructor element: the value sits on valStk above the frame.
 // isLast marks the element closed by '}' â€” a call there expands, so its results
 // all land in the table (Lua expands a call only in the final list position).
@@ -1982,66 +5179,6 @@ mod finishCtorElem(isLast: bool) {
   }
   lastCallPos = -1
   cfNext[fnDepth] = tr + 1
-}
-
-// Record a binary operator arrival: pops run first, the frame is pushed
-// once they drain (see pushPending). fl packs assoc bit + swap/negate bits.
-mod binArrive(opc: int, prec: int, fl: int) {
-  let t = opTopKind()
-  if (opc == 17 || opc == 18 || opc == 19) && t == 0 {
-    let ta = opA[opA.length() - 1]
-    if ta == 17 || ta == 18 || ta == 19 {
-      perr = true
-      perrMsg = "chained comparison (like Lua)"
-      return
-    }
-  }
-  pendKind = 0
-  pendPrec = prec
-  pendSub = opc
-  pendAux = fl
-  popMode = 1
-  popPrec = prec
-}
-
-// and/or arrival: pops drain first, then the frame goes up with its jump.
-mod andOrArrive(isOr: bool) {
-  pendKind = if isOr then 5 else 4
-  pendPrec = if isOr then 0 else 1
-  pendSub = 0
-  pendAux = 0
-  popMode = 1
-  popPrec = if isOr then 0 else 1
-}
-
-// Push the pending operator frame once precedence pops have drained.
-mod pushPending() {
-  if pendKind == 0 {
-    pushOp(0, pendPrec, pendSub, pendAux, valStk.length())
-  } else {
-    let ll = popVal()
-    let R = regAlloc()
-    bEmit(7, R, ll, 0)
-    if pendKind == 5 {
-      let pp = bEmit(22, 0, R, 0)
-      pushOp(5, pendPrec, R, pp, valStk.length() + 1)
-    } else {
-      let pp = bEmit(21, 0, R, 0)
-      pushOp(4, pendPrec, R, pp, valStk.length() + 1)
-    }
-    pushVal(R, false, false)
-  }
-  pendKind = -1
-}
-
-// ---------------------------------------------------------------- codegen helpers
-
-// GETUP's c operand: 0 reads this frame's own cell for the local, 1 reads the
-// enclosing closure's cell.  Which one is a property of the descriptor, so it
-// is settled here rather than in the VM.
-mod upKind() -> int {
-  let src = fUpSrc[fidAt[fnDepth] * MAX_UP + lkReg]
-  return if 0 <= src then 0 else 1
 }
 
 mod exprPushName(callParen: bool, callSugar: bool) {
@@ -2095,108 +5232,276 @@ mod exprPushName(callParen: bool, callSugar: bool) {
   }
 }
 
-// A function body runs its own statements, which reuse the statement-level
-// scratch arrays.  Park the outer statement's copy of them, or the body's first
-// `local` wipes the names the outer one still has to assign (the assignment then
-// silently vanished, taking `local f = function() local x ... end` with it).
-mod saveTmp() {
-  svC.push(tmpRegs.length())
-  svC.push(itBase.length())
-  svC.push(itKey.length())
-  svC.push(tmpNames.length())
-  svC.push(tmpA)
-  svI.append(tmpRegs)
-  svI.append(itBase)
-  svI.append(itKey)
-  svS.append(tmpNames)
-  tmpRegs.clear()
-  itBase.clear()
-  itKey.clear()
-  tmpNames.clear()
-}
-
-mod restoreTmp() {
-  tmpA = svC.pop().Value
-  let nN = svC.pop().Value
-  let nK = svC.pop().Value
-  let nB = svC.pop().Value
-  let nR = svC.pop().Value
-  tmpNames.slice(svS, svS.length() - nN, nN)
-  svS.resize(svS.length() - nN, "")
-  itKey.slice(svI, svI.length() - nK, nK)
-  svI.resize(svI.length() - nK, 0)
-  itBase.slice(svI, svI.length() - nB, nB)
-  svI.resize(svI.length() - nB, 0)
-  tmpRegs.slice(svI, svI.length() - nR, nR)
-  svI.resize(svI.length() - nR, 0)
-}
-
-mod newFunc() -> int {
-  fStart.push(-1)
-  fParams.push(0)
-  fRegs.push(-1)
-  fVar.push(false)
-  fUpN.push(0)
-  fUpSlotN.push(0)
-  let bad = fStart.length() > MAX_FUNCS
-  if bad {
+// Emit a numeric-for header after `do`: bind the control var (locals parsed
+// in the header still see outer scope), default a missing step to 1,
+// then FORPREP + entry JMP and open the body block (ctl kind 5).
+// Generic for: `for v1 [, v2] in explist do`.
+// The explist gives (f, s, ctrl); each step calls f(s, ctrl), stops when the
+// first result is nil, and feeds the results to the loop variables.  Only the
+// control variable moves on: it becomes the first result of each step, while
+// the state stays what the explist put there (verified against the oracle).
+// The header emits the loop head and the variable bindings; doBlockClose(kind
+// 7) appends the control update and the jump back.  Everything the close needs
+// lives in the control frame, so generic-fors nest.
+mod genForHead() {
+  if !(curKind() == 4 && curSub() == 3) {
     perr = true
-    perrMsg = "too many functions"
+    perrMsg = "expected do in for"
+    return
   }
-  return if bad then 0 else fStart.length() - 1
-}
-
-mod funcDepthInit(islocal: bool) {
-  cfNext[fnDepth] = 0
-  cfMax[fnDepth] = 0
-  cfBase[fnDepth] = 0
-  cfMaxLoc[fnDepth] = -1
-  selfClean[fnDepth] = true
-  selfFid[fnDepth] = -1
-  fnVar[fnDepth] = false
-  if islocal {
-    selfName[fnDepth] = tmpS
-    selfFid[fnDepth] = tmpB
+  cpos = cpos + 1
+  blkEnter()
+  if tmpRegs.length() < 1 {
+    perr = true
+    perrMsg = "for iterator is missing"
+    return
+  }
+  let freg = regAlloc()
+  let sreg = regAlloc()
+  let creg = regAlloc()
+  bEmit(7, freg, tmpRegs[0], 0)
+  if 1 < tmpRegs.length() {
+    bEmit(7, sreg, tmpRegs[1], 0)
   } else {
-    selfName[fnDepth] = ""
+    bEmit(1, sreg, 0, 0)
   }
-  funcEntryLoc[fnDepth] = locLen
-  fnSelfArg[fnDepth] = false
-  fidAt[fnDepth] = tmpB
+  if 2 < tmpRegs.length() {
+    bEmit(7, creg, tmpRegs[2], 0)
+  } else {
+    bEmit(1, creg, 0, 0)
+  }
+  // the iterator, its state and the control value stay live across the body
+  if freg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = freg }
+  if sreg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = sreg }
+  if creg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = creg }
+  let v1 = locDeclare(tmpNames[0])
+  dirtySelf(tmpNames[0])
+  var v2 = -1
+  if 1 < tmpNames.length() {
+    v2 = locDeclare(tmpNames[1])
+    dirtySelf(tmpNames[1])
+  }
+  // The call gets its own base, allocated *after* the loop variables: a call
+  // leaves its results in the base register and the one above it, so a base
+  // below them would overwrite a variable with the iterator's own first result.
+  let cb = regAlloc()
+  if cb > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = cb }
+  // loop head: f(s, ctrl) with its two arguments in place
+  let top = bop.length()
+  bEmit(7, cb, freg, 0)
+  bEmit(7, cb + 1, sreg, 0)
+  bEmit(7, cb + 2, creg, 0)
+  bEmit(23, cb, 2, 2)
+  let done = bEmit(21, 0, cb, 0)
+  // bind the results to the loop variables (runs once per entry)
+  bEmit(7, v1, cb, 0)
+  if 0 <= v2 {
+    bEmit(7, v2, cb + 1, 0)
+  }
+  // kind 7: A=loop top, B=exit jump, C=break list, D=ctrl reg, E=first var
+  pushCtl(7, top, done, -1, ctlLoop, creg, v1)
+  ctlLoop = ctlKind.length() - 1
+  forNames.push(tmpNames[0])
 }
 
-// Shared function head: fid already created in tmpB, name in tmpS.
-// islocal: self-recursion enabled. resume: 0 statement, 1 expression.
-mod pushCtl(kind: int, a: int, b: int, c: int, d: int, e: int, f: int) {
-  ctlKind.push(kind)
-  ctlA.push(a)
-  ctlB.push(b)
-  ctlC.push(c)
-  ctlD.push(d)
-  ctlE.push(e)
-  ctlF.push(f)
-  ctlG.push(0)
-}
-
-mod funcHeadAnon(fr: int) {
-  let skip = bEmit(20, 0, 0, 0)
-  pushCtl(3, tmpB, skip, 1, ctlLoop, fr, contKind)
-  ctlG[ctlG.length() - 1] = stState
-  tmpSStk.push("")
-  ctorStk.push(openCtor)
-  openCtor = 0
-  ctlLoop = -1
-  saveTmp()
-  fnDepth = fnDepth + 1
-  opBase[fnDepth] = opKind.length()
-  funcDepthInit(false)
-  if curKind() == 5 && curSub() == 14 {
+mod stmtDispatch() {
+  regSync()
+  let k = curKind()
+  let s = curSub()
+  if k == 5 && s == 17 {
     cpos = cpos + 1
-    stState = 20
-    inExpr = false
+  } else if k == 6 {
+    if ctlKind.length() == 0 {
+      bEmit(26, 0, 0, 0)
+      fRegs[mainFid] = cfMax[0]
+      pDone = true
+    } else {
+      perr = true
+      perrMsg = "unclosed block at end"
+    }
+  } else if k == 4 && s == 10 {
+    cpos = cpos + 1
+    if curKind() == 4 && curSub() == 8 {
+      cpos = cpos + 1
+      if curKind() == 3 {
+        tmpS = curStr()
+        cpos = cpos + 1
+        funcHead(true, 0, 0)
+      } else {
+        perr = true
+        perrMsg = "expected name after local function"
+      }
+    } else if curKind() == 3 {
+      tmpNames.clear()
+      tmpRegs.clear()
+      tmpNames.push(curStr())
+      cpos = cpos + 1
+      if curKind() == 5 && curSub() == 16 {
+        cpos = cpos + 1
+        stState = 10
+      } else if curKind() == 5 && curSub() == 13 {
+        cpos = cpos + 1
+        startUnit(6)
+      } else {
+        // no values: nil-fill; the next token is validated by dispatch
+        tmpA = 0
+        stState = 12
+      }
+    } else {
+      perr = true
+      perrMsg = "expected name after local"
+    }
+  } else if k == 4 && s == 8 {
+    cpos = cpos + 1
+    if curKind() == 3 {
+      tmpS = curStr()
+      cpos = cpos + 1
+      if curKind() == 5 && (curSub() == 23 || curSub() == 31) && nextKind() == 3 {
+        // function M.f(...) is M.f = function(...): keep the table in a
+        // register and store the function into the field when the body ends.
+        // With ':' the field name is a method, so the receiver is parameter one.
+        let isMethod = curSub() == 31
+        let tr = regAlloc()
+        locFind(tmpS)
+        if lkKind == 3 {
+          bEmit(46, tr, lkReg, upKind())
+        } else if lkKind == 1 {
+          bEmit(7, tr, lkReg, 0)
+        } else {
+          bEmit(5, tr, gDeclare(tmpS), 0)
+        }
+        let field = curStrAhead()
+        fnKey.push(field)
+        cpos = cpos + 2
+        funcHead(false, 0, tr + 2)
+        if isMethod {
+          fnSelfArg[fnDepth] = true
+        }
+      } else {
+        funcHead(false, 0, 0)
+      }
+    } else {
+      perr = true
+      perrMsg = "expected name after function"
+    }
+  } else if k == 4 && s == 9 {
+    cpos = cpos + 1
+    startUnit(2)
+  } else if k == 4 && s == 17 {
+    cpos = cpos + 1
+    tmpA = bop.length()
+    startUnit(4)
+  } else if k == 4 && s == 18 {
+    cpos = cpos + 1
+    if curKind() == 3 {
+      forName = curStr()
+      forInit = -1
+      forLimit = -1
+      forStep = -1
+      cpos = cpos + 1
+      if curKind() == 4 && curSub() == 19 {
+        // generic for with a single variable
+        tmpNames.clear()
+        tmpRegs.clear()
+        tmpNames.push(forName)
+        cpos = cpos + 1
+        startUnit(15)
+      } else if curKind() == 5 && curSub() == 16 {
+        // more names follow: gather them one per step, then expect `in`
+        tmpNames.clear()
+        tmpRegs.clear()
+        tmpNames.push(forName)
+        cpos = cpos + 1
+        stState = 21
+      } else if curKind() == 5 && curSub() == 13 {
+        cpos = cpos + 1
+        startUnit(10)
+      } else {
+        perr = true
+        perrMsg = "expected = or in for"
+      }
+    } else {
+      perr = true
+      perrMsg = "expected name after for"
+    }
+  } else if k == 4 && s == 20 {
+    cpos = cpos + 1
+    pushCtl(6, bop.length(), -1, -1, ctlLoop, 0, 0)
+    ctlLoop = ctlKind.length() - 1
+    blkEnter()
+  } else if k == 4 && s == 3 {
+    cpos = cpos + 1
+    blkEnter()
+    pushCtl(4, 0, 0, 0, 0, 0, 0)
+  } else if k == 4 && s == 2 {
+    cpos = cpos + 1
+    if ctlLoop == -1 {
+      perr = true
+      perrMsg = "break outside loop"
+    } else {
+      let pos = bEmit(20, 0, 0, 0)
+      plNext[pos] = ctlC[ctlLoop]
+      ctlC[ctlLoop] = pos
+    }
+  } else if k == 4 && s == 14 {
+    cpos = cpos + 1
+    if atStmtEnd() {
+      bEmit(26, 0, 0, 0)
+    } else {
+      startUnit(5)
+    }
+  } else if k == 3 {
+    let nk = nextKind()
+    let ns = nextSub()
+    if nk == 5 && ns == 14 {
+      startUnit(1)
+    } else if nk == 2 {
+      startUnit(1)
+    } else if nk == 5 && (ns == 21 || ns == 23) {
+      itBase.clear()
+      itKey.clear()
+      tmpRegs.clear()
+      startUnit(8)
+    } else if nk == 5 && (ns == 13 || ns == 16) {
+      tmpNames.clear()
+      tmpRegs.clear()
+      tmpNames.push(curStr())
+      cpos = cpos + 1
+      if ns == 16 {
+        cpos = cpos + 1
+        stState = 11
+      } else {
+        cpos = cpos + 1
+        startUnit(7)
+      }
+    } else {
+      perr = true
+      perrMsg = "not a call statement"
+    }
+  } else if k == 5 && s == 14 {
+    startUnit(1)
+  } else if k == 2 {
+    startUnit(1)
+  } else if k == 4 && s == 21 {
+    if ctlTop() != 6 {
+      perr = true
+      perrMsg = "until without repeat"
+    } else {
+      cpos = cpos + 1
+      // A repeat's body block is closed after this condition, so the bump that
+      // gives each round its own cells goes here, in front of it: at the block
+      // exit it would land outside the loop and run once.
+      if blkCapGen[blkCapGen.length() - 1] != capGen {
+        blkGenDone = true
+        bEmit(49, 0, 0, 0)
+      }
+      startUnit(13)
+    }
+  } else if k == 4 && (s == 6 || s == 4 || s == 5) {
+    doBlockClose()
   } else {
     perr = true
-    perrMsg = "expected ( after function"
+    perrMsg = "unexpected token at statement start"
   }
 }
 
@@ -2318,6 +5623,327 @@ mod exprPrefix() {
     perr = true
     perrMsg = "unexpected token in expression"
   }
+}
+
+mod doCont() {
+  if contKind == 1 {
+    if !presIsCall {
+      perr = true
+      perrMsg = "not a call statement"
+    }
+    regSync()
+    inExpr = false
+    contKind = 0
+  } else if contKind == 2 {
+    if curKind() != 4 || curSub() != 15 {
+      perr = true
+      perrMsg = "expected then"
+    } else {
+      cpos = cpos + 1
+      let fp = bEmit(21, 0, presReg, 0)
+      pushCtl(1, fp, -1, 0, 0, 0, 0)
+      blkEnter()
+    }
+    inExpr = false
+    contKind = 0
+  } else if contKind == 3 {
+    if curKind() != 4 || curSub() != 15 {
+      perr = true
+      perrMsg = "expected then"
+    } else {
+      cpos = cpos + 1
+      let fp = bEmit(21, 0, presReg, 0)
+      ctlA[ctlA.length() - 1] = fp
+      blkEnter()
+    }
+    inExpr = false
+    contKind = 0
+  } else if contKind == 4 {
+    if curKind() != 4 || curSub() != 3 {
+      perr = true
+      perrMsg = "expected do"
+    } else {
+      cpos = cpos + 1
+      let fp = bEmit(21, 0, presReg, 0)
+      pushCtl(2, tmpA, fp, -1, ctlLoop, 0, 0)
+      ctlLoop = ctlKind.length() - 1
+      blkEnter()
+    }
+    inExpr = false
+    contKind = 0
+  } else if contKind == 5 {
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      tmpRegs.clear()
+      tmpRegs.push(presReg)
+      startUnit(14)
+    } else if presIsCall {
+      // `return f()` forwards all of f's values, so let the call expand
+      patchAt(presCallPos)
+      bEmit(27, presReg, 0, 0)
+      inExpr = false
+      contKind = 0
+    } else {
+      bEmit(24, presReg, 0, 0)
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 14 {
+    tmpRegs.push(presReg)
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(14)
+    } else {
+      if tmpRegs.length() > 16 {
+        perr = true
+        perrMsg = "too many values"
+      } else {
+        // `return a, f()` returns f's values too, and how many there are is
+        // only known at run time: RETURNM with a negative count returns that
+        // many fixed values and then everything the call produced.  The call's
+        // own register is left out of the copy below -- its result block can
+        // overlap the block being built here.
+        let n = if presIsCall then tmpRegs.length() - 1 else tmpRegs.length()
+        // reserve the call's result window before allocating the return block,
+        // or regAlloc can hand out a register the call is about to write
+        if presIsCall { patchAt(presCallPos) }
+        let br = regAlloc()
+        if 1 < n {
+          let r2 = regAlloc()
+          if 2 < n {
+            let r3 = regAlloc()
+            if 3 < n {
+              let r4 = regAlloc()
+              if 4 < n {
+                let r5 = regAlloc()
+                if 5 < n {
+                  let r6 = regAlloc()
+                  if 6 < n {
+                    let r7 = regAlloc()
+                    if 7 < n {
+                      let r8 = regAlloc()
+                      if 8 < n {
+                        let r9 = regAlloc()
+                        if 9 < n {
+                          let r10 = regAlloc()
+                          if 10 < n {
+                            let r11 = regAlloc()
+                            if 11 < n {
+                              let r12 = regAlloc()
+                              if 12 < n {
+                                let r13 = regAlloc()
+                                if 13 < n {
+                                  let r14 = regAlloc()
+                                  if 14 < n {
+                                    let r15 = regAlloc()
+                                    if 15 < n {
+                                      bEmit(7, br + 15, tmpRegs[15], 0)
+                                    }
+                                    bEmit(7, br + 14, tmpRegs[14], 0)
+                                  }
+                                  bEmit(7, br + 13, tmpRegs[13], 0)
+                                }
+                                bEmit(7, br + 12, tmpRegs[12], 0)
+                              }
+                              bEmit(7, br + 11, tmpRegs[11], 0)
+                            }
+                            bEmit(7, br + 10, tmpRegs[10], 0)
+                          }
+                          bEmit(7, br + 9, tmpRegs[9], 0)
+                        }
+                        bEmit(7, br + 8, tmpRegs[8], 0)
+                      }
+                      bEmit(7, br + 7, tmpRegs[7], 0)
+                    }
+                    bEmit(7, br + 6, tmpRegs[6], 0)
+                  }
+                  bEmit(7, br + 5, tmpRegs[5], 0)
+                }
+                bEmit(7, br + 4, tmpRegs[4], 0)
+              }
+              bEmit(7, br + 3, tmpRegs[3], 0)
+            }
+            bEmit(7, br + 2, tmpRegs[2], 0)
+          }
+          bEmit(7, br + 1, tmpRegs[1], 0)
+        }
+        if 1 <= n { bEmit(7, br, tmpRegs[0], 0) }
+        if presIsCall {
+          bEmit(42, br, 0 - n, presReg)
+        } else {
+          bEmit(42, br, n, 0)
+        }
+        inExpr = false
+        contKind = 0
+      }
+    }
+  } else if contKind == 6 {
+    tmpRegs.push(presReg)
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(6)
+    } else {
+      expandTailCall()
+      tmpA = 0
+      stState = 12
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 8 {
+    // left-hand side unit of `t[k] = v` / `t.k = v`, or a call statement like t.f(x)
+    if curKind() == 5 && (curSub() == 13 || curSub() == 16) {
+      let li = bop.length() - 1
+      if li >= 0 && bop[li] == 29 && bpa[li] == presReg && !presIsCall {
+        let hiA = if bpb[li] > bpc[li] then bpb[li] else bpc[li]
+        let hi = (if hiA > bpa[li] then hiA else bpa[li]) + 1
+        if hi > cfNext[fnDepth] {
+          cfNext[fnDepth] = hi
+        }
+        itBase.push(bpb[li])
+        itKey.push(bpc[li])
+        bop.pop()
+        bpa.pop()
+        bpb.pop()
+        bpc.pop()
+        if curSub() == 16 {
+          cpos = cpos + 1
+          if curKind() == 3 && nextKind() == 5 && (nextSub() == 21 || nextSub() == 23) {
+            startUnit(8)
+          } else {
+            perr = true
+            perrMsg = "assignment targets must all be table fields"
+          }
+        } else {
+          cpos = cpos + 1
+          startUnit(9)
+        }
+      } else {
+        perr = true
+        perrMsg = "cannot assign to this expression"
+      }
+    } else if presIsCall {
+      inExpr = false
+      contKind = 0
+    } else {
+      perr = true
+      perrMsg = "not a call statement"
+    }
+  } else if contKind == 9 {
+    tmpRegs.push(presReg)
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(9)
+    } else {
+      // stores run right to left (like PUC Lua), so the last target wins
+      tmpA = itBase.length() - 1
+      stState = 15
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 15 {
+    // Generic-for explist.  A trailing call supplies the whole triple
+    // (ipairs(t) -> f, s, 0), so mark it to return everything and pad its own
+    // result registers to three -- Lua fills a short explist with nil.  The
+    // call's result window is already claimed by patchAt, so nothing else has
+    // to be allocated here.
+    tmpRegs.push(presReg)
+    if curKind() == 5 && curSub() == 16 && tmpRegs.length() < 3 {
+      cpos = cpos + 1
+      startUnit(15)
+    } else {
+      if presIsCall {
+        patchAt(presCallPos)
+        bEmit(43, presReg + 1, presReg + 1, 2)
+        tmpRegs.push(presReg + 1)
+        tmpRegs.push(presReg + 2)
+      }
+      genForHead()
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 7 {
+    if tmpNames.length() > 1 && !presIsCall {
+      // right-to-left stores can overwrite a value register, so keep a copy.
+      // A call needs no copy: expandTailCall relocates the extra results into
+      // fresh registers before any store runs.
+      let z = regAlloc()
+      bEmit(7, z, presReg, 0)
+      tmpRegs.push(z)
+    } else {
+      tmpRegs.push(presReg)
+    }
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(7)
+    } else {
+      expandTailCall()
+      // stores run right to left (like PUC Lua), so the last target wins
+      tmpA = tmpNames.length() - 1
+      stState = 13
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 10 {
+    // for-init value done: expect ',' then parse the limit
+    forInit = presReg
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(11)
+    } else {
+      perr = true
+      perrMsg = "expected , in for"
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 11 {
+    // for-limit value done: ',' + step, or 'do' with default step
+    forLimit = presReg
+    if curKind() == 5 && curSub() == 16 {
+      cpos = cpos + 1
+      startUnit(12)
+    } else if curKind() == 4 && curSub() == 3 {
+      forStep = -1
+      forDoHead()
+      inExpr = false
+      contKind = 0
+    } else {
+      perr = true
+      perrMsg = "expected , or do in for"
+      inExpr = false
+      contKind = 0
+    }
+  } else if contKind == 12 {
+    // for-step value done: expect 'do'
+    forStep = presReg
+    if curKind() == 4 && curSub() == 3 {
+      forDoHead()
+    } else {
+      perr = true
+      perrMsg = "expected do in for"
+    }
+    inExpr = false
+    contKind = 0
+  } else if contKind == 13 {
+    // repeat-until condition done: jump back while falsy, then leave scope
+    let n = ctlKind.length() - 1
+    if n < 0 || ctlKind[n] != 6 {
+      perr = true
+      perrMsg = "until without repeat"
+    } else {
+      bEmit(21, ctlA[n], presReg, 0)
+      blkExit()
+      tmpC = ctlD[n]
+      pdHead = ctlC[n]
+      pdThen = 1
+      popCtl()
+    }
+    inExpr = false
+    contKind = 0
+  } else {
+    inExpr = false
+    contKind = 0
+  }
+  exprDone = false
 }
 
 // Shared anon head (fr already loaded above): skip, frame, depth, params.
@@ -2756,1287 +6382,561 @@ mod exprMicro() {
   }
 }
 
-// ---------------------------------------------------------------- statement machine state
-// parseStep runs one micro-step: expression micro-ops while inExpr, else one
-// statement action. contKind resumes after a unit: 1 expr-stmt, 2 if-cond,
-// 3 elif-cond, 4 while-cond, 5 return, 6 local-values, 7 assign-values,
-// 10 for-init, 11 for-limit, 12 for-step, 13 repeat-until-cond.
-// stState tracks multi-step constructs. Control frames: 1 if (A=fpos,
-// B=ends), 2 while (A=top, B=false, C=breaks, D=savedLoop), 3 func
-// (A=fid, B=skip, C=resume, D=savedLoop, E=extra), 4 do,
-// 5 for (A=body, B=entry-jmp, C=breaks, D=savedLoop, E=limit, F=step),
-// 6 repeat (A=body-top, C=breaks, D=savedLoop).
-
-var inExpr: bool = false
-var contKind: int = 0
-var stState: int = 0
-var tmpA: int = 0
-var tmpB: int = 0
-var tmpC: int = 0
-var tmpS: string = ""
-var forName: string = ""
-var forInit: int = -1
-var forLimit: int = -1
-var forStep: int = -1
-var forNames: string[]
-var tmpNames: string[]
-var tmpRegs: int[]
-// saveTmp's parking lot: counts and values of the scratch arrays
-var svC: int[]
-var svI: int[]
-var svS: string[]
-var ctlD: int[]
-var ctlE: int[]
-var ctlF: int[]
-var ctlG: int[]
-var ctlLoop: int = -1
-var pdHead: int = -1
-var pdThen: int = 0
-// where a pending patch list points, when the target is not simply "wherever the
-// code ends by the time the list is drained" (a numeric loop's break list points
-// at the FOREND it has to run, which is one instruction before that)
-var pdTarget: int = -1
-var tmpSStk: string[]
-// field name of a `function M.f()` definition, popped when its body closes
-var fnKey: string[]
-var funcEntryLoc: int[]
-var pDone: bool = false
-
-mod popCtl() {
-  ctlKind.pop()
-  ctlA.pop()
-  ctlB.pop()
-  ctlC.pop()
-  ctlD.pop()
-  ctlE.pop()
-  ctlF.pop()
-  ctlG.pop()
-}
-
-mod ctlTop() -> int {
-  return if ctlKind.length() == 0 then -1 else ctlKind[ctlKind.length() - 1]
-}
-
-// Append a patch position to a control frame's patch list (kept in B/C).
-mod lstAppendB(pos: int) {
-  plNext[pos] = ctlB[ctlB.length() - 1]
-  ctlB[ctlB.length() - 1] = pos
-}
-
-// Start an expression unit ending in the given continuation.
-mod startUnit(cont: int) {
-  inExpr = true
-  contKind = cont
-  expectOperand = true
-  exprDone = false
-}
-
-// Emit a numeric-for header after `do`: bind the control var (locals parsed
-// in the header still see outer scope), default a missing step to 1,
-// then FORPREP + entry JMP and open the body block (ctl kind 5).
-// Generic for: `for v1 [, v2] in explist do`.
-// The explist gives (f, s, ctrl); each step calls f(s, ctrl), stops when the
-// first result is nil, and feeds the results to the loop variables.  Only the
-// control variable moves on: it becomes the first result of each step, while
-// the state stays what the explist put there (verified against the oracle).
-// The header emits the loop head and the variable bindings; doBlockClose(kind
-// 7) appends the control update and the jump back.  Everything the close needs
-// lives in the control frame, so generic-fors nest.
-mod genForHead() {
-  if !(curKind() == 4 && curSub() == 3) {
-    perr = true
-    perrMsg = "expected do in for"
-    return
-  }
-  cpos = cpos + 1
-  blkEnter()
-  if tmpRegs.length() < 1 {
-    perr = true
-    perrMsg = "for iterator is missing"
-    return
-  }
-  let freg = regAlloc()
-  let sreg = regAlloc()
-  let creg = regAlloc()
-  bEmit(7, freg, tmpRegs[0], 0)
-  if 1 < tmpRegs.length() {
-    bEmit(7, sreg, tmpRegs[1], 0)
+// An error inside a pcall is a value, not the end of the program.  vmFailed is
+// set either way, because the arms that check it after a possible failure must
+// not go on to do the work that failed -- pcallStep clears it when it hands the
+// message over.
+mod vmFail(msg: string) {
+  vmFailed = true
+  pcallBad[0] = 1
+  if pcallDepth > 0 {
+    pcallMsg = msg
+    pcallUnwind = true
   } else {
-    bEmit(1, sreg, 0, 0)
+    errV = msg
+    vmHalted = true
   }
-  if 2 < tmpRegs.length() {
-    bEmit(7, creg, tmpRegs[2], 0)
+}
+
+mod pcallEnter() {
+  let cid = pcallFid
+  let inner = if cid < cloBase then cid else cloF[cid]
+  let a = pcallA
+  let a1 = if 1 < pcallNArgs then pcallNArgs - 1 else 0
+  let base = pcallBase
+  // A protected call's frame starts one past its own register, so the true
+  // survives under it.  A message handler's starts *at* its register: the
+  // false is there already and its results belong there.
+  let nbase = if pcallMode == 0 then base + a + 1 else base + a
+  let np = fParams[inner]
+  let nslots = 3 * fUpSlotN[inner] + 1
+  let argSrc = if pcallMode != 0 then nbase else if pcallIsX then base + a + 3 else base + a + 2
+  if 8 < np {
+    vmFail("too many parameters")
+  } else if vaTop + nslots > MAX_VA {
+    vmFail("too many upvalues")
+  } else if vaTop + nslots + (if fVar[inner] && np < a1 then a1 - np else 0) > MAX_VA {
+    vmFail("too many varargs")
   } else {
-    bEmit(1, creg, 0, 0)
+    // the parameters land in the new frame from one past the pcall's own
+    // register, and retAdjust's nil-fill is what a missing argument is
+    retAdjust(argSrc, nbase, a1, np)
+    let nva = if fVar[inner] && np < a1 then a1 - np else 0
+    frameSeq = frameSeq + 1
+    let slotB = vaTop
+    vaNum[slotB] = frameSeq
+    vaSpill(nbase + np, slotB + nslots, nva)
+    fVaB.push(slotB + nslots)
+    vaTop = slotB + nslots + nva
+    fFunc.push(cid)
+    fBase.push(nbase)
+    if pcallMode == 0 {
+      fRetA.push(a + 1)
+    } else {
+      // a message handler's results go where its own register is: the false is
+      // already there and there is no true to step over
+      fRetA.push(a)
+    }
+    fRetBase.push(base)
+    fRetPC.push(vmPc + 1)
+    fRetN.push(-2)
+    fForDepth.push(forDepth)
+    vmBase = nbase
+    vmPc = fStart[inner]
   }
-  // the iterator, its state and the control value stay live across the body
-  if freg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = freg }
-  if sreg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = sreg }
-  if creg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = creg }
-  let v1 = locDeclare(tmpNames[0])
-  dirtySelf(tmpNames[0])
-  var v2 = -1
-  if 1 < tmpNames.length() {
-    v2 = locDeclare(tmpNames[1])
-    dirtySelf(tmpNames[1])
-  }
-  // The call gets its own base, allocated *after* the loop variables: a call
-  // leaves its results in the base register and the one above it, so a base
-  // below them would overwrite a variable with the iterator's own first result.
-  let cb = regAlloc()
-  if cb > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = cb }
-  // loop head: f(s, ctrl) with its two arguments in place
-  let top = bop.length()
-  bEmit(7, cb, freg, 0)
-  bEmit(7, cb + 1, sreg, 0)
-  bEmit(7, cb + 2, creg, 0)
-  bEmit(23, cb, 2, 2)
-  let done = bEmit(21, 0, cb, 0)
-  // bind the results to the loop variables (runs once per entry)
-  bEmit(7, v1, cb, 0)
-  if 0 <= v2 {
-    bEmit(7, v2, cb + 1, 0)
-  }
-  // kind 7: A=loop top, B=exit jump, C=break list, D=ctrl reg, E=first var
-  pushCtl(7, top, done, -1, ctlLoop, creg, v1)
-  ctlLoop = ctlKind.length() - 1
-  forNames.push(tmpNames[0])
 }
 
-mod forDoHead() {
-  cpos = cpos + 1
-  blkEnter()
-  let ctrl = locDeclare(forName)
-  dirtySelf(forName)
-  if forInit != ctrl {
-    bEmit(7, ctrl, forInit, 0)
-    regFree(forInit)
+mod numArg(t: int, v: float) -> float {
+  if t != 1 && t != 6 && t != 0 {
+    vmFail("bad argument (number expected)")
   }
-  if forStep == -1 {
-    forStep = regAlloc()
-    bEmit(2, forStep, cNum(1.0), 1)
-  }
-  // limit/step stay live across the whole body but are never locals;
-  // pin them under maxLoc so regSync cannot hand them to body temps.
-  if forLimit > cfMaxLoc[fnDepth] {
-    cfMaxLoc[fnDepth] = forLimit
-  }
-  if forStep > cfMaxLoc[fnDepth] {
-    cfMaxLoc[fnDepth] = forStep
-  }
-  bEmit(32, ctrl, forLimit, forStep)
-  let jp = bEmit(20, 0, 0, 0)
-  let bs = bop.length()
-  pushCtl(5, bs, jp, -1, ctlLoop, forLimit, forStep)
-  ctlLoop = ctlKind.length() - 1
-  forNames.push(forName)
+  return if t == 0 then 0.0 else v
 }
 
-// Post-unit continuations: 1 expr-stmt, 2 if-cond, 3 elif-cond,
-// 4 while-cond, 5 return, 6 local-values, 7 assign-values,
-// 10 for-init, 11 for-limit, 12 for-step, 13 repeat-until-cond.
-mod atStmtEnd() -> bool {
-  let k = curKind()
-  let s = curSub()
-  return if k == 6 then true
-    else if k == 5 && s == 17 then true
-    else if k == 4 && (s == 6 || s == 4 || s == 5 || s == 21) then true
-    else false
+mod fmtConvInt() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vtag[ab]
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else if vnum[ab] != floor(vnum[ab]) {
+      vmFail("number has no integer representation")
+    } else {
+      fmtNeg = vnum[ab] < 0.0
+      fmtNum_ = if fmtNeg then 0.0 - vnum[ab] else vnum[ab]
+      fmtBody = ""
+      fmtState = 7
+    }
+  }
 }
 
-mod doCont() {
-  if contKind == 1 {
-    if !presIsCall {
-      perr = true
-      perrMsg = "not a call statement"
-    }
-    regSync()
-    inExpr = false
-    contKind = 0
-  } else if contKind == 2 {
-    if curKind() != 4 || curSub() != 15 {
-      perr = true
-      perrMsg = "expected then"
+// %x %X %o.  A negative value is converted as its 64-bit two's complement, so
+// the digit loop divides with floor and is bounded by a digit count instead of
+// running until the quotient reaches zero -- the floor of a negative never does.
+// 16 digits for hex, 22 for octal, which is what makes %x of -1 come out as
+// ffffffffffffffff and %o of -1 as 1777777777777777777777.
+mod fmtConvRadix() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vtag[ab]
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else if vnum[ab] != floor(vnum[ab]) {
+      vmFail("number has no integer representation")
     } else {
-      cpos = cpos + 1
-      let fp = bEmit(21, 0, presReg, 0)
-      pushCtl(1, fp, -1, 0, 0, 0, 0)
-      blkEnter()
-    }
-    inExpr = false
-    contKind = 0
-  } else if contKind == 3 {
-    if curKind() != 4 || curSub() != 15 {
-      perr = true
-      perrMsg = "expected then"
-    } else {
-      cpos = cpos + 1
-      let fp = bEmit(21, 0, presReg, 0)
-      ctlA[ctlA.length() - 1] = fp
-      blkEnter()
-    }
-    inExpr = false
-    contKind = 0
-  } else if contKind == 4 {
-    if curKind() != 4 || curSub() != 3 {
-      perr = true
-      perrMsg = "expected do"
-    } else {
-      cpos = cpos + 1
-      let fp = bEmit(21, 0, presReg, 0)
-      pushCtl(2, tmpA, fp, -1, ctlLoop, 0, 0)
-      ctlLoop = ctlKind.length() - 1
-      blkEnter()
-    }
-    inExpr = false
-    contKind = 0
-  } else if contKind == 5 {
-    if curKind() == 5 && curSub() == 16 {
-      cpos = cpos + 1
-      tmpRegs.clear()
-      tmpRegs.push(presReg)
-      startUnit(14)
-    } else if presIsCall {
-      // `return f()` forwards all of f's values, so let the call expand
-      patchAt(presCallPos)
-      bEmit(27, presReg, 0, 0)
-      inExpr = false
-      contKind = 0
-    } else {
-      bEmit(24, presReg, 0, 0)
-      inExpr = false
-      contKind = 0
-    }
-  } else if contKind == 14 {
-    tmpRegs.push(presReg)
-    if curKind() == 5 && curSub() == 16 {
-      cpos = cpos + 1
-      startUnit(14)
-    } else {
-      if tmpRegs.length() > 16 {
-        perr = true
-        perrMsg = "too many values"
+      if fmtCh == "o" {
+        fmtBase_ = 8.0
+        fmtBaseI = 8
       } else {
-        // `return a, f()` returns f's values too, and how many there are is
-        // only known at run time: RETURNM with a negative count returns that
-        // many fixed values and then everything the call produced.  The call's
-        // own register is left out of the copy below -- its result block can
-        // overlap the block being built here.
-        let n = if presIsCall then tmpRegs.length() - 1 else tmpRegs.length()
-        // reserve the call's result window before allocating the return block,
-        // or regAlloc can hand out a register the call is about to write
-        if presIsCall { patchAt(presCallPos) }
-        let br = regAlloc()
-        if 1 < n {
-          let r2 = regAlloc()
-          if 2 < n {
-            let r3 = regAlloc()
-            if 3 < n {
-              let r4 = regAlloc()
-              if 4 < n {
-                let r5 = regAlloc()
-                if 5 < n {
-                  let r6 = regAlloc()
-                  if 6 < n {
-                    let r7 = regAlloc()
-                    if 7 < n {
-                      let r8 = regAlloc()
-                      if 8 < n {
-                        let r9 = regAlloc()
-                        if 9 < n {
-                          let r10 = regAlloc()
-                          if 10 < n {
-                            let r11 = regAlloc()
-                            if 11 < n {
-                              let r12 = regAlloc()
-                              if 12 < n {
-                                let r13 = regAlloc()
-                                if 13 < n {
-                                  let r14 = regAlloc()
-                                  if 14 < n {
-                                    let r15 = regAlloc()
-                                    if 15 < n {
-                                      bEmit(7, br + 15, tmpRegs[15], 0)
-                                    }
-                                    bEmit(7, br + 14, tmpRegs[14], 0)
-                                  }
-                                  bEmit(7, br + 13, tmpRegs[13], 0)
-                                }
-                                bEmit(7, br + 12, tmpRegs[12], 0)
-                              }
-                              bEmit(7, br + 11, tmpRegs[11], 0)
-                            }
-                            bEmit(7, br + 10, tmpRegs[10], 0)
-                          }
-                          bEmit(7, br + 9, tmpRegs[9], 0)
-                        }
-                        bEmit(7, br + 8, tmpRegs[8], 0)
-                      }
-                      bEmit(7, br + 7, tmpRegs[7], 0)
-                    }
-                    bEmit(7, br + 6, tmpRegs[6], 0)
-                  }
-                  bEmit(7, br + 5, tmpRegs[5], 0)
-                }
-                bEmit(7, br + 4, tmpRegs[4], 0)
-              }
-              bEmit(7, br + 3, tmpRegs[3], 0)
-            }
-            bEmit(7, br + 2, tmpRegs[2], 0)
-          }
-          bEmit(7, br + 1, tmpRegs[1], 0)
-        }
-        if 1 <= n { bEmit(7, br, tmpRegs[0], 0) }
-        if presIsCall {
-          bEmit(42, br, 0 - n, presReg)
+        fmtBase_ = 16.0
+        fmtBaseI = 16
+      }
+      if fmtCh == "X" {
+        fmtUpper = true
+      } else {
+        fmtUpper = false
+      }
+      fmtNeg = vnum[ab] < 0.0
+      fmtNum_ = vnum[ab]
+      fmtDigits = 0
+      fmtBody = ""
+      if fmtNeg {
+        // 64 bits is 16 hex digits exactly but 21 and a bit in octal, and the
+        // top octal digit is bit 63: %o of -1 is 1 followed by 21 sevens, not 22
+        // sevens.  Hex needs no leading digit; 16 divisions cover all 64 bits,
+        // and the octal one goes in front of the digits at the end (they are
+        // prepended as they come, so a leading 1 written here would end up last).
+        if fmtCh == "o" {
+          fmtDigitsMax = 21
         } else {
-          bEmit(42, br, n, 0)
-        }
-        inExpr = false
-        contKind = 0
-      }
-    }
-  } else if contKind == 6 {
-    tmpRegs.push(presReg)
-    if curKind() == 5 && curSub() == 16 {
-      cpos = cpos + 1
-      startUnit(6)
-    } else {
-      expandTailCall()
-      tmpA = 0
-      stState = 12
-      inExpr = false
-      contKind = 0
-    }
-  } else if contKind == 8 {
-    // left-hand side unit of `t[k] = v` / `t.k = v`, or a call statement like t.f(x)
-    if curKind() == 5 && (curSub() == 13 || curSub() == 16) {
-      let li = bop.length() - 1
-      if li >= 0 && bop[li] == 29 && bpa[li] == presReg && !presIsCall {
-        let hiA = if bpb[li] > bpc[li] then bpb[li] else bpc[li]
-        let hi = (if hiA > bpa[li] then hiA else bpa[li]) + 1
-        if hi > cfNext[fnDepth] {
-          cfNext[fnDepth] = hi
-        }
-        itBase.push(bpb[li])
-        itKey.push(bpc[li])
-        bop.pop()
-        bpa.pop()
-        bpb.pop()
-        bpc.pop()
-        if curSub() == 16 {
-          cpos = cpos + 1
-          if curKind() == 3 && nextKind() == 5 && (nextSub() == 21 || nextSub() == 23) {
-            startUnit(8)
-          } else {
-            perr = true
-            perrMsg = "assignment targets must all be table fields"
-          }
-        } else {
-          cpos = cpos + 1
-          startUnit(9)
+          fmtDigitsMax = 16
         }
       } else {
-        perr = true
-        perrMsg = "cannot assign to this expression"
+        fmtDigitsMax = 0
       }
-    } else if presIsCall {
-      inExpr = false
-      contKind = 0
-    } else {
-      perr = true
-      perrMsg = "not a call statement"
+      fmtState = 7
     }
-  } else if contKind == 9 {
-    tmpRegs.push(presReg)
-    if curKind() == 5 && curSub() == 16 {
-      cpos = cpos + 1
-      startUnit(9)
-    } else {
-      // stores run right to left (like PUC Lua), so the last target wins
-      tmpA = itBase.length() - 1
-      stState = 15
-      inExpr = false
-      contKind = 0
-    }
-  } else if contKind == 15 {
-    // Generic-for explist.  A trailing call supplies the whole triple
-    // (ipairs(t) -> f, s, 0), so mark it to return everything and pad its own
-    // result registers to three -- Lua fills a short explist with nil.  The
-    // call's result window is already claimed by patchAt, so nothing else has
-    // to be allocated here.
-    tmpRegs.push(presReg)
-    if curKind() == 5 && curSub() == 16 && tmpRegs.length() < 3 {
-      cpos = cpos + 1
-      startUnit(15)
-    } else {
-      if presIsCall {
-        patchAt(presCallPos)
-        bEmit(43, presReg + 1, presReg + 1, 2)
-        tmpRegs.push(presReg + 1)
-        tmpRegs.push(presReg + 2)
-      }
-      genForHead()
-      inExpr = false
-      contKind = 0
-    }
-  } else if contKind == 7 {
-    if tmpNames.length() > 1 && !presIsCall {
-      // right-to-left stores can overwrite a value register, so keep a copy.
-      // A call needs no copy: expandTailCall relocates the extra results into
-      // fresh registers before any store runs.
-      let z = regAlloc()
-      bEmit(7, z, presReg, 0)
-      tmpRegs.push(z)
-    } else {
-      tmpRegs.push(presReg)
-    }
-    if curKind() == 5 && curSub() == 16 {
-      cpos = cpos + 1
-      startUnit(7)
-    } else {
-      expandTailCall()
-      // stores run right to left (like PUC Lua), so the last target wins
-      tmpA = tmpNames.length() - 1
-      stState = 13
-      inExpr = false
-      contKind = 0
-    }
-  } else if contKind == 10 {
-    // for-init value done: expect ',' then parse the limit
-    forInit = presReg
-    if curKind() == 5 && curSub() == 16 {
-      cpos = cpos + 1
-      startUnit(11)
-    } else {
-      perr = true
-      perrMsg = "expected , in for"
-      inExpr = false
-      contKind = 0
-    }
-  } else if contKind == 11 {
-    // for-limit value done: ',' + step, or 'do' with default step
-    forLimit = presReg
-    if curKind() == 5 && curSub() == 16 {
-      cpos = cpos + 1
-      startUnit(12)
-    } else if curKind() == 4 && curSub() == 3 {
-      forStep = -1
-      forDoHead()
-      inExpr = false
-      contKind = 0
-    } else {
-      perr = true
-      perrMsg = "expected , or do in for"
-      inExpr = false
-      contKind = 0
-    }
-  } else if contKind == 12 {
-    // for-step value done: expect 'do'
-    forStep = presReg
-    if curKind() == 4 && curSub() == 3 {
-      forDoHead()
-    } else {
-      perr = true
-      perrMsg = "expected do in for"
-    }
-    inExpr = false
-    contKind = 0
-  } else if contKind == 13 {
-    // repeat-until condition done: jump back while falsy, then leave scope
-    let n = ctlKind.length() - 1
-    if n < 0 || ctlKind[n] != 6 {
-      perr = true
-      perrMsg = "until without repeat"
-    } else {
-      bEmit(21, ctlA[n], presReg, 0)
-      blkExit()
-      tmpC = ctlD[n]
-      pdHead = ctlC[n]
-      pdThen = 1
-      popCtl()
-    }
-    inExpr = false
-    contKind = 0
-  } else {
-    inExpr = false
-    contKind = 0
   }
-  exprDone = false
 }
 
-// One gathered local/assign target per micro-step is overkill; stores run
-// one target per parseStep via stState 12 (locals) / 13 (assign).
-mod doStoreStep() {
-  if stState == 12 {
-    if tmpA >= tmpNames.length() {
-      stState = 0
+// %c: the low byte of the argument, because C's sprintf("%c", n) takes the low
+// byte of an int -- 256 is a NUL and -1 is 0xFF.  Width and - are allowed (the
+// spec check handles the rest).
+mod fmtConvChar() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vtag[ab]
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else if vnum[ab] != floor(vnum[ab]) {
+      vmFail("number has no integer representation")
     } else {
-      let nm = tmpNames[tmpA]
-      let vr = if tmpA < tmpRegs.length() then tmpRegs[tmpA] else -1
-      if vr > cfMaxLoc[fnDepth] && vr >= cfBase[fnDepth] {
-        locBind(nm, vr)
+      fmtQ_ = toInt(vnum[ab] / 256.0)
+      let r = toInt(vnum[ab] - fmtQ_ * 256.0)
+      if r < 0 {
+        fmtD_ = r + 256
       } else {
-        let r = locDeclare(nm)
-        if vr >= 0 {
-          bEmit(7, r, vr, 0)
-        } else {
-          bEmit(1, r, 0, 0)
+        fmtD_ = r
+      }
+      fmtBody = FromCharCode(fmtD_).Character
+      fmtPre = ""
+      fmtState = 6
+    }
+  }
+}
+
+mod fmtConvG() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vtag[ab]
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else {
+      fmtNeg = vnum[ab] < 0.0
+      if fmtNeg {
+        fmtV = 0.0 - vnum[ab]
+      } else {
+        fmtV = vnum[ab]
+      }
+      // a precision of zero means one, which is C's rule and PUC's
+      fmtP = if fmtPrec < 0 then 6 else if fmtPrec == 0 then 1 else fmtPrec
+      fmtG0 = fmtP
+      // and the mantissa is read at one place fewer, whichever arm it ends up
+      // in: both spend a digit on a leading zero or a point
+      fmtP = fmtG0 - 1
+      fmtInt = ""
+      fmtFr = ""
+      fmtExp = ""
+      fmtSticky = false
+      fmtIsG = true
+      fmtStrip = if fmtHash == 1 then false else true
+      fmtGToExp = false
+      if fmtV == 0.0 {
+        fmtBody = if fmtNeg then "-0" else "0"
+        fmtPre = ""
+        fmtState = 6
+      } else if 14 < fmtP {
+        vmFail("precision above 14 cannot be formatted exactly on this chip")
+      } else if 9007199254740992.0 <= fmtV {
+        vmFail("number too large to format exactly on this chip")
+      } else {
+        fmtIP = floor(fmtV)
+        fmtNz = 0
+        fmtLz = -1
+        fmtDd[0] = fmtV - floor(fmtV)
+        fmtDd[1] = 0.0
+        fmtNxt = 21
+        fmtState = 20
+      }
+    }
+  }
+}
+
+// The entry, as %f's: the argument, the sign, the precision.  14 is the ceiling
+// and not an arbitrary one -- the mantissa is p+1 digits read as one integer,
+// and ten of them is past 2^53.
+mod fmtConvExp() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vtag[ab]
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else {
+      fmtNeg = vnum[ab] < 0.0
+      if fmtNeg {
+        fmtV = 0.0 - vnum[ab]
+      } else {
+        fmtV = vnum[ab]
+      }
+      fmtP = if fmtPrec < 0 then 6 else fmtPrec
+      fmtInt = ""
+      fmtFr = ""
+      // every one of these is per conversion, not per program: fmtExp left over
+      // from the last one is why two %e in a print gave e+00000
+      fmtExp = ""
+      fmtSticky = false
+      fmtIsG = false
+      fmtUpperE = fmtCh == "E"
+      if fmtV == 0.0 {
+        // 0 is 0.000000e+00 whatever the precision, and the exponent is a
+        // positive zero however the value was signed
+        fmtBody = (if fmtNeg then "-0" else "0")
+        if 0 < fmtP {
+          fmtBody = fmtBody .. "." .. ZEROS16.Substring(0, fmtP)
+        }
+        fmtBody = fmtBody .. (if fmtUpperE then "E+000" else "e+000")
+        fmtPre = ""
+        fmtState = 6
+      } else if 14 < fmtP {
+        vmFail("precision above 14 cannot be formatted exactly on this chip")
+      } else if 9007199254740992.0 <= fmtV {
+        vmFail("number too large to format exactly on this chip")
+      } else {
+        fmtIP = floor(fmtV)
+        fmtNz = 0
+        fmtLz = -1
+        // The walk below multiplies whatever pair it finds, so the fraction has
+        // to be in it before the first state, and it has to be written into
+        // fmtDd directly: a var this state writes is not what a later line of
+        // the same state reads, so every fraction digit of 1.5 came out 0.
+        fmtDd[0] = fmtV - floor(fmtV)
+        fmtDd[1] = 0.0
+        fmtNxt = 21
+        fmtState = 20
+      }
+    }
+  }
+}
+
+// Whether the walk goes on, in a state of its own.  A value of a hundred or
+// more has all its significant digits in the integer part, so it only has to
+// reach the round digit: p+2 digits less the ones already there.  Below one it
+// has to get past the leading zeros first, which it cannot know until the first
+// nonzero turns up.  The test cannot live at the end of the walk's own chain:
+// there it is a nested if under a mod call, and the state write in it is
+// dropped, so the walk never stopped and %.2e of 0.000123 ran until the ticks
+// ran out.
+mod fmtEFracMore() {
+  if 16 <= fmtNz {
+    // The double-double carries about sixteen fraction digits exactly and the
+    // walk has not found a nonzero one in that many, so the value's first
+    // significant digit is further down than the digits are the value's own.
+    // Without this the walk never ends: %.2e of 1e-300 ran until the ticks ran
+    // out, and a value that cannot be converted should say so.
+    vmFail("value too small to format exactly on this chip")
+  } else if fmtInt == "" {
+    if fmtLz < 0 || fmtNz < fmtLz + fmtP + 2 {
+      fmtState = 21
+    } else {
+      fmtState = 23
+    }
+  } else {
+    if fmtNz < fmtP + 2 - fmtInt.Length() {
+      fmtState = 21
+    } else {
+      fmtState = 23
+    }
+  }
+}
+
+// The entry: the argument, the sign, and the precision.  15 is the ceiling and
+// not an arbitrary one -- 10^15 is the last power of ten a double holds
+// exactly, and the double-double carries 53 bits of guard beyond it, so a
+// precision past that would be rounding a number that is not the value.
+// %e and %g, and why they are not here yet.  %f needed a double-double because
+// it scales by the precision; %e cannot do that at all, because the mantissa is
+// the value divided by 10^k and no division by ten is exact -- 1/10 is not even
+// representable.  So the work is a digit stream instead, and the shape it takes
+// is settled:
+//
+//   - the integer part's digits come off fmtFNDigits as they do here, and the
+//     fraction's come off a dd multiplied by ten per digit, which is exact for
+//     about fifteen of them and not the sixteenth -- so a value whose first
+//     significant digit is further down than that is a range error, the same
+//     kind as the two limits above.
+//   - the two digit runs join into one string with the point's index beside
+//     them, the first nonzero digit gives the exponent (index - (index of the
+//     point) + 1), and the mantissa is the p+1 digits from there read as one
+//     integer, so a carry out of them is +1 on the exponent rather than a walk
+//     back through the digits.
+//   - the rounding is the same two-half test as %f's, on the digit after the
+//     mantissa, with the dd's leftover as the sticky bit.  That leftover is why
+//     the fraction is extracted to exactly one digit past the round position:
+//     one more and the sticky needs a scan of the string, one fewer and the last
+//     digit read is a rounded one.
+//   - the multiply and the digit read cannot share a state, for the reason above,
+//     so it is two states and about thirty ticks per conversion's fraction.
+//   - %g is %e and %f chosen by the exponent (e when it is below -4 or at least
+//     the precision, f otherwise, at p-1-k places), with trailing zeros dropped
+//     unless # is given and a precision of 0 read as 1.  The trailing-zero strip
+//     is one more one-character-per-tick state.
+//
+// tools/fmtsweep.py takes the conversion letter as its second argument, so
+// `python -u tools/fmtsweep.py 64 e` is the same check for %e when it lands.
+mod fmtConvFloat() {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vtag[ab]
+    if t != 1 && t != 6 {
+      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
+             .. typeName(t) .. ")")
+    } else {
+      fmtNeg = vnum[ab] < 0.0
+      if fmtNeg {
+        fmtV = 0.0 - vnum[ab]
+      } else {
+        fmtV = vnum[ab]
+      }
+      fmtP = if fmtPrec < 0 then 6 else fmtPrec
+      fmtInt = ""
+      fmtFr = ""
+      fmtIsG = false
+      if fmtV == 0.0 {
+        fmtState = 17
+      } else if 15 < fmtP {
+        vmFail("precision above 15 cannot be formatted exactly on this chip")
+      } else if 9007199254740992.0 <= fmtV {
+        vmFail("number too large to format exactly on this chip")
+      } else {
+        fmtState = 15
+      }    }
+  }
+}
+
+// Round the scaled fraction to its p digits, ties to even, and let a carry out
+// of the fraction bump the integer part.  The decision reads the two halves
+// separately, because that is the only way to see the difference: hi - fl is
+// exact, so `rh == 0.5` says the high half is exactly a half and the low half
+// says which side of it the value is on.  0.05 at one place is the case that
+// needs it -- the high half is 0.5 and the low half is 2.8e-17, so it is a hair
+// above the tie and PUC prints 0.1, not 0.0.
+mod fmtFRound() {
+  let fl = floor(fmtDd[0])
+  let rh = fmtDd[0] - fl
+  // Which digit the tie looks at is the last one the conversion keeps, and with
+  // no precision there are no fraction digits to keep: it is the units digit of
+  // the integer part.  Taking the fraction's instead made every %.0f tie round
+  // down, so 1.5 came out 1 where PUC has 2.
+  let last = if 0 < fmtP then fl else fmtIP - floor(fmtIP / 10.0) * 10.0
+  let odd = last - floor(last / 2.0) * 2.0
+  fmtF = if rh > 0.5 then fl + 1.0 else if rh < 0.5 then fl
+    else if fmtDd[1] > 0.0 then fl + 1.0 else if fmtDd[1] < 0.0 then fl
+    else if odd == 1.0 then fl + 1.0 else fl
+  // 9.999 at three places rounds to 10.000: the fraction carries into the
+  // integer part, which is an exact add while it is below 2^53.  The limit is
+  // the precision's own 10^p -- fixed at 10^15 it never fired, and %.2f of 9.999
+  // came out 9.999 with a point in it.
+  if 10.0 ** (fmtP + 0.0) <= fmtF {
+    fmtF = 0.0
+    fmtIP = fmtIP + 1.0
+  }
+  if 9007199254740992.0 <= fmtIP {
+    vmFail("number too large to format exactly on this chip")
+  } else {
+    fmtFr = ""
+    fmtNxt = 17
+    fmtState = 16
+  }
+}
+
+mod patError() {
+  nxActive = false
+  vmFail(patErr)
+}
+
+// One table store from raw values; false means the store failed (error already
+// raised).  Shared by SETFIELD and by TAPPEND's unrolled ladder.  A nil value
+// leaves the key's slot in place as a tombstone so the chain order is stable and
+// re-assigning the key revives the same slot.
+mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: string) -> bool {
+  let key = tkey(tid, kt, kn, ks)
+  let r = tmap.get(key)
+  let kint = toInt(kn)
+  if r.Found {
+    let sl = r.Value
+    if vt == 0 {
+      // nil leaves the slot in the chain as a tombstone, so the walk order is
+      // stable and re-assigning the key revives the same slot
+      if tvTag[sl] != 0 {
+        tvTag[sl] = 0
+        tFree.push(sl)
+        if kt == 6 && kint == tLen[tid] {
+          tLen[tid] = kint - 1
         }
       }
-      dirtySelf(nm)
-      tmpA = tmpA + 1
-    }
-  } else if stState == 15 {
-    if tmpA < 0 {
-      stState = 0
     } else {
-      var vr = -1
-      if tmpA < tmpRegs.length() {
-        vr = tmpRegs[tmpA]
-      } else {
-        vr = regAlloc()
-        bEmit(1, vr, 0, 0)
-      }
-      bEmit(30, itBase[tmpA], itKey[tmpA], vr)
-      tmpA = tmpA - 1
-    }
-  } else if stState == 13 {
-    if tmpA < 0 {
-      stState = 0
-    } else if tmpA < tmpRegs.length() {
-      tmpB = tmpRegs[tmpA]
-      stState = 14
-    } else {
-      let z = regAlloc()
-      bEmit(1, z, 0, 0)
-      tmpB = z
-      stState = 14
-    }
-  } else if stState == 14 {
-    let nm = tmpNames[tmpA]
-    if forNames.find(nm).Found {
-      perr = true
-      perrMsg = "cannot assign to for loop control variable"
-    } else {
-    lkRaw = true
-    locFind(nm)
-    lkRaw = false
-    if lkKind == 3 {
-      // an upvalue has no register to fold into, so this is always its own
-      // instruction
-      bEmit(47, tmpB, lkReg, upKind())
-      dirtySelf(nm)
-    } else if lkKind == 1 {
-      // fold the store into the instruction that produced the value
-      let li = bop.length() - 1
-      let op0 = if li >= 0 then bop[li] else -1
-      let canFold = li >= 0 && bpa[li] == tmpB && tmpB > cfMaxLoc[fnDepth] && lastPatchTarget != bop.length() && op0 != 23 && op0 != 20 && op0 != 21 && op0 != 22 && op0 != 24 && op0 != 26 && op0 != 27 && op0 != 6 && op0 != 30
-      if canFold {
-        bpa[li] = lkReg
-      } else {
-        bEmit(7, lkReg, tmpB, 0)
-      }
-      dirtySelf(nm)
-    } else if lkKind == 0 {
-      bEmit(6, gDeclare(nm), tmpB, 0)
-    } else {
-      perr = true
-      perrMsg = "bad store"
-    }
-    tmpA = tmpA - 1
-    stState = 13
-    }
-  }
-}
-
-// ---------------------------------------------------------------- function definitions
-
-mod funcHead(islocal: bool, resume: int, fr: int) {
-  let fid = newFunc()
-  tmpB = fid
-  let skip = bEmit(20, 0, 0, 0)
-  if resume == 1 {
-    pushCtl(3, fid, skip, 1, ctlLoop, fr, contKind)
-  } else if islocal {
-    pushCtl(3, fid, skip, 0, ctlLoop, 1, 0)
-  } else {
-    // fr is 0 for a plain global function, or table-register+1 for `function M.f`
-    pushCtl(3, fid, skip, 0, ctlLoop, fr, 0)
-  }
-  ctlG[ctlG.length() - 1] = stState
-  tmpSStk.push(tmpS)
-  ctorStk.push(openCtor)
-  openCtor = 0
-  ctlLoop = -1
-  // Every kind-3 frame is closed by one restoreTmp(), so every kind-3 entry has
-  // to save.  Only the anonymous head did, which made a `local function` (or a
-  // named `function M.f`) inside a function literal pop the *literal's* saved
-  // state on its way out and leave the outer close popping an empty stack -- so
-  // `t.f = function() local function g() ... end end` lost the field store and
-  // read back nil.  The save is per-body state: the values a body pushes on
-  // tmpNames/tmpRegs belong to that body and must not leak outwards.
-  saveTmp()
-  fnDepth = fnDepth + 1
-  opBase[fnDepth] = opKind.length()
-  funcDepthInit(islocal)
-  if curKind() == 5 && curSub() == 14 {
-    cpos = cpos + 1
-    stState = 20
-  } else {
-    perr = true
-    perrMsg = "expected ( after function name"
-  }
-}
-
-// stState 20: parameter list.  `...` may appear last and makes the function
-// variadic: extra arguments land in the vararg stack (fVar marks the fid).
-mod funcParams() {
-  // `function M:f(a)` puts M in the first parameter slot, so `self` has to be
-  // the first local or every parameter shifts by one
-  if fnSelfArg[fnDepth] {
-    fnSelfArg[fnDepth] = false
-    locDeclare("self")
-  }
-  if curKind() == 5 && curSub() == 32 {
-    cpos = cpos + 1
-    fVar[tmpB] = true
-    if curKind() == 5 && curSub() == 15 {
-      cpos = cpos + 1
-      fParams[tmpB] = cfNext[fnDepth]
-      cfBase[fnDepth] = cfNext[fnDepth]
-      if selfName[fnDepth] != "" {
-        locDeclare(selfName[fnDepth])
-      }
-      fStart[tmpB] = bop.length()
-      fnVar[fnDepth] = true
-      stState = 0
-    } else {
-      perr = true
-      perrMsg = "expected ) after ..."
-    }
-  } else if curKind() == 3 {
-    locDeclare(curStr())
-    dirtySelf(curStr())
-    cpos = cpos + 1
-    if curKind() == 5 && curSub() == 16 {
-      cpos = cpos + 1
-    } else if curKind() == 5 && curSub() == 15 {
-      cpos = cpos + 1
-      fParams[tmpB] = cfNext[fnDepth]
-      cfBase[fnDepth] = cfNext[fnDepth]
-      if cfNext[fnDepth] > 8 {
-        perr = true
-        perrMsg = "too many parameters (max 8 in-gate)"
-      }
-      if selfName[fnDepth] != "" {
-        locDeclare(selfName[fnDepth])
-      }
-      fStart[tmpB] = bop.length()
-      stState = 0
-    } else {
-      perr = true
-      perrMsg = "expected , or ) in parameter list"
-    }
-  } else if curKind() == 5 && curSub() == 15 {
-    cpos = cpos + 1
-    fParams[tmpB] = cfNext[fnDepth]
-    cfBase[fnDepth] = cfNext[fnDepth]
-    if cfNext[fnDepth] > 8 {
-      perr = true
-      perrMsg = "too many parameters (max 8 in-gate)"
-    }
-    if selfName[fnDepth] != "" {
-      locDeclare(selfName[fnDepth])
-    }
-    fStart[tmpB] = bop.length()
-    stState = 0
-  } else {
-    perr = true
-    perrMsg = "expected parameter name"
-  }
-}
-
-// stState 10/11: gathering local/assign target names after a comma.
-mod stmtNameList(isLocal: bool) {
-  if curKind() == 3 {
-    tmpNames.push(curStr())
-    cpos = cpos + 1
-    if curKind() == 5 && curSub() == 16 {
-      cpos = cpos + 1
-    } else if curKind() == 5 && curSub() == 13 {
-      cpos = cpos + 1
-      startUnit(if isLocal then 6 else 7)
-    } else if isLocal {
-      // no values: nil-fill; the next token is validated by dispatch
-      tmpA = 0
-      stState = 12
-    } else {
-      perr = true
-      perrMsg = "expected , = or end of statement"
-    }
-  } else {
-    perr = true
-    perrMsg = "expected name"
-  }
-}
-
-mod stmtProgress() {
-  if stState == 10 {
-    stmtNameList(true)
-  } else if stState == 11 {
-    stmtNameList(false)
-  } else if stState == 12 || stState == 13 || stState == 14 || stState == 15 {
-    doStoreStep()
-  } else if stState == 20 {
-    funcParams()
-  } else if stState == 21 {
-    // gathering the remaining names of a generic-for header
-    if curKind() == 3 {
-      tmpNames.push(curStr())
-      cpos = cpos + 1
-      if curKind() == 5 && curSub() == 16 {
-        cpos = cpos + 1
-      } else if curKind() == 4 && curSub() == 19 {
-        cpos = cpos + 1
-        stState = 0
-        startUnit(15)
-      } else {
-        perr = true
-        perrMsg = "expected , or in after for name"
-      }
-    } else {
-      perr = true
-      perrMsg = "expected name after , in for"
-    }
-  } else {
-    perr = true
-    perrMsg = "bad statement state"
-  }
-}
-
-mod pdDrain() {
-  if pdHead == -1 {
-    if pdThen == 1 {
-      ctlLoop = tmpC
-    }
-    pdThen = 0
-    pdTarget = -1
-  } else {
-    bPatch(pdHead, if pdTarget == -1 then bop.length() else pdTarget)
-    pdHead = plNext[pdHead]
-  }
-}
-
-// end / else / elseif handling against the control stack top.
-mod doBlockClose() {
-  let s = curSub()
-  if ctlKind.length() == 0 {
-    perr = true
-    perrMsg = "end without block"
-    return
-  }
-  let n = ctlKind.length() - 1
-  let kind = ctlKind[n]
-  if s == 6 {
-    if kind == 1 {
-      blkExit()
-      if ctlA[n] != -1 {
-        bPatch(ctlA[n], bop.length())
-      }
-      pdHead = ctlB[n]
-      pdThen = 2
-      popCtl()
-    } else if kind == 2 {
-      blkExit()
-      tmpC = ctlD[n]
-      let jtop = ctlA[n]
-      bEmit(20, jtop, 0, 0)
-      bPatch(ctlB[n], bop.length())
-      pdHead = ctlC[n]
-      pdThen = 1
-      popCtl()
-    } else if kind == 7 {
-      // generic-for tail: the control variable becomes this step's first
-      // result, then jump back to the loop head
-      blkExit()
-      bEmit(7, ctlE[n], ctlF[n], 0)
-      let back = bEmit(20, 0, 0, 0)
-      bPatch(back, ctlA[n])
-      bPatch(ctlB[n], bop.length())
-      pdHead = ctlC[n]
-      pdThen = 1
-      popCtl()
-      forNames.pop()
-    } else if kind == 5 {
-      blkExit()
-      tmpC = ctlD[n]
-      bEmit(33, ctlA[n], ctlE[n], ctlF[n])
-      bEmit(50, 0, 0, 0)
-      pdTarget = bop.length() - 1
-      bPatch(ctlB[n], bop.length())
-      pdHead = ctlC[n]
-      pdThen = 1
-      popCtl()
-      forNames.pop()
-    } else if kind == 3 {
-      let fid = ctlA[n]
-      let skip = ctlB[n]
-      let resume = ctlC[n]
-      let extra = ctlE[n]
-      let savedCont = ctlF[n]
-      let savedSt = ctlG[n]
-      bEmit(26, 0, 0, 0)
-      fRegs[fid] = cfMax[fnDepth]
-      locLen = funcEntryLoc[fnDepth]
-      fnDepth = fnDepth - 1
-      bPatch(skip, bop.length())
-      ctlLoop = ctlD[n]
-      tmpS = tmpSStk.pop().Value
-      restoreTmp()
-      openCtor = ctorStk.pop().Value
-      popCtl()
-      if resume == 1 {
-        // a function literal is a value, not a call: marking it as a call made
-        // the enclosing call treat it as an expanding tail argument
-        pushVal(extra, false, true)
-        expectOperand = false
-        inExpr = true
-        exprDone = false
-        contKind = savedCont
-        stState = savedSt
-      } else if extra == 1 {
-        let outer = locDeclare(tmpS)
-        bEmit(25, outer, fid, 0)
-      } else if extra >= 2 {
-        // function M.f(): the table register is extra-2, the field name the
-        // one the header pushed
-        let fr = regAlloc()
-        bEmit(25, fr, fid, 0)
-        // fnKey holds the field NAME, so it still needs interning: passing the
-        // name itself loaded whichever string const came first, which is how
-        // `function M.f` worked only until the program had another string
-        let nm = cStr(fnKey.pop().Value)
-        let kr = regAlloc()
-        bEmit(3, kr, nm, 0)
-        bEmit(30, extra - 2, kr, fr)
-        bumpMax(fr + 2)
-      } else {
-        let fr = regAlloc()
-        bEmit(25, fr, fid, 0)
-        bEmit(6, gDeclare(tmpS), fr, 0)
-      }
-    } else {
-      blkExit()
-      popCtl()
-    }
-    cpos = cpos + 1
-  } else if s == 4 {
-    if kind != 1 {
-      perr = true
-      perrMsg = "else without if"
-      return
-    }
-    blkExit()
-    let pos = bEmit(20, 0, 0, 0)
-    lstAppendB(pos)
-    bPatch(ctlA[n], bop.length())
-    ctlA[n] = -1
-    blkEnter()
-    cpos = cpos + 1
-  } else {
-    if kind != 1 {
-      perr = true
-      perrMsg = "elseif without if"
-      return
-    }
-    blkExit()
-    let pos = bEmit(20, 0, 0, 0)
-    lstAppendB(pos)
-    bPatch(ctlA[n], bop.length())
-    ctlA[n] = -1
-    cpos = cpos + 1
-    startUnit(3)
-  }
-}
-
-mod stmtDispatch() {
-  regSync()
-  let k = curKind()
-  let s = curSub()
-  if k == 5 && s == 17 {
-    cpos = cpos + 1
-  } else if k == 6 {
-    if ctlKind.length() == 0 {
-      bEmit(26, 0, 0, 0)
-      fRegs[mainFid] = cfMax[0]
-      pDone = true
-    } else {
-      perr = true
-      perrMsg = "unclosed block at end"
-    }
-  } else if k == 4 && s == 10 {
-    cpos = cpos + 1
-    if curKind() == 4 && curSub() == 8 {
-      cpos = cpos + 1
-      if curKind() == 3 {
-        tmpS = curStr()
-        cpos = cpos + 1
-        funcHead(true, 0, 0)
-      } else {
-        perr = true
-        perrMsg = "expected name after local function"
-      }
-    } else if curKind() == 3 {
-      tmpNames.clear()
-      tmpRegs.clear()
-      tmpNames.push(curStr())
-      cpos = cpos + 1
-      if curKind() == 5 && curSub() == 16 {
-        cpos = cpos + 1
-        stState = 10
-      } else if curKind() == 5 && curSub() == 13 {
-        cpos = cpos + 1
-        startUnit(6)
-      } else {
-        // no values: nil-fill; the next token is validated by dispatch
-        tmpA = 0
-        stState = 12
-      }
-    } else {
-      perr = true
-      perrMsg = "expected name after local"
-    }
-  } else if k == 4 && s == 8 {
-    cpos = cpos + 1
-    if curKind() == 3 {
-      tmpS = curStr()
-      cpos = cpos + 1
-      if curKind() == 5 && (curSub() == 23 || curSub() == 31) && nextKind() == 3 {
-        // function M.f(...) is M.f = function(...): keep the table in a
-        // register and store the function into the field when the body ends.
-        // With ':' the field name is a method, so the receiver is parameter one.
-        let isMethod = curSub() == 31
-        let tr = regAlloc()
-        locFind(tmpS)
-        if lkKind == 3 {
-          bEmit(46, tr, lkReg, upKind())
-        } else if lkKind == 1 {
-          bEmit(7, tr, lkReg, 0)
-        } else {
-          bEmit(5, tr, gDeclare(tmpS), 0)
+      tvTag[sl] = vt
+      tvNum[sl] = vn
+      tvStr[sl] = vs
+      if kt == 6 && kint == tLen[tid] + 1 {
+        tLen[tid] = kint
+        if tmap.has(tid .. "#" .. (kint + 1)) {
+          lenChase = true
+          lenTid = tid
         }
-        let field = curStrAhead()
-        fnKey.push(field)
-        cpos = cpos + 2
-        funcHead(false, 0, tr + 2)
-        if isMethod {
-          fnSelfArg[fnDepth] = true
-        }
-      } else {
-        funcHead(false, 0, 0)
       }
-    } else {
-      perr = true
-      perrMsg = "expected name after function"
     }
-  } else if k == 4 && s == 9 {
-    cpos = cpos + 1
-    startUnit(2)
-  } else if k == 4 && s == 17 {
-    cpos = cpos + 1
-    tmpA = bop.length()
-    startUnit(4)
-  } else if k == 4 && s == 18 {
-    cpos = cpos + 1
-    if curKind() == 3 {
-      forName = curStr()
-      forInit = -1
-      forLimit = -1
-      forStep = -1
-      cpos = cpos + 1
-      if curKind() == 4 && curSub() == 19 {
-        // generic for with a single variable
-        tmpNames.clear()
-        tmpRegs.clear()
-        tmpNames.push(forName)
-        cpos = cpos + 1
-        startUnit(15)
-      } else if curKind() == 5 && curSub() == 16 {
-        // more names follow: gather them one per step, then expect `in`
-        tmpNames.clear()
-        tmpRegs.clear()
-        tmpNames.push(forName)
-        cpos = cpos + 1
-        stState = 21
-      } else if curKind() == 5 && curSub() == 13 {
-        cpos = cpos + 1
-        startUnit(10)
-      } else {
-        perr = true
-        perrMsg = "expected = or in for"
-      }
-    } else {
-      perr = true
-      perrMsg = "expected name after for"
-    }
-  } else if k == 4 && s == 20 {
-    cpos = cpos + 1
-    pushCtl(6, bop.length(), -1, -1, ctlLoop, 0, 0)
-    ctlLoop = ctlKind.length() - 1
-    blkEnter()
-  } else if k == 4 && s == 3 {
-    cpos = cpos + 1
-    blkEnter()
-    pushCtl(4, 0, 0, 0, 0, 0, 0)
-  } else if k == 4 && s == 2 {
-    cpos = cpos + 1
-    if ctlLoop == -1 {
-      perr = true
-      perrMsg = "break outside loop"
-    } else {
-      let pos = bEmit(20, 0, 0, 0)
-      plNext[pos] = ctlC[ctlLoop]
-      ctlC[ctlLoop] = pos
-    }
-  } else if k == 4 && s == 14 {
-    cpos = cpos + 1
-    if atStmtEnd() {
-      bEmit(26, 0, 0, 0)
-    } else {
-      startUnit(5)
-    }
-  } else if k == 3 {
-    let nk = nextKind()
-    let ns = nextSub()
-    if nk == 5 && ns == 14 {
-      startUnit(1)
-    } else if nk == 2 {
-      startUnit(1)
-    } else if nk == 5 && (ns == 21 || ns == 23) {
-      itBase.clear()
-      itKey.clear()
-      tmpRegs.clear()
-      startUnit(8)
-    } else if nk == 5 && (ns == 13 || ns == 16) {
-      tmpNames.clear()
-      tmpRegs.clear()
-      tmpNames.push(curStr())
-      cpos = cpos + 1
-      if ns == 16 {
-        cpos = cpos + 1
-        stState = 11
-      } else {
-        cpos = cpos + 1
-        startUnit(7)
-      }
-    } else {
-      perr = true
-      perrMsg = "not a call statement"
-    }
-  } else if k == 5 && s == 14 {
-    startUnit(1)
-  } else if k == 2 {
-    startUnit(1)
-  } else if k == 4 && s == 21 {
-    if ctlTop() != 6 {
-      perr = true
-      perrMsg = "until without repeat"
-    } else {
-      cpos = cpos + 1
-      // A repeat's body block is closed after this condition, so the bump that
-      // gives each round its own cells goes here, in front of it: at the block
-      // exit it would land outside the loop and run once.
-      if blkCapGen[blkCapGen.length() - 1] != capGen {
-        blkGenDone = true
-        bEmit(49, 0, 0, 0)
-      }
-      startUnit(13)
-    }
-  } else if k == 4 && (s == 6 || s == 4 || s == 5) {
-    doBlockClose()
+  } else if vt == 0 {
+    // assigning nil to a missing key does nothing
   } else {
-    perr = true
-    perrMsg = "unexpected token at statement start"
+    var sl = -1
+    if tFree.length() > 0 {
+      sl = tFree.pop().Value
+      if tNext[sl] != -2 {
+        // still chained in its old table: unhook it and drop the stale key
+        let ot = tOwner[sl]
+        tblUnlink(ot, sl)
+        tmap.remove(tkey(ot, tKeyTag[sl], tKeyNum[sl], tKeyStr[sl]))
+      }
+    } else {
+      sl = tHeap
+      tHeap = tHeap + 1
+    }
+    if sl >= MAX_HEAP {
+      vmFail("out of table memory")
+      return false
+    }
+    tvTag[sl] = vt
+    tvNum[sl] = vn
+    tvStr[sl] = vs
+    tOwner[sl] = tid
+    tKeyTag[sl] = kt
+    tKeyNum[sl] = kn
+    tKeyStr[sl] = ks
+    tblLink(tid, sl)
+    tmap.set(key, sl)
+    if kt == 6 && kint == tLen[tid] + 1 {
+      tLen[tid] = kint
+      if tmap.has(tid .. "#" .. (kint + 1)) {
+        lenChase = true
+        lenTid = tid
+      }
+    }
   }
+  return true
 }
 
-mod parseStep() {
-  if !perr && !pDone {
-    if pdThen != 0 {
-      pdDrain()
-    } else if inExpr {
-      exprMicro()
-      if exprDone {
-        doCont()
-      }
-    } else if stState != 0 {
-      stmtProgress()
+// %s and %q.  %q quotes a string and leaves everything else as %s does, which
+// is why the tag is tested here rather than in the walk.
+mod fmtConvStr(c: string) {
+  fmtArgI = fmtArgI + 1
+  let ab = fmtArgAt()
+  if fmtArgI > fmtArgs {
+    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
+  } else {
+    let t = vtag[ab]
+    fmtArg = fmtVal(t, vnum[ab], vstr[ab])
+    if c == "q" && t == 2 {
+      fmtBody = "\""
+      fmtQPos = 0
+      fmtState = 11
     } else {
-      stmtDispatch()
+      fmtBody = fmtArg
+      if 0 <= fmtPrec && fmtPrec < fmtBody.Length() {
+        fmtBody = fmtBody.Substring(0, fmtPrec)
+      }
+      fmtPre = ""
+      fmtState = 6
     }
   }
 }
 
-// ---------------------------------------------------------------- VM state
-// Flat register file (pre-sized; frames share it by base offsets) and
-// parallel frame stacks. Value tags match fmtVal: 0 nil, 1 num, 2 str,
-// 3 bool, 4 func.
-
-var vtag: int[]
-var vnum: float[]
-var vstr: string[]
-var fFunc: int[]
-var fBase: int[]
-var fRetA: int[]
-var fRetBase: int[]
-var fRetPC: int[]
-var fRetN: int[]
-var fVaB: int[]
-var fForDepth: int[]
-// vararg values as one flat stack; each frame records its base in fVaB and
-// vaTop is the number of live entries
-var vaTag: int[]
-var vaNum: float[]
-var vaStr: string[]
-var vaTop: int = 0
-var gtag: int[]
-var gnum: float[]
-var gstr: string[]
-var vmPc: int = 0
-var vmBase: int = 0
-var vmHalted: bool = true
-var vmFailed: bool = false
-var retCountV: int = -1
-var cmpActive: bool = false
-var cmpAA: int = 0
-var cmpBB: int = 0
-var cmpDst: int = 0
-var cmpI: int = 0
-var cmpOp: int = 0
-var tmap: Map<string, int>
-var tvTag: int[]
-var tvNum: float[]
-var tvStr: string[]
-var tLen: int[]
-var tFree: int[]
-var tHeap: int = 0
-var tCount: int = 0
-// per-slot insertion-order chain: tOwner/tKey* describe the entry, tPrev/tNext
-// link it, and tFirst/tLast are each table's ends (so pairs/next can walk in
-// insertion order).  -2 marks a free (unlinked) slot, -1 the end of a chain.
-var tOwner: int[]
-var tKeyTag: int[]
-var tKeyNum: float[]
-var tKeyStr: string[]
-var tPrev: int[]
-var tNext: int[]
-var tFirst: int[]
-var tLast: int[]
-// pending next() walk: nxSlot is the candidate entry, nxDst the absolute
-// destination register, nxPc the call's pc (advanced when the walk finishes)
-var nxActive: bool = false
-var nxSlot: int = 0
-var nxDst: int = 0
-var nxPc: int = 0
-var nxMode: int = 0
-// One micro-step per burst. vmBurst raises this and the first step consumes it.
-var fmtGo: bool = false
-var lenChase: bool = false
-var lenTid: int = 0
-var latchN0: float = 0.0
-var latchN1: float = 0.0
-var latchN2: float = 0.0
-var latchN3: float = 0.0
-var latchS0: string = ""
-var latchS1: string = ""
-var latchVX: float = 0.0
-var latchVY: float = 0.0
-var latchVZ: float = 0.0
-var latchCR: float = 0.0
-var latchCG: float = 0.0
-var latchCB: float = 0.0
-var latchCA: float = 0.0
-var latchI0: int = 0
-var forDepth: int = 0
-var forCtrl: int[]
-var forRem: float[]
-
-// ---------------------------------------------------------------- closures
-// A function value (tag 4) holds a *closure* number, not a prototype.  Below
-// cloBase a closure is its own prototype -- cloF is only written for the
-// records above it -- so every builtin and every function with no upvalues
-// works exactly as it did, and PUC's rule that two evaluations of one literal
-// are the same value when nothing was captured falls out of that.  A function
-// *with* upvalues gets a record per evaluation, and cloU is its cell list,
-// strided by MAX_UP.
-var cloBase: int = 0
-var cloTop: int = 0
-var cloF: int[]
-var cloU: int[]
-// Upvalue cells: one value each, out of a fixed arena, never reclaimed.  That
-// is the same bargain the table heap makes and it is what a collector would
-// fix -- a loop that makes a closure per iteration spends a cell per iteration.
-// Cell 0 is the "none" marker, so a slot needs no clearing to start empty.
-var uTag: int[]
-var uNum: float[]
-var uStr: string[]
-var uTop: int = 1
-// A frame's slot table -- three words per captured local: the cell, the frame
-// that made it, the loop round it was made in -- sits in the vararg stack just
-// below that frame's varargs, and the word below *it* is the frame's own
-// sequence number.  The stamps are what stop a new frame adopting the last
-// one's cells (the table is scratch space) and what give each round of a loop
-// its own, which is what PUC gets by closing the cells at the end of the block.
-var frameSeq: int = 0
-var iterGen: int = 0
-// cloStep's state: one cell per tick, driven from vmBurst.
-var cloCur: int = 0
-var cloCid: int = 0
-var cloK: int = 0
-var cloN: int = 0
-var cloDst: int = 0
-var cloActive: bool = false
-
-// The prototype the running frame is executing, and the closure number it is
-// running as.  The main chunk is the one frame not on the stack (an empty
-// fFunc is how it halts), so it answers for itself.
-mod curFid() -> int {
-  if fFunc.length() == 0 {
-    return mainFid
+// The subject and the pattern out of a call's own registers, with find's two
+// argument checks, shared by the matcher's gate and by gmatch's constructor so
+// the two cannot drift apart.  off is where the subject sits: _pat takes a mode
+// first, so its subject is the second argument, while _gmatch's is the first.
+// Only the arguments actually passed are read: a register past nargs still
+// holds the caller's previous call, and a find whose init came from there is a
+// find with a boolean init.
+mod patCheck(a: int, nargs: int, nm: string, off: int) -> bool {
+  let st = if nargs < off then 0 else vTag(a + off)
+  let pt = if nargs < off + 1 then 0 else vTag(a + off + 1)
+  if nargs < off {
+    vmFail("bad argument #1 to '" .. nm .. "' (string expected, got no value)")
+    return false
+  } else if st == 2 {
+    patSrc = vStr(a + off)
+  } else if st == 1 || st == 6 {
+    patSrc = fmtVal(st, vNum(a + off), vStr(a + off))
+  } else {
+    vmFail("bad argument #1 to '" .. nm .. "' (string expected, got " .. typeName(st) .. ")")
+    return false
   }
-  let cid = fFunc[fFunc.length() - 1]
-  if cid < cloBase {
-    return cid
+  if nargs < off + 1 {
+    vmFail("bad argument #2 to '" .. nm .. "' (string expected, got no value)")
+    return false
+  } else if pt == 2 {
+    patPat = vStr(a + off + 1)
+  } else if pt == 1 || pt == 6 {
+    patPat = fmtVal(pt, vNum(a + off + 1), vStr(a + off + 1))
+  } else {
+    vmFail("bad argument #2 to '" .. nm .. "' (string expected, got " .. typeName(pt) .. ")")
+    return false
   }
-  return cloF[cid]
-}
-
-mod curClo() -> int {
-  if fFunc.length() == 0 {
-    return mainFid
-  }
-  return fFunc[fFunc.length() - 1]
-}
-
-// Where this frame's slot table starts, and the sequence number of the frame
-// that owns it (the word just below the table).
-mod slotBase() -> int {
-  return fVaB[fVaB.length() - 1] - 3 * fUpSlotN[curFid()]
-}
-
-mod frameStamp() -> float {
-  return vaNum[slotBase() - 1]
-}
-
-// The cell a descriptor names.  GETUP and SETUP only look: the closure that
-// captured the local made the cell, so by the time either runs it is there,
-// and a parent descriptor's cell belongs to the enclosing closure.
-mod cellRead(fid: int, k: int, parent: bool) -> int {
-  if parent {
-    return cloU[curClo() * MAX_UP + k]
-  }
-  return toInt(vaNum[slotBase() + 3 * fUpSlot[fid * MAX_UP + k]])
+  return true
 }
 
 // The cell, made if this frame and this round have not made it yet, then
@@ -4069,321 +6969,29 @@ mod cellAt(fid: int, k: int) -> int {
   return cell
 }
 
-// Register access, two ways, and mixing them is the bug this pair of comments
-// exists to stop.  vTag/vNum/vStr/vSet take a register RELATIVE to the current
-// frame and add vmBase themselves; anything that already holds an absolute index
-// (fmtBase, nxDst, a retAdjust src) reads vtag[]/vnum[]/vstr[] directly.  The
-// mistake is invisible at top level, where vmBase is 0, and wrong by exactly
-// vmBase inside a function -- which is how the formatter answered "number
-// expected, got nil" for `return string.format('%d', 5)`.
-mod vTag(r: int) -> int {
-  return vtag[vmBase + r]
-}
-
-mod vNum(r: int) -> float {
-  return vnum[vmBase + r]
-}
-
-mod vStr(r: int) -> string {
-  return vstr[vmBase + r]
-}
-
-// Move a call's results across the frame boundary: copy k values from the
-// callee's frame (absolute src) into the caller's (absolute dst), then nil-fill
-// up to n so a fixed-arity caller sees nil for values the callee did not return.
-// k values are the ones actually produced; n is what the caller asked for.
-mod retAdjust(src: int, dst: int, k: int, n: int) {
-  if 1 <= k { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] } else if 1 <= n { vtag[dst] = 0 vnum[dst] = 0.0 vstr[dst] = "" }
-  if 2 <= k { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] } else if 2 <= n { vtag[dst+1] = 0 vnum[dst+1] = 0.0 vstr[dst+1] = "" }
-  if 3 <= k { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] } else if 3 <= n { vtag[dst+2] = 0 vnum[dst+2] = 0.0 vstr[dst+2] = "" }
-  if 4 <= k { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] } else if 4 <= n { vtag[dst+3] = 0 vnum[dst+3] = 0.0 vstr[dst+3] = "" }
-  if 5 <= k { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] } else if 5 <= n { vtag[dst+4] = 0 vnum[dst+4] = 0.0 vstr[dst+4] = "" }
-  if 6 <= k { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] } else if 6 <= n { vtag[dst+5] = 0 vnum[dst+5] = 0.0 vstr[dst+5] = "" }
-  if 7 <= k { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] } else if 7 <= n { vtag[dst+6] = 0 vnum[dst+6] = 0.0 vstr[dst+6] = "" }
-  if 8 <= k { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] } else if 8 <= n { vtag[dst+7] = 0 vnum[dst+7] = 0.0 vstr[dst+7] = "" }
-  if 9 <= k { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] } else if 9 <= n { vtag[dst+8] = 0 vnum[dst+8] = 0.0 vstr[dst+8] = "" }
-  if 10 <= k { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] } else if 10 <= n { vtag[dst+9] = 0 vnum[dst+9] = 0.0 vstr[dst+9] = "" }
-  if 11 <= k { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] } else if 11 <= n { vtag[dst+10] = 0 vnum[dst+10] = 0.0 vstr[dst+10] = "" }
-  if 12 <= k { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] } else if 12 <= n { vtag[dst+11] = 0 vnum[dst+11] = 0.0 vstr[dst+11] = "" }
-  if 13 <= k { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] } else if 13 <= n { vtag[dst+12] = 0 vnum[dst+12] = 0.0 vstr[dst+12] = "" }
-  if 14 <= k { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] } else if 14 <= n { vtag[dst+13] = 0 vnum[dst+13] = 0.0 vstr[dst+13] = "" }
-  if 15 <= k { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] } else if 15 <= n { vtag[dst+14] = 0 vnum[dst+14] = 0.0 vstr[dst+14] = "" }
-  if 16 <= k { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] } else if 16 <= n { vtag[dst+15] = 0 vnum[dst+15] = 0.0 vstr[dst+15] = "" }
-}
-
-mod retCopy(src: int, dst: int, n: int) {
-  if 1 <= n { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] }
-  if 2 <= n { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] }
-  if 3 <= n { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] }
-  if 4 <= n { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] }
-  if 5 <= n { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] }
-  if 6 <= n { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] }
-  if 7 <= n { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] }
-  if 8 <= n { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] }
-  if 9 <= n { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] }
-  if 10 <= n { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] }
-  if 11 <= n { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] }
-  if 12 <= n { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] }
-  if 13 <= n { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] }
-  if 14 <= n { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] }
-  if 15 <= n { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] }
-  if 16 <= n { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] }
-}
-
-mod vSet(r: int, tag: int, num: float, s: string) {
-  vtag[vmBase + r] = tag
-  vnum[vmBase + r] = num
-  vstr[vmBase + r] = s
-}
-
-mod vSetNum(r: int, v: float) {
-  vtag[vmBase + r] = 1
-  vnum[vmBase + r] = v
-}
-
-mod gTag(gi: int) -> int {
-  return gtag[gi]
-}
-
-mod gNum(gi: int) -> float {
-  return gnum[gi]
-}
-
-mod gStr(gi: int) -> string {
-  return gstr[gi]
-}
-
-mod gSet(gi: int, tag: int, num: float, s: string) {
-  gtag[gi] = tag
-  gnum[gi] = num
-  gstr[gi] = s
-}
-
-// Pre-registered globals: 0..3 outNum0..outNum3 (numbers), 4..5 outStr0..outStr1,
-// 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z, 15..18 incol r/g/b/a
-// (inputs filled from the latches), 19..39 builtins (print, type, tostring,
-// setvec, setcol, clock, inarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error, assert, pcall, xpcall, _pat, _gmatch, _gmnext) as
-// functions with ids 0..NB-1, the two int globals, and the four library tables.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 5, 5, 5, 5]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0]
-
-// One-time setup when a parsed program starts running: closure numbering, and
-// the main chunk's slot table.  The main chunk runs with no frame on the stack
-// (an empty fFunc is how it halts), so its vararg base and sequence number are
-// seeded here; every other frame gets both when it is entered.
-mod vmClosures() {
-  let base = fStart.length()
-  cloBase = base
-  cloTop = base
-  frameSeq = 1
-  let n = 3 * fUpSlotN[mainFid] + 1
-  vaNum[0] = 1.0
-  fVaB[0] = n
-  vaTop = n
-}
-
-mod vmReset() {  tmap.clear()
-  tvTag.clear()
-  tvNum.clear()
-  tvStr.clear()
-  tvTag.resize(MAX_HEAP, 0)
-  tvNum.resize(MAX_HEAP, 0.0)
-  tvStr.resize(MAX_HEAP, "")
-  tLen.clear()
-  tLen.resize(MAX_TABLES, 0)
-  tFree.clear()
-  tHeap = 0
-  tCount = 4
-  tOwner.clear()
-  tOwner.resize(MAX_HEAP, -1)
-  tKeyTag.clear()
-  tKeyTag.resize(MAX_HEAP, 0)
-  tKeyNum.clear()
-  tKeyNum.resize(MAX_HEAP, 0.0)
-  tKeyStr.clear()
-  tKeyStr.resize(MAX_HEAP, "")
-  tPrev.clear()
-  tPrev.resize(MAX_HEAP, -2)
-  tNext.clear()
-  tNext.resize(MAX_HEAP, -2)
-  tFirst.clear()
-  tFirst.resize(MAX_TABLES, -1)
-  tLast.clear()
-  tLast.resize(MAX_TABLES, -1)
-  nxActive = false
-  lenChase = false
-  vtag.clear()
-  vnum.clear()
-  vstr.clear()
-  vtag.resize(2048, 0)
-  vnum.resize(2048, 0.0)
-  vstr.resize(2048, "")
-  forCtrl.resize(16, 0)
-  forRem.resize(16, 0.0)
-  forDepth = 0
-  fFunc.clear()
-  fBase.clear()
-  fRetA.clear()
-  fRetBase.clear()
-  fRetPC.clear()
-  fRetN.clear()
-  fVaB.clear()
-  fForDepth.clear()
-  vaTag.clear()
-  vaNum.clear()
-  vaStr.clear()
-  vaTag.resize(MAX_VA, 0)
-  vaNum.resize(MAX_VA, 0.0)
-  vaStr.resize(MAX_VA, "")
-  vaTop = 0
-  cloF.clear()
-  cloF.resize(MAX_FUNCS + MAX_CLO, 0)
-  cloU.clear()
-  cloU.resize((MAX_FUNCS + MAX_CLO) * MAX_UP, 0)
-  uTag.clear()
-  uTag.resize(MAX_CELL, 0)
-  uNum.clear()
-  uNum.resize(MAX_CELL, 0.0)
-  uStr.clear()
-  uStr.resize(MAX_CELL, "")
-  uTop = 1
-  frameSeq = 0
-  iterGen = 0
-  gtag.clear()
-  gnum.clear()
-  gstr.clear()
-  gtag.resize(64, 0)
-  gnum.resize(64, 0.0)
-  gstr.resize(64, "")
-  gtag.copyFrom(GTAG_INIT)
-  gnum.copyFrom(GNUM_INIT)
-  gtag.resize(64, 0)
-  gnum.resize(64, 0.0)
-  gnum[slotInLatch + 0] = latchN0
-  gnum[slotInLatch + 1] = latchN1
-  gnum[slotInLatch + 2] = latchN2
-  gnum[slotInLatch + 3] = latchN3
-  gstr[slotInLatch + 4] = latchS0
-  gstr[slotInLatch + 5] = latchS1
-  gnum[slotInLatch + 6] = latchVX
-  gnum[slotInLatch + 7] = latchVY
-  gnum[slotInLatch + 8] = latchVZ
-  gnum[slotInLatch + 9] = latchCR
-  gnum[slotInLatch + 10] = latchCG
-  gnum[slotInLatch + 11] = latchCB
-  gnum[slotInLatch + 12] = latchCA
-  gnum[slotInInt0] = latchI0 + 0.0
-  vmPc = 0
-  vmBase = 0
-  vmHalted = bop.length() == 0
-  vmFailed = false
-  retCountV = -1
-  cmpActive = false
-  logV = ""
-  logLen = 0
-  logLines.clear()
-  fmtDd.clear()
-  pcallBad.clear()
-  patSl.clear()
-  patCapS.clear()
-  patCapE.clear()
-  patCapP.clear()
-  patCapIx.clear()
-  patGmS.clear()
-  patGmP.clear()
-  patGmPos.clear()
-  patTid = 0
-  patLastTid = 0
-  // the text in inStr0 is the program's standard input, and a run starts at its
-  // beginning; the cursors are state, so they go with everything else
-  rdText = inStr0
-  rdPos = 0
-  rdBuf = ""
-  rdGot = false
-  oF0 = 0.0
-  oF1 = 0.0
-  oF2 = 0.0
-  oF3 = 0.0
-  oI0 = 0
-  oS4 = ""
-  oS5 = ""
-  outArrV.clear()
-  outArrV.resize(64, 0.0)
-  outVecV = Vec(0.0, 0.0, 0.0)
-  outColV = Color(0.0, 0.0, 0.0, 0.0)
-  resultV = ""
-  errV = ""
-  fFunc.push(mainFid)
-  fBase.push(0)
-  fRetA.push(-1)
-  fRetBase.push(0)
-  fRetPC.push(-1)
-  fRetN.push(-1)
-  fVaB.push(0)
-  fForDepth.push(0)
-}
-
-// pcall, which PUC has in C and is a gate here for the same reason.
-//
-// The shape is a marker frame: a sentinel fid on the same fFunc stack the calls
-// use, carrying the pcall's own return.  pcall pushes the marker and then makes
-// the call to f itself with that call's results one register past the pcall's
-// own, so `true` has a register of its own and the values land beside it.  The
-// marker is what makes nesting work: a pcall inside a pcall has its own, and
-// the innermost one is what an error unwinds to.
-const PCALL_MARK = 99
-var pcallH: float = 0.0         // xpcall's message handler, as a value: it has
-var pcallHT: int = 0            // to be a variable, because the protected call's
-                               // own frame is written over its register
-var pcallMsg: string = ""      // the error a protected call caught
-var pcallUnwind: bool = false  // and that there is one to unwind
-var pcallDepth: int = 0        // markers on the stack: above zero, an error is a value
-var pcallIsX: bool = false     // and the call is xpcall, so an error goes to a handler
-var pcallMode: int = 0         // 0 the protected call itself, 1 its message handler
-var pcallBase: int = 0         // the frame the call was made from: a caught error
-                               // leaves vmBase wherever it got to
-var pcallGate: bool = false    // a gate is waiting to run at pcallGatePc
-var pcallGatePc: int = 0       // which is the protected call's own instruction
-var pcallGateArgs: int = 0     // and how many arguments it should be given
-var pcallRan: bool = false     // and the dispatch now under way is that gate
-var pcallBad: int[]            // whether that dispatch raised: an array, because
-                               // a mod's write to a file variable is not read
-                               // back reliably inside the same step
-var pcallGo: bool = false      // and pcallEnter has a frame to push
-
-// A micro-step gate is finished: its results are at nxDst and retCountV counts
-// them.  Normally the instruction steps past itself.  A gate a pcall dispatched
-// in place hands them to pcallEnd instead, which moves them up one and writes
-// the pcall's own true (or its handler's false) below -- so the protected call
-// is only completed here, once the work is actually done.  The other outcome
-// never arrives: a machine that raises goes to the unwind with pcallBad set, and
-// pcallStep answers false, message.
-mod nxDone() {
-  if pcallRan {
-    pcallRan = false
-    pcallEnd(nxDst, if 0 <= retCountV then retCountV else 0, 0)
-  } else {
-    vmPc = nxPc + 1
-  }
-}
-var pcallFid: int = 0          // which function
-var pcallA: int = 0            // the pcall's own register
-var pcallNArgs: int = 0        // how many arguments it was given
-
-// An error inside a pcall is a value, not the end of the program.  vmFailed is
-// set either way, because the arms that check it after a possible failure must
-// not go on to do the work that failed -- pcallStep clears it when it hands the
-// message over.
-mod vmFail(msg: string) {
-  vmFailed = true
-  pcallBad[0] = 1
-  if pcallDepth > 0 {
-    pcallMsg = msg
-    pcallUnwind = true
-  } else {
-    errV = msg
-    vmHalted = true
-  }
+// The double-double lives in an array, fmtDd[0] and fmtDd[1], and not in two
+// scalars.  As scalars it did not survive being read back: with fmtConvExp
+// seeding the pair and the walk reducing it, the compiler's shared Get per var
+// handed the digit state the seeded value instead of the multiplied one, and
+// every fraction digit came out 0.  Arrays are how the rest of the chip passes a
+// value a mod wrote to a state that runs later.
+mod fmtDdMul(hi: float, lo: float, c: float) {
+  let ph = hi * c
+  // 2^27 + 1 splits each operand into halves a multiply cannot mix, so the
+  // low half of the product comes out of four small products
+  let ca = 134217729.0 * hi
+  let ahi = ca - (ca - hi)
+  let alo = hi - ahi
+  let cb = 134217729.0 * c
+  let bhi = cb - (cb - c)
+  let blo = c - bhi
+  let pe = ((ahi * bhi - ph) + ahi * blo + alo * bhi) + alo * blo
+  let t = pe + lo * c
+  // two-sum, so s is the rounded sum and the rest of it exactly
+  let s = ph + t
+  let bb = s - ph
+  fmtDd[0] = s
+  fmtDd[1] = (ph - (s - bb)) + (t - bb)
 }
 
 // One frame per tick off a caught error, until the frame it pops is the marker:
@@ -4503,369 +7111,6 @@ mod pcallStep() {
   }
 }
 
-// The protected call has come back and the marker is on top, so the pcall's
-// values are its own: the call's k results move up past the pcall's register,
-// `true` goes there, and the pcall's caller carries on with the count it asked
-// for.
-//
-// One mod, and one call site per return variant plus one for a gate, because
-// these are mods this size and a test in the middle of one is the trap the
-// header warns about.  Every call site passes the same thing -- the results are
-// at vmBase + a -- because a frame starts at the very register its results go
-// to, so that is where they are in all four return forms and in a gate.
-mod pcallEnd(src: int, k: int, extra: int) {
-  let ra = fRetA[fRetA.length() - 1]
-  let rb = fRetBase[fRetBase.length() - 1]
-  let rpc = fRetPC[fRetPC.length() - 1]
-  let want = fRetN[fRetN.length() - 1]
-  fFunc.pop()
-  fBase.pop()
-  fRetA.pop()
-  fRetBase.pop()
-  fRetPC.pop()
-  fRetN.pop()
-  vaTop = fVaB.pop().Value
-  forDepth = fForDepth.pop()
-  pcallDepth = pcallDepth - 1
-  // The values move up one register, into the space after the call's own, and
-  // the call's own register gets true or false: true for the protected call
-  // itself (mode 0), false for a message handler's results (modes 1 and 2 --
-  // PUC 5.5 returns false plus the handler's results, measured not assumed).
-  // A handler contributes one value even when it returns more: a handler
-  // returning 7, 8 gives false 7 and not false 7 8.  Copying up cannot overwrite
-  // anything, which copying down would.
-  var m = 1
-  if pcallMode == 0 {
-    retCopy(src, rb + ra + 1, k)
-    vtag[rb + ra] = 3
-    vnum[rb + ra] = 1.0
-    vstr[rb + ra] = "true"
-    m = (if 1 <= k then k else 0) + extra + 1
-  } else {
-    let one = rb + ra + 1
-    if 1 <= k {
-      vtag[one] = vtag[src]
-      vnum[one] = vnum[src]
-      vstr[one] = vstr[src]
-    } else {
-      vtag[one] = 2
-      vnum[one] = 0.0
-      vstr[one] = "<no error object>"
-    }
-    vtag[rb + ra] = 3
-    vnum[rb + ra] = 0.0
-    vstr[rb + ra] = "false"
-    m = 2
-  }
-  let cnt = if want == -2 then m else if want < m then want else m
-  vmBase = rb
-  vmPc = rpc
-  retCountV = cnt
-}
-
-mod pcallEndJoin(src: int, fixed: int, tailSrc: int, tail: int) {
-  let dst = fRetBase[fRetBase.length() - 1] + fRetA[fRetA.length() - 1] + 1
-  let want = fRetN[fRetN.length() - 1]
-  let have = fixed + tail
-  let keep = if want == -2 then have else if want < have then want else have
-  let fixedKeep = if fixed < keep then fixed else keep
-  let tailKeep = keep - fixedKeep
-  let save = vaTop
-  if 0 < tail {
-    vaSpill(tailSrc, save, tail)
-  }
-  if 0 < tailKeep {
-    vaFill(save, dst + fixedKeep, tailKeep)
-  }
-  pcallEnd(src, fixed, tailKeep)
-}
-
-mod pcallEnter() {
-  let cid = pcallFid
-  let inner = if cid < cloBase then cid else cloF[cid]
-  let a = pcallA
-  let a1 = if 1 < pcallNArgs then pcallNArgs - 1 else 0
-  let base = pcallBase
-  // A protected call's frame starts one past its own register, so the true
-  // survives under it.  A message handler's starts *at* its register: the
-  // false is there already and its results belong there.
-  let nbase = if pcallMode == 0 then base + a + 1 else base + a
-  let np = fParams[inner]
-  let nslots = 3 * fUpSlotN[inner] + 1
-  let argSrc = if pcallMode != 0 then nbase else if pcallIsX then base + a + 3 else base + a + 2
-  if 8 < np {
-    vmFail("too many parameters")
-  } else if vaTop + nslots > MAX_VA {
-    vmFail("too many upvalues")
-  } else if vaTop + nslots + (if fVar[inner] && np < a1 then a1 - np else 0) > MAX_VA {
-    vmFail("too many varargs")
-  } else {
-    // the parameters land in the new frame from one past the pcall's own
-    // register, and retAdjust's nil-fill is what a missing argument is
-    retAdjust(argSrc, nbase, a1, np)
-    let nva = if fVar[inner] && np < a1 then a1 - np else 0
-    frameSeq = frameSeq + 1
-    let slotB = vaTop
-    vaNum[slotB] = frameSeq
-    vaSpill(nbase + np, slotB + nslots, nva)
-    fVaB.push(slotB + nslots)
-    vaTop = slotB + nslots + nva
-    fFunc.push(cid)
-    fBase.push(nbase)
-    if pcallMode == 0 {
-      fRetA.push(a + 1)
-    } else {
-      // a message handler's results go where its own register is: the false is
-      // already there and there is no true to step over
-      fRetA.push(a)
-    }
-    fRetBase.push(base)
-    fRetPC.push(vmPc + 1)
-    fRetN.push(-2)
-    fForDepth.push(forDepth)
-    vmBase = nbase
-    vmPc = fStart[inner]
-  }
-}
-
-mod numArg(t: int, v: float) -> float {
-  if t != 1 && t != 6 && t != 0 {
-    vmFail("bad argument (number expected)")
-  }
-  return if t == 0 then 0.0 else v
-}
-
-// PUC's string-to-number coercion, which the chip did not have at all: '3' + 1
-// is 4, ' 2.5 ' * 2 is 5.0, '0x10' + 0 is 16, '1e3' + 0 is 1000.0, -'3' is -3,
-// and a string that is not a number raises with the operator's own wording.
-// The host's ParseInt/ParseNumber gates are the primitive: each answers a value
-// and a Success flag, and the simulator models them with int(s)/float(s) and
-// that flag, so '10abc' fails (PUC wants the whole string) while '  2.5  '
-// parses.  ParseInt is tried first, which is also PUC's order and is what makes
-// '2' an integer and '2.0' a float: a fraction or an exponent in the numeral
-// makes ParseInt fail, so the answer takes the float path.
-//
-// It is two mods with one latch each, not one mod with one latch, and not an
-// if-expression.  A mod call in a VALUE position runs whether the arm runs or
-// not -- the trap that made math.type('x') raise through numArg -- and a `let`
-// taken from a var the same mod writes is re-derived at its next use, so a
-// shared latch would answer with the RIGHT operand's kind.  A latch per operand
-// side-steps that: nothing overwrites it after its call, so a re-derivation
-// reads the same value.
-//
-// The kind is what the caller needs for PUC's integer/float split: 0 the
-// operand was not a string, 1 a string that converted to an integer, 2 one that
-// converted to a float, 3 a string that is not a number at all.
-var coerceL: int = 0
-var coerceR: int = 0
-
-mod arithValL(t: int, v: float, s: string) -> float {
-  coerceL = 0
-  if t == 2 {
-    let i = s.ParseInt()
-    if i.Success {
-      coerceL = 1
-      return i
-    }
-    let p = s.ParseNumber()
-    if p.Success {
-      coerceL = 2
-      return p
-    }
-    coerceL = 3
-  }
-  return v
-}
-
-mod arithValR(t: int, v: float, s: string) -> float {
-  coerceR = 0
-  if t == 2 {
-    let i = s.ParseInt()
-    if i.Success {
-      coerceR = 1
-      return i
-    }
-    let p = s.ParseNumber()
-    if p.Success {
-      coerceR = 2
-      return p
-    }
-    coerceR = 3
-  }
-  return v
-}
-
-mod toInt(v: float) -> int {
-  return v | 0
-}
-
-// The one place the log grows, and the one place it shrinks.  logLen travels
-// with logV because a cap that computes a substring start from logV.Length() in
-// the same mod reads the NEW length -- the value gates are evaluated in a
-// fixpoint, not in source order -- so the start lands in the wrong place and the
-// log comes out empty.  Nothing writes logV except these two and vmReset.
-mod logAdd(s: string) {
-  logV = logV .. s
-  logLen = logLen + s.Length()
-}
-
-mod logDrop(n: int) {
-  logV = logV.Substring(n, logLen - n)
-  logLen = logLen - n
-}
-
-// One append to the log, by print or by io.write.  The caller has already made
-// the text what it wants -- print's line and its 64-character cap, or io.write's
-// raw chunk -- and the log keeps the last 32 appends, so the port stays a plain
-// string read and cannot grow without bound.  The 64-character cap is the
-// *caller's* because it is print's rule, not the log's: a write of 500 bytes is
-// one append here and 500 bytes of text, not eight dropped ones.
-mod logPush(line: string) {
-  logLines.push(line)
-  logAdd(line)
-  if logLines.length() > 32 {
-    let drop = logLines[0]
-    logDrop(drop.Length())
-    logLines.remove(0)
-  }
-}
-
-// Writable output globals live in gtag/gnum/gstr (slots 0..5); the ports
-// mirror them once per tick. Numeric outs read as numbers (nil -> 0.0),
-// string outs Lua-formatted (nil -> "").
-mod syncOuts() {
-  oF0 = if gtag[slotOutLatch + 0] == 0 then 0.0 else gnum[slotOutLatch + 0]
-  oF1 = if gtag[slotOutLatch + 1] == 0 then 0.0 else gnum[slotOutLatch + 1]
-  oF2 = if gtag[slotOutLatch + 2] == 0 then 0.0 else gnum[slotOutLatch + 2]
-  oF3 = if gtag[slotOutLatch + 3] == 0 then 0.0 else gnum[slotOutLatch + 3]
-  oI0 = if gtag[slotOutInt0] == 0 then 0 else toInt(gnum[slotOutInt0])
-  oS4 = if gtag[slotOutLatch + 4] == 0 then "" else fmtVal(gtag[slotOutLatch + 4], gnum[slotOutLatch + 4], gstr[slotOutLatch + 4])
-  oS5 = if gtag[slotOutLatch + 5] == 0 then "" else fmtVal(gtag[slotOutLatch + 5], gnum[slotOutLatch + 5], gstr[slotOutLatch + 5])
-}
-
-const INT64_LIMIT = 9223372036854775808.0
-const INT64_WRAP = 18446744073709551616.0
-
-mod intWrap(v: float) -> float {
-  var w = v
-  if w + INT64_LIMIT < 0.0 {
-    w = w + INT64_WRAP
-  } else if INT64_LIMIT <= w {
-    w = w - INT64_WRAP
-  }
-  return w
-}
-
-mod vSetInt(a: int, v: float) {
-  let w = intWrap(v)
-  if w == floor(w) && 0.0 <= w + INT64_LIMIT && w < INT64_LIMIT {
-    vSet(a, 6, w, "")
-  } else {
-    vSetNum(a, w)
-  }
-}
-
-mod vSetIntSat(a: int, v: float) {
-  var w = v
-  if w + INT64_LIMIT < 0.0 {
-    w = 0.0 - INT64_LIMIT
-  } else if INT64_LIMIT <= w {
-    w = INT64_LIMIT
-  }
-  vSet(a, 6, w, "")
-}
-
-mod cmpFinish(v: bool) {
-  vtag[cmpDst] = 3
-  if v {
-    vnum[cmpDst] = 1.0
-  } else {
-    vnum[cmpDst] = 0.0
-  }
-  cmpActive = false
-  vmPc = vmPc + 1
-  if vmPc >= bop.length() {
-    vmHalted = true
-  }
-}
-
-// One codepoint per call; prefix rules match Lua, order is by codepoint
-// (identical to byte order for ASCII).
-mod cmpStep() {
-  let sa = vstr[cmpAA]
-  let sb = vstr[cmpBB]
-  let la = sa.Length()
-  let lb = sb.Length()
-  if cmpI >= la && cmpI >= lb {
-    cmpFinish(cmpOp == 1)
-  } else if cmpI >= la {
-    cmpFinish(true)
-  } else if cmpI >= lb {
-    cmpFinish(false)
-  } else {
-    let ca = sa.Substring(cmpI, 1).ToCharCode().Codepoint
-    let cb = sb.Substring(cmpI, 1).ToCharCode().Codepoint
-    if ca != cb {
-      cmpFinish(ca < cb)
-    } else {
-      cmpI = cmpI + 1
-    }
-  }
-}
-
-// One VM instruction (ISA in spec.py).
-// Composite map key for table `tid`: kt is the key's value tag.
-mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
-  return if kt == 1 || kt == 6 then tid .. "#" .. (kn | 0)
-    else if kt == 2 then tid .. "$" .. ks
-    else tid .. "@" .. kt .. ":" .. (kn | 0)
-}
-
-// Normalize integral floats to the int tag so 1 and 1.0 share one key.
-// Copy cnt values from src down to a.  The two ranges overlap, so fill from the
-// LOW end: writing a high slot first would overwrite a source value that a
-// lower slot still has to read.
-mod shiftDown(a: int, src: int, cnt: int) {
-  if 1 <= cnt { vSet(a, vTag(src), vNum(src), vStr(src)) }
-  if 2 <= cnt { vSet(a + 1, vTag(src + 1), vNum(src + 1), vStr(src + 1)) }
-  if 3 <= cnt { vSet(a + 2, vTag(src + 2), vNum(src + 2), vStr(src + 2)) }
-  if 4 <= cnt { vSet(a + 3, vTag(src + 3), vNum(src + 3), vStr(src + 3)) }
-  if 5 <= cnt { vSet(a + 4, vTag(src + 4), vNum(src + 4), vStr(src + 4)) }
-  if 6 <= cnt { vSet(a + 5, vTag(src + 5), vNum(src + 5), vStr(src + 5)) }
-  if 7 <= cnt { vSet(a + 6, vTag(src + 6), vNum(src + 6), vStr(src + 6)) }
-  if 8 <= cnt { vSet(a + 7, vTag(src + 7), vNum(src + 7), vStr(src + 7)) }
-  if 9 <= cnt { vSet(a + 8, vTag(src + 8), vNum(src + 8), vStr(src + 8)) }
-  if 10 <= cnt { vSet(a + 9, vTag(src + 9), vNum(src + 9), vStr(src + 9)) }
-  if 11 <= cnt { vSet(a + 10, vTag(src + 10), vNum(src + 10), vStr(src + 10)) }
-  if 12 <= cnt { vSet(a + 11, vTag(src + 11), vNum(src + 11), vStr(src + 11)) }
-  if 13 <= cnt { vSet(a + 12, vTag(src + 12), vNum(src + 12), vStr(src + 12)) }
-  if 14 <= cnt { vSet(a + 13, vTag(src + 13), vNum(src + 13), vStr(src + 13)) }
-  if 15 <= cnt { vSet(a + 14, vTag(src + 14), vNum(src + 14), vStr(src + 14)) }
-  if 16 <= cnt { vSet(a + 15, vTag(src + 15), vNum(src + 15), vStr(src + 15)) }
-}
-
-mod tblFill(dst: int, tid: int, idx: int) {
-  let r = tmap.get(tkey(tid, 1, idx, ""))
-  if r.Found {
-    vSet(dst, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
-  } else {
-    vSet(dst, 0, 0.0, "")
-  }
-}
-
-mod keyTag(t: int, v: float) -> int {
-  return if t == 1 && v == floor(v) then 6 else t
-}
-
-// After t[len+1] was filled, keep extending the border while t[len+1] exists.
-mod lenStep() {
-  if tmap.has(lenTid .. "#" .. (tLen[lenTid] + 1)) {
-    tLen[lenTid] = tLen[lenTid] + 1
-  } else {
-    lenChase = false
-  }
-}
-
 // next(): one chain hop per tick, so a run of tombstones (keys assigned nil)
 // Fill one cell of a closure per tick, then publish the value.  nxActive
 // short-circuits the instruction dispatch, so nothing can read the half-built
@@ -4901,777 +7146,6 @@ mod cloStep() {
   }
 }
 
-// next()'s walk: the candidate is a tombstone or a nil value, so skip it and
-// look again -- that costs ticks but needs no loop.  Finishing writes key+value
-// (or a lone nil) and advances past the call.
-mod nxStep() {
-  if 0 <= nxSlot && (tvTag[nxSlot] == 0 || tNext[nxSlot] == -2) {
-    nxSlot = tNext[nxSlot]
-  } else {
-    if nxSlot < 0 {
-      vtag[nxDst] = 0
-      vnum[nxDst] = 0.0
-      vstr[nxDst] = ""
-      retCountV = 1
-    } else {
-      let kt = tKeyTag[nxSlot]
-      let kn = tKeyNum[nxSlot]
-      let ks = tKeyStr[nxSlot]
-      if kt == 6 || kt == 1 {
-        vtag[nxDst] = kt
-        vnum[nxDst] = kn
-        vstr[nxDst] = ""
-      } else if kt == 2 {
-        vtag[nxDst] = 2
-        vnum[nxDst] = 0.0
-        vstr[nxDst] = ks
-      } else if kt == 3 {
-        vtag[nxDst] = 3
-        vnum[nxDst] = kn
-        vstr[nxDst] = ""
-      } else if kt == 5 {
-        vtag[nxDst] = 5
-        vnum[nxDst] = kn
-        vstr[nxDst] = ks
-      } else {
-        vtag[nxDst] = 0
-        vnum[nxDst] = 0.0
-        vstr[nxDst] = ""
-      }
-      vtag[nxDst + 1] = tvTag[nxSlot]
-      vnum[nxDst + 1] = tvNum[nxSlot]
-      vstr[nxDst + 1] = tvStr[nxSlot]
-      retCountV = 2
-    }
-    nxActive = false
-    vmPc = nxPc + 1
-  }
-}
-
-// ================================================================= _fmt
-//
-// string.format as a WireScript micro-step: one character of the spec, or one
-// digit, per tick, stepped from nxStep like next() is.  This hunk is installed
-// and the suite covers it; lib/fmt_gate_draft.txt is the extracted copy of it,
-// with the findings that took the builds to get:
-//
-//   python -u tools/fmtdraft.py --check      what lua.ws has
-//   python -u tools/fmtdraft.py --extract    save this hunk back to the draft
-//
-// Why a gate and not the library: the PUC-verified Lua implementation of this
-// function is lib/str_format.lua, 10769 characters, and the lexer runs at four
-// characters per tick, so prepending it cost 2692 ticks of boot per program --
-// about 45 seconds in-game.  As a gate it costs +3,308 nodes and +6,026 wires
-// (68,134 -> 71,442) and 0 boot ticks, and a "%d" format call runs in 0.2s of
-// sim time where the Lua version took 9.4s.
-//
-// State: %d %i %u %s %q %x %X %o %c %%, every flag (- + space # 0), width,
-// precision, the per-conversion flag table and the error messages all match
-// lua5.5, case by case, in the fmt-* suite cases.  Not yet: %f %e %g (and %a),
-// for which lib/str_format.lua has the algorithm and the notes on why the
-// rounding needs a Dekker two-product.
-//
-// The rules this shape follows, each one learned by getting it wrong:
-//
-//   - fetch a character in a state of its own, consume it in the next.  A value
-//     gate fed by a variable the same mod writes reads the NEW value, so a state
-//     that read the character at fmtPos and then advanced fmtPos walked one
-//     character ahead of the spec: every conversion came out as its own
-//     conversion character ("%d" -> "d", "%s|%s" -> "s|s").
-//   - the walk enters at the fetch state, never at the literal state, or the
-//     first character is skipped.
-//   - a state that hands back to the walk goes through the fetch, because
-//     fmtCh still holds the character the previous state consumed: going straight
-//     to the literal state appended it ("%d" -> "42d").
-//   - a condition on a file-level var, NESTED inside another if, is unreliable
-//     where the mod around it is inlined more than once: fmtPadStep's
-//     `if fmtPadLeft` chose the else arm whatever the var held, and swapping the
-//     two arms changed nothing.  The old four-step burst inlined vmStep four
-//     times and the compiler shared one Get per var across the copies; the lexer's chain has the same
-//     shape and works, because lexChunk inlines it once.  So the rule of thumb
-//     is to hoist the test to the top of the mod or take the flag as a
-//     parameter, and tools/wswarn.py flags the shape as a candidate.
-//   - one micro-step per burst.  The old four-step burst inlined and entered this
-//     machine up to four times in one tick; fmtGo kept one write per tick.
-//   - a mod call in a conditional's VALUE position is evaluated whether the arm
-//     runs or not; only exec statements (a mod call that writes a var) are
-//     guarded.  So `let y = if 2 < nargs then numArg(vTag(a + 3), ...) else 0.0`
-//     still ran numArg on an argument the call never passed, on whatever the
-//     register held from an earlier call, and died on "bad argument (number
-//     expected)".  Choose the tag and the value first, then hand numArg those:
-//     `numArg(if 2 < nargs then vTag(a + 3) else 0, if 2 < nargs then vNum(a + 3)
-//     else 0.0)`, which is what setvec and setcol already did.
-//   - a write at the top of a mod, followed by an else-if chain that deep with
-//     mod calls in it, is silently dropped: fmtPos = fmtPos + 1 at the top of
-//     fmtConv never happened, so the conversion was re-read as a literal.  The
-//     advance is repeated in every arm instead.
-//   - an int flag var read in a condition compares through a placeholder that
-//     reads 0, so fmtPadLeft/fmtPadZero are bools and every assignment that
-//     depends on a comparison is written as an if/else.
-//   - `floor()` TRUNCATES toward zero, it is not a floor: `floor(-1.0 / 16.0)`
-//     is 0, so a digit loop that divides with it never goes negative and %x of -1
-//     came out as fifteen zeros.  Floor division is done by hand in fmtRadixDigit
-//     (truncate, then carry a negative remainder into the digit and off the
-//     quotient).  Lua's math.floor is a different code path -- the _m gate -- and
-//     does floor, which is why math.floor(-2.7) is -3 and this is not.
-//
-// WireScript traps measured while building this, all of them in tools/wswarn.py
-// now, and all of them worth knowing before writing any more WireScript:
-//   - `%`, `for`, and a mod call on the right of `..` all leave a placeholder
-//     that reads 0, or fail as "attempt to call"
-//   - a string `+`, and a chain mixing `..` with `+` -> placeholder
-//   - `x = a == b` -> placeholder (assign a constant and set it in an if)
-//   - a mod and a var sharing a name (fmtNum, fmtZero) -> placeholder
-//   - `c >= "0"` on strings -> compiles, reads false; compare codepoints
-//   - a string returned from a mod: equal by ==, but ToCharCode() reads 0, so
-//     read characters into a var and test the var in a later state
-//   - an assignment at the bottom of a deep else-if chain silently does not take
-//     effect: fmtState = 7 in the %d branch never ran.  One mod per state is
-//     the fix, and the reason fmtLit/fmtFlag/fmtWidthStep/... exist separately.
-//   - tools/vargraph.py is what settled the rest: it lists the var nodes behind
-//     a name, how many write it, and what fires each write.
-//
-// ---------------------------------------------------------------- _fmt
-//
-// string.format as a micro-step: one character of the spec, or one digit, per
-// tick.  The library is prepended Lua source and the lexer runs at four
-// characters per tick, so the PUC-verified Lua implementation of this function
-// (kept as lib/str_format.lua) cost 10769 characters -- 2692 ticks of boot, about
-// 45 seconds in-game, before the program so much as started.  A gate pays
-// nothing for the source and one state machine covers the loops, so this is the
-// cheaper host by two orders of magnitude.  The semantics are settled by that
-// reference: 107 of 108 cases match lua5.5 byte for byte.
-// The argument register of the call being formatted, absolute: fmtBase + 1 +
-// fmtArgI.  A mod because a write at the top of a mod is dropped, and an
-// expression in the middle of fmtConv's chain would be too deep for the same
-// reason.
-//
-// ABSOLUTE, and that is the whole point: vTag/vNum/vStr take a register relative
-// to the current frame and add vmBase themselves, so passing them an index built
-// from fmtBase counted vmBase twice.  At top level vmBase is 0 and it worked; in
-// a function every argument but the last read from two registers too high, which
-// is why `return string.format('%s%s%s', 'a', 'b', 'c')` printed `cnilnil` and
-// `%d` of a number answered "number expected, got nil".  The conversions read
-// vtag[]/vnum[]/vstr[] at this index for that reason, and it is also the smaller
-// shape: no vmBase to add.
-var fmtSrc: string = ""
-var fmtBase: int = 0          // the call's register base (absolute)
-var fmtArgs: int = 0
-var fmtArgI: int = 0
-var fmtPos: int = 0
-var fmtOut: string = ""
-var fmtBody: string = ""
-var fmtPre: string = ""       // the sign or 0x prefix, kept ahead of zero padding
-var fmtPadAcc: string = ""
-var fmtArg: string = ""
-var fmtNum_: float = 0.0
-var fmtWidth: int = 0
-var fmtPrec: int = 0
-// one int per flag rather than a bitmask: WireScript has no bitwise and, and
-// fmtMinus / fmtZero / ... say what they are
-var fmtMinus: int = 0
-var fmtPlus: int = 0
-var fmtSpace: int = 0
-var fmtHash: int = 0
-var fmtZero: int = 0
-var fmtState: int = 0
-var fmtPad: int = 0
-var fmtNeg: bool = false
-// the padding side and fill are bools, not the 0/1 ints the flags are: an int
-// flag var read in a condition compares through a placeholder that reads 0, and
-// %-6d silently came out right-justified
-var fmtPadLeft: bool = false
-var fmtPadZero: bool = false
-var fmtCh: string = ""
-var fmtEof: bool = false
-var fmtTo: int = 0
-// the quoted walk has its own cursor: it used to share fmtPos with the spec walk
-// and reset it to 0, so after %q the spec was read from the start again and the
-// conversion ran twice ("%q" of "" asked for argument #3)
-var fmtQPos: int = 0
-var fmtBase_: float = 10.0
-var fmtBaseI: int = 10
-var fmtQ_: int = 0
-var fmtD_: int = 0
-var fmtUpper: bool = false
-var fmtDigits: int = 0
-var fmtDigitsMax: int = 0
-var fmtSpec: string = ""
-const HEXDIG = "0123456789abcdef"
-const HEXDIG_U = "0123456789ABCDEF"
-const ZEROS16 = "0000000000000000"
-
-// states: 0 literal, 1 flags, 2 width, 3 precision, 4 conversion, 5 padding,
-// 6 finish a conversion, 7 one integer digit, 8 one quoted byte, 9 one
-// precision zero
-// The character at a 1-based position is read inline at each use rather than
-// from a mod: a string returned from a mod compares equal to the right text but
-// its ToCharCode() reads 0, so a digit test on it never fires.
-mod fmtArgAt() -> int {
-  return fmtBase + 1 + fmtArgI
-}
-
-// The name of a value tag, for error messages: PUC says "got string" for a
-// wrong argument and "got no value" for a missing one, so the caller passes the
-// tag it would have read and says "no value" itself when there is none.
-mod typeName(t: int) -> string {
-  return if t == 0 then "nil" else if t == 1 || t == 6 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else if t == 5 then "table" else "userdata"
-}
-
-// The argument number for an error message.  Concatenating an int prints it as
-// a float, so "bad argument #5.0" would come out; the digits are spelled out.
-mod fmtArgName() -> string {
-  let n = 1 + fmtArgI
-  let tens = floor(n / 10.0)
-  let ones = n - tens * 10.0
-  let a = FromCharCode(48 + tens).Character
-  let b = FromCharCode(48 + ones).Character
-  return if n < 10 then b else a .. b
-}
-
-mod fmtDone() {
-  vtag[nxDst] = 2
-  vnum[nxDst] = 0.0
-  vstr[nxDst] = fmtOut
-  retCountV = 1
-  nxActive = false
-  nxDone()
-}
-
-// The quoted form of one byte: PUC 5.5 writes a backslash and a real newline
-// for a newline, not "\n", so a quoted multi-line string stays one pasteable
-// literal; a tab is a numeric escape.  The digits are written without a loop:
-// anything below 32 is one or two digits, and 127 is the only three-digit one.
-mod fmtQuoteByte(b: int) -> string {
-  if b == 34 {
-    return "\\\""
-  } else if b == 92 {
-    return "\\\\"
-  } else if b == 10 {
-    return "\\\n"
-  } else if b == 13 {
-    return "\\r"
-  } else if b == 0 {
-    return "\\0"
-  } else if b == 127 {
-    return "\\127"
-  } else if b < 10 {
-    let one = b
-    let ch1 = FromCharCode(48 + one).Character
-    return "\\" .. ch1
-  } else if b < 32 {
-    // no `%` operator in WireScript, so the tens digit is a floor division
-    let tens = floor(b / 10.0)
-    let ones = b - tens * 10.0
-    let ch2 = FromCharCode(48 + tens).Character
-    let ch3 = FromCharCode(48 + ones).Character
-    return "\\" .. ch2 .. ch3
-  } else {
-    return FromCharCode(b).Character
-  }
-}
-
-// One mod per state.  A single fmtStep with the states in one long else-if chain
-// nested three deep lost the assignment at the bottom: `fmtState = 7` in the %d
-// branch never took effect, so the state machine ran the conversion twice and
-// read past the end of the spec.  The %s branch, one level shallower, worked --
-// which is exactly the kind of neighbour-is-fine trap that says the whole chain
-// should be flat.  One state per mod also gives each step a name that says what
-// it does, which a numbered branch cannot.
-// The character at the cursor, fetched in a state of its own, then handed to
-// whichever state asked for it (fmtTo).  A value gate fed by a variable that the
-// same mod writes reads the *new* value, so a state that both read the character
-// at fmtPos and advanced fmtPos walked one character ahead of the spec: %d came
-// out as "d" and %s|%s as "s|a".  Fetching in one state and consuming in the
-// next means the cursor is written in one tick and read in the next, which no
-// evaluation order in the graph can get wrong.  It costs one tick per spec
-// character, against the lexer's four.
-mod fmtFetch() {
-  if fmtPos < fmtSrc.Length() {
-    fmtCh = fmtSrc.Substring(fmtPos, 1)
-    fmtEof = false
-  } else {
-    fmtCh = ""
-    fmtEof = true
-  }
-  fmtState = fmtTo
-}
-
-// The same fetch for the argument %q walks, which is not the spec.  fmtEof is a
-// flag rather than an empty fmtCh because %q of a string with a NUL in it must
-// escape it, not stop there.
-mod fmtQFetch() {
-  if fmtQPos < fmtArg.Length() {
-    fmtCh = fmtArg.Substring(fmtQPos, 1)
-    fmtEof = false
-  } else {
-    fmtCh = ""
-    fmtEof = true
-  }
-  fmtState = 8
-}
-
-mod fmtLit() {
-  if fmtEof {
-    fmtDone()
-  } else if fmtCh == "%" {
-    fmtMinus = 0
-    fmtPlus = 0
-    fmtSpace = 0
-    fmtHash = 0
-    fmtZero = 0
-    fmtWidth = 0
-    fmtPrec = -1
-    fmtPos = fmtPos + 1
-    fmtTo = 1
-    fmtSpec = "%"
-    fmtState = 10
-  } else {
-    fmtOut = fmtOut .. fmtCh
-    fmtPos = fmtPos + 1
-    fmtTo = 0
-    fmtState = 10
-  }
-}
-
-mod fmtFlag() {
-  if fmtCh == "-" {
-    fmtMinus = 1
-    fmtSpec = fmtSpec .. fmtCh
-    fmtPos = fmtPos + 1
-    fmtTo = 1
-    fmtState = 10
-  } else if fmtCh == "+" {
-    fmtPlus = 1
-    fmtSpec = fmtSpec .. fmtCh
-    fmtPos = fmtPos + 1
-    fmtTo = 1
-    fmtState = 10
-  } else if fmtCh == " " {
-    fmtSpace = 1
-    fmtSpec = fmtSpec .. fmtCh
-    fmtPos = fmtPos + 1
-    fmtTo = 1
-    fmtState = 10
-  } else if fmtCh == "#" {
-    fmtHash = 1
-    fmtSpec = fmtSpec .. fmtCh
-    fmtPos = fmtPos + 1
-    fmtTo = 1
-    fmtState = 10
-  } else if fmtCh == "0" {
-    fmtZero = 1
-    fmtSpec = fmtSpec .. fmtCh
-    fmtPos = fmtPos + 1
-    fmtTo = 1
-    fmtState = 10
-  } else {
-    fmtTo = 2
-    fmtState = 10
-  }
-}
-
-mod fmtWidthStep() {
-  let cp = if 0 < fmtCh.Length() then fmtCh.ToCharCode().Codepoint else -1
-  if 48 <= cp && cp <= 57 {
-    fmtWidth = fmtWidth * 10 + (cp - 48)
-    fmtSpec = fmtSpec .. fmtCh
-    fmtPos = fmtPos + 1
-    fmtTo = 2
-    fmtState = 10
-  } else if fmtCh == "." {
-    fmtSpec = fmtSpec .. fmtCh
-    fmtPos = fmtPos + 1
-    fmtPrec = 0
-    fmtTo = 3
-    fmtState = 10
-  } else {
-    fmtTo = 4
-    fmtState = 10
-  }
-}
-
-mod fmtPrecStep() {
-  let cp = if 0 < fmtCh.Length() then fmtCh.ToCharCode().Codepoint else -1
-  if 48 <= cp && cp <= 57 {
-    fmtPrec = fmtPrec * 10 + (cp - 48)
-    fmtSpec = fmtSpec .. fmtCh
-    fmtPos = fmtPos + 1
-    fmtTo = 3
-    fmtState = 10
-  } else {
-    fmtState = 4
-  }
-}
-
-// The conversion character, consumed here.  Each conversion sets up its own
-// state and checks its own argument, so %% does not consume one and a missing
-// one is reported against the conversion that wanted it.  The cursor advance is
-// repeated in every branch rather than written once at the top: a write at the
-// top of a mod followed by a chain this deep, with mod calls in it, is silently
-// dropped, and the walk then re-read the conversion character as a literal
-// ("%d" -> "42d").
-mod fmtConv() {
-  let bad = fmtSpecBad()
-  if fmtCh == "%" {
-    fmtPos = fmtPos + 1
-    fmtBody = "%"
-    fmtPre = ""
-    fmtState = 6
-  } else if bad == 1 {
-    fmtPos = fmtPos + 1
-    fmtSpec = fmtSpec .. fmtCh
-    vmFail("invalid conversion specification: '" .. fmtSpec .. "'")
-  } else if bad == 2 {
-    fmtPos = fmtPos + 1
-    vmFail("specifier '%q' cannot have modifiers")
-  } else if fmtCh == "s" || fmtCh == "q" {    fmtPos = fmtPos + 1
-    fmtConvStr(fmtCh)
-  } else if fmtCh == "d" || fmtCh == "i" || fmtCh == "u" {
-    fmtPos = fmtPos + 1
-    fmtConvInt()
-  } else if fmtCh == "x" || fmtCh == "X" || fmtCh == "o" {
-    fmtPos = fmtPos + 1
-    fmtConvRadix()
-  } else if fmtCh == "c" {
-    fmtPos = fmtPos + 1
-    fmtConvChar()
-  } else if fmtCh == "f" || fmtCh == "e" || fmtCh == "E" || fmtCh == "g"
-      || fmtCh == "G" {
-    // the float conversions dispatch in a mod of their own: with them in this
-    // chain the arms above stopped taking effect and %d of 42 came out 00
-    fmtPos = fmtPos + 1
-    fmtConvFloatish()
-  } else {
-    fmtPos = fmtPos + 1
-    vmFail("invalid conversion '%" .. fmtCh .. "' to 'format'")
-  }
-}
-
-// %s and %q.  %q quotes a string and leaves everything else as %s does, which
-// is why the tag is tested here rather than in the walk.
-mod fmtConvStr(c: string) {
-  fmtArgI = fmtArgI + 1
-  let ab = fmtArgAt()
-  if fmtArgI > fmtArgs {
-    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
-  } else {
-    let t = vtag[ab]
-    fmtArg = fmtVal(t, vnum[ab], vstr[ab])
-    if c == "q" && t == 2 {
-      fmtBody = "\""
-      fmtQPos = 0
-      fmtState = 11
-    } else {
-      fmtBody = fmtArg
-      if 0 <= fmtPrec && fmtPrec < fmtBody.Length() {
-        fmtBody = fmtBody.Substring(0, fmtPrec)
-      }
-      fmtPre = ""
-      fmtState = 6
-    }
-  }
-}
-
-mod fmtConvInt() {
-  fmtArgI = fmtArgI + 1
-  let ab = fmtArgAt()
-  if fmtArgI > fmtArgs {
-    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
-  } else {
-    let t = vtag[ab]
-    if t != 1 && t != 6 {
-      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
-             .. typeName(t) .. ")")
-    } else if vnum[ab] != floor(vnum[ab]) {
-      vmFail("number has no integer representation")
-    } else {
-      fmtNeg = vnum[ab] < 0.0
-      fmtNum_ = if fmtNeg then 0.0 - vnum[ab] else vnum[ab]
-      fmtBody = ""
-      fmtState = 7
-    }
-  }
-}
-
-// %x %X %o.  A negative value is converted as its 64-bit two's complement, so
-// the digit loop divides with floor and is bounded by a digit count instead of
-// running until the quotient reaches zero -- the floor of a negative never does.
-// 16 digits for hex, 22 for octal, which is what makes %x of -1 come out as
-// ffffffffffffffff and %o of -1 as 1777777777777777777777.
-mod fmtConvRadix() {
-  fmtArgI = fmtArgI + 1
-  let ab = fmtArgAt()
-  if fmtArgI > fmtArgs {
-    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
-  } else {
-    let t = vtag[ab]
-    if t != 1 && t != 6 {
-      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
-             .. typeName(t) .. ")")
-    } else if vnum[ab] != floor(vnum[ab]) {
-      vmFail("number has no integer representation")
-    } else {
-      if fmtCh == "o" {
-        fmtBase_ = 8.0
-        fmtBaseI = 8
-      } else {
-        fmtBase_ = 16.0
-        fmtBaseI = 16
-      }
-      if fmtCh == "X" {
-        fmtUpper = true
-      } else {
-        fmtUpper = false
-      }
-      fmtNeg = vnum[ab] < 0.0
-      fmtNum_ = vnum[ab]
-      fmtDigits = 0
-      fmtBody = ""
-      if fmtNeg {
-        // 64 bits is 16 hex digits exactly but 21 and a bit in octal, and the
-        // top octal digit is bit 63: %o of -1 is 1 followed by 21 sevens, not 22
-        // sevens.  Hex needs no leading digit; 16 divisions cover all 64 bits,
-        // and the octal one goes in front of the digits at the end (they are
-        // prepended as they come, so a leading 1 written here would end up last).
-        if fmtCh == "o" {
-          fmtDigitsMax = 21
-        } else {
-          fmtDigitsMax = 16
-        }
-      } else {
-        fmtDigitsMax = 0
-      }
-      fmtState = 7
-    }
-  }
-}
-
-// %c: the low byte of the argument, because C's sprintf("%c", n) takes the low
-// byte of an int -- 256 is a NUL and -1 is 0xFF.  Width and - are allowed (the
-// spec check handles the rest).
-mod fmtConvChar() {
-  fmtArgI = fmtArgI + 1
-  let ab = fmtArgAt()
-  if fmtArgI > fmtArgs {
-    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
-  } else {
-    let t = vtag[ab]
-    if t != 1 && t != 6 {
-      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
-             .. typeName(t) .. ")")
-    } else if vnum[ab] != floor(vnum[ab]) {
-      vmFail("number has no integer representation")
-    } else {
-      fmtQ_ = toInt(vnum[ab] / 256.0)
-      let r = toInt(vnum[ab] - fmtQ_ * 256.0)
-      if r < 0 {
-        fmtD_ = r + 256
-      } else {
-        fmtD_ = r
-      }
-      fmtBody = FromCharCode(fmtD_).Character
-      fmtPre = ""
-      fmtState = 6
-    }
-  }
-}
-
-// %e.  The mantissa is the value divided by 10^k, and no division by ten is
-// exact -- 1/10 is not representable -- so this cannot be %f with a different
-// exponent bolted on.  It is a digit stream instead: the integer part's digits
-// come off one division at a time, the fraction's off a double-double multiplied
-// by ten per digit, and the exponent is where the first nonzero digit sits
-// relative to the point.  The mantissa is those p+1 digits read as one integer,
-// so a carry out of them is +1 on the exponent rather than a walk back through
-// the digits.  See the note above fmtConvFloat for why this is its own shape.
-var fmtAll: string = ""      // the integer's and the fraction's together
-var fmtK: int = 0            // the decimal exponent
-var fmtS: int = 0            // the index of the first significant digit
-var fmtPt: int = 0           // how many digits sit before the point
-var fmtM: float = 0.0        // the mantissa's p+1 digits, as one integer
-var fmtMI: int = 0           // the cursor while they are read
-var fmtNz: int = 0           // the fraction digits taken so far
-var fmtLz: int = -1          // where the first nonzero one is, -1 until it is
-var fmtLead: int = 0         // the mantissa's first digit, once they are read
-var fmtExp: string = ""      // the exponent's digits, separate from the value's
-var fmtUpperE: bool = false  // %E, which is the same number with an E
-var fmtSticky: bool = false // something nonzero follows the round digit
-var fmtSI: int = 0           // the cursor for that scan
-var fmtENum: int = 0         // the exponent while it is written out
-
-// %g, which is %e or %f chosen by the exponent, and then has its trailing zeros
-// taken off.  The choice needs the exponent first, so it runs %e's digit walk
-// to get it and then goes back through one arm or the other: %e's, with the
-// precision one lower, or %f's, with p-1-k places and no exponent at all.  The
-// digits are already in fmtAll either way, so the %f arm is string surgery on
-// them rather than a second conversion.
-var fmtIsG: bool = false     // this conversion is %g, not %e
-var fmtG0: int = 0           // %g's own precision, before either arm changes it
-var fmtStrip: bool = false   // and it drops trailing zeros (# says keep them)
-var fmtGToExp: bool = false  // and its stripped form wants the exponent after
-
-mod fmtConvG() {
-  fmtArgI = fmtArgI + 1
-  let ab = fmtArgAt()
-  if fmtArgI > fmtArgs {
-    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
-  } else {
-    let t = vtag[ab]
-    if t != 1 && t != 6 {
-      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
-             .. typeName(t) .. ")")
-    } else {
-      fmtNeg = vnum[ab] < 0.0
-      if fmtNeg {
-        fmtV = 0.0 - vnum[ab]
-      } else {
-        fmtV = vnum[ab]
-      }
-      // a precision of zero means one, which is C's rule and PUC's
-      fmtP = if fmtPrec < 0 then 6 else if fmtPrec == 0 then 1 else fmtPrec
-      fmtG0 = fmtP
-      // and the mantissa is read at one place fewer, whichever arm it ends up
-      // in: both spend a digit on a leading zero or a point
-      fmtP = fmtG0 - 1
-      fmtInt = ""
-      fmtFr = ""
-      fmtExp = ""
-      fmtSticky = false
-      fmtIsG = true
-      fmtStrip = if fmtHash == 1 then false else true
-      fmtGToExp = false
-      if fmtV == 0.0 {
-        fmtBody = if fmtNeg then "-0" else "0"
-        fmtPre = ""
-        fmtState = 6
-      } else if 14 < fmtP {
-        vmFail("precision above 14 cannot be formatted exactly on this chip")
-      } else if 9007199254740992.0 <= fmtV {
-        vmFail("number too large to format exactly on this chip")
-      } else {
-        fmtIP = floor(fmtV)
-        fmtNz = 0
-        fmtLz = -1
-        fmtDd[0] = fmtV - floor(fmtV)
-        fmtDd[1] = 0.0
-        fmtNxt = 21
-        fmtState = 20
-      }
-    }
-  }
-}
-
-// Which of the two forms, once the exponent is known: %e when it is below -4 or
-// at least the precision, %f otherwise.  Either way the precision the chosen
-// form runs at is one lower than %g's, because both forms spend one of the
-// digits on a leading zero or a point.
-// Which of the two forms, and this is after the rounding on purpose.  The
-// exponent C compares against the precision is the one the value has *after*
-// being rounded to that many digits, and 9.5 at one digit is 10, so its exponent
-// is 1, 1 is at the precision, and %g gives 1e+001 and not 10.  Deciding before
-// the rounding, with the exponent the digits had going in, gave 10.
-mod fmtGStyle() {
-  if fmtK < -4 || fmtG0 <= fmtK {
-    fmtGToExp = true
-    if fmtStrip {
-      fmtState = 36
-    } else {
-      fmtState = 29
-    }
-  } else {
-    fmtP = fmtG0 - 1 - fmtK
-    fmtGToExp = false
-    fmtInt = ""
-    fmtState = 15
-  }
-}
-
-
-// Trailing zeros off the fraction, and the point with them when nothing is left
-// after it: 1.2300 is 1.23 and 1.000 is 1.  Not the integer part -- %g of 100 is
-// 100, not 1 -- so the zeros stop at the point.
-mod fmtGStrip() {
-  let n = fmtBody.Length()
-  let last = fmtBody.Substring(n - 1, 1)
-  let dot = fmtBody.Find(".", true, 0)
-  if last == "0" && 0 <= dot && dot < n - 1 {
-    fmtBody = fmtBody.Substring(0, n - 1)
-  } else {
-    if last == "." {
-      fmtBody = fmtBody.Substring(0, n - 1)
-    }
-    fmtPre = ""
-    fmtState = if fmtGToExp then 29 else 6
-  }
-}
-
-// The entry, as %f's: the argument, the sign, the precision.  14 is the ceiling
-// and not an arbitrary one -- the mantissa is p+1 digits read as one integer,
-// and ten of them is past 2^53.
-mod fmtConvExp() {
-  fmtArgI = fmtArgI + 1
-  let ab = fmtArgAt()
-  if fmtArgI > fmtArgs {
-    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
-  } else {
-    let t = vtag[ab]
-    if t != 1 && t != 6 {
-      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
-             .. typeName(t) .. ")")
-    } else {
-      fmtNeg = vnum[ab] < 0.0
-      if fmtNeg {
-        fmtV = 0.0 - vnum[ab]
-      } else {
-        fmtV = vnum[ab]
-      }
-      fmtP = if fmtPrec < 0 then 6 else fmtPrec
-      fmtInt = ""
-      fmtFr = ""
-      // every one of these is per conversion, not per program: fmtExp left over
-      // from the last one is why two %e in a print gave e+00000
-      fmtExp = ""
-      fmtSticky = false
-      fmtIsG = false
-      fmtUpperE = fmtCh == "E"
-      if fmtV == 0.0 {
-        // 0 is 0.000000e+00 whatever the precision, and the exponent is a
-        // positive zero however the value was signed
-        fmtBody = (if fmtNeg then "-0" else "0")
-        if 0 < fmtP {
-          fmtBody = fmtBody .. "." .. ZEROS16.Substring(0, fmtP)
-        }
-        fmtBody = fmtBody .. (if fmtUpperE then "E+000" else "e+000")
-        fmtPre = ""
-        fmtState = 6
-      } else if 14 < fmtP {
-        vmFail("precision above 14 cannot be formatted exactly on this chip")
-      } else if 9007199254740992.0 <= fmtV {
-        vmFail("number too large to format exactly on this chip")
-      } else {
-        fmtIP = floor(fmtV)
-        fmtNz = 0
-        fmtLz = -1
-        // The walk below multiplies whatever pair it finds, so the fraction has
-        // to be in it before the first state, and it has to be written into
-        // fmtDd directly: a var this state writes is not what a later line of
-        // the same state reads, so every fraction digit of 1.5 came out 0.
-        fmtDd[0] = fmtV - floor(fmtV)
-        fmtDd[1] = 0.0
-        fmtNxt = 21
-        fmtState = 20
-      }
-    }
-  }
-}
-
-// The integer part's digits, then the fraction's.  One state to hand the digit
-// walk its next state, so the walk itself stays the one %f uses.
-mod fmtIntStart() {
-  fmtFNDigits()
-}
-
 // The integer part's digits, then the fraction's.  The fraction is exact for
 // about fifteen digits and not the sixteenth, so the walk stops at the round
 // digit and what is left in the double-double is the sticky bit -- which is why
@@ -5680,351 +7154,6 @@ mod fmtIntStart() {
 mod fmtEFracMul() {
   fmtDdMul(fmtDd[0], fmtDd[1], 10.0)
   fmtState = 22
-}
-
-mod fmtEFracDig() {
-  let d = floor(fmtDd[0])
-  // the character is its own let, as fmtDigit does it: the right-hand side of an
-  // assignment is a value gate, and it sees the value the same mod has just
-  // written, so an inline FromCharCode(48 + d) re-read floor(fmtDd[0]) after
-  // fmtDd[0] had been reduced and every digit came out 0
-  let ch = FromCharCode(48 + d).Character
-  fmtDd[0] = fmtDd[0] - d
-  fmtFr = fmtFr .. ch
-  if fmtLz < 0 && d != 0 {
-    fmtLz = fmtNz
-  }
-  fmtNz = fmtNz + 1
-  fmtState = 31
-}
-
-// Whether the walk goes on, in a state of its own.  A value of a hundred or
-// more has all its significant digits in the integer part, so it only has to
-// reach the round digit: p+2 digits less the ones already there.  Below one it
-// has to get past the leading zeros first, which it cannot know until the first
-// nonzero turns up.  The test cannot live at the end of the walk's own chain:
-// there it is a nested if under a mod call, and the state write in it is
-// dropped, so the walk never stopped and %.2e of 0.000123 ran until the ticks
-// ran out.
-mod fmtEFracMore() {
-  if 16 <= fmtNz {
-    // The double-double carries about sixteen fraction digits exactly and the
-    // walk has not found a nonzero one in that many, so the value's first
-    // significant digit is further down than the digits are the value's own.
-    // Without this the walk never ends: %.2e of 1e-300 ran until the ticks ran
-    // out, and a value that cannot be converted should say so.
-    vmFail("value too small to format exactly on this chip")
-  } else if fmtInt == "" {
-    if fmtLz < 0 || fmtNz < fmtLz + fmtP + 2 {
-      fmtState = 21
-    } else {
-      fmtState = 23
-    }
-  } else {
-    if fmtNz < fmtP + 2 - fmtInt.Length() {
-      fmtState = 21
-    } else {
-      fmtState = 23
-    }
-  }
-}
-
-// The exponent, and the string the digits are read from.  The first significant
-// digit is the integer part's first when there is one -- an integer part has no
-// leading zeros -- and otherwise the first nonzero fraction digit, which the
-// walk already counted, so nothing here has to scan.
-mod fmtEJoin() {
-  fmtAll = fmtInt .. fmtFr
-  fmtPt = fmtInt.Length()
-  if fmtInt == "" {
-    fmtS = fmtLz
-  } else {
-    fmtS = 0
-  }
-  fmtK = fmtPt - 1 - fmtS
-  if fmtLz < 0 {
-    fmtLz = fmtS
-  }
-  fmtMI = 0
-  fmtM = 0.0
-  // %g reads the same mantissa %e does, at one place fewer, and chooses its form
-  // once the rounding has given the exponent it compares against the precision
-  fmtState = 24
-}
-
-// One digit of the mantissa per state, the character in one and the number in
-// the next: a string returned from a mod compares equal to the right text and
-// its ToCharCode reads 0, so the code has to travel through a variable and a
-// tick.  The cursor counts from the first significant digit, and p+1 of them
-// make the mantissa.
-mod fmtEFetch() {
-  fmtD_ = fmtAll.Substring(fmtS + fmtMI, 1).ToCharCode().Codepoint - 48
-  fmtState = 25
-}
-
-mod fmtEBuild() {
-  fmtM = fmtM * 10.0 + fmtD_
-  fmtMI = fmtMI + 1
-  if fmtMI <= fmtP {
-    fmtState = 24
-  } else {
-    fmtSI = 0
-    fmtState = 32
-  }
-}
-
-// Whether anything nonzero follows the round digit, one character per state.
-// The double-double's leftover is not the whole answer: when the round digit is
-// still inside the integer part -- 916506699492 at two places rounds on the 5
-// and the 066 behind it are what say it is above the tie -- the walk stopped
-// before the fraction and the leftover is zero.  So the digits after the round
-// digit are read from the string as well, and either source is enough.
-mod fmtESticky() {
-  if fmtS + fmtP + 2 + fmtSI < fmtAll.Length() {
-    if fmtAll.Substring(fmtS + fmtP + 2 + fmtSI, 1) != "0" {
-      fmtSticky = true
-      fmtState = 26
-    } else {
-      fmtSI = fmtSI + 1
-    }
-  } else {
-    fmtState = 26
-  }
-}
-
-// The round digit is the one after the mantissa, and whether anything nonzero
-// follows it decides a tie.  A carry out of the mantissa is 10^p with the
-// exponent up by one, which is 9.999e5 becoming 1.000e6.
-mod fmtERound() {
-  let rd = fmtAll.Substring(fmtS + fmtP + 1, 1).ToCharCode().Codepoint - 48
-  let last = fmtM - floor(fmtM / 10.0) * 10.0
-  let odd = last - floor(last / 2.0) * 2.0
-  let sticky = fmtSticky || fmtDd[0] != 0.0 || fmtDd[1] != 0.0
-  if rd > 5 || (rd == 5 && (sticky || odd == 1.0)) {
-    fmtM = fmtM + 1.0
-    if 10.0 ** (fmtP + 1.0) <= fmtM {
-      fmtM = 10.0 ** (fmtP + 0.0)
-      fmtK = fmtK + 1
-    }
-  }
-  fmtNz = 0
-  // the mantissa's digits go into the same string the fraction's came out in,
-  // so it has to be emptied: left alone, %e of 1.5 printed thirteen zeros
-  fmtFr = ""
-  fmtState = 27
-}
-
-// The mantissa's trailing p digits, least significant first as everywhere else,
-// then the point and the leading digit in the state after.
-mod fmtEMant() {
-  if fmtNz < fmtP {
-    let q = floor(fmtM / 10.0)
-    let d = toInt(fmtM - q * 10.0)
-    let ch = FromCharCode(48 + d).Character
-    fmtFr = ch .. fmtFr
-    fmtM = q
-    fmtNz = fmtNz + 1
-  } else {
-    fmtLead = toInt(fmtM)
-    fmtState = 28
-  }
-}
-
-// The mantissa, the point and the sign.  The point goes after the leading
-// digit, which is what %e and %g's %e arm both want; %g's other arm is the %f
-// conversion with a precision of its own, not a different way of spelling this
-// one.  # keeps the point even with no places after it, so %#.0e of 1.5 is
-// 2.e+000 and not 2e+000.
-mod fmtEMantEnd() {
-  if fmtNeg {
-    fmtBody = "-" .. FromCharCode(48 + fmtLead).Character
-  } else if fmtPlus == 1 {
-    fmtBody = "+" .. FromCharCode(48 + fmtLead).Character
-  } else if fmtSpace == 1 {
-    fmtBody = " " .. FromCharCode(48 + fmtLead).Character
-  } else {
-    fmtBody = FromCharCode(48 + fmtLead).Character
-  }
-  if 0 < fmtP {
-    fmtBody = fmtBody .. "." .. fmtFr
-  } else if fmtHash == 1 {
-    fmtBody = fmtBody .. "."
-  }
-  fmtENum = if fmtK < 0 then 0 - fmtK else fmtK
-  fmtNz = 0
-  if fmtIsG {
-    fmtState = 34
-  } else {
-    fmtState = 29
-  }
-}
-
-// The exponent, three digits with a sign.  Three, not C's two: PUC 5.5 formats
-// the floats itself rather than through the platform's printf, and measures
-// %.3e of zero at ten characters, which is 0.000e+000.  Every double's exponent
-// fits in three digits -- the largest is 308 -- so the width is fixed and there
-// is no loop for it.
-// The exponent's digits, one per state, most significant first.  Each arm says
-// where to go before it does its work: a state write after a mod call in the
-// deepest arm of a chain this deep is dropped, and the walk then wrote its zero
-// over and over -- an exponent of zero came out as e+00000.  Two at a time
-// would be fewer states, but FromCharCode(48 + d) is one character, so an
-// exponent past 99 came out as e-1< and e-2w.
-mod fmtEExpDig() {
-  if fmtENum >= 10 {
-    fmtState = 29
-    let q = floor(fmtENum / 10.0)
-    let ch = FromCharCode(48 + toInt(fmtENum - q * 10.0)).Character
-    fmtExp = ch .. fmtExp
-    fmtENum = q
-  } else {
-    fmtState = 30
-    let ch1 = FromCharCode(48 + fmtENum).Character
-    fmtExp = ch1 .. fmtExp
-  }
-}
-
-mod fmtEExpEnd() {
-  // three digits, whatever the exponent: one is 00, two is 0N.  Two pads, since
-  // no double's exponent passes 308, and each pad is its own write so the second
-  // sees the first's result.
-  if fmtExp.Length() < 3 {
-    fmtExp = "0" .. fmtExp
-  }
-  if fmtExp.Length() < 3 {
-    fmtExp = "0" .. fmtExp
-  }
-  if fmtK < 0 {
-    fmtBody = fmtBody .. (if fmtUpperE then "E-" else "e-") .. fmtExp
-  } else {
-    fmtBody = fmtBody .. (if fmtUpperE then "E+" else "e+") .. fmtExp
-  }
-  fmtPre = ""
-  fmtState = 6
-}
-
-// %f %e %g, which dispatch apart from fmtConv's chain: that chain was already
-// at the edge of what holds, and two more arms in it stopped the %d arm's write
-// from taking effect.
-mod fmtConvFloatish() {
-  if fmtCh == "f" {
-    fmtConvFloat()
-  } else if fmtCh == "e" || fmtCh == "E" {
-    fmtConvExp()
-  } else {
-    fmtConvG()
-  }
-}
-
-// %f: the value scaled by its precision and rounded to an integer, which is
-// then read out one digit per tick with the point put back.  The scale is the
-// whole difficulty: a double times a power of ten is not the exact product
-// (0.15 * 10 is 1.5, and the exact product is 1.4999999999999999944..., so the
-// one-rounding version prints 0.2 where PUC prints 0.1), and a rounded product
-// cannot say which side of a .5 it landed on.  So the product is carried in a
-// double-double: two doubles holding 106 bits, and the tie is read off the sign
-// of the half the single multiply dropped.  tools/fmtdiff.py measures what the
-// cheap version costs: 0.17% of the values that fit come out with the wrong
-// last digit, and they are 0.05, 0.15, 344.95 -- the values programs format.
-var fmtV: float = 0.0         // |the argument|
-var fmtDd: float[]           // the double-double: [0] the high half, [1] the low
-var fmtIP: float = 0.0        // the integer part, exact while it is below 2^53
-var fmtF: float = 0.0         // the fraction scaled by the precision
-var fmtInt: string = ""       // its digits, least significant first
-var fmtFr: string = ""        // and the fraction's
-var fmtP: int = 0             // the precision in force, %f's 6 when none given
-var fmtNxt: int = 17          // where the integer digit walk goes when it ends
-
-// The double-double lives in an array, fmtDd[0] and fmtDd[1], and not in two
-// scalars.  As scalars it did not survive being read back: with fmtConvExp
-// seeding the pair and the walk reducing it, the compiler's shared Get per var
-// handed the digit state the seeded value instead of the multiplied one, and
-// every fraction digit came out 0.  Arrays are how the rest of the chip passes a
-// value a mod wrote to a state that runs later.
-mod fmtDdMul(hi: float, lo: float, c: float) {
-  let ph = hi * c
-  // 2^27 + 1 splits each operand into halves a multiply cannot mix, so the
-  // low half of the product comes out of four small products
-  let ca = 134217729.0 * hi
-  let ahi = ca - (ca - hi)
-  let alo = hi - ahi
-  let cb = 134217729.0 * c
-  let bhi = cb - (cb - c)
-  let blo = c - bhi
-  let pe = ((ahi * bhi - ph) + ahi * blo + alo * bhi) + alo * blo
-  let t = pe + lo * c
-  // two-sum, so s is the rounded sum and the rest of it exactly
-  let s = ph + t
-  let bb = s - ph
-  fmtDd[0] = s
-  fmtDd[1] = (ph - (s - bb)) + (t - bb)
-}
-
-// The entry: the argument, the sign, and the precision.  15 is the ceiling and
-// not an arbitrary one -- 10^15 is the last power of ten a double holds
-// exactly, and the double-double carries 53 bits of guard beyond it, so a
-// precision past that would be rounding a number that is not the value.
-// %e and %g, and why they are not here yet.  %f needed a double-double because
-// it scales by the precision; %e cannot do that at all, because the mantissa is
-// the value divided by 10^k and no division by ten is exact -- 1/10 is not even
-// representable.  So the work is a digit stream instead, and the shape it takes
-// is settled:
-//
-//   - the integer part's digits come off fmtFNDigits as they do here, and the
-//     fraction's come off a dd multiplied by ten per digit, which is exact for
-//     about fifteen of them and not the sixteenth -- so a value whose first
-//     significant digit is further down than that is a range error, the same
-//     kind as the two limits above.
-//   - the two digit runs join into one string with the point's index beside
-//     them, the first nonzero digit gives the exponent (index - (index of the
-//     point) + 1), and the mantissa is the p+1 digits from there read as one
-//     integer, so a carry out of them is +1 on the exponent rather than a walk
-//     back through the digits.
-//   - the rounding is the same two-half test as %f's, on the digit after the
-//     mantissa, with the dd's leftover as the sticky bit.  That leftover is why
-//     the fraction is extracted to exactly one digit past the round position:
-//     one more and the sticky needs a scan of the string, one fewer and the last
-//     digit read is a rounded one.
-//   - the multiply and the digit read cannot share a state, for the reason above,
-//     so it is two states and about thirty ticks per conversion's fraction.
-//   - %g is %e and %f chosen by the exponent (e when it is below -4 or at least
-//     the precision, f otherwise, at p-1-k places), with trailing zeros dropped
-//     unless # is given and a precision of 0 read as 1.  The trailing-zero strip
-//     is one more one-character-per-tick state.
-//
-// tools/fmtsweep.py takes the conversion letter as its second argument, so
-// `python -u tools/fmtsweep.py 64 e` is the same check for %e when it lands.
-mod fmtConvFloat() {
-  fmtArgI = fmtArgI + 1
-  let ab = fmtArgAt()
-  if fmtArgI > fmtArgs {
-    vmFail("bad argument #" .. fmtArgName() .. " to 'format' (no value)")
-  } else {
-    let t = vtag[ab]
-    if t != 1 && t != 6 {
-      vmFail("bad argument #" .. fmtArgName() .. " to 'format' (number expected, got "
-             .. typeName(t) .. ")")
-    } else {
-      fmtNeg = vnum[ab] < 0.0
-      if fmtNeg {
-        fmtV = 0.0 - vnum[ab]
-      } else {
-        fmtV = vnum[ab]
-      }
-      fmtP = if fmtPrec < 0 then 6 else fmtPrec
-      fmtInt = ""
-      fmtFr = ""
-      fmtIsG = false
-      if fmtV == 0.0 {
-        fmtState = 17
-      } else if 15 < fmtP {
-        vmFail("precision above 15 cannot be formatted exactly on this chip")
-      } else if 9007199254740992.0 <= fmtV {
-        vmFail("number too large to format exactly on this chip")
-      } else {
-        fmtState = 15
-      }    }
-  }
 }
 
 // Scale the *fraction* by the precision.  Scaling the whole value instead -- one
@@ -6040,415 +7169,29 @@ mod fmtFScale() {
   fmtState = 19
 }
 
-// Round the scaled fraction to its p digits, ties to even, and let a carry out
-// of the fraction bump the integer part.  The decision reads the two halves
-// separately, because that is the only way to see the difference: hi - fl is
-// exact, so `rh == 0.5` says the high half is exactly a half and the low half
-// says which side of it the value is on.  0.05 at one place is the case that
-// needs it -- the high half is 0.5 and the low half is 2.8e-17, so it is a hair
-// above the tie and PUC prints 0.1, not 0.0.
-mod fmtFRound() {
-  let fl = floor(fmtDd[0])
-  let rh = fmtDd[0] - fl
-  // Which digit the tie looks at is the last one the conversion keeps, and with
-  // no precision there are no fraction digits to keep: it is the units digit of
-  // the integer part.  Taking the fraction's instead made every %.0f tie round
-  // down, so 1.5 came out 1 where PUC has 2.
-  let last = if 0 < fmtP then fl else fmtIP - floor(fmtIP / 10.0) * 10.0
-  let odd = last - floor(last / 2.0) * 2.0
-  fmtF = if rh > 0.5 then fl + 1.0 else if rh < 0.5 then fl
-    else if fmtDd[1] > 0.0 then fl + 1.0 else if fmtDd[1] < 0.0 then fl
-    else if odd == 1.0 then fl + 1.0 else fl
-  // 9.999 at three places rounds to 10.000: the fraction carries into the
-  // integer part, which is an exact add while it is below 2^53.  The limit is
-  // the precision's own 10^p -- fixed at 10^15 it never fired, and %.2f of 9.999
-  // came out 9.999 with a point in it.
-  if 10.0 ** (fmtP + 0.0) <= fmtF {
-    fmtF = 0.0
-    fmtIP = fmtIP + 1.0
-  }
-  if 9007199254740992.0 <= fmtIP {
-    vmFail("number too large to format exactly on this chip")
+// A micro-step gate is finished: its results are at nxDst and retCountV counts
+// them.  Normally the instruction steps past itself.  A gate a pcall dispatched
+// in place hands them to pcallEnd instead, which moves them up one and writes
+// the pcall's own true (or its handler's false) below -- so the protected call
+// is only completed here, once the work is actually done.  The other outcome
+// never arrives: a machine that raises goes to the unwind with pcallBad set, and
+// pcallStep answers false, message.
+mod nxDone() {
+  if pcallRan {
+    pcallRan = false
+    pcallEnd(nxDst, if 0 <= retCountV then retCountV else 0, 0)
   } else {
-    fmtFr = ""
-    fmtNxt = 17
-    fmtState = 16
+    vmPc = nxPc + 1
   }
 }
 
-// One fraction digit per tick, least significant first, as %d does.
-mod fmtFFDigits() {
-  if fmtF < 1.0 {
-    fmtState = 20
-  } else {
-    let q = floor(fmtF / 10.0)
-    let d = toInt(fmtF - q * 10.0)
-    fmtFr = FromCharCode(48 + d).Character .. fmtFr
-    fmtF = q
-  }
-}
-
-// One integer digit per tick.  The integer part of a double below 2^53 is exact
-// and each division by ten is exact too -- the quotient is at least 0.1 away
-// from a whole number, which is far more than the division's own rounding -- so
-// these are the value's digits and not approximations of them.  fmtNxt says
-// where to go when they run out: %f pads the fraction next, %e walks the
-// fraction's.  It cannot be a parameter, because a mod cannot write one to a
-// var -- four placeholders and a refusal to lower.
-mod fmtFNDigits() {
-  if fmtIP < 1.0 {
-    fmtState = fmtNxt
-  } else {
-    let q = floor(fmtIP / 10.0)
-    let d = toInt(fmtIP - q * 10.0)
-    fmtInt = FromCharCode(48 + d).Character .. fmtInt
-    fmtIP = q
-  }
-}
-
-// Pad the fraction out to the precision, so %.2f of 0.4 is 0.40 and not 0.4.  The
-// zeros come from a constant with a Substring rather than a state: there are at
-// most sixteen of them and a state each would cost a tick apiece.
-mod fmtFPad() {
-  let n = fmtFr.Length()
-  if n < fmtP {
-    fmtFr = ZEROS16.Substring(0, fmtP - n) .. fmtFr
-  }
-  fmtState = 18
-}
-
-// The point between the two halves, the leading zero, and the sign.  A state of
-// its own because the lengths it reads are the ones the pad and the digit loops
-// have just written: a value gate fed by a variable the same mod writes reads
-// the new one, so doing this with them would splice the strings at the wrong
-// offsets.
-mod fmtFPoint() {
-  if fmtInt == "" {
-    fmtInt = "0"
-  }
-  if 0 < fmtP {
-    fmtBody = fmtInt .. "." .. fmtFr
-  } else {
-    fmtBody = fmtInt
-  }
-  if fmtNeg {
-    fmtBody = "-" .. fmtBody
-  } else if fmtPlus == 1 {
-    fmtBody = "+" .. fmtBody
-  } else if fmtSpace == 1 {
-    fmtBody = " " .. fmtBody
-  } else if fmtHash == 1 && fmtP == 0 {
-    // # keeps the point even with no places, on this arm as on %e's: %#.1g of
-    // 1.5 is 2. and not 2
-    fmtBody = fmtBody .. "."
-  }
-  fmtPre = ""
-  // %g's %f arm strips its trailing zeros on the way out
-  if fmtIsG && fmtStrip {
-    fmtState = 36
-  } else {
-    fmtState = 6
-  }
-}
-
-// Which flags each conversion takes, as PUC's table has it.  Returns 0 when the
-// spec is good, 1 for a flag the conversion does not take, 2 for a %q with any
-// modifier at all -- which PUC words differently, and without the spec text.
-//   - + space # 0  width  prec
-//   d i u           y y y   n y  y     y
-//   f e g           y y y   y y  y     y
-//   x X o           y n n   y y  y     y
-//   c               y n n   n n  y     n
-//   s               y n n   n y  y     y
-//   q               n n n   n n  n     n
-mod fmtSpecBad() -> int {
-  if fmtCh == "q" {
-    if fmtMinus == 1 || fmtPlus == 1 || fmtSpace == 1 || fmtHash == 1
-        || fmtZero == 1 || 0 < fmtWidth || 0 <= fmtPrec {
-      return 2
-    }
-  } else if fmtCh == "c" {
-    if fmtHash == 1 || fmtPlus == 1 || fmtSpace == 1 || fmtZero == 1 || 0 <= fmtPrec {
-      return 1
-    }
-  } else if fmtCh == "s" {
-    if fmtHash == 1 || fmtPlus == 1 || fmtSpace == 1 {
-      return 1
-    }
-  } else if fmtCh == "x" || fmtCh == "X" || fmtCh == "o" {
-    if fmtPlus == 1 || fmtSpace == 1 {
-      return 1
-    }
-  } else if fmtCh == "f" || fmtCh == "e" || fmtCh == "E" || fmtCh == "g"
-      || fmtCh == "G" {
-    // the three float conversions take every flag, and only the integer ones
-    // refuse #: this arm is why %#.0g was an invalid specification
-    return 0
-  } else if fmtHash == 1 {
-    return 1
-  }
-  return 0
-}
-
-// One digit of a radix conversion, with the division done by hand: the host's
-// floor truncates toward zero, so a negative quotient never goes negative and
-// %x of -1 came out as fifteen zeros.  The quotient is a truncating cast and a
-// negative remainder is carried into the digit and taken off the quotient, which
-// is floor division; the quotient then settles at -1 and the digit count is what
-// stops the loop, which is where the 64-bit two's complement comes from.
-// One digit of a radix conversion, with the division done by hand: the host's
-// floor truncates toward zero, so a negative quotient never goes negative and
-// %x of -1 came out as fifteen zeros.  The quotient is a truncating cast and a
-// negative remainder is carried into the digit and taken off the quotient, which
-// is floor division; the quotient then settles at -1 and the digit count is what
-// stops the loop, which is where the 64-bit two's complement comes from.  It
-// leaves the digit in fmtQ_ and fmtDigitPut turns it into a character.
-mod fmtRadixDigit() {
-  let q = toInt(fmtNum_ / fmtBase_)
-  let r = toInt(fmtNum_ - q * fmtBase_)
-  if r < 0 {
-    fmtQ_ = r + fmtBaseI
-    fmtNum_ = q - 1.0
-  } else {
-    fmtQ_ = r
-    fmtNum_ = q
-  }
-  fmtState = 33
-}
-
-// Prepend the digit the state before worked out.  A state of its own because the
-// digit and the quotient both come from one var, and a mod that writes that var
-// has its own expressions re-evaluated against the new value: with the character
-// built in the same state, %d of 42 came out 00, because the digit and the
-// quotient were both recomputed after fmtNum_ had become 4.  Nothing here is
-// derived from the var this writes.
-mod fmtDigitPut() {
-  let ch = if fmtBase_ == 16.0 then if fmtUpper then HEXDIG_U.Substring(fmtQ_, 1)
-    else HEXDIG.Substring(fmtQ_, 1) else FromCharCode(48 + fmtQ_).Character
-  fmtBody = ch .. fmtBody
-  fmtState = 7
-}
-
-// One digit per tick.  Digits come out least significant first and are
-// prepended, so no array is needed to reverse them.  Base 10 divides a
-// non-negative value; the radix bases divide the signed one.
-mod fmtDigit() {
-  if fmtBase_ == 10.0 {
-    if fmtNum_ < 1.0 {
-      fmtState = 13
-    } else {
-      let q = floor(fmtNum_ / 10.0)
-      fmtQ_ = toInt(fmtNum_ - q * 10.0)
-      fmtNum_ = q
-      fmtState = 33
-    }
-  } else if fmtNum_ > 0.0 || fmtDigits < fmtDigitsMax {
-    fmtDigits = fmtDigits + 1
-    fmtRadixDigit()
-  } else {
-    fmtState = 13
-  }
-}
-
-// The last digit: the zero a bare zero formats to (not with %.0), then the
-// precision zeros.  The # prefix and the sign are fmtSign's business, because the
-// prefix goes in front of the precision padding: %#.3x of 255 is 0x0ff, not 0xff.
-mod fmtDigitEnd() {
-  if fmtBody == "" && fmtPrec != 0 {
-    fmtBody = "0"
-  }
-  if 0 < fmtPrec && fmtPrec > fmtBody.Length() {
-    fmtPad = fmtPrec - fmtBody.Length()
-    fmtPadAcc = ""
-    fmtState = 9
-  } else {
-    fmtSign()
-  }
-}
-
-// The sign for %d %i %u, and the 0x / 0X / 0 prefix for %x %X %o.  The radix
-// conversions have no sign -- they print the two's complement -- and # adds
-// nothing for a zero, in either base.
-mod fmtSign() {
-  if fmtBase_ == 10.0 {
-    if fmtNeg {
-      fmtBody = "-" .. fmtBody
-    } else if fmtPlus == 1 {
-      fmtBody = "+" .. fmtBody
-    } else if fmtSpace == 1 {
-      fmtBody = " " .. fmtBody
-    }
-  } else {
-    fmtRadixPrefix()
-  }
-  fmtPre = ""
-  fmtState = 6
-}
-
-// The top octal digit of a negative value, and the 0x / 0X / 0 prefix the # flag
-// asks for.  # adds nothing for a zero, in either base.
-mod fmtRadixPrefix() {
-  if fmtNeg && fmtCh == "o" {
-    fmtBody = "1" .. fmtBody
-  }
-  if fmtHash == 1 && fmtBody != "" && fmtBody != "0" {
-    if fmtCh == "o" {
-      fmtBody = "0" .. fmtBody
-    } else if fmtUpper {
-      fmtBody = "0X" .. fmtBody
-    } else {
-      fmtBody = "0x" .. fmtBody
-    }
-  }
-}
-
-// One precision zero per tick: WireScript has no loop to unroll for it.  Named
-// for the state, not fmtZero: a mod and a var sharing a name silently
-// miscompiles, so this must not be called fmtZero.
-mod fmtPrecZero() {
-  fmtPad = fmtPad - 1
-  fmtPadAcc = fmtPadAcc .. "0"
-  if fmtPad <= 0 {
-    fmtBody = fmtPadAcc .. fmtBody
-    fmtSign()
-  }
-}
-
-// One byte per tick, escaped the way PUC escapes it.  The byte comes from
-// fmtQFetch, a state earlier, for the same reason fmtLit does not read the
-// cursor itself.
-mod fmtQuoted() {
-  if fmtEof {
-    fmtBody = fmtBody .. "\""
-    fmtPre = ""
-    fmtState = 6
-  } else {
-    let b = fmtCh.ToCharCode().Codepoint
-    let piece = fmtQuoteByte(b)
-    fmtQPos = fmtQPos + 1
-    fmtBody = fmtBody .. piece
-    fmtState = 11
-  }
-}
-
-// Split the sign or 0x prefix off the body, since zero padding goes after it,
-// and decide how the width is filled.
-mod fmtFinish() {
-  let c1 = if 0 < fmtBody.Length() then fmtBody.Substring(0, 1) else ""
-  if c1 == "-" || c1 == "+" || c1 == " " {
-    fmtPre = c1
-    fmtBody = fmtBody.Substring(1, fmtBody.Length() - 1)
-  } else {
-    fmtPre = ""
-  }
-  if fmtBody.Length() >= 2 {
-    let c2 = fmtBody.Substring(0, 2)
-    if c2 == "0x" || c2 == "0X" {
-      fmtPre = fmtPre .. c2
-      fmtBody = fmtBody.Substring(2, fmtBody.Length() - 2)
-    }
-  }
-  // the - flag wins over the 0 flag: %-06d pads with spaces on the right
-  if fmtMinus == 1 {
-    fmtPadLeft = true
-  } else {
-    fmtPadLeft = false
-  }
-  if fmtZero == 1 {
-    fmtPadZero = true
-  } else {
-    fmtPadZero = false
-  }
-  if fmtPadLeft {
-    fmtPadZero = false
-  }
-  fmtPadAcc = ""
-  fmtPad = fmtWidth - fmtPre.Length() - fmtBody.Length()
-  if fmtPad <= 0 {
-    fmtOut = fmtOut .. fmtPre .. fmtBody
-    // back to the walk through the fetch: fmtCh still holds the conversion
-    // character, and entering the literal state directly appended it
-    fmtTo = 0
-    fmtState = 10
-  } else {
-    fmtState = 5
-  }
-}
-
-// One padding character per tick.  Three sides, because the sign goes in a
-// different place in each: right-justified spaces go before it (%6d of -42 is
-// "   -42"), zero padding after it ("%06d" is "-00042"), and left justification
-// after the number.  The side is read at the top level of the mod and each arm
-// carries its own end-of-loop test, because a nested condition on a file-level
-// var is unreliable in a mod this inlined (see the header).
-mod fmtPadStep() {
-  fmtPad = fmtPad - 1
-  if fmtPadLeft {
-    fmtPadAcc = fmtPadAcc .. " "
-    if fmtPad <= 0 {
-      fmtOut = fmtOut .. fmtPre .. fmtBody .. fmtPadAcc
-      fmtTo = 0
-      fmtState = 10
-    }
-  } else if fmtPadZero {
-    fmtPadAcc = fmtPadAcc .. "0"
-    if fmtPad <= 0 {
-      fmtOut = fmtOut .. fmtPre .. fmtPadAcc .. fmtBody
-      fmtTo = 0
-      fmtState = 10
-    }
-  } else {
-    fmtPadAcc = fmtPadAcc .. " "
-    if fmtPad <= 0 {
-      fmtOut = fmtOut .. fmtPadAcc .. fmtPre .. fmtBody
-      fmtTo = 0
-      fmtState = 10
-    }
-  }
-}
-
-// The dispatch, in two halves.  One chain for all of it stops working once it
-// is this long: the arms near the top quietly stop taking effect, and %d of 42
-// came out 00 because the integer digit state was never entered.  Sixteen arms
-// each is what holds, which is the same lesson as the conversion chain.
-mod fmtStep() {
-  if fmtState < 16 {
-    fmtStepA()
-  } else {
-    fmtStepB()
-  }
-}
-
-mod fmtStepA() {
-  if fmtState == 0 {
-    fmtLit()
-  } else if fmtState == 1 {
-    fmtFlag()
-  } else if fmtState == 2 {
-    fmtWidthStep()
-  } else if fmtState == 3 {
-    fmtPrecStep()
-  } else if fmtState == 4 {
-    fmtConv()
-  } else if fmtState == 5 {
-    fmtPadStep()
-  } else if fmtState == 6 {
-    fmtFinish()
-  } else if fmtState == 7 {
-    fmtDigit()
-  } else if fmtState == 8 {
-    fmtQuoted()
-  } else if fmtState == 9 {
-    fmtPrecZero()
-  } else if fmtState == 10 {
-    fmtFetch()
-  } else if fmtState == 11 {
-    fmtQFetch()
-  } else if fmtState == 13 {
-    fmtDigitEnd()
-  } else {
-    fmtFScale()
-  }
+mod fmtDone() {
+  vtag[nxDst] = 2
+  vnum[nxDst] = 0.0
+  vstr[nxDst] = fmtOut
+  retCountV = 1
+  nxActive = false
+  nxDone()
 }
 
 mod fmtStepB() {
@@ -6493,938 +7236,6 @@ mod fmtStepB() {
   } else {
     fmtESticky()
   }
-}
-
-
-// Unlink a slot from its table's insertion chain.
-mod tblUnlink(tid: int, sl: int) {
-  let pv = tPrev[sl]
-  let nx = tNext[sl]
-  if pv != -1 {
-    tNext[pv] = nx
-  } else {
-    tFirst[tid] = nx
-  }
-  if nx != -1 {
-    tPrev[nx] = pv
-  } else {
-    tLast[tid] = pv
-  }
-}
-
-// ==================================================================== patterns
-//
-// string.find, string.match and string.gmatch are C in PUC (lstrlib.c) and are
-// gates here for the same reason: a backtracking matcher wants a stack and a
-// loop, and a Lua program gets neither without a coroutine per match.  gsub's
-// *matcher* is the same gate, called one match at a time by mode 2, but gsub's
-// loop is a library piece (LIB_str_gsub): its replacement can be a Lua function
-// and a gate cannot call one, so the part that has to call back into Lua stays
-// in Lua.  The library piece around find and match is ordinary Lua too (see
-// libStrPat), which is the split PUC itself makes.
-//
-// The shape is the _fmt machine: the gate arm sets the subject, the pattern and
-// where the answers go, raises patGo, and the steps below run one piece per
-// tick until the registers hold PUC's answer.  What is PUC's is the algorithm:
-// lstrlib's match() is recursive, and the recursion here is an explicit stack
-// of continuations (patSl, four ints per entry -- kind, pattern position,
-// subject position, and one spare for %b's depth).
-//
-// The stack holds only what a flat pattern needs:
-//
-//   1  a class item under + or *: the subject position before the item, so a
-//      failed rest can consume one more character and try again
-//   2  a ?: the pattern position past the ?, to carry on with the item skipped
-//   3  %b: the balance depth, to keep counting from where it was
-//
-// Captures work the way PUC's do_match recursion does, with a flat machine
-// keeping what the recursion gets for free.  A capture's number is how many the
-// attempt has opened, and its depth is how many are open now: "(a)(b)" closes the
-// first before it opens the second, so the number is not the depth, and the
-// number of the innermost *open* capture is neither -- that one is a stack,
-// patCapIx.  A quantifier inside a capture gives a character back and runs the
-// ) again, so the ) records that it closed and the rewind opens it again.  A (
-// followed by ) is PUC 5.5's position capture, whose value is where it stands,
-// as a number.
-//
-// Four traps this part paid for, all general enough to be here:
-//   - An int[] does not keep a negative value.  The capture ends were sentinels
-//     of -1 for "open" and -2 for a position capture, and every one of them read
-//     back as 0, so every capture looked like an empty match.  The ends are
-//     stored plus one, with the position case in a flag of its own.
-//   - A local computed from a var the same mod writes is re-derived at its next
-//     use, so patOpen's n = patCapN + 1 became n + 1 when it reached the push
-//     and the first capture's entry pointed at the second one's slot.  Compute
-//     it, use it, and write the var last.
-//   - A quantifier with no item in front of it is PUC's own dead end rather than
-//     an error: max_expand wants at least one match of the character it names.
-//     That is why "(%d+)-" still finds its minus and "a??b" finds nothing.
-//   - A capture's answer does not fit an expression's registers past MAXVALS, so
-//     a find with more captures than that is refused rather than written over
-//     the values after it.
-//
-// The cost is ticks, not gates, and it is worth knowing which is which before
-// making this faster.  The library piece is 130 characters, so a program that
-// names find or match pays about 33 ticks of lexing on every run (4 chars a
-// tick) and two function literals to parse; a find that matches near the front
-// is then five or six states, one tick each.  What costs is the retry: a find
-// that fails tries every start position, and a quantifier that gives characters
-// back walks the pattern again for each one, so a failing find over a long
-// subject is O(n) states and a subject of a few hundred characters is a
-// program's worth of ticks.  The fix when that matters is more states per tick
-// -- call patStep several times in the arm at the top of vmStep, the way
-// lexChunk calls lexStep four times -- not fewer gates.
-//
-// Two more from the first pass, also general:
-//   - A gate may read only the arguments it was given.  A register past nargs
-//     still holds whatever the caller's previous call left in it, so reading
-//     a+4 for an init that was never passed gave a find a boolean init and an
-//     error about argument #3.  Every argument read is guarded by its count.
-//   - An array read that FOLLOWS a var write inside a nested arm loses its Exec
-//     chain when the mod is inlined this many times, and the writes fed by it
-//     quietly never happen: patBack popped an entry and then read its four slots
-//     into patI, patItemP and patQEnd, and only the pop landed.  The slots are
-//     read into locals at the top of the mod now, before anything is written.
-//
-// Mode 2 is the gsub shape: the same answer find gives, plus the capture count
-// in the third register so the loop knows how many of the next nine it must
-// read, and plus the whole match in the first when the pattern captured
-// nothing.  gsub's own loop is PUC's and three of its rules are not the
-// matcher's, which is where the time went when this was ported:
-//   - The unmatched text between one match and the next is copied when the
-//     match lands, not before it, so a find's a can be past the loop's cursor.
-//     A step that does not match copies exactly one character and does not count
-//     as a replacement.
-//   - The loop stops when a match ends where the last one ended, which is
-//     because lstrlib compares e with lastmatch and not because the matcher
-//     refuses the end of the subject: find("abc", "a*", 4) is 4 3, and "aaa" on
-//     "a*" is one replacement for the same reason.
-//   - A leading ^ gives one match: the loop breaks after it, whatever the limit.
-// A function replacement gets the captures, or the whole match when there are
-// none, and not the match and then the captures; a table replacement is keyed
-// by the first capture or by the whole match, and a nil or false value from
-// either keeps the matched text rather than dropping it.  Those last two are
-// lstrlib's push_captures and add_table, measured, not remembered.
-
-const PAT_STACK = 200
-// How many gmatch walks can be live at once: each is a slot in three arrays, and
-// the nesting a program can write is the nesting a chip can afford.  The list
-// resets between programs, so this is not a total-iterations budget.
-const PAT_WALKS = 16
-
-var patGo: bool = false      // one pattern step per burst, like fmtGo
-var patMode: int = 0         // 0 find, 1 match, 2 gsub's one match at a time
-var patSrc: string = ""      // the subject
-var patPat: string = ""      // the pattern, with a leading ^ already skipped
-var patPEnd: int = 0         // and its length
-var patLen: int = 0
-var patI: int = 0            // subject cursor, 0-based
-var patP: int = 0            // pattern cursor, 0-based
-var patStart: int = 0        // where this attempt began
-var patR: int = 0            // the start to try after this one fails
-var patAnchor: bool = false  // the pattern began with ^
-var patPSkip: int = 0        // and the ^ is not part of the pattern proper
-var patPlain: bool = false   // the pattern is a literal
-var patQ: int = 0            // the item's quantifier: 0 none, 1 *, 2 +, 3 -, 4 ?
-var patItemP: int = 0        // where the item under test starts
-var patItemE: int = 0        // and just past it
-var patQEnd: int = 0         // just past the quantifier
-var patQS: int = 0           // the subject position before the item
-var patHit: bool = false     // the last item's verdict
-var patSetP: int = 0         // the set scan's cursor, just past its [
-var patSetC: int = 0         // the character it is testing
-var patSetAny: bool = false  // whether that character is in the set so far
-var patSetSeen: bool = false // whether the set has any text yet
-var patSetPrev: int = 0      // the previous character, for a range
-var patSetHasPrev: bool = false
-var patSetNeg: bool = false  // [^...]
-var patBOpen: string = ""    // %b's two delimiters
-var patBClose: string = ""
-var patBC: int = 0           // and its balance
-var patBFirst: bool = false  // and whether the opening delimiter is still ahead
-var patFPrev: bool = false   // %f's previous-character test
-var patCapS: int[]           // a capture's start, by number
-var patCapE: int[]           // its end plus one, so a zero means "no end yet"
-var patCapP: int[]           // and 1 for a position capture, whose value is where
-                             // it stands rather than what it covers.  None of
-                             // these hold a negative: an int[] does not keep one,
-                             // which is what sentinels of -1 and -2 turned into
-                             // plain zeroes and left every capture reading as an
-                             // empty match.  Zero-plus-one is the encoding that
-                             // works.
-var patCapIx: int[]          // the numbers of the captures open right now, as a
-                             // stack: the innermost one is not a counter, since
-                             // "(a)(b)" closes the first before it opens the
-                             // second, and "((a))" does not
-var patNCap: int = 0         // how many captures this attempt has opened
-var patCapN: int = 0         // and how many are open at this point
-var patAOff: int = 0         // where the answer's captures start
-var patAn: int = 0           // and which one is being written
-var patAdv: int = 1          // how far the item under test moved the cursor:
-                             // one character for everything but a backreference
-var patSp: int = 0           // the backtrack stack's pointer, in ints
-var patSl: int[]
-var patErr: string = ""      // a malformed pattern's message
-var patTid: int = 0          // gmatch's state slot, and how far the walk is
-var patLastTid: int = 0      // the last one made, for an iterator called with
-                             // something that is not a number: PUC's gmatch
-                             // ignores its arguments entirely, so this is the
-                             // closest answer to "f(junk)" when one walk is live
-var patGmS: string[]         // each walk's subject, pattern and cursor
-var patGmP: string[]
-var patGmPos: int[]
-var patGmId: int = 0          // the walk this call is about
-var patGmPhase: int = 0       // 0 make the walk, 1 take a step
-var patGmIni: int = 1         // where the walk starts: gmatch takes an init
-var patAfter: int = 0        // where a finished set scan goes on a match
-var patFailTo: int = 0       // and on a miss
-var patSt: int = 0
-
-// The dispatch, in two halves for the same reason fmtStep is: one chain for
-// fifteen states is at the edge where the arms near the top stop taking effect.
-mod patStep() {
-  if patSt < 9 {
-    patStepA()
-  } else {
-    patStepB()
-  }
-}
-
-mod patStepA() {
-  if patSt == 0 {
-    patStartStep()
-  } else if patSt == 1 {
-    patNextItem()
-  } else if patSt == 2 {
-    patApply()
-  } else if patSt == 3 {
-    patBStep()
-  } else if patSt == 4 {
-    patBack()
-  } else if patSt == 5 {
-    patDone()
-  } else if patSt == 6 {
-    patNextStart()
-  } else if patSt == 7 {
-    patSetStep()
-  } else {
-    patError()
-  }
-}
-
-mod patStepB() {
-  if patSt == 9 {
-    patFPrevStep()
-  } else if patSt == 10 {
-    patFCurStep()
-  } else if patSt == 11 {
-    patGreedy()
-  } else if patSt == 12 {
-    patSetHit()
-  } else if patSt == 13 {
-    patSetRetry()
-  } else if patSt == 14 {
-    patGreedyEnd()
-  } else {
-    patAnswer()
-  }
-}
-
-// A new attempt at patStart: an empty backtrack stack, the pattern back at its
-// first item, and no captures.  The captures go with the attempt, not with the
-// call: PUC's level is per match() and a second start begins with none, which
-// is why "()b" finds its one position capture on the second try and not two.
-mod patStartStep() {
-  patSp = 0
-  patP = patPSkip
-  patI = patStart
-  patNCap = 0
-  patCapN = 0
-  patSt = 1
-}
-
-// The classes PUC's %a %c %d %g %l %p %s %u %w %x mean, on the codes
-// themselves: the host's isalpha is not a gate, and the lexer spells digit and
-// letter out the same way.  A letter that names no class is the character
-// itself, which is how %. and %b and %q work, and an uppercase letter negates.
-mod patClassHit(c: int, code: int, neg: bool) -> bool {
-  if code == 97 {
-    let hit = (65 <= c && c <= 90) || (97 <= c && c <= 122)
-    return if neg then !hit else hit
-  } else if code == 99 {
-    let hit = c < 32 || c == 127
-    return if neg then !hit else hit
-  } else if code == 100 {
-    let hit = 48 <= c && c <= 57
-    return if neg then !hit else hit
-  } else if code == 103 {
-    let hit = 33 <= c && c <= 126
-    return if neg then !hit else hit
-  } else if code == 108 {
-    let hit = 97 <= c && c <= 122
-    return if neg then !hit else hit
-  } else if code == 112 {
-    let hit = 33 <= c && c <= 126 && !(48 <= c && c <= 57) && !(65 <= c && c <= 90)
-      && !(97 <= c && c <= 122)
-    return if neg then !hit else hit
-  } else if code == 115 {
-    let hit = c == 32 || (9 <= c && c <= 13)
-    return if neg then !hit else hit
-  } else if code == 117 {
-    let hit = 65 <= c && c <= 90
-    return if neg then !hit else hit
-  } else if code == 119 {
-    let hit = (48 <= c && c <= 57) || (65 <= c && c <= 90) || (97 <= c && c <= 122)
-    return if neg then !hit else hit
-  } else if code == 120 {
-    let hit = (48 <= c && c <= 57) || (97 <= c && c <= 102) || (65 <= c && c <= 70)
-    return if neg then !hit else hit
-  }
-  let lit = c == code
-  return if neg then !lit else lit
-}
-
-// Set up a set scan for the set whose text starts at p, testing the character
-// code.  The scan is one character of the set per tick and finishes in
-// patSetStep, so this only writes; the caller picks the states it ends in.
-mod patSetBegin(p: int, code: int) {
-  patSetP = p
-  patSetC = code
-  patSetAny = false
-  patSetSeen = false
-  patSetHasPrev = false
-  patSetPrev = 0
-  patSetNeg = false
-  if p < patPEnd && patPat.Substring(p, 1) == "^" {
-    patSetNeg = true
-    patSetP = p + 1
-  }
-}
-
-// The item at pattern position p against the character at subject position s.
-// 0 does not match, 1 does, 2 a set has to be scanned first, 3 the pattern is
-// malformed and patErr says how.  Only the items that can carry a quantifier
-// answer here; %b and %f are patNextItem's business.  patItemE is where the
-// quantifier is read from, which is why a set reports its end when its scan
-// finishes rather than here.
-mod patTestItem(p: int, s: int) -> int {
-  patAdv = 1
-  if s >= patLen || p >= patPEnd {
-    return 0
-  }
-  let sc = patSrc.Substring(s, 1)
-  if patPlain {
-    patItemE = p + 1
-    return if patPat.Substring(p, 1) == sc then 1 else 0
-  }
-  let k = patPat.Substring(p, 1)
-  if k == "[" {
-    patSetBegin(p + 1, sc.ToCharCode().Codepoint)
-    return 2
-  }
-  if k == "%" {
-    if p + 1 >= patPEnd {
-      patErr = "malformed pattern (ends with '%')"
-      return 3
-    }
-    let code = patPat.Substring(p + 1, 1).ToCharCode().Codepoint
-    if 49 <= code && code <= 57 {
-      return patBackref(p, s, code - 48)
-    }
-    let neg = 65 <= code && code <= 90
-    patItemE = p + 2
-    return if patClassHit(sc.ToCharCode().Codepoint, if neg then code + 32 else code, neg) then 1 else 0
-  }
-  patItemE = if k == "." then p + 1 else p + 1
-  if k == "." {
-    return 1
-  }
-  return if k == sc then 1 else 0
-}
-
-// One continuation onto the backtrack stack, or false when it is full.  kind 1
-// is a greedy + or * that has taken at least one character: slot 1 is the
-// item, slot 2 the subject position the rest would resume from, slot 3 the
-// pattern position past the quantifier.  kind 2 is a ?'s matched item, kind 4 a
-// lazy - that has taken one.  A kind 1 entry is re-pushed as it is used, one
-// position further back, which is what makes the rest of the pattern try the
-// longer match first and the shorter ones after it.
-mod patPush(kind: int, p: int, s: int, x: int) -> bool {
-  if patSp + 4 > PAT_STACK {
-    return false
-  }
-  patSl[patSp] = kind
-  patSl[patSp + 1] = p
-  patSl[patSp + 2] = s
-  patSl[patSp + 3] = x
-  patSp = patSp + 4
-  return true
-}
-
-// ( starts a capture, and a ( followed by ) is PUC's position capture: its value
-// is where it stands rather than what it covers, which is why find answers a
-// number there and not a string.  A capture's number is how many the attempt has
-// opened, and patCapN is how many are open *now*: the two are not the same, since
-// "(a)(b)" closes the first before it opens the second, and PUC numbers those one
-// and two.  Each records the start it had, so a rewind puts that back.  Returns
-// the state to run next.
-//
-// The two counters are written last, and n is read from patNCap first: a local
-// computed from a var the same mod writes is re-derived at its next use, so
-// patPush was handed n + 1 and the first capture's entry pointed at the second
-// one's slot.
-mod patOpen() -> int {
-  let n = patNCap + 1
-  let old = patCapS[n]
-  if 32 < n {
-    patErr = "too many captures"
-    return 8
-  }
-  if patP + 1 < patPEnd && patPat.Substring(patP + 1, 1) == ")" {
-    // the ) is part of the item, so it is consumed here and the capture is
-    // already closed: patCapN does not count it
-    if !patPush(6, n, old, 0) {
-      patErr = "pattern too complex"
-      return 8
-    }
-    patCapS[n] = patI
-    patCapE[n] = 0
-    patCapP[n] = 1
-    patP = patP + 2
-    patNCap = n
-  } else {
-    if !patPush(5, n, old, 0) {
-      patErr = "pattern too complex"
-      return 8
-    }
-    patCapS[n] = patI
-    patCapE[n] = 0
-    patCapP[n] = 0
-    patCapIx[patCapN] = n
-    patP = patP + 1
-    patNCap = n
-    patCapN = patCapN + 1
-  }
-  return 1
-}
-
-// ) closes the innermost open capture -- the one on top of patCapIx, whose
-// number is neither the depth nor the count in general -- and records that it
-// did: a quantifier inside the capture gives a character back and runs the )
-// again, which has to find the capture open the second time.  PUC's
-// start_capture is a recursive call and gets that from the recursion; a flat
-// machine has to write it down, and the entry carries the depth to put back.  A
-// ) reached once a capture has been opened is PUC's "invalid pattern capture",
-// and before any has, it is a character that matches nothing, which is where
-// PUC's answers for "a)" and ")" come from.
-mod patClose() -> int {
-  let d = patCapN - 1
-  let c = patCapIx[d]
-  let old = patCapE[c]
-  if !patPush(7, c, old, d + 1) {
-    patErr = "pattern too complex"
-    return 8
-  }
-  patCapE[c] = patI + 1
-  patCapN = d
-  patP = patP + 1
-  return 1
-}
-
-// %1 to %9: the subject has to carry the same text the capture did, and both
-// move on by the capture's length.  A position capture has no text to compare --
-// PUC's CAP_POSITION is not a length -- so it never matches, and PUC agrees that
-// "()%1" finds nothing.  A capture the pattern has not opened yet, or has not
-// closed, is PUC's "invalid capture index".
-mod patBackref(p: int, s: int, ci: int) -> int {
-  let ce = patCapE[ci]
-  let cp = patCapP[ci]
-  let cs = patCapS[ci]
-  if patNCap < ci || ce == 0 && cp == 0 {
-    patErr = "invalid capture index %" .. FromCharCode(48 + ci).Character
-    return 3
-  }
-  if cp == 1 {
-    return 0
-  }
-  // A quantifier on a backreference is PUC's own dead end: max_expand counts one
-  // subject character a repetition while the pattern steps over %N, so it never
-  // matches -- "aa" with "(a)%1*" finds nothing.
-  if p + 2 < patPEnd {
-    let q = patPat.Substring(p + 2, 1)
-    if q == "*" || q == "+" || q == "-" || q == "?" {
-      return 0
-    }
-  }
-  let len = ce - 1 - cs
-  if s + len > patLen {
-    return 0
-  }
-  if patSrc.Substring(s, len) != patSrc.Substring(cs, len) {
-    return 0
-  }
-  patItemE = p + 2
-  patAdv = len
-  return 1
-}
-
-// The next item in the pattern.  $ at the very end is the end anchor, %b and %f
-// are the two items that walk the subject themselves, ( and ) are the captures,
-// and a quantifier with no item in front of it is PUC's own dead end, not an
-// error: max_expand wants at least one match of the character it names, so "*l"
-// and "a??b" are patterns that do not match, while "(%d+)-" still finds its
-// minus.  (PUC's lazy branch starts the rest one character early, and "l???" is
-// the one shape where that shows: it matches empty there, not here.)
-//
-// A pattern does match at the end of the subject: find("abc", "a*", 4) is 4 3.
-// What stops gsub's loop on "aaa" after one replacement is not the matcher but
-// str_gsub's own e == lastmatch test, which is a step of the library loop.
-mod patNextItem() {
-  if patP >= patPEnd {
-    patSt = 5
-  } else if patPlain {
-    // the whole pattern is literal, so a magic character is just a character:
-    // $ is an anchor only when the pattern is read as a pattern
-    patItemP = patP
-    patQS = patI
-    patAfter = 2
-    patFailTo = 2
-    patHit = if patTestItem(patP, patI) == 1 then true else false
-    patSt = 2
-  } else {
-    let ch = patPat.Substring(patP, 1)
-    if ch == "$" && patP + 1 == patPEnd {
-      if patI == patLen {
-        patSt = 5
-      } else {
-        patSt = 4
-      }
-    } else if ch == "(" {
-      patSt = patOpen()
-    } else if ch == ")" {
-      if patCapN != 0 {
-        patSt = patClose()
-      } else if patNCap == 0 {
-        patSt = 4
-      } else {
-        patErr = "invalid pattern capture"
-        patSt = 8
-      }
-    } else if ch == "*" || ch == "+" || ch == "?" {
-      // A quantifier with no item in front of it is PUC's own dead end, not an
-      // error: max_expand wants at least one match of the character it names, so
-      // "*l" and "a??b" are patterns that do not match, while "(%d+)-" still
-      // finds its minus.  (PUC's lazy branch starts the rest one character early,
-      // and "l???" is the one shape where that shows: it matches empty there and
-      // finds nothing here.)
-      patItemP = patP
-      patQS = patI
-      patAfter = 2
-      patFailTo = 2
-      let rq = patTestItem(patP, patI)
-      if rq == 3 {
-        patSt = 8
-      } else if rq == 2 {
-        patSt = 7
-      } else {
-        patHit = if rq == 1 then true else false
-        patSt = 2
-      }
-    } else if ch == "%" && patP + 1 < patPEnd {
-      let code = patPat.Substring(patP + 1, 1).ToCharCode().Codepoint
-      if code == 98 {
-        patSt = patBS()
-      } else if code == 102 {
-        patSt = patF()
-      } else {
-        patItemP = patP
-        patQS = patI
-        patAfter = 2
-        patFailTo = 2
-        let r = patTestItem(patP, patI)
-        if r == 3 {
-          patSt = 8
-        } else if r == 2 {
-          patSt = 7
-        } else {
-          patHit = if r == 1 then true else false
-          patSt = 2
-        }
-      }
-    } else {
-      patItemP = patP
-      patQS = patI
-      patAfter = 2
-      patFailTo = 2
-      let r = patTestItem(patP, patI)
-      if r == 3 {
-        patSt = 8
-      } else if r == 2 {
-        patSt = 7
-      } else {
-        patHit = if r == 1 then true else false
-        patSt = 2
-      }
-    }
-  }
-}
-
-// %bxy: the opening delimiter, the closing one, and the subject's balance.  PUC
-// does not backtrack this one -- matchbalance counts to the first return to zero
-// and either has its match or has not -- so nothing goes on the stack.  Returns
-// the state to run next: the scan, or the error.
-mod patBS() -> int {
-  if patP + 3 >= patPEnd {
-    patErr = "malformed pattern (missing arguments to '%b')"
-    return 8
-  }
-  patBOpen = patPat.Substring(patP + 2, 1)
-  patBClose = patPat.Substring(patP + 3, 1)
-  patQEnd = patP + 4
-  patBC = 0
-  patBFirst = true
-  return 3
-}
-
-// %f[set]: the frontier, a transition into the set.  It needs two set tests, the
-// character before the cursor and the one at it, and patItemP is what brings the
-// second scan back to the set's text.  Returns the state to run next.
-mod patF() -> int {
-  if patP + 2 >= patPEnd || patPat.Substring(patP + 2, 1) != "[" {
-    patErr = "missing '[' after '%f' in pattern"
-    return 8
-  }
-  patItemP = patP
-  if patI == 0 {
-    // there is no character before the first one, so that test is vacuously
-    // true and only the one at the cursor is worth making
-    patFPrev = false
-    patAfter = 10
-    patFailTo = 4
-    patSetBegin(patP + 3, patSrc.Substring(patI, 1).ToCharCode().Codepoint)
-    return 7
-  }
-  patAfter = 9
-  patFailTo = 9
-  patSetBegin(patP + 3, patSrc.Substring(patI - 1, 1).ToCharCode().Codepoint)
-  return 7
-}
-
-// The item's verdict is in patHit and its extent in patItemE, so this is where
-// the quantifier is read and where every alternative is recorded.  The order
-// matters: a greedy quantifier records the position the rest would resume from
-// and then consumes as many characters as it can, so the rest of the pattern
-// sees the longest match first; a lazy one records the position before the item
-// and tries the rest there first; ? records how to skip the item it matched, and
-// a quantifier whose item did not match records nothing, because there is no
-// longer alternative to come back to.
-mod patApply() {
-  let q = if patPlain then "" else if patItemE < patPEnd then patPat.Substring(patItemE, 1) else ""
-  patQ = if q == "*" then 1 else if q == "+" then 2 else if q == "-" then 3 else if q == "?" then 4 else 0
-  patQEnd = if patQ == 0 then patItemE else patItemE + 1
-  if patQ == 0 {
-    if patHit {
-      patI = patI + patAdv
-      patP = patQEnd
-      patSt = 1
-    } else {
-      patSt = 4
-    }
-  } else if patQ == 1 || patQ == 2 {
-    if !patHit {
-      // zero repetitions: + is the one quantifier that cannot have none
-      if patQ == 2 {
-        patSt = 4
-      } else {
-        patP = patQEnd
-        patSt = 1
-      }
-    } else if !patPush(1, patItemP, patI, patQEnd) {
-      patErr = "pattern too complex"
-      patSt = 8
-    } else {
-      patSt = 11
-    }
-  } else if patQ == 3 {
-    if patHit {
-      if !patPush(4, patItemP, patI, patQEnd) {
-        patErr = "pattern too complex"
-        patSt = 8
-      } else {
-        patP = patQEnd
-        patSt = 1
-      }
-    } else {
-      patP = patQEnd
-      patSt = 1
-    }
-  } else {
-    if patHit {
-      if patPush(2, patQEnd, 0, 0) {
-        patI = patI + 1
-        patP = patQEnd
-        patSt = 1
-      } else {
-        patErr = "pattern too complex"
-        patSt = 8
-      }
-    } else {
-      patP = patQEnd
-      patSt = 1
-    }
-  }
-}
-
-// A greedy quantifier, taking one more character while the item still matches.
-// When it stops, the pattern carries on past the quantifier with as many as it
-// took, and the stack entry is left holding the position one before the last
-// character it took, which is where the rest starts if this attempt fails.
-mod patGreedy() {
-  if patI < patLen {
-    patAfter = 12
-    patFailTo = 14
-    let r = patTestItem(patItemP, patI)
-    if r == 0 {
-      patSt = 14
-    } else if r == 3 {
-      patSt = 8
-    } else if r == 2 {
-      patSt = 7
-    } else {
-      patSl[patSp - 2] = patI
-      patI = patI + 1
-      patSt = 11
-    }
-  } else {
-    patSt = 14
-  }
-}
-
-mod patGreedyEnd() {
-  patP = patQEnd
-  patSt = 1
-}
-
-// %b's walk.  The opening delimiter has to be the character under the cursor --
-// PUC's matchbalance compares the subject with the pattern's first delimiter
-// before it counts anything -- and then one character per tick, counting up on
-// the opening delimiter and down on the closing one until the balance is back
-// where it started.  A subject that runs out is a miss, which is all
-// matchbalance can answer too.
-mod patBStep() {
-  if patBFirst {
-    patBFirst = false
-    if patI < patLen && patSrc.Substring(patI, 1) == patBOpen {
-      patBC = 1
-      patI = patI + 1
-      patSt = 3
-    } else {
-      patSt = 4
-    }
-  } else if patI >= patLen {
-    patSt = 4
-  } else {
-    let c = patSrc.Substring(patI, 1)
-    if c == patBOpen {
-      patBC = patBC + 1
-      patI = patI + 1
-      patSt = 3
-    } else if c == patBClose {
-      if patBC == 1 {
-        patI = patI + 1
-        patP = patQEnd
-        patSt = 1
-      } else {
-        patBC = patBC - 1
-        patI = patI + 1
-        patSt = 3
-      }
-    } else {
-      patI = patI + 1
-      patSt = 3
-    }
-  }
-}
-
-// %f's previous-character test is done, whether it was in the set or not: the
-// frontier needs to know, so the test at the cursor runs either way.
-mod patFPrevStep() {
-  patFPrev = patHit
-  patAfter = 10
-  patFailTo = 4
-  patSetBegin(patItemP + 3, patSrc.Substring(patI, 1).ToCharCode().Codepoint)
-  patSt = 7
-}
-
-// %f's second test is done: a match is the transition from outside the set to
-// inside it, and it consumes nothing.
-mod patFCurStep() {
-  if !patFPrev && patHit {
-    patP = patItemE
-    patSt = 1
-  } else {
-    patSt = 4
-  }
-}
-
-// Take back the most recent alternative.  A greedy entry moves the rest of the
-// pattern one character back and records where to move it back to next time; a
-// lazy entry gives the item one more character if it matches there; a ?'s entry
-// carries on with its item skipped.  An empty stack means this attempt is over.
-//
-// The four slots are read into locals before anything is written, at the top of
-// the mod: an array read that follows a var write inside a nested arm loses its
-// Exec chain when the mod is inlined this many times, and the writes fed by it
-// quietly never happen.  Reading them first is what the header's trap is about.
-mod patBack() {
-  if patSp <= 0 {
-    patSt = 6
-  } else {
-    let sp = patSp - 4
-    let k0 = patSl[sp]
-    let k1 = patSl[sp + 1]
-    let k2 = patSl[sp + 2]
-    let k3 = patSl[sp + 3]
-    if k0 == 1 {
-      patSp = sp
-      patI = k2
-      patItemP = k1
-      patQEnd = k3
-      if 0 <= patI - 1 {
-        patPush(1, patItemP, patI - 1, patQEnd)
-      }
-      patP = patQEnd
-      patSt = 1
-    } else if k0 == 2 {
-      patSp = sp
-      patP = k1
-      patSt = 1
-    } else if k0 == 5 {
-      // undo a capture: PUC's start_capture is a recursive call, so when the
-      // rest inside the parens has no alternative left, neither has the attempt
-      patSp = sp
-      patCapS[k1] = k2
-      patCapE[k1] = 0
-      patCapP[k1] = 0
-      patCapN = k1 - 1
-      patNCap = k1 - 1
-      patSt = 4
-    } else if k0 == 6 {
-      // a position capture has no depth to undo, only a number and a start
-      patSp = sp
-      patCapS[k1] = k2
-      patCapP[k1] = 0
-      patNCap = k1 - 1
-      patSt = 4
-    } else if k0 == 7 {
-      // a rewind past a ) has to open the capture again, because the item
-      // inside it is about to run once more; k3 is the depth to put back, and
-      // the open list holds the capture's number one below it
-      patSp = sp
-      patCapE[k1] = k2
-      patCapIx[k3 - 1] = k1
-      patCapN = k3
-      patSt = 4
-    } else if k0 == 4 {
-      patSp = sp
-      patI = k2
-      patItemP = k1
-      patQEnd = k3
-      patAfter = 13
-      patFailTo = 4
-      let r = patTestItem(k1, k2)
-      if r == 0 {
-        patSt = 4
-      } else if r == 3 {
-        patSt = 8
-      } else if r == 2 {
-        patSt = 7
-      } else {
-        patI = k2 + 1
-        if 0 <= patI {
-          patPush(4, k1, patI, k3)
-        }
-        patP = k3
-        patSt = 1
-      }
-    } else {
-      patSp = sp
-      patSt = 4
-    }
-  }
-}
-
-// One pass through a set's text: a literal character, a %class, a range, or the
-// closing bracket.  The alternatives accumulate in patSetAny and patSetNeg
-// flips the answer at the end, so [^a-z] is one rule rather than a special
-// case per character.  A '-' with a character before it and one after it is a
-// range, which is why a leading or trailing '-' stays a literal.
-mod patSetStep() {
-  patAdv = 1
-  if patSetP >= patPEnd {
-    patErr = "malformed pattern (missing ']')"
-    patSt = 8
-  } else {
-    let sc = patPat.Substring(patSetP, 1)
-    if sc == "]" {
-      if patSetSeen {
-        patItemE = patSetP + 1
-        patHit = if patSetNeg then !patSetAny else patSetAny
-        patSetP = patSetP + 1
-        patSt = if patHit then patAfter else patFailTo
-      } else {
-        patErr = "malformed pattern (missing ']')"
-        patSt = 8
-      }
-    } else if sc == "%" && patSetP + 1 < patPEnd {
-      let code = patPat.Substring(patSetP + 1, 1).ToCharCode().Codepoint
-      let neg = 65 <= code && code <= 90
-      if (97 <= code && code <= 122) || (65 <= code && code <= 90) {
-        patSetAny = patSetAny || patClassHit(patSetC, if neg then code + 32 else code, neg)
-        patSetSeen = true
-        patSetP = patSetP + 2
-        patSt = 7
-      } else {
-        patSetAny = patSetAny || patSetC == code
-        patSetSeen = true
-        patSetP = patSetP + 2
-        patSt = 7
-      }
-    } else if sc == "-" && patSetHasPrev && patSetP + 1 < patPEnd
-        && patPat.Substring(patSetP + 1, 1) != "]" {
-      let hi = patPat.Substring(patSetP + 1, 1).ToCharCode().Codepoint
-      patSetAny = patSetAny || (patSetPrev <= patSetC && patSetC <= hi)
-      patSetSeen = true
-      patSetP = patSetP + 2
-      patSt = 7
-    } else {
-      patSetAny = patSetAny || patSetC == sc.ToCharCode().Codepoint
-      patSetSeen = true
-      patSetHasPrev = true
-      patSetPrev = sc.ToCharCode().Codepoint
-      patSetP = patSetP + 1
-      patSt = 7
-    }
-  }
-}
-
-// A set matched where the greedy quantifier is taking characters: one more,
-// and the entry's resume point moves with it.
-mod patSetHit() {
-  patSl[patSp - 2] = patI
-  patI = patI + 1
-  patSt = 11
-}
-
-// A set matched on the way back up the stack: the lazy item takes one more
-// character and records where to take the next one from.
-mod patSetRetry() {
-  patI = patI + 1
-  if 0 <= patI {
-    patPush(4, patItemP, patI, patQEnd)
-  }
-  patP = patQEnd
-  patSt = 1
 }
 
 // The whole pattern matched at patStart.  find reports the two positions, an
@@ -7540,6 +7351,29 @@ mod patNone() {
   nxDone()
 }
 
+mod fmtLit() {
+  if fmtEof {
+    fmtDone()
+  } else if fmtCh == "%" {
+    fmtMinus = 0
+    fmtPlus = 0
+    fmtSpace = 0
+    fmtHash = 0
+    fmtZero = 0
+    fmtWidth = 0
+    fmtPrec = -1
+    fmtPos = fmtPos + 1
+    fmtTo = 1
+    fmtSpec = "%"
+    fmtState = 10
+  } else {
+    fmtOut = fmtOut .. fmtCh
+    fmtPos = fmtPos + 1
+    fmtTo = 0
+    fmtState = 10
+  }
+}
+
 // This attempt failed, so the next start position, unless the pattern is
 // anchored or the subject has run out.  PUC's loop stops at the last character
 // rather than at the end, which is why an empty pattern's match past it comes
@@ -7554,189 +7388,516 @@ mod patNextStart() {
   }
 }
 
-mod patError() {
-  nxActive = false
-  vmFail(patErr)
-}
-
-// ==================================================================== io: stdin
-//
-// The text in the inStr0 port is the program's standard input, and two gate
-// builtins plus a library piece give it PUC's io.read / io.write / io.lines.
-// inStr0 rather than a port of its own: it is already a string input, the
-// harness already sets it, and a ninth input port is API surface for nothing.
-//
-//   _rd(fmt)  fmt is a byte count, "*a" (the rest), "*l" (a line, the newline
-//            eaten, a trailing CR not part of the line) or "*r" (rewind, which is
-//            what io.lines() needs to start at the beginning).  PUC's "*n" is not
-//            here: it needs a string-to-number scan and the chip has no such
-//            primitive, so a program that wants a number cannot get one yet.
-//   _wr(s)    append to the log with no tab and no newline, which is the whole
-//            point of io.write; print's line handling is not what a program
-//            writing a report wants.  The order with print is kept because both
-//            go through logPush, and the 32-append cap is the same one.
-var rdText: string = ""
-var rdPos: int = 0
-var rdBuf: string = ""
-var rdGot: bool = false
-
-// n bytes from the cursor, or whatever is left of them.
-mod rdTake(n: int) {
-  let avail = rdText.Length() - rdPos
-  let k = if n < avail then n else avail
-  rdBuf = if k <= 0 then "" else rdText.Substring(rdPos, k)
-  rdPos = rdPos + k
-  rdGot = rdBuf != ""
-}
-
-// One line, as PUC's "*l" gives it: no newline, and a trailing CR is not part of
-// the line.  rdGot is false at the end of the text, so io.lines terminates --
-// and a blank line in the middle is a line, not the end.
-mod rdLine() {
-  let nl = rdText.Find("\n", true, rdPos)
-  if rdPos >= rdText.Length() {
-    rdGot = false
-    rdBuf = ""
-  } else if nl < 0 {
-    rdBuf = rdText.Substring(rdPos, rdText.Length() - rdPos)
-    rdPos = rdText.Length()
-    rdGot = true
-  } else {
-    rdBuf = rdText.Substring(rdPos, nl - rdPos)
-    if rdBuf.Length() > 0 {
-      if rdBuf.Substring(rdBuf.Length() - 1, 1) == "\r" {
-        rdBuf = rdBuf.Substring(0, rdBuf.Length() - 1)
-      }
+// Start the machine: mode 0 find, 1 match, 2 one gsub step, 3 one gmatch step.
+// dst is the absolute register the answers go in and tid is gmatch's state table
+// (0 when there is none).  A start past the subject's end answers a single nil,
+// which is how a walk that is over ends and how a find past the end has always
+// answered here.
+mod patArm(iniArg: int, mode: int, dst: int, tid: int) {
+  // a parameter is not a writable target, so the clamp gets a local of its own
+  // and every later use of `ini` below reads that
+  var ini = iniArg
+  patAnchor = false
+  patPSkip = 0
+  // a leading ^ is the anchor, but not on the plain path, which is a literal
+  // search and never looks at the pattern's meaning.  Mode 3 strips it and does
+  // not anchor: PUC's gmatch is not the anchored find, it re-enters the matcher
+  // at a new position every step.
+  if !patPlain && 0 < patPat.Length() && patPat.Substring(0, 1) == "^" {
+    if mode == 3 {
+      patPSkip = 1
+    } else {
+      patAnchor = true
+      patPSkip = 1
     }
-    rdPos = nl + 1
-    rdGot = true
   }
-}
-
-// Link a slot at the tail of its table's chain, so pairs/next walk entries in
-// insertion order (the order PUC-Lua uses, which the tests compare against).
-mod tblLink(tid: int, sl: int) {
-  let last = tLast[tid]
-  tPrev[sl] = last
-  tNext[sl] = -1
-  if last != -1 {
-    tNext[last] = sl
+  patPEnd = patPat.Length()
+  patLen = patSrc.Length()
+  if ini < 1 {
+    ini = 1
+  }
+  if patLen + 1 < ini {
+    vtag[dst] = 0
+    vnum[dst] = 0.0
+    vstr[dst] = ""
+    // the end of a gmatch walk answers *no* values, which is what ends the loop:
+    // a single nil is a value, and a for-in that gets one runs for ever
+    retCountV = if mode == 3 then 0 else 1
+  } else if mode == 3 && patPSkip == 1 {
+    // measured: a pattern that starts with ^ matches nothing at all in gmatch,
+    // while find and gsub both take it as the anchor and honour it
+    vtag[dst] = 0
+    vnum[dst] = 0.0
+    vstr[dst] = ""
+    retCountV = 0
   } else {
-    tFirst[tid] = sl
+    patMode = mode
+    patTid = tid
+    // one local for both cursors: patR = patStart would read the value patStart
+    // had *before* the line above wrote it, and the walk then never advances
+    // its right edge, so patNextStart takes the "there is another start" arm for
+    // ever and the machine cycles 0 1 2 4 6 until the tick budget runs out
+    let start = ini - 1
+    patStart = start
+    patR = start
+    patSt = 0
+    patSp = 0
+    patNCap = 0
+    patCapN = 0
+    patErr = ""
+    nxDst = dst
+    nxPc = vmPc
+    nxMode = 2
+    nxActive = true
   }
-  tLast[tid] = sl
 }
 
-// One table store from raw values; false means the store failed (error already
-// raised).  Shared by SETFIELD and by TAPPEND's unrolled ladder.  A nil value
-// leaves the key's slot in place as a tombstone so the chain order is stable and
-// re-assigning the key revives the same slot.
-mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: string) -> bool {
-  let key = tkey(tid, kt, kn, ks)
-  let r = tmap.get(key)
-  let kint = toInt(kn)
-  if r.Found {
-    let sl = r.Value
-    if vt == 0 {
-      // nil leaves the slot in the chain as a tombstone, so the walk order is
-      // stable and re-assigning the key revives the same slot
-      if tvTag[sl] != 0 {
-        tvTag[sl] = 0
-        tFree.push(sl)
-        if kt == 6 && kint == tLen[tid] {
-          tLen[tid] = kint - 1
+// One byte per tick, escaped the way PUC escapes it.  The byte comes from
+// fmtQFetch, a state earlier, for the same reason fmtLit does not read the
+// cursor itself.
+mod fmtQuoted() {
+  if fmtEof {
+    fmtBody = fmtBody .. "\""
+    fmtPre = ""
+    fmtState = 6
+  } else {
+    let b = fmtCh.ToCharCode().Codepoint
+    let piece = fmtQuoteByte(b)
+    fmtQPos = fmtQPos + 1
+    fmtBody = fmtBody .. piece
+    fmtState = 11
+  }
+}
+
+// One mod per state.  A single fmtStep with the states in one long else-if chain
+// nested three deep lost the assignment at the bottom: `fmtState = 7` in the %d
+// branch never took effect, so the state machine ran the conversion twice and
+// read past the end of the spec.  The %s branch, one level shallower, worked --
+// which is exactly the kind of neighbour-is-fine trap that says the whole chain
+// should be flat.  One state per mod also gives each step a name that says what
+// it does, which a numbered branch cannot.
+// The character at the cursor, fetched in a state of its own, then handed to
+// whichever state asked for it (fmtTo).  A value gate fed by a variable that the
+// same mod writes reads the *new* value, so a state that both read the character
+// at fmtPos and advanced fmtPos walked one character ahead of the spec: %d came
+// out as "d" and %s|%s as "s|a".  Fetching in one state and consuming in the
+// next means the cursor is written in one tick and read in the next, which no
+// evaluation order in the graph can get wrong.  It costs one tick per spec
+// character, against the lexer's four.
+mod fmtFetch() {
+  if fmtPos < fmtSrc.Length() {
+    fmtCh = fmtSrc.Substring(fmtPos, 1)
+    fmtEof = false
+  } else {
+    fmtCh = ""
+    fmtEof = true
+  }
+  fmtState = fmtTo
+}
+
+// The item at pattern position p against the character at subject position s.
+// 0 does not match, 1 does, 2 a set has to be scanned first, 3 the pattern is
+// malformed and patErr says how.  Only the items that can carry a quantifier
+// answer here; %b and %f are patNextItem's business.  patItemE is where the
+// quantifier is read from, which is why a set reports its end when its scan
+// finishes rather than here.
+mod patTestItem(p: int, s: int) -> int {
+  patAdv = 1
+  if s >= patLen || p >= patPEnd {
+    return 0
+  }
+  let sc = patSrc.Substring(s, 1)
+  if patPlain {
+    patItemE = p + 1
+    return if patPat.Substring(p, 1) == sc then 1 else 0
+  }
+  let k = patPat.Substring(p, 1)
+  if k == "[" {
+    patSetBegin(p + 1, sc.ToCharCode().Codepoint)
+    return 2
+  }
+  if k == "%" {
+    if p + 1 >= patPEnd {
+      patErr = "malformed pattern (ends with '%')"
+      return 3
+    }
+    let code = patPat.Substring(p + 1, 1).ToCharCode().Codepoint
+    if 49 <= code && code <= 57 {
+      return patBackref(p, s, code - 48)
+    }
+    let neg = 65 <= code && code <= 90
+    patItemE = p + 2
+    return if patClassHit(sc.ToCharCode().Codepoint, if neg then code + 32 else code, neg) then 1 else 0
+  }
+  patItemE = if k == "." then p + 1 else p + 1
+  if k == "." {
+    return 1
+  }
+  return if k == sc then 1 else 0
+}
+
+// The next item in the pattern.  $ at the very end is the end anchor, %b and %f
+// are the two items that walk the subject themselves, ( and ) are the captures,
+// and a quantifier with no item in front of it is PUC's own dead end, not an
+// error: max_expand wants at least one match of the character it names, so "*l"
+// and "a??b" are patterns that do not match, while "(%d+)-" still finds its
+// minus.  (PUC's lazy branch starts the rest one character early, and "l???" is
+// the one shape where that shows: it matches empty there, not here.)
+//
+// A pattern does match at the end of the subject: find("abc", "a*", 4) is 4 3.
+// What stops gsub's loop on "aaa" after one replacement is not the matcher but
+// str_gsub's own e == lastmatch test, which is a step of the library loop.
+mod patNextItem() {
+  if patP >= patPEnd {
+    patSt = 5
+  } else if patPlain {
+    // the whole pattern is literal, so a magic character is just a character:
+    // $ is an anchor only when the pattern is read as a pattern
+    patItemP = patP
+    patQS = patI
+    patAfter = 2
+    patFailTo = 2
+    patHit = if patTestItem(patP, patI) == 1 then true else false
+    patSt = 2
+  } else {
+    let ch = patPat.Substring(patP, 1)
+    if ch == "$" && patP + 1 == patPEnd {
+      if patI == patLen {
+        patSt = 5
+      } else {
+        patSt = 4
+      }
+    } else if ch == "(" {
+      patSt = patOpen()
+    } else if ch == ")" {
+      if patCapN != 0 {
+        patSt = patClose()
+      } else if patNCap == 0 {
+        patSt = 4
+      } else {
+        patErr = "invalid pattern capture"
+        patSt = 8
+      }
+    } else if ch == "*" || ch == "+" || ch == "?" {
+      // A quantifier with no item in front of it is PUC's own dead end, not an
+      // error: max_expand wants at least one match of the character it names, so
+      // "*l" and "a??b" are patterns that do not match, while "(%d+)-" still
+      // finds its minus.  (PUC's lazy branch starts the rest one character early,
+      // and "l???" is the one shape where that shows: it matches empty there and
+      // finds nothing here.)
+      patItemP = patP
+      patQS = patI
+      patAfter = 2
+      patFailTo = 2
+      let rq = patTestItem(patP, patI)
+      if rq == 3 {
+        patSt = 8
+      } else if rq == 2 {
+        patSt = 7
+      } else {
+        patHit = if rq == 1 then true else false
+        patSt = 2
+      }
+    } else if ch == "%" && patP + 1 < patPEnd {
+      let code = patPat.Substring(patP + 1, 1).ToCharCode().Codepoint
+      if code == 98 {
+        patSt = patBS()
+      } else if code == 102 {
+        patSt = patF()
+      } else {
+        patItemP = patP
+        patQS = patI
+        patAfter = 2
+        patFailTo = 2
+        let r = patTestItem(patP, patI)
+        if r == 3 {
+          patSt = 8
+        } else if r == 2 {
+          patSt = 7
+        } else {
+          patHit = if r == 1 then true else false
+          patSt = 2
         }
       }
     } else {
-      tvTag[sl] = vt
-      tvNum[sl] = vn
-      tvStr[sl] = vs
-      if kt == 6 && kint == tLen[tid] + 1 {
-        tLen[tid] = kint
-        if tmap.has(tid .. "#" .. (kint + 1)) {
-          lenChase = true
-          lenTid = tid
-        }
-      }
-    }
-  } else if vt == 0 {
-    // assigning nil to a missing key does nothing
-  } else {
-    var sl = -1
-    if tFree.length() > 0 {
-      sl = tFree.pop().Value
-      if tNext[sl] != -2 {
-        // still chained in its old table: unhook it and drop the stale key
-        let ot = tOwner[sl]
-        tblUnlink(ot, sl)
-        tmap.remove(tkey(ot, tKeyTag[sl], tKeyNum[sl], tKeyStr[sl]))
-      }
-    } else {
-      sl = tHeap
-      tHeap = tHeap + 1
-    }
-    if sl >= MAX_HEAP {
-      vmFail("out of table memory")
-      return false
-    }
-    tvTag[sl] = vt
-    tvNum[sl] = vn
-    tvStr[sl] = vs
-    tOwner[sl] = tid
-    tKeyTag[sl] = kt
-    tKeyNum[sl] = kn
-    tKeyStr[sl] = ks
-    tblLink(tid, sl)
-    tmap.set(key, sl)
-    if kt == 6 && kint == tLen[tid] + 1 {
-      tLen[tid] = kint
-      if tmap.has(tid .. "#" .. (kint + 1)) {
-        lenChase = true
-        lenTid = tid
+      patItemP = patP
+      patQS = patI
+      patAfter = 2
+      patFailTo = 2
+      let r = patTestItem(patP, patI)
+      if r == 3 {
+        patSt = 8
+      } else if r == 2 {
+        patSt = 7
+      } else {
+        patHit = if r == 1 then true else false
+        patSt = 2
       }
     }
   }
-  return true
 }
 
-// Copy up to MAXVALS values from the register file into the vararg stack.
-mod vaSpill(src: int, dst: int, n: int) {
-  if 1 <= n { vaTag[dst] = vtag[src] vaNum[dst] = vnum[src] vaStr[dst] = vstr[src] }
-  if 2 <= n { vaTag[dst+1] = vtag[src+1] vaNum[dst+1] = vnum[src+1] vaStr[dst+1] = vstr[src+1] }
-  if 3 <= n { vaTag[dst+2] = vtag[src+2] vaNum[dst+2] = vnum[src+2] vaStr[dst+2] = vstr[src+2] }
-  if 4 <= n { vaTag[dst+3] = vtag[src+3] vaNum[dst+3] = vnum[src+3] vaStr[dst+3] = vstr[src+3] }
-  if 5 <= n { vaTag[dst+4] = vtag[src+4] vaNum[dst+4] = vnum[src+4] vaStr[dst+4] = vstr[src+4] }
-  if 6 <= n { vaTag[dst+5] = vtag[src+5] vaNum[dst+5] = vnum[src+5] vaStr[dst+5] = vstr[src+5] }
-  if 7 <= n { vaTag[dst+6] = vtag[src+6] vaNum[dst+6] = vnum[src+6] vaStr[dst+6] = vstr[src+6] }
-  if 8 <= n { vaTag[dst+7] = vtag[src+7] vaNum[dst+7] = vnum[src+7] vaStr[dst+7] = vstr[src+7] }
-  if 9 <= n { vaTag[dst+8] = vtag[src+8] vaNum[dst+8] = vnum[src+8] vaStr[dst+8] = vstr[src+8] }
-  if 10 <= n { vaTag[dst+9] = vtag[src+9] vaNum[dst+9] = vnum[src+9] vaStr[dst+9] = vstr[src+9] }
-  if 11 <= n { vaTag[dst+10] = vtag[src+10] vaNum[dst+10] = vnum[src+10] vaStr[dst+10] = vstr[src+10] }
-  if 12 <= n { vaTag[dst+11] = vtag[src+11] vaNum[dst+11] = vnum[src+11] vaStr[dst+11] = vstr[src+11] }
-  if 13 <= n { vaTag[dst+12] = vtag[src+12] vaNum[dst+12] = vnum[src+12] vaStr[dst+12] = vstr[src+12] }
-  if 14 <= n { vaTag[dst+13] = vtag[src+13] vaNum[dst+13] = vnum[src+13] vaStr[dst+13] = vstr[src+13] }
-  if 15 <= n { vaTag[dst+14] = vtag[src+14] vaNum[dst+14] = vnum[src+14] vaStr[dst+14] = vstr[src+14] }
-  if 16 <= n { vaTag[dst+15] = vtag[src+15] vaNum[dst+15] = vnum[src+15] vaStr[dst+15] = vstr[src+15] }
+// A greedy quantifier, taking one more character while the item still matches.
+// When it stops, the pattern carries on past the quantifier with as many as it
+// took, and the stack entry is left holding the position one before the last
+// character it took, which is where the rest starts if this attempt fails.
+mod patGreedy() {
+  if patI < patLen {
+    patAfter = 12
+    patFailTo = 14
+    let r = patTestItem(patItemP, patI)
+    if r == 0 {
+      patSt = 14
+    } else if r == 3 {
+      patSt = 8
+    } else if r == 2 {
+      patSt = 7
+    } else {
+      patSl[patSp - 2] = patI
+      patI = patI + 1
+      patSt = 11
+    }
+  } else {
+    patSt = 14
+  }
 }
 
-// Copy up to MAXVALS values from the vararg stack into registers (VARARG).
-mod vaFill(base: int, dst: int, n: int) {
-  if 1 <= n { vtag[dst] = vaTag[base] vnum[dst] = vaNum[base] vstr[dst] = vaStr[base] }
-  if 2 <= n { vtag[dst+1] = vaTag[base+1] vnum[dst+1] = vaNum[base+1] vstr[dst+1] = vaStr[base+1] }
-  if 3 <= n { vtag[dst+2] = vaTag[base+2] vnum[dst+2] = vaNum[base+2] vstr[dst+2] = vaStr[base+2] }
-  if 4 <= n { vtag[dst+3] = vaTag[base+3] vnum[dst+3] = vaNum[base+3] vstr[dst+3] = vaStr[base+3] }
-  if 5 <= n { vtag[dst+4] = vaTag[base+4] vnum[dst+4] = vaNum[base+4] vstr[dst+4] = vaStr[base+4] }
-  if 6 <= n { vtag[dst+5] = vaTag[base+5] vnum[dst+5] = vaNum[base+5] vstr[dst+5] = vaStr[base+5] }
-  if 7 <= n { vtag[dst+6] = vaTag[base+6] vnum[dst+6] = vaNum[base+6] vstr[dst+6] = vaStr[base+6] }
-  if 8 <= n { vtag[dst+7] = vaTag[base+7] vnum[dst+7] = vaNum[base+7] vstr[dst+7] = vaStr[base+7] }
-  if 9 <= n { vtag[dst+8] = vaTag[base+8] vnum[dst+8] = vaNum[base+8] vstr[dst+8] = vaStr[base+8] }
-  if 10 <= n { vtag[dst+9] = vaTag[base+9] vnum[dst+9] = vaNum[base+9] vstr[dst+9] = vaStr[base+9] }
-  if 11 <= n { vtag[dst+10] = vaTag[base+10] vnum[dst+10] = vaNum[base+10] vstr[dst+10] = vaStr[base+10] }
-  if 12 <= n { vtag[dst+11] = vaTag[base+11] vnum[dst+11] = vaNum[base+11] vstr[dst+11] = vaStr[base+11] }
-  if 13 <= n { vtag[dst+12] = vaTag[base+12] vnum[dst+12] = vaNum[base+12] vstr[dst+12] = vaStr[base+12] }
-  if 14 <= n { vtag[dst+13] = vaTag[base+13] vnum[dst+13] = vaNum[base+13] vstr[dst+13] = vaStr[base+13] }
-  if 15 <= n { vtag[dst+14] = vaTag[base+14] vnum[dst+14] = vaNum[base+14] vstr[dst+14] = vaStr[base+14] }
-  if 16 <= n { vtag[dst+15] = vaTag[base+15] vnum[dst+15] = vaNum[base+15] vstr[dst+15] = vaStr[base+15] }
+// Take back the most recent alternative.  A greedy entry moves the rest of the
+// pattern one character back and records where to move it back to next time; a
+// lazy entry gives the item one more character if it matches there; a ?'s entry
+// carries on with its item skipped.  An empty stack means this attempt is over.
+//
+// The four slots are read into locals before anything is written, at the top of
+// the mod: an array read that follows a var write inside a nested arm loses its
+// Exec chain when the mod is inlined this many times, and the writes fed by it
+// quietly never happen.  Reading them first is what the header's trap is about.
+mod patBack() {
+  if patSp <= 0 {
+    patSt = 6
+  } else {
+    let sp = patSp - 4
+    let k0 = patSl[sp]
+    let k1 = patSl[sp + 1]
+    let k2 = patSl[sp + 2]
+    let k3 = patSl[sp + 3]
+    if k0 == 1 {
+      patSp = sp
+      patI = k2
+      patItemP = k1
+      patQEnd = k3
+      if 0 <= patI - 1 {
+        patPush(1, patItemP, patI - 1, patQEnd)
+      }
+      patP = patQEnd
+      patSt = 1
+    } else if k0 == 2 {
+      patSp = sp
+      patP = k1
+      patSt = 1
+    } else if k0 == 5 {
+      // undo a capture: PUC's start_capture is a recursive call, so when the
+      // rest inside the parens has no alternative left, neither has the attempt
+      patSp = sp
+      patCapS[k1] = k2
+      patCapE[k1] = 0
+      patCapP[k1] = 0
+      patCapN = k1 - 1
+      patNCap = k1 - 1
+      patSt = 4
+    } else if k0 == 6 {
+      // a position capture has no depth to undo, only a number and a start
+      patSp = sp
+      patCapS[k1] = k2
+      patCapP[k1] = 0
+      patNCap = k1 - 1
+      patSt = 4
+    } else if k0 == 7 {
+      // a rewind past a ) has to open the capture again, because the item
+      // inside it is about to run once more; k3 is the depth to put back, and
+      // the open list holds the capture's number one below it
+      patSp = sp
+      patCapE[k1] = k2
+      patCapIx[k3 - 1] = k1
+      patCapN = k3
+      patSt = 4
+    } else if k0 == 4 {
+      patSp = sp
+      patI = k2
+      patItemP = k1
+      patQEnd = k3
+      patAfter = 13
+      patFailTo = 4
+      let r = patTestItem(k1, k2)
+      if r == 0 {
+        patSt = 4
+      } else if r == 3 {
+        patSt = 8
+      } else if r == 2 {
+        patSt = 7
+      } else {
+        patI = k2 + 1
+        if 0 <= patI {
+          patPush(4, k1, patI, k3)
+        }
+        patP = k3
+        patSt = 1
+      }
+    } else {
+      patSp = sp
+      patSt = 4
+    }
+  }
+}
+
+mod patStepB() {
+  if patSt == 9 {
+    patFPrevStep()
+  } else if patSt == 10 {
+    patFCurStep()
+  } else if patSt == 11 {
+    patGreedy()
+  } else if patSt == 12 {
+    patSetHit()
+  } else if patSt == 13 {
+    patSetRetry()
+  } else if patSt == 14 {
+    patGreedyEnd()
+  } else {
+    patAnswer()
+  }
+}
+
+mod patStepA() {
+  if patSt == 0 {
+    patStartStep()
+  } else if patSt == 1 {
+    patNextItem()
+  } else if patSt == 2 {
+    patApply()
+  } else if patSt == 3 {
+    patBStep()
+  } else if patSt == 4 {
+    patBack()
+  } else if patSt == 5 {
+    patDone()
+  } else if patSt == 6 {
+    patNextStart()
+  } else if patSt == 7 {
+    patSetStep()
+  } else {
+    patError()
+  }
+}
+
+// %f %e %g, which dispatch apart from fmtConv's chain: that chain was already
+// at the edge of what holds, and two more arms in it stopped the %d arm's write
+// from taking effect.
+mod fmtConvFloatish() {
+  if fmtCh == "f" {
+    fmtConvFloat()
+  } else if fmtCh == "e" || fmtCh == "E" {
+    fmtConvExp()
+  } else {
+    fmtConvG()
+  }
+}
+
+// The conversion character, consumed here.  Each conversion sets up its own
+// state and checks its own argument, so %% does not consume one and a missing
+// one is reported against the conversion that wanted it.  The cursor advance is
+// repeated in every branch rather than written once at the top: a write at the
+// top of a mod followed by a chain this deep, with mod calls in it, is silently
+// dropped, and the walk then re-read the conversion character as a literal
+// ("%d" -> "42d").
+mod fmtConv() {
+  let bad = fmtSpecBad()
+  if fmtCh == "%" {
+    fmtPos = fmtPos + 1
+    fmtBody = "%"
+    fmtPre = ""
+    fmtState = 6
+  } else if bad == 1 {
+    fmtPos = fmtPos + 1
+    fmtSpec = fmtSpec .. fmtCh
+    vmFail("invalid conversion specification: '" .. fmtSpec .. "'")
+  } else if bad == 2 {
+    fmtPos = fmtPos + 1
+    vmFail("specifier '%q' cannot have modifiers")
+  } else if fmtCh == "s" || fmtCh == "q" {    fmtPos = fmtPos + 1
+    fmtConvStr(fmtCh)
+  } else if fmtCh == "d" || fmtCh == "i" || fmtCh == "u" {
+    fmtPos = fmtPos + 1
+    fmtConvInt()
+  } else if fmtCh == "x" || fmtCh == "X" || fmtCh == "o" {
+    fmtPos = fmtPos + 1
+    fmtConvRadix()
+  } else if fmtCh == "c" {
+    fmtPos = fmtPos + 1
+    fmtConvChar()
+  } else if fmtCh == "f" || fmtCh == "e" || fmtCh == "E" || fmtCh == "g"
+      || fmtCh == "G" {
+    // the float conversions dispatch in a mod of their own: with them in this
+    // chain the arms above stopped taking effect and %d of 42 came out 00
+    fmtPos = fmtPos + 1
+    fmtConvFloatish()
+  } else {
+    fmtPos = fmtPos + 1
+    vmFail("invalid conversion '%" .. fmtCh .. "' to 'format'")
+  }
+}
+
+mod fmtStepA() {
+  if fmtState == 0 {
+    fmtLit()
+  } else if fmtState == 1 {
+    fmtFlag()
+  } else if fmtState == 2 {
+    fmtWidthStep()
+  } else if fmtState == 3 {
+    fmtPrecStep()
+  } else if fmtState == 4 {
+    fmtConv()
+  } else if fmtState == 5 {
+    fmtPadStep()
+  } else if fmtState == 6 {
+    fmtFinish()
+  } else if fmtState == 7 {
+    fmtDigit()
+  } else if fmtState == 8 {
+    fmtQuoted()
+  } else if fmtState == 9 {
+    fmtPrecZero()
+  } else if fmtState == 10 {
+    fmtFetch()
+  } else if fmtState == 11 {
+    fmtQFetch()
+  } else if fmtState == 13 {
+    fmtDigitEnd()
+  } else {
+    fmtFScale()
+  }
+}
+
+// The dispatch, in two halves.  One chain for all of it stops working once it
+// is this long: the arms near the top quietly stop taking effect, and %d of 42
+// came out 00 because the integer digit state was never entered.  Sixteen arms
+// each is what holds, which is the same lesson as the conversion chain.
+mod fmtStep() {
+  if fmtState < 16 {
+    fmtStepA()
+  } else {
+    fmtStepB()
+  }
+}
+
+// The dispatch, in two halves for the same reason fmtStep is: one chain for
+// fifteen states is at the edge where the arms near the top stop taking effect.
+mod patStep() {
+  if patSt < 9 {
+    patStepA()
+  } else {
+    patStepB()
+  }
 }
 
 // The low half of the gate dispatch: fids 0..8.  The chain was one of
@@ -7864,145 +8025,140 @@ mod gateLow(fid: int, a: int, nargs: int) {
     }
   }
 }
-// gmatch's two halves, run from the micro-step at the top of vmStep (nxMode 3)
-// because an array element write inside gateHigh's arm is dropped; see the note
-// there.  Phase 0 is the constructor: the walk's subject, pattern and cursor go
-// into three arrays, and the three values a generic for takes come back.  Phase
-// 1 is one step: the cursor comes out of the arrays and the matcher runs from
-// it.  The walk is a number where PUC's is a closure, and it is the second
-// value here and nil in PUC; the loop hands it back and the body never sees it,
-// so the only difference a program can see is type() of that value.
-mod gmStep() {
-  if patGmPhase == 0 {
-    patGmS[patGmId] = patSrc
-    patGmP[patGmId] = patPat
-    patGmPos[patGmId] = patGmIni
-    vtag[nxDst] = 4
-    vnum[nxDst] = 22.0
-    vstr[nxDst] = ""
-    vtag[nxDst + 1] = 6
-    vnum[nxDst + 1] = patGmId * 1.0
-    vstr[nxDst + 1] = ""
-    vtag[nxDst + 2] = 0
-    vnum[nxDst + 2] = 0.0
-    vstr[nxDst + 2] = ""
-    retCountV = 3
-    nxActive = false
-    nxDone()
-  } else {
-    patSrc = patGmS[patGmId]
-    patPat = patGmP[patGmId]
-    let pos = patGmPos[patGmId]
-    // patArm records where to come back to as vmPc, and this step runs a tick
-    // *after* the call, by which time vmPc is the next instruction: without
-    // putting it back the machine returns past the generic-for's nil test, the
-    // loop never ends, and the walk is called again from the start for ever.
-    vmPc = nxPc
-    // patArm answers a single nil itself when the walk is past the end, and it
-    // leaves the machine down: the arm raised nxActive before it knew whether a
-    // machine was coming, so without this the call re-runs the gate for ever.
-    patMode = -1
-    patArm(pos, 3, nxDst, patGmId)
-    if patMode == -1 {
-      nxActive = false
-      nxDone()
-    }
-  }
-}
 
-// The subject and the pattern out of a call's own registers, with find's two
-// argument checks, shared by the matcher's gate and by gmatch's constructor so
-// the two cannot drift apart.  off is where the subject sits: _pat takes a mode
-// first, so its subject is the second argument, while _gmatch's is the first.
-// Only the arguments actually passed are read: a register past nargs still
-// holds the caller's previous call, and a find whose init came from there is a
-// find with a boolean init.
-mod patCheck(a: int, nargs: int, nm: string, off: int) -> bool {
-  let st = if nargs < off then 0 else vTag(a + off)
-  let pt = if nargs < off + 1 then 0 else vTag(a + off + 1)
-  if nargs < off {
-    vmFail("bad argument #1 to '" .. nm .. "' (string expected, got no value)")
-    return false
-  } else if st == 2 {
-    patSrc = vStr(a + off)
-  } else if st == 1 || st == 6 {
-    patSrc = fmtVal(st, vNum(a + off), vStr(a + off))
-  } else {
-    vmFail("bad argument #1 to '" .. nm .. "' (string expected, got " .. typeName(st) .. ")")
-    return false
-  }
-  if nargs < off + 1 {
-    vmFail("bad argument #2 to '" .. nm .. "' (string expected, got no value)")
-    return false
-  } else if pt == 2 {
-    patPat = vStr(a + off + 1)
-  } else if pt == 1 || pt == 6 {
-    patPat = fmtVal(pt, vNum(a + off + 1), vStr(a + off + 1))
-  } else {
-    vmFail("bad argument #2 to '" .. nm .. "' (string expected, got " .. typeName(pt) .. ")")
-    return false
-  }
-  return true
-}
-
-// Start the machine: mode 0 find, 1 match, 2 one gsub step, 3 one gmatch step.
-// dst is the absolute register the answers go in and tid is gmatch's state table
-// (0 when there is none).  A start past the subject's end answers a single nil,
-// which is how a walk that is over ends and how a find past the end has always
-// answered here.
-mod patArm(ini: int, mode: int, dst: int, tid: int) {
-  patAnchor = false
-  patPSkip = 0
-  // a leading ^ is the anchor, but not on the plain path, which is a literal
-  // search and never looks at the pattern's meaning.  Mode 3 strips it and does
-  // not anchor: PUC's gmatch is not the anchored find, it re-enters the matcher
-  // at a new position every step.
-  if !patPlain && 0 < patPat.Length() && patPat.Substring(0, 1) == "^" {
-    if mode == 3 {
-      patPSkip = 1
+// One gathered local/assign target per micro-step is overkill; stores run
+// one target per parseStep via stState 12 (locals) / 13 (assign).
+mod doStoreStep() {
+  if stState == 12 {
+    if tmpA >= tmpNames.length() {
+      stState = 0
     } else {
-      patAnchor = true
-      patPSkip = 1
+      let nm = tmpNames[tmpA]
+      let vr = if tmpA < tmpRegs.length() then tmpRegs[tmpA] else -1
+      if vr > cfMaxLoc[fnDepth] && vr >= cfBase[fnDepth] {
+        locBind(nm, vr)
+      } else {
+        let r = locDeclare(nm)
+        if vr >= 0 {
+          bEmit(7, r, vr, 0)
+        } else {
+          bEmit(1, r, 0, 0)
+        }
+      }
+      dirtySelf(nm)
+      tmpA = tmpA + 1
+    }
+  } else if stState == 15 {
+    if tmpA < 0 {
+      stState = 0
+    } else {
+      var vr = -1
+      if tmpA < tmpRegs.length() {
+        vr = tmpRegs[tmpA]
+      } else {
+        vr = regAlloc()
+        bEmit(1, vr, 0, 0)
+      }
+      bEmit(30, itBase[tmpA], itKey[tmpA], vr)
+      tmpA = tmpA - 1
+    }
+  } else if stState == 13 {
+    if tmpA < 0 {
+      stState = 0
+    } else if tmpA < tmpRegs.length() {
+      tmpB = tmpRegs[tmpA]
+      stState = 14
+    } else {
+      let z = regAlloc()
+      bEmit(1, z, 0, 0)
+      tmpB = z
+      stState = 14
+    }
+  } else if stState == 14 {
+    let nm = tmpNames[tmpA]
+    if forNames.find(nm).Found {
+      perr = true
+      perrMsg = "cannot assign to for loop control variable"
+    } else {
+    lkRaw = true
+    locFind(nm)
+    lkRaw = false
+    if lkKind == 3 {
+      // an upvalue has no register to fold into, so this is always its own
+      // instruction
+      bEmit(47, tmpB, lkReg, upKind())
+      dirtySelf(nm)
+    } else if lkKind == 1 {
+      // fold the store into the instruction that produced the value
+      let li = bop.length() - 1
+      let op0 = if li >= 0 then bop[li] else -1
+      let canFold = li >= 0 && bpa[li] == tmpB && tmpB > cfMaxLoc[fnDepth] && lastPatchTarget != bop.length() && op0 != 23 && op0 != 20 && op0 != 21 && op0 != 22 && op0 != 24 && op0 != 26 && op0 != 27 && op0 != 6 && op0 != 30
+      if canFold {
+        bpa[li] = lkReg
+      } else {
+        bEmit(7, lkReg, tmpB, 0)
+      }
+      dirtySelf(nm)
+    } else if lkKind == 0 {
+      bEmit(6, gDeclare(nm), tmpB, 0)
+    } else {
+      perr = true
+      perrMsg = "bad store"
+    }
+    tmpA = tmpA - 1
+    stState = 13
     }
   }
-  patPEnd = patPat.Length()
-  patLen = patSrc.Length()
-  if ini < 1 {
-    ini = 1
-  }
-  if patLen + 1 < ini {
-    vtag[dst] = 0
-    vnum[dst] = 0.0
-    vstr[dst] = ""
-    // the end of a gmatch walk answers *no* values, which is what ends the loop:
-    // a single nil is a value, and a for-in that gets one runs for ever
-    retCountV = if mode == 3 then 0 else 1
-  } else if mode == 3 && patPSkip == 1 {
-    // measured: a pattern that starts with ^ matches nothing at all in gmatch,
-    // while find and gsub both take it as the anchor and honour it
-    vtag[dst] = 0
-    vnum[dst] = 0.0
-    vstr[dst] = ""
-    retCountV = 0
+}
+
+mod stmtProgress() {
+  if stState == 10 {
+    stmtNameList(true)
+  } else if stState == 11 {
+    stmtNameList(false)
+  } else if stState == 12 || stState == 13 || stState == 14 || stState == 15 {
+    doStoreStep()
+  } else if stState == 20 {
+    funcParams()
+  } else if stState == 21 {
+    // gathering the remaining names of a generic-for header
+    if curKind() == 3 {
+      tmpNames.push(curStr())
+      cpos = cpos + 1
+      if curKind() == 5 && curSub() == 16 {
+        cpos = cpos + 1
+      } else if curKind() == 4 && curSub() == 19 {
+        cpos = cpos + 1
+        stState = 0
+        startUnit(15)
+      } else {
+        perr = true
+        perrMsg = "expected , or in after for name"
+      }
+    } else {
+      perr = true
+      perrMsg = "expected name after , in for"
+    }
   } else {
-    patMode = mode
-    patTid = tid
-    // one local for both cursors: patR = patStart would read the value patStart
-    // had *before* the line above wrote it, and the walk then never advances
-    // its right edge, so patNextStart takes the "there is another start" arm for
-    // ever and the machine cycles 0 1 2 4 6 until the tick budget runs out
-    let start = ini - 1
-    patStart = start
-    patR = start
-    patSt = 0
-    patSp = 0
-    patNCap = 0
-    patCapN = 0
-    patErr = ""
-    nxDst = dst
-    nxPc = vmPc
-    nxMode = 2
-    nxActive = true
+    perr = true
+    perrMsg = "bad statement state"
+  }
+}
+
+mod parseStep() {
+  if !perr && !pDone {
+    if pdThen != 0 {
+      pdDrain()
+    } else if inExpr {
+      exprMicro()
+      if exprDone {
+        doCont()
+      }
+    } else if stState != 0 {
+      stmtProgress()
+    } else {
+      stmtDispatch()
+    }
   }
 }
 
@@ -8014,7 +8170,16 @@ mod patArm(ini: int, mode: int, dst: int, tid: int) {
 // number; `cid` is the closure the call actually names, and it goes on the
 // frame so a closure body can ask which closure it is (GETCLO, the recursive
 // name of a `local function`).
-mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
+mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
+  // This mod is INLINED into vmStep, which is why writing `advanced` here used to
+  // work at all -- the name resolved to vmStep's local after inlining, and the
+  // compiler's scope check runs before that, so it called the identifier unknown
+  // and refused to write the artifact.  The flag is answered as a value instead:
+  // a parameter is by value, so a write would not travel back, and a return does.
+  // Only two arms step over their own instruction (the pairs/next walk and the
+  // CALL arm, which sets vmPc to the callee's entry), and every other arm falls
+  // through to the end with the flag still false.
+  var advanced = false
   if fid == 9 {
     // next(t [, k]): the entry after k in insertion order, as key+value.
     // A nil result means the walk is over.  Tombstones (keys assigned nil)
@@ -8641,6 +8806,82 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) {
       }
     }
   }
+  return advanced
+}
+
+// Lex one chunk per call; the driver loops these across ticks.
+mod lexChunk() {
+  // Two lexStep calls per tick, not four.  Same inlining as vmBurst and
+  // parseChunk: four calls compiled the lexer four times over, 6,692 nodes for
+  // what is one step's work at four copies.  Two is the middle of the road --
+  // one call is 5,019 nodes cheaper again but costs 83% more boot, and boot is
+  // what a library piece is charged in (its escaped characters over 4).
+  //
+  // Measured: a gsub program ran 2,400 ticks with four calls, 3,067 with two,
+  // 4,401 with one.  Two takes a third of the available saving for half the
+  // boot cost, and the string Find fast path already cut the piece's own boot
+  // from 692 to 617 ticks, so the rate is not the whole story any more.
+  lexStep()
+  if !lerr { lexStep() }
+}
+
+mod parseChunk() {
+  // One parseStep per tick rather than two, for the same reason vmBurst makes
+  // one vmStep call: a mod is inlined at its call site, so two calls compiled
+  // the parser twice over.  parseStep is 22,293 of the chip's 52,386 nodes, and
+  // one call is 11,143 fewer.
+  //
+  // Measured beside it: a gsub program went from 2,400 ticks to 3,084, so boot
+  // is 28% longer.  That is a smaller price than the vmStep change (a program
+  // takes 3.6x the ticks to *run*) because parsing is a one-pass pipeline over
+  // the source and the extra cost is bounded by the program's length, while the
+  // library piece is charged by the lexer's rate, which this does not touch.
+  parseStep()
+}
+// gmatch's two halves, run from the micro-step at the top of vmStep (nxMode 3)
+// because an array element write inside gateHigh's arm is dropped; see the note
+// there.  Phase 0 is the constructor: the walk's subject, pattern and cursor go
+// into three arrays, and the three values a generic for takes come back.  Phase
+// 1 is one step: the cursor comes out of the arrays and the matcher runs from
+// it.  The walk is a number where PUC's is a closure, and it is the second
+// value here and nil in PUC; the loop hands it back and the body never sees it,
+// so the only difference a program can see is type() of that value.
+mod gmStep() {
+  if patGmPhase == 0 {
+    patGmS[patGmId] = patSrc
+    patGmP[patGmId] = patPat
+    patGmPos[patGmId] = patGmIni
+    vtag[nxDst] = 4
+    vnum[nxDst] = 22.0
+    vstr[nxDst] = ""
+    vtag[nxDst + 1] = 6
+    vnum[nxDst + 1] = patGmId * 1.0
+    vstr[nxDst + 1] = ""
+    vtag[nxDst + 2] = 0
+    vnum[nxDst + 2] = 0.0
+    vstr[nxDst + 2] = ""
+    retCountV = 3
+    nxActive = false
+    nxDone()
+  } else {
+    patSrc = patGmS[patGmId]
+    patPat = patGmP[patGmId]
+    let pos = patGmPos[patGmId]
+    // patArm records where to come back to as vmPc, and this step runs a tick
+    // *after* the call, by which time vmPc is the next instruction: without
+    // putting it back the machine returns past the generic-for's nil test, the
+    // loop never ends, and the walk is called again from the start for ever.
+    vmPc = nxPc
+    // patArm answers a single nil itself when the walk is past the end, and it
+    // leaves the machine down: the arm raised nxActive before it knew whether a
+    // machine was coming, so without this the call re-runs the gate for ever.
+    patMode = -1
+    patArm(pos, 3, nxDst, patGmId)
+    if patMode == -1 {
+      nxActive = false
+      nxDone()
+    }
+  }
 }
 
 mod vmStep() {
@@ -8939,7 +9180,9 @@ mod vmStep() {
           // a builtin is its own closure, so the prototype is the number again
           // until the closure records start
           let fid = if cid < cloBase then cid else cloF[cid]
-          gateHigh(fid, a, nargs, mtSelf, cid)
+          if gateHigh(fid, a, nargs, mtSelf, cid) {
+            advanced = true
+          }
         }
         if pcallRan && pcallBad[0] == 0 && !nxActive {
           // a gate dispatched in place by a pcall: its results are at the
@@ -9438,234 +9681,6 @@ mod vmStep() {
       }
     }
   }
-}
-
-// ---------------------------------------------------------------- jobs + events
-
-let sched: exec
-let goParse: exec
-let goParse2: exec
-
-var jobBusy: bool = false
-var wantParse: bool = false
-
-mod parseJobStart() {
-  parseInit()
-  // One reserved function slot per gate builtin (ids 0..NB-1), so a program's
-  // own functions start at NB and can never collide with one.  The rest of the
-  // standard library is Lua source prepended to the program (see libIter etc).
-  pcallBad.resize(1, 0)
-  patSl.resize(PAT_STACK, 0)
-  patCapS.resize(33, 0)
-  patCapE.resize(33, 0)
-  patCapP.resize(33, 0)
-  patCapIx.resize(33, 0)
-  patGmS.resize(PAT_WALKS, "")
-  patGmP.resize(PAT_WALKS, "")
-  patGmPos.resize(PAT_WALKS, 1)
-  fStart.resize(NB, -1)
-  fParams.resize(NB, -1)
-  fRegs.resize(NB, -1)
-  fUpN.resize(NB, 0)
-  fUpSlotN.resize(NB, 0)
-  mainFid = newFunc()
-  fStart[mainFid] = 0
-  fParams[mainFid] = 0
-  // the main chunk is the outermost function, so a capture of one of its locals
-  // is a descriptor on it
-  fidAt[0] = mainFid
-}
-
-// Lex one chunk per call; the driver loops these across ticks.
-mod lexChunk() {
-  // Two lexStep calls per tick, not four.  Same inlining as vmBurst and
-  // parseChunk: four calls compiled the lexer four times over, 6,692 nodes for
-  // what is one step's work at four copies.  Two is the middle of the road --
-  // one call is 5,019 nodes cheaper again but costs 83% more boot, and boot is
-  // what a library piece is charged in (its escaped characters over 4).
-  //
-  // Measured: a gsub program ran 2,400 ticks with four calls, 3,067 with two,
-  // 4,401 with one.  Two takes a third of the available saving for half the
-  // boot cost, and the string Find fast path already cut the piece's own boot
-  // from 692 to 617 ticks, so the rate is not the whole story any more.
-  lexStep()
-  if !lerr { lexStep() }
-}
-
-mod parseChunk() {
-  // One parseStep per tick rather than two, for the same reason vmBurst makes
-  // one vmStep call: a mod is inlined at its call site, so two calls compiled
-  // the parser twice over.  parseStep is 22,293 of the chip's 52,386 nodes, and
-  // one call is 11,143 fewer.
-  //
-  // Measured beside it: a gsub program went from 2,400 ticks to 3,084, so boot
-  // is 28% longer.  That is a smaller price than the vmStep change (a program
-  // takes 3.6x the ticks to *run*) because parsing is a one-pass pipeline over
-  // the source and the extra cost is bounded by the program's length, while the
-  // library piece is charged by the lexer's rate, which this does not touch.
-  parseStep()
-}
-
-// ---------------------------------------------------------------- stdlib
-//
-// The library is plain Lua source, prepended to the program before it is
-// lexed, and only the pieces a program actually names are included: parsing is
-// a tick-bounded job, so an unused library would cost every run.  Only the
-// handful of operations Lua cannot express at all (next, select, the _s/_m
-// string and math primitives) live in the VM; everything else is Lua.
-
-// Does p name this library entry?  A plain substring test, like the reference
-// chip: it never misses a word the program actually uses, and the worst a
-// needless match can do is parse a little more library.
-mod srcUses(p: string, name: string) -> bool {
-  return p.Find(name, true, 0) >= 0
-}
-
-// Library selection keys on the FIELD name, not on how the program spells it:
-// `s:upper()` never writes "string.upper", so matching the dotted form alone
-// left the string table unbuilt and the method call nil.  A colon is the
-// method-call signal; a match inside a string or comment only costs a piece
-// that goes unused.
-mod srcUsesField(p: string, name: string) -> bool {
-  let dotted = "string." .. name
-  let colon = ":" .. name
-  return srcUses(p, dotted) || srcUses(p, colon)
-}
-
-mod libIter(p: string) -> string {
-  return if srcUses(p, "ipairs") || srcUses(p, "pairs") then LIB_iter else ""
-}
-
-mod libStrIndex(p: string) -> string {
-  return if srcUses(p, "string.len") || srcUses(p, "string.sub")
-      || srcUsesField(p, "len") || srcUsesField(p, "sub")
-      || srcUsesField(p, "byte") || srcUsesField(p, "char")
-      then LIB_str_index else ""
-}
-
-mod libStrCase(p: string) -> string {
-  return if srcUses(p, "string.upper") || srcUses(p, "string.lower")
-      || srcUsesField(p, "upper") || srcUsesField(p, "lower")
-      then LIB_str_case else ""
-}
-
-mod libStrFmt(p: string) -> string {
-  return if srcUses(p, "string.format") || srcUsesField(p, "format")
-      then LIB_str_fmt else ""
-}
-
-mod libStrGmatch(p: string) -> string {
-  return if srcUses(p, "string.gmatch") || srcUsesField(p, "gmatch")
-      then LIB_str_gmatch else ""
-}
-
-// gsub's replacement walk scans for '%' with string.find, so it brings the pat
-// piece with it; libStrPat then stands down so the program pays for it once.
-mod libStrPat(p: string) -> string {
-  return if (srcUses(p, "string.find") || srcUses(p, "string.match")
-      || srcUsesField(p, "find") || srcUsesField(p, "match"))
-      && !(srcUses(p, "string.gsub") || srcUsesField(p, "gsub"))
-      then LIB_str_pat else ""
-}
-
-mod libStrGsub(p: string) -> string {
-  return if srcUses(p, "string.gsub") || srcUsesField(p, "gsub")
-      then LIB_str_pat .. LIB_str_gsub else ""
-}
-
-mod libStrMisc(p: string) -> string {
-  return if srcUses(p, "string.rep") || srcUses(p, "string.reverse")
-      || srcUsesField(p, "rep") || srcUsesField(p, "reverse")
-      then LIB_str_misc else ""
-}
-
-mod libMathConst(p: string) -> string {
-  return if srcUses(p, "math.pi") || srcUses(p, "math.huge")
-      || srcUses(p, "math.maxinteger") || srcUses(p, "math.mininteger")
-      then LIB_math_const else ""
-}
-
-mod libMathInt(p: string) -> string {
-  return if srcUses(p, "math.floor") || srcUses(p, "math.ceil")
-      || srcUses(p, "math.tointeger") || srcUses(p, "math.type")
-      || srcUses(p, "math.abs") || srcUses(p, "math.sqrt")
-      || srcUsesField(p, "floor") || srcUsesField(p, "ceil")
-      || srcUsesField(p, "abs") || srcUsesField(p, "sqrt")
-      || srcUsesField(p, "tointeger") || srcUsesField(p, "type")
-      then LIB_math_int else ""
-}
-
-mod libMathTrig(p: string) -> string {
-  return if srcUses(p, "math.sin") || srcUses(p, "math.cos")
-      || srcUses(p, "math.tan") || srcUses(p, "math.asin")
-      || srcUses(p, "math.acos") || srcUses(p, "math.atan")
-      || srcUsesField(p, "sin") || srcUsesField(p, "cos")
-      || srcUsesField(p, "tan") || srcUsesField(p, "asin")
-      || srcUsesField(p, "acos") || srcUsesField(p, "atan")
-      then LIB_math_trig else ""
-}
-
-mod libMathExp(p: string) -> string {
-  return if srcUses(p, "math.exp") || srcUses(p, "math.log")
-      || srcUsesField(p, "exp") || srcUsesField(p, "log")
-      then LIB_math_exp else ""
-}
-
-mod libMathMisc(p: string) -> string {
-  return if srcUses(p, "math.max") || srcUses(p, "math.min")
-      || srcUses(p, "math.fmod") || srcUses(p, "math.modf")
-      || srcUsesField(p, "max") || srcUsesField(p, "min")
-      || srcUsesField(p, "fmod") || srcUsesField(p, "modf")
-      then LIB_math_misc else ""
-}
-
-mod libTabIns(p: string) -> string {
-  return if srcUses(p, "table.insert") || srcUses(p, "table.remove")
-      || srcUses(p, ":insert") || srcUses(p, ":remove")
-      then LIB_tab_ins else ""
-}
-
-mod libTabList(p: string) -> string {
-  return if srcUses(p, "table.unpack") || srcUses(p, "table.pack")
-      || srcUses(p, "table.move") then LIB_tab_list else ""
-}
-
-mod libTabConcat(p: string) -> string {
-  return if srcUses(p, "table.concat") then LIB_tab_concat else ""
-}
-
-mod libTabSort(p: string) -> string {
-  return if srcUses(p, "table.sort") then LIB_tab_sort else ""
-}
-
-mod libIo(p: string) -> string {
-  return if srcUses(p, "io.read") || srcUses(p, "io.write")
-      || srcUses(p, "io.lines") then LIB_io else ""
-}
-
-// The library is prepended to the program, so a line in the source the lexer
-// and the parser see counts the library's lines as well.  Both error paths undo
-// that here, because two copies of one subtraction is one copy waiting to be
-// wrong -- and the parser's was missing, so every syntax error in a program that
-// pulled in a piece reported a line number tens of lines too high.
-//
-// It answers a STRING, not a number, because the int/float distinction lives in
-// the register's tag and a line number is an int: fmtNum is the FLOAT formatter
-// and always spells a whole number "2.0" (which is right for 2.0 and wrong for a
-// line).  The int spelling is the one fmtVal uses for the integer tag.
-mod userLine(raw: float) -> string {
-  let l = toInt(raw)
-  var u = l
-  if libLines < l { u = l - libLines } else { u = 1 }
-  return "" .. (u | 0)
-}
-
-mod libTonumber(p: string) -> string {
-  return if srcUses(p, "tonumber") then LIB_tonumber else ""
-}
-
-mod libMathRandom(p: string) -> string {
-  return if srcUses(p, "math.random") then LIB_math_random else ""
 }
 
 // A closure being filled owns the whole tick: its cells go in one per tick and
