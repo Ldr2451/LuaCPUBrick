@@ -136,10 +136,23 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
         pre.append(f"inStr{k} = {lua_str_lit(s)}")
     arr = [float(v) for v in inarr] if inarr else []
     pre.append("ARR = {" + ", ".join(lua_num_lit(v) for v in arr) + "}")
-    pre.append("inarr = function(i)")
-    pre.append("  if type(i) == 'number' and i == math.floor(i)")
-    pre.append("      and i >= 1 and i <= #ARR then return ARR[i] end")
-    pre.append("  return nil")
+    # inarr models the chip's PORT function, so it has to carry the port's
+    # contract: inarr(i) is one slot and inarr(i, k) is k of them, with a slot
+    # past the end reading nil.  Without the second form the model silently
+    # answered one value where the chip answers k, and any program using it
+    # diverged from the reference for a reason that had nothing to do with the
+    # chip.  The count guard raises with level 0 because the chip has no line to
+    # put in a message.
+    pre.append("inarr = function(i, k)")
+    pre.append("  if type(i) ~= 'number' or i ~= math.floor(i)")
+    pre.append("      or i < 1 or i > #ARR then return nil end")
+    pre.append("  if k == nil then return ARR[i] end")
+    pre.append("  if type(k) ~= 'number' or k ~= math.floor(k) or k < 1 or k > 8")
+    pre.append("      then error('bad argument #2 to \\'inarr\\' (count out of"
+               " range)', 0) end")
+    pre.append("  local got = {}")
+    pre.append("  for j = 0, k - 1 do got[j + 1] = ARR[i + j] end")
+    pre.append("  return table.unpack(got, 1, k)")
     pre.append("end")
     # The port writers are no-ops: the reference has no ports, so their values
     # are the chip's to check and the log is the part PUC can decide.  setvec

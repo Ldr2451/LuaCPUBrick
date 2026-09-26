@@ -45,7 +45,7 @@ DEMO_LOG = ("arith\t2.25\t7.0\t-4\t-4\t-0.5\n"
              "grade\tB\n"
              "flow\t55\t2\t1\tsecond\n"
              "inputs\t6.0\t1.875\t10.0\n"
-             "inputs2\t30.0\tnil\tnil\n"
+             "inputs2\tnil\tnil\t10.0\t20.0\t30.0\n"
              "outs\t7\t79\n"
              "outs2\tfoo-bar!|foo\t21.75/table\n"
              "\n"
@@ -1572,13 +1572,16 @@ TESTS = [
      {"expect": {"outArr": [0.0] * 60 + [1.0, 2.0, 3.0, 4.0], "log": "ok\n"}}),
     ("arr-multi-badval", "outarr(1, 1, 1, {})", None, "runtimerr",
      {"expect": {"err": "array element must be a number"}}),
+    # These two are DIFFERENTIAL, not literal: tests/lua_oracle.py's inarr models
+    # the chip's port contract (one slot, or k of them with a slot past the end
+    # reading nil), so PUC decides the answer and the chip has to agree.
     ("arr-multi-read", "local a, b, c, d = inarr(4, 4) print(a, b, c, d)", None,
-     "modelio", {"inarr": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-                 "expect": {"log": "4.0\t5.0\t6.0\t7.0\n"}}),
+     "run", {"inarr": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]}),
+    ("arr-multi-expand", "print(inarr(1, 3))", None, "run",
+     {"inarr": [1.5, 2.5, 3.5, 4.5]}),
     # a slot past the end of the array reads nil, the same rule inarr(65) has
-    ("arr-multi-read-edge", "print(inarr(62, 4))", None, "modelio",
-     {"inarr": [float(i) for i in range(1, 65)],
-      "expect": {"log": "62.0\t63.0\t64.0\tnil\n"}}),
+    ("arr-multi-read-edge", "print(inarr(62, 4))", None, "run",
+     {"inarr": [float(i) for i in range(1, 65)]}),
     # the count is a count, not an index: 0, 9 and 1.5 all raise.  Each case sets
     # inarr, because the INDEX is checked first: with an empty array inarr(1, 9)
     # answers nil and never reaches the count.
@@ -1590,6 +1593,13 @@ TESTS = [
      {"inarr": [1.0], "expect": {"err": "count out of range"}}),
     ("arr-multi-read1", "print(inarr(1, 1))", None, "modelio",
      {"inarr": [3.5], "expect": {"log": "3.5\n"}}),
+    # A compile limit answers on the err port with the line that asked for too
+    # much, so a program that runs out of registers can be fixed rather than
+    # guessed at: PUC allows 200 locals per function and the chip 64, so this is
+    # a case the chip must REJECT and the reference must accept.
+    ("lim-registers",
+     " ".join("local v%d = %d" % (i, i) for i in range(70))
+     + " print('unreached')", None, "reject", {"errline": 1}),
     # writable output globals
     ("out-nums", "outNum0 = 1 outNum1 = 2.5 outNum2 = true outNum3 = nil", None,
      "modelio",

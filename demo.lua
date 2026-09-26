@@ -5,9 +5,9 @@
 -- Every group below exercises a feature and the ports at the end depend on all
 -- of them, so any mismatch means something broke.  The expected log is NOT here:
 -- it is tests/cases.py's DEMO_LOG, checked against Lua 5.5 on every suite run.
--- Kept small on purpose -- the lexer runs at 4 chars/tick, so source is boot
--- time -- and it names no string./math./table./io. function, because the loader
--- prepends that library's source and the program gate is about 4 KB.
+-- Kept small on purpose (the lexer runs at 4 chars/tick, so source is boot
+-- time) and it names no string./math./table./io. function, because naming one
+-- makes the loader prepend that library's source in front of this file.
 
 -- arithmetic, precedence, unary minus, power, floored % and //, concat
 local a = (inNum0 + inNum1 * inNum2 - inNum3 / 2) % 4
@@ -111,7 +111,11 @@ local vlen = invecx + invecy + invecz
 local cren = incolr + incolg + incolb + incola
 local mixed = (a + b) * inNum0 - 24 / 4
 print("inputs", vlen, cren, inarr(1))
-print("inputs2", inarr(3), inarr(9), type(inarr(9)))
+-- inarr(i, k) reads a run of slots in one call.  Only a call in the LAST slot
+-- expands all of them, so that is where the three values appear; slot 9 is past
+-- the end of the array and reads nil, and the middle call is cut to one value
+-- exactly as PUC cuts it.
+print("inputs2", inarr(9), type(inarr(9)), inarr(1, 3))
 
 -- writable outputs: dup store leaves 7, strings format, array/vec/col
 outNum0, outNum0 = 7, 8

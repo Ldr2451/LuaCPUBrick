@@ -388,6 +388,13 @@ def compare(name, mode, kw, r, dt):
     if mode == "reject":
         if c["progOk"]:
             return (name, False, "chip accepted, want reject", dt)
+        # a limit the chip enforces and PUC does not (64 registers against 200)
+        # lands here, so the line is worth asserting: the message is how a user
+        # finds the declaration that asked for too much
+        if "errline" in kw:
+            want = "line %d:" % kw["errline"]
+            if want not in c["err"]:
+                return (name, False, "err missing %r: got %r" % (want, c["err"]), dt)
         return (name, True, "", dt)
     if mode == "runtimerr":
         exp_err = (exp.get("err") or "") if exp else ""

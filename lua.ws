@@ -167,6 +167,36 @@
 ///   string.gmatch answers three values where PUC answers one (its iterator
 ///   ignores the arguments the generic for hands it); the chip's generic for
 ///   reads the walk's state out of the call.  See CHIP_LOG gmatch-arity.
+///   #t after DELETING from the middle differs: {1,2,3} with t[2] = nil is 3 here
+///   and 1 in PUC, which finds the nil in its array part and answers the index
+///   before it.  The chip's border is the append one, so an append still answers
+///   the new length; only a hole in the middle reads long.  CHIP_LOG tab-del.
+///   a float PRINTS with the host's shortest round trip (the `..` gate's
+///   format!("{f}"), so where PUC writes 17 significant digits the chip writes
+///   the shortest string that reads back the same: 1/3 is 0.3333333333333333 here
+///   and 0.33333333333333331 in PUC, and math.modf(3.7) answers 0.7000000000000002
+///   against 0.70000000000000018.  The value is the same, the spelling is the
+///   host's, and there is no precision knob to ask for.  CHIP_LOG fmt-div3,
+///   math-modf.
+///   so math.maxinteger PRINTS 9223372036854775808 -- 2^63, the nearest float --
+///   where PUC writes 9223372036854775807.  This is the 2^53 rule above seen from
+///   the other side: the literal is exact, the register is not.  CHIP_LOG
+///   math-maxinteger.
+///   math.random's NUMBERS are not PUC's.  PUC seeds xoshiro256** on a 64-bit
+///   state and the chip runs a 32-bit LCG, so the same seed gives a different
+///   sequence: math.randomseed(42) then three draws of math.random(1, 6) is
+///   1, 6, 3 here and 6, 2, 4 in PUC, and math.randomseed(7) then five draws of
+///   math.random(10) is 6, 1, 8, 7, 1 here against 8, 10, 10, 8, 6.  Everything
+///   else about it is PUC's -- ranges, intervals, the arity, the argument
+///   indexes, the error text -- so a program that uses the numbers gets
+///   different ones and a program that uses the API does not notice.  The host's
+///   Random gate would give a stream, but an
+///   exec gate's value cannot land in a register in the same instruction (see
+///   AGENTS.md), so the piece is the honest way to have both.  CHIP_LOG
+///   math-random-seed42, math-random-ten.  Its two long error messages are cut at
+///   the 64-character log cap, and PUC's text is three characters longer before
+///   the cut, so the chip's line ends "...integer repres" where PUC's ends
+///   "...r".  That is the cap, not the message.
 ///   tostring of a table is address-shaped (PUC's exact address is unstable).
 ///   t[nil] reads and writes raise "table index is nil". outNum0..outNum3 only
 ///   take numbers/booleans/nil and outArr only numbers (PUC tables take
