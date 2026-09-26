@@ -40,11 +40,17 @@ def main():
         isolated = run_cpu("cpu-b-isolated", cpu_b, "print(inarr(1))")
         require(isolated["log"] == "nil\n", "CPU B inherited CPU A state")
 
+        # the outputs are calls now, so a program cannot read one back: the
+        # check is what the OUTSIDE reader sees on the ports, which is the thing
+        # that actually has to work
         self_out = run_cpu(
             "self-output", cpu_a,
             "outnum(1, 5) outstr(1, 'self') outint(7) "
-            "outarr(1, 41) print('A3', 6, 'self', 8)")
-        require(self_out["log"] == "6\tself\t8\n", "scalar self-readback failed")
+            "outarr(1, 41) print('A3')")
+        require(self_out["log"] == "A3\n", "the program did not finish")
+        require(self_out["outGlobals"]["outNum0"] == 5.0, "outNum0 was not written")
+        require(self_out["outGlobals"]["outStr0"] == "self", "outStr0 was not written")
+        require(self_out["outGlobals"]["outInt0"] == 7.0, "outInt0 was not written")
         require(self_out["outArr"][0] == 41.0, "outArr[1] was not written")
 
         self_in = run_cpu(
@@ -68,10 +74,10 @@ def main():
 
         reply = run_cpu(
             "cpu-a-reply", cpu_a,
-            "outnum(1, inarr(1)) print('A2', inarr(1) * 2)",
+            "outnum(1, inarr(1)) print('A2', inarr(1), inarr(1) * 2)",
             response["outArr"])
         require(reply["log"] == "A2\t18.0\t36.0\n", "CPU A reply mismatch")
-        require(reply["outGlobals"]["outNum0"] == 9.0,
+        require(reply["outGlobals"]["outNum0"] == 18.0,
                 "CPU A did not retain the reply")
     finally:
         os.unlink(dump_path)

@@ -34,20 +34,21 @@ A WireScript chip is wires, so everything a program can see or change is a port.
 `program` carries the source in, the chip runs it, and the results come back out:
 
 ```
-program   --|           |-- log
-run       --|           |-- outNum0
-inNum0    --|___________|-- outNum1
-inNum1    --|           |-- outNum2
-inNum2    --|           |-- outNum3
-inNum3    --|  Lua 5.5  |-- outInt0
-inStr0    --|           |-- outStr0
-inStr1    --|___________|-- outStr1
-inArr     --|           |-- outArr
-inInt0    --|           |-- result
-                        |-- err
-                        |-- progOk
-                        |-- busy
+          program --|           |-- log
+              run --|           |-- outNum0
+           inNum0 --|           |-- outNum1
+           inNum1 --|___________|-- outNum2
+           inNum2 --|           |-- outNum3
+           inNum3 --|  Lua 5.5  |-- outInt0
+           inStr0 --|           |-- outStr0
+           inStr1 --|___________|-- outStr1
+            inArr --|           |-- outArr
+           inInt0 --|           |-- result
+                                |-- err
+                                |-- progOk
+                                |-- busy
 ```
+
 
 `run` is the only one that decides anything: high runs the program, low stops it
 where it is, and a rising edge starts again from the top. Every other input

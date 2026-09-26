@@ -264,8 +264,8 @@ TESTS = [
      {"sinputs": {0: "a", 1: "b"}, "vec": (1, 2, 3)}),
     ("inputs-expr", "print(inNum0*2, inStr0 .. '!', inNum3%inNum1)",
      [10, 3, 0, 7], "run", {"sinputs": {0: "hey"}}),
-    ("inputs-vec", "print(inarr(1)+inarr(2)+inarr(3))", None, "run",
-     {"vec": (1.5, 2.5, 3.0)}),
+    ("inputs-arr3", "print(inarr(1)+inarr(2)+inarr(3))", None, "run",
+     {"inarr": [1.5, 2.5, 3.0]}),
             ("io-strings", "print(inStr0 .. inStr1)", None, "run",
      {"sinputs": {0: "foo", 1: "bar"}}),
     # clock() is the server uptime, which the sim models as tick * 0.01 -- it
