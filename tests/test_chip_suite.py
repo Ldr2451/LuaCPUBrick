@@ -314,26 +314,39 @@ def compare(name, mode, kw, r, dt):
             if run.get("finished") != want_finished:
                 return (name, False, "%s finished got=%r want=%r" % (
                     run_name, run.get("finished"), want_finished), dt)
-            if run.get("tick") != run.get("budget", 0) - 1:
+            if not want_finished and run.get("tick") != run.get("budget", 0) - 1:
                 return (name, False, "%s stopped at tick %r/%r" % (
                     run_name, run.get("tick"), run.get("budget", 0) - 1), dt)
             if want_log is not None and run.get("log") != want_log:
                 return (name, False, "%s log got=%r want=%r" % (
                     run_name, run.get("log"), want_log), dt)
-            samples = run.get("samples", [])
-            sample_ticks = [sample.get("tick") for sample in samples]
-            want_ticks = list(checkpoints) + [run.get("budget", 0) - 1]
-            if sample_ticks != want_ticks:
-                return (name, False, "%s samples got=%r want=%r" % (
-                    run_name, sample_ticks, want_ticks), dt)
-            values = [sample.get("outNum0", 0.0) for sample in samples]
-            if not values or values[0] <= 0.0 or any(
-                    left >= right for left, right in zip(values, values[1:])):
-                return (name, False, "%s no progress: %r" % (run_name, values), dt)
-            if any(sample.get("finished") != want_finished or
-                   not sample.get("busy") for sample in samples):
-                return (name, False, "%s invalid sample state: %r" % (
-                    run_name, samples), dt)
+            # the checkpoints are the ticks the case asked about; a case that
+            # asked for none has nothing to sample, and the final sample is
+            # wherever the run stopped, which is the budget only when the program
+            # was still going
+            if checkpoints:
+                samples = run.get("samples", [])
+                sample_ticks = [sample.get("tick") for sample in samples]
+                want_ticks = list(checkpoints)
+                if not want_finished:
+                    want_ticks.append(run.get("budget", 0) - 1)
+                if sample_ticks != want_ticks:
+                    return (name, False, "%s samples got=%r want=%r" % (
+                        run_name, sample_ticks, want_ticks), dt)
+            # the progress and per-sample checks describe the shape the two
+            # infinite-loop cases have (a counter that only goes up, busy the
+            # whole time).  A schedule case asserts the log instead, so it asks
+            # for progress: false rather than having those assumptions applied to
+            # it; a case with checkpoints means them, as it always did.
+            if exp.get("progress", bool(checkpoints)):
+                values = [sample.get("outNum0", 0.0) for sample in samples]
+                if not values or values[0] <= 0.0 or any(
+                        left >= right for left, right in zip(values, values[1:])):
+                    return (name, False, "%s no progress: %r" % (run_name, values), dt)
+                if any(sample.get("finished") != want_finished or
+                       not sample.get("busy") for sample in samples):
+                    return (name, False, "%s invalid sample state: %r" % (
+                        run_name, samples), dt)
         baseline = life.get("baseline", {})
         reset = life.get("reset", {})
         if baseline.get("tick") != 0 or baseline.get("finished") or \
@@ -467,13 +480,36 @@ def lifecycle_sample(sim_, tick):
     }
 
 
-def lifecycle_window(sim_, si, ticks, checkpoints):
+def lifecycle_window(sim_, si, ticks, checkpoints, phases=None):
     sim_.reset()
     sim_.inputs = si
+    # A SCHEDULE of run levels, because "the first run edge does nothing" is a
+    # claim about the ORDER of the edges and a mode that sets every input once at
+    # tick zero cannot see it.  phases is [{"ticks": n, "run": true|false}, ...].
+    # The whole schedule is ONE run() call: Sim.finished is a latch that only
+    # reset() clears, so a second run() after the program finished returns at
+    # once, and a phase boundary has to be crossed INSIDE the run.
     wanted = set(checkpoints)
     samples = []
+    edges = []
+    if phases:
+        # The FIRST phase is the level the run starts at, not an edge.  Every
+        # later phase's level arrives at the END of the one before it, so the
+        # boundary is the running total BEFORE this phase is added.  Getting
+        # either of those wrong produces a schedule that never raises run at all,
+        # which is a test that cannot fail the bug it was written for.
+        at = 0
+        for i, ph in enumerate(phases):
+            if i:
+                edges.append((at, bool(ph["run"])))
+            at += int(ph["ticks"])
+        sim_.inputs = dict(si, run=bool(phases[0]["run"]))
+    pending = list(edges)
 
     def on_tick(sim_now, tick):
+        while pending and tick + 1 >= pending[0][0]:
+            _at, level = pending.pop(0)
+            sim_now.inputs = dict(si, run=level)
         if tick in wanted:
             samples.append(lifecycle_sample(sim_now, tick))
 
@@ -496,14 +532,21 @@ def lifecycle_reset_state(sim_):
 def run_lifecycle(sim_, p):
     kw = p["kw"]
     si = sim_inputs(p["src"], kw)
-    ticks = p["ticks"]
+    # a schedule of run levels replaces the single run of `ticks` ticks, and the
+    # budget is the schedule's total, because the comparator checks that the run
+    # used exactly the ticks it asked for
+    phases = kw.get("phases")
+    if phases:
+        ticks = sum(int(ph["ticks"]) for ph in phases)
+    else:
+        ticks = p["ticks"]
     checkpoints = kw.get("expect", {}).get("checkpoints", [])
     sim_.reset()
     baseline = lifecycle_reset_state(sim_)
-    first = lifecycle_window(sim_, si, ticks, checkpoints)
+    first = lifecycle_window(sim_, si, ticks, checkpoints, phases)
     sim_.reset()
     reset = lifecycle_reset_state(sim_)
-    second = lifecycle_window(sim_, si, ticks, checkpoints)
+    second = lifecycle_window(sim_, si, ticks, checkpoints, phases)
     return baseline, first, reset, second
 
 

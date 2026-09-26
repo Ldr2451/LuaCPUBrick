@@ -1245,6 +1245,32 @@ TESTS = [
     ("life-prog", "local n = 0 print('start') while true do "
      "n = n + 1 outnum(1, n) end", None, "lifecycle",
      {"expect": {"log": "start\n", "checkpoints": [300, 600, 900]}}),
+    # WHEN the run edge arrives, not just that one does.  A game program is
+    # pasted first and run is toggled afterwards, and the first high has to work
+    # exactly like the second: the chip parsed the program while run was low, so
+    # the parse is over and the edge is the only thing that starts the VM.
+    ("life-run-high-after-parse", "print('hi') outnum(1, 7)", None,
+     "lifecycle",
+     {"phases": [{"ticks": 1200, "run": False}, {"ticks": 600, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # the control: the same program with run high from tick zero, which is what
+    # every other case in the suite does and what used to be the only shape
+    ("life-run-high-from-boot", "print('hi') outnum(1, 7)", None,
+     "lifecycle",
+     {"phases": [{"ticks": 1800, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # and the shape that works today, kept so the fix cannot quietly change it:
+    # low, high, low, high
+    ("life-run-toggle-twice", "print('hi') outnum(1, 7)", None, "lifecycle",
+     {"phases": [{"ticks": 1200, "run": False}, {"ticks": 300, "run": True},
+                 {"ticks": 100, "run": False}, {"ticks": 600, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # run goes high BEFORE the program arrives, so the edge lands while there is
+    # nothing to run: the paste is the start, and the log must still appear
+    ("life-run-high-before-program", "print('hi') outnum(1, 7)", None,
+     "lifecycle",
+     {"phases": [{"ticks": 400, "run": True}, {"ticks": 1400, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
     ("long-string", "print([[hello]])", None, "run"),
     ("long-string-nest", 'print([=[a]=])', None, "run"),
     ("long-comment", "--[[this is a comment]]print(1)", None, "run"),

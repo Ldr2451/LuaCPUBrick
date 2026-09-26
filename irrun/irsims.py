@@ -256,6 +256,19 @@ class Sim:
             if src and 'Internal_MicrochipInput' in src.cls and dst and 'Expr_ChangeDetectorExec' in dst.cls and getattr(w, 'src_port', None) == 'RER_Output':
                 label = _extract(src.props.get('PortLabel', ('raw', '')))
                 self.chg_inputs[getattr(w, 'dst_id', None)] = label if isinstance(label, str) else str(label)
+        # Every input PORT node, so a value that moves can be re-read.  The queue
+        # only fires them once, from the initial pass, which left a port holding
+        # whatever it read at tick 0: the cached prop is returned before the live
+        # read (see _out_val), so `busy` never noticed `run` going low and no
+        # case could test the ORDER of two input edges at all.
+        self.port_nodes: list[int] = []
+        self.port_label: dict[int, str] = {}
+        for nid, nd in self.nodes.items():
+            if 'Internal_MicrochipInput' in nd.cls:
+                label = _extract(nd.props.get('PortLabel', ('raw', '')))
+                self.port_nodes.append(nid)
+                self.port_label[nid] = label if isinstance(label, str) else str(label)
+        self.port_seen: dict[int, object] = {}
         for w in wires:
             dn = self.nodes.get(w.src_id)
             if dn and dn.kind == "Input":
@@ -290,6 +303,11 @@ class Sim:
         self.vars = {}
         self.arrays = {}
         self.maps = {}
+        # the port values this Sim has already pushed.  Clearing it makes the
+        # first tick after a reset push every port again: node props survive
+        # reset(), so a shared Sim would otherwise carry the PREVIOUS case's
+        # input values and a case could never change one.
+        self.port_seen = {}
         self.log = ""
         self._log_appends = []
         self.tick = 0
@@ -320,10 +338,11 @@ class Sim:
             self.tick_delta = max(1, tick - prev)
             prev = tick
             self.tick_done: set[tuple[int, str]] = set()
-            # NOTE: inputs are edge-triggered (like hardware): they fire once
-            # from the initial queue. Re-firing them every tick would reset
-            # latched state (e.g. re-latch program source, resetting parse).
-            # init constants (once; vars guard re-init internally)
+            # NOTE: input NODES fire once from the initial queue.  Re-firing them
+            # EVERY tick would reset latched state (e.g. re-latch the program
+            # source and re-parse forever), so a port is re-read below only when
+            # its value really moved -- which is what hardware does, and it is
+            # what lets a case order two input edges.
             if tick == 0:
                 for nid in sorted(self.nodes):
                     nd = self.nodes[nid]
@@ -332,6 +351,29 @@ class Sim:
                             or "WireGraphPseudo_MapVar" in nd.cls
                             or nd.cls == "_Literal"):
                         self._do_literal(nid)
+            else:
+                for nid in self.port_nodes:
+                    label = self.port_label[nid]
+                    if label not in self.inputs:
+                        continue
+                    val = self.inputs[label]
+                    if isinstance(val, (list, tuple)):
+                        # an array port keeps its own storage, so a new list has
+                        # to replace it or the reader sees the old contents
+                        if list(val) == self.port_seen.get(nid):
+                            continue
+                        self.port_seen[nid] = list(val)
+                        self.arrays[self._arr_id(nid)] = list(val)
+                    else:
+                        if val == self.port_seen.get(nid):
+                            continue
+                        self.port_seen[nid] = val
+                    # re-queue the port: this pushes its RER_Output wires, which
+                    # is how the Change detectors downstream get to fire, and it
+                    # refreshes the cached prop the pure readers see
+                    self._out_val(nid, 'RER_Output', val)
+                    for w in self.out_wires.get((nid, "RER_Output"), []):
+                        self.exec_queue.add((w.dst_id, w.dst_port))
             # Same-tick exec drain (hardware exec pulses propagate
             # combinationally within a tick; Clocks/BufferTicks pace across
             # ticks). Interleaved pure-value fixpoint keeps exec decisions
