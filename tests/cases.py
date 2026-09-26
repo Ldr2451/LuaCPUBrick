@@ -1331,6 +1331,20 @@ TESTS = [
     # check that fired on every outnum(1, v) in every program would be noise.
     ("index-literal-inrange-ok", "outnum(1, 1) outnum(5, 5)", None, "state",
      {"noProgDebug": "outnum index must be"}),
+    # outarr IS bounded - 64 slots - so a literal past the end is a real failure
+    # with a real runtime message, and the guard's bound is read from the array
+    # rather than written as 64 so the two cannot drift.
+    ("index-literal-outarr", "outarr(65, 1)", None, "state",
+     {"progDebug": "array index out of range"}),
+    ("index-literal-outarr-ok", "outarr(64, 1)", None, "state",
+     {"noProgDebug": "array index out of range"}),
+    # inArr past the end gives nil, and PUC agrees (t[65] over 64 slots is nil).
+    # A warning for it is wanted - a silent nil is a worse failure than a crash -
+    # but it is NOT here yet: reading the inArr port during codegen broke two
+    # unrelated cases, so the width has to come from a constant instead.  This case
+    # pins only the behaviour, and asserts nothing about progDebug, because a case
+    # that locks in the absence of a wanted warning is a trap for whoever adds it.
+    ("index-inarr-past-end", "print(inarr(65))", None, "state", {"log": "nil\n"}),
     ("life-program-recovers", "print('hi')", None, "lifecycle",
      {"steps": [{"ticks": 300, "src": "print('"},
                 {"ticks": 300, "src": "print('hi')"}],

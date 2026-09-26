@@ -1499,6 +1499,19 @@ mod noteIndex(name: string) {
     if name == "outstr" && !(1.0 <= v && v <= 2.0) {
       nameWarn = nameWarn .. "warn: outstr index must be 1..2, and this call is out of range\n"
     }
+    // the runtime guard is `iv != floor(iv) || iv < 1.0 || iv > outArrV.length()`
+    // and its message is verbatim below, so this cannot disagree with it - and
+    // the bound is read from the array itself rather than written as 64
+    if name == "outarr" && (v != floor(v) || v < 1.0 || v > outArrV.length()) {
+      nameWarn = nameWarn
+        .. "warn: array index out of range, and outarr is 1-based over the outArr slots\\n"
+    }
+    // inArr is bounded by the same length, but a bad index there substitutes nil
+    // and carries on, so it deserves its own words.  NOT done yet: reading an
+    // INPUT port during codegen broke two unrelated cases (out-badindex-str and
+    // tab-index-expr, neither of which calls inarr), because a port value is
+    // resolved in a fixpoint rather than in source order.  The check needs the
+    // width from a constant instead of from the port.
   }
 }
 
