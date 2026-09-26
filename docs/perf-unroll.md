@@ -116,3 +116,32 @@ dispatches twice in a tick. And the call-heavy case gets nothing from it:
 `fib(18)` only finishes at four full steps, and `CALL` is deliberately not in the
 fast set. So the honest pitch is *loop and straight-line speed at ~7% of the full
 unroll's price*, not "the 4x, cheaper".
+
+## Where the 4x actually went: the node census
+
+The compiler prints a source line per node, so ONE build attributes every node to
+the mod that emitted it (102,296 of 104,949 attributed; the rest are ports and
+literals). At the landed 4x:
+
+| mod | nodes | call sites | per site | what it is |
+|---|---|---|---|---|
+| retCopy | 7,660 | 4 | 1,915 | 16-value return copier, 3 arrays x 16 unrolled |
+| vmFail | 5,849 | 115 | 51 | the error raiser |
+| tblSetKey | 5,645 | - | - | one table store; TAPPEND calls it 16 times |
+| retAdjust | 5,144 | 6 | 857 | sixteen unconditional ifs |
+| vmStep | 4,841 | 4 | 1,210 | the chain's own arms |
+| gateHigh + gateLow | 5,110 | 4 | 1,278 | builtin dispatch |
+| vSet + vNum + vTag + vStr | 8,008 | many | - | the register-file accessors |
+
+Top ten mods are 43% of the chip. **The unroll did not duplicate the dispatch - it
+duplicated the HELPERS**, because the cheap arms call `vSet`/`vNum`/`vTag`/`vStr`
+and every error site calls `vmFail`. That is why a "partial" unroll carrying only
+loads and arithmetic still pays most of the accessor cost, and why cutting Lua
+features is the wrong lever: `assert` is 1,381 of 104,949.
+
+The actionable number is `retCopy`: 4 call sites, 1,915 nodes each, for a ladder
+that moves `n` values in three parallel arrays. Returns are usually 0-3 values, and
+`AGENTS.md` already records the fix for two callers that know their count (428 and
+400 nodes for copy-only paths). Specialising the remaining sites by count is the
+largest single identified saving, and it is the same shape as a decision already
+made and measured twice in this chip.
