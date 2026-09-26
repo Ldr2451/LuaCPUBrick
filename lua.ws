@@ -9018,6 +9018,16 @@ mod gmStep() {
   }
 }
 
+// Is a micro-step machine, a protected call or a closure fill driving this tick?
+// vmStep routes on these; vmStepFast has to stand aside on the SAME set, and the
+// set is written once here so the two cannot drift.  A copied list is how
+// string.format got dispatched past: the fast step had its own idea of what
+// "busy" meant and did not include the format machine.
+mod vmBusy() -> bool {
+  return cloActive || pcallUnwind || pcallGo || pcallGate || lenChase || nxActive
+      || cmpActive
+}
+
 mod vmStep() {
   if cloActive {
     // A closure being filled owns the WHOLE tick: its cells go in one per tick
@@ -9828,15 +9838,250 @@ mod vmStep() {
 // the value is published at the end, and nothing may read it half-built. The
 // step lives here rather than in vmStep: measured in the old four-step burst,
 // the rare arm cost every program about a fifth of its per-tick time.
+// A fast dispatch: the arms a loop body and straight-line code are made of, and
+// nothing else.  Four of these plus one full vmStep is most of the 4x speed for a
+// fraction of the gates, because the three extra copies never carry the helpers
+// the expensive arms call - retCopy, retAdjust, tblSetKey, vmFail - and those are
+// what made the full unroll 2.58x the artifact.
+//
+// The pc advances only when an arm in THIS step matched, which is the whole point:
+// the shared tail in vmStep fires whenever `advanced` is false, and that is only
+// safe because vmStep has EVERY arm.  Here the set is a range test on the opcode,
+// so no arm body is edited - an earlier attempt inserted a statement per arm and
+// the compiler reported a branch type mismatch three arms later, because an arm
+// body whose last statement is a single expression gives the block its value.
+mod vmStepFast() {
+  if vmHalted || vmBusy() {
+    return
+  }
+  let op = bop[vmPc]
+  let a = bpa[vmPc]
+  let b = bpb[vmPc]
+  let c = bpc[vmPc]
+  var advanced = false
+  if op == 0 {
+    vmHalted = true
+    advanced = true
+  } else if op == 1 {
+    vSet(a, 0, 0.0, "")
+  } else if op == 2 {
+    if c == 1 {
+      vSetIntSat(a, constNum[b])
+    } else {
+      vSetNum(a, constNum[b])
+    }
+  } else if op == 3 {
+    vSet(a, 2, 0.0, constStr[b])
+  } else if op == 4 {
+    if b == 0 {
+      vSet(a, 3, 0.0, "")
+    } else {
+      vSet(a, 3, 1.0, "")
+    }
+  } else if op == 5 {
+    vSet(a, gTag(b), gNum(b), gStr(b))
+  } else if op == 6 {
+    // The output ports are written by outnum/outstr now, not by
+    // assigning a global, so a store to a global is just a store.
+    gSet(a, vTag(b), vNum(b), vStr(b))
+  } else if op == 7 {
+    vSet(a, vTag(b), vNum(b), vStr(b))
+  } else if op >= 8 && op <= 13 {
+    let immK = c < 0
+    let immPack = if immK then (-1 - c) | 0 else 0
+    let bt = vTag(b)
+    let ct = if immK then (if (immPack & 1) == 1 then 6 else 1) else vTag(c)
+    // String operands go through PUC's coercion (arithValL/arithValR), and
+    // the failure message is PUC's: a string that will not convert names the
+    // operator and both operand types ("attempt to add a 'string' with a
+    // 'number'"), while any other non-number names the offending operand
+    // ("attempt to perform arithmetic on a table value").  Both are built in
+    // the failing branch, so neither concat runs on arithmetic that succeeds.
+    let x = arithValL(bt, vNum(b), vStr(b))
+    let y = arithValR(ct, if immK then constNum[immPack >> 1] else vNum(c), if immK then "" else vStr(c))
+    let badL = coerceL == 3
+    let badR = coerceR == 3
+    if badL || badR || !((bt == 1 || bt == 6 || bt == 2) && (ct == 1 || ct == 6 || ct == 2)) {
+      let opn = if op == 8 then "add" else if op == 9 then "sub"
+        else if op == 10 then "mul" else if op == 11 then "div"
+        else if op == 12 then "mod" else "pow"
+      if badL || badR {
+        vmFail("attempt to " .. opn .. " a '" .. typeName(bt) .. "' with a '" .. typeName(ct) .. "'")
+      } else {
+        // hoisted out of the call for the same reason as the LT arm: a folded
+        // && as a call argument costs the operand its tag
+        let badT = if bt != 1 && bt != 6 then bt else ct
+        vmFail("attempt to perform arithmetic on a " .. typeName(badT) .. " value")
+      }
+    } else {
+      // A string that converted is an integer only when ParseInt took it, so
+      // '2' + 1 is 3 where '2.0' + 1 is 3.0 and 2.0 + 1 is 3.0.
+      let ii = if bt == 6 then true else if bt == 2 then coerceL == 1 else false
+      let ij = if ct == 6 then true else if ct == 2 then coerceR == 1 else false
+      if op == 8 {
+        if ii && ij {
+          vSetInt(a, x + y)
+        } else {
+          vSetNum(a, x + y)
+        }
+      } else if op == 9 {
+        if ii && ij {
+          vSetInt(a, x - y)
+        } else {
+          vSetNum(a, x - y)
+        }
+      } else if op == 10 {
+        if ii && ij {
+          vSetInt(a, x * y)
+        } else {
+          vSetNum(a, x * y)
+        }
+      } else if op == 11 {
+        // A zero divisor is not special-cased: the host's divide gate is
+        // `x / y` on a 64-bit float, so 1/0 is inf and 0/0 is nan, which is
+        // what PUC prints too.  A guard here answered 0.0 for both, and
+        // 1/(0.0*-1) with it.
+        vSetNum(a, x / y)
+      } else if op == 12 {
+        if y == 0.0 {
+          if ii && ij {
+            vmFail("attempt to perform 'n%0'")
+          } else {
+            vSetNum(a, x % y)
+          }
+        } else {
+          // floored quotient: the floor gate truncates toward zero,
+          // so adjust negative non-integral quotients down by one
+          let q = x / y
+          let t = q | 0
+          let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+          let flf = fl + 0.0
+          if ii && ij {
+            vSetInt(a, x - flf * y)
+          } else {
+            vSetNum(a, x - flf * y)
+          }
+        }
+      } else {
+        vSetNum(a, x ** y)
+      }
+    }
+  } else if op == 14 {
+    // -v, not 0.0 - v: IEEE negation of 0.0 is -0.0, and 0.0 - 0.0 is +0.0,
+    // which is how `print(-0.0)` came out "0.0".
+    let nt = vTag(b)
+    let nx = arithValL(nt, vNum(b), vStr(b))
+    let nbad = coerceL == 3
+    if nbad {
+      // PUC names the operand twice for a unary op: attempt to unm a 'string'
+      // with a 'string'
+      vmFail("attempt to unm a '" .. typeName(nt) .. "' with a '" .. typeName(nt) .. "'")
+    } else if nt != 1 && nt != 6 && nt != 2 {
+      vmFail("attempt to perform arithmetic on a " .. typeName(nt) .. " value")
+    } else {
+      if nt == 6 || coerceL == 1 {
+        vSetInt(a, -nx)
+      } else {
+        vSetNum(a, -nx)
+      }
+    }
+  } else if op == 15 {
+    if truthyOf(vTag(b), vNum(b)) {
+      vSet(a, 3, 0.0, "")
+    } else {
+      vSet(a, 3, 1.0, "")
+    }
+  } else if op == 17 || op == 18 || op == 19 {
+    let immK = c < 0
+    let immConst = if immK then -1 - c else 0
+    let lt = vTag(b)
+    let rt = if immK then 1 else vTag(c)
+    let rv = if immK then constNum[immConst] else vNum(c)
+    let ln = lt == 1 || lt == 6
+    let rn = rt == 1 || rt == 6
+    if op == 17 {
+      if ln && rn {
+        vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+      } else if lt != rt {
+        vSet(a, 3, 0.0, "")
+      } else if lt == 1 {
+        vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+      } else if lt == 2 {
+        vSet(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0, "")
+      } else if lt == 3 {
+        vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+      } else if lt == 4 || lt == 5 {
+        vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+      } else {
+        vSet(a, 3, 1.0, "")
+      }
+    } else if ln && rn {
+      let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
+      if a < 0 && op == 19 {
+        if hit {
+          vmPc = vmPc + 2
+        } else {
+          vmPc = -1 - a
+        }
+        advanced = true
+      } else {
+        vSet(a, 3, if hit then 1.0 else 0.0, "")
+      }
+    } else if lt == 2 && rt == 2 {
+      // lexicographic string order cannot use the MathCompare gate
+      // (numbers only), so compare one codepoint per vmStep instead
+      cmpActive = true
+      cmpAA = vmBase + b
+      cmpBB = vmBase + c
+      cmpDst = vmBase + a
+      cmpI = 0
+      cmpOp = if op == 19 then 1 else 0
+      advanced = true
+    } else {
+      // PUC names both types, unquoted: "attempt to compare number with string"
+      vmFail("attempt to compare " .. typeName(lt) .. " with " .. typeName(rt))
+    }
+  } else if op == 20 {
+    vmPc = a
+    advanced = true
+  } else if op == 21 {
+    if !truthyOf(vTag(b), vNum(b)) {
+      vmPc = a
+      advanced = true
+    }
+  } else if op == 22 {
+    if truthyOf(vTag(b), vNum(b)) {
+      vmPc = a
+      advanced = true
+    }
+  } else if op == 50 {
+    forDepth = forDepth - 1
+  }
+  if (op <= 15 || (17 <= op && op <= 22) || op == 50) && !advanced && !vmHalted {
+    vmPc = vmPc + 1
+    if vmPc >= bop.length() {
+      vmHalted = true
+    }
+  }
+}
+
 mod vmBurst() {
   fmtGo = true
   patGo = true
-  // Two dispatches per tick.  vmStep routes a closure fill, a pcall and the
-  // micro-step machines itself, so a second call in the same tick is safe.
-  vmStep()
-  vmStep()
-  vmStep()
-  vmStep()
+  if cloActive {
+    cloStep()
+  } else {
+    // Four cheap dispatches and one full one.  Each vmStep re-reads the routing
+    // flags, so a closure fill, a pcall or a micro-step machine that the first
+    // step started is serviced by the second instead of dispatched past - which
+    // is what made every upvalue program produce no output at all before the
+    // guard moved out of vmBurst and into vmStep.
+    vmStepFast()
+    vmStepFast()
+    vmStepFast()
+    vmStepFast()
+    vmStep()
+  }
 }
 
 on Change(program) {
