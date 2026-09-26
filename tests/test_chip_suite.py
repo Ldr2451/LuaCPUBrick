@@ -722,21 +722,14 @@ def run_in_sim(sim, p, sim2=None):
         "lockstep": lockstep,
         "state": state,
         "log": r["log"],
-        "outGlobals": {
-            "outNum0": og.get("outNum0", 0.0),
-            "outNum1": og.get("outNum1", 0.0),
-            "outNum2": og.get("outNum2", 0.0),
-            "outNum3": og.get("outNum3", 0.0),
-            "outStr0": og.get("outStr0", ""),
-            "outStr1": og.get("outStr1", ""),
-            "outInt0": og.get("outInt0", 0),
-            
-            "outCol": list(og.get("outCol", [0.0] * 4)),
-            "outArr": list(og.get("outArr", [0.0] * 64)),
-            "result": og.get("result", ""),
-            "err": og.get("err") or "",
-            "progOk": bool(og.get("progOk", False)),
-        },
+        # The sim's OWN capture, passed through.  This used to be a hand-written
+        # dict of ports, and it drifted: it still listed outCol and outInt0 -
+        # ports deleted days earlier - and had no outNum4, so four cases read 0.0
+        # for an output the chip was writing correctly, while a direct probe of the
+        # same program read the right value.  A hand-kept mirror of somebody
+        # else's dict is a second source of truth; the shape belongs to chip_ports,
+        # which is allowed to know about ports, and the VALUES come from here.
+        "outGlobals": og,
     }
 
 

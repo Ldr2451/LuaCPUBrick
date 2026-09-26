@@ -26,8 +26,11 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGENTS = os.path.join(ROOT, "AGENTS.md")
-# a move is not a loss, but the number must exist somewhere reachable
-COMPANIONS = ["docs/vm-isa.md", "tools/model/README.md"]
+# a move is not a loss, but the number must exist somewhere reachable.  AGENTS.md
+# is kept short on purpose, so the traps, the ISA reference, the model rules and
+# the two expensive lessons all live beside it and are found here.
+COMPANIONS = ["docs/vm-isa.md", "docs/traps.md", "docs/lessons.md",
+              "tools/model/README.md"]
 
 # a number, its separators, and the unit that makes it a measurement
 NUM = re.compile(
