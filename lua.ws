@@ -3090,6 +3090,13 @@ mod parseInit() {
   lerrMsg = ""
   lerrLine = 1
   lline = 1
+  // The lexer's own state machine starts at the beginning too.  A parse that
+  // failed MID-TOKEN left lstage where it had reached, and the next parse
+  // resumed from there with lpos back at 0, so the half-read token completed
+  // against the wrong characters.  No case fails without this line - the
+  // recovery cases pass either way and the artifact is byte-identical - so it
+  // is correctness by inspection, not by proof; it costs nothing.
+  lstage = 0
   lastPatchTarget = -1
   lastCallPos = -1
   presCallPos = -1

@@ -512,10 +512,19 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None, steps=None):
     # one value, so this is the closest analogue of a host that fills the port
     # over time -- and the shape a case could not ask about before the sim
     # re-read its ports.
-    for st in (steps or []):
-        program_at.append(st)
-    if program_at:
-        si = dict(si, program=program_at[0]["src"])
+    # `steps` is a delivery schedule for the program PORT, on its own clock: each
+    # entry's src arrives at the end of its own ticks.  It is deliberately NOT
+    # tied to phase transitions - the first version did that, so a case with one
+    # phase never delivered anything and ran the first fragment forever, which
+    # read as a chip that cannot recover.
+    prog_edges = []
+    if steps:
+        at = 0
+        for i, st in enumerate(steps):
+            at += int(st["ticks"])
+            if i:
+                prog_edges.append((at, st["src"]))
+        si = dict(si, program=steps[0]["src"])
 
     if phases:
         # a schedule keeps clocking past an error, because that is what a host
@@ -529,13 +538,11 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None, steps=None):
         at = 0
         for i, ph in enumerate(phases):
             if i:
-                text = None
-                if program_at and len(program_at) > i:
-                    text = program_at[i]["src"]
-                edges.append((at, bool(ph["run"]), ph.get("jitter"), text))
+                edges.append((at, bool(ph["run"]), ph.get("jitter"), None))
             at += int(ph["ticks"])
         sim_.inputs = dict(si, run=bool(phases[0]["run"]))
         set_live(phases[0].get("jitter"))
+    pending_prog = list(prog_edges)
     for ph in (phases or []):
         if ph.get("grid_every"):
             grid_every[0] = int(ph["grid_every"])
@@ -552,6 +559,9 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None, steps=None):
             # activity broke the next start, and it cannot also be asking the
             # running-time question in the same run
             set_live(jitter)
+        while pending_prog and tick + 1 >= pending_prog[0][0]:
+            _at, text = pending_prog.pop(0)
+            sim_now.inputs = dict(sim_now.inputs, program=text)
         # `jitter` changes one input EVERY tick, which is what an input wired to
         # something live does in game.  The chip restarts the program on a scalar
         # input change while run is high, so this is the shape that can restart
