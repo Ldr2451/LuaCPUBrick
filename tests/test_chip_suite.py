@@ -141,7 +141,16 @@ CHIP_LOG = {
     # this case is for, and the index is the thing the piece used to get wrong.
     "math-random-argidx":
         "false\tfalse\tfalse\tbad argument #1 to 'random' (interval is empt\n",
-    "tab-del": "1\tnil\t3\t3\n",
+    # #t is the first nil minus one, and the cached border now FOLLOWS a delete,
+    # so {1,2,3} with t[2] = nil is 1.  What it does not do is extend across a
+    # bridged gap: {} t[1]=1 t[3]=3 t[2]=2 is 2 here and 3 in PUC, because the
+    # chase machine (lenChase/lenStep) never fires -- its tmap.has probe for the
+    # next index is false even when t[n] reads its value back, and five ticks of
+    # slack change nothing.  So the border is right for appends and for deletes
+    # and short for a bridge.  len-hole-bridge2 is the same program with ticks in
+    # between, so the pair rules out timing.
+    "len-hole-bridge": "2\n",
+    "len-hole-bridge2": "2\n",
     # error's message carries the chunk and line of whatever called error, and
     # pcall hands that message on as a value.  The chip has no line at run time
     # to name, so the text a program asked for is what it gets.

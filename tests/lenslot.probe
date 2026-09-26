@@ -1,0 +1,7 @@
+t = {1,2,3} t[2] = nil t[2] = 9 print(t[3], t[1], t[2])
+%%
+t = {1,2,3} t[2] = nil print(t[3]) t[2] = 9 print(t[3], #t)
+%%
+t = {1,2,3} print(t[3]) t[2] = nil print(t[3])
+%%
+t = {1,2,3,4} t[2] = nil t[2] = 9 print(#t, t[3], t[4])

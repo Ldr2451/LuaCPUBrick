@@ -1591,6 +1591,30 @@ TESTS = [
      {"inarr": [1.0], "expect": {"err": "count out of range"}}),
     ("arr-multi-countfrac", "print(inarr(1, 1.5))", None, "runtimerr",
      {"inarr": [1.0], "expect": {"err": "count out of range"}}),
+    # PUC's # on a table with a hole is the FIRST nil minus one, so deleting an
+    # array element at or below the border moves it, and a key above the border
+    # does not.  The chip shrank only when the deleted key WAS the border, which
+    # is why {1,2,3} with t[2] = nil read 3 here and 1 in PUC.
+    ("len-hole-mid", "t = {1,2,3} t[2] = nil print(#t, t[1], t[2], t[3])", None,
+     "run"),
+    ("len-hole-last", "t = {1,2,3} t[3] = nil print(#t)", None, "run"),
+    ("len-hole-first", "t = {1,2,3} t[1] = nil print(#t)", None, "run"),
+    ("len-hole-sparse", "t = {} t[1] = 1 t[3] = 3 print(#t)", None, "run"),
+    ("len-hole-append", "t = {1,2,3} t[2] = nil t[4] = 4 print(#t)", None, "run"),
+    ("len-hole-two", "t = {1,2,3,4,5} t[2] = nil t[4] = nil print(#t)", None,
+     "run"),
+    ("len-hole-filllast",
+     "t = {1,2,3} t[3] = nil t[3] = 3 print(#t)", None, "run"),
+    # A fill that BRIDGES a gap does not extend the border, because the chase
+    # machine that would never fires.  Two cases, and the second proves it is not
+    # a timing question: five ticks of slack change nothing.
+    ("len-hole-bridge", "t = {} t[1] = 1 t[3] = 3 t[2] = 2 print(#t)", None,
+     "run"),
+    ("len-hole-bridge2", "t = {} t[1] = 1 t[3] = 3 t[2] = 2 local x = 0 "
+     "for i = 1, 5 do x = x + 1 end print(#t)", None, "run"),
+    # and the append pattern the border exists for still works after a delete
+    ("len-hole-append2",
+     "t = {1,2,3} t[2] = nil t[4] = 4 print(#t)", None, "run"),
     ("arr-multi-read1", "print(inarr(1, 1))", None, "modelio",
      {"inarr": [3.5], "expect": {"log": "3.5\n"}}),
     # A compile limit answers on the err port with the line that asked for too

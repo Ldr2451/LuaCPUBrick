@@ -371,6 +371,21 @@
   and the old burst inlined it four times. A closure cell-fill there cost every
   program 20% of its per-tick time; moved to `vmBurst` it cost 2,133 nodes
   instead of 3,054 and the tick-bound cases went back to normal.
+- **A cached length must follow a delete, and a chase that never fires is not a
+  chase.** `#t` is the first nil minus one; the chip caches a border, and it only
+  shrank when the deleted key WAS the border, so `{1,2,3}` with `t[2] = nil` read
+  3 against PUC's 1. Changing `kint == tLen[tid]` to `kint <= tLen[tid]` is the
+  whole fix — no nodes — and it makes seven measured shapes agree (mid, last,
+  first, sparse, append-above, two holes, refill-last). What it does **not** fix
+  is a fill that *bridges* a gap: `t = {} t[1]=1 t[3]=3 t[2]=2` is 2 against
+  PUC's 3, and five ticks in between change nothing, so `lenChase`/`lenStep` is
+  dead code — its `tmap.has(tid .. "#" .. n)` probe for the next index is false
+  even when `t[n]` reads its value back. An inline unrolled extension in the LEN
+  arm used the same expression, was equally ineffective, and was deleted rather
+  than committed: **when a probe inside a cache never fires, find out why before
+  building on it.** The next thing to try is `tmap.get` instead of `tmap.has`,
+  and then reading the key back out of the slot (`tKeyNum[sl]`) rather than
+  rebuilding it as text.
 - Time the *program*, not just the harness: a case going 0.2s → 2s in the suite
   is a user-visible regression, and the suite prints per-case seconds so it
   cannot hide.

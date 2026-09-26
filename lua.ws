@@ -167,10 +167,13 @@
 ///   string.gmatch answers three values where PUC answers one (its iterator
 ///   ignores the arguments the generic for hands it); the chip's generic for
 ///   reads the walk's state out of the call.  See CHIP_LOG gmatch-arity.
-///   #t after DELETING from the middle differs: {1,2,3} with t[2] = nil is 3 here
-///   and 1 in PUC, which finds the nil in its array part and answers the index
-///   before it.  The chip's border is the append one, so an append still answers
-///   the new length; only a hole in the middle reads long.  CHIP_LOG tab-del.
+///   #t is the FIRST nil minus one, and the cached border follows a delete: with
+///   t[2] = nil, {1,2,3} is 1 here and 1 in PUC, t[1] = nil is 0, and a key above
+///   the border leaves it alone.  What it does NOT do is extend across a gap that
+///   is filled later: t = {} t[1] = 1 t[3] = 3 t[2] = 2 is 2 here and 3 in PUC,
+///   and five ticks in between change nothing, so it is not a timing question --
+///   the chase machine that would extend it never fires.  So an append and a
+///   delete are right and a bridge is short.  CHIP_LOG len-hole-bridge.
 ///   a float PRINTS with the host's shortest round trip (the `..` gate's
 ///   format!("{f}"), so where PUC writes 17 significant digits the chip writes
 ///   the shortest string that reads back the same: 1/3 is 0.3333333333333333 here
@@ -551,7 +554,6 @@ var expectOperand: bool = true
 var popMode: int = 0
 var popPrec: int = 0
 var pendKind: int = -1
-var traceDbg: bool = false        // TEMP DEBUG: trace the expression compiler
 var pendPrec: int = 0
 var pendSub: int = 0
 var pendAux: int = 0
@@ -6396,22 +6398,6 @@ mod closeAction() {
 }
 
 mod exprMicro() {
-  if traceDbg {
-    var t = "T" .. (cpos | 0) .. " pop" .. (popMode | 0) .. " cl"
-      .. (closeMode | 0) .. " pend" .. (pendKind | 0) .. " ops"
-      .. (opKind.length() | 0) .. ":["
-    if 0 < opKind.length() { t = t .. (opKind[opKind.length() - 1] | 0) .. "/" .. (opA[opKind.length() - 1] | 0) .. "/" .. (opC[opKind.length() - 1] | 0) }
-    if 1 < opKind.length() { t = t .. " " .. (opKind[opKind.length() - 2] | 0) .. "/" .. (opA[opKind.length() - 2] | 0) .. "/" .. (opC[opKind.length() - 2] | 0) }
-    if 2 < opKind.length() { t = t .. " " .. (opKind[opKind.length() - 3] | 0) .. "/" .. (opA[opKind.length() - 3] | 0) .. "/" .. (opC[opKind.length() - 3] | 0) }
-    t = t .. "] vs" .. (valStk.length() | 0) .. ":["
-    if 0 < valStk.length() { t = t .. (valStk[valStk.length() - 1] | 0) }
-    if 1 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 2] | 0) }
-    if 2 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 3] | 0) }
-    if 3 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 4] | 0) }
-    if 4 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 5] | 0) }
-    if 5 < valStk.length() { t = t .. " " .. (valStk[valStk.length() - 6] | 0) }
-    logPush(t .. "]")
-  }
   if !perr {
     if popMode != 0 {
       let tk0 = opTopKind()
@@ -6912,7 +6898,12 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
       if tvTag[sl] != 0 {
         tvTag[sl] = 0
         tFree.push(sl)
-        if kt == 6 && kint == tLen[tid] {
+        // Deleting an array element moves the border to just before it, for ANY
+        // key at or below the border and not only for the border itself: PUC's
+        // # is the first nil minus one, so {1,2,3} with t[2] = nil is 1 and
+        // t[1] = nil is 0.  A key ABOVE the border leaves it alone, which is why
+        // filling the hole afterwards grows it again.
+        if kt == 6 && kint <= tLen[tid] {
           tLen[tid] = kint - 1
         }
       }
@@ -9706,8 +9697,15 @@ mod vmStep() {
     } else if op == 31 {
       let bt = vTag(b)
       if bt == 5 {
+        // The cached border.  It follows an append and it moves down when an
+        // array element at or below it is deleted, but a fill that BRIDGES a gap
+        // does not extend it, because the chase machine that would (lenChase /
+        // lenStep) never fires -- its tmap.has(tid .. "#" .. n) probe is false
+        // even when t[n] reads back its value, so {} t[1]=1 t[3]=3 t[2]=2 is 2
+        // here and 3 in PUC.  See AGENTS.md and CHIP_LOG len-hole-bridge.
         vSet(a, 6, tLen[toInt(vNum(b))] + 0.0, "")
       } else if bt == 2 {
+
         vSet(a, 6, vStr(b).Length() + 0.0, "")
       } else {
         // PUC also names the value: "attempt to get length of a nil value", plus
