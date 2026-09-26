@@ -40,6 +40,7 @@ module LifecycleHandshake {
   // reported sequence (low, edit, high) and one redundant write.
   var runWrites: int
   var progWrites: int
+  var gridReads: int
 
   action init = all {
     runLevel' = false,
@@ -51,6 +52,7 @@ module LifecycleHandshake {
     prints' = 0,
     runWrites' = 0,
     progWrites' = 0,
+    gridReads' = 0,
   }
 
   // ---- host actions
@@ -59,8 +61,8 @@ module LifecycleHandshake {
   // Writing the SAME text again still fires the handler, because only the host
   // knows whether it suppressed an unchanged write.
   action hostWriteProgram = all {
-    runWrites' = runWrites,
-    progWrites' = progWrites,    progWrites < 2,
+    gridReads' = gridReads,    runWrites' = runWrites,
+    progWrites' = progWrites,    progWrites < 4,
     wantParse' = true,
     runLevel' = runLevel,
     loadedProg' = 2,
@@ -73,7 +75,7 @@ module LifecycleHandshake {
   // The run port is written; the level applied is chosen nondeterministically, so
   // a redundant write of the same level is in the state space.
   action hostWriteRun = all {
-    progWrites' = progWrites,    runWrites < 3,
+    gridReads' = gridReads,    progWrites' = progWrites,    runWrites < 5,
     runWrites' = runWrites + 1,
     runLevel' = true,
     loadedProg' = loadedProg,
@@ -85,7 +87,7 @@ module LifecycleHandshake {
   }
 
   action hostLowerRun = all {
-    progWrites' = progWrites,    runWrites < 3,
+    gridReads' = gridReads,    progWrites' = progWrites,    runWrites < 5,
     runWrites' = runWrites + 1,
     runLevel' = false,
     loadedProg' = loadedProg,
@@ -102,7 +104,7 @@ module LifecycleHandshake {
   // is the chip's real rule and the reason a program edit can be lost - kept as
   // its own action rather than a conditional, because Quint's `if` is an action.
   action schedBusy = all {
-    runWrites' = runWrites,
+    gridReads' = gridReads,    runWrites' = runWrites,
     progWrites' = progWrites,    jobBusy,
     jobBusy' = jobBusy,
     wantParse' = wantParse,
@@ -115,7 +117,7 @@ module LifecycleHandshake {
 
   // on sched with an idle parser: the request is consumed and the parse starts.
   action schedGo = all {
-    runWrites' = runWrites,
+    gridReads' = gridReads,    runWrites' = runWrites,
     progWrites' = progWrites,    not(jobBusy),
     wantParse,
     jobBusy' = true,
@@ -129,7 +131,7 @@ module LifecycleHandshake {
 
   // on sched with nothing pending: nothing happens.
   action schedIdle = all {
-    runWrites' = runWrites,
+    gridReads' = gridReads,    runWrites' = runWrites,
     progWrites' = progWrites,    not(jobBusy),
     not(wantParse),
     jobBusy' = jobBusy,
@@ -144,7 +146,7 @@ module LifecycleHandshake {
   // The parse finishes: this is the ONLY place the loaded program becomes the
   // running one, and it carries a full vmReset.
   action parseStep = all {
-    runWrites' = runWrites,
+    gridReads' = gridReads,    runWrites' = runWrites,
     progWrites' = progWrites,    jobBusy,
     jobBusy' = false,
     progOk' = true,
@@ -157,7 +159,7 @@ module LifecycleHandshake {
 
   // Change(run) on a rising edge: guarded, and a full vmReset when it fires.
   action runEdge = all {
-    runWrites' = runWrites,
+    gridReads' = gridReads,    runWrites' = runWrites,
     progWrites' = progWrites,    runLevel,
     progOk,
     not(jobBusy),
@@ -172,7 +174,7 @@ module LifecycleHandshake {
 
   // A tick of work: the print instruction runs, then the program halts.
   action vmPrint = all {
-    runWrites' = runWrites,
+    gridReads' = gridReads,    runWrites' = runWrites,
     progWrites' = progWrites,    runLevel,
     progOk,
     not(jobBusy),
@@ -187,7 +189,7 @@ module LifecycleHandshake {
   }
 
   action stutter = all {
-    runWrites' = runWrites,
+    gridReads' = gridReads,    runWrites' = runWrites,
     progWrites' = progWrites,    runLevel' = runLevel,
     loadedProg' = loadedProg,
     progOk' = progOk,
@@ -197,6 +199,41 @@ module LifecycleHandshake {
     prints' = prints,
   }
 
+  // A grid read.  on ReadBrickGrid also sets wantParse and emits sched, so this
+  // can start a parse at ANY point in the sequence - including while the program
+  // is running, which is the case most likely to produce a second start.  Not
+  // modelled until now, and the chip really does restart on grid reads.
+  action gridRead = all {
+    gridReads < 3,
+    gridReads' = gridReads + 1,
+    wantParse' = true,
+    runLevel' = runLevel,
+    loadedProg' = loadedProg,
+    progOk' = progOk,
+    jobBusy' = jobBusy,
+    vmHalted' = vmHalted,
+    prints' = prints,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+  }
+
+  // A scalar input changing.  Same guard and same full vmReset as the run edge,
+  // but the host can do it with `run` already high and nothing else changing.
+  action inputWrite = all {
+    gridReads' = gridReads,    runLevel,
+    progOk,
+    not(jobBusy),
+    vmHalted' = false,
+    prints' = 0,
+    runLevel' = runLevel,
+    loadedProg' = loadedProg,
+    progOk' = progOk,
+    jobBusy' = jobBusy,
+    wantParse' = wantParse,
+    runWrites' = runWrites,
+    progWrites' = progWrites,
+  }
+
   action step = any {
     hostWriteProgram,
     hostWriteRun,
@@ -204,6 +241,8 @@ module LifecycleHandshake {
     schedBusy,
     schedGo,
     schedIdle,
+    gridRead,
+    inputWrite,
     parseStep,
     runEdge,
     vmPrint,

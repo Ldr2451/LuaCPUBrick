@@ -220,6 +220,10 @@ def main(argv):
     if any(a.startswith("--max-steps=") for a in extra):
         steps = int([a for a in extra
                      if a.startswith("--max-steps=")][0].split("=")[1])
+        # consumed as `steps` below, so it must NOT also be handed to quint --
+        # passing it twice made quint refuse with "can not be specified more than
+        # once", which read as the model failing rather than as a flag clash
+        extra = tuple(a for a in extra if not a.startswith("--max-steps="))
     if want_tlc:
         skipped = [m for m in models if m not in TLC_MODELS]
         models = [m for m in models if m in TLC_MODELS]
