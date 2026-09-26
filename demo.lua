@@ -1,6 +1,6 @@
 -- Tiny Lua full-feature smoke test. Paste into `program`, set `run` high.
 -- Inputs:  inNum0=3 inNum1=1 inNum2=4 inNum3=1.5
---          inStr0="foo" inStr1="bar" inVec=(1,2,3)
+--          inStr0="foo" inStr1="bar"
 --          inArr=[10,20,30]
 -- Every group below exercises a feature and the ports at the end depend on all
 -- of them, so any mismatch means something broke.  The expected log is NOT here:
@@ -102,12 +102,14 @@ end
 local p, q = 1, 2
 p, q = q, p
 -- NB: `local dup, dup` declares TWO locals (second shadows, prints "second");
--- assignment dups store right to left (see outNum0 below, which reads 7)
+-- assignment dups store right to left, so this global keeps the FIRST value
+gdup, gdup = 7, 8
+print("dupstore", gdup)
 local dup, dup = "first", "second"
 print("flow", sum, p, q, dup)
 
--- vector/array inputs (inarr(9) is out of range -> nil)
-local vlen = invecx + invecy + invecz
+-- array inputs (inarr(9) is out of range -> nil)
+local vlen = inarr(1) + inarr(2) + inarr(3)
 local mixed = (a + b) * inNum0 - 24 / 4
 print("inputs", vlen, inarr(1), inarr(2))
 -- inarr(i, k) reads a run of slots in one call.  Only a call in the LAST slot
@@ -116,21 +118,26 @@ print("inputs", vlen, inarr(1), inarr(2))
 -- exactly as PUC cuts it.
 print("inputs2", inarr(9), type(inarr(9)), inarr(1, 3))
 
--- writable outputs: dup store leaves 7, strings format, array and vector
-outNum0, outNum0 = 7, 8
-outNum1 = sum + fact(4)
-outNum2 = vlen * 10 + #s
-outNum3 = #t + #s
-outStr0 = s .. "|" .. t.name
-outStr1 = tostring(mixed) .. "/" .. tostring(t)
+-- The outputs are written by CALL, and there is nothing to read them back with:
+-- a port is not a global, so a program that wants the value keeps its own copy.
+-- A written value stays on its port until it is written again, which is why
+-- `outs` and `outs2` print nothing -- the values are on the chip, not here.
+outnum(1, 7)
+outnum(2, sum + fact(4))
+outnum(3, vlen * 10 + #s)
+outnum(4, #t + #s)
+outstr(1, s .. "|" .. t.name)
+outstr(2, tostring(mixed) .. "/" .. tostring(t))
 -- one call writes a run of adjacent slots (up to 8 values); inarr(i, k) reads
 -- them back the same way, but the reference has no inarr so the demo cannot
--- print that one -- tests/cases.py's arr-multi-read is where it is checked
+-- print that one -- tests/cases.py's arr-multi-read is where it is checked.
+-- Every index a program passes is 1-BASED, the same as a Lua table, so
+-- outarr(1, x) and outnum(1, x) are the same slot and there is no
+-- off-by-one to remember.
 outarr(1, sum, fact(3), #t)
 outarr(62, -1, -2, -3)
-outvec(invecx * 2, invecy * 2, invecz * 2)
-print("outs", outNum0, outNum1)
-print("outs2", outStr0, outStr1)
+print("outs")
+print("outs2")
 print()
 print("check", sum, s, t[5])
 return "done-" .. sum

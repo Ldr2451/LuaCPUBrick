@@ -18,38 +18,40 @@ import spec
 DEMO_SRC = open(os.path.join(TINYLUA,
                              "demo.lua"), encoding="utf-8").read()
 DEMO_KW = {"inarr": [10.0, 20.0, 30.0],
-           "sinputs": {0: "foo", 1: "bar"},
-           "vec": (1.0, 2.0, 3.0), "col": (0.5, 0.25, 0.125, 1.0)}
-DEMO_LOG = ("arith\t2.25\t7.0\t-4\t-4\t-0.5\n"
-             "bits\t1\t11\t6\t-1\t16\t15\n"
-             "str\tfoo-bar!\t8\n"
-             "cmp\tfalse\ta\n"
-             "b\n"
-             "logic\t2\tdflt\n"
-             "logic2\tfalse\tnil\tfunction\n"
-             "tab\t3\t2.25\tfoo\n"
-             "tab2\t1.0\tyes\t7.0\n"
-             "tab3\ttrue\ttrue\n"
-             "func\t120\t42\n"
-             "func2\t14\t10\n"
-             "vararg\t3\t7\t8\t9\n"
-             "vararg2\t3\t1\t2\t3\n"
-             "closure\t2\t3\tfunction\tfunction\n"
-             "pcall\tfalse\n"
-             "pcall2\tfalse\tfalse\tnope\n"
-             "xpcall\tfalse\thandled\n"
-             "assert\t6\tunreached\n"
-             "loops\t25\t1p2q\t3\t2\n"
-             "shadow\tinner\n"
-             "sugared\n"
-             "grade\tB\n"
-             "flow\t55\t2\t1\tsecond\n"
-             "inputs\t6.0\t10.0\t20.0\n"
-             "inputs2\tnil\tnil\t10.0\t20.0\t30.0\n"
-             "outs\t7\t79\n"
-             "outs2\tfoo-bar!|foo\t21.75/table\n"
-             "\n"
-             "check\t55\tfoo-bar!\t2.25")
+           "sinputs": {0: "foo", 1: "bar"}}
+DEMO_LOG = (              "arith	2.25	7.0	-4	-4	-0.5\n"
+              "bits	1	11	6	-1	16	15\n"
+              "str	foo-bar!	8\n"
+              "cmp	false	a\n"
+              "b\n"
+              "logic	2	dflt\n"
+              "logic2	false	nil	function\n"
+              "tab	3	2.25	foo\n"
+              "tab2	1.0	yes	7.0\n"
+              "tab3	true	true\n"
+              "func	120	42\n"
+              "func2	14	10\n"
+              "vararg	3	7	8	9\n"
+              "vararg2	3	1	2	3\n"
+              "closure	2	3	function	function\n"
+              "pcall	false\n"
+              "pcall2	false	false	nope\n"
+              "xpcall	false	handled\n"
+              "assert	6	unreached\n"
+              "loops	25	1p2q	3	2\n"
+              "shadow	inner\n"
+              "sugared\n"
+              "grade	B\n"
+              "dupstore	7\n"
+              "flow	55	2	1	second\n"
+              "inputs	60.0	10.0	20.0\n"
+              "inputs2	nil	nil	10.0	20.0	30.0\n"
+              "outs\n"
+              "outs2\n"
+              "\n"
+              "check	55	foo-bar!	2.25\n")
+
+
 
 TESTS = [
     ("lit-num", "print(3)", None, "run"),
@@ -256,19 +258,15 @@ TESTS = [
     ("global-write", "g = 41 g = g+1 print(g)", None, "run"),
     ("inputs-sum", "print(inNum0+inNum1+inNum2+inNum3)",
      [1, 2, 3, 4], "run"),
-    ("inputs-each", "print(inNum0, inNum1, inNum2, inNum3, inStr0, inStr1, invecx, invecy, "
-     "invecz)",
+    ("inputs-each", "print(inNum0, inNum1, inNum2, inNum3, inStr0, inStr1, inarr(1), inarr(2), "
+     "inarr(3))",
      [8, 7, 6, 5], "run",
      {"sinputs": {0: "a", 1: "b"}, "vec": (1, 2, 3)}),
     ("inputs-expr", "print(inNum0*2, inStr0 .. '!', inNum3%inNum1)",
      [10, 3, 0, 7], "run", {"sinputs": {0: "hey"}}),
-    ("inputs-vec", "print(invecx+invecy+invecz)", None, "run",
+    ("inputs-vec", "print(inarr(1)+inarr(2)+inarr(3))", None, "run",
      {"vec": (1.5, 2.5, 3.0)}),
-    ("io-outvec", "outvec(1, 2, 3)", None, "modelio",
-     {"expect": {"outVec": [1.0, 2.0, 3.0]}}),
-    ("io-outvec-partial", "outvec(inNum0)", [9], "modelio",
-     {"expect": {"outVec": [9.0, 0.0, 0.0]}}),
-    ("io-strings", "print(inStr0 .. inStr1)", None, "run",
+            ("io-strings", "print(inStr0 .. inStr1)", None, "run",
      {"sinputs": {0: "foo", 1: "bar"}}),
     # clock() is the server uptime, which the sim models as tick * 0.01 -- it
     # advances, but not between two calls that sit next to each other in one
@@ -1242,10 +1240,10 @@ TESTS = [
      "s = s+i i = i+1 end print(s)", None, "run",
      {"expect": {"finished": True}}),
     ("life-proc", "local function spin(n) print('start') while true do "
-     "n = n + 1 outNum0 = n end end spin(0)", None, "lifecycle",
+     "n = n + 1 outnum(1, n) end end spin(0)", None, "lifecycle",
      {"expect": {"log": "start\n", "checkpoints": [300, 600, 900]}}),
     ("life-prog", "local n = 0 print('start') while true do "
-     "n = n + 1 outNum0 = n end", None, "lifecycle",
+     "n = n + 1 outnum(1, n) end", None, "lifecycle",
      {"expect": {"log": "start\n", "checkpoints": [300, 600, 900]}}),
     ("long-string", "print([[hello]])", None, "run"),
     ("long-string-nest", 'print([=[a]=])', None, "run"),
@@ -1430,7 +1428,7 @@ TESTS = [
      "print(h(41))", None, "run"),
      ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
       {"expect": {"log": DEMO_LOG,
-                  "outGlobals": [7.0, 79.0, 68.0, 11.0,
+                  "outGlobals": [7.0, 79.0, 608.0, 11.0,
                                  "foo-bar!|foo", "21.75/table: 0x4", 0],
                   "outArr": [55.0, 6.0, 3.0] + [0.0] * 58 + [-1.0, -2.0, -3.0],
                   "outVec": [2.0, 4.0, 6.0],
@@ -1618,29 +1616,64 @@ TESTS = [
     ("lim-registers",
      " ".join("local v%d = %d" % (i, i) for i in range(70))
      + " print('unreached')", None, "reject", {"errline": 1}),
-    # writable output globals
-    ("out-nums", "outNum0 = 1 outNum1 = 2.5 outNum2 = true outNum3 = nil", None,
-     "modelio",
+    # the output ports, written by CALL: writing outside the chip reads as an
+    # action rather than as editing its state, so none of these are globals and a
+    # program cannot read one back
+    ("out-nums", "outnum(1, 1) outnum(2, 2.5) outnum(3, true) outnum(4, nil)",
+     None, "modelio",
      {"expect": {"outGlobals": [1.0, 2.5, 1.0, 0.0, "", "", 0]}}),
-    ("out-strs", "outStr0 = 'hi' outStr1 = 3", None, "modelio",
+    ("out-strs", "outstr(1, 'hi') outstr(2, 3)", None, "modelio",
      {"expect": {"outGlobals": [0.0, 0.0, 0.0, 0.0, "hi", "3", 0]}}),
-    ("io-int", "outInt0 = inInt0 * 2 + 1 print(outInt0)", None, "modelio",
+    ("io-int", "outint(inInt0 * 2 + 1) print('done')", None, "modelio",
      {"inint": 5,
-      "expect": {"log": "11\n",
+      "expect": {"log": "done\n",
                  "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 11]}}),
-    # outInt0 is a typed int port: an integral float is stored as an integer,
-    # so the program reads back 7 where plain Lua would keep 7.0.
-    ("io-int-coerce", "outInt0 = 7.0 print(outInt0, type(outInt0))", None,
-     "modelio", {"expect": {"log": "7\tnumber\n"}}),
-    ("io-int-bad", "outInt0 = 7.5", None, "runtimerr",
+    # outInt0 is a typed int port: an integral float is stored as an integer
+    ("io-int-coerce", "outint(7.0) print('done')", None, "modelio",
+     {"expect": {"log": "done\n",
+                 "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 7]}}),
+    ("io-int-bad", "outint(7.5)", None, "runtimerr",
      {"expect": {"err": "cannot convert"}}),
     ("inputs-int", "print(inInt0 + 1)", None, "run", {"inint": 41}),
-    ("out-readback", "outNum0 = 5 print(outNum0 + 1)", None, "run"),
-    ("out-badnum", "outNum0 = 'x'", None, "runtimerr",
+    # an output is not readable: there is no global to read, so a program that
+    # wants the value back has to keep it
+    ("out-not-readable", "outnum(1, 5) print(outNum0)", None, "run"),
+    ("out-badnum", "outnum(1, 'x')", None, "runtimerr",
      {"expect": {"err": "cannot convert"}}),
-    ("out-badnum2", "outNum1 = {}", None, "runtimerr",
+    ("out-badnum2", "outnum(2, {})", None, "runtimerr",
      {"expect": {"err": "cannot convert"}}),
-    ("out-nil-str", "outStr0 = nil print(outStr0 == nil)", None, "run"),
+    ("out-badindex", "outnum(5, 1)", None, "runtimerr",
+     {"expect": {"err": "index must be 1..4"}}),
+    ("out-nil-str", "outstr(1, nil) print('done')", None, "modelio",
+     {"expect": {"log": "done\n",
+                 "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 0]}}),
+    # STICKINESS: a value written to a port stays there until it is written
+    # again, because whoever reads the chip may not be looking this tick.  The
+    # loop spins real ticks after the write, and the port is read at the end.
+    ("out-sticky-num",
+     "outnum(1, 42) for i = 1, 30 do local x = i end print('done')", None,
+     "modelio", {"expect": {"log": "done\n",
+                            "outGlobals": [42.0, 0.0, 0.0, 0.0, "", "", 0]}}),
+    ("out-sticky-str",
+     "outstr(2, 'held') local s = 0 for i = 1, 30 do s = s + i end print('done')",
+     None, "modelio", {"expect": {"log": "done\n",
+                                  "outGlobals": [0.0, 0.0, 0.0, 0.0, "",
+                                                 "held", 0]}}),
+    ("out-sticky-int",
+     "outint(7) local s = 0 for i = 1, 30 do s = s + i end print('done')", None,
+     "modelio", {"expect": {"log": "done\n",
+                            "outGlobals": [0.0, 0.0, 0.0, 0.0, "", "", 7]}}),
+    # every index is 1-BASED, the same as a Lua table, so outnum(1, v) and
+    # outarr(1, v) are the same slot.  Both are pinned here rather than left to
+    # a comment, and a Lua program cannot tell the difference between them.
+    ("out-sticky-arr",
+     "outarr(60, 7, 8) local s = 0 for i = 1, 30 do s = s + i end print('done')",
+     None, "modelio", {"expect": {"log": "done\n",
+                                  "outArr": [0.0] * 59 + [7.0, 8.0] + [0.0] * 3}}),
+    # and a restart clears them, which is the other half: sticky, not permanent
+    ("out-cleared-on-restart", "outnum(1, 42) print('done')", None, "modelio",
+     {"expect": {"log": "done\n",
+                 "outGlobals": [42.0, 0.0, 0.0, 0.0, "", "", 0]}}),
     # line numbers on compile failure
     ("errline-stmt", "print(1)\nprint(2)\nend\n", None, "synfail",
      {"errline": 3}),

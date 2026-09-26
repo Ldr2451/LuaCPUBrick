@@ -130,7 +130,7 @@ class Gen:
             return v
         if typ == "num":
             return r.choice(NUMC + ["inNum0", "inNum1", "inNum2", "inNum3",
-                                   "invecx", "invecy", "invecz"])
+                                   "inarr"]
         if typ == "str":
             return r.choice([f"'{s}'" for s in SAFE_STRS]
                             + ["inStr0", "inStr1"])
@@ -221,9 +221,9 @@ class Gen:
         if c < 0.84:
             return f"outarr({r.randint(1, 4)}, {self.expr('num', 1)})"
         if c < 0.90:
-            return (f"outNum{r.randint(0, 3)} = {self.expr('num', 1)}"
+            return (f"outnum({r.randint(1, 4)}, {self.expr('num', 1)})"
                     if r.random() < 0.6 else
-                    f"outStr{r.randint(0, 1)} = {self.expr('str', 1)}")
+                    f"outstr({r.randint(1, 2)}, {self.expr('str', 1)}")
         args = ", ".join(self.printable(1) for _ in range(r.randint(0, 2)))
         return f"print({args})"
 

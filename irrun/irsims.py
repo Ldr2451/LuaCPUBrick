@@ -542,8 +542,6 @@ class Sim:
         return {
             "log": self.log,
             "outGlobals": og,
-            "outVec": og.get("outVec", [0.0, 0.0, 0.0]),
-            "outCol": og.get("outCol", [0.0, 0.0, 0.0, 0.0]),
             "outArr": og.get("outArr", [0.0] * 64),
             "halted": not self.exec_queue and not self._deferred,
         }

@@ -34,28 +34,33 @@ A WireScript chip is wires, so everything a program can see or change is a port.
 `program` carries the source in, the chip runs it, and the results come back out:
 
 ```
-program   ----------------- log
-run       ----------------- outNum0
-inNum0    ----------------- outNum1
-inNum1    ----------------- outNum2
-inNum2    ----------------- outNum3
-inNum3    --|           |-- outInt0
-inStr0    --+-----------+-- outStr0
-inStr1    --|   Lua 5.5   |-- outStr1
-inVec     --+-----------+-- outArr
-inArr     --|           |-- outVec
-inInt0    ----------------- result
-          ----------------- err
-          ----------------- progOk
-          ----------------- busy
+program   --|           |-- log
+run       --|           |-- outNum0
+inNum0    --|___________|-- outNum1
+inNum1    --|           |-- outNum2
+inNum2    --|           |-- outNum3
+inNum3    --|  Lua 5.5  |-- outInt0
+inStr0    --|           |-- outStr0
+inStr1    --|___________|-- outStr1
+inArr     --|           |-- outArr
+inInt0    --|           |-- result
+                        |-- err
+                        |-- progOk
+                        |-- busy
 ```
 
 `run` is the only one that decides anything: high runs the program, low stops it
 where it is, and a rising edge starts again from the top. Every other input
 restarts the program when it changes while `run` is high, except `inArr`, which
-is read live by `inarr()`. The writable outputs are globals you assign to
-(`outNum0 = 3`), except the array and the vector, which are functions because a
-port cannot be assigned from Lua: `outarr(i, v, ...)` and `outvec(x, y, z)`.
+is read live by `inarr()`.
+
+Everything a program *writes* is a call, including the single numbers and
+strings: `outnum(i, v)`, `outstr(i, v)`, `outint(v)` and `outarr(i, v, ...)` for
+the array. Two consequences worth knowing: a program cannot read an output back
+(the ports are not globals, so keep your own copy), and a value stays on its port
+until something writes there again, so whatever is reading the chip can take its
+time. The indexes differ between the two families: `outnum`/`outstr` are 0-based,
+`outarr` is 1-based, so `outnum(0, v)` and `outarr(1, v)` are the same slot.
 
 The picture is generated from the port declarations in `lua.ws`, so it cannot
 drift from them without the diff saying so.

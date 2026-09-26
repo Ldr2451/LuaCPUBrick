@@ -54,12 +54,12 @@ def _braced(prefix):
 
 
 # 1. builtins: ids, reserved slots, fid dispatch ---------------------------
-# An id may be RESERVED with no builtin behind it: fid 4 was outcol and the
-# colour port is gone, and renumbering the twenty-two builtins above it would
-# move every one of them for no gain, so the hole stays.  The rule is therefore
+# Two ids are RESERVED with no builtin behind them: 3 was outvec and 4 was
+# outcol.  Both ports are gone, and renumbering the builtins above them
+# would move every one for no gain, so the holes stay.  The rule is therefore
 # "contiguous with declared holes", and a hole has to be deliberate -- which is
 # what RESERVED_FIDS is for.
-RESERVED_FIDS = {4}
+RESERVED_FIDS = {3, 4}
 n_builtin = len(m.BUILTINS)
 ids = sorted(fid for _, fid in m.BUILTINS)
 expected = [i for i in range(max(ids) + 1) if i not in RESERVED_FIDS]
@@ -68,7 +68,7 @@ check("builtin-ids-contiguous", ids == expected,
 nb_ws = re.search(r"const NB = (\d+)", WS)
 check("nb-const-present", nb_ws is not None, "no `const NB` in lua.ws")
 if nb_ws:
-    check("nb-matches-builtins", int(nb_ws.group(1)) == n_builtin,
+    check("nb-matches-builtins", int(nb_ws.group(1)) == max(ids) + 1,
           f"lua.ws NB={nb_ws.group(1)}, spec has {n_builtin} builtins")
 pjs = mod_body("parseJobStart")
 check("reserved-slots-sized", "fStart.resize(NB, -1)" in pjs,
@@ -153,7 +153,6 @@ check("no-halted-port", "out halted" not in WS)
 check("no-proglen-port", "out progLen" not in WS)
 check("no-nprint-port", "out nPrint" not in WS)
 for hw, port in [("inarr", "inArr"), ("outarr", "outArr"),
-                 ("outvec", "outVec"),
                  ("print", "log")]:
     check(f"hw-{hw}-{port}", re.search(
         rf"@(?:left|right) (?:in|out) {port}\b", WS) is not None)
@@ -176,7 +175,7 @@ for where, body in (("parseInit", pi), ("vmReset", vr)):
         check(f"clear-target-{tgt}-{where}", tgt in decls_arr,
               "clears undeclared array")
 # restart resets outputs, log and error text
-for var in ["logV", "oF0", "oI0", "oS4", "outVecV",
+for var in ["logV", "oF0", "oI0", "oS4",
             "resultV", "errV"]:
     check(f"reset-{var}", re.search(rf"\b{var} = ", vr) is not None)
 check("reset-logLines", "logLines.clear()" in vr)

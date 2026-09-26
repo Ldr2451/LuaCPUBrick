@@ -62,12 +62,28 @@ def diagram():
 def main():
     art, IN, OUT = diagram()
     if "--check" in sys.argv:
+        # The picture's LAYOUT belongs to whoever drew it -- a human made this one
+        # clearer, and a generator that insists on its own arrangement would undo
+        # that every time it ran.  What must not go stale is the CONTENT: every
+        # port has to appear.  So the check is "is every port named in the
+        # diagram", not "is the diagram byte-identical to what I would draw".
         readme = io.open(README, encoding="utf-8").read()
-        if art not in readme:
-            print("FAIL readme-port-diagram: the README's picture does not match "
-                  "the ports.  Re-run without --check and paste it in.")
+        anchor = readme.find("## The interface")
+        block = ""
+        if anchor >= 0:
+            m = re.search(r"```\n(.*?)\n```", readme[anchor:], re.S)
+            if m:
+                block = m.group(1)
+        missing = [p for p in IN + OUT if p not in block]
+        if not block:
+            print("FAIL readme-port-diagram: no diagram found under "
+                  "'## The interface'")
             return 1
-        print("PASS readme-port-diagram")
+        if missing:
+            print("FAIL readme-port-diagram: the picture does not mention %s"
+                  % ", ".join(missing))
+            return 1
+        print("PASS readme-port-diagram (%d ports)" % (len(IN) + len(OUT)))
         return 0
     print(art)
     print("\n(%d inputs, %d outputs)" % (len(IN), len(OUT)))

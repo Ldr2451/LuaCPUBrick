@@ -252,8 +252,7 @@ def chip_ports(r):
     og = r["outGlobals"]
     return {
         "log": r["log"],
-        "outVec": list(og.get("outVec", [0.0] * 3)),
-        "outCol": list(og.get("outCol", [0.0] * 4)),
+                "outCol": list(og.get("outCol", [0.0] * 4)),
         "outGlobals": [og.get("outNum0", 0.0), og.get("outNum1", 0.0),
                        og.get("outNum2", 0.0), og.get("outNum3", 0.0),
                        og.get("outStr0", ""), og.get("outStr1", ""),
@@ -383,8 +382,7 @@ def compare(name, mode, kw, r, dt):
                     key, got, value), dt)
         return (name, True, "", dt)
     if mode == "modelio":
-        for key in ("log", "outVec", "outCol", "outGlobals", "outArr",
-                    "result"):
+        for key in ("log", "outGlobals", "outArr", "result"):
             got, want_v = c[key], exp.get(key)
             if key in exp and (norm_log(got) if key == "log" else got) != (
                     norm_log(want_v) if key == "log" else want_v):
@@ -449,8 +447,6 @@ def sim_inputs(src, kw):
         si["inNum%d" % k] = float(v)
     for k, v in (kw.get("sinputs") or {}).items():
         si["inStr%d" % int(k)] = v
-    if kw.get("vec"):
-        si["inVec"] = tuple(kw["vec"])
     if kw.get("inarr") is not None:
         si["inArr"] = [float(v) for v in kw["inarr"]]
     if kw.get("inint") is not None:
@@ -592,7 +588,7 @@ def run_in_sim(sim, p, sim2=None):
             "outStr0": og.get("outStr0", ""),
             "outStr1": og.get("outStr1", ""),
             "outInt0": og.get("outInt0", 0),
-            "outVec": list(og.get("outVec", [0.0] * 3)),
+            
             "outCol": list(og.get("outCol", [0.0] * 4)),
             "outArr": list(og.get("outArr", [0.0] * 64)),
             "result": og.get("result", ""),

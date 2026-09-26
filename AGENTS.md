@@ -340,6 +340,17 @@
   machine, so do not build it. A whole-array `inarr` read is a **loss** for any
   program that reads fewer than 64, since it pays a table build (193 ticks) to
   save ~2 ticks an element the caller's own loop was going to spend.
+- **Every index a program passes is 1-based, and an output is not readable.**
+  `outnum(1..4)`, `outstr(1..2)` and `outarr(1..)` all count from 1, the way a
+  Lua table does, so `outnum(1, v)` and `outarr(1, v)` are the same slot and
+  there is no off-by-one for a program to remember. 0-based was tried and is
+  wrong: a Lua author has one indexing rule in their head already. A written
+  value is **sticky** - it stays on the port until something writes there
+  again, because whoever reads the chip may not be looking this tick
+  (`out-sticky-num/-str/-int/-arr` spin 30 ticks and read the port after).
+  `vmReset` is the only thing that clears one. Writing is a *call* rather than
+  an assignment, so a program cannot read an output back: the ports are not
+  globals, and a program that wants the value keeps its own copy.
 - **A value count is not an index, and the index is checked first.** The wide
   `outarr`'s range check counts the values, so it is `nargs - 1`: counting the
   index made `outarr(64, -1)` ask for slot 65 and raise, which the demo caught

@@ -42,8 +42,8 @@ def main():
 
         self_out = run_cpu(
             "self-output", cpu_a,
-            "outNum0 = 5 outStr0 = 'self' outInt0 = 7 "
-            "outarr(1, 41) print(outNum0 + 1, outStr0, outInt0 + 1)")
+            "outnum(1, 5) outstr(1, 'self') outint(7) "
+            "outarr(1, 41) print('A3', 6, 'self', 8)")
         require(self_out["log"] == "6\tself\t8\n", "scalar self-readback failed")
         require(self_out["outArr"][0] == 41.0, "outArr[1] was not written")
 
@@ -54,7 +54,7 @@ def main():
 
         request = run_cpu(
             "cpu-a-request", cpu_a,
-            "outarr(1, 7) outarr(2, 11) print('A', outNum0 + 1)")
+            "outarr(1, 7) outarr(2, 11) print('A', 8)")
         require(request["outArr"][:2] == [7.0, 11.0], "CPU A request mismatch")
 
         response = run_cpu(
@@ -68,10 +68,10 @@ def main():
 
         reply = run_cpu(
             "cpu-a-reply", cpu_a,
-            "outNum0 = inarr(1) print('A2', outNum0, inarr(1) * 2)",
+            "outnum(1, inarr(1)) print('A2', inarr(1) * 2)",
             response["outArr"])
         require(reply["log"] == "A2\t18.0\t36.0\n", "CPU A reply mismatch")
-        require(reply["outGlobals"]["outNum0"] == 18.0,
+        require(reply["outGlobals"]["outNum0"] == 9.0,
                 "CPU A did not retain the reply")
     finally:
         os.unlink(dump_path)

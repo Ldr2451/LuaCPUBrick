@@ -56,9 +56,9 @@ TIMEOUT = 90       # seconds per case before the worker is killed
 # is Lua source prepended to the program on demand (see libIter/libString in
 # lua.ws).  A program's own functions get ids from NB upward, and NB has to
 # match the `const NB` in lua.ws.
-BUILTINS = (("print", 0), ("type", 1), ("tostring", 2), ("outvec", 3),
-            ("clock", 5), ("inarr", 6), ("outarr", 7),
-            ("select", 8), ("next", 9), ("_s", 10), ("_m", 11), ("unpack", 12),
+BUILTINS = (("print", 0), ("type", 1), ("tostring", 2),
+             ("clock", 5), ("inarr", 6), ("outarr", 7),
+             ("select", 8), ("next", 9), ("_s", 10), ("_m", 11), ("unpack", 12),
              ("_fmt", 13),
              ("_rd", 14),
              ("_wr", 15),
@@ -68,30 +68,30 @@ BUILTINS = (("print", 0), ("type", 1), ("tostring", 2), ("outvec", 3),
              ("xpcall", 19),
              ("_pat", 20),
              ("_gmatch", 21),
-             ("_gmnext", 22))
+             ("_gmnext", 22),
+             # the output setters: writing outside the chip is a call, so it
+             # reads as an action rather than as editing its state.  fid 4 was
+             # outvec and stays reserved (see test_consistency's RESERVED_FIDS).
+             ("outnum", 23), ("outstr", 24), ("outint", 25))
 
-NB = len(BUILTINS)  # first id available to the program's own functions
+
+# first id available to the program's own functions.  NOT len(BUILTINS):
+# ids 3 and 4 are reserved, so the count and the top id differ.
+NB = max(fid for _n, fid in BUILTINS) + 1
 
 # Canonical global slot order the chip must declare (out, in, builtins, ints).
-GSLOT_ORDER = [    "outNum0",
-    "outNum1",
-    "outNum2",
-    "outNum3",
-    "outStr0",
-    "outStr1",
-    "inNum0",
+GSLOT_ORDER = [    "inNum0",
     "inNum1",
     "inNum2",
     "inNum3",
     "inStr0",
     "inStr1",
-    "invecx",
-    "invecy",
-    "invecz",
+    "outnum",
+    "outstr",
+    "outint",
     "print",
     "type",
     "tostring",
-    "outvec",
     "clock",
     "inarr",
     "outarr",
