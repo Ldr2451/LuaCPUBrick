@@ -360,6 +360,20 @@ falls out for free.
 ## WireScript traps
 Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
 `tools/chip/vargraph.py <name>` shows which gate fires each write.
+- **OPEN BUG: three temps in one comparison operand can leave the wrong tag.**
+  `print("a" < (tostring(false or false)))` raises "attempt to compare" where PUC
+  answers `true`. Every near miss is right — `print("a" < tostring(1))`,
+  `print("a" < (tostring(1)))`, `print("a" < ("b"))`, `print("a" < (s))` for a
+  local, `print(tostring(false or false))` and its `type` — so it is not string
+  comparison, not `tostring`, not `or` and not the parentheses: it is the
+  combination, which makes it a temp-allocation collision in one instruction
+  rather than a wrong comparison. Found by `tools/fuzz.py` seed 1358, which is
+  only comparable now that the generator is scope-correct (below): it had been
+  skipping two thirds of its seeds, so it could not have found this.
+- **A seed is expensive, so the fuzzer is not an edit-loop tool.** Measured: 150
+  seeds 2.5 min, 400 seeds 6 min, one seed 5 s. Its default is 40 for that
+  reason; the suite and `tools/check.py @file` are the fast paths, and a big
+  sweep is a before-you-ship thing.
 - **The host's laws are in the compiler's source, on this machine, and are worth
   more than any inference from the oracle.** `irdump.WS_DIR` is the wirescript
   checkout the compiler came from (`%TEMP%\opencode\wirescript`), complete with
