@@ -33,28 +33,28 @@ Read three ways:
 
 ## The unroll is not free: two calls break the upvalue cases
 
-Landing two steps fails `upvalue-read` and `upvalue-write` with an **empty log** —
-the program does not run at all, so this is not a slow path, it is a broken one.
-It was reverted rather than shipped.
+Landing two steps failed at first, and that was the real half of the problem:
+upvalue-read and upvalue-write came back with an EMPTY log, so a second dispatch
+was not a slow path, it was a broken one. The cause was one misplaced check, and
+it is the same rule as the lstage reset: THE CHECK BELONGS TO THE PHASE THAT OWNS
+THE STATE. cloStep() was called only from vmBurst, so with one dispatch per tick
+the cell-fill guard and the dispatcher were the same thing; with two they are not.
+A second vmStep() in the same tick dispatched straight into the opcode chain while
+a closure was half-built, the fill never finished, the closure was never
+published, and every program that read an upvalue produced nothing at all.
+Moving the guard into vmStep fixed it, and with it the whole unroll:
 
-What that points at: `vmBurst` gives a closure cell-fill the whole tick
-(`if cloActive { cloStep() }`), and a second `vmStep` in the same tick is the
-first thing that has run two dispatches back to back since the closure work
-landed. The dispatcher ends with
+| steps | lua.brz | nodes | wires | loop-60 | fib(18) | closures |
+|---|---|---|---|---|---|---|
+| 1 | 620,027 | 39,305 | 81,821 | 197 | no answer | - |
+| 2 | 930,432 | 60,672 | 128,433 | 128 | no answer | ok |
+| 4 | 1,598,905 | 104,949 | 222,375 | 96 | 15,782 -> 2584 | 222 -> 41 |
 
-```
-if !advanced && !vmHalted { vmPc = vmPc + 1; if vmPc >= bop.length() { vmHalted = true } }
-```
-
-so a step that moves `vmPc` itself has to write `vmPc = vmPc + 1` *and* set
-`advanced = true` — one alone stalls, the other double-advances. That rule is
-about a single step; a second step in the same tick re-reads `vmPc`, `advanced`
-and `vmHalted` written by the first, and a cell-fill or a `GEN` that expects one
-dispatch per tick is exactly the state that a second dispatch can invalidate.
-The two failing cases are both upvalue cases, which is the right neighbourhood
-for that theory and the wrong place to stop guessing.
-
-So the unroll is two problems, not one: the size (measured above, 2.56x at four)
+Four steps is 2.05x on a loop, and it is the only setting where a call-heavy
+program finishes at all, so the capability threshold and the speed win point the
+same way. The partial unroll below was designed to get most of the loop win for
+about 7% of the price; the full 4x is landed instead, and the partial idea is only
+worth reviving if the size has to come back down.
 and a correctness question that has to be answered before any of it can land.
 `tools/chip/modcost.py` and `tools/chip/armcost.py` are how the cost half was
 measured; the correctness half needs the two failing cases as the spec.

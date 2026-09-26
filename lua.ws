@@ -9019,7 +9019,17 @@ mod gmStep() {
 }
 
 mod vmStep() {
-  if pcallUnwind {
+  if cloActive {
+    // A closure being filled owns the WHOLE tick: its cells go in one per tick
+    // and the value is published at the end, so a dispatch that ran instead of
+    // this would read the closure half-built.  The check belongs here, in the
+    // step that owns the state, rather than only in vmBurst - with one call per
+    // tick the two are the same thing, and with more than one they are not: a
+    // second step after a fill started dispatched straight into the opcode
+    // chain, the fill never finished, and every program that read an upvalue
+    // produced no output at all.
+    cloStep()
+  } else if pcallUnwind {
     // a caught error: frames come off until the marker is up.  This is the
     // first arm because the instruction that raised is still in vmPc and must
     // not run again while the unwind is in progress.
@@ -9821,13 +9831,12 @@ mod vmStep() {
 mod vmBurst() {
   fmtGo = true
   patGo = true
-  if cloActive {
-    cloStep()
-  } else {
-    // One vmStep per tick. Four calls cost 57,612 extra nodes; the compiler's
-    // constant folds recover half the lost loop ticks for a few hundred nodes.
-    vmStep()
-  }
+  // Two dispatches per tick.  vmStep routes a closure fill, a pcall and the
+  // micro-step machines itself, so a second call in the same tick is safe.
+  vmStep()
+  vmStep()
+  vmStep()
+  vmStep()
 }
 
 on Change(program) {
