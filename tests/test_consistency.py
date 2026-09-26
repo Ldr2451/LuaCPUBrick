@@ -289,4 +289,41 @@ for local in sorted(used - set(assigned)):
 
 print(f"{len(FAILS)} failed" if FAILS else "ALL-OK")
 print("test_consistency: %.1fs" % (time.time() - _T0), file=sys.stderr)
+# 11. the README's picture of the interface, and the demo's expected log -------
+# Both are things a person reads or a person maintains, and both rot silently.
+import subprocess
+
+_diag = subprocess.run(
+    [sys.executable, "-u", os.path.join(os.path.dirname(HERE), "tools", "chip",
+                                        "port_diagram.py"), "--check"],
+    cwd=os.path.dirname(HERE), capture_output=True, text=True,
+    encoding="utf-8", errors="replace")
+check("readme-port-diagram", _diag.returncode == 0,
+      (_diag.stdout + _diag.stderr).strip()[:160])
+
+try:
+    sys.path.insert(0, HERE)
+    import cases as _cases
+    import lua_oracle as _or
+    # the SAME normaliser the suite compares with, so the two cannot disagree
+    # about what a log is: oracle_log joins lines and folds a table's address,
+    # and DEMO_LOG is a literal that spells both
+    from test_chip_suite import norm_log
+    _kw = dict(_cases.DEMO_KW)
+    _kw["inputs"] = [3, 1, 4, 1.5]
+    _o = _or.oracle_run(_cases.DEMO_SRC, inputs=_kw["inputs"],
+                        sinputs=_kw.get("sinputs"), vec=_kw.get("vec"),
+                        inarr=_kw.get("inarr"))
+    if not _o.get("avail") or _o["calls"] is None:
+        check("demo-log-current", False, "no oracle, so DEMO_LOG is unchecked")
+    else:
+        _want = norm_log(_or.oracle_log(_or.norm_calls(_o["calls"])))
+        check("demo-log-current", _want == norm_log(_cases.DEMO_LOG),
+              "DEMO_LOG is stale -- regenerate it from the oracle:\\n"
+              "  want %r\\n  have %r" % (_want[:120], norm_log(_cases.DEMO_LOG)[:120]))
+except Exception as _e:
+    # a check that cannot run is not a check
+    check("demo-log-current", False, "the check itself failed: %r" % (_e,))
+
+
 sys.exit(1 if FAILS else 0)

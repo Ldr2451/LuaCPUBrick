@@ -26,6 +26,46 @@ frames, 512 table entries, and 16 values in one expanded call, return, or
 statement. Exceeding one is a **compile error on the `err` port with the line
 that asked for too much**, never a wrong answer.
 
+
+
+## The interface
+
+A WireScript chip is wires, so everything a program can see or change is a port.
+`program` carries the source in, the chip runs it, and the results come back out:
+
+```
+                                                                                         
+program    the source text      ----     log        print, io.write
+run        high runs, low stops ----     outNum0    outNum0 .. outNum3
+inNum0     inNum0 .. inNum3     ----     outNum1    
+inNum1                          ----     outNum2    
+inNum2                          ----     outNum3    
+inNum3                          ----     outInt0    a whole number
+inStr0     inStr0 .. inStr1     ----     outStr0    outStr0 .. outStr1
+                                ---------------------            
+                                ----  Lua 5.5  ----            
+                                ---------------------            
+inStr1                          ----     outStr1    
+inVec      invecx .. invecz     ----     outArr     outarr(i, v, ...)
+inArr      inarr(i), inarr(i,k) ----     outVec     outvec(x, y, z)
+inInt0     a whole number       ----     result     the top-level return
+                                ----     err        runtime error text
+                                ----     progOk     false if it did not compile
+                                ----     busy       true while it works
+                                                                                         
+
+```
+
+`run` is the only one that decides anything: high runs the program, low stops it
+where it is, and a rising edge starts again from the top. Every other input
+restarts the program when it changes while `run` is high, except `inArr`, which
+is read live by `inarr()`. The writable outputs are globals you assign to
+(`outNum0 = 3`), except the array and the vector, which are functions because a
+port cannot be assigned from Lua: `outarr(i, v, ...)` and `outvec(x, y, z)`.
+
+The picture is generated from the port declarations in `lua.ws`, so it cannot
+drift from them without the diff saying so.
+
 ## Running the tests
 
 ```sh
