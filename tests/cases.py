@@ -1338,13 +1338,18 @@ TESTS = [
      {"progDebug": "array index out of range"}),
     ("index-literal-outarr-ok", "outarr(64, 1)", None, "state",
      {"noProgDebug": "array index out of range"}),
-    # inArr past the end gives nil, and PUC agrees (t[65] over 64 slots is nil).
-    # A warning for it is wanted - a silent nil is a worse failure than a crash -
-    # but it is NOT here yet: reading the inArr port during codegen broke two
-    # unrelated cases, so the width has to come from a constant instead.  This case
-    # pins only the behaviour, and asserts nothing about progDebug, because a case
-    # that locks in the absence of a wanted warning is a trap for whoever adds it.
+    # inArr is bounded by the same 64 as outArr and a bad index there gives a
+    # SILENT nil, which is worth warning about - but it is not implemented: an
+    # input PORT cannot be read during codegen (see the note in noteIndex).  The
+    # behaviour is pinned; progDebug is deliberately NOT asserted, because a case
+    # that locks in a warning the chip does not emit is worse than no case.
     ("index-inarr-past-end", "print(inarr(65))", None, "state", {"log": "nil\n"}),
+    # One issue per line is the port's whole contract, and a substring assertion
+    # cannot see it: an earlier outarr warning ended in an escaped backslash rather
+    # than a newline and its case still passed.  Two findings that really exist, so
+    # the separator is load-bearing and the literal backslash cannot reappear.
+    ("progdebug-one-per-line", "outarr(65, 1) print(setmetatable)", None, "state",
+     {"progDebug": "array index out of range\nwarn: no metatables"}),
     ("life-program-recovers", "print('hi')", None, "lifecycle",
      {"steps": [{"ticks": 300, "src": "print('"},
                 {"ticks": 300, "src": "print('hi')"}],

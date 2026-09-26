@@ -1416,6 +1416,12 @@ mod bEmit(op: int, a: int, b: int, c: int) -> int {
   bpc.push(c)
   if bop.length() > MAX_INSTR {
     perr = true
+    // The message names the cap but not the distance: a program 200 over
+    // reads the same as one 3 over.  Measured and REJECTED - saying so
+    // costs 1,535 nodes and 2,462 wires, 3.4% of the chip, because a concat
+    // with a computed int pulls in a heavier formatting path than the const
+    // concat used above.  Not worth it for a line that only appears when the
+    // program is already too big to run.
     perrMsg = "program too long"
   }
   return bop.length() - 1
@@ -1499,19 +1505,20 @@ mod noteIndex(name: string) {
     if name == "outstr" && !(1.0 <= v && v <= 2.0) {
       nameWarn = nameWarn .. "warn: outstr index must be 1..2, and this call is out of range\n"
     }
-    // the runtime guard is `iv != floor(iv) || iv < 1.0 || iv > outArrV.length()`
-    // and its message is verbatim below, so this cannot disagree with it - and
-    // the bound is read from the array itself rather than written as 64
-    if name == "outarr" && (v != floor(v) || v < 1.0 || v > outArrV.length()) {
-      nameWarn = nameWarn
-        .. "warn: array index out of range, and outarr is 1-based over the outArr slots\\n"
+    // outArr raises on a bad index.  inArr is bounded by the same length but
+    // substitutes nil and carries on, and saying THAT is worth having - a silent
+    // nil is the worse failure - but it is NOT here, and the reason is worth more
+    // than the check: reading an input PORT during codegen empties every program,
+    // including ones that never mention inarr, because all of noteIndex is inlined
+    // into exprPushName so the read is in the graph whether or not the branch is
+    // taken.  outArrV.length() is safe because that is a chip-side array var.  The
+    // width has to come from a constant, and no such constant exists yet.
+    if name == "outarr" {
+      if v != floor(v) || v < 1.0 || v > outArrV.length() {
+        nameWarn = nameWarn
+          .. "warn: array index out of range, and outarr is 1-based over the outArr slots\n"
+      }
     }
-    // inArr is bounded by the same length, but a bad index there substitutes nil
-    // and carries on, so it deserves its own words.  NOT done yet: reading an
-    // INPUT port during codegen broke two unrelated cases (out-badindex-str and
-    // tab-index-expr, neither of which calls inarr), because a port value is
-    // resolved in a fixpoint rather than in source order.  The check needs the
-    // width from a constant instead of from the port.
   }
 }
 
