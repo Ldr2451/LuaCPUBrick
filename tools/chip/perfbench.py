@@ -83,7 +83,7 @@ def measure(runner, src, ticks):
     og = result.get("outGlobals", {})
     if not sim.finished:
         raise RuntimeError("CAP at %d: %s" % (sim.tick, og.get("err", "")))
-    if not og.get("progOk", False) or og.get("err"):
+    if any(l.startswith("err:") for l in (og.get("progDebug") or "").splitlines()) or og.get("err"):
         raise RuntimeError("chip failed: %s" % og.get("err", ""))
     used_ticks = sim.tick + 1
     bop = sim.arrays.get(labels.get("bop"), [])

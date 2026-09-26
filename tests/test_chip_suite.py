@@ -248,6 +248,16 @@ def run_batch(cases_in):
             for n, c in zip(names, cases_in)]
 
 
+def fatal(prog_debug):
+    """A rejection is a line that says `err:`, not a non-empty string.
+
+    progDebug also carries `warn: ` lines, and a warned program RUNS, so testing
+    emptiness reported a warned program as rejected - which is what made the
+    program-arrives-in-pieces cases fail before the port was split by severity.
+    """
+    return any(l.startswith("err:") for l in (prog_debug or "").splitlines())
+
+
 def chip_ports(r):
     og = r["outGlobals"]
     # five numbers then two strings: the numeric outputs are all float now, so
@@ -261,7 +271,8 @@ def chip_ports(r):
         "outArr": list(og.get("outArr", [0.0] * 64)),
         "result": og.get("result", ""),
         "err": og.get("err") or "",
-        "progOk": bool(og.get("progOk", False)),
+        "progDebug": og.get("progDebug") or "",
+        "progOk": not fatal(og.get("progDebug")),
     }
 
 
@@ -290,7 +301,7 @@ def compare(name, mode, kw, r, dt):
         if want is None:
             return (name, None, "SKIP unrecorded deviation", dt)
         if not c["progOk"]:
-            return (name, False, "chip rejected: %r" % c["err"], dt)
+            return (name, False, "chip rejected: %r" % c["progDebug"], dt)
         if "finished" in exp and bool(r.get("finished")) != exp["finished"]:
             return (name, False, "finished got=%r want=%r" % (
                 r.get("finished"), exp["finished"]), dt)
@@ -308,7 +319,7 @@ def compare(name, mode, kw, r, dt):
             run = life.get(run_name, {})
             if not run.get("progOk"):
                 return (name, False, "%s chip rejected: %r" % (
-                    run_name, run.get("err")), dt)
+                    run_name, run.get("progDebug")), dt)
             if run.get("err"):
                 return (name, False, "%s error: %r" % (
                     run_name, run.get("err")), dt)
@@ -384,7 +395,7 @@ def compare(name, mode, kw, r, dt):
         return (name, True, "", dt)
     if mode == "state":
         if not c["progOk"]:
-            return (name, False, "chip rejected: %r" % c["err"], dt)
+            return (name, False, "chip rejected: %r" % c["progDebug"], dt)
         want_log = exp.get("log")
         if want_log is not None and c["log"] != want_log:
             return (name, False, "log mismatch got=%r want=%r" % (
@@ -411,8 +422,9 @@ def compare(name, mode, kw, r, dt):
         # finds the declaration that asked for too much
         if "errline" in kw:
             want = "line %d:" % kw["errline"]
-            if want not in c["err"]:
-                return (name, False, "err missing %r: got %r" % (want, c["err"]), dt)
+            if want not in c["progDebug"]:
+                return (name, False, "progDebug missing %r: got %r" % (
+                    want, c["progDebug"]), dt)
         return (name, True, "", dt)
     if mode == "runtimerr":
         exp_err = (exp.get("err") or "") if exp else ""
@@ -435,8 +447,9 @@ def compare(name, mode, kw, r, dt):
             return (name, False, "lua accepted, want reject", dt)
         if "errline" in kw:
             want = "line %d:" % kw["errline"]
-            if want not in c["err"]:
-                return (name, False, "err missing %r: got %r" % (want, c["err"]), dt)
+            if want not in c["progDebug"]:
+                return (name, False, "progDebug missing %r: got %r" % (
+                    want, c["progDebug"]), dt)
         return (name, True, "", dt)
     if mode == "haltfail":
         o = OR.oracle_run(r["src"])
@@ -477,7 +490,8 @@ def lifecycle_sample(sim_, tick):
         "outNum0": float(og.get("outNum0", 0.0)),
         "busy": bool(og.get("busy", False)),
         "err": og.get("err") or "",
-        "progOk": bool(og.get("progOk", False)),
+        "progDebug": og.get("progDebug") or "",
+        "progOk": not fatal(og.get("progDebug")),
     }
 
 
@@ -622,9 +636,10 @@ def run_trace(sim, src, kw, ticks):
     sim.reset()
     sim.inputs = sim_inputs(src, kw)
     r = sim.run(ticks, on_tick=lambda s, tick: marks.append(s.log))
+    pd = r["outGlobals"].get("progDebug") or ""
     return {"log": marks, "ticks": sim.tick, "err": (r["outGlobals"].get("err")
                                                      or ""),
-            "progOk": bool(r["outGlobals"].get("progOk", False))}
+            "progDebug": pd, "progOk": not fatal(pd)}
 
 
 def _assert_graph_is_this_chip(sim):
@@ -677,6 +692,7 @@ def run_in_sim(sim, p, sim2=None):
                      "reset": reset, "second": second}
         r = {"log": first["log"], "outGlobals": {
             "outNum0": first["outNum0"], "err": first["err"],
+            "progDebug": first["progDebug"],
             "progOk": first["progOk"]}}
     elif p["mode"] == "lockstep":
         # Two equal chips, the same program, the same start: the output must be the
@@ -701,7 +717,8 @@ def run_in_sim(sim, p, sim2=None):
                     "errA": a["err"], "errB": b["err"],
                     "okA": a["progOk"], "okB": b["progOk"]}
         r = {"log": a["log"][-1] if a["log"] else "",
-             "outGlobals": {"err": a["err"], "progOk": a["progOk"]}}
+             "outGlobals": {"err": a["err"], "progDebug": a["progDebug"],
+                            "progOk": a["progOk"]}}
     else:
         sim.reset()
         sim.inputs = sim_inputs(src, kw)

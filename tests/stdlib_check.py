@@ -86,7 +86,7 @@ def run_case(runner, src, inputs, ticks):
     if oracle.get("rc") != 0 or oracle.get("calls") is None:
         return False, "oracle failed: %s" % oracle.get("stderr"), sim_seconds, oracle_seconds
     want = OR.oracle_log(oracle["calls"])
-    if not og.get("progOk", False):
+    if any(l.startswith("err:") for l in (og.get("progDebug") or "").splitlines()):
         return False, "chip rejected: %s" % og.get("err", ""), sim_seconds, oracle_seconds
     if og.get("err"):
         return False, "chip error: %s" % og["err"], sim_seconds, oracle_seconds

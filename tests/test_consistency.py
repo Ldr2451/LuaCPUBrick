@@ -137,7 +137,7 @@ for port, typ in [("log", "string"), ("outNum0", "float"),
                   ("outStr0", "string"),
                   ("outStr1", "string"), ("outArr", "float[]"),
                   ("result", "string"), ("err", "string"),
-                  ("progOk", "bool"), ("busy", "bool")]:
+                  ("progDebug", "string"), ("busy", "bool")]:
     check(f"port-{port}", port in outs_d,
           f"missing (have {sorted(outs_d)})")
     if port in outs_d and typ:
@@ -146,7 +146,7 @@ for port, typ in [("log", "string"), ("outNum0", "float"),
 for port, bindvar in [("log", "logV"), ("outNum0", "oF0"),
                       ("outNum4", "oF4"),
                       ("outStr0", "oS4"), ("result", "resultV"),
-                      ("err", "errV"), ("progOk", "progOkV")]:
+                      ("err", "errV"), ("progDebug", "progDebugV")]:
     check(f"port-{port}-bound", re.search(
         rf"^(var|let) {bindvar}\b", WS, re.M) is not None)
 check("no-halted-port", "out halted" not in WS)

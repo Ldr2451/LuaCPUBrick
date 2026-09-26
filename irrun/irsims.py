@@ -285,13 +285,36 @@ class Sim:
                     self.input_ids.append(w.src_id)
         self._halted_id = None
         self._err_id = None
+        self._perr_id = None
         for nid, nd in nodes.items():
             lbl = _extract(nd.props.get('_label', ('raw', '')))
             if lbl == 'vmHalted':
                 self._halted_id = nid
             elif lbl == 'errV' and self._err_id is None:
                 self._err_id = nid
+            elif lbl == 'progDebugV' and self._perr_id is None:
+                self._perr_id = nid
         self.reset()
+
+    def _errored(self):
+        """True while the chip is reporting a failure of either kind.
+
+        `errV` is the runtime channel; `progDebugV` carries the compile-time one
+        as an `err: ` line.  A run must not end while either is set, because a
+        host keeps ticking a chip that reported an error and a new program on the
+        port re-parses.  Keying this on `errV` alone meant that the day compile
+        errors stopped being written there, a rejected fragment read as a clean
+        finish: the run latched `finished` at the fragment and stopped before the
+        good program was delivered, so the recovery cases could not pass.
+        """
+        if self._err_id is not None and self.vars.get(self._err_id):
+            return True
+        if self._perr_id is not None:
+            txt = self.vars.get(self._perr_id) or ""
+            if isinstance(txt, str) and any(l.startswith("err:")
+                                            for l in txt.splitlines()):
+                return True
+        return False
 
     def _seed_inputs(self):
         for nid in self.input_ids:
@@ -450,8 +473,7 @@ class Sim:
                 # branch: that made a rejected program end the run at once, and
                 # the error branch below (which keep_going governs) is the one
                 # that should decide
-                errored = bool(self._err_id is not None
-                               and self.vars.get(self._err_id))
+                errored = self._errored()
                 pending = {q for q in self.exec_queue if q[0] not in observed}
                 if not errored and not pending and not self._deferred:
                     self.finished = True
@@ -468,8 +490,7 @@ class Sim:
             # made "does it recover from a rejected program?" unanswerable: the
             # run ended at tick 5, before the good program had even been
             # delivered.
-            if (self._err_id is not None and self.vars.get(self._err_id)
-                    and not self.keep_going):
+            if self._errored() and not self.keep_going:
                 self.finished = True
                 break
         return self.capture()

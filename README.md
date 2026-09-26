@@ -46,7 +46,7 @@ A WireScript chip is wires, so everything a program can see or change is a port.
                                  |-- result
                                  |-- err
 
-                                |-- progOk
+                                |-- progDebug
                                 |-- busy
 ```
 

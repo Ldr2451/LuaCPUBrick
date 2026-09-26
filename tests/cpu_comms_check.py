@@ -17,7 +17,7 @@ def run_cpu(name, runner, src, inarr=None, ticks=1200):
     og = result.get("outGlobals", {})
     if not runner.sim.finished:
         raise RuntimeError("%s did not finish: %s" % (name, og.get("err", "")))
-    if not og.get("progOk", False) or og.get("err"):
+    if any(l.startswith("err:") for l in (og.get("progDebug") or "").splitlines()) or og.get("err"):
         raise RuntimeError("%s failed: %s" % (name, og.get("err", "")))
     print("%-18s OK log=%r" % (name, result.get("log", "")), flush=True)
     return result

@@ -35,7 +35,8 @@
 ///   out result: string    top-level return value, "" when none
 ///   out err: string       runtime error text, "" when none; compile failures read
 ///                         "line N: message"
-///   out progOk: bool      false when the program did not compile
+///   out progDebug: string  one line per static finding, `err: ` fatal or
+///                        `warn: ` advisory; empty when there were none
 ///   out busy: bool        true while lexing, parsing, or executing with run high
 ///   A change on any scalar input while `run` is high restarts the program with the new
 ///   value. inArr is read live by inarr() (no restart needed). Changing an input while
@@ -200,7 +201,7 @@
 ///   anything; fixed-size float storage is a gate limitation). The log keeps
 ///   the last 32 lines at 64 chars each (about 2 KB).
 ///
-/// Limits (compile error past them, progOk = false)
+/// Limits (a compile error past them, reported as an `err: ` line)
 ///   4096 tokens, 1024 bytecode instructions, 64 registers per function, 96 functions,
 ///   96 globals (48 pre-registered), 256 numeric and 256 string constants, 16 values
 ///   per expanded call/return/statement, 32 nested calls, 16 upvalues per function.
@@ -251,7 +252,7 @@
 @right out outArr: float[] = outArrV
 @right out result: string = resultV.Value
 @right out err: string = errV.Value
-@right out progOk: bool = progOkV.Value
+@right out progDebug: string = progDebugV.Value
 @right out busy: bool = jobBusy || (run && progOkV && !vmHalted)
 
 // ---------------------------------------------------------------- tunables
@@ -353,6 +354,17 @@ var outArrV: float[]
 var resultV: string = ""
 var errV: string = ""
 var progOkV: bool = false
+// What the static passes found in the program text, for the person holding
+// the Brick.  One issue per line, each prefixed `err: ` (fatal, the program
+// will not run) or `warn: ` (it runs, and will misbehave), because those two
+// have opposite consequences and must not be told apart by guessing.
+//
+// `err` is the runtime channel and keeps PUC's exact words.  This is
+// deliberately NOT cleared by vmReset: the program has not changed, so its
+// findings have not either.  It is a report, NOT the gate - progOkV is the
+// gate, because a warning does not stop a program and a non-empty string
+// therefore cannot mean "rejected".
+var progDebugV: string = ""
 
 // ---------------------------------------------------------------- value helpers
 // value tags: 0 nil, 1 number, 2 string, 3 boolean, 4 function, 5 table, 6 integer
@@ -10162,13 +10174,60 @@ on goParse {
   } else {
     if lerr {
       progOkV = false
-      errV = "line " .. userLine(lerrLine) .. ": " .. lerrMsg
+      progDebugV = "err: line " .. userLine(lerrLine) .. ": " .. lerrMsg
       vmHalted = true
       jobBusy = false
     } else {
       emit goParse2
     }
   }
+}
+
+// Names this build does not have, and every one of them, so a single boot
+// tells the user everything that is wrong instead of one thing per run.  A run of
+// Find()s over text the parser already holds, once per program, at parse time.
+//
+// Scanned against the user's own source and not `lsrc`, because `lsrc` has the
+// library pieces prepended and those are the chip's text, not the program's.
+//
+// A finding is advice, never a refusal: PUC also lets an undefined global read
+// as nil, so the program still runs and still prints what PUC would print.  The
+// port list at the end is what catches a typo, which is the common case -
+// `in0` for `inNum0` - and it does so without the chip knowing every typo
+// anyone can make.
+mod staticAdvice(p: string) -> string {
+  var h = ""
+  if srcUses(p, "setmetatable") || srcUsesField(p, "setmetatable")
+    || srcUses(p, "getmetatable") || srcUses(p, "rawget") || srcUses(p, "rawset")
+    || srcUses(p, "rawequal") || srcUses(p, "rawlen") || srcUsesField(p, "metatable") {
+    h = h .. "warn: no metatables: setmetatable/getmetatable/rawget/rawset/rawequal are absent\n"
+  }
+  if srcUses(p, "coroutine") {
+    h = h .. "warn: no coroutines\n"
+  }
+  if srcUses(p, "require") || srcUses(p, "module") || srcUses(p, "dofile")
+    || srcUses(p, "loadfile") || srcUses(p, "loadstring") || srcUses(p, "package") {
+    h = h .. "warn: no modules or file loading: require/module/dofile/loadfile/loadstring are absent\n"
+  }
+  if srcUsesField(p, "io") || srcUsesField(p, "os") || srcUsesField(p, "debug")
+    || srcUsesField(p, "utf8") {
+    h = h .. "warn: no io/os/debug/utf8 library\n"
+  }
+  if srcUsesField(p, "inInt0") || srcUsesField(p, "outInt0") {
+    h = h .. "warn: there is no int port: one number type, so use inNum0..inNum3 and outnum(i, v) with i in 1..5\n"
+  }
+  if srcUsesField(p, "inVec") || srcUsesField(p, "outVec")
+    || srcUsesField(p, "invecx") || srcUsesField(p, "outvec") {
+    h = h .. "warn: there is no vector port: use inarr(i) and outarr(i, v, ...) with i from 1\n"
+  }
+  if srcUsesField(p, "inCol") || srcUsesField(p, "outCol")
+    || srcUsesField(p, "incol") || srcUsesField(p, "outcol") {
+    h = h .. "warn: there is no colour port\n"
+  }
+  if h != "" {
+    h = h .. "warn: the ports are program, run, inNum0..inNum3, inStr0, inStr1, inArr going in, and log, outNum0..outNum4, outStr0, outStr1, outArr, result, err, progDebug, busy going out\n"
+  }
+  return h
 }
 
 on goParse2 {
@@ -10184,11 +10243,13 @@ on goParse2 {
     vmReset()
     vmClosures()
     if perr {
-      // vmReset clears errV, so report the failure after it; cpos sits at
-      // (or just past) the offending token in nearly every perr path
+      // cpos sits at (or just past) the offending token in nearly every perr
+      // path, which is the line to name
       let epos = if cpos >= tl.length() then tl.length() - 1 else cpos
-      errV = "line " .. userLine(if epos < 0 then lline else tl[epos])
+      progDebugV = "err: line " .. userLine(if epos < 0 then lline else tl[epos])
         .. ": " .. perrMsg
+    } else {
+      progDebugV = staticAdvice(program)
     }
   }
 }
@@ -10272,7 +10333,7 @@ on Clock(interval = STEP_INTERVAL) {
 //    single-expression form, exprPushName de-duplicated, builtin globals initialised from
 //    constant arrays. Step Clock 0.1 s -> 0.01 s.
 // 12. busy and halted merged into one busy port (pure expression over the parse job,
-//    run, progOk and the halt flag); progLen and nPrint ports dropped.
+//    run, progDebug and the halt flag); progLen and nPrint ports dropped.
 // 13. print feeds one multiline log port (one tab-separated line per call, last 32 lines
 //    at 64 chars each, cleared on restart) instead of 8 slots; the 16-way slot dispatch
 //    is gone, lines stream through a small array plus a string mirror.
