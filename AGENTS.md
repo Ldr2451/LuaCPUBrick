@@ -360,21 +360,34 @@ falls out for free.
 ## WireScript traps
 Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
 `tools/chip/vargraph.py <name>` shows which gate fires each write.
-- **OPEN BUG, and it is in the COMPILER: a call whose argument is a folded `or`,
-  used inline in a comparison, leaves the wrong tag in the result register.**
-  `print("a" < (tostring(false or false)))` raises "attempt to compare" where PUC
-  answers `true`. Every near miss is right — `print("a" < tostring(1))`,
-  `print("a" < (tostring(1)))`, `print("a" < ("b"))`, `print("a" < (s))` for a
-  local, and `local q = tostring(false or false) print("a" < q)` — and both
-  `tostring(false or 1)` and `tostring(1 or false)` fail, so it is the folded `or`
-  as the *argument* plus the call being *inline* in the comparison operand. The
-  value is a string when it goes through a local, so the tag is lost in register
-  allocation, not at run time: the comparison arm only reads the tags it is given
-  and correctly rejects a pair that is neither two strings nor two numbers. There
-  is nothing to fix in `lua.ws` — hoist the call into a local, which is the
-  workaround, and file it against `wirescript`. Found by `tools/fuzz.py` seed
-  1358, which is only comparable now that the generator is scope-correct (below):
-  it had been skipping two thirds of its seeds, so it could not have found this.
+- **OPEN BUG, and it is in the chip's OWN Lua compiler, not in wirescript.**
+  `print("a" < (tostring(false or false)))` raises "attempt to compare" where
+  PUC answers `true`, and `print(1 + tostring(false or false))` says it is adding
+  a boolean to a string. The shape is **a call whose argument is an `and`/`or`,
+  anywhere inside a larger expression**; hoisting the call into a local is the
+  verified workaround (`local s = tostring(false or false) print("a" < s)` works,
+  as does `print("a" < tostring(1))`, `print("a" < (tostring(1)))` and
+  `print(#tostring(false or false))`). The compiler is WireScript's, and
+  WireScript cannot even parse the shape — `tostring(false or false)` compiles to
+  `_Unsupported` placeholders — so this is the code in `lua.ws` that compiles a
+  *program* to bytecode.
+  The bytecode says exactly what goes wrong: for the failing program it emits
+  `LOADSTR a=1` (the `"a"`), then the call's argument chain, then `CALL a=2 b=1`,
+  then **`LT a=2 b=4`** — it compares the call's result (register 2) against
+  register 4, which is the call's *argument*, the register the folded `or` left
+  behind. The working program emits `LT a=2 b=2` with both operands where they
+  belong. So the pending binary operator's operand register is lost across the
+  argument list: `applyPop` and `pushPending` (lua.ws, around 3320 and 3402) move
+  values on and off `valStk` around the `and`/`or` branch form, and the call's
+  `)` close (`closeMode == 1`, around 6117) drains to the depth the `(` recorded.
+  The value stack balances in each of those pieces on its own; the interaction
+  does not. Do not "fix" it by making the comparison arms tolerant — the add case
+  shows the wrong *register* is read, not a wrong tag, so there is nothing sound
+  to recover at run time. `lua.ws` itself no longer contains the shape (three
+  error-message sites were rewritten to hoist it), so the deliverable is clean;
+  what remains is a program-compiler bug. Found by `tools/fuzz.py` seed 1358,
+  which could not have found it while the generator was skipping two thirds of
+  its seeds.
 - **A seed is expensive, so the fuzzer is not an edit-loop tool.** Measured: 150
   seeds 2.5 min, 400 seeds 6 min, one seed 5 s. Its default is 40 for that
   reason; the suite and `tools/check.py @file` are the fast paths, and a big
