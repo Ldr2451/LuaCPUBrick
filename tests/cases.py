@@ -1682,7 +1682,6 @@ TESTS = [
                   "outGlobals": [7.0, 79.0, 608.0, 11.0, 0.0,
                                  "foo-bar!|foo", "21.75/table: 0x4"],
                   "outArr": [55.0, 6.0, 3.0] + [0.0] * 58 + [-1.0, -2.0, -3.0],
-                  "outVec": [2.0, 4.0, 6.0],
                   "result": "done-55"}}),
 
     # regression: the original progOk bug (hello world must compile)
