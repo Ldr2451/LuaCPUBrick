@@ -532,6 +532,29 @@ and what they look like in the source.  	ools/chip/wswarn.py flags the visible o
   is a different and much more expensive thing** — the chip's constants, the gates
   and the host's laws are not in it, so a green model proves the *rule* you were
   about to encode and nothing about the chip.
+- **Skipping work is invisible to the log whenever the work also resets it, so
+  assert the COST and not the output.** A re-parse calls `vmReset`, which clears
+  the log, so a recompiled program prints *exactly* what a skipped parse prints —
+  the log had no way to see a restart re-parsing, and neither did `finished`,
+  which is a latch only `reset()` clears and so was still set from the PREVIOUS
+  run. A case therefore times a run from the log going empty to non-empty
+  (`life-no-reparse-second-run`'s `secondRunUnder`, fitted between 5 ticks to
+  restart and 104 to re-parse — a one-line program re-parses in 16, so a
+  generous cap passes it), and `python -u tools/chip/restartcost.py` prints both
+  costs, the control edit and the per-rep spread, because "noticeably" and
+  "reliably" are two claims. **Proved by damaging the chip:** a parse per run edge
+  fails with `restart cost [100, 100] ticks, want under 20` while the log and
+  `finished` are both correct. Three traps cost that measurement and are worth
+  more than the rule: a value port rewritten on every phase edge re-fires
+  `Change(program)`, so the harness measures the EDIT while believing it measures
+  the restart — write the port once, then only flip `run`; a permissive
+  comparison is invisible while every case supplies the value once, since all 713
+  delivered the program from `progText = ""` where `program != progText` is true
+  whatever it says, so catching it needed a SECOND, different program
+  (`life-edit-while-running`, the only one of 19 lifecycle cases that fails when
+  the comparison is damaged); and a bound is only as good as the measurement
+  behind it, which is why the tool takes `--chip` and was aimed at a damaged
+  source to confirm it can report the bad answer.
 
 ## Workflow
 - **A compacted session starts with `git status` and `git diff`.** The summary
