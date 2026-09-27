@@ -773,14 +773,19 @@ var cloN: int = 0
 var cloDst: int = 0
 var cloActive: bool = false
 
-// Pre-registered globals: 0..4 outNum0..outNum4 (numbers), 5..6 outStr0..outStr1,
-// 6..9 inNum0..inNum3, 10..11 inStr0..inStr1, 12..14 invec x/y/z (the inputs
-// filled from the latches), 15..35 builtins (print, type, tostring, outvec,
-// clock, innumarr, outarr, select, next, _s, _m, unpack, _fmt, _rd, _wr, error,
-// assert, pcall, xpcall, _pat, _gmatch, _gmnext, and instrarr last) as functions
-// with their own ids,
-// and the four library tables.  There is no colour port:
-// incol r/g/b/a used to hold 15..18 and the ids below them moved when it went.
+// Pre-registered globals, in the gDeclare order in parseInit: the six INPUTS are
+// slots 0..5 (inNum0..inNum3 then inStr0..inStr1) and are filled from the latches;
+// after them come the callables, the four library tables, and instrarr last.  The
+// writable outputs are deliberately NOT globals -- they are written by
+// outnum/outstr/outarr and read on their own ports, so there is no slot for them
+// at all.
+// The two arrays below carry the seed for every slot, and that pair plus the
+// gDeclare list are the authority.  This comment used to spell the whole slot map
+// out in prose, and was wrong twice over: it listed outNum0..outNum4, invec and
+// outvec as globals, and none of the three exists -- the outputs are calls and the
+// vector ports are gone (RESERVED_FIDS keeps the ids).  That is a hand-kept mirror
+// of numbers the chip computes, which is how a doc ends up confidently disagreeing
+// with the build, so it now repeats only the two facts worth having.
 var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 4]
 var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 23.0, 24.0, 0.0, 1.0, 2.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 1.0, 2.0, 3.0, 25.0]
 

@@ -434,7 +434,7 @@
   they keep the port's spelling. Two spellings for one thing is the failure this
   avoids: a program cannot wonder whether `inarr` or `inNumArr` is the call.
 - **Every index a program passes is 1-based, and an output is not readable.**
-  `outnum(1..4)`, `outstr(1..2)` and `outarr(1..)` all count from 1, the way a
+  `outnum(1..5)`, `outstr(1..2)` and `outarr(1..)` all count from 1, the way a
   Lua table does, so `outnum(1, v)` and `outarr(1, v)` are the same slot and
   there is no off-by-one for a program to remember. 0-based was tried and is
   wrong: a Lua author has one indexing rule in their head already. A written
