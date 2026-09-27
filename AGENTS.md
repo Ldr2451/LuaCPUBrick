@@ -247,29 +247,46 @@
   time. **In-game a tick is 16.7ms of real time whatever the chip does**, so
   there only fewer ticks reaches the user. A change can halve one and double the
   other; say which one you moved.
-- **The scan floor is 2 chars/tick, and parsing costs 4× that.** Measured at a
+- **The scan floor is 2 chars/tick, and parsing costs 2-3x that.** Measured at a
   fixed 1,600 characters: whitespace 811 ticks and a comment 815 — identical, so
   the floor is the raw scan, `0.507` ticks/char, and 4 chars/tick was stale
-  (`lexChunk` was unrolled 4→2 without the figure following). Real code at the
-  same length cost 4,015, so **parsing adds ~2.0 ticks/char, about 80% of
-  compiling anything real**. So a boot-cost argument is a *parse* argument, and
-  the lexer is the smaller half — inverting the obvious guess.
+  (`lexChunk` was unrolled 4→2 without the figure following). `tools/chip/lexrate.py`
+  re-measures the floor as **exactly `0.500` ticks/char** (a comment, linear from
+  13 to 2,013 chars) and prices what compiling really costs: real source that is
+  lexed AND parsed but never run is **1.30 to 1.75 ticks/char** depending on the
+  statement (`if x == 1 then x = 2 end` 1.30, `x = x + 1` 1.75), so the parse adds
+  0.8-1.25 ticks a character over the scan. Real code at the same length cost
+  4,015, which is that plus running it. So a boot-cost argument is a *parse*
+  argument, and the lexer is the smaller half — inverting the obvious guess.
 - **A library piece is charged by the character AND by every function it
-  defines.** Source is spliced in front of the program and the lexer runs at
-  2 chars/tick, so `C/2` ticks is the lexing; on top of that each `function` in
-  a piece is a closure the chip has to create and fill, measured at about **280
-  ticks each** (tonumber 760 chars/2 functions = 583 ticks = 190 + 2×197;
-  math.random before this was inlined 1,140/3 = 1,130 = 285 + 3×282; string.gsub
-  2,783 chars and 2,933 ticks, which fits ~8 functions). **That count over 4 is
-  the in-game number to argue about** - `LIB_str_gsub` is 2,783 escaped chars =
-  696 ticks = 11.6s at 60 ticks/s, before the program runs one instruction and
-  before the closures on top of it. So a piece's first question is how many
-  functions it needs, not how long it is: inlining `math.random`'s generator
-  (randomseed does not draw) took it from 3 functions to 2 and its boot from 1,130
-  ticks to 989, and 141 ticks is 2.3s at 60 ticks/s for a program that names it
-  once. `tools/lib/libconst.py piece.lua LIB_x` prints the size; `--install`
-  minifies (comments, indentation, blank lines out, nothing else - a line inside a
-  long bracket string is data) and rewrites the const in `lua.ws`.
+  defines**, and both terms were wrong by a factor of three to ten while they were
+  derived by subtraction from a whole program's boot. Measured directly, and
+  deterministic to the tick (`tools/chip/lexrate.py lib/piece.lua`): **1.30 to
+  1.75 ticks per character** of real source, and **24 to 62 ticks per function**
+  (an empty one 24, one with a parameter, a local and a return 62). The old rule
+  said `C/2` from the scan floor, which is what a character that lexes to no token
+  costs, and ~280 ticks a function.
+  - `lib/str_format.lua` is 11,468 characters and 19 functions, so **15,400 to
+    21,300 ticks of boot, 256 to 354s at 60 ticks/s** — against the 2,692 ticks the
+    old rate claimed, which is why `string.format` is a gate and not a piece.
+  - `LIB_str_gsub` is 2,783 escaped chars, so **3,600 to 4,900 ticks = 60 to 81s**
+    at 60 ticks/s, not the 696 ticks = 11.6s the old arithmetic gave, before the
+    program runs one instruction.
+  The old numbers came from splitting measured program totals (tonumber 760
+  chars/2 functions = 583 ticks = 190 + 2×197; math.random before this was inlined
+  1,140/3 = 1,130 = 285 + 3×282; string.gsub 2,783 chars and 2,933 ticks, which
+  fits ~8 functions) and they do not survive a direct measurement: 760 characters at
+  1.75 ticks is 1,330 ticks of parse on its own, more than the 583 the whole
+  program took. So the escaped-char count is probably not what gets spliced, or
+  those totals were deltas against a baseline that had already paid for shared
+  library text. The one old number that WAS a delta agrees with the direct
+  measurement: inlining `math.random`'s generator (randomseed does not draw) took it
+  from 3 functions to 2 and its boot from 1,130 ticks to 989, and 141 ticks is 2.3s
+  at 60 ticks/s for a program that names it once. **The first question about a
+  piece is therefore how long it is, not how many functions it has**: the character
+  term dominates, and eight functions is 200-500 ticks on top.
+  `tools/lib/libconst.py piece.lua LIB_x` prints the size; `--install` minifies (comments, indentation, blank lines out, nothing else - a
+  line inside a long bracket string is data) and rewrites the const in `lua.ws`.
 - **A gate can be dearer at boot than the piece it would replace.** Measured:
   naming `math.abs` or `math.floor` costs about 474 ticks of boot and
   `math.maxinteger` 923, because `libMathInt` and `libMathConst` are pieces the

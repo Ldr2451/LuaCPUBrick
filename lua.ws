@@ -217,12 +217,16 @@
 ///               that fast has not been measured; time a loop with clock() to check.
 ///               Rough sizes: an 8 element bubble sort is ~740 instructions, 16 elements
 ///               ~2600, 32 elements ~9400.
-///   Parsing     lexChunk() = 4 characters per tick, parseChunk() = 1 parser step per
+///   Parsing     lexChunk() scans 2 characters per tick, and real source costs
+///               1.3 to 1.75 ticks a character once it is parsed as well, so
+///               parseChunk() = 1 parser step per
 ///               tick. A few hundred characters take a few seconds. Add or remove calls in
 ///               lexChunk / parseChunk / vmBurst to trade gates for speed.
-///               Six chains are past the ~16 arm edge where arms near the top stop
-///               taking effect (vmStep is the worst at 43); tools/chip/chainmap.py
-///               lists them, so check there before adding an arm to one of those.
+///               Six chains are past the ~16 arm edge and the suite runs every one
+///               of them, so arm count on its own is not the hazard; what the one
+///               measured failure had was a write at the bottom of a deep else
+///               branch.  tools/chip/chainmap.py lists them, and
+///               tools/chip/lexrate.py measures the rates above.
 ///
 /// Verification: differential tests against real Lua 5.5, structural model<->chip
 /// consistency checks (builtin ids, global slots, limits, ports, opcode and keyword
@@ -1253,9 +1257,13 @@ var presCallPos: int = -1
 //   python -u tools/fmt/fmtdraft.py --extract    save this hunk back to the draft
 //
 // Why a gate and not the library: the PUC-verified Lua implementation of this
-// function is lib/str_format.lua, 10769 characters, and the lexer runs at four
-// characters per tick, so prepending it cost 2692 ticks of boot per program --
-// about 45 seconds in-game.  As a gate it costs +3,308 nodes and +6,026 wires
+// function is lib/str_format.lua, 11468 characters and 19 functions.  Priced at
+// the measured rates -- 1.3 to 1.75 ticks a character of real source, 24 to 62 a
+// function (tools/chip/lexrate.py) -- prepending it costs 15,400 to 21,300 ticks
+// of boot per program, 256 to 354 seconds in-game.  It used to be quoted here as
+// 10769 characters at four characters a tick, 2692 ticks, which applied the raw
+// scan rate to source that also has to be parsed, and the scan floor is 2
+// characters a tick rather than 4.  As a gate it costs +3,308 nodes and +6,026 wires
 // (68,134 -> 71,442) and 0 boot ticks, and a "%d" format call runs in 0.2s of
 // sim time where the Lua version took 9.4s.
 //
@@ -1328,10 +1336,11 @@ var presCallPos: int = -1
 // ---------------------------------------------------------------- _fmt
 //
 // string.format as a micro-step: one character of the spec, or one digit, per
-// tick.  The library is prepended Lua source and the lexer runs at four
-// characters per tick, so the PUC-verified Lua implementation of this function
-// (kept as lib/str_format.lua) cost 10769 characters -- 2692 ticks of boot, about
-// 45 seconds in-game, before the program so much as started.  A gate pays
+// tick.  The library is prepended Lua source, which the lexer and parser together
+// charge at 1.3 to 1.75 ticks a character (measured, tools/chip/lexrate.py), so the
+// PUC-verified Lua implementation of this function (kept as lib/str_format.lua,
+// 11468 characters and 19 functions) cost 15,400 to 21,300 ticks of boot, 256 to
+// 354 seconds in-game, before the program so much as started.  A gate pays
 // nothing for the source and one state machine covers the loops, so this is the
 // cheaper host by two orders of magnitude.  The semantics are settled by that
 // reference: 107 of 108 cases match lua5.5 byte for byte.
@@ -8673,7 +8682,8 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
   } else if fid == 13 {
     // _fmt(fmt, ...): string.format, as a micro-step.  lib/str_format.lua
     // is the PUC-verified Lua version of this algorithm; as prepended
-    // source it cost 2692 ticks of lexing per program, so it lives here
+    // source it cost 15,400 to 21,300 ticks of boot per program at the
+    // measured rates (tools/chip/lexrate.py), so it lives here
     // and the library only aliases the name (LIB_str_fmt).
     if nargs < 1 {
       vmFail("bad argument #1 to 'format' (string expected, got no value)")
@@ -9092,7 +9102,8 @@ mod lexChunk() {
   // parseChunk: four calls compiled the lexer four times over, 6,692 nodes for
   // what is one step's work at four copies.  Two is the middle of the road --
   // one call is 5,019 nodes cheaper again but costs 83% more boot, and boot is
-  // what a library piece is charged in (its escaped characters over 4).
+  // what a library piece is charged in (its characters, at 1.3 to 1.75 ticks each,
+  // tools/chip/lexrate.py).
   //
   // Measured: a gsub program ran 2,400 ticks with four calls, 3,067 with two,
   // 4,401 with one.  Two takes a third of the available saving for half the
