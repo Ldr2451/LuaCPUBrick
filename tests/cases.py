@@ -18,6 +18,7 @@ import spec
 DEMO_SRC = open(os.path.join(TINYLUA,
                              "demo.lua"), encoding="utf-8").read()
 DEMO_KW = {"innumarr": [10.0, 20.0, 30.0],
+           "instrarr": ["alpha", "beta", "gamma"],
            "sinputs": {0: "foo", 1: "bar"}}
 DEMO_LOG = (              "arith	2.25	7.0	-4	-4	-0.5\n"
               "bits	1	11	6	-1	16	15\n"
@@ -46,6 +47,7 @@ DEMO_LOG = (              "arith	2.25	7.0	-4	-4	-0.5\n"
               "flow	55	2	1	second\n"
               "inputs	60.0	10.0	20.0\n"
               "inputs2	nil	nil	10.0	20.0	30.0\n"
+              "names	alpha	nil	5\n"
               "outs\n"
               "outs2\n"
               "\n"
@@ -1811,6 +1813,19 @@ TESTS = [
     # a slot past the end of the array reads nil, the same rule innumarr(65) has
     ("arr-multi-read-edge", "print(innumarr(62, 4))", None, "run",
      {"innumarr": [float(i) for i in range(1, 65)]}),
+    # k is capped at 8, and this is the AT the cap: every other multi-read case
+    # used 3 or 4, so the widest form the chip accepts was the one thing untested
+    # on both arrays.  Nine is the first rejected value (arr-multi-count9).
+    ("arr-multi-read8", "print(innumarr(1, 8))", None, "run",
+     {"innumarr": [float(i) for i in range(1, 13)]}),
+    # the cap is on the COUNT, and a read of 8 that starts near the end still
+    # answers 8: four slots and four nils, not an error and not four
+    ("arr-multi-read8-edge", "print(innumarr(60, 8))", None, "run",
+     {"innumarr": [float(i) for i in range(1, 65)]}),
+    # the results land in consecutive registers, so a constructor is the shape
+    # that would break first if it did -- and #t is PUC's, not the chip's
+    ("arr-multi-into-table", "local t = {innumarr(2, 4)} print(#t, t[1], t[4])",
+     None, "run", {"innumarr": [9.0, 1.0, 2.0, 3.0, 4.0, 5.0]}),
     # the count is a count, not an index: 0, 9 and 1.5 all raise.  Each case sets
     # innumarr, because the INDEX is checked first: with an empty array innumarr(1, 9)
     # answers nil and never reaches the count.
@@ -1839,6 +1854,14 @@ TESTS = [
      "run", {"instrarr": ["one", "two", "three", "four"]}),
     ("sarr-multi-expand", "print(instrarr(2, 3))", None, "run",
      {"instrarr": ["one", "two", "three", "four"]}),
+    # k = 8 is the cap and instrarr has to reach it, because the number array's
+    # cap being tested is no evidence about this arm: it is a separate fid with
+    # its own eight writes.
+    ("sarr-multi-read8", "print(instrarr(1, 8))", None, "run",
+     {"instrarr": ["s%d" % i for i in range(1, 13)]}),
+    # and a wide read that runs off the end answers nils, not a short run
+    ("sarr-multi-read-edge", "print(instrarr(2, 4))", None, "run",
+     {"instrarr": ["one", "two", "three"]}),
     # A slot that reads as a number is still a STRING: the port's wire type is
     # what it is, and the coercion is PUC's, so this is differential on purpose.
     # It is also the case that would break first if instrarr ever answered with

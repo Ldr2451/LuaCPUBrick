@@ -380,7 +380,8 @@ try:
     _kw["inputs"] = [3, 1, 4, 1.5]
     _o = _or.oracle_run(_cases.DEMO_SRC, inputs=_kw["inputs"],
                         sinputs=_kw.get("sinputs"), vec=_kw.get("vec"),
-                        innumarr=_kw.get("innumarr"))
+                        innumarr=_kw.get("innumarr"),
+                        instrarr=_kw.get("instrarr"))
     if not _o.get("avail") or _o["calls"] is None:
         check("demo-log-current", False, "no oracle, so DEMO_LOG is unchecked")
     else:

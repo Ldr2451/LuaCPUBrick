@@ -395,6 +395,11 @@ var progOkV: bool = false
 // therefore cannot mean "rejected".
 var progDebugV: string = ""
 
+// The two `info: ` lines a parse writes, and WHY they exist: see parseInfoStart
+// beside parseJobStart.
+var dbgStartV: string = ""
+var dbgTick0: float = 0.0
+
 // ---------------------------------------------------------------- value helpers
 // value tags: 0 nil, 1 number, 2 string, 3 boolean, 4 function, 5 table, 6 integer
 
@@ -4808,6 +4813,42 @@ mod fmtPrecZero() {
     fmtBody = fmtPadAcc .. fmtBody
     fmtSign()
   }
+}
+
+// A chip that is lexing and parsing prints nothing, because the log belongs to
+// the program and the program has not started.  A few hundred characters is a
+// four-figure tick count -- a 615-char program measured 1113 -- so from the
+// outside that is a chip that looks stuck, and the log, the outputs and the
+// error port all read the same way while it happens.  Two `info: ` lines say so:
+// the first goes on the port BEFORE the work begins, which is the only moment it
+// can be read from, and the second says what the wait cost.  They are prepended
+// to whatever the parse finds, because progDebug is written once when the job
+// lands and that is exactly too late to announce the start.
+//
+// The character count is what the user handed over, not what gets lexed: a
+// program that names a library has that piece's characters prepended, and the
+// tick count is where that shows up.
+mod parseInfoStart(chars: int) {
+  dbgTick0 = ServerUptime()
+  dbgStartV = "info: parse start: " .. ("" .. chars) .. " chars\n"
+  progDebugV = dbgStartV
+}
+
+// Uptime is ticks * 0.01, so a span of it is a span of ticks * 100.  This is
+// what turns "it is busy" into "it will be done in this many ticks", and it is
+// the only place the chip reports its own cost.
+//
+// REBUILDS both lines from the current tick rather than appending to what is on
+// the port, and that is the whole design.  Two jobs can be in flight in one tick
+// -- a stale parse finishing while a new one starts -- so an append-and-latch
+// keeps the FIRST end line forever, which is how this read "parse end: 0 ticks"
+// on a 72-tick parse: the stale job's end arrived after the real job's start and
+// the latch then blocked the real one.  Recomputing means a stale call writes a
+// wrong line that the real call overwrites, so the port ends up right without
+// anything having to know how many times it was written.
+mod parseInfoEnd() -> string {
+  let t = toInt((ServerUptime() - dbgTick0) * 100.0)
+  return dbgStartV .. ("info: parse end: " .. ("" .. t) .. " ticks\n")
 }
 
 mod parseJobStart() {
@@ -10430,6 +10471,9 @@ on sched {
 }
 
 on goParse {
+  // Before anything else, so the port says the job started even if the job then
+  // fails: an `err:` line with no start above it is a chip that went quiet.
+  parseInfoStart(program.Length())
   parseJobStart()
   // The library goes in front of the program, so the user's line numbers are
   // shifted by however many lines it added; libLines undoes that for errors.
@@ -10476,7 +10520,9 @@ on goParse {
   } else {
     if lerr {
       progOkV = false
-      progDebugV = "err: line " .. userLine(lerrLine) .. ": " .. lerrMsg
+      let i0 = parseInfoEnd()
+      let i1 = "err: line " .. userLine(lerrLine) .. ": " .. lerrMsg
+      progDebugV = i0 .. i1
       vmHalted = true
       jobBusy = false
     } else {
@@ -10558,10 +10604,16 @@ on goParse2 {
       // cpos sits at (or just past) the offending token in nearly every perr
       // path, which is the line to name
       let epos = if cpos >= tl.length() then tl.length() - 1 else cpos
-      progDebugV = "err: line " .. userLine(if epos < 0 then lline else tl[epos])
+      let i0 = parseInfoEnd()
+      let i1 = "err: line " .. userLine(if epos < 0 then lline else tl[epos])
         .. ": " .. perrMsg
+      progDebugV = i0 .. i1
     } else {
-      progDebugV = staticAdvice(program)
+      // staticAdvice into a local first: the host cannot lower a mod call inside
+      // a binary operation, only variable + variable.
+      let advice = staticAdvice(program)
+      let i0 = parseInfoEnd()
+      progDebugV = i0 .. advice
     }
   }
 }

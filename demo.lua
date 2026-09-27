@@ -1,7 +1,7 @@
 -- Tiny Lua full-feature smoke test. Paste into `program`, set `run` high.
 -- Inputs:  inNum0=3 inNum1=1 inNum2=4 inNum3=1.5
 --          inStr0="foo" inStr1="bar"
---          inNumArr=[10,20,30]
+--          inNumArr=[10,20,30] inStrArr=["alpha","beta","gamma"]
 -- Every group below exercises a feature and the ports at the end depend on all
 -- of them, so any mismatch means something broke.  The expected log is NOT here:
 -- it is tests/cases.py's DEMO_LOG, checked against Lua 5.5 on every suite run.
@@ -117,6 +117,13 @@ print("inputs", vlen, innumarr(1), innumarr(2))
 -- the end of the array and reads nil, and the middle call is cut to one value
 -- exactly as PUC cuts it.
 print("inputs2", innumarr(9), type(innumarr(9)), innumarr(1, 3))
+-- inStrArr is the same two shapes over strings, and a port carries one wire
+-- type, so strings and numbers are two ports rather than one array of either.
+-- `names` is the FIRST of the two values and nothing else -- same rule as
+-- innumarr above, a multi-slot call expands only in the last slot -- so #names
+-- is the length of the string "alpha" and not a count of the array.
+local names = instrarr(1, 2)
+print("names", names, instrarr(9), #names)
 
 -- The outputs are written by CALL, and there is nothing to read them back with:
 -- a port is not a global, so a program that wants the value keeps its own copy.
@@ -128,9 +135,9 @@ outnum(3, vlen * 10 + #s)
 outnum(4, #t + #s)
 outstr(1, s .. "|" .. t.name)
 outstr(2, tostring(mixed) .. "/" .. tostring(t))
--- one call writes a run of adjacent slots (up to 8 values); innumarr(i, k) reads
--- them back the same way, but the reference has no innumarr so the demo cannot
--- print that one -- tests/cases.py's arr-multi-read is where it is checked.
+-- one call writes a run of adjacent slots (up to 8 values), and innumarr(i, k)
+-- reads a run back the same way -- `inputs2` above prints one, and
+-- tests/cases.py's arr-multi-read8 is where the widest form, k of 8, is checked.
 -- Every index a program passes is 1-BASED, the same as a Lua table, so
 -- outarr(1, x) and outnum(1, x) are the same slot and there is no
 -- off-by-one to remember.
