@@ -405,6 +405,10 @@ var nameWarn: string = ""
 // True when the program port holds text that has NOT been parsed yet.  The
 // text itself is the port, so this is all the chip needs to know.
 var progDirty: bool = true
+/// The text currently loaded, so a re-push of the SAME text is not an edit.  The
+/// program port is a value and a host syncs the chip every tick, so without this
+/// every sync recompiled the program.
+var progText: string = ""
 var llen: int = 0
 var lpos: int = 0
 var lstage: int = 0
@@ -1200,7 +1204,6 @@ let goParse: exec
 let goParse2: exec
 
 var jobBusy: bool = false
-var wantParse: bool = false
 
 // ---------------------------------------------------------------- stdlib
 //
@@ -10264,24 +10267,37 @@ mod vmBurst() {
   }
 }
 
+// The host re-pushes the SAME text to a port it already holds.  A host syncs the
+// chip every tick, and a string port is a value, not an event: re-sending what it
+// already sent is NOT an edit, and treating it as one re-compiled the program on
+// every sync - 1114 ticks on a restart against the first run's 1113, so a second
+// run was never cheaper than the run it repeated.  This is where the text is
+// compared with what is loaded, and it is the only place that does so.
+//
+// progDirty is the "there is unparsed text" flag that the CLOCK and `sched` both
+// consult.  It is set HERE, where the difference is known, rather than at each
+// site that might ask for a parse - a flag set by the request sites is a flag
+// three call sites have to remember, and one of them already had.
+//
+// A stopped chip does NOT parse.  Parsing here put a parse completion next to a
+// running VM, and that is the only way the program counter and the log can come
+// apart - a pc rewound without the log cleared, or registers cleared with the pc
+// left mid-call.  An edit while stopped waits for the run edge and pays its parse
+// then, before the first instruction rather than during one.  So this handler does
+// NOT ask for a parse: the CLOCK asks, and it asks only while `run`.
+//
+// Text that has never run means the chip has NOT finished, even though its VM is
+// idle.  The sim latches `finished` as soon as the halt is high, the error is
+// empty and the queue is drained, so a chip idling over unparsed text reported
+// itself done and the run ended before it was asked to do anything.  Halted is a
+// claim about a PROGRAM, so it must mean "the loaded program ran to completion".
 on Change(program) {
-  // with the text, like every other finding: nameWarn is built while parsing
-  nameWarn = ""
-  progDirty = true
-  // A stopped chip does NOT parse.  Parsing here put a parse completion next to a
-  // running VM, and that is the only way the program counter and the log can
-  // come apart - a pc rewound without the log cleared, or registers cleared with
-  // the pc left mid-call.  So an edit while stopped waits for the run edge, and
-  // pays its parse then, before the first instruction rather than during one.
-  // Text that has never run means the chip has NOT finished, even though its VM is
-  // idle.  The sim latches `finished` as soon as the halt is high, the error is
-  // empty and the queue is drained, so a chip idling over unparsed text reported
-  // itself done and the run ended before it was asked to do anything.  Halted is a
-  // claim about a PROGRAM, so it must mean "the loaded program ran to completion".
-  vmHalted = false
-  if run {
-    wantParse = true
-    emit sched
+  if program != progText {
+    progText = program
+    // with the text, like every other finding: nameWarn is built while parsing
+    nameWarn = ""
+    progDirty = true
+    vmHalted = false
   }
 }
 
@@ -10289,41 +10305,38 @@ on Change(run) {
   if run && progOkV && !jobBusy {
     vmReset()
   }
-  // Starting with text that has not been parsed yet: parse it now.  jobBusy goes
-  // up inside sched, so the clock's `!jobBusy` guard keeps the VM still until the
-  // parse lands - the program cannot begin running against a half-written one.
-  if run && progDirty && !jobBusy {
-    wantParse = true
-    emit sched
-  }
+  // The parse for text that arrived while stopped is asked for by the CLOCK, not
+  // here.  A request raised in a port handler is raised and consumed inside one
+  // tick, so no per-tick view of the chip could show who asked - which is why the
+  // site that was actually recompiling on every restart looked innocent.  The
+  // clock reads `run` fresh every tick, so it sees the edge whenever it falls.
 }
 
+// A host syncs the chip every tick, so this handler runs constantly and must not
+// do work: it used to ask for a parse on every grid read, which meant a chip that
+// was never asked to run parsed anyway.  It no longer asks at all - the CLOCK
+// raises the request, once, while the text is unparsed, and `sched` refuses a
+// request when there is nothing to compile.  A read is a read.
 on ReadBrickGrid() {
-  // A stopped chip does no work, so a host reading the grid must not start a
-  // parse: this handler used to ask for one unconditionally, which meant a chip
-  // that was never asked to run was parsing on every grid read.  The request is
-  // raised only while running; an edit that arrived while stopped waits for the
-  // run edge, and progDirty is what keeps that to a single parse.
-  //
-  // Only when there is something to parse.  A grid read arrives on every tick a
-  // host syncs the chip, and asking for a parse each time re-compiled text that
-  // had not changed: stopping and starting a program cost a second, full parse,
-  // 1114 ticks against the first run's 1113, so a restart was never cheaper than
-  // the run it repeated.  A host that pushes new code delivers it on `program`,
-  // which sets progDirty, and this still picks it up.
-  if run && progDirty {
-    wantParse = true
-    emit sched
-  }
 }
 
+// The ONLY place a parse starts, and the only place that can be wrong about it.
+//
+// There used to be a `wantParse` REQUEST as well as `progDirty`, the FACT that
+// there is unparsed text, and one boolean was doing both jobs.  That is what made
+// the bug invisible: a request raised while a parse was still in flight was
+// indistinguishable from one being made right now, so on a restart the request
+// that survived to run was the grid read's.  The chip was handed text it already
+// had and recompiled it, 1114 ticks against the first run's 1113 - a second run
+// that was not cheaper than the run it repeated.
+//
+// `progDirty` alone answers it, because only a completed parse clears it.  The
+// request was a second thing to keep in step with the first, and the one that
+// needed it was the one that could not be trusted.
 on sched {
-  if !jobBusy {
-    if wantParse {
-      wantParse = false
-      jobBusy = true
-      emit goParse
-    }
+  if !jobBusy && progDirty {
+    jobBusy = true
+    emit goParse
   }
 }
 
@@ -10442,14 +10455,13 @@ on goParse2 {
     buffer emit loop
   } else {
     progOkV = !perr && pDone
+    // A parse that has LANDED means there is no unparsed text waiting, and this is
+    // the only thing that says so.  `progDirty` is what the clock's request and
+    // `sched` both consult, so a completed parse is what stops the next thing that
+    // asks from recompiling text that has not changed - a 615-char program cost
+    // 1113 ticks on its first run and 1114 on its second, so stopping and starting
+    // again re-parsed every time.
     progDirty = false
-    // A parse that has LANDED is not pending.  Leaving wantParse set meant the
-    // next thing that asked for a parse - a grid read on the run edge - started a
-    // second, full parse of text that had not changed: a 615-char program cost
-    // 1113 ticks to run the first time and 1114 the second, so stopping and
-    // starting again re-parsed every time.  Cleared here, beside progDirty,
-    // because both mean the same thing: there is no unparsed text waiting.
-    wantParse = false
     jobBusy = false
     vmReset()
     vmClosures()
@@ -10510,6 +10522,14 @@ on Change(inStr1) {
 
 
 on Clock(interval = STEP_INTERVAL) {
+  // The ONE place a parse is requested, for the same reason the clock is the one
+  // place the VM is stepped: it reads `run` fresh every tick, so it sees the edge
+  // whenever it falls.  A request raised in a port handler is raised and consumed
+  // inside one tick, which is why three such sites all looked innocent when a
+  // restart was recompiling text that had not changed.
+  if run && progDirty && !jobBusy {
+    emit sched
+  }
   if run && progOkV && !vmHalted && !jobBusy {
     vmBurst()
   }

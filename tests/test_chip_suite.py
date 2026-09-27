@@ -366,6 +366,26 @@ def compare(name, mode, kw, r, dt):
         # `idleBusy` names ticks at which the chip must NOT be busy.  It pins "a
         # stopped chip does nothing": a program edited while `run` is low must not
         # start a parse, so busy stays false until the run edge.
+        # `secondRunUnder` bounds the ticks of the run after the LAST rising edge.
+        # It is the only assertion that can see a skipped parse, because a re-parse
+        # clears the log and so prints identically - the bound is what separates a
+        # restart that reuses the loaded program from one that recompiles it.  The
+        # first window runs the schedule to its end, so its own edge is the only
+        # one measured, and the two windows must agree or the chip is not
+        # deterministic.
+        cap = exp.get("secondRunUnder")
+        if cap:
+            got = [life.get(k, {}).get("runTicks") for k in ("first", "second")]
+            if any(g is None or g > int(cap) for g in got):
+                return (name, False,
+                        "restart cost %r ticks, want under %r" % (got, cap), dt)
+            # "reliably", not "at least once": a chip that re-parsed on some starts
+            # would pass a bound fitted to the best of them, so the two windows
+            # must agree exactly.
+            if got[0] != got[1]:
+                return (name, False, "restart cost varies: %r then %r"
+                        % (got[0], got[1]), dt)
+
         idle = exp.get("idleBusy") or []
         if idle:
             # the FIRST window, because that is the one the checkpoints were given
@@ -592,9 +612,30 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None, steps=None):
             grid_every[0] = int(ph["grid_every"])
     pending = list(edges)
 
+    # The tick the most recent RISING run edge fell on, and the ticks counted while
+    # running since.  A case that asks whether a restart is cheap needs the cost of
+    # the run that followed the edge, and the log cannot see it: a re-parse calls
+    # vmReset, which clears the log, so a recompiled program prints exactly what a
+    # skipped parse prints.  Only the ticks tell them apart.
+    edge = [-1]
+    done = [None]
+
     def on_tick(sim_now, tick):
+        # The tick the run after the last rising edge produced its output on,
+        # which is what a case asking about a restart's cost needs.  It cannot be
+        # `finished`: that is a latch only reset() clears, so it is still set from
+        # the PREVIOUS run and every restart would measure as 1 tick.  The log is
+        # cleared by the vmReset on the run edge, so it going from empty to
+        # non-empty is exactly the end of this run.
+        if edge[0] >= 0 and done[0] is None and sim_now.log:
+            done[0] = tick - edge[0] + 1
         while pending and tick + 1 >= pending[0][0]:
             _at, level, jitter, text = pending.pop(0)
+            if level:
+                # a rising edge starts a new accounting window: the run that
+                # follows is the one whose cost the case is asking about
+                edge[0] = tick + 1
+                done[0] = None
             # A phase edge resets the other inputs to the baseline, but it must
             # NOT rewind `program`.  It used to, because `si` holds the INITIAL
             # program, so every run-level change silently rewound the program port
@@ -646,8 +687,13 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None, steps=None):
             raise AssertionError(
                 "lifecycle harness lost the program: delivered %r, sim holds %r"
                 % (_want, _got))
+    # `runTicks` is the cost of the run after the last rising edge: the tick it
+    # finished on, from the edge.  It is the only thing in a lifecycle result that
+    # can tell a restart which skipped the parse from one which recompiled, because
+    # a re-parse clears the log and so prints identically.
     samples.append(lifecycle_sample(sim_, sim_.tick))
     return {"budget": ticks, "samples": samples,
+            "edgeTick": edge[0], "runTicks": done[0],
             **samples[-1]}
 
 

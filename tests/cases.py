@@ -1289,10 +1289,21 @@ TESTS = [
     # A second run of the SAME text must not re-parse.  A re-parse would vmReset,
     # which clears the log, so the program would print a second time; the log
     # having the line exactly once IS the observable proof that it did not.
-    ("life-no-reparse-second-run", "print('hi')", None, "lifecycle",
+    # A restart must not recompile the text it already has.  The LOG cannot see
+    # this: a re-parse calls vmReset, which clears the log, so a recompiled
+    # program prints exactly what a skipped parse prints.  `secondRunUnder` is the
+    # bound that can - it is fitted between the two measured costs, 5 ticks for a
+    # restart and 104 for the same program re-parsed, so a chip that quietly went
+    # back to compiling text it already had would fail here while printing the
+    # right thing.  The bound must be fitted to the program's own parse cost: a
+    # one-line program re-parses in 16 ticks and any generous cap would pass it.
+    ("life-no-reparse-second-run",
+     "x = 0\nx = x + 1\nx = x + 2\nx = x + 3\nx = x + 4\nprint(x)", None,
+     "lifecycle",
      {"phases": [{"ticks": 700, "run": True}, {"ticks": 400, "run": False},
                  {"ticks": 1200, "run": True}],
-      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+      "expect": {"progress": False, "finished": True, "log": "10\n",
+                 "secondRunUnder": 20}}),
     # the control: the same program with run high from tick zero, which is what
     # every other case in the suite does and what used to be the only shape
     ("life-run-high-from-boot", "print('hi') outnum(1, 7)", None,
