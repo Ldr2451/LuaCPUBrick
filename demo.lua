@@ -1,11 +1,11 @@
 -- Tiny Lua full-feature smoke test. Paste into `program`, set `run` high.
 -- Inputs:  inNum0=3 inNum1=1 inNum2=4 inNum3=1.5
 --          inStr0="foo" inStr1="bar"
---          inArr=[10,20,30]
+--          inNumArr=[10,20,30]
 -- Every group below exercises a feature and the ports at the end depend on all
 -- of them, so any mismatch means something broke.  The expected log is NOT here:
 -- it is tests/cases.py's DEMO_LOG, checked against Lua 5.5 on every suite run.
--- Kept small on purpose (the lexer runs at 4 chars/tick, so source is boot
+-- Kept small on purpose (the lexer runs at 2 chars/tick, so source is boot
 -- time) and it names no string./math./table./io. function, because naming one
 -- makes the loader prepend that library's source in front of this file.
 
@@ -108,15 +108,15 @@ print("dupstore", gdup)
 local dup, dup = "first", "second"
 print("flow", sum, p, q, dup)
 
--- array inputs (inarr(9) is out of range -> nil)
-local vlen = inarr(1) + inarr(2) + inarr(3)
+-- array inputs (innumarr(9) is out of range -> nil)
+local vlen = innumarr(1) + innumarr(2) + innumarr(3)
 local mixed = (a + b) * inNum0 - 24 / 4
-print("inputs", vlen, inarr(1), inarr(2))
--- inarr(i, k) reads a run of slots in one call.  Only a call in the LAST slot
+print("inputs", vlen, innumarr(1), innumarr(2))
+-- innumarr(i, k) reads a run of slots in one call.  Only a call in the LAST slot
 -- expands all of them, so that is where the three values appear; slot 9 is past
 -- the end of the array and reads nil, and the middle call is cut to one value
 -- exactly as PUC cuts it.
-print("inputs2", inarr(9), type(inarr(9)), inarr(1, 3))
+print("inputs2", innumarr(9), type(innumarr(9)), innumarr(1, 3))
 
 -- The outputs are written by CALL, and there is nothing to read them back with:
 -- a port is not a global, so a program that wants the value keeps its own copy.
@@ -128,8 +128,8 @@ outnum(3, vlen * 10 + #s)
 outnum(4, #t + #s)
 outstr(1, s .. "|" .. t.name)
 outstr(2, tostring(mixed) .. "/" .. tostring(t))
--- one call writes a run of adjacent slots (up to 8 values); inarr(i, k) reads
--- them back the same way, but the reference has no inarr so the demo cannot
+-- one call writes a run of adjacent slots (up to 8 values); innumarr(i, k) reads
+-- them back the same way, but the reference has no innumarr so the demo cannot
 -- print that one -- tests/cases.py's arr-multi-read is where it is checked.
 -- Every index a program passes is 1-BASED, the same as a Lua table, so
 -- outarr(1, x) and outnum(1, x) are the same slot and there is no

@@ -349,21 +349,33 @@
 - **The array ports are already whole-array on the wire; only the Lua-side call
   is per element, so batch it by widening the call, not with a machine.**
   `outArr` is `@right out outArr: float[] = outArrV`, so the whole array reaches
-  the port every tick however it was filled, and `inarr(i)` is a live
-  `inArr[toInt(iv) - 1]` — one index and one tag write, with no per-element copy
+  the port every tick however it was filled, and `innumarr(i)` is a live
+  `inNumArr[toInt(iv) - 1]` — one index and one tag write, with no per-element copy
   to remove. So the cost is the CALL: a 64-slot fill is 367 ticks against 205 for
   the same empty loop, **about 5 ticks per element**, and a whole 64-slot write
   is 6.1s in game at 60 ticks/s. `outarr(i, v...)` therefore writes one slot per
-  extra value (up to 8) and `inarr(i, k)` returns k of them, and **measured on a
+  extra value (up to 8) and `innumarr(i, k)` returns k of them, and **measured on a
   64-slot fill that is 367 → 257 ticks, a 30% cut, for 7,272 bytes of chip and no
   new state** — 4.3s in game instead of 6.1s. The read side is much weaker: 544
   → 521, a 4% cut, because a loop that consumes each value spends its ticks on
   the `or` and the add, not on the call. A whole-array setter instead of a wider
   call would have to walk a Lua table in a micro-step machine at 1 tick per
   element: 367 → ~270, a *smaller* cut than the wide call for a new state
-  machine, so do not build it. A whole-array `inarr` read is a **loss** for any
+  machine, so do not build it. A whole-array `innumarr` read is a **loss** for any
   program that reads fewer than 64, since it pays a table build (193 ticks) to
   save ~2 ticks an element the caller's own loop was going to spend.
+- **A port carries ONE wire type, so a second type is a second port — and the
+  name a program calls is the lowercase of the port it touches.** `inNumArr` and
+  `inStrArr` are two ports rather than one `inArr` that holds either, because the
+  type is the port's: `any` cannot even be stored (WS025), so there is no union to
+  widen it to, and a program that needs both reads both while one that needs only
+  numbers pays nothing for the string half. The naming follows the rule the
+  outputs already set — `outNum0`/`outStr0`/`outArr` are written by
+  `outnum`/`outstr`/`outarr` — so `inNumArr`/`inStrArr` are read by
+  `innumarr`/`instrarr`. The camelCase names a program sees as **values**
+  (`inNum0`, `inStr0`) are the port mirrors, which are values and not calls, so
+  they keep the port's spelling. Two spellings for one thing is the failure this
+  avoids: a program cannot wonder whether `inarr` or `inNumArr` is the call.
 - **Every index a program passes is 1-based, and an output is not readable.**
   `outnum(1..4)`, `outstr(1..2)` and `outarr(1..)` all count from 1, the way a
   Lua table does, so `outnum(1, v)` and `outarr(1, v)` are the same slot and
@@ -378,9 +390,9 @@
 - **A value count is not an index, and the index is checked first.** The wide
   `outarr`'s range check counts the values, so it is `nargs - 1`: counting the
   index made `outarr(64, -1)` ask for slot 65 and raise, which the demo caught
-  because it writes the last slot. And `inarr(1, 9)` with an *empty* array
+  because it writes the last slot. And `innumarr(1, 9)` with an *empty* array
   answers nil and never reaches the count guard, so a case for the count has to
-  set `inarr` — two mistakes that each looked like a chip bug and were not.
+  set `innumarr` — two mistakes that each looked like a chip bug and were not.
 - **A rarely-taken path does not belong in `vmStep`** — it fires every tick,
   and the old burst inlined it four times. A closure cell-fill there cost every
   program 20% of its per-tick time; moved to `vmBurst` it cost 2,133 nodes

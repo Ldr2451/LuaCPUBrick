@@ -11,8 +11,8 @@ from irsims import ChipRunner, share_dump, sim_from_dump
 from timing import Elapsed
 
 
-def run_cpu(name, runner, src, inarr=None, ticks=1200):
-    inputs = {"inArr": list(inarr)} if inarr is not None else None
+def run_cpu(name, runner, src, innumarr=None, ticks=1200):
+    inputs = {"inNumArr": list(innumarr)} if innumarr is not None else None
     result = runner.run(src, ticks, inputs)
     og = result.get("outGlobals", {})
     if not runner.sim.finished:
@@ -37,7 +37,7 @@ def main():
         cpu_a = ChipRunner(sim=sim_from_dump(dump_path))
         cpu_b = ChipRunner(sim=sim_from_dump(dump_path))
 
-        isolated = run_cpu("cpu-b-isolated", cpu_b, "print(inarr(1))")
+        isolated = run_cpu("cpu-b-isolated", cpu_b, "print(innumarr(1))")
         require(isolated["log"] == "nil\n", "CPU B inherited CPU A state")
 
         # the outputs are calls now, so a program cannot read one back: the
@@ -55,8 +55,8 @@ def main():
 
         self_in = run_cpu(
             "self-input", cpu_a,
-            "print(inarr(1), inarr(99))", self_out["outArr"])
-        require(self_in["log"] == "41.0\tnil\n", "outArr-to-inArr handoff failed")
+            "print(innumarr(1), innumarr(99))", self_out["outArr"])
+        require(self_in["log"] == "41.0\tnil\n", "outArr-to-inNumArr handoff failed")
 
         request = run_cpu(
             "cpu-a-request", cpu_a,
@@ -65,7 +65,7 @@ def main():
 
         response = run_cpu(
             "cpu-b-response", cpu_b,
-            "local x = inarr(1) local y = inarr(2) "
+            "local x = innumarr(1) local y = innumarr(2) "
             "outarr(1, x + y) print('B', x, y, x + y)",
             request["outArr"])
         require(response["log"] == "B\t7.0\t11.0\t18.0\n",
@@ -74,7 +74,7 @@ def main():
 
         reply = run_cpu(
             "cpu-a-reply", cpu_a,
-            "outnum(1, inarr(1)) print('A2', inarr(1), inarr(1) * 2)",
+            "outnum(1, innumarr(1)) print('A2', innumarr(1), innumarr(1) * 2)",
             response["outArr"])
         require(reply["log"] == "A2\t18.0\t36.0\n", "CPU A reply mismatch")
         require(reply["outGlobals"]["outNum0"] == 18.0,

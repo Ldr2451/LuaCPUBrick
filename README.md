@@ -43,8 +43,8 @@ A WireScript chip is wires, so everything a program can see or change is a port.
            inNum3 --|           |-- outNum4
            inStr0 --|___________|-- outStr0
            inStr1 --|           |-- outStr1
-            inArr --|           |-- outArr
-                                |-- result
+         inNumArr --|           |-- outArr
+         inStrArr --|           |-- result
                                 |-- err
                                 |-- progDebug
                                 |-- busy
@@ -53,16 +53,17 @@ A WireScript chip is wires, so everything a program can see or change is a port.
 
 `run` is the only one that decides anything: high runs the program, low stops it
 where it is, and a rising edge starts again from the top. Every other input
-restarts the program when it changes while `run` is high, except `inArr`, which
+restarts the program when it changes while `run` is high, except `inNumArr`, which
 is read live by `inarr()`.
 
 Everything a program *writes* is a call, including the single numbers and
-strings: `outnum(i, v)`, `outstr(i, v)`, `outint(v)` and `outarr(i, v, ...)` for
-the array. Two consequences worth knowing: a program cannot read an output back
-(the ports are not globals, so keep your own copy), and a value stays on its port
-until something writes there again, so whatever is reading the chip can take its
-time. The indexes differ between the two families: `outnum`/`outstr` are 0-based,
-`outarr` is 1-based, so `outnum(0, v)` and `outarr(1, v)` are the same slot.
+strings: `outnum(i, v)`, `outstr(i, v)` and `outarr(i, v, ...)` for the array.
+Two consequences worth knowing: a program cannot read an output back (the ports
+are not globals, so keep your own copy), and a value stays on its port until
+something writes there again, so whatever is reading the chip can take its time.
+Every index a program passes counts from 1, the way a Lua table does, in both
+families: `outnum(1..5, v)`, `outstr(1..2, v)` and `outarr(1.., v...)` all start
+at 1, so there is no off-by-one to remember between the two.
 
 The picture is generated from the port declarations in `lua.ws`, so it cannot
 drift from them without the diff saying so.

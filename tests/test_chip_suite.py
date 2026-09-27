@@ -289,7 +289,7 @@ def compare(name, mode, kw, r, dt):
     if mode == "run":
         o = OR.oracle_run(r["src"], inputs=kw.get("inputs"),
                           sinputs=kw.get("sinputs"), vec=kw.get("vec"),
-                          col=kw.get("col"), inarr=kw.get("inarr"),
+                          col=kw.get("col"), innumarr=kw.get("innumarr"), instrarr=kw.get("instrarr"),
                           inint=kw.get("inint"))
         if not o.get("avail"):
             return (name, None, "SKIP no oracle", dt)
@@ -524,8 +524,10 @@ def sim_inputs(src, kw):
         si["inNum%d" % k] = float(v)
     for k, v in (kw.get("sinputs") or {}).items():
         si["inStr%d" % int(k)] = v
-    if kw.get("inarr") is not None:
-        si["inArr"] = [float(v) for v in kw["inarr"]]
+    if kw.get("innumarr") is not None:
+        si["inNumArr"] = [float(v) for v in kw["innumarr"]]
+    if kw.get("instrarr") is not None:
+        si["inStrArr"] = [str(v) for v in kw["instrarr"]]
     if kw.get("inint") is not None:
         si["inInt0"] = int(kw["inint"])
     return si

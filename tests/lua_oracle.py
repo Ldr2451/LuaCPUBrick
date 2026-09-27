@@ -116,7 +116,7 @@ def _first_line(raw):
 
 
 def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
-               inarr=None, timeout=15, inint=None):
+               innumarr=None, instrarr=None, timeout=15, inint=None):
     if LUA_BIN is None:
         return {"avail": False}
     pre = []
@@ -133,24 +133,41 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     for k in (0, 1):
         s = sinputs.get(k, "")
         pre.append(f"inStr{k} = {lua_str_lit(s)}")
-    arr = [float(v) for v in inarr] if inarr else []
+    arr = [float(v) for v in innumarr] if innumarr else []
     pre.append("ARR = {" + ", ".join(lua_num_lit(v) for v in arr) + "}")
-    # inarr models the chip's PORT function, so it has to carry the port's
-    # contract: inarr(i) is one slot and inarr(i, k) is k of them, with a slot
+    # innumarr models the chip's PORT function, so it has to carry the port's
+    # contract: innumarr(i) is one slot and innumarr(i, k) is k of them, with a slot
     # past the end reading nil.  Without the second form the model silently
     # answered one value where the chip answers k, and any program using it
     # diverged from the reference for a reason that had nothing to do with the
     # chip.  The count guard raises with level 0 because the chip has no line to
     # put in a message.
-    pre.append("inarr = function(i, k)")
+    pre.append("innumarr = function(i, k)")
     pre.append("  if type(i) ~= 'number' or i ~= math.floor(i)")
     pre.append("      or i < 1 or i > #ARR then return nil end")
     pre.append("  if k == nil then return ARR[i] end")
     pre.append("  if type(k) ~= 'number' or k ~= math.floor(k) or k < 1 or k > 8")
-    pre.append("      then error('bad argument #2 to \\'inarr\\' (count out of"
+    pre.append("      then error('bad argument #2 to \\'innumarr\\' (count out of"
                " range)', 0) end")
     pre.append("  local got = {}")
     pre.append("  for j = 0, k - 1 do got[j + 1] = ARR[i + j] end")
+    pre.append("  return table.unpack(got, 1, k)")
+    pre.append("end")
+    # instrarr is innumarr over SARR, and it has to be modelled rather than stubbed
+    # for the same reason: a stub answers one value where the chip answers k, and
+    # the diff would then be about the model.  SARR holds STRINGS, so a case can
+    # hand a program a list and let PUC decide what it does with them.
+    sarr = list(instrarr) if instrarr else []
+    pre.append("SARR = {" + ", ".join(lua_str_lit(s) for s in sarr) + "}")
+    pre.append("instrarr = function(i, k)")
+    pre.append("  if type(i) ~= 'number' or i ~= math.floor(i)")
+    pre.append("      or i < 1 or i > #SARR then return nil end")
+    pre.append("  if k == nil then return SARR[i] end")
+    pre.append("  if type(k) ~= 'number' or k ~= math.floor(k) or k < 1 or k > 8")
+    pre.append("      then error('bad argument #2 to \\'instrarr\\' (count out of"
+               " range)', 0) end")
+    pre.append("  local got = {}")
+    pre.append("  for j = 0, k - 1 do got[j + 1] = SARR[i + j] end")
     pre.append("  return table.unpack(got, 1, k)")
     pre.append("end")
     # The port writers are no-ops: the reference has no ports, so their values

@@ -6,7 +6,7 @@ reach: builtin ids vs reserved function slots, global slot order, limits,
 port bindings, opcode coverage, keyword coverage, and re-parse/restart
 clearing of every state array. A mismatch here is a gate bug no behavior
 test can catch (e.g. the parseJobStart six-slot collision that broke every
-function once inarr and outarr took ids 6 and 7).
+function once innumarr and outarr took ids 6 and 7).
 
 Run: python -u tests/test_consistency.py  (exit 0 = all green)
 """
@@ -126,7 +126,7 @@ check(f"log-width-{m.LOG_WIDTH}",
       and f"Substring(0, {m.LOG_WIDTH - 1})" in WS)
 check(f"outarr-{m.OUTARR}",
       f"outArrV.resize({m.OUTARR}, 0.0)" in WS)
-# The inArr/outArr index warnings need the width while PARSING, and an input port
+# The inNumArr/outArr index warnings need the width while PARSING, and an input port
 # cannot be read then - it empties every program's log - so the width is a const.
 # That makes two rules that have to agree, and a comment is not a check: this one
 # is, and it also fails if the warnings go back to reading the array or a literal.
@@ -163,11 +163,16 @@ for port, bindvar in [("log", "logV"), ("outNum0", "oF0"),
 check("no-halted-port", "out halted" not in WS)
 check("no-proglen-port", "out progLen" not in WS)
 check("no-nprint-port", "out nPrint" not in WS)
-for hw, port in [("inarr", "inArr"), ("outarr", "outArr"),
-                 ("print", "log")]:
+for hw, port in [("innumarr", "inNumArr"), ("instrarr", "inStrArr"),
+                 ("outarr", "outArr"), ("print", "log")]:
     check(f"hw-{hw}-{port}", re.search(
         rf"@(?:left|right) (?:in|out) {port}\b", WS) is not None)
-check("no-change-on-array", "on Change(inArr)" not in WS)
+# An array port cannot be watched: `Change` observes one wire value and a
+# container has none (WS059 from the compiler).  BOTH array ports are named here
+# rather than the one that turned out to be un-watchable, because the second one
+# is added later and would otherwise be added unwatched by nobody noticing.
+for _arr in ("inNumArr", "inStrArr"):
+    check(f"no-change-on-array-{_arr}", f"on Change({_arr})" not in WS)
 
 # 5. state clearing: every array/Map cleared on re-parse or restart ---------
 decls_arr = set(re.findall(r"^var (\w+): (?:.*\[\]|Map<[^>]*>)",
@@ -375,7 +380,7 @@ try:
     _kw["inputs"] = [3, 1, 4, 1.5]
     _o = _or.oracle_run(_cases.DEMO_SRC, inputs=_kw["inputs"],
                         sinputs=_kw.get("sinputs"), vec=_kw.get("vec"),
-                        inarr=_kw.get("inarr"))
+                        innumarr=_kw.get("innumarr"))
     if not _o.get("avail") or _o["calls"] is None:
         check("demo-log-current", False, "no oracle, so DEMO_LOG is unchecked")
     else:

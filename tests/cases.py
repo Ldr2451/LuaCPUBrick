@@ -17,7 +17,7 @@ import spec
 
 DEMO_SRC = open(os.path.join(TINYLUA,
                              "demo.lua"), encoding="utf-8").read()
-DEMO_KW = {"inarr": [10.0, 20.0, 30.0],
+DEMO_KW = {"innumarr": [10.0, 20.0, 30.0],
            "sinputs": {0: "foo", 1: "bar"}}
 DEMO_LOG = (              "arith	2.25	7.0	-4	-4	-0.5\n"
               "bits	1	11	6	-1	16	15\n"
@@ -258,14 +258,14 @@ TESTS = [
     ("global-write", "g = 41 g = g+1 print(g)", None, "run"),
     ("inputs-sum", "print(inNum0+inNum1+inNum2+inNum3)",
      [1, 2, 3, 4], "run"),
-    ("inputs-each", "print(inNum0, inNum1, inNum2, inNum3, inStr0, inStr1, inarr(1), inarr(2), "
-     "inarr(3))",
+    ("inputs-each", "print(inNum0, inNum1, inNum2, inNum3, inStr0, inStr1, innumarr(1), innumarr(2), "
+     "innumarr(3))",
      [8, 7, 6, 5], "run",
      {"sinputs": {0: "a", 1: "b"}, "vec": (1, 2, 3)}),
     ("inputs-expr", "print(inNum0*2, inStr0 .. '!', inNum3%inNum1)",
      [10, 3, 0, 7], "run", {"sinputs": {0: "hey"}}),
-    ("inputs-arr3", "print(inarr(1)+inarr(2)+inarr(3))", None, "run",
-     {"inarr": [1.5, 2.5, 3.0]}),
+    ("inputs-arr3", "print(innumarr(1)+innumarr(2)+innumarr(3))", None, "run",
+     {"innumarr": [1.5, 2.5, 3.0]}),
             ("io-strings", "print(inStr0 .. inStr1)", None, "run",
      {"sinputs": {0: "foo", 1: "bar"}}),
     # clock() is the server uptime, which the sim models as tick * 0.01 -- it
@@ -1375,8 +1375,8 @@ TESTS = [
     # which is what made the first version warn on outnum(i, i).
     ("arity-zero-outnum", "outnum()", None, "state",
      {"expect": {"progDebug": "outnum() takes an index and a value"}}),
-    ("arity-zero-inarr", "print(inarr())", None, "state",
-     {"expect": {"progDebug": "inarr() takes an index from 1"}}),
+    ("arity-zero-innumarr", "print(innumarr())", None, "state",
+     {"expect": {"progDebug": "innumarr() takes an index from 1"}}),
     # ... and the near miss: real arguments must stay silent, including inside a
     # for body, which is exactly where the value-stack version cried wolf.
     # ... and the near miss: real arguments must stay silent, including inside a
@@ -1424,20 +1424,20 @@ TESTS = [
      {"expect": {"progDebug": "array index out of range"}}),
     ("index-literal-outarr-ok", "outarr(64, 1)", None, "state",
      {"expect": {"noProgDebug": "array index out of range"}}),
-    # inArr is bounded by the same 64 as outArr and a bad index there gives a
+    # innumarr is bounded by the same 64 as outArr and a bad index there gives a
     # SILENT nil, which is worth warning about - but it is not implemented: an
     # input PORT cannot be read during codegen (see the note in noteIndex).  The
     # behaviour is pinned; progDebug is deliberately NOT asserted, because a case
     # that locks in a warning the chip does not emit is worse than no case.
-    # inArr is bounded by the same 64 as outArr, and a bad index there gives a
+    # innumarr is bounded by the same 64 as outArr, and a bad index there gives a
     # SILENT nil rather than a failure, so it is the one a user would never see
     # otherwise.  The bound is a chip const because the port cannot be read while
     # parsing; test_consistency ties that const to spec.OUTARR.
-    ("index-inarr-past-end", "print(inarr(65))", None, "state",
-     {"expect": {"log": "nil\n", "progDebug": "inarr reads past the end"}}),
+    ("index-innumarr-past-end", "print(innumarr(65))", None, "state",
+     {"expect": {"log": "nil\n", "progDebug": "innumarr reads past the end"}}),
     # ... and in range is silent, including the last slot.
-    ("index-inarr-inrange-ok", "print(inarr(1)) print(inarr(64))", None, "state",
-     {"expect": {"noProgDebug": "inarr reads past the end"}}),
+    ("index-innumarr-inrange-ok", "print(innumarr(1)) print(innumarr(64))", None, "state",
+     {"expect": {"noProgDebug": "innumarr reads past the end"}}),
     # One issue per line is the port's whole contract, and a substring assertion
     # cannot see it: an earlier outarr warning ended in an escaped backslash rather
     # than a newline and its case still passed.  Two findings that really exist, so
@@ -1655,9 +1655,9 @@ TESTS = [
      None, "run"),
     ("func-twice", "function a() return 1 end function b() return 2 end "
      "print(a(), b(), a() + b())", None, "run"),
-    ("func-inarr", "function g() return inarr(1) + inarr(2) end "
+    ("func-innumarr", "function g() return innumarr(1) + innumarr(2) end "
      "print(g(), g())", None, "modelio",
-     {"inarr": [3.0, 4.0], "expect": {"log": "7.0\t7.0\n"}}),
+     {"innumarr": [3.0, 4.0], "expect": {"log": "7.0\t7.0\n"}}),
     ("func-outarr", "function w(v) outarr(1, v * 2) end w(5) w(6)",
      None, "modelio",
      {"expect": {"outArr": [12.0] + [0.0] * 63, "log": ""}}),
@@ -1758,14 +1758,14 @@ TESTS = [
     ("log-wide", "print('" + "y" * 100 + "')", None, "modelio",
      {"expect": {"log": "y" * 63 + "\n"}}),
     # array ports
-    ("arr-read", "print(inarr(1), inarr(2), inarr(3))", None, "modelio",
-     {"inarr": [1.5, 2.5], "expect": {"log": "1.5\t2.5\tnil\n"}}),
-    ("arr-write", "outarr(1, 9) outarr(2, inarr(1))", None, "modelio",
-     {"inarr": [5.0],
+    ("arr-read", "print(innumarr(1), innumarr(2), innumarr(3))", None, "modelio",
+     {"innumarr": [1.5, 2.5], "expect": {"log": "1.5\t2.5\tnil\n"}}),
+    ("arr-write", "outarr(1, 9) outarr(2, innumarr(1))", None, "modelio",
+     {"innumarr": [5.0],
       "expect": {"outArr": [9.0, 5.0] + [0.0] * 62, "log": ""}}),
-    ("arr-oob-read", "print(inarr(0), inarr(-1), inarr(1.5), inarr('x'))",
+    ("arr-oob-read", "print(innumarr(0), innumarr(-1), innumarr(1.5), innumarr('x'))",
      None, "modelio",
-     {"inarr": [7.0], "expect": {"log": "nil\tnil\tnil\tnil\n"}}),
+     {"innumarr": [7.0], "expect": {"log": "nil\tnil\tnil\tnil\n"}}),
     ("arr-oob-write", "outarr(0, 1)", None, "runtimerr",
      {"expect": {"err": "array index out of range"}}),
     ("arr-oob-write2", "outarr(65, 1)", None, "runtimerr",
@@ -1776,10 +1776,10 @@ TESTS = [
      {"expect": {"err": "array element must be a number"}}),
     ("arr-nil-write", "outarr(1, nil)", None, "modelio",
      {"expect": {"outArr": [0.0] * 64}}),
-    ("arr-missing", "print(inarr())", None, "modelio",
+    ("arr-missing", "print(innumarr())", None, "modelio",
      {"expect": {"log": "nil\n"}}),
     # The bounded forms: outarr(i, v, ...) writes one slot per extra value and
-    # inarr(i, k) returns k of them, so a run of adjacent slots costs one call.
+    # innumarr(i, k) returns k of them, so a run of adjacent slots costs one call.
     # The port was never the cost -- outArr is @right out, so the whole array
     # reaches it every tick -- so this is about the CALL, measured at 5 ticks an
     # element for a write.
@@ -1801,25 +1801,65 @@ TESTS = [
      {"expect": {"outArr": [0.0] * 60 + [1.0, 2.0, 3.0, 4.0], "log": "ok\n"}}),
     ("arr-multi-badval", "outarr(1, 1, 1, {})", None, "runtimerr",
      {"expect": {"err": "array element must be a number"}}),
-    # These two are DIFFERENTIAL, not literal: tests/lua_oracle.py's inarr models
+    # These two are DIFFERENTIAL, not literal: tests/lua_oracle.py's innumarr models
     # the chip's port contract (one slot, or k of them with a slot past the end
     # reading nil), so PUC decides the answer and the chip has to agree.
-    ("arr-multi-read", "local a, b, c, d = inarr(4, 4) print(a, b, c, d)", None,
-     "run", {"inarr": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]}),
-    ("arr-multi-expand", "print(inarr(1, 3))", None, "run",
-     {"inarr": [1.5, 2.5, 3.5, 4.5]}),
-    # a slot past the end of the array reads nil, the same rule inarr(65) has
-    ("arr-multi-read-edge", "print(inarr(62, 4))", None, "run",
-     {"inarr": [float(i) for i in range(1, 65)]}),
+    ("arr-multi-read", "local a, b, c, d = innumarr(4, 4) print(a, b, c, d)", None,
+     "run", {"innumarr": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]}),
+    ("arr-multi-expand", "print(innumarr(1, 3))", None, "run",
+     {"innumarr": [1.5, 2.5, 3.5, 4.5]}),
+    # a slot past the end of the array reads nil, the same rule innumarr(65) has
+    ("arr-multi-read-edge", "print(innumarr(62, 4))", None, "run",
+     {"innumarr": [float(i) for i in range(1, 65)]}),
     # the count is a count, not an index: 0, 9 and 1.5 all raise.  Each case sets
-    # inarr, because the INDEX is checked first: with an empty array inarr(1, 9)
+    # innumarr, because the INDEX is checked first: with an empty array innumarr(1, 9)
     # answers nil and never reaches the count.
-    ("arr-multi-count0", "print(inarr(1, 0))", None, "runtimerr",
-     {"inarr": [1.0], "expect": {"err": "count out of range"}}),
-    ("arr-multi-count9", "print(inarr(1, 9))", None, "runtimerr",
-     {"inarr": [1.0], "expect": {"err": "count out of range"}}),
-    ("arr-multi-countfrac", "print(inarr(1, 1.5))", None, "runtimerr",
-     {"inarr": [1.0], "expect": {"err": "count out of range"}}),
+    ("arr-multi-count0", "print(innumarr(1, 0))", None, "runtimerr",
+     {"innumarr": [1.0], "expect": {"err": "count out of range"}}),
+    ("arr-multi-count9", "print(innumarr(1, 9))", None, "runtimerr",
+     {"innumarr": [1.0], "expect": {"err": "count out of range"}}),
+    ("arr-multi-countfrac", "print(innumarr(1, 1.5))", None, "runtimerr",
+     {"innumarr": [1.0], "expect": {"err": "count out of range"}}),
+    # inStrArr is the string array input, and instrarr(i) / instrarr(i, k) are
+    # innumarr's two shapes on it.  A port carries one wire type, so this is a
+    # SECOND port rather than a wider inNumArr -- the header says why, and the
+    # count guard and the nil past the end are innumarr's rather than new rules.
+    # Like inNumArr it is read LIVE and cannot restart the program, and that half is
+    # structural rather than tested here: an array is a container and `Change`
+    # watches one wire value, so no handler can exist (the compiler says WS059).
+    # tests/test_consistency.py names BOTH array ports in the no-Change check, so
+    # the second port cannot be added later without anyone noticing.
+    ("sarr-read", "print(instrarr(1), instrarr(2))", None, "run",
+     {"instrarr": ["alpha", "beta"]}),
+    # past the end is nil, one slot or a whole run of them
+    ("sarr-read-edge", "print(instrarr(1), instrarr(4))", None, "run",
+     {"instrarr": ["alpha", "beta"]}),
+    ("sarr-empty", "print(instrarr(1))", None, "run", {"instrarr": []}),
+    ("sarr-multi-read", "local a, b, c = instrarr(1, 3) print(a, b, c)", None,
+     "run", {"instrarr": ["one", "two", "three", "four"]}),
+    ("sarr-multi-expand", "print(instrarr(2, 3))", None, "run",
+     {"instrarr": ["one", "two", "three", "four"]}),
+    # A slot that reads as a number is still a STRING: the port's wire type is
+    # what it is, and the coercion is PUC's, so this is differential on purpose.
+    # It is also the case that would break first if instrarr ever answered with
+    # a number, which is why it is here and not a comment.
+    ("sarr-stays-string", "print(instrarr(1) + 0, type(instrarr(1)))", None, "run",
+     {"instrarr": ["5"]}),
+    # the count is a count, not an index, and the index is checked FIRST: an empty
+    # array answers nil and never reaches the count guard, so each case sets it
+    ("sarr-multi-count0", "print(instrarr(1, 0))", None, "runtimerr",
+     {"instrarr": ["a"], "expect": {"err": "count out of range"}}),
+    ("sarr-multi-count9", "print(instrarr(1, 9))", None, "runtimerr",
+     {"instrarr": ["a"], "expect": {"err": "count out of range"}}),
+    ("sarr-multi-countfrac", "print(instrarr(1, 1.5))", None, "runtimerr",
+     {"instrarr": ["a"], "expect": {"err": "count out of range"}}),
+    # past the end on the way IN is the silent nil, so it gets the parse-time
+    # advice innumarr gets -- same bound, same const, same reason
+    ("index-instrarr-past-end", "print(instrarr(65))", None, "state",
+     {"instrarr": ["a"],
+      "expect": {"log": "nil\n", "progDebug": "instrarr reads past the end"}}),
+    ("index-instrarr-inrange-ok", "print(instrarr(1))", None, "state",
+     {"instrarr": ["a"], "expect": {"noProgDebug": "instrarr reads past the end"}}),
     # PUC's # on a table with a hole is the FIRST nil minus one, so deleting an
     # array element at or below the border moves it, and a key above the border
     # does not.  The chip shrank only when the deleted key WAS the border, which
@@ -1844,8 +1884,8 @@ TESTS = [
     # and the append pattern the border exists for still works after a delete
     ("len-hole-append2",
      "t = {1,2,3} t[2] = nil t[4] = 4 print(#t)", None, "run"),
-    ("arr-multi-read1", "print(inarr(1, 1))", None, "modelio",
-     {"inarr": [3.5], "expect": {"log": "3.5\n"}}),
+    ("arr-multi-read1", "print(innumarr(1, 1))", None, "modelio",
+     {"innumarr": [3.5], "expect": {"log": "3.5\n"}}),
     # A compile limit answers on the err port with the line that asked for too
     # much, so a program that runs out of registers can be fixed rather than
     # guessed at: PUC allows 200 locals per function and the chip 64, so this is

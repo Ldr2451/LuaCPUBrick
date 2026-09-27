@@ -86,7 +86,7 @@ class Gen:
                 # an int there, which no string comparison can tell
                 # apart from a printed int-looking string)
                 return f"((#{self.expr('str', depth + 1)}) + 0)"
-            return f"(inarr({r.choice(['1', '2', '3'])}) + 0)"
+            return f"(innumarr({r.choice(['1', '2', '3'])}) + 0)"
         if typ == "str":
             if c < 0.35:
                 return self.leaf("str")
@@ -117,7 +117,7 @@ class Gen:
                 t = r.choice(sorted(self.tinfo))
                 return f"({t}[{r.randint(50, 99)}])"
             if c < 0.75:
-                return "(inarr(99))"
+                return "(innumarr(99))"
             return "nil"
         return self.leaf("nil")
 
@@ -130,7 +130,7 @@ class Gen:
             return v
         if typ == "num":
             return r.choice(NUMC + ["inNum0", "inNum1", "inNum2", "inNum3",
-                                   "inarr"]
+                                   "innumarr(1)"])
         if typ == "str":
             return r.choice([f"'{s}'" for s in SAFE_STRS]
                             + ["inStr0", "inStr1"])
@@ -309,7 +309,7 @@ def main():
     # them there left inNum0..3 nil on BOTH sides and two thirds of the
     # programs came back "oracle rejected".
     kw = {"inputs": INPUTS, "sinputs": SINPUTS, "vec": VEC, "col": COL,
-          "inarr": INARR}
+          "innumarr": INARR}
     jobs = [("fuzz-%d" % (seed0 + k), one(seed0 + k)) for k in range(count)]
     fails = skips = known = 0
     with cf.ThreadPoolExecutor(max_workers=8) as ex:

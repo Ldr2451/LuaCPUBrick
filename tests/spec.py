@@ -57,7 +57,7 @@ TIMEOUT = 90       # seconds per case before the worker is killed
 # lua.ws).  A program's own functions get ids from NB upward, and NB has to
 # match the `const NB` in lua.ws.
 BUILTINS = (("print", 0), ("type", 1), ("tostring", 2),
-             ("clock", 5), ("inarr", 6), ("outarr", 7),
+             ("clock", 5), ("innumarr", 6), ("outarr", 7),
              ("select", 8), ("next", 9), ("_s", 10), ("_m", 11), ("unpack", 12),
              ("_fmt", 13),
              ("_rd", 14),
@@ -72,7 +72,10 @@ BUILTINS = (("print", 0), ("type", 1), ("tostring", 2),
              # the output setters: writing outside the chip is a call, so it
              # reads as an action rather than as editing its state.  fid 4 was
              # outvec and stays reserved (see test_consistency's RESERVED_FIDS).
-             ("outnum", 23), ("outstr", 24))
+             ("outnum", 23), ("outstr", 24),
+             # instrarr reads the string array input, the other half of the two
+             # array ports.  It is last so no existing fid moves.
+             ("instrarr", 25))
 
 
 # first id available to the program's own functions.  NOT len(BUILTINS):
@@ -92,7 +95,7 @@ GSLOT_ORDER = [    "inNum0",
     "type",
     "tostring",
     "clock",
-    "inarr",
+    "innumarr",
     "outarr",
     "select",
     "next",
@@ -112,4 +115,5 @@ GSLOT_ORDER = [    "inNum0",
     "math",
     "string",
     "table",
-    "io"]
+    "io",
+    "instrarr"]
