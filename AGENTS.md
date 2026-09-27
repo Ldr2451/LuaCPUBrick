@@ -404,6 +404,23 @@
   machine, so do not build it. A whole-array `innumarr` read is a **loss** for any
   program that reads fewer than 64, since it pays a table build (193 ticks) to
   save ~2 ticks an element the caller's own loop was going to spend.
+- **A sticky input's VALUE comes from the port; only its restart comes from an
+  edge — and a suite that always raises a first-sight edge cannot see the
+  difference.** The six scalar inputs were latched inside `on Change(port)`, so a
+  value already on the port when the chip started was never latched: an edge
+  needs a *transition*, and a value that is simply present produces none. In game
+  `inStr0` and `inStr1` read `""` while wired to `"test"`, and changed to `hello`
+  worked, because that is a transition. 731 cases were green throughout: they all
+  deliver their inputs before the first tick, and the sim raises an edge for a
+  port's first sight, so every one of them got an edge the real host does not
+  raise. The fix seeds the latches from the ports in `on goParse2`'s completion
+  branch — a handler body, before `vmReset` copies them into the globals — and
+  the edge keeps one job, deciding *when* to restart. `tests/host_compat_check.py`
+  runs every input kind with `Sim.host_baselines` on, which models the host that
+  baselines silently; it is in preflight because a test nobody runs catches
+  nothing. **Two rules from it: read a value, do not wait to be told it; and when
+  a bug only appears in game, the sim's assumption that made it invisible is the
+  thing to fix, not the case that noticed it.**
 - **A port carries ONE wire type, so a second type is a second port — and the
   name a program calls is the lowercase of the port it touches.** `inNumArr` and
   `inStrArr` are two ports rather than one `inArr` that holds either, because the

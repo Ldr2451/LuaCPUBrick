@@ -197,6 +197,16 @@ class Sim:
         self.tick = 0
         self._deferred: dict[int, list] = {}
         self._chg_state: dict = {}
+        # Does a port raise an edge for the value it already carries when the chip
+        # starts?  False (the default) says yes, which is what every case in the
+        # suite has been relying on without knowing it: they all deliver their
+        # inputs before the first tick, so each one gets a first-sight edge and a
+        # chip that learns a sticky input ONLY from an edge looks correct here.
+        # True models the host observed in game, which establishes the baseline
+        # first and reports nothing -- and with it, a value that was on the port
+        # before the chip started never arrives.  tests/host_compat_check.py sets
+        # it, and it is the only thing in the suite that can see that class of bug.
+        self.host_baselines = False
         self.input_ids: list[int] = []
         self.inputs: dict[str, Any] = {}
         self._eval_stack: set[int] = set()
@@ -269,6 +279,7 @@ class Sim:
                 self.port_nodes.append(nid)
                 self.port_label[nid] = label if isinstance(label, str) else str(label)
         self.port_seen: dict[int, object] = {}
+        self.port_baselined: set[int] = set()
         # The grid reads the chip again whenever it syncs, so Internal_ReadBrickGrid
         # is an event the HOST repeats, not one the chip sees once.  It was seeded
         # with the other inputs and then never fired again, which hid the one thing
@@ -346,6 +357,7 @@ class Sim:
         # reset(), so a shared Sim would otherwise carry the PREVIOUS case's
         # input values and a case could never change one.
         self.port_seen = {}
+        self.port_baselined = set()
         self.log = ""
         self._log_appends = []
         self.tick = 0
@@ -409,7 +421,18 @@ class Sim:
                     else:
                         if val == self.port_seen.get(nid):
                             continue
+                        # The first value this loop sees is the BASELINE, not a
+                        # change -- port_seen was empty, so the value the chip was
+                        # handed at tick 0 looks brand new here.  With
+                        # host_baselines it is recorded and no edge is raised, and
+                        # the value itself is already cached by the port node's own
+                        # execution, so a reader still finds it.  Gating only the
+                        # port node was not enough: this loop raised the same first
+                        # edge one tick later.
+                        first = nid not in self.port_seen
                         self.port_seen[nid] = val
+                        if first and self.host_baselines:
+                            continue
                     # re-queue the port: this pushes its RER_Output wires, which
                     # is how the Change detectors downstream get to fire, and it
                     # refreshes the cached prop the pure readers see
@@ -1161,12 +1184,25 @@ class Sim:
         elif "Internal_ReadBrickGrid" in cls:
             self._do_grid(nid, nq)
         elif "Internal_MicrochipInput" in cls:
-            for w in self.out_wires.get((nid, "RER_Output"), []):
-                nq.add((w.dst_id, w.dst_port))
+            # `host_baselines` models the host observed in game: the port's value
+            # is there for a reader to find, and NOTHING downstream is told about
+            # it, because the host established the baseline before the chip could
+            # act and there was no transition to report.  The gate belongs HERE
+            # and not on the change detector, because this is the node that pushes
+            # RER_Output, which is what makes the detectors fire at all -- gating
+            # the detector left this first value still reaching the chip, and a
+            # check written for that bug passed against it.
+            baseline_only = (self.host_baselines
+                             and nid not in self.port_baselined)
+            self.port_baselined.add(nid)
             label = _extract(node.props.get('PortLabel', ('raw', '')))
             label = label if isinstance(label, str) else str(label)
             if label in self.inputs:
+                # the value is delivered either way; only the EDGE is withheld
                 self._out_val(nid, 'RER_Output', self.inputs[label])
+            if not baseline_only:
+                for w in self.out_wires.get((nid, "RER_Output"), []):
+                    nq.add((w.dst_id, w.dst_port))
         elif "Internal_MicrochipOutput" in cls:
             pass
         else:

@@ -16,15 +16,22 @@ two-second answer.  This runs the cheap half of the test matrix instead:
   tests/syntax_check.py
                        the parser battery: nesting and call positions,
                        diffed against real Lua
+  tests/host_compat_check.py
+                       every input kind reaching a program that was handed its
+                       value BEFORE the chip started, with the change detectors
+                       silent.  It is here because the whole suite delivers its
+                       inputs before the first tick AND the sim raises an edge for
+                       that first value, so a chip that learned a sticky input
+                       only from an edge passed 731 cases and read nil in game
 
 One chip build is shared by every case in the last one, so the whole run is
 build-sized.  It is not a substitute for the suite -- it does not check
 results, only shapes -- so run the suite before committing, and this one
 after every edit.
 
-The four checks are independent and each is a build-sized single process, so
-they run at once: four of them in series is 53s of one core, and the slowest
-of the four is 31s.  Their output is collected and printed in the same order,
+The five checks are independent and each is a build-sized single process, so
+they run at once: five of them in series is 65s of one core, and the slowest
+of the five is 31s.  Their output is collected and printed in the same order,
 so a failure reads the same as it always did.
 
   python -u tools/preflight.py
@@ -42,6 +49,8 @@ CHECKS = [
     ('wswarn', ['tools/chip/wswarn.py'], 'compiler warnings: 0'),
     ('consistency', ['tests/test_consistency.py'], 'ALL-OK'),
     ('syntax', ['tests/syntax_check.py'], 'FAIL=0'),
+    ('hostcompat', ['tests/host_compat_check.py'],
+     'every input reached the program'),
 ]
 
 

@@ -10630,6 +10630,37 @@ on goParse2 {
     // again re-parsed every time.
     progDirty = false
     jobBusy = false
+    // Seed the input latches from the PORTS, here, before the reset copies them
+    // into the globals the program reads.
+    //
+    // This is the fix for a value that was already on a port before the chip had
+    // anything to compare it against.  The six `on Change` handlers latch a value
+    // when the port CHANGES, and an edge needs a transition -- so an input wired
+    // to "test" before the program started produced no edge, nothing latched it,
+    // and the program read "" until the value was changed once.  A program that
+    // begins here has to be able to see what is on the ports NOW, with no
+    // transition required.
+    //
+    // It is here, in a handler body, because that is the one context where a port
+    // read is known to work: it is what the six Change handlers have always done.
+    // Two earlier versions read the ports from inside a MOD -- one in the clock,
+    // one in vmReset -- and both broke the restart contract, so this shape is
+    // what is left after ruling them out.  What broke them is NOT established:
+    // each attempt changed more than one thing, so "a mod cannot read a port" is
+    // a guess that fits the failures rather than a measured rule.  If someone
+    // wants to settle it, the experiment is one tiny .ws -- a mod that reads a
+    // port and a handler that does not -- and nothing here should be read as
+    // evidence that the mod form is impossible.
+    //
+    // Latches, not globals, so that every LATER reset (a `run` edge, a grid read)
+    // copies the same correct value.  Seeding the globals directly would be
+    // undone by the next vmReset.
+    latchN0 = inNum0
+    latchN1 = inNum1
+    latchN2 = inNum2
+    latchN3 = inNum3
+    latchS0 = inStr0
+    latchS1 = inStr1
     vmReset()
     vmClosures()
     if perr {
