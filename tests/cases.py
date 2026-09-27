@@ -1274,11 +1274,9 @@ TESTS = [
                 {"ticks": 200, "src": "print(2)"}],
       "phases": [{"ticks": 500, "run": False}, {"ticks": 1800, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "2\n"}}),
-    # THE SPEC for the deferred parse, and it FAILS today - kept deliberately so
-    # the requirement is executable rather than described.  A stopped chip must do
-    # nothing: edit while `run` is low, busy stays false through the whole stopped
-    # window, and the new program is picked up at the run edge.  See the commit
-    # message for why this does not pass yet.
+    # THE SPEC for the deferred parse.  A stopped chip must do nothing: edit while
+    # `run` is low, busy stays false through the whole stopped window, and the new
+    # program is picked up at the run edge.
     ("life-edit-stopped-not-busy", "print(2)", None, "lifecycle",
      {"steps": [{"ticks": 200, "src": "print(1)"},
                 {"ticks": 200, "src": "print(2)"}],
@@ -1286,9 +1284,35 @@ TESTS = [
       "expect": {"progress": False, "finished": True, "log": "2\n",
                  "checkpoints": [300, 450, 550],
                  "idleBusy": [300, 450, 550]}}),
-    # A second run of the SAME text must not re-parse.  A re-parse would vmReset,
-    # which clears the log, so the program would print a second time; the log
-    # having the line exactly once IS the observable proof that it did not.
+    # THE CONTROL for the case below, and the only thing that keeps
+    # `progDirty` honest.  Skipping the parse on a restart is only correct if a
+    # genuine EDIT still gets one, and the difference between the two is a string
+    # comparison: `program != progText`.  Get that comparison wrong in the
+    # permissive direction and the chip keeps running the program it already has
+    # and never notices the new text - which no other case can see, because every
+    # other case delivers its program once, from `progText = ""`, where the
+    # comparison is true whatever it says.
+    #
+    # So this is the shape that was missing: a DIFFERENT program arriving while
+    # `run` is high, with nothing about it resembling a restart.  The log is the
+    # oracle and it is exact: the new program's parse calls vmReset, so the old
+    # line is cleared and only "2" is left.  A chip that ignored the edit prints
+    # "1", and one that ran both prints "1" then "2".
+    ("life-edit-while-running", "print(2)", None, "lifecycle",
+     {"steps": [{"ticks": 400, "src": "print(1)"},
+                {"ticks": 400, "src": "print(2)"}],
+      "phases": [{"ticks": 2400, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "2\n"}}),
+    # and the near miss that makes the comparison a comparison: the SAME text
+    # arriving again is not an edit, so the run is not disturbed and the program
+    # prints exactly once.  The log cannot tell this from a re-parse (both end
+    # with one "1"), so what this holds down is the opposite error - a comparison
+    # that fires on every value the host re-pushes, which is every tick of a sync.
+    ("life-resend-same-text-while-running", "print(1)", None, "lifecycle",
+     {"steps": [{"ticks": 400, "src": "print(1)"},
+                {"ticks": 400, "src": "print(1)"}],
+      "phases": [{"ticks": 2400, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "1\n"}}),
     # A restart must not recompile the text it already has.  The LOG cannot see
     # this: a re-parse calls vmReset, which clears the log, so a recompiled
     # program prints exactly what a skipped parse prints.  `secondRunUnder` is the
