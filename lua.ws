@@ -1281,8 +1281,10 @@ var presCallPos: int = -1
 // Why a gate and not the library: the PUC-verified Lua implementation of this
 // function is lib/str_format.lua, 11468 characters and 19 functions.  Priced at
 // the measured rates -- 1.3 to 1.75 ticks a character of real source, 24 to 62 a
-// function (tools/chip/lexrate.py) -- prepending it costs 15,400 to 21,300 ticks
-// of boot per program, 256 to 354 seconds in-game.  It used to be quoted here as
+// function (tools/chip/lexrate.py) -- prepending it models at 15,400 to 21,300
+// ticks of boot per program.  That is an UPPER bound and cannot be measured at
+// all: 11,478 characters does not fit the ~4 KB source buffer, so a piece this
+// size could not be delivered whatever it cost.  It used to be quoted here as
 // 10769 characters at four characters a tick, 2692 ticks, which applied the raw
 // scan rate to source that also has to be parsed, and the scan floor is 2
 // characters a tick rather than 4.  As a gate it costs +3,308 nodes and +6,026 wires
@@ -1361,8 +1363,9 @@ var presCallPos: int = -1
 // tick.  The library is prepended Lua source, which the lexer and parser together
 // charge at 1.3 to 1.75 ticks a character (measured, tools/chip/lexrate.py), so the
 // PUC-verified Lua implementation of this function (kept as lib/str_format.lua,
-// 11468 characters and 19 functions) cost 15,400 to 21,300 ticks of boot, 256 to
-// 354 seconds in-game, before the program so much as started.  A gate pays
+// 11468 characters and 19 functions) models at 15,400 to 21,300 ticks of boot --
+// and could not be delivered at all, since 11,478 characters does not fit the
+// ~4 KB source buffer.  A gate pays
 // nothing for the source and one state machine covers the loops, so this is the
 // cheaper host by two orders of magnitude.  The semantics are settled by that
 // reference: 107 of 108 cases match lua5.5 byte for byte.
@@ -4910,17 +4913,29 @@ mod lexStep() {
     let isAlpha = (cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122) || cp == 95
     let isAlNum = isAlpha || isDigit
     if lstage == 10 {
-      // line comment: skip to newline or end
-      if lpos >= llen {
-        lstage = 99
-      } else if cp == 10 || cp == 13 {
-        if cp == 10 {
-          lline = lline + 1
-        }
+      // A line comment is the largest region in this codebase's own Lua -- 53%
+      // of demo.lua and 66% of lib/gmatch.lua -- and walking it one character per
+      // lexStep IS the 0.500 ticks/char floor the lexer is measured at, so a
+      // commented line costs what its prose costs.  One search finds the newline,
+      // and a host search is a gate: it costs the same for a 4-character comment
+      // and a 400-character one, which is the whole trade -- ticks for gates.
+      //
+      // Long comments never arrive here: `--[[` goes to lexLong, which already
+      // searches for its closer, so this arm is only the `--` that is not one.
+      //
+      // lpos lands ON the newline instead of past it, so stage 0 consumes it and
+      // counts the line.  That is also what keeps a CRLF file counting once per
+      // line: the CR is inside the jumped-over region and the LF is the single
+      // character stage 0 gets to see.
+      let nl = lsrc.Find("\n", true, lpos)
+      if 0 <= nl {
+        lpos = nl
         lstage = 0
-        lpos = lpos + 1
       } else {
-        lpos = lpos + 1
+        // a comment that runs to the end of the source with no newline is the
+        // end of the lex, which is what walking off the end used to arrive at
+        lpos = llen
+        lstage = 99
       }
     } else if lpos >= llen {
       if lstage == 1 || lstage == 2 || (lstage == 11 && lnumHexN > 0) {
@@ -8753,8 +8768,9 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
   } else if fid == 13 {
     // _fmt(fmt, ...): string.format, as a micro-step.  lib/str_format.lua
     // is the PUC-verified Lua version of this algorithm; as prepended
-    // source it cost 15,400 to 21,300 ticks of boot per program at the
-    // measured rates (tools/chip/lexrate.py), so it lives here
+    // source it models at 15,400 to 21,300 ticks of boot per program at
+    // the measured rates (tools/chip/lexrate.py) and at 11,478 characters
+    // it would not fit the source buffer at all, so it lives here
     // and the library only aliases the name (LIB_str_fmt).
     if nargs < 1 {
       vmFail("bad argument #1 to 'format' (string expected, got no value)")
@@ -10479,9 +10495,12 @@ on goParse {
   // shifted by however many lines it added; libLines undoes that for errors.
   // One variable per library piece, then concatenate: the host compiler cannot
   // lower a mod call inside a binary operation, only variable + variable.
-  // A piece is charged by its characters (4 per tick of lexing), so only pieces
-  // of a few hundred characters belong here; string.format is a builtin instead
-  // (lib/str_format.lua is the reference implementation it is built from).
+  // A piece is charged by its characters, so only pieces of a few hundred
+  // characters belong here, and a comment-heavy one costs far less than its
+  // length suggests now that a comment is a single Find. string.format is a
+  // builtin instead (lib/str_format.lua is the reference implementation it is
+  // built from, and at 11,468 characters it would not fit the source buffer at
+  // all -- which is the real reason it is a gate).
   let libA = libIter(program)
   let libB = libStrIndex(program)
   let libC = libStrCase(program)

@@ -94,8 +94,26 @@ def first_run(runner, src):
 
 
 def scan_prog(n):
-    """A comment: characters the lexer reads and the parser never sees."""
+    """A comment: characters the lexer reads and the parser never sees.
+
+    This WAS the scan floor, and it stopped being one: a line comment is one
+    Find now, so this family is flat and a flat family cannot price anything.
+    It is kept because "O(1)" is the measurement, and because the floor moving
+    off this family is the thing a reader needs to see.
+    """
     return "-- %s\nprint(1)\n" % ("x" * n)
+
+
+def space_prog(n):
+    """Whitespace: also characters no token comes from, and still per character.
+
+    This is the scan floor now that `scan` is flat.  Indentation is the one
+    thing a real program has that neither this nor a comment covers, and a Find
+    cannot help it: skipping a run of spaces needs the first character that is
+    NOT a space, and the host's search finds a substring rather than a character
+    class.
+    """
+    return "%s\nprint(1)\n" % (" " * n)
 
 
 def body_prog(body, n):
@@ -150,38 +168,81 @@ def slope(runner, label, sizes, make, unit, use, reps):
     (n0, c0, t0, _), (n1, c1, t1, _) = points[0], points[-1]
     per_n = (t1 - t0) / float(n1 - n0)
     chars_each = (c1 - c0) / float(n1 - n0)
-    # A rate at or below zero is a measurement that did not measure: the bigger
-    # program was not more expensive.  Fail rather than print it.
+    # A rate at or below zero used to mean the probe had measured nothing, and
+    # failing was the honest answer.  It now means the region is O(1): a comment
+    # is one Find, so 2,013 characters cost the same 17 ticks as 13.  That is a
+    # RESULT and the most interesting thing this tool can say, so it is printed
+    # rather than raised -- and it is reported as a flat family, never as a rate,
+    # because "0.000 ticks/char" would read as "free" and it is not: it is
+    # "this dimension no longer costs per character".
     if per_n <= 0:
-        raise SystemExit("%s: the larger program was not more expensive (%r) - "
-                         "this is not a rate" % (label, points))
+        print("  %-8s %6.2f ticks per %-4s = O(1): %d chars cost the same %d "
+              "ticks as %d\n" % ("", per_n, unit, c1, t1, c0))
+        return {"label": label, "unit": unit, "use": use, "per_n": 0.0,
+                "per_char": 0.0, "points": points, "flat": True}
     print("  %-8s %6.2f ticks per %-4s = %.3f ticks/char  (%.1f chars each)\n"
           % ("", per_n, unit, per_n / chars_each, chars_each))
     return {"label": label, "unit": unit, "use": use, "per_n": per_n,
             "per_char": per_n / chars_each, "points": points}
 
 
-def price(path, per_char, per_func, floor):
-    """What prepending this file would cost, at the measured rates."""
+def price(runner, path, per_char, per_func, floor):
+    """What prepending this file would cost: MEASURED, with the model beside it.
+
+    The model is `chars * per_char`, and per_char comes from synthetic programs
+    with no comments in them, so it charges every character of a commented file
+    the code rate.  That overstated demo.lua by about 2x (8,180-11,426 modelled
+    against 4,532 measured) and it did so silently, which is the worst way to be
+    wrong: a piece priced with it looked twice as dear as it is.  So the number
+    that leads is the one from running the file, and the model is kept as the
+    comparison it has become.
+    """
     text = open(path, encoding="utf-8").read()
     chars = len(text)
     funcs = len(re.findall(r"function", text))
-    lo = chars * per_char[0] + funcs * per_func[0]
-    hi = chars * per_char[1] + funcs * per_func[1]
+    # A library piece DEFINES functions and prints nothing, and first_run times to
+    # the first line of output -- so measuring the piece alone would time out
+    # rather than measure.  The chip's real path is the piece prepended to a user
+    # program, so that is what gets run: the piece's characters plus the smallest
+    # program that produces a line.
+    #
+    # A file that will not fit is not a pricing problem, it is an ANSWER: the
+    # source buffer is about 4 KB including everything prepended, so a piece this
+    # size could not be delivered at all.  That is the whole reason string.format
+    # is a gate and lib/str_format.lua is only its reference implementation.
+    prog = text + "\nprint(1)\n"
+    limit = 4096
+    if len(prog) > limit:
+        print("\n%s: %d chars, %d `function`s" % (path, chars, funcs))
+        print("  NOT MEASURABLE: %d chars with the smallest program that prints,"
+              " over" % len(prog))
+        print("  the ~%d-char source buffer.  A piece this size cannot be"
+              " delivered at all, so the" % limit)
+        print("  modelled %.0f - %.0f ticks is academic and the gate it should"
+              " be is" % (chars * per_char[0], chars * per_char[1]))
+        print("  not optional.")
+        return None, None
+    seen = sorted(first_run(runner, prog) for _ in range(2))
+    lo, hi = seen[0][0], seen[-1][0]
+    model = chars * per_char[0] + funcs * per_func[0]
     print("\n%s: %d chars, %d `function`s" % (path, chars, funcs))
-    print("  lexing + parsing  %6.0f - %-6.0f ticks  (%.2f - %.2f ticks/char)"
-          % (chars * per_char[0], chars * per_char[1], per_char[0], per_char[1]))
-    print("  closures           %6.0f - %-6.0f ticks  (%.0f - %.0f ticks each)"
+    print("  MEASURED boot     %6d - %-6d ticks  = %.0f - %.0f s in game at"
+          " %.0f ticks/s" % (lo, hi, lo / TICKS_PER_SECOND,
+                             hi / TICKS_PER_SECOND, TICKS_PER_SECOND))
+    print("  modelled          %6.0f - %-6.0f ticks  (chars x %.2f-%.2f, which"
+          " is the code rate)" % (chars * per_char[0], chars * per_char[1],
+                                  per_char[0], per_char[1]))
+    print("  closures            %3.0f - %-6.0f ticks  (%.0f - %.0f ticks each,"
+          " already inside the measured total)"
           % (funcs * per_func[0], funcs * per_func[1], per_func[0], per_func[1]))
-    print("  boot total         %6.0f - %-6.0f ticks  = %.0f - %.0f s in game"
-          " at %.0f ticks/s" % (lo, hi, lo / TICKS_PER_SECOND,
-                                hi / TICKS_PER_SECOND, TICKS_PER_SECOND))
-    # The two rates the repo used to price a piece, so the gap is on the record:
-    # chars/4 is what lua.ws's header rate gives, chars/2 is AGENTS.md's C/2.
-    print("  for comparison: at the scan floor (%.2f ticks/char) it would have"
-          " said %.0f ticks, and at" % (floor, chars * floor))
-    print("  lua.ws's old 4 chars/tick rate %.0f ticks - the price is the parsing"
-          " of the source, not the scanning" % (chars / 4.0))
+    if model > 0:
+        print("  the model says %.1fx the measured cost, because it charges"
+              " comment and" % (model / float(lo)))
+        print("  whitespace characters the code rate and neither costs that"
+              " any more")
+    print("  for comparison: at the scan floor (%.2f ticks/char) the SCANNING"
+          " alone would be %.0f" % (floor, chars * floor))
+    print("  ticks, so the parsing of the source is most of the boot either way")
     return lo, hi
 
 
@@ -206,6 +267,7 @@ def main():
 
     print("rates, as the difference between the two ends of each family")
     rates = [slope(runner, "scan", SIZES, scan_prog, "char", "char", reps),
+             slope(runner, "space", SIZES, space_prog, "char", "char", reps),
              slope(runner, "assign", STMTS, lambda n: body_prog(SOURCE_BODY, n),
                    "stmt", "char", reps),
              slope(runner, "cond", STMTS, lambda n: body_prog(COND_BODY, n),
@@ -215,22 +277,38 @@ def main():
              slope(runner, "funccap", FUNCS, funccap_prog, "func", "func", reps)]
 
     print("summary")
-    floor = [r["per_char"] for r in rates if r["label"] == "scan"][0]
+    # The floor is the `space` family, and it is the floor BECAUSE `scan` went
+    # flat: a comment is one Find now, so the cheapest per-character thing left
+    # is a run of spaces.  If `space` ever goes flat too there is no floor left
+    # to quote, and saying so beats dividing by zero.
+    space = [r for r in rates if r["label"] == "space"][0]
+    if space.get("flat"):
+        raise SystemExit("space is flat too, so there is no per-character floor "
+                         "left to quote - re-derive the piece rates from a family "
+                         "that still costs per character")
+    floor = space["per_char"]
     chars = sorted(r["per_char"] for r in rates
-                   if r["use"] == "char" and r["label"] != "scan")
+                   if r["use"] == "char" and r["label"] not in ("scan", "space"))
     funcs = sorted(r["per_n"] for r in rates if r["use"] == "func")
     for got in rates:
-        print("  %-8s %6.3f ticks/char  %6.2f ticks per %s"
-              % (got["label"], got["per_char"], got["per_n"], got["unit"]))
-    print("\n  the scan floor is %.2f ticks/char = %.2f chars/tick, which is what a"
-          " character" % (floor, 1.0 / floor))
-    print("  that lexes to no token costs -- NOT a piece's rate")
+        if got.get("flat"):
+            print("  %-8s %6s ticks/char  %6s per %s  (O(1): a Find, not a walk)"
+                  % (got["label"], "-", "-", got["unit"]))
+        else:
+            print("  %-8s %6.3f ticks/char  %6.2f ticks per %s"
+                  % (got["label"], got["per_char"], got["per_n"], got["unit"]))
+    print("\n  the scan floor is %.2f ticks/char = %.2f chars/tick, measured with"
+          " WHITESPACE" % (floor, 1.0 / floor))
+    print("  -- a comment used to be the probe and is O(1) now, and a string with"
+          " no escape in it always was")
+    print("  the floor is what a character that lexes to no token costs -- NOT a"
+          " piece's rate")
     print("  a piece's per-char term is %.2f to %.2f ticks/char (real source, lexed"
           " and parsed)" % (chars[0], chars[-1]))
     print("  its per-function term is %.0f to %.0f ticks" % (funcs[0], funcs[-1]))
 
     for path in args.piece:
-        price(os.path.join(ROOT, path), (chars[0], chars[-1]),
+        price(runner, os.path.join(ROOT, path), (chars[0], chars[-1]),
               (funcs[0], funcs[-1]), floor)
     return 0
 

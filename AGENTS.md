@@ -247,17 +247,46 @@
   time. **In-game a tick is 16.7ms of real time whatever the chip does**, so
   there only fewer ticks reaches the user. A change can halve one and double the
   other; say which one you moved.
-- **The scan floor is 2 chars/tick, and parsing costs 2-3x that.** Measured at a
-  fixed 1,600 characters: whitespace 811 ticks and a comment 815 — identical, so
-  the floor is the raw scan, `0.507` ticks/char, and 4 chars/tick was stale
-  (`lexChunk` was unrolled 4→2 without the figure following). `tools/chip/lexrate.py`
-  re-measures the floor as **exactly `0.500` ticks/char** (a comment, linear from
-  13 to 2,013 chars) and prices what compiling really costs: real source that is
-  lexed AND parsed but never run is **1.30 to 1.75 ticks/char** depending on the
-  statement (`if x == 1 then x = 2 end` 1.30, `x = x + 1` 1.75), so the parse adds
-  0.8-1.25 ticks a character over the scan. Real code at the same length cost
-  4,015, which is that plus running it. So a boot-cost argument is a *parse*
-  argument, and the lexer is the smaller half — inverting the obvious guess.
+- **A comment is one `Find`, so it is O(1), and that is the cheapest boot win in
+  the chip.** `lexStep`'s line-comment arm used to advance one character per step,
+  which *was* the scan floor — 0.500 ticks/char, a 4-character comment costing what
+  a 400-character one costs. It is now a single search for the newline, and a
+  comment of 2,013 chars costs the same **17 ticks** as one of 13 chars
+  (`tools/chip/lexrate.py`'s `scan` family is now flat, which is why the tool
+  reports it as O(1) and refuses to divide it). Long comments and long strings
+  already went through `lexLong`, which searches for its closer, and a string
+  with no escape in it already took a `Find` — the line comment was the last
+  region still walked. Measured on **demo.lua: 4,532 → 2,994 ticks to first
+  output, 34%, 1,538 of a predicted 1,624 ceiling** (53% of demo.lua and 66% of
+  `lib/gmatch.lua` are comment characters, which is why the win is that size).
+  It cost **−6 nodes and −10 wires**: one search replaced a four-arm chain of
+  per-character tests, and perfbench has all seven programs' ticks, gates and
+  bytecode byte-identical. Ticks for gates is the trade, and a host search is a
+  gate. What is left walking a character at a time is whitespace and identifier
+  runs; a `Find` cannot help either, because both need the first character that
+  is NOT in a class rather than a substring.
+- **Price a file by RUNNING it, not by `chars x a rate`.** The per-char rate
+  comes from synthetic programs with no comments in them, so charging every
+  character of a commented file the code rate overstated demo.lua by **2.7x**
+  (7,840-10,554 modelled against 2,994 measured) and did so silently.
+  `lexrate.py` now leads with the measured boot and keeps the model as the
+  comparison. Note also that a file over the ~4 KB source buffer **cannot be
+  measured at all** — 11,478 chars does not fit — and that is the answer rather
+  than a gap: it is why `string.format` is a gate and `lib/str_format.lua` is
+  only its reference implementation.
+- **The scan floor is 2 chars/tick, and parsing costs 2-3x that.** First measured
+  at a fixed 1,600 characters: whitespace 811 ticks and a comment 815 —
+  identical, so the floor is the raw scan at `0.507` ticks/char, and 4 chars/tick
+  was stale (`lexChunk` had been unrolled 4→2 without the figure following).
+  `tools/chip/lexrate.py` re-measures it as **exactly `0.500` ticks/char**, now
+  with **whitespace** (linear 16 → 1,016 ticks over 10 → 2,010 chars) because a
+  comment stopped being per-character when it became a `Find`. Real source that
+  is lexed AND parsed but never run is **1.30 to 1.75 ticks/char** depending on
+  the statement (`if x == 1 then x = 2 end` 1.30, `x = x + 1` 1.75), so the parse
+  adds 0.8-1.25 ticks a character over the scan. Real code at the same length
+  cost 4,015 ticks, which is that plus running it. So a boot-cost argument is a
+  *parse* argument, and the lexer is the smaller half — inverting the obvious
+  guess.
 - **A library piece is charged by the character AND by every function it
   defines**, and both terms were wrong by a factor of three to ten while they were
   derived by subtraction from a whole program's boot. Measured directly, and
@@ -266,9 +295,18 @@
   (an empty one 24, one with a parameter, a local and a return 62). The old rule
   said `C/2` from the scan floor, which is what a character that lexes to no token
   costs, and ~280 ticks a function.
-  - `lib/str_format.lua` is 11,468 characters and 19 functions, so **15,400 to
-    21,300 ticks of boot, 256 to 354s at 60 ticks/s** — against the 2,692 ticks the
-    old rate claimed, which is why `string.format` is a gate and not a piece.
+  - Those two terms are an UPPER bound, not a price: they charge comment and
+    whitespace characters the code rate, and a comment costs ~0. Measured, the
+    two pieces this repo ships come out at **`lib/gmatch.lua` 5,095 chars → 3,331
+    ticks = 56s** against 6,720-9,165 modelled (2.0x), and **demo.lua 6,031 chars
+    → 2,994 ticks = 50s** against 7,840-10,554 (2.7x). Price a file by running
+    it; the rate multiplication is only for comparing two shapes.
+  - `lib/str_format.lua` is 11,468 characters and 19 functions, so the model says
+    **15,400 to 21,300 ticks of boot, 256 to 354s at 60 ticks/s** — and it cannot
+    be measured at all, because 11,478 characters does not fit the ~4 KB source
+    buffer. That is the reason `string.format` is a gate and not a piece: a piece
+    that size cannot be delivered, whatever it would have cost. The old rule said
+    **2,692 ticks** for it, which is where that number went.
   - `LIB_str_gsub` is 2,783 escaped chars, so **3,600 to 4,900 ticks = 60 to 81s**
     at 60 ticks/s, not the 696 ticks = 11.6s the old arithmetic gave, before the
     program runs one instruction.
@@ -295,9 +333,11 @@
   against the piece's boot, never about gates being free.
 - A boot cost is only reducible three ways: fewer characters, more chars per
   tick, or not parsing. The middle one is linear in gates (unrolling `lexStep`:
-  8 steps +6.5k nodes, 16 steps +19.6k — `tools/chip/lexcost.py`). The cheap end is a
-  `Find`-based fast path for string literals and a run ladder for identifiers,
-  which is where the ladder's zero-progress trap (below) bites.
+  8 steps +6.5k nodes, 16 steps +19.6k — `tools/chip/lexcost.py`). The cheap end
+  is a `Find`-based fast path per region, and **two of the three are now built**:
+  a string literal with no escape in it, and a line comment (both above). The
+  third is a run ladder for identifiers, which is where the ladder's zero-progress
+  trap (below) bites. A `Find` cannot help whitespace, and that is the floor now.
 - **A piece's boot is its whole dependency chain, not its own characters — that
   is what decides whether a gate can become a piece.** Measured on `string.gmatch`
   (`tools/chip/piececost.py`, reference in `lib/gmatch.lua`): as two gates plus a
