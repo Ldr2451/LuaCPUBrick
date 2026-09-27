@@ -1379,6 +1379,18 @@ TESTS = [
      {"expect": {"progDebug": "outnum() takes an index and a value"}}),
     ("arity-zero-innumarr", "print(innumarr())", None, "state",
      {"expect": {"progDebug": "innumarr() takes an index from 1"}}),
+    # A program port nobody wired, or wired and left blank.  The chip is RIGHT
+    # here -- PUC runs an empty chunk and so does this one -- and the symptom is
+    # what needed saying: the log stays empty, busy goes low, err is empty and
+    # progOk is true, which is indistinguishable from a program that has decided
+    # to print nothing.  A comment left behind by pasting is the same shape, so
+    # it is the same case: all four compile to the single RETURN0.
+    ("empty-program-says-so", "-- pasted nothing yet\n", None, "state",
+     {"expect": {"progDebug": "nothing to run"}}),
+    # ... and the half that matters, because a check that fires on every program
+    # is noise: a real program says nothing about it.
+    ("nonempty-program-quiet", "print('hi')", None, "state",
+     {"expect": {"log": "hi\n", "noProgDebug": "nothing to run"}}),
     # ... and the near miss: real arguments must stay silent, including inside a
     # for body, which is exactly where the value-stack version cried wolf.
     # ... and the near miss: real arguments must stay silent, including inside a

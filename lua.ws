@@ -10564,6 +10564,19 @@ on goParse {
 // unresolved name instead of the ones somebody thought to write down.
 mod staticAdvice(p: string) -> string {
   var h = nameWarn
+  // A program that compiled to nothing RUNS, and PUC agrees -- `lua -e ""` is a
+  // valid chunk that does nothing -- so this is `info: ` and never a refusal.
+  // It is here because the symptom otherwise has no cause attached: the log
+  // stays empty, `busy` goes low, `err` is empty and `progOk` is true, so a chip
+  // whose program port was never wired looks exactly like a chip running a
+  // program that has decided to print nothing, forever.  The test is the
+  // bytecode rather than the source, because the four shapes a person actually
+  // hits -- not wired, "", whitespace, and a comment left behind by pasting --
+  // all compile to the same single RETURN0, and one comparison covers them.
+  if bop.length() <= 1 {
+    h = h .. "info: nothing to run: the program port is empty, or holds only"
+      .. " whitespace and comments\n"
+  }
   if srcUses(p, "setmetatable") || srcUsesField(p, "setmetatable")
     || srcUses(p, "getmetatable") || srcUses(p, "rawget") || srcUses(p, "rawset")
     || srcUses(p, "rawequal") || srcUses(p, "rawlen") || srcUsesField(p, "metatable") {
