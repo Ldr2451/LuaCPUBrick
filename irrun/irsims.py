@@ -494,7 +494,15 @@ class Sim:
                 pending = {q for q in self.exec_queue if q[0] not in observed}
                 if not errored and not pending and not self._deferred:
                     self.finished = True
-                    break
+                    # A schedule that still has ticks to give keeps clocking, the
+                    # way the error branch below already does.  Breaking here ended
+                    # a lifecycle run at the FIRST idle moment, so every phase after
+                    # it never happened: a case that stops the program and starts it
+                    # again passed on the output of the FIRST run, which is how
+                    # "the second run does not re-parse" came to be green without
+                    # the second run ever taking place.
+                    if not self.keep_going:
+                        break
             # A program that has an error is finished, whatever the clock is
             # doing, and the queue does not necessarily drain after one: a
             # source too long to lex errored and still ran its whole 200k-tick
@@ -1571,7 +1579,17 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_clear(self, nid: int, nq: set):
-        self.arrays[self._arr_id(nid)] = []
+        aid = self._arr_id(nid)
+        self.arrays[aid] = []
+        # The log is mirrored here as well as on push, or clearing it on the chip
+        # does nothing to the log: a restart calls vmReset, which calls
+        # logLines.clear(), and the next print APPENDED to the previous run's
+        # output, so a program stopped and started again reported its line twice.
+        # Nothing caught it because the latch ended a lifecycle run at the first
+        # idle moment, so the second run never happened until that was fixed.
+        if aid == self._loglines_id:
+            self._log_appends = []
+            self.log = ""
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
