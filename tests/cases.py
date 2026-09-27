@@ -1274,6 +1274,25 @@ TESTS = [
                 {"ticks": 200, "src": "print(2)"}],
       "phases": [{"ticks": 500, "run": False}, {"ticks": 1800, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "2\n"}}),
+    # THE SPEC for the deferred parse, and it FAILS today - kept deliberately so
+    # the requirement is executable rather than described.  A stopped chip must do
+    # nothing: edit while `run` is low, busy stays false through the whole stopped
+    # window, and the new program is picked up at the run edge.  See the commit
+    # message for why this does not pass yet.
+    ("life-edit-stopped-not-busy", "print(2)", None, "lifecycle",
+     {"steps": [{"ticks": 200, "src": "print(1)"},
+                {"ticks": 200, "src": "print(2)"}],
+      "phases": [{"ticks": 600, "run": False}, {"ticks": 1500, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "2\n",
+                 "checkpoints": [300, 450, 550],
+                 "idleBusy": [300, 450, 550]}}),
+    # A second run of the SAME text must not re-parse.  A re-parse would vmReset,
+    # which clears the log, so the program would print a second time; the log
+    # having the line exactly once IS the observable proof that it did not.
+    ("life-no-reparse-second-run", "print('hi')", None, "lifecycle",
+     {"phases": [{"ticks": 700, "run": True}, {"ticks": 400, "run": False},
+                 {"ticks": 1200, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
     # the control: the same program with run high from tick zero, which is what
     # every other case in the suite does and what used to be the only shape
     ("life-run-high-from-boot", "print('hi') outnum(1, 7)", None,

@@ -402,6 +402,9 @@ var lsrc: string = ""
 // One `warn: ` line per name the compiler had to invent, built while parsing and
 // handed to staticAdvice, which prefixes the rest.  Cleared with the program.
 var nameWarn: string = ""
+// True when the program port holds text that has NOT been parsed yet.  The
+// text itself is the port, so this is all the chip needs to know.
+var progDirty: bool = true
 var llen: int = 0
 var lpos: int = 0
 var lstage: int = 0
@@ -10264,19 +10267,47 @@ mod vmBurst() {
 on Change(program) {
   // with the text, like every other finding: nameWarn is built while parsing
   nameWarn = ""
-  wantParse = true
-  emit sched
+  progDirty = true
+  // A stopped chip does NOT parse.  Parsing here put a parse completion next to a
+  // running VM, and that is the only way the program counter and the log can
+  // come apart - a pc rewound without the log cleared, or registers cleared with
+  // the pc left mid-call.  So an edit while stopped waits for the run edge, and
+  // pays its parse then, before the first instruction rather than during one.
+  // Text that has never run means the chip has NOT finished, even though its VM is
+  // idle.  The sim latches `finished` as soon as the halt is high, the error is
+  // empty and the queue is drained, so a chip idling over unparsed text reported
+  // itself done and the run ended before it was asked to do anything.  Halted is a
+  // claim about a PROGRAM, so it must mean "the loaded program ran to completion".
+  vmHalted = false
+  if run {
+    wantParse = true
+    emit sched
+  }
 }
 
 on Change(run) {
   if run && progOkV && !jobBusy {
     vmReset()
   }
+  // Starting with text that has not been parsed yet: parse it now.  jobBusy goes
+  // up inside sched, so the clock's `!jobBusy` guard keeps the VM still until the
+  // parse lands - the program cannot begin running against a half-written one.
+  if run && progDirty && !jobBusy {
+    wantParse = true
+    emit sched
+  }
 }
 
 on ReadBrickGrid() {
-  wantParse = true
-  emit sched
+  // A stopped chip does no work, so a host reading the grid must not start a
+  // parse: this handler used to ask for one unconditionally, which meant a chip
+  // that was never asked to run was parsing on every grid read.  The request is
+  // raised only while running; an edit that arrived while stopped waits for the
+  // run edge, and progDirty is what keeps that to a single parse.
+  if run {
+    wantParse = true
+    emit sched
+  }
 }
 
 on sched {
@@ -10404,6 +10435,7 @@ on goParse2 {
     buffer emit loop
   } else {
     progOkV = !perr && pDone
+    progDirty = false
     jobBusy = false
     vmReset()
     vmClosures()

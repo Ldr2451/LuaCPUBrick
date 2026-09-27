@@ -284,12 +284,18 @@ class Sim:
                 if w.src_id not in self.input_ids:
                     self.input_ids.append(w.src_id)
         self._halted_id = None
+        self._pDone_id = None
+        self._progOk_id = None
         self._err_id = None
         self._perr_id = None
         for nid, nd in nodes.items():
             lbl = _extract(nd.props.get('_label', ('raw', '')))
             if lbl == 'vmHalted':
                 self._halted_id = nid
+            elif lbl == 'pDone' and self._pDone_id is None:
+                self._pDone_id = nid
+            elif lbl == 'progOkV' and self._progOk_id is None:
+                self._progOk_id = nid
             elif lbl == 'errV' and self._err_id is None:
                 self._err_id = nid
             elif lbl == 'progDebugV' and self._perr_id is None:
@@ -467,7 +473,18 @@ class Sim:
             # the run burned its whole budget and every case that watched a
             # finished program fail.  Reading a chip is not pending work.
             observed = self.grid_ids + self.port_nodes
-            if self._halted_id is not None and self.vars.get(self._halted_id):
+            # A chip holding text it has NOT parsed is neither busy nor done, and
+            # `vmHalted` alone cannot say so: it is high from reset, so a chip
+            # idling over an unparsed program looked finished at tick 0 and the run
+            # ended before it was asked to do anything.  So the halt only counts
+            # when there is a PARSED, VALID program behind it.  Both are vars the
+            # sim can read; this is the same conjunction the chip means by
+            # "halted", spelled where the answer is observable.
+            _loaded = (self._pDone_id is not None and self._progOk_id is not None
+                       and bool(self.vars.get(self._pDone_id))
+                       and bool(self.vars.get(self._progOk_id)))
+            if self._halted_id is not None and self.vars.get(self._halted_id) \
+                    and _loaded:
                 # a halt the chip took because of an ERROR is not a program that
                 # ran to completion, so it must not end the run through this
                 # branch: that made a rejected program end the run at once, and

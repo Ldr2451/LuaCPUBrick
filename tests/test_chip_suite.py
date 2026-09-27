@@ -342,7 +342,11 @@ def compare(name, mode, kw, r, dt):
                 want_ticks = list(checkpoints)
                 if not want_finished:
                     want_ticks.append(run.get("budget", 0) - 1)
-                if sample_ticks != want_ticks:
+                # the harness always appends one final sample at wherever the run
+                # stopped, so a case that asks about ticks AND lets the program
+                # finish legitimately has one more sample than it asked for.  Only
+                # the requested ticks are the case's business; the tail is the run's.
+                if sample_ticks[:len(want_ticks)] != want_ticks:
                     return (name, False, "%s samples got=%r want=%r" % (
                         run_name, sample_ticks, want_ticks), dt)
             # the progress and per-sample checks describe the shape the two
@@ -359,6 +363,24 @@ def compare(name, mode, kw, r, dt):
                        not sample.get("busy") for sample in samples):
                     return (name, False, "%s invalid sample state: %r" % (
                         run_name, samples), dt)
+        # `idleBusy` names ticks at which the chip must NOT be busy.  It pins "a
+        # stopped chip does nothing": a program edited while `run` is low must not
+        # start a parse, so busy stays false until the run edge.
+        idle = exp.get("idleBusy") or []
+        if idle:
+            # the FIRST window, because that is the one the checkpoints were given
+            # to: reading `run` here would use whatever the loop left behind, which
+            # is the second window, and it samples nothing
+            by_tick = {s.get("tick"): s
+                       for s in life.get("first", {}).get("samples", [])}
+            for t in idle:
+                smp = by_tick.get(t)
+                if smp is None:
+                    return (name, False, "first no sample at tick %d" % (
+                        run_name, t), dt)
+                if smp.get("busy"):
+                    return (name, False, "%s busy=%r at idle tick %d, want false"
+                            % (run_name, smp.get("busy"), t), dt)
         baseline = life.get("baseline", {})
         reset = life.get("reset", {})
         if baseline.get("tick") != 0 or baseline.get("finished") or \
