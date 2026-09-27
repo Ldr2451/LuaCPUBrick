@@ -54,9 +54,8 @@ A WireScript chip is wires, so everything a program can see or change is a port.
 `run` is the only one that decides anything: high runs the program, low stops it
 where it is, and a rising edge starts again from the top. Every other input
 restarts the program when it changes while `run` is high, except the two array
-ports: `inNumArr` and `inStrArr` are read live by `innumarr()` and `instrarr()`.
-An array cannot be watched at all — a change detector sees one wire value, and an
-array is a container — so they are read on demand and never restart anything.
+ports: `inNumArr` and `inStrArr` are read live by `innumarr()` and `instrarr()`,
+so changing one mid-run is seen by the running program and does not restart it.
 
 Everything a program *writes* is a call, including the single numbers and
 strings: `outnum(i, v)`, `outstr(i, v)` and `outarr(i, v, ...)` for the array.
@@ -66,9 +65,6 @@ something writes there again, so whatever is reading the chip can take its time.
 Every index a program passes counts from 1, the way a Lua table does, in both
 families: `outnum(1..5, v)`, `outstr(1..2, v)` and `outarr(1.., v...)` all start
 at 1, so there is no off-by-one to remember between the two.
-
-The picture is generated from the port declarations in `lua.ws`, so it cannot
-drift from them without the diff saying so.
 
 ## Running the tests
 
