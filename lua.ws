@@ -10304,7 +10304,14 @@ on ReadBrickGrid() {
   // that was never asked to run was parsing on every grid read.  The request is
   // raised only while running; an edit that arrived while stopped waits for the
   // run edge, and progDirty is what keeps that to a single parse.
-  if run {
+  //
+  // Only when there is something to parse.  A grid read arrives on every tick a
+  // host syncs the chip, and asking for a parse each time re-compiled text that
+  // had not changed: stopping and starting a program cost a second, full parse,
+  // 1114 ticks against the first run's 1113, so a restart was never cheaper than
+  // the run it repeated.  A host that pushes new code delivers it on `program`,
+  // which sets progDirty, and this still picks it up.
+  if run && progDirty {
     wantParse = true
     emit sched
   }
@@ -10436,6 +10443,13 @@ on goParse2 {
   } else {
     progOkV = !perr && pDone
     progDirty = false
+    // A parse that has LANDED is not pending.  Leaving wantParse set meant the
+    // next thing that asked for a parse - a grid read on the run edge - started a
+    // second, full parse of text that had not changed: a 615-char program cost
+    // 1113 ticks to run the first time and 1114 the second, so stopping and
+    // starting again re-parsed every time.  Cleared here, beside progDirty,
+    // because both mean the same thing: there is no unparsed text waiting.
+    wantParse = false
     jobBusy = false
     vmReset()
     vmClosures()
