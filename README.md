@@ -59,9 +59,9 @@ so changing one mid-run is seen by the running program and does not restart it.
 
 Everything a program *writes* is a call, including the single numbers and
 strings: `outnum(i, v)`, `outstr(i, v)` and `outarr(i, v, ...)` for the array.
-Two consequences worth knowing: a program cannot read an output back (the ports
-are not globals, so keep your own copy), and a value stays on its port until
-something writes there again, so whatever is reading the chip can take its time.
+A written value stays on its port until something writes there again, so whatever
+is reading the chip can take its time — and you can wire an output to an input,
+or to another chip, and the value will still be there on the next tick.
 Every index a program passes counts from 1, the way a Lua table does, in both
 families: `outnum(1..5, v)`, `outstr(1..2, v)` and `outarr(1.., v...)` all start
 at 1, so there is no off-by-one to remember between the two.
