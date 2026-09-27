@@ -220,6 +220,9 @@
 ///   Parsing     lexChunk() = 4 characters per tick, parseChunk() = 1 parser step per
 ///               tick. A few hundred characters take a few seconds. Add or remove calls in
 ///               lexChunk / parseChunk / vmBurst to trade gates for speed.
+///               Six chains are past the ~16 arm edge where arms near the top stop
+///               taking effect (vmStep is the worst at 43); tools/chip/chainmap.py
+///               lists them, so check there before adding an arm to one of those.
 ///
 /// Verification: differential tests against real Lua 5.5, structural model<->chip
 /// consistency checks (builtin ids, global slots, limits, ports, opcode and keyword
@@ -260,7 +263,7 @@
 const STEP_INTERVAL = 0.01
 const MAX_INSTR = 1024
 // the prepended library plus a full program; the token arrays are sized from
-// this, so raising it costs gates (see tools/gatecount.py)
+// this, so raising it costs gates (see tools/chip/audit.py)
 const MAX_TOKENS = 4096
 // Entries in the inArr and outArr ports.  A const rather than inArr.length()
 // because an input PORT cannot be read during codegen - it empties every
@@ -955,7 +958,7 @@ var fmtGToExp: bool = false  // and its stripped form wants the exponent after
 // one-rounding version prints 0.2 where PUC prints 0.1), and a rounded product
 // cannot say which side of a .5 it landed on.  So the product is carried in a
 // double-double: two doubles holding 106 bits, and the tie is read off the sign
-// of the half the single multiply dropped.  tools/fmtdiff.py measures what the
+// of the half the single multiply dropped.  tools/fmt/fmtdiff.py measures what the
 // cheap version costs: 0.17% of the values that fit come out with the wrong
 // last digit, and they are 0.05, 0.15, 344.95 -- the values programs format.
 var fmtV: float = 0.0         // |the argument|
@@ -1246,8 +1249,8 @@ var presCallPos: int = -1
 // and the suite covers it; lib/fmt_gate_draft.txt is the extracted copy of it,
 // with the findings that took the builds to get:
 //
-//   python -u tools/fmtdraft.py --check      what lua.ws has
-//   python -u tools/fmtdraft.py --extract    save this hunk back to the draft
+//   python -u tools/fmt/fmtdraft.py --check      what lua.ws has
+//   python -u tools/fmt/fmtdraft.py --extract    save this hunk back to the draft
 //
 // Why a gate and not the library: the PUC-verified Lua implementation of this
 // function is lib/str_format.lua, 10769 characters, and the lexer runs at four
@@ -1281,7 +1284,7 @@ var presCallPos: int = -1
 //     times and the compiler shared one Get per var across the copies; the lexer's chain has the same
 //     shape and works, because lexChunk inlines it once.  So the rule of thumb
 //     is to hoist the test to the top of the mod or take the flag as a
-//     parameter, and tools/wswarn.py flags the shape as a candidate.
+//     parameter, and tools/chip/wswarn.py flags the shape as a candidate.
 //   - one micro-step per burst.  The old four-step burst inlined and entered this
 //     machine up to four times in one tick; fmtGo kept one write per tick.
 //   - a mod call in a conditional's VALUE position is evaluated whether the arm
@@ -1306,7 +1309,7 @@ var presCallPos: int = -1
 //     quotient).  Lua's math.floor is a different code path -- the _m gate -- and
 //     does floor, which is why math.floor(-2.7) is -3 and this is not.
 //
-// WireScript traps measured while building this, all of them in tools/wswarn.py
+// WireScript traps measured while building this, all of them in tools/chip/wswarn.py
 // now, and all of them worth knowing before writing any more WireScript:
 //   - `%`, `for`, and a mod call on the right of `..` all leave a placeholder
 //     that reads 0, or fail as "attempt to call"
@@ -1319,7 +1322,7 @@ var presCallPos: int = -1
 //   - an assignment at the bottom of a deep else-if chain silently does not take
 //     effect: fmtState = 7 in the %d branch never ran.  One mod per state is
 //     the fix, and the reason fmtLit/fmtFlag/fmtWidthStep/... exist separately.
-//   - tools/vargraph.py is what settled the rest: it lists the var nodes behind
+//   - tools/chip/vargraph.py is what settled the rest: it lists the var nodes behind
 //     a name, how many write it, and what fires each write.
 //
 // ---------------------------------------------------------------- _fmt
@@ -5891,9 +5894,7 @@ mod doCont() {
                                     let r15 = regAlloc()
                                     if 15 < n {
                                       bEmit(7, br + 15, tmpRegs[15], 0)
-}
-
-
+                                    }
                                     bEmit(7, br + 14, tmpRegs[14], 0)
                                   }
                                   bEmit(7, br + 13, tmpRegs[13], 0)
@@ -6904,8 +6905,8 @@ mod fmtEFracMore() {
 //     unless # is given and a precision of 0 read as 1.  The trailing-zero strip
 //     is one more one-character-per-tick state.
 //
-// tools/fmtsweep.py takes the conversion letter as its second argument, so
-// `python -u tools/fmtsweep.py 64 e` is the same check for %e when it lands.
+// tools/fmt/fmtsweep.py takes the conversion letter as its second argument, so
+// `python -u tools/fmt/fmtsweep.py 64 e` is the same check for %e when it lands.
 mod fmtConvFloat() {
   fmtArgI = fmtArgI + 1
   let ab = fmtArgAt()
@@ -8081,7 +8082,7 @@ mod patStep() {
 // The low half of the gate dispatch: fids 0..8.  The chain was one of
 // seventeen arms inside the old four-copy vmStep, and the documented edge for
 // a chain is about sixteen -- past it the arms near the top stop taking effect,
-// silently.  tools/chainmap.py counts them.
+// silently.  tools/chip/chainmap.py counts them.
 
 mod gateLow(fid: int, a: int, nargs: int) {
   if fid == 0 {
@@ -8245,7 +8246,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
         // An empty result list still has to leave the callee's own register
         // nil: the compiler puts the local a call is assigned to in the slot
         // the function was in, so `local c = select(2, ...)` read the select
-        // VALUE (type "function") where PUC reads nil.  tools/wswarn.py's
+        // VALUE (type "function") where PUC reads nil.  tools/chip/wswarn.py's
         // "empty result" check watches for exactly this arm.
         vSet(a, 0, 0.0, "")
         retCountV = 0
