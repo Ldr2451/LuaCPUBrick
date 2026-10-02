@@ -3,20 +3,24 @@ real Lua oracle. Only generates programs both sides must accept with
 identical logs (documented divergences are excluded by construction).
 
 Usage: python -u tools/fuzz.py [count=40] [seed0=1]
-Exit 0 when every seed agrees, 1 with the failing program otherwise.
+Exit 0 when every seed was COMPARED and agreed; 1 on a failing seed or on any
+unexplained skip (see SKIP_REASONS).
 
 The default is deliberately small: a seed costs an oracle run and a chip run, so
 150 seeds measured 2.5 minutes and 400 measured 6.  That is a before-you-ship
 sweep, not an edit-loop command -- the suite and tools/check.py are the fast
 paths, and `1 <seed>` is about 5 seconds when you want one program.
 
-The generator is now scope-correct, which is what the skip rate was: a name being
-defined was offered to its own initialiser (`w5 = (w5 % 3)`, `local v7 = v7 +
-1`), a local from a `then` arm stayed in scope for the `else` arm, and a local
-declared in a block outlived it.  Each of those is a read of an undeclared
-global, which PUC answers with "attempt to perform arithmetic on a nil value" and
-the harness counts as a skip.  Measured on 150 seeds: 50 agreed and 100 were
-skipped before, 150 are now compared.
+The skip rate was the generator, in two rounds.  First it was scope: a name
+being defined was offered to its own initialiser (`w5 = (w5 % 3)`, `local v7 = v7
++ 1`), a local from a `then` arm stayed in scope for the `else` arm, and a local
+declared in a block outlived it.  Each of those is a read of an undeclared global,
+which PUC answers with "attempt to perform arithmetic on a nil value".  Then,
+with the scope right, 30 of 150 were still skipped and all 30 were the SAME
+cause: the outstr arm of the generator never closed its own paren, so the program
+was a syntax error, the oracle rejected it before the chip ran, and the harness
+called that a skip.  Measured on 150 seeds: 50 agreed and 100 skipped at the
+start, 119 agreed and 30 skipped after the scope fix, 149 agree and 0 skip now.
 """
 import concurrent.futures as cf
 import os
@@ -221,9 +225,15 @@ class Gen:
         if c < 0.84:
             return f"outarr({r.randint(1, 4)}, {self.expr('num', 1)})"
         if c < 0.90:
+            # the closing ')' of outstr( is part of the format string, exactly as
+            # it is for outarr and outnum above.  It was missing, so every program
+            # that took this arm was missing a paren: the oracle rejected it as a
+            # SYNTAX error before the chip ran, and the harness counted that as a
+            # skip -- which is how 30 of 150 seeds went uncompared while the tool
+            # still reported a clean run.
             return (f"outnum({r.randint(1, 4)}, {self.expr('num', 1)})"
                     if r.random() < 0.6 else
-                    f"outstr({r.randint(1, 2)}, {self.expr('str', 1)}")
+                    f"outstr({r.randint(1, 2)}, {self.expr('str', 1)})")
         args = ", ".join(self.printable(1) for _ in range(r.randint(0, 2)))
         return f"print({args})"
 
@@ -301,6 +311,24 @@ def only_neg_zero(text):
     return signless(got) == signless(want) and got != want
 
 
+# A skip is a program that was never compared, and an uncompared program is not
+# a pass.  This is the fuzzer's version of the suite's SKIP dict, and it exists
+# because of what a skip actually hid here: the outstr arm of the generator was
+# missing its own closing paren, so every program that took it was unparseable,
+# the oracle rejected all of them as SYNTAX errors, and 30 of 150 seeds were
+# counted as skips -- which this tool reported as a clean run, because the exit
+# code only ever looked at `fails`.  With the oracle missing entirely it would
+# have reported 0/150 and exited 0.
+#
+# So a skip fails the run unless its seed is named here WITH the reason it is
+# uncompareable.  There are none, and the list is empty on purpose: the generator
+# only emits programs both sides must accept (see the module docstring), so a skip
+# means the generator or the environment is wrong, not that the seed is hard.
+# Delete the `or skips` from the return below and this comment is the net that
+# stops firing -- which is how you check it still can.
+SKIP_REASONS = {}
+
+
 def main():
     count = int(sys.argv[1]) if len(sys.argv) > 1 else 40
     seed0 = int(sys.argv[2]) if len(sys.argv) > 2 else 1
@@ -318,7 +346,8 @@ def main():
         for f in cf.as_completed(futs):
             name, good, detail, dt = f.result()
             if good is None:
-                print(f"SKIP {name}: {detail}", flush=True)
+                if name not in SKIP_REASONS:
+                    print(f"SKIP {name}: {detail}", flush=True)
                 skips += 1
             elif good:
                 pass
@@ -339,7 +368,9 @@ def main():
                 fails += 1
     print("%d/%d agree (%d skipped, %d known negative-zero)"
           % (count - fails - skips - known, count, skips, known))
-    return 1 if fails else 0
+    # `or skips` is the rule above, and it is what makes the tool's exit code
+    # mean "compared and agreed" rather than "did not find anything".
+    return 1 if fails or skips else 0
 
 
 if __name__ == "__main__":

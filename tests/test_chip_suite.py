@@ -987,6 +987,19 @@ def main(args):
         kw["_irpkl"] = irpkl
     ok = fail = 0
     skip = skip_pre
+    # A skip that is not in SKIP is a case that was NOT compared, and an
+    # uncompared case is not a pass -- the same rule the suite's SKIP dict
+    # already encodes, applied to the other place a skip can come from.  The exit
+    # code used to look only at `fail`, so a run in which every case skipped
+    # reported OK=0 FAIL=0 and exited 0: green, having checked nothing.  That is
+    # not hypothetical, it is how tools/fuzz.py hid 30 unparseable programs for
+    # long enough to look like a clean sweep -- its oracle rejected them, the
+    # harness called it a skip, and the exit code never noticed.  Here the
+    # reachable unexplained skips are "oracle rejected rc=N" (a case whose program
+    # raises in real Lua, which is a broken case) and "oracle framing broken";
+    # "SKIP unrecorded deviation" is unreachable, because oracle_log returns a
+    # string for any call list and a None one is caught as framing above.
+    uncompared = 0
     # Group the cases into batches: a worker builds the chip once and reuses it
     # for every case in its batch, which is where most of the wall clock went.
     prepared = []
@@ -994,9 +1007,10 @@ def main(args):
         prepared.append((name, resolve_src(src, kw), kw, mode, inputs))
 
     def report(name, good, detail, dt):
-        nonlocal ok, fail, skip
+        nonlocal ok, fail, skip, uncompared
         if good is None:
             skip += 1
+            uncompared += 1
             tag = "SKIP"
         elif good:
             ok += 1
@@ -1034,7 +1048,14 @@ def main(args):
     print("OK=%d FAIL=%d SKIP=%d  (%d cases%s)" % (
         ok, fail, skip, len(prepared),
         "" if POOL else ", %d batches" % len(batches)))
-    return 1 if fail else 0
+    if uncompared:
+        # named, not counted: "3 skipped" reads as a tally and this is the list of
+        # cases whose answer nobody has
+        print("UNCOMPARED %d: not in SKIP, so their answer is unknown, not agreed"
+              % uncompared, flush=True)
+    # `or uncompared` is what makes this exit code mean "compared and agreed".
+    # Delete it and this run reports success having compared nothing.
+    return 1 if fail or uncompared else 0
 
 
 if __name__ == "__main__":
