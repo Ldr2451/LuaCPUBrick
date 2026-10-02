@@ -38,6 +38,7 @@ MAX_INSTR = 1024
 MAX_TOKENS = 4096
 MAX_REGS = 64
 MAX_FUNCS = 96
+MAX_CLO = 256    # extra closure records on top of MAX_FUNCS; see cloF in lua.ws
 MAX_GLOBALS = 96
 MAX_CALLS = 32
 MAX_TABLES = 68

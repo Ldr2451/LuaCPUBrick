@@ -217,10 +217,17 @@
 ///
 /// Limits (a compile error past them, reported as an `err: ` line)
 ///   4096 tokens, 1024 bytecode instructions, 64 registers per function, 96 functions,
-///   96 globals (48 pre-registered), 256 numeric and 256 string constants, 16 values
+///   96 globals (34 pre-registered), 256 numeric and 256 string constants, 16 values
 ///   per expanded call/return/statement, 32 nested calls, 16 upvalues per function.
 ///   At run time: 64 program tables plus four library tables, 512 table entries,
-///   256 closures and 1024 upvalue cells.
+///   352 closure records and 1024 upvalue cells.  The records are shared with the
+///   program's own prototypes, which take the low end of the array, so a program
+///   with N functions can make 352 - N closures; and a cell is three words of the
+///   256-word vararg stack, so that stack is what runs out first and 1024 is a
+///   ceiling rather than the limit a program meets.
+///   A table entry is handed back when its key is assigned nil, and that is the
+///   whole of the arena's reuse: there is no collector, so a table that grows
+///   without deleting keys stops at 512 entries with "out of table memory".
 ///
 /// Speed and gate count
 ///   Everything is unrolled per tick, so gates buy speed. Approximate cost of one extra
@@ -515,6 +522,12 @@ var locDepth: int[]
 // over it still goes through the register, which is right because in those
 // instructions no closure exists yet.
 var locCap: bool[]
+// was this local declared inside a loop body?  That is the question a cell's
+// lifetime turns on, because PUC closes a local's cell when the block that
+// DECLARED it ends, and a block inside a loop ends once per round.  A local
+// declared outside every loop outlives them all, so its cell must not be replaced
+// when a loop body round ends -- which is what one global loop counter used to do.
+var locInLoop: bool[]
 var locLen: int = 0
 // Upvalues.  fUpN[fid] is how many descriptors the prototype has, and the two
 // arrays strided by MAX_UP say what each one is: fUpSrc >= 0 is the captured
@@ -530,6 +543,12 @@ var fUpN: int[]
 var fUpSrc: int[]
 var fUpSlot: int[]
 var fUpSlotN: int[]
+// does the local behind this descriptor live in a block that a loop re-enters?
+// Strided with fUpSlot, and the reason cellAt's generation test is conditional:
+// without it, one loop body's round-end replaced the cell of every captured local
+// in the function, including the ones declared outside the loop and still in
+// scope.
+var fUpInLoop: bool[]
 var upIdx: Map<string, int>
 // the prototype each compile depth is on, so a capture can be walked up the
 // chain of enclosing functions
@@ -543,6 +562,13 @@ var fidAt: int[]
 // local's block is the outer body and PUC re-opens it every round.
 var capGen: int = 0
 var blkCapGen: int[]
+// How many loop bodies enclose the point being compiled, restored by the same
+// blkEnter/blkExit pair that restores locLen and the block chain, so a body that
+// leaves early cannot leave the count behind.  blkEnter takes whether the block
+// it is opening IS a loop body; a block nested inside one sees the larger count
+// and is still re-entered every round.
+var loopNesting: int = 0
+var blkLoop: int[]
 // A repeat's block ends *after* its until condition, so its one-per-round bump
 // is emitted in front of the condition and this says so, or the block exit
 // would add a second one outside the loop.
@@ -1681,11 +1707,13 @@ mod locBind(name: string, r: int) {
     locReg[locLen] = r
     locDepth[locLen] = fnDepth
     locCap[locLen] = false
+    locInLoop[locLen] = 0 < loopNesting
   } else {
     locName.push(name)
     locReg.push(r)
     locDepth.push(fnDepth)
     locCap.push(false)
+    locInLoop.push(0 < loopNesting)
   }
   locLen = locLen + 1
   if r > cfMaxLoc[fnDepth] {
@@ -1693,10 +1721,18 @@ mod locBind(name: string, r: int) {
   }
 }
 
-mod blkEnter() {
+mod blkEnter(isLoopBody: bool) {
   blkLen.push(locLen)
   blkNext.push(cfNext[fnDepth])
   blkCapGen.push(capGen)
+  // the count as it was BEFORE this block, because blkExit has to put it back
+  // exactly where it found it: a local declared after a loop is not in one, and
+  // pushing the post-increment value left the count stuck at 1 for the rest of
+  // the function
+  blkLoop.push(loopNesting)
+  if isLoopBody {
+    loopNesting = loopNesting + 1
+  }
 }
 
 mod regSync() {
@@ -1743,6 +1779,10 @@ mod upStep(d: int, ix: int, src: int) -> int {
   if 0 <= src {
     fUpSlot[p * MAX_UP + k] = fUpSlotN[p]
     fUpSlotN[p] = fUpSlotN[p] + 1
+    // taken from the DECLARING local, not from the block this capture is written
+    // in: the same loop body can capture a local of the function above it, and
+    // that one's cell outlives the loop
+    fUpInLoop[p * MAX_UP + k] = locInLoop[ix]
     // the declaring function's own reads and writes go through this cell from
     // here on, so a write from a nested function is visible to it
     locCap[ix] = true
@@ -2100,13 +2140,22 @@ mod vmReset() {  tmap.clear()
   gtag.clear()
   gnum.clear()
   gstr.clear()
-  gtag.resize(64, 0)
-  gnum.resize(64, 0.0)
-  gstr.resize(64, "")
+  // MAX_GLOBALS and not a literal, because gDeclare refuses past that const: an
+  // array smaller than the guard turned "too many globals" into a write past the
+  // end of the storage, and stress-instr -- the case that fills the globals table
+  // to the documented 96 -- wrote 32 entries past it while staying green.
+  gtag.resize(MAX_GLOBALS, 0)
+  gnum.resize(MAX_GLOBALS, 0.0)
+  gstr.resize(MAX_GLOBALS, "")
   gtag.copyFrom(GTAG_INIT)
   gnum.copyFrom(GNUM_INIT)
-  gtag.resize(64, 0)
-  gnum.resize(64, 0.0)
+  // CopyFrom REPLACES the array, so it leaves gtag and gnum at GTAG_INIT's 34
+  // entries and the length has to be set again here.  Dropping this pair as a
+  // no-op on a 64-long array left the two at 34, and every read of a global the
+  // program never assigned came back out of bounds -- three cases answering 1,
+  // false and 1 where PUC says nil, false and nil.
+  gtag.resize(MAX_GLOBALS, 0)
+  gnum.resize(MAX_GLOBALS, 0.0)
   gnum[slotInLatch + 0] = latchN0
   gnum[slotInLatch + 1] = latchN1
   gnum[slotInLatch + 2] = latchN2
@@ -2226,17 +2275,18 @@ mod cmpFinish(v: bool) {
   }
 }
 
-// Is there an entry for this key?  Two things learned the hard way, both about
-// asking the question at all:
-//  - tmap.has never fired on a key built by string concatenation here, which made
-//    the border chase dead code; tmap.get(key).Found works, and it is what the
-//    five working lookups use.
-//  - the key must be built by tkey(), the one function that owns the format.  A
-//    probe that re-implements it with `tid .. "#" .. n` agrees with the format on
-//    paper and misses in the map, and nothing but a failing case tells you.
+// Does t[idx] hold a VALUE?  Not merely whether the key is in the map: a nil
+// assignment leaves a tombstone there (see tblSetKey), so a key can be in the map
+// and still read nil, and PUC's # is the first nil minus one.  Answering the map
+// question made the border chase walk straight over the tombstones, so a program
+// that emptied a table and refilled it got the old length back -- delete 60 keys,
+// refill 40, and #t said 60 where PUC says 40.
 mod tblHas(tid: int, idx: int) -> bool {
   let r = tmap.get(tkey(tid, 6, idx + 0.0, ""))
-  return r.Found
+  if r.Found {
+    return tvTag[r.Value] != 0
+  }
+  return false
 }
 
 // After t[len+1] was filled, keep extending the border while t[len+1] exists.
@@ -2768,7 +2818,12 @@ mod fmtPadStep() {
 }
 
 
-// Unlink a slot from its table's insertion chain.
+// Unlink a slot from its table's insertion chain, and mark it unchained (-2),
+// which is what the -2 in the declaration above has always meant.  The mark is
+// load-bearing: a slot on the free list is a key that was assigned nil, and it
+// stays on the list after the table it died in stops pointing at it, so the
+// free list reads -2 to tell "dead and nobody owns it any more" from "dead but
+// still chained, unhook it and drop its stale map entry".
 mod tblUnlink(tid: int, sl: int) {
   let pv = tPrev[sl]
   let nx = tNext[sl]
@@ -2782,6 +2837,8 @@ mod tblUnlink(tid: int, sl: int) {
   } else {
     tLast[tid] = pv
   }
+  tPrev[sl] = -2
+  tNext[sl] = -2
 }
 
 // A new attempt at patStart: an empty backtrack stack, the pattern back at its
@@ -2968,18 +3025,28 @@ mod rdLine() {
   }
 }
 
-// Link a slot at the tail of its table's chain, so pairs/next walk entries in
-// insertion order (the order PUC-Lua uses, which the tests compare against).
-mod tblLink(tid: int, sl: int) {
-  let last = tLast[tid]
-  tPrev[sl] = last
-  tNext[sl] = -1
-  if last != -1 {
-    tNext[last] = sl
+// Put a slot between two chain entries, which is the whole of what an insertion
+// chain is; pv == -1 means the head and nx == -1 the tail.  tblLink is the
+// append-at-the-tail case, and a revived key is the replace-in-place case.
+mod tblSplice(tid: int, sl: int, pv: int, nx: int) {
+  tPrev[sl] = pv
+  tNext[sl] = nx
+  if pv != -1 {
+    tNext[pv] = sl
   } else {
     tFirst[tid] = sl
   }
-  tLast[tid] = sl
+  if nx != -1 {
+    tPrev[nx] = sl
+  } else {
+    tLast[tid] = sl
+  }
+}
+
+// Link a slot at the tail of its table's chain, so pairs/next walk entries in
+// insertion order (the order PUC-Lua uses, which the tests compare against).
+mod tblLink(tid: int, sl: int) {
+  tblSplice(tid, sl, tLast[tid], -1)
 }
 
 // Copy up to MAXVALS values from the register file into the vararg stack.
@@ -3295,6 +3362,7 @@ mod parseInit() {
   locReg.clear()
   locDepth.clear()
   locCap.clear()
+  locInLoop.clear()
   fUpN.clear()
   fUpSlotN.clear()
   valStk.clear()
@@ -3332,11 +3400,15 @@ mod parseInit() {
   blkNext.clear()
   blkCapGen.clear()
   capGen = 0
+  blkLoop.clear()
+  loopNesting = 0
   upIdx.clear()
   fUpSrc.clear()
   fUpSrc.resize(MAX_FUNCS * MAX_UP, -1)
   fUpSlot.clear()
   fUpSlot.resize(MAX_FUNCS * MAX_UP, 0)
+  fUpInLoop.clear()
+  fUpInLoop.resize(MAX_FUNCS * MAX_UP, false)
   fidAt.clear()
   fidAt.resize(33, -1)
   cfNext.clear()
@@ -3461,6 +3533,7 @@ mod locDeclare(name: string) -> int {
 mod blkExit() {
   locLen = blkLen.pop().Value
   cfNext[fnDepth] = blkNext.pop().Value
+  loopNesting = blkLoop.pop().Value
   let had = blkCapGen.pop().Value != capGen
   if blkGenDone {
     blkGenDone = false
@@ -4516,7 +4589,7 @@ mod locFind(name: string) {
 
 mod forDoHead() {
   cpos = cpos + 1
-  blkEnter()
+  blkEnter(true)
   let ctrl = locDeclare(forName)
   dirtySelf(forName)
   if forInit != ctrl {
@@ -4725,7 +4798,7 @@ mod doBlockClose() {
     lstAppendB(pos)
     bPatch(ctlA[n], bop.length())
     ctlA[n] = -1
-    blkEnter()
+    blkEnter(false)
     cpos = cpos + 1
   } else {
     if kind != 1 {
@@ -5506,7 +5579,7 @@ mod genForHead() {
     return
   }
   cpos = cpos + 1
-  blkEnter()
+  blkEnter(true)
   if tmpRegs.length() < 1 {
     perr = true
     perrMsg = "for iterator is missing"
@@ -5684,10 +5757,10 @@ mod stmtDispatch() {
     cpos = cpos + 1
     pushCtl(6, bop.length(), -1, -1, ctlLoop, 0, 0)
     ctlLoop = ctlKind.length() - 1
-    blkEnter()
+    blkEnter(true)
   } else if k == 4 && s == 3 {
     cpos = cpos + 1
-    blkEnter()
+    blkEnter(false)
     pushCtl(4, 0, 0, 0, 0, 0, 0)
   } else if k == 4 && s == 2 {
     cpos = cpos + 1
@@ -5898,7 +5971,7 @@ mod doCont() {
       cpos = cpos + 1
       let fp = bEmit(21, 0, presReg, 0)
       pushCtl(1, fp, -1, 0, 0, 0, 0)
-      blkEnter()
+      blkEnter(false)
     }
     inExpr = false
     contKind = 0
@@ -5910,7 +5983,7 @@ mod doCont() {
       cpos = cpos + 1
       let fp = bEmit(21, 0, presReg, 0)
       ctlA[ctlA.length() - 1] = fp
-      blkEnter()
+      blkEnter(false)
     }
     inExpr = false
     contKind = 0
@@ -5923,7 +5996,7 @@ mod doCont() {
       let fp = bEmit(21, 0, presReg, 0)
       pushCtl(2, tmpA, fp, -1, ctlLoop, 0, 0)
       ctlLoop = ctlKind.length() - 1
-      blkEnter()
+      blkEnter(true)
     }
     inExpr = false
     contKind = 0
@@ -6688,7 +6761,11 @@ mod pcallEnter() {
   if 8 < np {
     vmFail("too many parameters")
   } else if vaTop + nslots > MAX_VA {
-    vmFail("too many upvalues")
+    // The vararg stack is what runs out, not the cell arena: a cell is three
+    // words of it, so MAX_VA/3 binds long before MAX_CELL (1024) does.  Saying
+    // which one is the difference between a message a reader can act on and one
+    // that points at the wrong arena.
+    vmFail("too many captured locals live at once")
   } else if vaTop + nslots + (if fVar[inner] && np < a1 then a1 - np else 0) > MAX_VA {
     vmFail("too many varargs")
   } else {
@@ -7082,21 +7159,36 @@ mod patError() {
 }
 
 // One table store from raw values; false means the store failed (error already
-// raised).  Shared by SETFIELD and by TAPPEND's unrolled ladder.  A nil value
-// leaves the key's slot in place as a tombstone so the chain order is stable and
-// re-assigning the key revives the same slot.
+// raised).  Shared by SETFIELD and by TAPPEND's unrolled ladder, so it is
+// inlined seventeen times and anything added here is added seventeen times.
+//
+// A nil value leaves the key's slot in place as a tombstone, which is PUC's own
+// shape: PUC keeps a nil-valued key in the node, so next(t, k) still finds k
+// after t[k] = nil and pairs() still walks past it.  Re-assigning the key then
+// revives that same slot, at the same place in the chain.
+//
+// What the tombstone cannot do is stay on the free list, because the delete put
+// it there: the list's next pop would hand the slot to an unrelated new key and
+// unhook it from here, and the key would stop existing with no error and no
+// wrong value anywhere -- it would just read nil.  So a revive takes its entry
+// OFF the list: either the list hands this very slot back (off the list, in its
+// own place, nothing else to do) or the value goes into the entry the list does
+// hand back and the tombstone is left dead, unlinked, and still on the list
+// where a dead slot belongs.
 mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: string) -> bool {
   let key = tkey(tid, kt, kn, ks)
   let r = tmap.get(key)
   let kint = toInt(kn)
+  // sl is the entry to write into, or -1 for one that has to be allocated.  A
+  // revive leaves the tombstone behind and takes a fresh entry for it.
+  var sl = -1
+  var revived = false
+  var old = -1
   if r.Found {
-    let sl = r.Value
     if vt == 0 {
-      // nil leaves the slot in the chain as a tombstone, so the walk order is
-      // stable and re-assigning the key revives the same slot
-      if tvTag[sl] != 0 {
-        tvTag[sl] = 0
-        tFree.push(sl)
+      if tvTag[r.Value] != 0 {
+        tvTag[r.Value] = 0
+        tFree.push(r.Value)
         // Deleting an array element moves the border to just before it, for ANY
         // key at or below the border and not only for the border itself: PUC's
         // # is the first nil minus one, so {1,2,3} with t[2] = nil is 1 and
@@ -7106,53 +7198,73 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
           tLen[tid] = kint - 1
         }
       }
+      // A delete is finished here.  It must NOT fall through to the allocation
+      // below: that would pop the slot this line just pushed and re-link it,
+      // which leaves the key in the table and the free list empty, so the table
+      // never shrinks and nothing is ever recycled.
+      return true
+    } else if tvTag[r.Value] == 0 {
+      old = r.Value
+      revived = true
     } else {
-      tvTag[sl] = vt
-      tvNum[sl] = vn
-      tvStr[sl] = vs
-      if kt == 6 && kint == tLen[tid] + 1 {
-        tLen[tid] = kint
-        if tblHas(tid, kint + 1) {
-          lenChase = true
-          lenTid = tid
-        }
-      }
+      sl = r.Value
     }
-  } else if vt == 0 {
-    // assigning nil to a missing key does nothing
+  } else if vt != 0 {
+    // a key the table does not have yet
   } else {
-    var sl = -1
+    // assigning nil to a missing key does nothing
+    return true
+  }
+  if sl < 0 {
     if tFree.length() > 0 {
       sl = tFree.pop().Value
       if tNext[sl] != -2 {
-        // still chained in its old table: unhook it and drop the stale key
+        // a dead slot still chained in the table it died in: unhook it and drop
+        // the stale map entry, because the map is what a read goes through
         let ot = tOwner[sl]
         tblUnlink(ot, sl)
         tmap.remove(tkey(ot, tKeyTag[sl], tKeyNum[sl], tKeyStr[sl]))
       }
-    } else {
+    } else if tHeap < MAX_HEAP {
       sl = tHeap
       tHeap = tHeap + 1
-    }
-    if sl >= MAX_HEAP {
-      vmFail("out of table memory")
+    } else {
+      // toInt for the same reason as the tables message: the folder turns the
+      // bare const into a float literal and the message reads "512.0"
+      let cap = toInt(MAX_HEAP + 0.0)
+      vmFail("out of table memory (" .. (cap | 0) .. " entries; "
+        .. "assign nil to a key to free one)")
       return false
     }
-    tvTag[sl] = vt
-    tvNum[sl] = vn
-    tvStr[sl] = vs
     tOwner[sl] = tid
     tKeyTag[sl] = kt
     tKeyNum[sl] = kn
     tKeyStr[sl] = ks
-    tblLink(tid, sl)
-    tmap.set(key, sl)
-    if kt == 6 && kint == tLen[tid] + 1 {
-      tLen[tid] = kint
-      if tblHas(tid, kint + 1) {
-        lenChase = true
-        lenTid = tid
+    if revived {
+      // sl == old is the easy case, the list handing back the very tombstone;
+      // otherwise the new entry takes the tombstone's place in the chain, so
+      // pairs() still walks the key where PUC walks it.  Unlink first and
+      // splice into the gap it leaves: splicing across a neighbour that IS the
+      // new entry would point a chain entry at itself.
+      if sl != old {
+        let pv = tPrev[old]
+        let nx = tNext[old]
+        tblUnlink(tid, old)
+        tblSplice(tid, sl, pv, nx)
       }
+    } else {
+      tblLink(tid, sl)
+    }
+    tmap.set(key, sl)
+  }
+  tvTag[sl] = vt
+  tvNum[sl] = vn
+  tvStr[sl] = vs
+  if kt == 6 && kint == tLen[tid] + 1 {
+    tLen[tid] = kint
+    if tblHas(tid, kint + 1) {
+      lenChase = true
+      lenTid = tid
     }
   }
   return true
@@ -7226,9 +7338,18 @@ mod patCheck(a: int, nargs: int, nm: string, off: int) -> bool {
 mod cellAt(fid: int, k: int) -> int {
   let s = slotBase() + 3 * fUpSlot[fid * MAX_UP + k]
   var cell = toInt(vaNum[s])
-  if cell <= 0 || vaNum[s + 1] != frameStamp() || vaNum[s + 2] != iterGen {
+  // The round stamp is checked ONLY for a local declared inside a loop body.  A
+  // cell lives as long as the block that declared its local, and a local declared
+  // outside every loop is still in scope after a body round ends -- so testing it
+  // here for that local replaced a live cell with a fresh one and every closure
+  // made in a later round saw the loop counter's value at ITS round instead of
+  // the shared one.
+  if cell <= 0 || vaNum[s + 1] != frameStamp()
+      || (fUpInLoop[fid * MAX_UP + k] && vaNum[s + 2] != iterGen) {
     if MAX_CELL <= uTop {
-      vmFail("too many upvalues")
+      // the cell pool itself, which the vararg stack's 256 words normally
+      // exhaust first -- so this is the rarer of the two and says so
+      vmFail("too many captured locals (the chip's cell pool is full)")
       return 0
     }
     cell = uTop
@@ -9208,7 +9329,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
         // scratch space a later frame reuses without adopting stale cells
         let nslots = 3 * fUpSlotN[fid] + 1
         if vaTop + nslots > MAX_VA {
-          vmFail("too many upvalues")
+          vmFail("too many captured locals live at once")
         } else if vaTop + nslots + nva > MAX_VA {
           vmFail("too many varargs")
         } else {
@@ -9873,8 +9994,13 @@ mod vmStep() {
     } else if op == 25 {
       if fUpN[b] == 0 {
         vSet(a, 4, b, "")
-      } else if 1000000 <= cloTop {
-        vmFail("too many closures top " .. (cloTop | 0) .. " base " .. (cloBase | 0) .. " fid " .. (b | 0) .. " up " .. (fUpN[b] | 0) .. " nf " .. (fStart.length() | 0))
+      } else if cloF.length() <= cloTop {
+        // The array's own length, which is MAX_FUNCS + MAX_CLO, rather than a
+        // literal: the literal was 1000000, so this never fired and 400 closures
+        // wrote cloF[352..427] and cloU past the end of both.  The five internal
+        // numbers it used to print were the debugging that found it, and a user
+        // cannot act on any of them.
+        vmFail("too many closures (" .. (cloF.length() | 0) .. " records)")
       } else {
         // A function with upvalues is a fresh closure every time it is
         // evaluated.  Only scalars are written here: this arm is inlined once
@@ -9942,7 +10068,10 @@ mod vmStep() {
       forDepth = forDepth - 1
     } else if op == 28 {
       if tCount >= MAX_TABLES {
-        vmFail("too many tables")
+        // toInt, because the constant folder turns `MAX_TABLES | 0` into the
+        // float literal 68 and the message then reads "68.0"
+        let cap = toInt(MAX_TABLES + 0.0)
+        vmFail("too many tables (" .. (cap | 0) .. ")")
       } else {
         tLen[tCount] = 0
         vSet(a, 5, tCount + 0.0, "")

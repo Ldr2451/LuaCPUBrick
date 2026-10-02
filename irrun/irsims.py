@@ -352,6 +352,8 @@ class Sim:
         self.vars = {}
         self.arrays = {}
         self.maps = {}
+        self.arr_sized = {}
+        self.arr_oob = []
         # the port values this Sim has already pushed.  Clearing it makes the
         # first tick after a reset push every port again: node props survive
         # reset(), so a shared Sim would otherwise carry the PREVIOUS case's
@@ -676,6 +678,13 @@ class Sim:
                 bad.append("table lengths out of range: %s" % over[:4])
         if var("cloK") is not None and var("cloK", 0) > var("cloN", 0):
             bad.append("cloK=%s past cloN=%s" % (var("cloK"), var("cloN")))
+        # Writes past the end of an array the chip itself sized.  The sim grows
+        # its list rather than refusing, which is what let a guard that was not a
+        # guard (cloTop against a literal 1000000, against 352 slots) read as
+        # working for every case in the suite.
+        if self.arr_oob:
+            bad.append("wrote past the end of %s"
+                       % ", ".join("%s" % w for w in self.arr_oob[:4]))
         if clean:
             for name, why in (("forDepth", "numeric loop"),
                               ("pcallDepth", "protected call"),
@@ -1556,6 +1565,12 @@ class Sim:
         if v is None:
             v = 0.0
         arr.append(v)
+        # a push IS the chip growing the array on purpose, so it moves the bound
+        # a later write is measured against.  fStart and its siblings are sized
+        # once at parse and then grown a function at a time this way, and a
+        # bound taken from the resize alone flagged every write in every case.
+        if aid in self.arr_sized:
+            self.arr_sized[aid] = len(arr)
         if aid == self._loglines_id:
             s = v if isinstance(v, str) else str(v)
             # The log is the last 32 *appends*, whatever is in them.  A print
@@ -1595,6 +1610,17 @@ class Sim:
         idx = _as_int(self._in_val(nid, "Index", 0))
         v = self._in_val(nid, "Value", None)
         if idx >= 0:
+            # Growing the list is what the host does not do: it writes past the
+            # end of the array.  The write is still carried out so the run keeps
+            # going and the damage is visible, but it is recorded, because a
+            # silently absorbed out-of-bounds write is how a guard that is not a
+            # guard reads as working.  cloF is sized MAX_FUNCS + MAX_CLO and the
+            # closure arm compared cloTop against a literal 1000000, so 400
+            # closures wrote past the end and every case stayed green.
+            sized = self.arr_sized.get(aid)
+            if sized is not None and idx >= sized and len(self.arr_oob) < 8:
+                self.arr_oob.append("%s[%d] (sized %d)"
+                                    % (self._arr_name(nid), idx, sized))
             while idx >= len(arr):
                 arr.append(0.0)
             if v is not None:
@@ -1679,6 +1705,9 @@ class Sim:
             arr.extend([fill] * (sz - len(arr)))
         else:
             del arr[sz:]
+        # The chip sizing an array is the only statement of how big it is, so
+        # that is the bound a later write is measured against (see _do_arr_set).
+        self.arr_sized[aid] = len(arr)
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
@@ -2108,6 +2137,13 @@ class Sim:
         for w in self.in_wires.get((nid, "ArrayVarRef"), []):
             return w.src_id
         return nid
+
+    def _arr_name(self, nid: int) -> str:
+        """A chip array's declared name, for a message a reader can act on."""
+        for name, other in self._arr_by_label.items():
+            if self._arr_id(other) == self._arr_id(nid):
+                return name
+        return "array#%d" % nid
 
     def _arr_list(self, aid: int) -> list:
         arr = self.arrays.get(aid)

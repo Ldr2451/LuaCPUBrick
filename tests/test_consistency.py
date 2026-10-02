@@ -113,7 +113,7 @@ for name, fid in m.BUILTINS:
 # Every limit is written in lua.ws as a const and mirrored in spec.py; the
 # mirror is only useful if it is checked, which is what this loop is for.
 for name in ["MAX_INSTR", "MAX_TOKENS", "MAX_REGS", "MAX_FUNCS", "MAX_GLOBALS",
-             "MAX_CALLS", "MAX_TABLES", "MAX_HEAP", "MAXVALS"]:
+             "MAX_CALLS", "MAX_TABLES", "MAX_HEAP", "MAX_CLO", "MAXVALS"]:
     m_ws = re.search(rf"const {name} = (\d+)", WS)
     check(f"limit-{name}-declared", m_ws is not None, "no const in lua.ws")
     if m_ws:

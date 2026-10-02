@@ -65,7 +65,26 @@ TICKS = 6000
 
 # Cases the tick sim cannot reach, or that fail for a reason still open.  Every
 # entry here says what was measured, so the next attempt starts from evidence.
-SKIP = {}
+SKIP = {
+    # Both are the cell arena, and neither is the loop-round rule the other
+    # clo-cell cases cover -- that one is fixed and green.  What is left is HOW a
+    # cell gets its first value.
+    "clo-cell-after-loop":
+        "chip '10 10', PUC '20 20'.  A write to the local compiled BEFORE the "
+        "capture goes to its register, and every prototype that captures the "
+        "local allocates its OWN slot, so a second closure seeds a fresh cell "
+        "from that now-stale register.  Same answer without the leading loop, so "
+        "the 'declared after a loop' reading is not what is happening; the "
+        "capture-before-write order gives '20 20' and passes.  Baseline chip "
+        "'10 20', so this predates the loop-round fix.  Fixing it means one slot "
+        "per local entry shared by every prototype that captures it.",
+    "clo-cell-two-loops":
+        "chip '5 6 6', PUC '6 6 6'.  An inner loop body's round-end bump is a "
+        "GLOBAL counter, so it invalidates the outer body's cell as well as its "
+        "own: the round stamp has to be per slot, not one counter.  Baseline "
+        "chip '3 5 6'.  Needs blkExit to emit one generation bump per captured "
+        "slot the block owns instead of a single GEN.",
+}
 
 # Extra VM ticks / timeouts for heavy but reachable cases.
 TICKS_OVERRIDES = {
@@ -164,6 +183,8 @@ def resolve_src(src, kw):
         return cases.build_stress()
     if src == "OVERCAP":
         return cases.build_overcap()
+    if src == "GLOBALSOVER":
+        return cases.build_globals_over()
     if src == "DEMO":
         for k, v in cases.DEMO_KW.items():
             kw.setdefault(k, v)
@@ -469,12 +490,17 @@ def compare(name, mode, kw, r, dt):
             return (name, False, "chip accepted, want reject", dt)
         # a limit the chip enforces and PUC does not (64 registers against 200)
         # lands here, so the line is worth asserting: the message is how a user
-        # finds the declaration that asked for too much
+        # finds the declaration that asked for too much.  `errText` is the other
+        # half of that -- WHICH limit -- because "rejected" alone says nothing
+        # about whether the reason is one a reader can act on.
         if "errline" in kw:
             want = "line %d:" % kw["errline"]
             if want not in c["progDebug"]:
                 return (name, False, "progDebug missing %r: got %r" % (
                     want, c["progDebug"]), dt)
+        if "errText" in kw and kw["errText"] not in c["progDebug"]:
+            return (name, False, "progDebug missing %r: got %r" % (
+                kw["errText"], c["progDebug"]), dt)
         return (name, True, "", dt)
     if mode == "runtimerr":
         exp_err = (exp.get("err") or "") if exp else ""

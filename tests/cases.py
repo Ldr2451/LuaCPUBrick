@@ -1497,6 +1497,79 @@ TESTS = [
     ("long-comment-nest", "--[==[nested]==]print(2)", None, "run"),
     ("stress-instr", "STRESS", None, "run"),
     ("over-cap", "OVERCAP", None, "reject"),
+    # One global PAST the limit, which is the other half of stress-instr: that
+    # case fills the table to 96 and reads every slot back, so it says the storage
+    # is big enough for the guard and nothing about what happens one past it.  The
+    # LINE is not asserted, because which declaration goes over depends on how
+    # many globals the chip pre-registers, which is its own number and not one
+    # derived from the spec here; the message is asserted, because that is the
+    # part a reader acts on.
+    ("stress-globals-over", "GLOBALSOVER", None, "reject",
+     {"errText": "too many globals"}),
+    # The closure arena's own limit.  A function with an upvalue is a fresh
+    # closure every time its expression is evaluated, and the arena is fixed, so a
+    # loop that builds them has to stop somewhere.  It stopped nowhere: the guard
+    # compared the cursor against a literal 1000000 while the array holds
+    # MAX_FUNCS + MAX_CLO, and 400 closures wrote past the end of cloF and cloU.
+    ("clo-arena-oom", "local x = 1 local t = {} local i = 1 "
+     "while i <= 400 do t[i] = function() return x end i = i + 1 end "
+     "print('unreachable')", None, "runtimerr",
+     {"ticks": 24000,
+      "expect": {"err": "too many closures (%d records)"
+                        % (spec.MAX_FUNCS + spec.MAX_CLO)}}),
+    # ... and the same loop under the limit, so the case above is a limit being
+    # reached rather than the arena simply being small.  The captured name is one
+    # the loop never writes: a captured local that the loop body DOES write is a
+    # separate, still-open divergence, and a case for the arena should not lean on
+    # it.
+    ("clo-arena-under", "local x = 7 local t = {} local i = 1 "
+     "while i <= 100 do t[i] = function() return x end i = i + 1 end "
+     "print(#t, t[1](), t[100]())", None, "run", {"ticks": 24000}),
+    # A cell belongs to the BLOCK that declared the local, so the loop round has
+    # to leave a cell alone when the captured local is declared OUTSIDE the loop:
+    # PUC closes a local's cell when its own block ends, and a local declared at
+    # the top of a function does not end until the function does.  The chip
+    # stamped every cell with one global loop counter, so exiting the loop body
+    # replaced the cell of a local that was still in scope -- t[1]() read 3 where
+    # PUC reads 5.
+    ("clo-cell-outer-while", "local i = 1 local t = {} "
+     "while i <= 3 do t[i] = function() return i end i = i + 1 end "
+     "print(t[1](), t[2](), t[3]())", None, "run"),
+    # The four loop forms, because each body block is entered from its own place
+    # in the parser and a flag missed on one of them shows up as exactly one of
+    # these four.  PUC closes the body's own local per round (2 3 4) and shares
+    # the outer one (5 for all three).
+    ("clo-cell-outer-for", "local i = 0 local t = {} "
+     "for k = 1, 3 do local j = k t[k] = function() return i + j end "
+     "i = i + 1 end print(t[1](), t[2](), t[3]())", None, "run"),
+    ("clo-cell-outer-genfor", "local n = 0 local t = {} "
+     "for k in ipairs({1, 2, 3}) do local j = k "
+     "t[k] = function() return n + j end n = n + 1 end "
+     "print(t[1](), t[2](), t[3]())", None, "run"),
+    ("clo-cell-outer-repeat", "local n = 0 local t = {} local k = 1 "
+     "repeat local j = k t[k] = function() return n + j end n = n + 1 "
+     "k = k + 1 until k > 3 print(t[1](), t[2](), t[3]())", None, "run"),
+    # ... and a block that is NOT a loop body, nested inside one.  The cell has
+    # to follow the LOOP's round, not the inner block's, because that block is
+    # re-entered once per round: j is 2, 3, 4 and not all three 4.
+    ("clo-cell-outer-if", "local i = 1 local t = {} "
+     "while i <= 3 do if i > 0 then local j = i t[i] = function() return j end "
+     "end i = i + 1 end print(t[1](), t[2](), t[3]())", None, "run"),
+    # A local declared AFTER a loop, captured inside a second one.  The count of
+    # enclosing loop bodies has to be back to zero by then, and the only way to
+    # see that is to capture it: x is written by the second loop, so a cell that
+    # the loop wrongly replaced answers 10 and one it correctly keeps answers 20.
+    ("clo-cell-after-loop", "local t = {} local i = 1 "
+     "while i <= 2 do local q = function() return 1 end i = i + 1 end "
+     "local x = 0 local j = 1 "
+     "while j <= 2 do x = x + 10 t[j] = function() return x end j = j + 1 end "
+     "print(t[1](), t[2]())", None, "run"),
+    # Two loops deep: the outer local outlives both, the inner body's does not.
+    ("clo-cell-two-loops", "local n = 0 local t = {} local i = 1 "
+     "while i <= 2 do local j = i "
+     "while j <= 2 do t[n + 1] = function() return n + j end n = n + 1 "
+     "j = j + 1 end i = i + 1 end "
+     "print(t[1](), t[2](), t[3]())", None, "run"),
     # error-class tests
     # LOCKSTEP.  Two equal chips, one program, the same start: the output has to be
     # the same AT EVERY TICK, not merely the same at the end.  The chip is a
@@ -1519,9 +1592,14 @@ TESTS = [
     ("lockstep-closures", "local function c() local n = 0 return function() "
      "n = n + 1 return n end end local f = c() for i = 1, 10 do f() end "
      "print(f())", None, "lockstep", {"expect": {"log": "11\n"}}),
+    # 21 is PUC's answer and was checked against the oracle, not copied off the
+    # chip: this mode compares two chips with each other, so a hand-written `want`
+    # can hold the chip's own wrong answer and stay green.  This one did -- it said
+    # 6, because the loop-body cell bug threw away the accumulation, and it only
+    # showed up when the closure fix made the chip right.
     ("lockstep-pcall", "local s = 0 for i = 1, 6 do local ok, v = "
      "pcall(function() s = s + i return s end) end print(s)", None, "lockstep",
-     {"expect": {"log": "6\n"}}),
+     {"expect": {"log": "21\n"}}),
     ("lockstep-string", "print(string.format('%d/%s', 42, string.rep('ab', 3)))",
      None, "lockstep", {"expect": {"log": "42/ababab\n"}}),
     # The numeric inputs live in the tuple's THIRD slot, which is where the suite
@@ -1750,9 +1828,76 @@ TESTS = [
     ("tab-len-nontable", "print(#5)", None, "haltfail"),
     ("tab-toomany", "t = {} i = 0 while i < 65 do t[#t+1] = {} "
      "i = i+1 end", None, "runtimerr",
-     {"expect": {"err": "too many tables"}}),
+     {"expect": {"err": "too many tables (%d)" % spec.MAX_TABLES}}),
     ("tab-oom", "t = {} i = 0 while i < 70 do t[i] = {} i = i+1 end", None,
      "runtimerr", {"expect": {"err": "too many tables"}}),
+    # The table arena is fixed (512 entries, `MAX_HEAP`) and there is no
+    # collector, so the ONLY thing that keeps a program inside it is the slot
+    # free list: `t[k] = nil` hands the entry back and the next new key takes
+    # it.  That is the whole recycling story, and it is invisible until a
+    # program allocates more entries IN TOTAL than the arena holds -- which is
+    # the shape these cases are for.  60 rounds x 8 keys is 480 stores with
+    # never more than 8 live, so without the free list this is an OOM at 512;
+    # with it the values still have to be right, which is the other half (a
+    # slot handed back must come back holding the new value).
+    ("tab-recycle", "local t = {} for round = 1, 60 do for i = 1, 8 do "
+     "t[i] = round * 8 + i end for i = 1, 8 do t[i] = nil end end "
+     "for i = 1, 8 do t[i] = i end "
+     "local s = 0 for i = 1, 8 do s = s + t[i] end print(s, #t)", None,
+     "run", {"ticks": 24000}),
+    # Same recycling, over the arena's whole size and with the entries coming
+    # from TWO tables: a slot freed by one table and taken by another is where
+    # a stale owner would show up as a key that stops existing.
+    ("tab-recycle-tables", "local a = {} local b = {} for round = 1, 40 do "
+     "for i = 1, 6 do a[i] = round * 6 + i end for i = 1, 6 do b[i] = i end "
+     "for i = 1, 6 do a[i] = nil end for i = 1, 6 do b[i] = nil end end "
+     "for i = 1, 6 do a[i] = -i end for i = 1, 6 do b[i] = i * 2 end "
+     "print(a[1], a[6], b[1], b[6])", None, "run", {"ticks": 24000}),
+    # A DELETED key that is then re-assigned revives its own slot, and that
+    # slot is still on the free list -- so the next new key, in this table or
+    # another one, takes it and the revived key stops existing.  No error, no
+    # wrong value anywhere: the key just reads nil, which is why the value
+    # assertions below are the whole test.  Three shapes, because the rule is
+    # "a slot on the free list has one owner" and each shape broke a different
+    # part of it: a new key in the same table, a new key in another table, and
+    # an integer key (which also carries the `#` border).
+    ("tab-revive-steal", "local t = {} t.a = 1 t.a = nil t.a = 2 t.b = 3 "
+     "print(t.a, t.b)", None, "run"),
+    ("tab-revive-steal-other", "local t = {} t.a = 1 t.a = nil t.a = 2 "
+     "local u = {} u.b = 3 print(t.a, u.b)", None, "run"),
+    ("tab-revive-steal-int", "local t = {} t[1] = 'a' t[1] = nil t[1] = 'b' "
+     "local u = {} u.x = 1 print(t[1], #t, u.x)", None, "run"),
+    # The same steal in a loop, which is the shape a real program has: the key
+    # that disappears is one of many, so nothing in the output points at it.
+    ("tab-revive-steal-loop", "local t = {} for i = 1, 6 do t[i] = i end "
+     "t[3] = nil t[3] = 30 for i = 10, 15 do t[i] = i end "
+     "local s = 0 for i = 1, 6 do s = s + (t[i] or 0) end "
+     "print(s, #t, t[3])", None, "run"),
+    # The 512-entry arena's own limit, which `tab-oom` above does NOT reach: it
+    # runs out of TABLES (68) long before entries (512), so the entry path had
+    # no case at all.  The message is the contract, and `runtimerr` also reads
+    # the arena counters through the suite's structural invariants -- an OOM
+    # that walked tHeap past its own storage would fail there rather than here.
+    ("tab-entries-oom", "local t = {} for i = 1, 600 do t[i] = i end "
+     "print('unreachable')", None, "runtimerr",
+     {"ticks": 24000,
+      "expect": {"err": "out of table memory (%d entries; assign nil to a key "
+                        "to free one)" % spec.MAX_HEAP}}),
+    # An OOM a program can catch, and recover from, because the arena is a free
+    # list rather than a wall: the failure goes to pcall as a value, the deletes
+    # hand the entries back, and the table then holds what it could not a moment
+    # earlier.  400 and not 520 because the arena itself is 512 entries and four
+    # of them belong to the library tables -- a case asking for more than fits
+    # would be asking for an OOM, not for recycling.  The failure itself is
+    # deliberately NOT printed: PUC has no 512-entry limit, so a line saying
+    # whether it happened could not be compared against the oracle and this
+    # would stop being a differential case.  `tab-entries-oom` above is where the
+    # message is the contract.
+    ("tab-entries-recover", "local t = {} pcall(function() "
+     "for i = 1, 520 do t[i] = i end end) "
+     "for i = 1, 520 do t[i] = nil end "
+     "for i = 1, 400 do t[i] = i * 2 end "
+     "print(#t, t[1], t[400])", None, "run", {"ticks": 60000}),
     ("tab-bubble", "t = {5, 3, 8, 1, 9, 2, 7, 4} i = 1 "
      "while i <= 8 do j = 1 "
      "while j <= 8 - i do "
@@ -1908,6 +2053,21 @@ TESTS = [
      "run"),
     ("len-hole-filllast",
      "t = {1,2,3} t[3] = nil t[3] = 3 print(#t)", None, "run"),
+    # Emptying a table and refilling it shorter, which is the shape every
+    # recycling loop has.  A nil assignment leaves the key in the map as a
+    # tombstone -- PUC does the same, and next(t, k) depends on it -- so the
+    # border chase has to ask whether the entry holds a VALUE, not whether the
+    # key is in the map.  Answering the map question walked the chase over the
+    # tombstones and handed back the length the table had before it was emptied.
+    ("len-after-empty", "local t = {} for i = 1, 60 do t[i] = i end "
+     "for i = 1, 70 do t[i] = nil end for i = 1, 40 do t[i] = i * 2 end "
+     "print(#t, t[1], t[40], t[41])", None, "run"),
+    # The same, with the refill going PAST the old length, so the chase has to
+    # stop somewhere other than where it started: the answer is the new border,
+    # not the old one and not the high-water mark.
+    ("len-after-empty-grow", "local t = {} for i = 1, 20 do t[i] = i end "
+     "for i = 1, 30 do t[i] = nil end for i = 1, 25 do t[i] = i end "
+     "print(#t, t[25], t[26])", None, "run"),
     # A fill that BRIDGES a gap does not extend the border, because the chase
     # machine that would never fires.  Two cases, and the second proves it is not
     # a timing question: five ticks of slack change nothing.
@@ -2078,6 +2238,20 @@ def build_stress():
     for k in range(n):
         lines.append(f"v{k} = {k}*2+1")
     lines.append("print(" + ", ".join(f"v{k}" for k in range(0, n, 10)) + ")")
+    return "\n".join(lines) + "\n"
+
+
+def build_globals_over():
+    """One global past MAX_GLOBALS, as build_stress is exactly up to it.
+
+    Derived from the spec the same way, so it is one slot over rather than a
+    number typed twice.  The declaration that goes over is the FIRST one, so the
+    case can name its line: what the chip has to say is which declaration asked
+    for too much.
+    """
+    n = spec.MAX_GLOBALS - len(spec.GSLOT_ORDER) + 1
+    lines = [f"w{k} = {k}" for k in range(n)]
+    lines.append("print('unreachable')")
     return "\n".join(lines) + "\n"
 
 
