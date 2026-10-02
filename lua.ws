@@ -9689,10 +9689,12 @@ mod vmStep() {
     let b = bpb[vmPc]
     let c = bpc[vmPc]
     var advanced = false
-    if op == 0 {
-      vmHalted = true
-      advanced = true
-    } else if op == 1 {
+    // HALT is the LAST arm, not the first.  docs/vm-isa records it as "handled
+    // defensively; the compiler normally ends with RETURN0", so it runs at most
+    // once per program -- while in first position its failed comparison is paid
+    // by every instruction this step dispatches.  vmStepFast says the same about
+    // why FORLOOP is here.
+    if op == 1 {
       vSet(a, 0, 0.0, "")
     } else if op == 2 {
       if c == 1 {
@@ -9901,7 +9903,7 @@ mod vmStep() {
         vmPc = a
         advanced = true
       }
-    } else if op == 23 || op == 41 {
+    } else if op == 23 {
       if vTag(a) != 4 {
         vmFail("attempt to call")
       } else {
@@ -9911,8 +9913,14 @@ mod vmStep() {
         // time); 2 = I return all of my results, not just one.  Both can be
         // set (3) when a call is both the tail of an enclosing call and itself
         // expanded into a target list.
+        //
+        // The arm used to be `op == 23 || op == 41` and mtSelf also tested
+        // `op == 41`, for CALLM.  It is still an opcode in docs/vm-isa and still
+        // nothing emits it -- there is no bEmit(41, ...) anywhere in the
+        // compiler -- so both were a comparison paid by every Lua call in the
+        // hottest arm in the chip.
         let mtArg = if c == 1 || c == 3 then true else false
-        let mtSelf = if c == 2 || c == 3 || op == 41 then true else false
+        let mtSelf = if c == 2 || c == 3 then true else false
         // a tail argument's call already ran and reported how many values it
         // produced; the enclosing call counts those in place of its last arg
         let tailN = if mtArg then (if 0 <= retCountV then retCountV else 0) else 0
@@ -10416,6 +10424,9 @@ mod vmStep() {
       let rt = vTag(c)
       bitFail(lt, vNum(b), rt, vNum(c))
       vSetInt(a, floor(vNum(b) / (2.0 ** vNum(c))))
+    } else if op == 0 {
+      vmHalted = true
+      advanced = true
     }
     if !advanced && !vmHalted {
       vmPc = vmPc + 1
@@ -10451,10 +10462,13 @@ mod vmStepFast() {
   let b = bpb[vmPc]
   let c = bpc[vmPc]
   var advanced = false
-  if op == 0 {
-    vmHalted = true
-    advanced = true
-  } else if op == 1 {
+  // HALT is the LAST arm, not the first, and it is worth saying why: docs/vm-isa
+  // records it as "handled defensively; the compiler normally ends with RETURN0",
+  // so it runs at most once per program -- while in first position its failed
+  // comparison is paid by EVERY instruction the step ever dispatches.  A chain
+  // arm costs a comparison per instruction for every instruction above it, which
+  // is why FORLOOP was moved into this mod for position alone.
+  if op == 1 {
     vSet(a, 0, 0.0, "")
   } else if op == 2 {
     if c == 1 {
@@ -10661,8 +10675,20 @@ mod vmStepFast() {
     advanced = true
   } else if op == 50 {
     forDepth = forDepth - 1
+  } else if op == 0 {
+    vmHalted = true
+    advanced = true
   }
-  if (op <= 15 || (17 <= op && op <= 22) || op == 24 || op == 33 || op == 50)
+  // The same set as `op <= 15 || (17 <= op && op <= 22) || op == 24 || op == 33
+  // || op == 50`, written so it costs five comparisons instead of six: 0..15 and
+  // 17..22 together are exactly "at most 22 and not 16".  A comparison is one
+  // gate and this runs on every fast dispatch, four of them to a tick, so one
+  // fewer term is four fewer gates a tick.
+  //
+  // The parentheses round the WHOLE set, not just its first term: `||` binds
+  // looser than `&&`, so an unbracketed tail would bind only the last term and
+  // leave `!advanced` guarding nothing but it.
+  if ((op <= 22 && op != 16) || op == 24 || op == 33 || op == 50)
     && !advanced && !vmHalted {
     vmPc = vmPc + 1
     if vmPc >= bop.length() {
