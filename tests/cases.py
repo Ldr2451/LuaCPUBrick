@@ -1564,6 +1564,21 @@ TESTS = [
      "local x = 0 local j = 1 "
      "while j <= 2 do x = x + 10 t[j] = function() return x end j = j + 1 end "
      "print(t[1](), t[2]())", None, "run"),
+    # The SAME loop body with the store and the closure swapped.  Two statements,
+    # same work, same answers expected -- and the pair is the rule: a store
+    # compiled before the capture is noticed is a plain register write, and one
+    # compiled after is a SETUP, so the order used to decide whether the closures
+    # saw the loop's own updates.  Only the second of these passed before the fix.
+    ("clo-cell-before-loop", "local t = {} local x = 0 local j = 1 "
+     "while j <= 2 do t[j] = function() return x end x = x + 10 j = j + 1 end "
+     "print(t[1](), t[2]())", None, "run"),
+    # ... and the write coming from a NESTED function, which reaches the cell by a
+    # path that updates no register at all.  Copying the register in on every
+    # closure creation would undo those writes, which is how this one caught that
+    # half-fix; the cell has to know it was written.
+    ("clo-cell-nested-write", "local s = 0 local i = 1 "
+     "while i <= 4 do local f = function() s = s + i return s end f() "
+     "i = i + 1 end print(s)", None, "run"),
     # Two loops deep: the outer local outlives both, the inner body's does not.
     ("clo-cell-two-loops", "local n = 0 local t = {} local i = 1 "
      "while i <= 2 do local j = i "

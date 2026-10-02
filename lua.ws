@@ -793,6 +793,14 @@ var cloU: int[]
 var uTag: int[]
 var uNum: float[]
 var uStr: string[]
+// Has anything written this cell since cellAt last seeded it?  The register and
+// the cell are two homes for one local, and which one is current depends on WHEN
+// the capture was noticed: a store compiled before it is a plain register write,
+// so the register is ahead and has to be copied in; a store through SETUP, from
+// either the declaring frame or a nested one, has already put the value in the
+// cell, and for a nested one the register is not updated at all -- so copying the
+// register in then would undo it.  The flag is what tells the two apart.
+var uDirty: bool[]
 var uTop: int = 1
 // A frame's slot table -- three words per captured local: the cell, the frame
 // that made it, the loop-body generation it was made in -- sits in the vararg
@@ -2147,6 +2155,8 @@ mod vmReset() {  tmap.clear()
   uNum.resize(MAX_CELL, 0.0)
   uStr.clear()
   uStr.resize(MAX_CELL, "")
+  uDirty.clear()
+  uDirty.resize(MAX_CELL, false)
   uTop = 1
   frameSeq = 0
   upGen.clear()
@@ -7390,24 +7400,33 @@ mod cellAt(fid: int, k: int) -> int {
     vaNum[s] = cell
     vaNum[s + 1] = frameStamp()
     vaNum[s + 2] = if 0 < fd then upGen[fd] else 0.0
-    // Seeded from the register ONCE, and deliberately not on every closure: a
-    // nested function's write reaches this cell through SETUP's c == 1 path, which
-    // writes the cell and no register of the frame that owns it, so from that
-    // moment the declaring frame's register is stale and re-copying it in undoes
-    // the write.  Copying every time was measured and the suite caught it --
-    // `while i <= 4 do local f = function() s = s + i end f() end` answered 4
-    // where PUC answers 10, which is lockstep-pcall's shape.
-    //
-    // The price is the window before the capture is noticed: a store compiled
-    // BEFORE it is a plain register write, so a loop body that writes a local and
-    // only then makes a closure over it leaves the cell at the first round's
-    // value.  clo-cell-after-loop is the case and its SKIP entry says what closing
-    // that window would take.
+  }
+  // Copy the register in unless someone has written the cell since the last time
+  // we looked.  That is the whole rule, and both halves were measured rather than
+  // argued:
+  //
+  //  * Always copying closes the pre-capture window: a loop body that writes the
+  //    local and only THEN makes a closure over it wrote the register in rounds
+  //    where the cell already existed from round one, and every closure read the
+  //    first round's value (10 10 where PUC says 20 20).
+  //  * Never copying loses that same window, and the window is not hypothetical:
+  //    it is decided by the SOURCE ORDER of the store and the closure, so
+  //    swapping the two statements is the difference between 10 10 and 20 20 on the
+  //    same program doing the same work.
+  //
+  // Copying unconditionally instead breaks the other shape: a nested function's
+  // write reaches this cell through SETUP's c == 1 path, which updates no
+  // register of the frame that owns the cell, so the register is stale from that
+  // moment and an unconditional copy undoes it -- `while i <= 4 do local f =
+  // function() s = s + i end f() end` answered 4 where PUC answers 10, which is
+  // lockstep-pcall's shape and the suite caught.
+  if !uDirty[cell] {
     let reg = fUpSrc[fid * MAX_UP + k]
     uTag[cell] = vtag[vmBase + reg]
     uNum[cell] = vnum[vmBase + reg]
     uStr[cell] = vstr[vmBase + reg]
   }
+  uDirty[cell] = false
   return cell
 }
 
@@ -10081,7 +10100,10 @@ mod vmStep() {
     } else if op == 47 {
       // SETUP a=source, b=descriptor, c=kind.  The local's own register is
       // written as well as the cell, because the register is its home and a
-      // closure made later copies the register in (see cellAt).
+      // closure made later copies the register in when the cell has not been
+      // written since (see cellAt).  Both paths set uDirty: the c == 0 one has
+      // the register current too, but marking it is harmless and it keeps the
+      // rule to one statement instead of two that have to agree.
       let fid = curFid()
       if c == 1 {
         let cell = cloU[curClo() * MAX_UP + b]
@@ -10089,6 +10111,7 @@ mod vmStep() {
           uTag[cell] = vTag(a)
           uNum[cell] = vNum(a)
           uStr[cell] = vStr(a)
+          uDirty[cell] = true
         }
       } else {
         let cell = cellRead(fid, b, false)
@@ -10096,6 +10119,7 @@ mod vmStep() {
           uTag[cell] = vTag(a)
           uNum[cell] = vNum(a)
           uStr[cell] = vStr(a)
+          uDirty[cell] = true
         }
         let abs = vmBase + fUpSrc[fid * MAX_UP + b]
         vtag[abs] = vTag(a)

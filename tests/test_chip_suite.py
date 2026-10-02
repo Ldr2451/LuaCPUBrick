@@ -65,34 +65,7 @@ TICKS = 6000
 
 # Cases the tick sim cannot reach, or that fail for a reason still open.  Every
 # entry here says what was measured, so the next attempt starts from evidence.
-SKIP = {
-    # The window before a capture is noticed: a store to the local compiled
-    # BEFORE the capture is a plain register write, so it never reaches the cell,
-    # and the cell keeps the value from the round that created it.  `while j <= 2
-    # do x = x + 10 t[j] = function() return x end j = j + 1 end` reads 10 10
-    # where PUC reads 20 20.  Baseline chip '10 20', so it predates the loop-round
-    # fix; it was '10 20' there too.
-    #
-    # Neither half of the obvious fix works, and both were measured.  Copying the
-    # register into the cell at EVERY closure creation closes this case and breaks
-    # the other shape: a nested function's write reaches the cell through SETUP's
-    # c == 1 path, which writes the cell and no register of the frame that owns
-    # it, so the register is stale from that moment -- re-copying then undid the
-    # write, and `while i <= 4 do local f = function() s = s + i end f() end` read
-    # 4 where PUC reads 10 (that is lockstep-pcall's shape, and the suite caught
-    # it).  Seeding only at creation leaves this case wrong.
-    #
-    # So the register and the cell are two sources of truth for the length of that
-    # window, and closing it properly means only one: either the cell exists from
-    # the local's declaration, which costs a cell per captured-by-anything local
-    # and a read and a write per access, or the compiler knows which locals are
-    # captured BEFORE it compiles their initialisers, which is a second pass over
-    # each function body.  Neither is a change to make inside a bug fix.
-    "clo-cell-after-loop":
-        "chip '10 10', PUC '20 20'.  A write to the local compiled BEFORE its "
-        "capture goes to the register and never reaches the cell.  See the long "
-        "note above this dict for the two half-fixes and why each is wrong.",
-}
+SKIP = {}
 
 # Extra VM ticks / timeouts for heavy but reachable cases.
 TICKS_OVERRIDES = {
