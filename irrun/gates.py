@@ -244,6 +244,13 @@ def all_gate_classes() -> set:
         "BrickComponentType_Clock",
         "BrickComponentType_Internal_MicrochipInput",
         "BrickComponentType_Internal_MicrochipOutput",
+        # A chip call site. Pure structure: it has no ports and no wires, and the
+        # call's arguments, its exec trigger and its result all travel on the
+        # body's MicrochipInput/MicrochipOutput pins instead (cross-module wires
+        # that live in the caller's wire list). So there is nothing to execute
+        # here -- listing it says "recognised, does nothing" rather than leaving
+        # it unhandled and silently dropping every program that uses a chip.
+        "BrickComponentType_Internal_Microchip",
         "BrickComponentType_Internal_ReadBrickGrid",
         LITERAL,
     }

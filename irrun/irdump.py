@@ -184,32 +184,80 @@ def _parse_ports(s):
 
 
 def parse_dump(text):
-    nodes, wires, nchips = {}, [], 0
+    """Every module merged into ONE flat graph: `(nodes, wires, nchips)`.
+
+    A chip body is not a separate graph to execute. The root module's wire list
+    already contains the cross-boundary wires -- the call site's arguments landing
+    on the body's `MicrochipInput` pins, an exec gate driving `_exec_in`, and the
+    body's `_exec_out` rejoining the caller's chain via `MicrochipOutput` -- and
+    node ids are globally unique across the whole tree. So a simulator needs every
+    module's nodes in one id space and nothing else changes.
+
+    Merging is also why this stays backward compatible: a source with no `chip`
+    has exactly one module, so the flat graph is what it always was.
+    """
+    mods = parse_modules(text)
+    nodes, wires = {}, []
+    for m in mods:
+        nodes.update(m["nodes"])
+        wires.extend(m["wires"])
+    return nodes, wires, mods[0]["nchips"]
+
+
+def parse_modules(text):
+    """Every module in the dump, root first, chips after.
+
+    A `chip` body is a graph in its own right: its own nodes, its own wires, and
+    `MicrochipInput`/`MicrochipOutput` pins carrying values across the boundary.
+    An external simulator has to run it as a sub-graph, so the dump groups it
+    with a `G[...]` header naming the chip node that owns it (`parent=`).
+
+    Node ids are globally unique across the tree, so a flat id space is safe and
+    one `Sim` can hold every module at once.
+    """
+    mods = []
     for line in text.splitlines():
         line = line.strip()
-        if line.startswith("N["):
+        if line.startswith("G["):
+            mods.append({"name": None, "parent": None, "nodes": {},
+                         "wires": [], "nchips": 0})
+            # The header is space-separated (unlike `props={...}`, which is
+            # comma-separated), so split on whitespace -- `_split_top` would
+            # swallow the whole line as one field.
+            for part in line[2:-1].split():
+                k, v = part.split("=", 1)
+                if k == "module":
+                    mods[-1]["name"] = _parse_lit(v)[1]
+                elif k == "parent":
+                    mods[-1]["parent"] = (None if v == "-"
+                                          else int(v))
+        elif line.startswith("N["):
             m = re.match(r"N\[(\d+) kind=(\w+) class=(\S+) props=\{(.*)\} "
                          r"in=\[(.*)\] out=\[(.*)\]\]$", line)
+            if not m:
+                raise RuntimeError("unparsed N line: %s" % line[:120])
             nid, kind, cls = int(m.group(1)), m.group(2), m.group(3)
             props = {}
             for p in _split_top(m.group(4)):
                 k, v = p.split("=", 1)
                 props[k.strip()] = _parse_lit(v)
-            nodes[nid] = Node(nid, kind, cls,
-                              props,
-                              _parse_ports(m.group(5)),
-                              _parse_ports(m.group(6)))
+            mods[-1]["nodes"][nid] = Node(nid, kind, cls,
+                                          props,
+                                          _parse_ports(m.group(5)),
+                                          _parse_ports(m.group(6)))
         elif line.startswith("W["):
             m = re.match(r"W\[(\d+):(\S+) -> (\d+):(\S+)\]$", line)
-            wires.append((int(m.group(1)), m.group(2),
-                          int(m.group(3)), m.group(4)))
+            mods[-1]["wires"].append((int(m.group(1)), m.group(2),
+                                      int(m.group(3)), m.group(4)))
         elif line.startswith("M["):
-            nchips = int(re.search(r"chips=(\d+)", line).group(1))
-    return nodes, wires, nchips
+            mods[-1]["nchips"] = int(re.search(r"chips=(\d+)", line).group(1))
+    if not mods:
+        raise RuntimeError("no G[ module headers; is this --dump-ir-full?")
+    return mods
 
 
-def dump_source(path, brz_out=None):
-    """Compile path with --dump-ir-full; return (nodes, wires, nchips).
+def _compile_dump(path, brz_out=None):
+    """Run the compiler with --dump-ir-full; return the dump text.
 
     Always directs the .brz at brz_out (default: alongside a scratch
     copy) so the real artifact is never touched as a side effect.
@@ -239,4 +287,22 @@ def dump_source(path, brz_out=None):
     if "N[" not in p.stderr:
         raise RuntimeError(f"no IR dump; compiler said: "
                            f"{p.stdout[-500:]} {p.stderr[-2000:]}")
-    return parse_dump(p.stderr)
+    return p.stderr
+
+
+def dump_source(path, brz_out=None):
+    """Compile path with --dump-ir-full; return (nodes, wires, nchips).
+
+    Root module only -- a `chip` body is a separate graph, and a caller that wants
+    to execute one needs `dump_source_modules`.
+    """
+    return parse_dump(_compile_dump(path, brz_out))
+
+
+def dump_source_modules(path, brz_out=None):
+    """Compile path and return every module: root first, then chip bodies.
+
+    Chip bodies carry their own nodes and wires and are addressed by the chip
+    node that owns them, so a simulator can run one per instance.
+    """
+    return parse_modules(_compile_dump(path, brz_out))

@@ -792,10 +792,22 @@ class Sim:
             # time.  Consumers that write use _arr_list() instead.
             if sid in self.arrays:
                 return self.arrays[sid]
+            # Materialise on reference, not only on execution. A top-level array
+            # is normally created when its pseudo-array node runs, but a chip body
+            # reaches it through a boundary pin instead, so nothing runs it and
+            # every read fell back to a default.
+            if "WireGraphPseudo_ArrayVar" in self.nodes[sid].cls:
+                self._do_literal(sid)
+                if sid in self.arrays:
+                    return self.arrays[sid]
             return self._default_for(self.nodes[sid], sport)
         if kind == 2:
             if sid in self.maps:
                 return self.maps[sid]
+            if "WireGraphPseudo_MapVar" in self.nodes[sid].cls:
+                self._do_literal(sid)
+                if sid in self.maps:
+                    return self.maps[sid]
             return self._default_for(self.nodes[sid], sport)
         if kind == 3:
             return self.vars.get(sid, self._default_for(self.nodes[sid], sport))
@@ -823,6 +835,25 @@ class Sim:
                     label = _extract(src.props.get('PortLabel', ('raw', '')))
                     if isinstance(label, str) and label in self.inputs:
                         return self.inputs[label]
+            elif "Internal_Microchip" in src.cls:
+                # A chip boundary pin is a WIRE, not a value: read through it to
+                # whatever drove it. The pin deliberately publishes nothing (see
+                # the handler), so without this every argument came back None --
+                # the arguments come from expression gates (`Expr_Select`,
+                # `Expr_BitwiseOR`) whose values this same function pulls on
+                # demand.
+                #
+                # EXCEPT on an Exec pin, and that exception is load-bearing.
+                # Reading through one pulls the body's last gate *speculatively*,
+                # so `_exec_out` looks satisfied and the caller's chain resumes
+                # before the body has run: the table was fully built (`tLen[0]=3`,
+                # three entries in `tmap`) and `#t` still printed 0, because the
+                # read happened first. Exec must arrive by execution, never by
+                # evaluation.
+                if not self._port_is_exec(src, "RER_Input"):
+                    through = self._in_val(w.src_id, "RER_Input")
+                    if through is not None:
+                        return through
         if not tail:
             pv = self.nodes[nid].props.get(port)
             if pv:
@@ -1193,6 +1224,25 @@ class Sim:
         elif "Internal_ReadBrickGrid" in cls:
             self._do_grid(nid, nq)
         elif "Internal_MicrochipInput" in cls:
+            # TWO different jobs share this gate class, and conflating them is
+            # why a `chip` hung. A ROOT module port is seeded from `self.inputs`
+            # and has no incoming wire; a nested chip's boundary pin is fed by the
+            # caller's wires and labelled with the parameter name (`tid`, `tmap`,
+            # ...), which is not in `self.inputs`. Decide by wiring, not label.
+            if self.in_wires.get((nid, "RER_Input")):
+                # Publish NOTHING. A boundary pin is a wire, and caching what it
+                # saw is what broke this: the pin is reached early in the caller's
+                # exec chain, before the argument expression has run, so it
+                # published the DEFAULT it was handed -- 0.0, not None -- and
+                # every later read trusted that 0. `tmap` came back holding
+                # 0, 0, 0 for `{1,2,3}`. Reads go through `_in_val` instead, which
+                # gets the value when the body asks for it, by which point the
+                # caller has produced it.
+                #
+                # The edge is still pushed, because that is what fires the body.
+                for w in self.out_wires.get((nid, "RER_Output"), []):
+                    nq.add((w.dst_id, w.dst_port))
+                return
             # `host_baselines` models the host observed in game: the port's value
             # is there for a reader to find, and NOTHING downstream is told about
             # it, because the host established the baseline before the chip could
@@ -1213,7 +1263,13 @@ class Sim:
                 for w in self.out_wires.get((nid, "RER_Output"), []):
                     nq.add((w.dst_id, w.dst_port))
         elif "Internal_MicrochipOutput" in cls:
-            pass
+            # The body's way back out: push RER_Input to RER_Output so the
+            # caller's chain continues. Left as a bare `pass`, the body ran to
+            # completion and stranded the caller, which re-entered the chip once
+            # a tick and never printed anything.
+            if self.in_wires.get((nid, "RER_Input")):
+                for w in self.out_wires.get((nid, "RER_Output"), []):
+                    nq.add((w.dst_id, w.dst_port))
         else:
             # Unknown gate: never silent — a skipped gate corrupts the run.
             if cls not in self._unimpl_warned:
@@ -2133,9 +2189,44 @@ class Sim:
         props = self.nodes[nid].props.get("Value", ("raw", "false"))
         return _extract(props) if isinstance(props, tuple) else props
 
+    def _port_is_exec(self, node, port: str) -> bool:
+        """True when `port` on `node` is Exec-typed per the dump's port spec."""
+        for pname, ptype in node.pin:
+            if pname == port:
+                return ptype == "Exec"
+        for pname, ptype in node.pout:
+            if pname == port:
+                return ptype == "Exec"
+        return False
+
+    def _ref_node(self, nid: int) -> int:
+        """Follow a chip boundary pin through to the node it refers to.
+
+        A chip body reaches a top-level array or map through a `Ref(...)`
+        MicrochipInput pin, so a body's ArrayVarRef / MapVarRef has the PIN as its
+        immediate source, not the array. These return an ID and `self.arrays` /
+        `self.maps` are keyed by ID, so using the pin's ID silently handed the body
+        a private array: it wrote `maps[79160]` while the caller wrote `maps[215]`
+        and nothing was ever shared -- the body reported success and `tmap` stayed
+        empty. Fixing `_in_val` is not enough for this, because it returns the
+        object and these return the key.
+
+        Bounded, because a pin's RER_Input is itself fed by a wire and a malformed
+        dump could in principle make two pins feed each other.
+        """
+        for _ in range(8):
+            nd = self.nodes.get(nid)
+            if nd is None or "Internal_Microchip" not in nd.cls:
+                return nid
+            ins = self.in_wires.get((nid, "RER_Input"))
+            if not ins:
+                return nid
+            nid = ins[0].src_id
+        return nid
+
     def _arr_id(self, nid: int) -> int:
         for w in self.in_wires.get((nid, "ArrayVarRef"), []):
-            return w.src_id
+            return self._ref_node(w.src_id)
         return nid
 
     def _arr_name(self, nid: int) -> str:
@@ -2148,6 +2239,12 @@ class Sim:
     def _arr_list(self, aid: int) -> list:
         arr = self.arrays.get(aid)
         if arr is None:
+            # A pin is not an array: hand back the referent's own list, so the
+            # body and the caller share one object instead of each getting a
+            # private copy created here.
+            target = self._ref_node(aid)
+            if target != aid:
+                return self._arr_list(target)
             nd = self.nodes.get(aid)
             if nd is not None and "Internal_MicrochipInput" in nd.cls:
                 label = _extract(nd.props.get("PortLabel", ("raw", "")))
@@ -2162,11 +2259,11 @@ class Sim:
 
     def _map_id(self, nid: int) -> int:
         for w in self.in_wires.get((nid, "MapVarRef"), []):
-            return w.src_id
+            return self._ref_node(w.src_id)
         for w in self.in_wires.get((nid, "VarRef"), []):
             src = self.nodes.get(w.src_id)
             if src and "MapVar" in src.cls:
-                return w.src_id
+                return self._ref_node(w.src_id)
         return nid
 
 
