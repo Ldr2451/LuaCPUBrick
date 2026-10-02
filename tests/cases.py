@@ -2113,6 +2113,76 @@ TESTS = [
     ("negslot-float-ok", "local z = -5.0 * 0.0 print(z, z*(-5.0))", None, "run"),
     ("negslot-sub-ok", "local z = 1-1 print(z, math.type(z), z*(-5.0))", None,
      "run"),
+    # ... and the two routes by which a negative zero reaches an arithmetic
+    # operand other than a local: through a table slot and through a parameter.
+    # Both were checked while looking for a third route and both were already
+    # right, which is why they are cases and not a comment.
+    ("negslot-table",
+     "local t = {} t[1] = -0 print(t[1] * -5.0, math.type(t[1]))", None, "run"),
+    ("negslot-arg", "local function f(v) return v * -5.0 end print(f(-0))",
+     None, "run"),
+    # Every route that MAKES a negative zero, in one program.  The bug this
+    # session was found through one of them (`-(0^3)`), and the sweep that found
+    # it also proved the other four agree -- so this pins the rule rather than
+    # the program: a float zero's sign is IEEE's, not the chip's.
+    ("negzero-make",
+     "print(-(0.0), 0.0 * -1.0, 0.0 / -1.0, -0.5 * 0.0, -(0 ^ 3))", None, "run"),
+    # ... and the operations on one.  `z - 1` is -1.0 and `-z` is +0.0, which is
+    # the pair that makes the alternation visible: both are signs of zero decided
+    # by IEEE, and both are places a "normalise zero" fix would break.
+    ("negzero-arith",
+     "local z = -0.0 print(z + 1, z - 1, z * 1, z / 1, z % 7, -z)", None, "run"),
+    # concat and tostring keep it, so the leak is NOT in the printing path --
+    # which is what first sent this looking at the host's `..` and was wrong.
+    ("negzero-str",
+     "local z = -0.0 print(#tostring(z), z .. 'x', 'x' .. z, tostring(z))",
+     None, "run"),
+    # The comparisons are the whole reason the bug stayed invisible: -0.0 is not
+    # less than zero and it does equal zero, so no test on the value alone can
+    # see the sign.  1/z is the one operation that exposes it, which is why it is
+    # the sign oracle the pow workaround cannot afford.
+    ("negzero-cmp",
+     "local z = -0.0 print(z < 0, z == 0, z <= 0, 1/z, 1/0.0)", None, "run"),
+    # math.abs, the other bug this sweep found.  It is written in Lua in the
+    # library const as `if x < 0 then return -x end return x`, and -0.0 is not
+    # less than zero, so it returned the negative zero unchanged.  abs has to
+    # clear the sign of a zero, and it is the one place where that is true by
+    # definition rather than by IEEE accident.
+    ("negzero-abs",
+     "print(math.abs(-0.0), math.abs(0.0), math.type(math.abs(-0.0)))", None,
+     "run"),
+    # ... and the neighbour that says how it was fixed: `x + 0.0` would have
+    # turned math.abs(-5) into a FLOAT, because the fix has to normalise the
+    # sign without changing the type.  abs returns an integer for an integer.
+    ("negzero-abs-int",
+     "print(math.abs(-5), math.type(math.abs(-5)), math.abs(0), "
+     "math.type(math.abs(0)), math.abs(-5.5), math.abs(1/0))", None, "run"),
+    # the rest of the math library on a negative zero, measured while sweeping
+    # for further routes and all already agreeing: floor and ceil answer the
+    # INTEGER 0 (so they normalise, and unlike abs that is the host gate's job),
+    # fmod and sqrt keep the sign.
+    ("negzero-math-rest",
+     "local z = -0.0 print(math.floor(z), math.ceil(z))", None, "run"),
+    ("negzero-math-rest2", "local z = -0.0 print(math.fmod(z, 3), math.sqrt(z))",
+     None, "run"),
+    # The one signed-zero case left, pinned in CHIP_LOG so it is a CANARY rather
+    # than a comment: the pow arm is a bare `x ** y` and the gate answers the
+    # right magnitude with the wrong sign whenever the base is a negative zero
+    # and the exponent is an integer.  PUC alternates on parity and the chip does
+    # not alternate at all -- positive exponents are all +0.0, negative exponents
+    # are all -inf.  `(-0.0)^0.5` agrees, so it is a zero RESULT, not a negative
+    # base: other negative bases are fine (-2.0^3 is -8.0).
+    #
+    # Deliberately unfixed, and the language docs say why: `&&` does not
+    # short-circuit ("both arms evaluate... an arm cannot be used to guard
+    # another"), so the sign test would be paid on EVERY pow, and the only oracle
+    # for a zero's sign is a divide.  The documented sign() gate does not help --
+    # irsims.py models it as `0.0 if x == 0`, and -0.0 == 0.0.  Fixing it also
+    # needs the exponent's parity or `(-0.0)^2` regresses, so it is a compare, a
+    # divide, an integer test and a parity test to fix one printed value in 400
+    # fuzz seeds.
+    ("negzero-pow", "local z = -0.0 print(z ^ 2, z ^ 3, z ^ -2, z ^ 0.5)", None,
+     "run"),
     ("arr-multi-read1", "print(innumarr(1, 1))", None, "modelio",
      {"innumarr": [3.5], "expect": {"log": "3.5\n"}}),
     # A compile limit answers on the err port with the line that asked for too

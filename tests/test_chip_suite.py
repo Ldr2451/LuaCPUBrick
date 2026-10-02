@@ -129,6 +129,18 @@ CHIP_LOG = {
     # PUC 5.5's string.gmatch answers one value; the chip answers three because
     # its generic for reads the walk's state out of the call.
     "gmatch-arity": "function\t0\tnil\n3\n",
+    # A negative zero raised to an integer power: right magnitude, wrong sign.
+    # The pow arm is a bare `x ** y` and the gate loses the sign of a zero
+    # result -- PUC alternates -0.0/+0.0 on the parity of the exponent (and
+    # -inf/+inf for negative exponents) and the chip answers +0.0 for every
+    # positive exponent and -inf for every negative one.  A non-integer exponent
+    # agrees, and other negative bases are fine, so this is a zero RESULT rather
+    # than a negative base.  The full reasoning and the measurement are on the
+    # case in cases.py; the short version is that the language has no cheap sign
+    # oracle for a zero (`&&` does not short-circuit, so a guard is paid on every
+    # pow, and sign() is modelled as `0.0 if x == 0`), so this is host-bound and
+    # it is here as a canary: if someone fixes it, this entry is what fails.
+    "negzero-pow": "0.0\t0.0\t-inf\t0.0\n",
     # A builtin reached as a VALUE through pcall names itself by its short name
     # where PUC names it by its library path.  A named call agrees with PUC.
     "pcall-gate-name": "false\tbad argument #2 to 'format' "
