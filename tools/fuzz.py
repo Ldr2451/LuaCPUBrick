@@ -11,16 +11,28 @@ The default is deliberately small: a seed costs an oracle run and a chip run, so
 sweep, not an edit-loop command -- the suite and tools/check.py are the fast
 paths, and `1 <seed>` is about 5 seconds when you want one program.
 
-The skip rate was the generator, in two rounds.  First it was scope: a name
-being defined was offered to its own initialiser (`w5 = (w5 % 3)`, `local v7 = v7
-+ 1`), a local from a `then` arm stayed in scope for the `else` arm, and a local
-declared in a block outlived it.  Each of those is a read of an undeclared global,
-which PUC answers with "attempt to perform arithmetic on a nil value".  Then,
-with the scope right, 30 of 150 were still skipped and all 30 were the SAME
-cause: the outstr arm of the generator never closed its own paren, so the program
-was a syntax error, the oracle rejected it before the chip ran, and the harness
-called that a skip.  Measured on 150 seeds: 50 agreed and 100 skipped at the
-start, 119 agreed and 30 skipped after the scope fix, 149 agree and 0 skip now.
+The skip rate was the generator, in three rounds, and none of them was the chip.
+First it was scope: a name being defined was offered to its own initialiser
+(`w5 = (w5 % 3)`, `local v7 = v7 + 1`), a local from a `then` arm stayed in
+scope for the `else` arm, and a local declared in a block outlived it.  Each of
+those is a read of an undeclared global, which PUC answers with "attempt to
+perform arithmetic on a nil value".  Then, with the scope right, 30 of 150 were
+still skipped and all 30 were the SAME cause: the outstr arm never closed its own
+paren, so the program was a syntax error and the oracle rejected it before the
+chip ran.  The last two only appear past seed 150, which is why 400 seeds is the
+number that finds them:
+
+  * expr()'s fall-through was `self.leaf("nil")` -- a hardcoded "nil" where it
+    should have been `typ` -- so a func-typed expression asked for a nil leaf,
+    got the literal, and wrote `f1, g0 = f1, nil`: 19 seeds in 250.
+  * the multiple-assignment arm moved a function between names without moving
+    its arity, so `f0, g2 = f1, nil` left a later `f0(w)` passing one argument to
+    a two-parameter function: 4 seeds in 250.
+
+Measured, all four bugs included: seeds 1-150 went from 50 agreeing and 100
+skipped, to 119 agreeing and 30 skipped, to 150 agreeing and 0 skipped; seeds
+1-400 now load 400 of 400 and 399 agree, the one exception being the signed zero
+in the KNOWN comment below.
 """
 import concurrent.futures as cf
 import os
@@ -123,14 +135,28 @@ class Gen:
             if c < 0.75:
                 return "(innumarr(99))"
             return "nil"
-        return self.leaf("nil")
+        # `typ` and NOT a hardcoded "nil", which is what this said.  Every type
+        # with a case above returns from inside it, so the only thing that reaches
+        # here is "func" -- and asking for a nil leaf got the literal back, so
+        # `f1, g0 = f1, nil` made g0 nil while the generator still believed it was
+        # a function, and the next `g0(x)` raised "attempt to call a nil value
+        # (global 'g0')".  19 seeds in 250, all of them skips until the exit code
+        # counted skips.
+        return self.leaf(typ)
 
     def leaf(self, typ):
         r = self.r
         v = self.var(typ)
-        if v is not None and r.random() < 0.7:
-            if typ == "table":
-                return v
+        # A function has no literal form, so the 30% that goes looking for one
+        # must be given the name instead of falling through to the "nil" below.
+        # Falling through wrote `f1, g0 = f1, nil` -- a statement that makes g0
+        # nil while the generator still believed it was a function -- and the
+        # next `g0(x)` raised "attempt to call a nil value (global 'g0')".  That
+        # was 19 seeds in 250, every one of them a skip until the exit code
+        # counted skips.  Asking for a literal of a typ that has none is the
+        # bug; the name is always available because reaching here with
+        # typ == "func" means a function exists.
+        if v is not None and (typ == "func" or r.random() < 0.7):
             return v
         if typ == "num":
             return r.choice(NUMC + ["inNum0", "inNum1", "inNum2", "inNum3",
@@ -189,7 +215,45 @@ class Gen:
             b = self.var(ta)
             if b is None:
                 b = self.expr(ta, 1)
-            return f"{a}, {g} = {b}, {self.expr(ta, 1)}"
+            # The second value is its OWN expression and is often a DIFFERENT
+            # function from b -- `f1, g0 = f1, f0` is the shape that matters -- so
+            # each target takes the arity of the value IT receives.  Reading both
+            # from b is wrong in exactly the case that matters: g0 then claimed
+            # f1's one parameter while holding f0, and `g0(x)` left f0's p1 nil,
+            # so PUC raised "attempt to perform arithmetic on a nil value (local
+            # 'p1')".
+            second = self.expr(ta, 1)
+            stmt = f"{a}, {g} = {b}, {second}"
+            # Both names now hold a value of type ta, so the type and ARITY tables
+            # have to move with them: a call is generated from self.funcs, and a
+            # stale arity is a runtime error rather than a wrong answer.  Nothing
+            # here updated either table, which is four seeds in 250 rejected as
+            # "attempt to perform arithmetic on a nil value (local 'p1')" -- all
+            # of them skips until the exit code started counting skips, which is
+            # the whole reason it does.
+            self.env[a] = ta
+            self.env[g] = ta
+            if ta == "func":
+                # b and second are function NAMES here, not computed values: expr()
+                # has no case for "func" and falls through to leaf(typ), which
+                # offers a name of that type, and reaching ta == "func" means one
+                # exists.
+                #
+                # Both arities are read BEFORE either is written, because a target
+                # can also be one of the two sources: `f1, g2 = f0, f1` reads
+                # f1's own arity for g2, and writing funcs["f1"] first had already
+                # replaced it.  That aliasing is what left one seed in 400 still
+                # rejected, with g2 claiming one parameter while holding f1.
+                ar_a = self.funcs[b]
+                ar_g = self.funcs[second]
+                self.funcs[a] = ar_a
+                self.funcs[g] = ar_g
+            else:
+                # a function name that has just been given a number must lose its
+                # arity, or the call generator would keep calling it
+                self.funcs.pop(a, None)
+                self.funcs.pop(g, None)
+            return stmt
         if c < 0.58 and self.tinfo:
             return self.tstmt(r.choice(sorted(self.tinfo)))
         if c < 0.68:
@@ -352,12 +416,27 @@ def main():
             elif good:
                 pass
             elif only_neg_zero(detail):
-                # The one divergence the fuzzer keeps finding is the sign of a
-                # negative zero: the host's `..` answers "0" for every zero
-                # (`if !f.is_finite() || *f == 0.0`) while PUC keeps the sign, and
-                # the chip's own fmtNum answers "-0.0".  Reporting it as a FAIL
-                # every run trains the reader to ignore FAILs, so it gets its own
-                # count and says which class it was.
+                # The one divergence left, and it is NOT what this comment used to
+                # say.  It claimed the host's `..` answers "0" for every zero; that
+                # was never true here -- `local v = -0.0 print('a' .. v)` prints
+                # a-0.0 and matches PUC, and so does tostring and print.  The real
+                # cause is the exponentiation GATE: the chip's pow arm is a bare
+                # `x ** y`, and `(-0.0) ** 3` comes back +0.0 where IEEE and PUC
+                # both say -0.0.  Measured on `print((-0.0)^3)` and
+                # `print((-0.0)^1)`; other negative bases are fine (-2.0^3 is
+                # -8.0), so it is the sign of a zero result, not negative bases.
+                #
+                # Left unfixed deliberately, and the docs say why
+                # (wirescript.brickadia.dev): `&&` does not short-circuit -- "both
+                # arms evaluate... an arm cannot be used to guard another" -- so a
+                # guard would cost its test on EVERY pow.  The only sign oracle in
+                # the chip is `1/x`, a divide, and the documented `sign()` gate does
+                # not help either: irsims.py models it as `0.0 if x == 0`, and
+                # -0.0 == 0.0, so sign(-0.0) is 0 exactly like sign(0.0).  A signed
+                # zero raised to a power is not worth a divide per exponentiation.
+                #
+                # Reporting it as a FAIL every run trains the reader to ignore
+                # FAILs, so it gets its own count and says which class it was.
                 print(f"KNOWN {name} ({dt:.1f}s): negative zero only: {detail}",
                       flush=True)
                 known += 1

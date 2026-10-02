@@ -2093,6 +2093,26 @@ TESTS = [
     # and the append pattern the border exists for still works after a delete
     ("len-hole-append2",
      "t = {1,2,3} t[2] = nil t[4] = 4 print(#t)", None, "run"),
+    # Integer zero has no sign, so a value stored under an integer tag may not
+    # carry one.  The chip computed -7 * 0 in f64, which is -0.0, and stored that
+    # under the integer tag: `print(z)` and `math.type(z)` were both right, so the
+    # leak was invisible until the value met a float -- and `-5.0 * -0.0` is
+    # `+0.0` where PUC's `-5.0 * 0` is `-0.0`.  This is the fuzzer's one
+    # recurring divergence, and it is a chip bug rather than a host law.
+    #
+    # The three spellings of integer zero reach it by three routes: a runtime
+    # MUL of two folded constants, the literal `-0` (a constant load), and a
+    # runtime SUB.  Only the first two leaked, and the case is in the shape the
+    # fuzzer found rather than a shape chosen to be minimal.
+    ("negslot-mul",
+     "local z = (3-10)*(10%2) print(z, math.type(z), z*(-5.0))", None, "run"),
+    ("negslot-lit", "local z = -0 print(z, math.type(z), z*(-5.0))", None,
+     "run"),
+    # the neighbours, so the fix cannot be "make every zero positive" -- these
+    # are float zero and they KEEP the sign, which is a different rule
+    ("negslot-float-ok", "local z = -5.0 * 0.0 print(z, z*(-5.0))", None, "run"),
+    ("negslot-sub-ok", "local z = 1-1 print(z, math.type(z), z*(-5.0))", None,
+     "run"),
     ("arr-multi-read1", "print(innumarr(1, 1))", None, "modelio",
      {"innumarr": [3.5], "expect": {"log": "3.5\n"}}),
     # A compile limit answers on the err port with the line that asked for too

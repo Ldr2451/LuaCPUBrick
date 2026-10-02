@@ -3914,10 +3914,32 @@ mod arrNumOk(tag: int) -> bool {
   return tag == 1 || tag == 6 || tag == 0 || tag == 3
 }
 
+// An integer-tagged slot carries no sign, because integer zero does not have
+// one.  The arithmetic is done in f64, where -7.0 * 0.0 IS -0.0, and storing
+// that under the integer tag leaked the sign into every later float coercion:
+// `local z = (3-10)*(10%2) print(z, math.type(z), z*(-5.0))` printed
+// `0  integer  0.0` where PUC prints `0  integer  -0.0`, because the runtime MUL
+// left -0.0 in the slot and `-5.0 * -0.0` is `+0.0`.  Neither print(z) nor
+// math.type(z) could see it -- the tag and the printed integer were both right,
+// which is why this survived until a fuzzer multiplied the value by a float.
+//
+// `w + 0.0` is the normalising step and it is the whole fix: IEEE says (-0.0) +
+// (+0.0) is +0.0, and adding positive zero leaves every other value alone,
+// infinities and NaN included.  A FLOAT zero is untouched by this and keeps its
+// sign, which is a different rule and a correct one: `local z = -5.0 * 0.0
+// print(z)` is -0.0 in PUC and here.
+//
+// One function owns it because there are two places that write the integer tag
+// with a computed value (#t and #s add 0.0 themselves before they get here) and
+// they have to agree about this exactly as they agree about the tag.
+mod vSetIntTag(a: int, w: float) {
+  vSet(a, 6, w + 0.0, "")
+}
+
 mod vSetInt(a: int, v: float) {
   let w = intWrap(v)
   if w == floor(w) && 0.0 <= w + INT64_LIMIT && w < INT64_LIMIT {
-    vSet(a, 6, w, "")
+    vSetIntTag(a, w)
   } else {
     vSetNum(a, w)
   }
@@ -3930,7 +3952,7 @@ mod vSetIntSat(a: int, v: float) {
   } else if INT64_LIMIT <= w {
     w = INT64_LIMIT
   }
-  vSet(a, 6, w, "")
+  vSetIntTag(a, w)
 }
 
 // One codepoint per call; prefix rules match Lua, order is by codepoint
