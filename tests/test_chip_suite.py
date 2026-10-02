@@ -66,24 +66,32 @@ TICKS = 6000
 # Cases the tick sim cannot reach, or that fail for a reason still open.  Every
 # entry here says what was measured, so the next attempt starts from evidence.
 SKIP = {
-    # Both are the cell arena, and neither is the loop-round rule the other
-    # clo-cell cases cover -- that one is fixed and green.  What is left is HOW a
-    # cell gets its first value.
+    # The window before a capture is noticed: a store to the local compiled
+    # BEFORE the capture is a plain register write, so it never reaches the cell,
+    # and the cell keeps the value from the round that created it.  `while j <= 2
+    # do x = x + 10 t[j] = function() return x end j = j + 1 end` reads 10 10
+    # where PUC reads 20 20.  Baseline chip '10 20', so it predates the loop-round
+    # fix; it was '10 20' there too.
+    #
+    # Neither half of the obvious fix works, and both were measured.  Copying the
+    # register into the cell at EVERY closure creation closes this case and breaks
+    # the other shape: a nested function's write reaches the cell through SETUP's
+    # c == 1 path, which writes the cell and no register of the frame that owns
+    # it, so the register is stale from that moment -- re-copying then undid the
+    # write, and `while i <= 4 do local f = function() s = s + i end f() end` read
+    # 4 where PUC reads 10 (that is lockstep-pcall's shape, and the suite caught
+    # it).  Seeding only at creation leaves this case wrong.
+    #
+    # So the register and the cell are two sources of truth for the length of that
+    # window, and closing it properly means only one: either the cell exists from
+    # the local's declaration, which costs a cell per captured-by-anything local
+    # and a read and a write per access, or the compiler knows which locals are
+    # captured BEFORE it compiles their initialisers, which is a second pass over
+    # each function body.  Neither is a change to make inside a bug fix.
     "clo-cell-after-loop":
-        "chip '10 10', PUC '20 20'.  A write to the local compiled BEFORE the "
-        "capture goes to its register, and every prototype that captures the "
-        "local allocates its OWN slot, so a second closure seeds a fresh cell "
-        "from that now-stale register.  Same answer without the leading loop, so "
-        "the 'declared after a loop' reading is not what is happening; the "
-        "capture-before-write order gives '20 20' and passes.  Baseline chip "
-        "'10 20', so this predates the loop-round fix.  Fixing it means one slot "
-        "per local entry shared by every prototype that captures it.",
-    "clo-cell-two-loops":
-        "chip '5 6 6', PUC '6 6 6'.  An inner loop body's round-end bump is a "
-        "GLOBAL counter, so it invalidates the outer body's cell as well as its "
-        "own: the round stamp has to be per slot, not one counter.  Baseline "
-        "chip '3 5 6'.  Needs blkExit to emit one generation bump per captured "
-        "slot the block owns instead of a single GEN.",
+        "chip '10 10', PUC '20 20'.  A write to the local compiled BEFORE its "
+        "capture goes to the register and never reaches the cell.  See the long "
+        "note above this dict for the two half-fixes and why each is wrong.",
 }
 
 # Extra VM ticks / timeouts for heavy but reachable cases.
@@ -448,13 +456,36 @@ def compare(name, mode, kw, r, dt):
                 lk["errA"], lk["errB"]), dt)
         if lk["okA"] != lk["okB"]:
             return (name, False, "one chip rejected the program", dt)
-        # Nothing else: a program that raises is still one the two must agree
-        # about, and whether it was supposed to print anything is the case's own
-        # expectation, which the check below reads.
+        # Two chips agreeing is not an answer, only a repeatability: both are the
+        # same source, so a case's hand-written `want` can hold the chip's own
+        # wrong answer and stay green.  lockstep-pcall did -- it said 6 where PUC
+        # says 21, and only the closure fix made the disagreement visible.  So the
+        # oracle is the authority here too, the same as `run`; the two-chip check
+        # above is what this mode adds on top of it.
         want = exp.get("log")
         if want is not None and lk["finalA"] != want:
             return (name, False, "log got=%r want=%r" % (
                 lk["finalA"], want), dt)
+        o = OR.oracle_run(r["src"], inputs=kw.get("inputs"),
+                          sinputs=kw.get("sinputs"),
+                          innumarr=kw.get("innumarr"),
+                          instrarr=kw.get("instrarr"))
+        if not o.get("avail"):
+            return (name, None, "SKIP no oracle", dt)
+        if o["rc"] == 0 and o["calls"] is not None:
+            got = OR.norm_val(lk["finalA"])
+            if got != OR.oracle_log(OR.norm_calls(o["calls"])):
+                return (name, False, "log mismatch chip=%r lua=%r" % (
+                    lk["finalA"], OR.oracle_log(OR.norm_calls(o["calls"]))), dt)
+        elif lk["errA"]:
+            # the program raises on both sides: the contract is the message, and
+            # the oracle's carries a "lua: " prefix and a trace
+            if OR.LUA_BIN is not None and lk["errA"] not in (o.get("stderr") or ""):
+                return (name, False, "err %r not in the oracle's %r" % (
+                    lk["errA"], (o.get("stderr") or "")[:120]), dt)
+        elif o["rc"] != 0:
+            return (name, False, "oracle rejected rc=%d, chip did not" % o["rc"],
+                    dt)
         return (name, True, "", dt)
     if mode == "state":
         if not c["progOk"]:

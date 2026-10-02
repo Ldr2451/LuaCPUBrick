@@ -522,12 +522,13 @@ var locDepth: int[]
 // over it still goes through the register, which is right because in those
 // instructions no closure exists yet.
 var locCap: bool[]
-// was this local declared inside a loop body?  That is the question a cell's
-// lifetime turns on, because PUC closes a local's cell when the block that
-// DECLARED it ends, and a block inside a loop ends once per round.  A local
-// declared outside every loop outlives them all, so its cell must not be replaced
-// when a loop body round ends -- which is what one global loop counter used to do.
-var locInLoop: bool[]
+// The loop-body depth this local was declared at, 0 for a local declared outside
+// every loop.  That depth is the question a cell's lifetime turns on, because PUC
+// closes a local's cell when the block that DECLARED it ends, and a loop body ends
+// once per round: a local declared inside a body is fresh each round, and one
+// declared outside every loop outlives them all.  It has to be the DEPTH and not a
+// flag, because a body nested two loops deep must not close its parent's cells.
+var locInLoop: int[]
 var locLen: int = 0
 // Upvalues.  fUpN[fid] is how many descriptors the prototype has, and the two
 // arrays strided by MAX_UP say what each one is: fUpSrc >= 0 is the captured
@@ -543,12 +544,13 @@ var fUpN: int[]
 var fUpSrc: int[]
 var fUpSlot: int[]
 var fUpSlotN: int[]
-// does the local behind this descriptor live in a block that a loop re-enters?
-// Strided with fUpSlot, and the reason cellAt's generation test is conditional:
-// without it, one loop body's round-end replaced the cell of every captured local
-// in the function, including the ones declared outside the loop and still in
-// scope.
-var fUpInLoop: bool[]
+// does the local behind this descriptor live in a loop body, and how deep?
+// Strided with fUpSlot, and the reason cellAt's generation test is conditional and
+// indexed: without it, one loop body's round-end replaced the cell of every
+// captured local in the function, including the ones declared outside the loop
+// and still in scope; and with one shared counter instead of one per depth, an
+// inner body's exit also closed the outer body's cell.
+var fUpDepth: int[]
 var upIdx: Map<string, int>
 // the prototype each compile depth is on, so a capture can be walked up the
 // chain of enclosing functions
@@ -569,6 +571,15 @@ var blkCapGen: int[]
 // and is still re-entered every round.
 var loopNesting: int = 0
 var blkLoop: int[]
+// Was the block being closed a loop body?  blkLoop holds the depth as it was
+// BEFORE the block, so this answers the other half: only a body closes cells, and
+// only its own depth's.
+var blkIsLoop: bool[]
+// A cell's round stamp, one counter PER LOOP-BODY DEPTH.  It was one counter for
+// the whole chip, which meant any block with a capture closed every captured
+// local's cell in the function, and then one counter per slot, which fixed that
+// but not a nested body closing its parent's cells.
+var upGen: int[]
 // A repeat's block ends *after* its until condition, so its one-per-round bump
 // is emitted in front of the condition and this says so, or the block exit
 // would add a second one outside the loop.
@@ -784,13 +795,14 @@ var uNum: float[]
 var uStr: string[]
 var uTop: int = 1
 // A frame's slot table -- three words per captured local: the cell, the frame
-// that made it, the loop round it was made in -- sits in the vararg stack just
-// below that frame's varargs, and the word below *it* is the frame's own
-// sequence number.  The stamps are what stop a new frame adopting the last
-// one's cells (the table is scratch space) and what give each round of a loop
-// its own, which is what PUC gets by closing the cells at the end of the block.
+// that made it, the loop-body generation it was made in -- sits in the vararg
+// stack just below that frame's varargs, and the word below *it* is the frame's
+// own sequence number.  The stamps are what stop a new frame adopting the last
+// one's cells (the table is scratch space) and what give each round of a loop its
+// own, which is what PUC gets by closing the cells at the end of the block.  The
+// third word is 0 for a local declared outside every loop, which is the "never
+// stale" case.
 var frameSeq: int = 0
-var iterGen: int = 0
 // cloStep's state: one cell per tick, driven from vmBurst.
 var cloCur: int = 0
 var cloCid: int = 0
@@ -1707,13 +1719,13 @@ mod locBind(name: string, r: int) {
     locReg[locLen] = r
     locDepth[locLen] = fnDepth
     locCap[locLen] = false
-    locInLoop[locLen] = 0 < loopNesting
+    locInLoop[locLen] = loopNesting
   } else {
     locName.push(name)
     locReg.push(r)
     locDepth.push(fnDepth)
     locCap.push(false)
-    locInLoop.push(0 < loopNesting)
+    locInLoop.push(loopNesting)
   }
   locLen = locLen + 1
   if r > cfMaxLoc[fnDepth] {
@@ -1729,7 +1741,8 @@ mod blkEnter(isLoopBody: bool) {
   // exactly where it found it: a local declared after a loop is not in one, and
   // pushing the post-increment value left the count stuck at 1 for the rest of
   // the function
-  blkLoop.push(loopNesting)
+  blkLoop.push(loopNesting + (if isLoopBody then 1 else 0))
+  blkIsLoop.push(isLoopBody)
   if isLoopBody {
     loopNesting = loopNesting + 1
   }
@@ -1782,7 +1795,7 @@ mod upStep(d: int, ix: int, src: int) -> int {
     // taken from the DECLARING local, not from the block this capture is written
     // in: the same loop body can capture a local of the function above it, and
     // that one's cell outlives the loop
-    fUpInLoop[p * MAX_UP + k] = locInLoop[ix]
+    fUpDepth[p * MAX_UP + k] = locInLoop[ix]
     // the declaring function's own reads and writes go through this cell from
     // here on, so a write from a nested function is visible to it
     locCap[ix] = true
@@ -2136,7 +2149,12 @@ mod vmReset() {  tmap.clear()
   uStr.resize(MAX_CELL, "")
   uTop = 1
   frameSeq = 0
-  iterGen = 0
+  upGen.clear()
+  // 512 because the depth cannot reach it: every nesting level costs at least a
+  // conditional jump and a back jump out of MAX_INSTR's 1024 instructions, and a
+  // level that declares a local costs one of MAX_REGS' 64 registers as well.  The
+  // simulator's out-of-bounds invariant is the backstop if that ever stops holding.
+  upGen.resize(512, 0)
   gtag.clear()
   gnum.clear()
   gstr.clear()
@@ -3401,14 +3419,15 @@ mod parseInit() {
   blkCapGen.clear()
   capGen = 0
   blkLoop.clear()
+  blkIsLoop.clear()
   loopNesting = 0
   upIdx.clear()
   fUpSrc.clear()
   fUpSrc.resize(MAX_FUNCS * MAX_UP, -1)
   fUpSlot.clear()
   fUpSlot.resize(MAX_FUNCS * MAX_UP, 0)
-  fUpInLoop.clear()
-  fUpInLoop.resize(MAX_FUNCS * MAX_UP, false)
+  fUpDepth.clear()
+  fUpDepth.resize(MAX_FUNCS * MAX_UP, 0)
   fidAt.clear()
   fidAt.resize(33, -1)
   cfNext.clear()
@@ -3533,12 +3552,24 @@ mod locDeclare(name: string) -> int {
 mod blkExit() {
   locLen = blkLen.pop().Value
   cfNext[fnDepth] = blkNext.pop().Value
-  loopNesting = blkLoop.pop().Value
+  // The depth THIS block sits at, which is what its cells' stamp counts -- a `do`
+  // or `if` block inside a body shares the body's depth, so only the body itself
+  // may bump it.  Read off blkLoop rather than from loopNesting, which is the
+  // block's own depth only while the block is open: reading the global here
+  // emitted depth 0 for every loop body, and with the stamp pinned to depth 1 the
+  // cells of a body-declared local were never replaced and `for k = 1, 3 do local
+  // j = k t[k] = function() return j end end` answered the same value three times
+  // where PUC answers k.  blkLoop holds the depth AFTER this block's own
+  // increment, so the restore is one less exactly when the block was a body.
+  let blkDepth = blkLoop[blkLoop.length() - 1]
+  let blkWasBody = blkIsLoop.pop().Value
+  blkLoop.pop()
+  loopNesting = blkDepth - (if blkWasBody then 1 else 0)
   let had = blkCapGen.pop().Value != capGen
   if blkGenDone {
     blkGenDone = false
-  } else if had {
-    bEmit(49, 0, 0, 0)
+  } else if blkWasBody && had {
+    bEmit(49, 0, blkDepth, 0)
   }
 }
 
@@ -5820,9 +5851,9 @@ mod stmtDispatch() {
       // A repeat's body block is closed after this condition, so the bump that
       // gives each round its own cells goes here, in front of it: at the block
       // exit it would land outside the loop and run once.
-      if blkCapGen[blkCapGen.length() - 1] != capGen {
+      if blkCapGen[blkCapGen.length() - 1] != capGen && 0 < loopNesting {
         blkGenDone = true
-        bEmit(49, 0, 0, 0)
+        bEmit(49, 0, loopNesting, 0)
       }
       startUnit(13)
     }
@@ -7338,14 +7369,16 @@ mod patCheck(a: int, nargs: int, nm: string, off: int) -> bool {
 mod cellAt(fid: int, k: int) -> int {
   let s = slotBase() + 3 * fUpSlot[fid * MAX_UP + k]
   var cell = toInt(vaNum[s])
-  // The round stamp is checked ONLY for a local declared inside a loop body.  A
-  // cell lives as long as the block that declared its local, and a local declared
-  // outside every loop is still in scope after a body round ends -- so testing it
-  // here for that local replaced a live cell with a fresh one and every closure
-  // made in a later round saw the loop counter's value at ITS round instead of
-  // the shared one.
+  // The round stamp is checked ONLY for a local declared inside a loop body, and
+  // against the generation of the depth that body is at.  A cell lives as long as
+  // the block that declared its local: a local declared outside every loop is
+  // still in scope after a body round ends, so testing it here replaced a live cell
+  // with a fresh one and every closure made in a later round saw the loop
+  // counter's value at ITS round; and a body nested inside another must not close
+  // the outer one's cells, which is why the counter is per depth and not one.
+  let fd = fUpDepth[fid * MAX_UP + k]
   if cell <= 0 || vaNum[s + 1] != frameStamp()
-      || (fUpInLoop[fid * MAX_UP + k] && vaNum[s + 2] != iterGen) {
+      || (0 < fd && vaNum[s + 2] != upGen[fd]) {
     if MAX_CELL <= uTop {
       // the cell pool itself, which the vararg stack's 256 words normally
       // exhaust first -- so this is the rarer of the two and says so
@@ -7356,11 +7389,20 @@ mod cellAt(fid: int, k: int) -> int {
     uTop = uTop + 1
     vaNum[s] = cell
     vaNum[s + 1] = frameStamp()
-    vaNum[s + 2] = iterGen
-    // seeded from the register, once: the register is where the value is until
-    // the cell exists, and after that the cell is the value and the register
-    // only gets written alongside it (SETUP), so re-copying here would undo a
-    // write that came from a nested function
+    vaNum[s + 2] = if 0 < fd then upGen[fd] else 0.0
+    // Seeded from the register ONCE, and deliberately not on every closure: a
+    // nested function's write reaches this cell through SETUP's c == 1 path, which
+    // writes the cell and no register of the frame that owns it, so from that
+    // moment the declaring frame's register is stale and re-copying it in undoes
+    // the write.  Copying every time was measured and the suite caught it --
+    // `while i <= 4 do local f = function() s = s + i end f() end` answered 4
+    // where PUC answers 10, which is lockstep-pcall's shape.
+    //
+    // The price is the window before the capture is noticed: a store compiled
+    // BEFORE it is a plain register write, so a loop body that writes a local and
+    // only then makes a closure over it leaves the cell at the first round's
+    // value.  clo-cell-after-loop is the case and its SKIP entry says what closing
+    // that window would take.
     let reg = fUpSrc[fid * MAX_UP + k]
     uTag[cell] = vtag[vmBase + reg]
     uNum[cell] = vnum[vmBase + reg]
@@ -10063,7 +10105,11 @@ mod vmStep() {
     } else if op == 48 {
       vSet(a, 4, curClo(), "")
     } else if op == 49 {
-      iterGen = iterGen + 1
+      // One round of the loop body at depth b ended, so the cells of the locals
+      // declared in THAT body are stale: PUC closes them at the end of the block
+      // and the next round makes new ones.  A counter per depth rather than one
+      // for the chip, so a nested body's exit cannot close its parent's cells.
+      upGen[b] = upGen[b] + 1
     } else if op == 50 {
       forDepth = forDepth - 1
     } else if op == 28 {
