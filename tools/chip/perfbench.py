@@ -30,6 +30,20 @@ PROGRAMS = {
              "print(s)",
     "string": "local s = 'abcdef' for i = 1, 10 do "
               "s = s:upper():sub(2, -2) end print(s, s:byte(1, -1))",
+    # Exponentiation, because there was no benchmark that used it and that is why
+    # the cost of the negative-zero guard on the pow arm was unmeasurable for so
+    # long: a wall-clock comparison of two chips read 1.66 -> 2.22ms for a change
+    # that was really +7%, because the two runs drifted, and a multiply loop with
+    # no pow in it moved 11.7 -> 12.3s across the same pair.  Ticks are
+    # deterministic and the two chips are alternated in one process, which is the
+    # only comparison this repo trusts.
+    #
+    # 20 iterations keeps it inside the default tick budget while still putting
+    # 20 pows in the measurement, and the exponent is fractional in half of them
+    # so the slow pow path is exercised too -- an integer exponent is the case the
+    # guard is about, and a fractional one is the case it must not touch.
+    "pow": "local s = 0.0 for i = 1, 20 do "
+           "s = s + (i % 7) ^ 2 + (i % 5) ^ 0.5 end print(s)",
 }
 
 

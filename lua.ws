@@ -3955,6 +3955,48 @@ mod vSetIntSat(a: int, v: float) {
   vSetIntTag(a, w)
 }
 
+// x ** y, with the sign of a negative zero base put back.
+//
+// The exponentiation gate answers the right MAGNITUDE and the wrong SIGN when
+// the base is a negative zero and the exponent is an integer: PUC alternates on
+// the parity of the exponent (-0.0/+0.0 for positive exponents, -inf/+inf for
+// negative) and the gate answers +0.0 for every positive exponent and -inf for
+// every negative one.  Other negative bases are fine (-2.0^3 is -8.0) and a
+// non-integer exponent agrees, so this is the sign of a zero or infinite RESULT,
+// not of a negative base.
+//
+// The guard is a STATEMENT if on purpose.  An if-expression compiles to a Select
+// fed by BOTH arms -- the language reference is explicit that "both arms
+// evaluate... an arm cannot be used to guard another" -- while a statement in exec
+// context skips its body.  So the divide and the modulo below are paid only when
+// the base is a zero, and a pow of anything else costs one comparison.
+//
+// It is a mod rather than a second expression because the arithmetic dispatch is
+// written twice, in vmStepFast and in vmStep, and a mod is inlined at both call
+// sites from one body -- two copies of this rule is two rules to keep in step.
+mod powSignedZero(x: float, y: float) -> float {
+  var p = x ** y
+  if x == 0.0 {
+    let iy = y | 0
+    // `y == iy + 0.0` keeps an exponent too large to truncate out, and 1/x is the
+    // only sign oracle this language has for a zero: -0.0 is not < 0.0, and
+    // sign() is modelled as `0.0 if x == 0` so it cannot tell them apart either.
+    // The divide gate answers inf rather than faulting, so it is safe here.
+    if y == iy + 0.0 && 1/x < 0.0 {
+      // floored modulo, so an odd exponent is 1 on either side of zero
+      if (p < 0.0) != (iy % 2 != 0) {
+        // -p and NOT `0.0 - p`: IEEE says (-0.0) - (+0.0) is -0.0 but
+        // (+0.0) - (+0.0) is +0.0, so subtracting zero flips an infinity and
+        // leaves a zero exactly where it was.  Unary minus is the operation
+        // that changes a zero's sign, which is why the chip's UNM arm negates
+        // rather than subtracting.
+        p = -p
+      }
+    }
+  }
+  return p
+}
+
 // One codepoint per call; prefix rules match Lua, order is by codepoint
 // (identical to byte order for ASCII).
 mod cmpStep() {
@@ -9751,7 +9793,13 @@ mod vmStep() {
             }
           }
         } else {
-          vSetNum(a, x ** y)
+          // The arithmetic dispatch is written TWICE -- once in vmStep and once in
+          // vmStepFast, which is the subset that runs when nothing is busy -- and
+          // both copies carry a pow arm.  Fixing only this one changed nothing
+          // observable: `local z = -0.0 print(z ^ 3)` still answered 0.0 until the
+          // other copy went through the same helper.  One body, two call sites,
+          // so the rule about a negative zero base cannot be stated twice.
+          vSetNum(a, powSignedZero(x, y))
         }
       }
     } else if op == 14 {
@@ -10507,7 +10555,10 @@ mod vmStepFast() {
           }
         }
       } else {
-        vSetNum(a, x ** y)
+        // the other copy of the pow arm; both go through powSignedZero so the rule
+        // about a negative zero base has one body, because a fix that reached only
+        // one of the two is invisible from a program that runs the other
+        vSetNum(a, powSignedZero(x, y))
       }
     }
   } else if op == 14 {

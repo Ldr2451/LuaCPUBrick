@@ -31,8 +31,7 @@ number that finds them:
 
 Measured, all four bugs included: seeds 1-150 went from 50 agreeing and 100
 skipped, to 119 agreeing and 30 skipped, to 150 agreeing and 0 skipped; seeds
-1-400 now load 400 of 400 and 399 agree, the one exception being the signed zero
-in the KNOWN comment below.
+1-400 now load 400 of 400 and 400 agree.
 """
 import concurrent.futures as cf
 import os
@@ -416,27 +415,23 @@ def main():
             elif good:
                 pass
             elif only_neg_zero(detail):
-                # The one divergence left, and it is NOT what this comment used to
-                # say.  It claimed the host's `..` answers "0" for every zero; that
-                # was never true here -- `local v = -0.0 print('a' .. v)` prints
-                # a-0.0 and matches PUC, and so does tostring and print.  The real
-                # cause is the exponentiation GATE: the chip's pow arm is a bare
-                # `x ** y`, and `(-0.0) ** 3` comes back +0.0 where IEEE and PUC
-                # both say -0.0.  Measured on `print((-0.0)^3)` and
-                # `print((-0.0)^1)`; other negative bases are fine (-2.0^3 is
-                # -8.0), so it is the sign of a zero result, not negative bases.
+                # A signed zero that differs ONLY in sign.  There are none at the
+                # moment -- 400 seeds agree with nothing in this bucket -- and this
+                # comment has been wrong twice, which is why it now says what the
+                # class is rather than what caused the last one:
                 #
-                # Left unfixed deliberately, and the docs say why
-                # (wirescript.brickadia.dev): `&&` does not short-circuit -- "both
-                # arms evaluate... an arm cannot be used to guard another" -- so a
-                # guard would cost its test on EVERY pow.  The only sign oracle in
-                # the chip is `1/x`, a divide, and the documented `sign()` gate does
-                # not help either: irsims.py models it as `0.0 if x == 0`, and
-                # -0.0 == 0.0, so sign(-0.0) is 0 exactly like sign(0.0).  A signed
-                # zero raised to a power is not worth a divide per exponentiation.
+                #  * It blamed the host's `..`.  Never true here -- `local v = -0.0
+                #    print('a' .. v)` prints a-0.0 and matches PUC, and so do
+                #    tostring and print.
+                #  * It blamed the pow gate, which was real and is now FIXED, by
+                #    powSignedZero in lua.ws.  Both remaining signed-zero bugs were
+                #    chip bugs, not host laws: an integer-tagged register carrying
+                #    -0.0, and math.abs not clearing the sign of a zero.
                 #
-                # Reporting it as a FAIL every run trains the reader to ignore
-                # FAILs, so it gets its own count and says which class it was.
+                # The bucket stays because a signed zero is the one class where a
+                # one-character difference is invisible in a diff, and because
+                # reporting it as a FAIL every run trains the reader to ignore
+                # FAILs.  If one appears, it is a real divergence: say which.
                 print(f"KNOWN {name} ({dt:.1f}s): negative zero only: {detail}",
                       flush=True)
                 known += 1

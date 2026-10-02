@@ -47,6 +47,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKS = [
     ('audit', ['tools/chip/audit.py'], '0 placeholder(s)'),
     ('wswarn', ['tools/chip/wswarn.py'], 'compiler warnings: 0'),
+    ('twopaths', ['tools/chip/twopaths.py'],
+     'every shared arm has the same body in both'),
     ('consistency', ['tests/test_consistency.py'], 'ALL-OK'),
     ('syntax', ['tests/syntax_check.py'], 'FAIL=0'),
     ('hostcompat', ['tests/host_compat_check.py'],

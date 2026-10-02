@@ -98,10 +98,17 @@ TIMEOUT_OVERRIDES = {
 # their value before printing. Fixing either needs a host primitive or a parallel
 # integer representation, not another formatter patch.
 # - lit-hex / int-wrap / math-maxinteger: exact ints past +/-2^53 float-round.
-# - tab-del: #{1,nil,3} is undefined in Lua (hole length); the chip
-#   keeps the allocated length while PUC Lua reports 1.
 # - io-int-coerce is a chip feature, not a divergence: outInt0 is a typed int
 #   port, so an integral float is stored as an integer.
+#
+# A hole length is NOT on this list, and used to be described here: the note said
+# `#{1,nil,3}` was a divergence because the chip kept the allocated length while
+# PUC reported 1.  There is no CHIP_LOG entry for it and there has not been one
+# since the border chase learned to count tombstones -- `tab-del` and
+# `len-hole-bridge` compare against the oracle and both agree, and so do
+# `#{1,nil,3}`, `#{1,2,nil,4}` and `#{nil,2,3}`.  A comment that outlives the
+# entry it explains is worse than no comment: it reads as a live divergence and
+# sends the next person looking for a bug that is not there.
 CHIP_LOG = {
     "lit-hex": "255\t16\t9223372036854775808\n",
     "fmt-div3": "0.3333333333333333\n",
@@ -129,18 +136,6 @@ CHIP_LOG = {
     # PUC 5.5's string.gmatch answers one value; the chip answers three because
     # its generic for reads the walk's state out of the call.
     "gmatch-arity": "function\t0\tnil\n3\n",
-    # A negative zero raised to an integer power: right magnitude, wrong sign.
-    # The pow arm is a bare `x ** y` and the gate loses the sign of a zero
-    # result -- PUC alternates -0.0/+0.0 on the parity of the exponent (and
-    # -inf/+inf for negative exponents) and the chip answers +0.0 for every
-    # positive exponent and -inf for every negative one.  A non-integer exponent
-    # agrees, and other negative bases are fine, so this is a zero RESULT rather
-    # than a negative base.  The full reasoning and the measurement are on the
-    # case in cases.py; the short version is that the language has no cheap sign
-    # oracle for a zero (`&&` does not short-circuit, so a guard is paid on every
-    # pow, and sign() is modelled as `0.0 if x == 0`), so this is host-bound and
-    # it is here as a canary: if someone fixes it, this entry is what fails.
-    "negzero-pow": "0.0\t0.0\t-inf\t0.0\n",
     # A builtin reached as a VALUE through pcall names itself by its short name
     # where PUC names it by its library path.  A named call agrees with PUC.
     "pcall-gate-name": "false\tbad argument #2 to 'format' "

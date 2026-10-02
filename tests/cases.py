@@ -2165,24 +2165,35 @@ TESTS = [
      "local z = -0.0 print(math.floor(z), math.ceil(z))", None, "run"),
     ("negzero-math-rest2", "local z = -0.0 print(math.fmod(z, 3), math.sqrt(z))",
      None, "run"),
-    # The one signed-zero case left, pinned in CHIP_LOG so it is a CANARY rather
-    # than a comment: the pow arm is a bare `x ** y` and the gate answers the
-    # right magnitude with the wrong sign whenever the base is a negative zero
-    # and the exponent is an integer.  PUC alternates on parity and the chip does
-    # not alternate at all -- positive exponents are all +0.0, negative exponents
-    # are all -inf.  `(-0.0)^0.5` agrees, so it is a zero RESULT, not a negative
-    # base: other negative bases are fine (-2.0^3 is -8.0).
-    #
-    # Deliberately unfixed, and the language docs say why: `&&` does not
-    # short-circuit ("both arms evaluate... an arm cannot be used to guard
-    # another"), so the sign test would be paid on EVERY pow, and the only oracle
-    # for a zero's sign is a divide.  The documented sign() gate does not help --
-    # irsims.py models it as `0.0 if x == 0`, and -0.0 == 0.0.  Fixing it also
-    # needs the exponent's parity or `(-0.0)^2` regresses, so it is a compare, a
-    # divide, an integer test and a parity test to fix one printed value in 400
-    # fuzz seeds.
+    # The pow arm is now sign-correct for a negative zero base: the gate answered the
+    # right MAGNITUDE with the wrong sign, +0.0 for every positive exponent and
+    # -inf for every negative one, where PUC alternates on the parity of the
+    # exponent.  The whole set is here because fixing it means "flip the sign
+    # sometimes" and each of these pins one side of that decision -- `^ 4` and
+    # `^ -3` are the ones a parity test written the wrong way round breaks, and
+    # `^ 0` and `^ 0.5` are the ones a guard written too wide breaks.
     ("negzero-pow", "local z = -0.0 print(z ^ 2, z ^ 3, z ^ -2, z ^ 0.5)", None,
      "run"),
+    ("negzero-pow2",
+     "local z = -0.0 print(z ^ 0, z ^ 1, z ^ -1, z ^ 4, z ^ -3)", None, "run"),
+    ("negzero-pow3", "print((-0.0)^1e300, 0.0^-3, (-2.0)^3, (-0.5)^3, 2^0.5)",
+     None, "run"),
+    # The dispatch is written twice -- vmStep and the vmStepFast subset -- and a
+    # fix that reached only one copy was invisible, so these compute the same pow
+    # in PLAIN execution and inside a closure.  vmBusy() is true while cloActive,
+    # so the closure call is the other dispatch path, and the two answers have to
+    # be equal as well as right.  tools/chip/twopaths.py checks the same invariant
+    # on the source, for every arm, which is why it exists: pow is the terminal
+    # `else` of the arithmetic chain rather than an `op == 13` arm, so a tool that
+    # only matched `op == N` could not see it.
+    ("negzero-pow-paths",
+     "local z = -0.0 local function pw(v, e) return v ^ e end "
+     "print(z ^ 3, pw(z, 3)) print(z ^ -2, pw(z, -2)) "
+     "print(z ^ 2, pw(z, 2)) print(z ^ 0.5, pw(z, 0.5))", None, "run"),
+    ("negzero-pow-paths2",
+     "local z = -0.0 local function pw(v, e) return v ^ e end "
+     "local t = {} t[1] = z ^ 3 t[2] = pw(z, 3) "
+     "print(t[1], t[2], t[1] == t[2])", None, "run"),
     ("arr-multi-read1", "print(innumarr(1, 1))", None, "modelio",
      {"innumarr": [3.5], "expect": {"log": "3.5\n"}}),
     # A compile limit answers on the err port with the line that asked for too
