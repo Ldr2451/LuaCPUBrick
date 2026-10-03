@@ -2298,7 +2298,7 @@ mod intWrap(v: float) -> float {
   return w
 }
 
-mod cmpFinish(v: bool) {
+chip cmpFinish(v: bool) {
   vtag[cmpDst] = 3
   if v {
     vnum[cmpDst] = 1.0
@@ -7681,7 +7681,7 @@ mod pcallStep() {
 // closure: the value lands in cloDst before the instruction after LOADFUNC
 // runs.  One tick per cell is the price of keeping the array stores out of
 // the op-25 arm.
-mod cloStep() {
+chip cloStep() {
   if cloK < cloN {
     let fid = cloCur
     let cfid = curFid()
