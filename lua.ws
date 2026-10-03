@@ -3043,7 +3043,7 @@ chip rdTake(n: int) {
 // One line, as PUC's "*l" gives it: no newline, and a trailing CR is not part of
 // the line.  rdGot is false at the end of the text, so io.lines terminates --
 // and a blank line in the middle is a line, not the end.
-mod rdLine() {
+chip rdLine() {
   let nl = rdText.Find("\n", true, rdPos)
   if rdPos >= rdText.Length() {
     rdGot = false
@@ -6865,7 +6865,7 @@ chip vmFail(msg: string) {
 // good operands it does nothing.  PUC adds "(constant 'x')" when the operand is
 // a literal; the chip knows the register but not that it came from a literal, so
 // that note is the one part of these messages that stays.
-mod bitFail(lt: int, lv: float, rt: int, rv: float) {
+chip bitFail(lt: int, lv: float, rt: int, rv: float) {
   if lt != 6 && !(lt == 1 && lv == floor(lv)) {
     vmFail("attempt to perform bitwise operation on a " .. typeName(lt)
       .. " value")
