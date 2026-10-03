@@ -5119,8 +5119,15 @@ mod fmtEFracDig() {
 
 chip lexStep() {
   if lstage != 99 && !lerr {
-    let cp = if lpos < llen then lsrc.Substring(lpos, 1).ToCharCode().Codepoint else 0
+    // ONE Substring for the character, not two.  `cp` is its codepoint and `ch`
+    // is the character itself, and both were asking the host for the same
+    // one-character slice -- two string allocations on every lexStep, which is
+    // the hottest loop in the chip.  The bound check stays on the codepoint,
+    // because that is where the 0 for "past the end" is wanted; `ch` keeps
+    // taking the slice unconditionally, exactly as before, so a lexStep that
+    // runs off the end still sees the "" it always did.
     let ch = lsrc.Substring(lpos, 1)
+    let cp = if lpos < llen then ch.ToCharCode().Codepoint else 0
     // cp2 and cp3 are two more Substring calls, and only the first three stages
     // read them: a name, a string body, an escape, a comment and a hex digit all
     // look at cp alone.  Most of a library piece's characters are inside one of
