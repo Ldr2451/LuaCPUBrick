@@ -925,11 +925,15 @@ def worker(ws_path, payload, irpkl=None):
         from irsims import sim_from_dump
         sim = sim_from_dump(irpkl)
     else:
-        from irdump import dump_source
+        from irdump import dump_source_modules, chip_call_groups
         from irgraph import Wire
         from irsims import Sim
-        nodes, wires, _ = dump_source(ws_path)
-        sim = Sim(nodes, [Wire(*w) for w in wires])
+        mods = dump_source_modules(ws_path)
+        nodes, wires = {}, []
+        for m in mods:
+            nodes.update(m["nodes"])
+            wires.extend(m["wires"])
+        sim = Sim(nodes, [Wire(*w) for w in wires], chip_call_groups(mods))
     # One graph build for the whole batch: compiling the chip and indexing its
     # wires costs more than most cases run for.
     # A lockstep case needs a SECOND, independent chip built from the same graph,
@@ -940,11 +944,16 @@ def worker(ws_path, payload, irpkl=None):
             from irsims import sim_from_dump
             sim2 = sim_from_dump(irpkl)
         else:
-            from irdump import dump_source
+            from irdump import dump_source_modules, chip_call_groups
             from irgraph import Wire
             from irsims import Sim
-            nodes, wires, _ = dump_source(ws_path)
-            sim2 = Sim(nodes, [Wire(*w) for w in wires])
+            mods = dump_source_modules(ws_path)
+            nodes, wires = {}, []
+            for m in mods:
+                nodes.update(m["nodes"])
+                wires.extend(m["wires"])
+            sim2 = Sim(nodes, [Wire(*w) for w in wires],
+                       chip_call_groups(mods))
     for p in batch:
         sys.stdout.write(json.dumps(run_in_sim(sim, p, sim2)) + "\n")
         sys.stdout.flush()

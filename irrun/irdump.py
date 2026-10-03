@@ -290,6 +290,46 @@ def _compile_dump(path, brz_out=None):
     return p.stderr
 
 
+def chip_call_groups(mods):
+    """Each chip call's value pins, keyed by its `_exec_in` pin.
+
+    Read off module parentage, not inferred by flood-fill: every body module
+    names the chip node that owns it (`parent=`), so its pins ARE the call's
+    pins. The flood-fill this replaces missed pins twice -- once for arguments
+    read only by pure gates (never exec-reachable), once the same way again --
+    because reachability is the wrong question. Membership is in the dump.
+
+    A pin qualifies when it has an incoming `RER_Input` wire (root module ports
+    have none); the trigger is the one whose `RER_Output` is Exec-typed.
+    Returns {} for a source with no chips, so callers need no special case.
+    """
+    groups = {}
+    # Cross-boundary wires live in the CALLER's wire list, not the body's: a
+    # body module's own wires never include the edges landing on its pins
+    # (those are external refs from the caller's side). Index every module's
+    # wires together or no pin ever qualifies.
+    inw = {}
+    for m in mods:
+        for s, sp, d, dp in m["wires"]:
+            inw.setdefault((d, dp), []).append((s, sp))
+    for m in mods[1:]:
+        exec_pin, pins = None, []
+        for nid, nd in m["nodes"].items():
+            if "Internal_MicrochipInput" not in nd.cls:
+                continue
+            if not inw.get((nid, "RER_Input")):
+                continue
+            is_exec = any(p[1] == "Exec" for p in nd.pout
+                          if p[0] == "RER_Output")
+            if is_exec:
+                exec_pin = nid
+            else:
+                pins.append(nid)
+        if exec_pin is not None:
+            groups[exec_pin] = pins
+    return groups
+
+
 def dump_source(path, brz_out=None):
     """Compile path with --dump-ir-full; return (nodes, wires, nchips).
 

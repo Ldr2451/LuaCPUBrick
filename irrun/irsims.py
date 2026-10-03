@@ -173,9 +173,16 @@ def lit_value(lit):
 
 
 class Sim:
-    def __init__(self, nodes: dict[int, Node], wires: list):
+    def __init__(self, nodes: dict[int, Node], wires: list,
+                 groups: dict[int, list[int]] | None = None):
         self.nodes = nodes
         self.wires = wires
+        # Each chip call's value pins, keyed by its `_exec_in` pin, read off
+        # module parentage by `irdump.chip_call_groups` ({} when chipless).
+        # Passed in rather than inferred here: the flood-fill this replaces
+        # missed pins twice, because reachability is the wrong question when
+        # membership is in the dump.
+        self._call_pins: dict[int, list[int]] = groups or {}
         self.in_wires: dict[tuple[int, str], list] = {}
         self.out_wires: dict[tuple[int, str], list] = {}
         for w in wires:
@@ -215,9 +222,9 @@ class Sim:
         # sources read a shared, advancing stack: one arm's source published
         # 1.0, 2.0, 3.0 across three ticks, so a pin that re-snapshots on every
         # publish hands its body the LAST value (`{1,2,3}` came back as 3, 3, 3)
-        # instead of the value current at its own call.
-        self._call_pins: dict[int, list[int]] = {}
-        self._build_call_pins()
+        # instead of the value current at its own call. (`_call_pins` itself is
+        # set from the constructor argument above; the groups come from module
+        # parentage, not from inference here.)
         # A pin snapshots the FIRST publish after it unlocks, then holds (locked)
         # until its call completes (`_exec_out` unlocks). Re-snapshotting on every
         # publish hands the body a LATER call's value: one arm's source published
@@ -2292,76 +2299,13 @@ class Sim:
         props = self.nodes[nid].props.get("Value", ("raw", "false"))
         return _extract(props) if isinstance(props, tuple) else props
 
-    def _build_call_pins(self):
-        """Group each chip call's value pins under its `_exec_in` pin.
-
-        A body is the exec-reachable set from its `_exec_in`; any boundary pin
-        those gates read is one of the call's arguments. Flood-fill through exec
-        ports only, so a value wire out of the body cannot escape into the
-        caller. Bounded: bodies are hundreds of nodes, and a malformed dump could
-        cycle.
-        """
-        for nid, nd in self.nodes.items():
-            if "Internal_MicrochipInput" not in nd.cls:
-                continue
-            if not self.in_wires.get((nid, "RER_Input")):
-                continue
-            if not self._port_is_exec(nd, "RER_Output"):
-                continue
-            seen, stack, pins = {nid}, [nid], []
-            for _ in range(60000):
-                if not stack:
-                    break
-                cur = stack.pop()
-                for oport in [p[0] for p in self.nodes[cur].pout
-                              if "Exec" in p[1]]:
-                    for w in self.out_wires.get((cur, oport), []):
-                        if w.dst_id in seen:
-                            continue
-                        dn = self.nodes.get(w.dst_id)
-                        # Stop at the boundary going out: following `_exec_out`
-                        # into the caller walks the whole program and every other
-                        # body with it (one group came out with 464 pins from 17
-                        # bodies). The body is what `_exec_in` can reach without
-                        # leaving through an Output pin.
-                        if dn is not None and "MicrochipOutput" in dn.cls:
-                            seen.add(w.dst_id)
-                            continue
-                        seen.add(w.dst_id)
-                        stack.append(w.dst_id)
-                        if (dn and "Internal_MicrochipInput" in dn.cls
-                                and self.in_wires.get((w.dst_id, "RER_Input"))
-                                and not self._port_is_exec(dn, "RER_Output")):
-                            pins.append(w.dst_id)
-            # Pins the reachable gates read as values (they are sources in
-            # in_wires, not exec-reachable, so the fill above never sees them).
-            # Walk BACKWARD through pure gates too: an argument like `k` is read
-            # only by pure comparisons (`1 <= k`), which are pulled on demand and
-            # never exec-reachable. Missing them left `k`/`n` unsnapshotted, so a
-            # multi-value return copied nothing and `string.find` lost its
-            # captures. Bounded: values fan in, and a malformed dump could cycle.
-            def collect_pin_sources(g, depth=0):
-                if depth > 24:
-                    return
-                gn = self.nodes.get(g)
-                if gn is None or "Internal_Microchip" in gn.cls:
-                    return
-                for p in [x[0] for x in gn.pin]:
-                    for w in self.in_wires.get((g, p), []):
-                        dn = self.nodes.get(w.src_id)
-                        if (dn and "Internal_MicrochipInput" in dn.cls
-                                and self.in_wires.get((w.src_id, "RER_Input"))
-                                and not self._port_is_exec(dn, "RER_Output")
-                                and w.src_id not in pins):
-                            pins.append(w.src_id)
-                        elif (dn and self._is_pure(dn.cls)
-                                and w.src_id not in seen_pure):
-                            seen_pure.add(w.src_id)
-                            collect_pin_sources(w.src_id, depth + 1)
-            seen_pure: set[int] = set()
-            for g in seen:
-                collect_pin_sources(g)
-            self._call_pins[nid] = pins
+    # `_build_call_pins` lived here: a flood-fill that grouped each call's pins
+    # under its `_exec_in` by reachability. It missed pins twice (arguments read
+    # only by pure gates are never exec-reachable), because reachability is the
+    # wrong question when membership is in the dump. Groups now come from module
+    # parentage via `irdump.chip_call_groups`, passed to the constructor.
+    # Deleted rather than kept as a fallback: two silent misses is enough, and a
+    # fallback that can disagree with the dump is worse than none.
 
     def _published_val(self, nid: int, port: str):
         """What `nid` has ALREADY published on `port`, or None. Never pulls."""
@@ -2480,8 +2424,13 @@ class Sim:
 
 def run_ws(ws_path: str, max_ticks: int = MAX_TICKS,
            inputs: dict | None = None) -> dict:
-    nodes, wires, _ = dump_source(ws_path)
-    sim = Sim(nodes, [Wire(*w) for w in wires])
+    from irdump import dump_source_modules, chip_call_groups
+    mods = dump_source_modules(ws_path)
+    nodes, wires = {}, []
+    for m in mods:
+        nodes.update(m["nodes"])
+        wires.extend(m["wires"])
+    sim = Sim(nodes, [Wire(*w) for w in wires], chip_call_groups(mods))
     if inputs:
         sim.inputs = dict(inputs)
     return sim.run(max_ticks)
@@ -2500,8 +2449,14 @@ class ChipRunner:
         # A runner is a sim plus nothing, so a worker that already has the sim
         # (loaded from a share_dump pickle, say) can make one without compiling.
         if sim is None:
-            nodes, wires, _ = dump_source(ws_path)
-            sim = Sim(nodes, [Wire(*w) for w in wires])
+            from irdump import dump_source_modules, chip_call_groups
+            mods = dump_source_modules(ws_path)
+            nodes, wires = {}, []
+            for m in mods:
+                nodes.update(m["nodes"])
+                wires.extend(m["wires"])
+            sim = Sim(nodes, [Wire(*w) for w in wires],
+                      chip_call_groups(mods))
         self.sim = sim
 
     def reset(self):
@@ -2534,9 +2489,14 @@ def share_dump(ws_path: str, path: str) -> str:
     seconds before it runs a program that takes a second.
     """
     import pickle
-    nodes, wires, _ = dump_source(ws_path)
+    from irdump import dump_source_modules, chip_call_groups
+    mods = dump_source_modules(ws_path)
+    nodes, wires = {}, []
+    for m in mods:
+        nodes.update(m["nodes"])
+        wires.extend(m["wires"])
     with open(path, "wb") as f:
-        pickle.dump((nodes, wires), f)
+        pickle.dump((nodes, wires, chip_call_groups(mods)), f)
     return path
 
 
@@ -2544,5 +2504,10 @@ def sim_from_dump(path: str) -> "Sim":
     """A Sim over the graph in a share_dump pickle, with nothing compiled."""
     import pickle
     with open(path, "rb") as f:
-        nodes, wires = pickle.load(f)
-    return Sim(nodes, [Wire(*w) for w in wires])
+        loaded = pickle.load(f)
+    # Pickles from before the groups existed hold (nodes, wires): chipless
+    # sources never need groups, so those load as group-less rather than
+    # failing. Every current writer stores all three.
+    nodes, wires = loaded[0], loaded[1]
+    groups = loaded[2] if len(loaded) > 2 else None
+    return Sim(nodes, [Wire(*w) for w in wires], groups)

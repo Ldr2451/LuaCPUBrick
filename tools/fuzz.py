@@ -43,7 +43,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "tests"))
-from test_chip_suite import run_case
+from test_chip_suite import run_case, WS_PATH
+import time
 
 INPUTS = [2.5, -1.0, 0.5, 8.0]
 SINPUTS = {0: "ab", 1: "c d"}
@@ -402,44 +403,67 @@ def main():
     kw = {"inputs": INPUTS, "sinputs": SINPUTS, "vec": VEC, "col": COL,
           "innumarr": INARR}
     jobs = [("fuzz-%d" % (seed0 + k), one(seed0 + k)) for k in range(count)]
-    fails = skips = known = 0
-    with cf.ThreadPoolExecutor(max_workers=8) as ex:
-        futs = {ex.submit(run_case, name, src, None, "run", dict(kw)): name
-                for name, src in jobs}
-        for f in cf.as_completed(futs):
-            name, good, detail, dt = f.result()
-            if good is None:
-                if name not in SKIP_REASONS:
-                    print(f"SKIP {name}: {detail}", flush=True)
-                skips += 1
-            elif good:
-                pass
-            elif only_neg_zero(detail):
-                # A signed zero that differs ONLY in sign.  There are none at the
-                # moment -- 400 seeds agree with nothing in this bucket -- and this
-                # comment has been wrong twice, which is why it now says what the
-                # class is rather than what caused the last one:
-                #
-                #  * It blamed the host's `..`.  Never true here -- `local v = -0.0
-                #    print('a' .. v)` prints a-0.0 and matches PUC, and so do
-                #    tostring and print.
-                #  * It blamed the pow gate, which was real and is now FIXED, by
-                #    powSignedZero in lua.ws.  Both remaining signed-zero bugs were
-                #    chip bugs, not host laws: an integer-tagged register carrying
-                #    -0.0, and math.abs not clearing the sign of a zero.
-                #
-                # The bucket stays because a signed zero is the one class where a
-                # one-character difference is invisible in a diff, and because
-                # reporting it as a FAIL every run trains the reader to ignore
-                # FAILs.  If one appears, it is a real divergence: say which.
-                print(f"KNOWN {name} ({dt:.1f}s): negative zero only: {detail}",
-                      flush=True)
-                known += 1
-            else:
-                src = dict(jobs)[name]
-                print(f"FAIL {name} ({dt:.1f}s): {detail}\n{src}",
-                      flush=True)
-                fails += 1
+    # One shared IR dump for every seed: each seed used to spawn its own worker
+    # subprocess that compiled lua.ws fresh (~4.5s), so 400 seeds paid the build
+    # 400 times and the sweep took 400+ seconds. Batches build once per worker
+    # process instead; the programs generated are byte-identical (same seeds,
+    # same `one()`), only the execution is shared.
+    import tempfile
+    from test_chip_suite import run_batch, resolve_src
+    from irsims import share_dump
+    t0 = time.time()
+    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
+        irpkl = f.name
+    try:
+        share_dump(WS_PATH, irpkl)
+        print("dump %.1fs -> %s" % (time.time() - t0, irpkl), flush=True)
+        prepared = [("fuzz-%d" % (seed0 + k), resolve_src(src, dict(kw)),
+                      dict(kw, _irpkl=irpkl), "run", None)
+                    for k, (name, src) in enumerate(jobs)]
+        # run_batch falls back to case-by-case on a hang, which keeps the hard
+        # per-case timeout that isolates a single runaway program.
+        BATCH = 25
+        batches = [prepared[i:i + BATCH]
+                   for i in range(0, len(prepared), BATCH)]
+        fails = skips = known = 0
+        with cf.ThreadPoolExecutor(max_workers=8) as ex:
+            futs = [ex.submit(run_batch, b) for b in batches]
+            for f in cf.as_completed(futs):
+                for name, good, detail, dt in f.result():
+                    if good is None:
+                        if name not in SKIP_REASONS:
+                            print(f"SKIP {name}: {detail}", flush=True)
+                        skips += 1
+                    elif good:
+                        pass
+                    elif only_neg_zero(detail):
+                        # A signed zero that differs ONLY in sign.  There are none at the
+                        # moment -- 400 seeds agree with nothing in this bucket -- and this
+                        # comment has been wrong twice, which is why it now says what the
+                        # class is rather than what caused the last one:
+                        #
+                        #  * It blamed the host's `..`.  Never true here -- `local v = -0.0
+                        #    print('a' .. v)` prints a-0.0 and matches PUC, and so do
+                        #    tostring and print.
+                        #  * It blamed the pow gate, which was real and is now FIXED, by
+                        #    powSignedZero in lua.ws.  Both remaining signed-zero bugs were
+                        #    chip bugs, not host laws: an integer-tagged register carrying
+                        #    -0.0, and math.abs not clearing the sign of a zero.
+                        #
+                        # The bucket stays because a signed zero is the one class where a
+                        # one-character difference is invisible in a diff, and because
+                        # reporting it as a FAIL every run trains the reader to ignore
+                        # FAILs.  If one appears, it is a real divergence: say which.
+                        print(f"KNOWN {name} ({dt:.1f}s): negative zero only: {detail}",
+                              flush=True)
+                        known += 1
+                    else:
+                        src = dict(jobs)[name]
+                        print(f"FAIL {name} ({dt:.1f}s): {detail}\n{src}",
+                              flush=True)
+                        fails += 1
+    finally:
+        os.unlink(irpkl)
     print("%d/%d agree (%d skipped, %d known negative-zero)"
           % (count - fails - skips - known, count, skips, known))
     # `or skips` is the rule above, and it is what makes the tool's exit code
