@@ -93,6 +93,15 @@ def body_of(src, name):
     i = start
     while i < len(src):
         c = src[i]
+        # Comments FIRST, before any quote handling.  strip_noise has always
+        # done it this way and this file's own docstring says the ordering is the
+        # whole reason the tool works -- but the walker did not, and an
+        # APOSTROPHE IN A COMMENT put it into string mode: "the program's" opens
+        # a quote that some later apostrophe closes, and every brace in between
+        # is counted wrong.  That is how vmStepFast stopped being findable, on a
+        # chip that compiles with zero diagnostics, which is the worst shape for
+        # a net to fail in.  Comments cannot nest and are never inside a string
+        # here, so skipping to the newline is enough.
         if quote:
             if c == '\\':
                 i += 2
@@ -100,6 +109,10 @@ def body_of(src, name):
             if c == quote:
                 quote = None
             i += 1
+            continue
+        if src[i:i + 2] == '//':
+            j = src.find('\n', i)
+            i = len(src) if j < 0 else j
             continue
         if c in "\"'":
             quote = c
@@ -189,6 +202,19 @@ def match_brace(body, brace):
     return None
 
 
+def guard_set(src):
+    """The opcodes the fast path's pc-advance guard admits, or None if absent."""
+    m = re.search(r'if \(\(op <= (\d+) && op != (\d+)\)(.*?)\)\s*\n\s*&& !advanced',
+                  src, re.S)
+    if not m:
+        return None
+    out = set(range(0, int(m.group(1)) + 1))
+    out.discard(int(m.group(2)))
+    for g in re.findall(r'op == (\d+)', m.group(3)):
+        out.add(int(g))
+    return out
+
+
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(
@@ -211,6 +237,22 @@ def main():
         print('FAIL: found %d arms in vmStep and %d in vmStepFast; the '
               'extraction is broken, not the chip' % (len(sa), len(fa)))
         return 1
+
+    # An arm whose opcode the guard does not admit is DEAD: the chain runs before
+    # the guard, so the arm executes, but the guard then refuses to advance the
+    # pc, so the instruction is dispatched again next tick and the tick is
+    # wasted.  No test can see that -- the output is right and the tick count is
+    # only a few per cent -- and a truncated arm got in exactly this way, by a
+    # copy that ran past the end of the arm it was copying.
+    guard = guard_set(src)
+    dead = []
+    if guard is not None:
+        for key in fa:
+            if not isinstance(key, int):
+                continue          # a terminal `else`, keyed by position
+            if key not in guard:
+                dead.append(key)
+
     both = sorted(set(sa) & set(fa), key=str)
     only_slow = sorted(set(sa) - set(fa))
     only_fast = sorted(set(fa) - set(sa))
@@ -226,6 +268,15 @@ def main():
     print('shared keys: %s' % (both,))
     print('only in vmStep (%d): %s' % (len(only_slow), only_slow))
     print('only in vmStepFast (%d): %s' % (len(only_fast), only_fast))
+    if dead:
+        print('DEAD ARMS: %d arm(s) in vmStepFast whose opcode the fast-path '
+              'guard does not admit -- they execute and the pc never advances'
+              % len(dead))
+        print('  opcodes: %s' % (dead,))
+        print('  either add the opcode to the guard or delete the arm')
+    elif guard is not None:
+        print('guard admits %d opcodes; every vmStepFast arm is one of them'
+              % len(guard))
     if not bad:
         print('OK: every shared arm has the same body in both')
         return 0
@@ -234,7 +285,7 @@ def main():
         print('\n  arm %s' % op)
         print('    vmStep     : %s' % a[:300])
         print('    vmStepFast : %s' % b[:300])
-    return 1
+    return 1 if bad else (1 if dead else 0)
 
 
 if __name__ == '__main__':

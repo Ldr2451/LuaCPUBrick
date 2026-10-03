@@ -316,6 +316,21 @@ TESTS = [
     ("multi-args", "function id(a) return a end print(id(1), id(2))", None,
      "run"),
     ("ret-multi", "function f() return 1, 2 end print(f())", None, "run"),
+    # RETURNM (op 42) is `return <fixed>, <call>`: the fixed values plus
+    # everything the call produced.  It had NO case here, and that gap is why a
+    # TRUNCATED op == 42 arm sat in vmStepFast for a session -- outside the
+    # fast-path guard, so it matched nothing and did nothing, while every
+    # RETURNM paid four wasted fast dispatches.  772 cases and 400 fuzz seeds
+    # all passed, because none of them emitted this opcode.  A net caught it
+    # rather than a test, which is backwards, so the opcode has cases now.
+    ("retm-call", "function g() return 7 end function h() return 1, g() end "
+     "print(h())", None, "run"),
+    ("retm-call2", "function g() return 7, 8 end function h() return 1, g() end "
+     "print(h())", None, "run"),
+    ("retm-call-mid", "function g() return 7 end function h() return 1, g() end "
+     "print(9, h(), 8)", None, "run"),
+    ("retm-call-only", "function g() return 7 end function h() return g() end "
+     "print(h())", None, "run"),
     ("ret-multi3", "function f() return 1, 2, 3 end print(f())", None, "run"),
     ("ret-multi-mid", "function f() return 1, 2 end print(9, f(), 8)", None,
      "run"),

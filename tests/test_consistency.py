@@ -35,8 +35,19 @@ def check(name, cond, detail=""):
 
 
 def mod_body(name):
-    """Extract the full body of `mod name(...) { ... }` by brace matching."""
-    return _braced(f"mod {name}(")
+    """Extract the full body of `mod name(...) { ... }` by brace matching.
+
+    Either keyword.  resolveKw became a `chip` -- it is called twice from inside
+    lexStep, which is itself a chip, so its body existed twice over, and -57
+    nodes is what that was worth -- and keying the search on `mod` alone made
+    this net die with "substring not found" on a chip that is perfectly fine,
+    which is how a net gets ignored.  The body is what this net is about, not
+    how it is declared.
+    """
+    for prefix in (f"mod {name}(", f"chip {name}("):
+        if prefix in WS:
+            return _braced(prefix)
+    raise ValueError("no mod or chip named %r" % name)
 
 
 def _braced(prefix):

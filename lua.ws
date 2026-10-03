@@ -4476,7 +4476,7 @@ mod emitNum() {
   emitTok(1, if isInt then 1 else 0, v, "")
 }
 
-mod resolveKw() {
+chip resolveKw() {
   let n = lidBuf
   let id = if n == "and" then 1
     else if n == "break" then 2
@@ -10783,6 +10783,13 @@ chip vmStepFast() {
     } else {
       tblSetKey(toInt(vNum(a)), kt, vNum(b), vStr(b), vTag(c), vNum(c), vStr(c))
     }
+  } else if op == 43 {
+    // ADJUST a=src b=dst c=max: normalise the rest of the last call's results
+    // into c consecutive registers.  `a` already points past the first value
+    // (the caller consumed it), so only retCountV-1 values remain to copy.
+    let avail = if 0 < retCountV then retCountV - 1 else 0
+    let n = if avail < c then avail else c
+    retAdjust(vmBase + a, vmBase + b, n, c)
   } else if op == 0 {
     vmHalted = true
     advanced = true
@@ -10796,7 +10803,7 @@ chip vmStepFast() {
   // The parentheses round the WHOLE set, not just its first term: `||` binds
   // looser than `&&`, so an unbracketed tail would bind only the last term and
   // leave `!advanced` guarding nothing but it.
-  if ((op <= 22 && op != 16) || op == 24 || op == 33 || op == 50 || op == 29 || op == 30)
+  if ((op <= 22 && op != 16) || op == 24 || op == 33 || op == 50 || op == 29 || op == 30 || op == 43)
     && !advanced && !vmHalted {
     vmPc = vmPc + 1
     if vmPc >= bop.length() {

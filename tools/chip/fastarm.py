@@ -29,27 +29,73 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
 WS = os.path.join(ROOT, "lua.ws")
 
 
-def find_arm(lines, lo, hi, op):
-    """(start, end) of the top-level arm for `op`, by brace depth."""
-    depth = 0
-    start = None
-    base = None
+def extract_arm(lines, lo, hi, op):
+    """The lines of the top-level arm for `op`, as a STANDALONE arm.
+
+    No brace counting, and that is the point.  The chain is written
+
+        } else if op == 42 {
+          body
+        } else if op == 43 {
+
+    so an arm's closing brace is the FIRST CHARACTER of the next arm's head
+    line.  A depth walk therefore never sees the arm end -- depth returns to
+    base and immediately goes back up on the same line -- and the first version
+    of this ran past arm 43 and stopped at an inner `}` two arms later.  What
+    it copied was arm 43 PLUS A TRUNCATED arm 42, which compiles, passes 772
+    cases and 400 fuzz seeds, and costs four wasted fast dispatches on every
+    RETURNM forever.
+
+    So find the next CHAIN HEAD instead, which is unambiguous: `} else if op ==
+    N` and `} else` occur only in the dispatcher, never nested.  The closing
+    brace is taken from that head line, and a final arm ends at a lone `}`.
+    """
+    head = None
     for i in range(lo, hi):
-        l = lines[i]
-        if start is None:
-            m = re.match(r"\s*(\} else if|if) op == (\d+)(.*)\{$", l)
-            if m and int(m.group(2)) == op and base is None:
-                start = i
-                head_open = l.count("{")
-                base = depth
-                depth += l.count("{") - l.count("}")
+        m = re.match(r"\s*\}? else if op == (\d+)", lines[i])
+        if m and int(m.group(1)) == op:
+            head = i
+            break
+    if head is None:
+        return None
+    nxt = None
+    for i in range(head + 1, hi):
+        s = lines[i].strip()
+        if re.match(r"\} else (if op == \d+|if |\w|$)", s) or s == "}":
+            nxt = i
+            break
+    if nxt is None:
+        return None
+    body = list(lines[head:nxt])
+    # No closing brace here: the caller dedents every line it is given, so a
+    # closer added now would be dedented too and land in column 0 -- which is a
+    # syntax error that reads as "unexpected token '}'", not as a bad indent.
+    return body
+
+
+def _strip(line, quote):
+    """(code without comments/strings, quote state after it)."""
+    out = []
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if quote:
+            if c == "\\":
+                i += 2
                 continue
-            depth += l.count("{") - l.count("}")
+            if c == quote:
+                quote = None
+            i += 1
             continue
-        depth += l.count("{") - l.count("}")
-        if depth == base and l.strip() == "}":
-            return start, i
-    return None
+        if line[i:i + 2] == "//":
+            break
+        if c in "\"'":
+            quote = c
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out), quote
 
 
 def main(argv):
@@ -66,13 +112,12 @@ def main(argv):
 
     taken = []
     for op in ops:
-        got = find_arm(lines, s0, v0, op)
+        got = extract_arm(lines, s0, v0, op)
         if got is None:
             print("  op %-3d NOT FOUND in vmStep" % op)
             return 1
         taken.append((op, got))
-        print("  op %-3d lines %d-%d (%d lines)"
-              % (op, got[0] + 1, got[1] + 1, got[1] - got[0] + 1))
+        print("  op %-3d %d lines from vmStep" % (op, len(got)))
 
     # The guard is patched BEFORE the arms go in.  Inserting the arms shifts every
     # line below them, so searching for the guard afterwards looks in a range
@@ -95,17 +140,23 @@ def main(argv):
     print("  guard: %s" % " ".join(old.split())[:96])
 
     # insert before HALT, which must stay the last arm
-    halt = find_arm(lines, v0, v1, 0)
+    halt = extract_arm(lines, v0, v1, 0)
     if halt is None:
         print("  HALT arm not found in vmStepFast")
         return 1
     block = []
-    for op, (a, b) in taken:
-        for k in range(a, b + 1):
-            line = lines[k]
+    for op, arm in taken:
+        for line in arm:
             block.append(line[2:] if line.startswith("  ") else line)
+        # NO closing brace.  In this chain the arm's `}` is the first character
+        # of the NEXT head line, and the arm is inserted immediately before an
+        # existing one, so that line already closes it.  Adding a closer gives
+        # one brace too many and the compiler says "unexpected token 'else'".
         print("  %-4s -> vmStepFast" % ("op%d" % op))
-    lines[halt[0]:halt[0]] = block
+    # insert before HALT, which must stay the last arm
+    at = next(i for i in range(v0, v1)
+              if re.match(r"\s*\}? else if op == 0", lines[i]))
+    lines[at:at] = block
 
     if check:
         print("--check: nothing written")
