@@ -2030,7 +2030,8 @@ chip retAdjust(src: int, dst: int, k: int, n: int) {
   if 16 <= k { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] } else if 16 <= n { vtag[dst+15] = 0 vnum[dst+15] = 0.0 vstr[dst+15] = "" }
 }
 
-mod retCopy(src: int, dst: int, n: int) {
+// A CHIP: inlined copies multiply through outer mods (pcallEnd, gateHigh).
+chip retCopy(src: int, dst: int, n: int) {
   if 1 <= n { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] }
   if 2 <= n { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] }
   if 3 <= n { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] }
