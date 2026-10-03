@@ -1230,16 +1230,27 @@ class Sim:
             # caller's wires and labelled with the parameter name (`tid`, `tmap`,
             # ...), which is not in `self.inputs`. Decide by wiring, not label.
             if self.in_wires.get((nid, "RER_Input")):
-                # Publish NOTHING. A boundary pin is a wire, and caching what it
-                # saw is what broke this: the pin is reached early in the caller's
-                # exec chain, before the argument expression has run, so it
-                # published the DEFAULT it was handed -- 0.0, not None -- and
-                # every later read trusted that 0. `tmap` came back holding
-                # 0, 0, 0 for `{1,2,3}`. Reads go through `_in_val` instead, which
-                # gets the value when the body asks for it, by which point the
-                # caller has produced it.
+                # SNAPSHOT, at the moment the pin is scheduled -- which is when
+                # the argument expression publishes, i.e. the call. The body runs
+                # later, and by then the caller's stack slot holds a LATER value:
+                # read-through gave `{1,2,3}` the single value 3, 3, 3, because all
+                # sixteen arms resolve through the same VM stack read.
                 #
-                # The edge is still pushed, because that is what fires the body.
+                # Only SCALARS. A `Ref(...)` pin carries a reference and caching
+                # it snapshots it: the pin is reached before the referent exists,
+                # and the body then reads and writes that throwaway object forever
+                # while the caller writes the real one -- `tmap` stayed empty while
+                # the body reported success. References resolve through
+                # `_arr_id`/`_map_id`, which follow the pin.
+                #
+                # Snapshot what the source PUBLISHED, never a pulled value, and
+                # publish nothing when there is none: the unpulled default was
+                # what filled `tmap` with 0, 0, 0.
+                for w in self.in_wires.get((nid, "RER_Input"), []):
+                    got = self._published_val(w.src_id, w.src_port)
+                    if isinstance(got, (bool, int, float, str)):
+                        self._out_val(nid, 'RER_Output', got)
+                        break
                 for w in self.out_wires.get((nid, "RER_Output"), []):
                     nq.add((w.dst_id, w.dst_port))
                 return
@@ -2188,6 +2199,21 @@ class Sim:
             return None
         props = self.nodes[nid].props.get("Value", ("raw", "false"))
         return _extract(props) if isinstance(props, tuple) else props
+
+    def _published_val(self, nid: int, port: str):
+        """What `nid` has ALREADY published on `port`, or None. Never pulls.
+
+        A boundary pin must snapshot the argument the caller published at the
+        moment it published it. `_in_val` cannot be used for that: it pulls
+        `Exec_*` value outputs on demand, re-evaluating them against the stack as
+        it stands NOW rather than as it stood at the call -- which made all
+        sixteen arms of a table constructor read one value, `{1,2,3}` coming back
+        as 3, 3, 3.
+        """
+        if (nid, port) not in self.value_ready:
+            return None
+        pv = self.nodes[nid].props.get(port)
+        return _extract(pv) if pv else None
 
     def _port_is_exec(self, node, port: str) -> bool:
         """True when `port` on `node` is Exec-typed per the dump's port spec."""
