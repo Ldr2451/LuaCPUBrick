@@ -2855,7 +2855,9 @@ mod fmtPadStep() {
 // stays on the list after the table it died in stops pointing at it, so the
 // free list reads -2 to tell "dead and nobody owns it any more" from "dead but
 // still chained, unhook it and drop its stale map entry".
-mod tblUnlink(tid: int, sl: int) {
+// A CHIP: nested in tblSetKey; 34 instances, 1 grid.
+// A CHIP: nested in tblSetKey; 34 instances, 1 grid.
+chip tblUnlink(tid: int, sl: int) {
   let pv = tPrev[sl]
   let nx = tNext[sl]
   if pv != -1 {
@@ -3059,7 +3061,9 @@ mod rdLine() {
 // Put a slot between two chain entries, which is the whole of what an insertion
 // chain is; pv == -1 means the head and nx == -1 the tail.  tblLink is the
 // append-at-the-tail case, and a revived key is the replace-in-place case.
-mod tblSplice(tid: int, sl: int, pv: int, nx: int) {
+// A CHIP: nested in tblSetKey; 34 instances, 2 grids.
+// A CHIP: nested in tblSetKey; 34 instances, 2 grids.
+chip tblSplice(tid: int, sl: int, pv: int, nx: int) {
   tPrev[sl] = pv
   tNext[sl] = nx
   if pv != -1 {
@@ -3081,7 +3085,9 @@ mod tblLink(tid: int, sl: int) {
 }
 
 // Copy up to MAXVALS values from the register file into the vararg stack.
-mod vaSpill(src: int, dst: int, n: int) {
+// A CHIP: 4 sites, 1 grid.
+// A CHIP: 4 sites, 1 grid.
+chip vaSpill(src: int, dst: int, n: int) {
   if 1 <= n { vaTag[dst] = vtag[src] vaNum[dst] = vnum[src] vaStr[dst] = vstr[src] }
   if 2 <= n { vaTag[dst+1] = vtag[src+1] vaNum[dst+1] = vnum[src+1] vaStr[dst+1] = vstr[src+1] }
   if 3 <= n { vaTag[dst+2] = vtag[src+2] vaNum[dst+2] = vnum[src+2] vaStr[dst+2] = vstr[src+2] }
@@ -3101,7 +3107,9 @@ mod vaSpill(src: int, dst: int, n: int) {
 }
 
 // Copy up to MAXVALS values from the vararg stack into registers (VARARG).
-mod vaFill(base: int, dst: int, n: int) {
+// A CHIP: 3 sites, 1 grid.
+// A CHIP: 3 sites, 1 grid.
+chip vaFill(base: int, dst: int, n: int) {
   if 1 <= n { vtag[dst] = vaTag[base] vnum[dst] = vaNum[base] vstr[dst] = vaStr[base] }
   if 2 <= n { vtag[dst+1] = vaTag[base+1] vnum[dst+1] = vaNum[base+1] vstr[dst+1] = vaStr[base+1] }
   if 3 <= n { vtag[dst+2] = vaTag[base+2] vnum[dst+2] = vaNum[base+2] vstr[dst+2] = vaStr[base+2] }
@@ -3860,7 +3868,9 @@ mod slotBase() -> int {
 // header warns about.  Every call site passes the same thing -- the results are
 // at vmBase + a -- because a frame starts at the very register its results go
 // to, so that is where they are in all four return forms and in a gate.
-mod pcallEnd(src: int, k: int, extra: int) {
+// A CHIP: 15 instances, 4 grids.
+// A CHIP: 15 instances, 4 grids.
+chip pcallEnd(src: int, k: int, extra: int) {
   let ra = fRetA[fRetA.length() - 1]
   let rb = fRetBase[fRetBase.length() - 1]
   let rpc = fRetPC[fRetPC.length() - 1]
