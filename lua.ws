@@ -4024,7 +4024,8 @@ mod cmpStep() {
   }
 }
 
-mod tblFill(dst: int, tid: int, idx: int) {
+// A CHIP: 16 ladder sites share one small body.
+chip tblFill(dst: int, tid: int, idx: int) {
   let r = tmap.get(tkey(tid, 1, idx, ""))
   if r.Found {
     vSet(dst, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
@@ -6824,7 +6825,10 @@ mod exprMicro() {
 // set either way, because the arms that check it after a possible failure must
 // not go on to do the work that failed -- pcallStep clears it when it hands the
 // message over.
-mod vmFail(msg: string) {
+// A CHIP: 122 lexical sites (174 instances through outer inlining) share 53
+// small grids -- one per distinct message, the largest shared by 89. Error
+// path, so per-call ticks are irrelevant; the saving is instantiated gates.
+chip vmFail(msg: string) {
   vmFailed = true
   pcallBad[0] = 1
   if pcallDepth > 0 {
