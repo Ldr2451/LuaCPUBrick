@@ -54,6 +54,50 @@ DEMO_LOG = (              "arith	2.25	7.0	-4	-4	-0.5\n"
               "check	55	foo-bar!	2.25\n")
 
 
+def _locdecls(n):
+    return " ".join("local v%d = %d" % (i, i) for i in range(n))
+
+
+def _oldest_read(n):
+    """A function with n live locals that reads the OLDEST one.
+
+    locFind resolves a name by walking backwards down a fixed-depth ladder of
+    live locals, so the ladder's depth decides how old a local can be and still
+    be found.  Too shallow and the miss is indistinguishable from a global:
+    `return v0` compiled to LOADGLOBAL and answered nil where PUC answers 0,
+    with nothing on `err` or `progDebug` to say so.  That is a silent wrong
+    answer, which is why these read the oldest local rather than the newest --
+    a newest-local case passes at any depth and proves nothing.
+    """
+    return "local function f() %s return v0 end print(f())" % _locdecls(n)
+
+
+def _global_read(n):
+    """A global read with a deep live-local table behind it.
+
+    The other half of the same rule: a ladder that reaches every live local can
+    still miss, and that miss MUST keep meaning 'global'.  If a fix ever made
+    an unresolved name an error instead, this stops compiling.  30 locals, not
+    60: a global read costs a register of its own, and at 60 this case failed on
+    the register limit instead -- passing for a reason that had nothing to do
+    with the rule it is here to pin.
+    """
+    return ("flag = 9 local function f() %s return v0, flag end print(f())"
+            % _locdecls(n))
+
+
+def _outer_read(n):
+    """An inner closure reading an outer local, past the old ladder depth.
+
+    Same ladder, reached through resolveUp rather than a direct read, so it is
+    the case that would survive a fix that only widened the direct path.  29, not
+    31: the inner function's own locals are live at the reference too, so a
+    cross-frame read costs the outer locals AND the closure's.
+    """
+    return ("local function f() %s local g = function() return v0 end "
+            "return g() end print(f())" % _locdecls(n))
+
+
 
 TESTS = [
     ("lit-num", "print(3)", None, "run"),
@@ -254,6 +298,18 @@ TESTS = [
      "run"),
     ("local-multi", "local a,b = 1 print(a, b)", None, "run"),
     ("local-none", "local q print(q)", None, "run"),
+    # The locFind ladder: how deep a live-local table a name reference can see.
+    # 30 was the old depth, and the boundary is the whole point -- at 31 the
+    # oldest local resolved as a global and the answer was nil, silently.
+    # The depth is tools/chip/ladder.py's, and the two edge cases sit ON it, so
+    # raising the depth means moving these two with it.
+    ("locals-oldest-29", _oldest_read(29), None, "run"),
+    ("locals-oldest-30", _oldest_read(30), None, "run"),
+    ("locals-oldest-31", _oldest_read(31), None, "run"),
+    ("locals-oldest-past-ladder", _oldest_read(32), None, "reject"),
+    ("locals-past-frame", _oldest_read(64), None, "reject"),
+    ("locals-global-deep", _global_read(30), None, "run"),
+    ("locals-outer-29", _outer_read(29), None, "run"),
     ("assign-multi", "a, b = 1, 2 print(a, b)", None, "run"),
     ("assign-swap", "a, b = 10, 20 a, b = b, a print(a, b)", None, "run"),
     ("assign-short", "a, b, c = 1 print(a, b, c)", None, "run"),
@@ -1856,10 +1912,14 @@ TESTS = [
      {"expect": {"err": "table index is nil"}}),
     ("tab-idx-nontable", "x = 5 print(x[1])", None, "haltfail"),
     ("tab-len-nontable", "print(#5)", None, "haltfail"),
-    ("tab-toomany", "t = {} i = 0 while i < 65 do t[#t+1] = {} "
-     "i = i+1 end", None, "runtimerr",
+    # Both table limits are counted from spec, so raising one cannot quietly
+    # turn its case into a no-op: a program that no longer reaches the ceiling
+    # would stop raising, and `runtimerr` fails on the missing error.
+    ("tab-toomany", "t = {} i = 0 while i < %d do t[#t+1] = {} "
+     "i = i+1 end" % spec.MAX_TABLES, None, "runtimerr",
      {"expect": {"err": "too many tables (%d)" % spec.MAX_TABLES}}),
-    ("tab-oom", "t = {} i = 0 while i < 70 do t[i] = {} i = i+1 end", None,
+    ("tab-oom", "t = {} i = 0 while i < %d do t[i] = {} i = i+1 end"
+     % (spec.MAX_TABLES + 1), None,
      "runtimerr", {"expect": {"err": "too many tables"}}),
     # The table arena is fixed (512 entries, `MAX_HEAP`) and there is no
     # collector, so the ONLY thing that keeps a program inside it is the slot
@@ -1903,31 +1963,36 @@ TESTS = [
      "t[3] = nil t[3] = 30 for i = 10, 15 do t[i] = i end "
      "local s = 0 for i = 1, 6 do s = s + (t[i] or 0) end "
      "print(s, #t, t[3])", None, "run"),
-    # The 512-entry arena's own limit, which `tab-oom` above does NOT reach: it
-    # runs out of TABLES (68) long before entries (512), so the entry path had
-    # no case at all.  The message is the contract, and `runtimerr` also reads
-    # the arena counters through the suite's structural invariants -- an OOM
-    # that walked tHeap past its own storage would fail there rather than here.
-    ("tab-entries-oom", "local t = {} for i = 1, 600 do t[i] = i end "
-     "print('unreachable')", None, "runtimerr",
+    # The arena's own entry limit, which `tab-oom` above does NOT reach: it runs
+    # out of TABLES long before entries, so the entry path needs a program that
+    # asks for more entries than the arena holds.  The message is the contract,
+    # and `runtimerr` also reads the arena counters through the suite's
+    # structural invariants -- an OOM that walked tHeap past its own storage
+    # would fail there rather than here.
+    ("tab-entries-oom", "local t = {} for i = 1, %d do t[i] = i end "
+     "print('unreachable')" % (spec.MAX_HEAP + 88), None, "runtimerr",
      {"ticks": 24000,
       "expect": {"err": "out of table memory (%d entries; assign nil to a key "
                         "to free one)" % spec.MAX_HEAP}}),
     # An OOM a program can catch, and recover from, because the arena is a free
     # list rather than a wall: the failure goes to pcall as a value, the deletes
     # hand the entries back, and the table then holds what it could not a moment
-    # earlier.  400 and not 520 because the arena itself is 512 entries and four
-    # of them belong to the library tables -- a case asking for more than fits
-    # would be asking for an OOM, not for recycling.  The failure itself is
-    # deliberately NOT printed: PUC has no 512-entry limit, so a line saying
-    # whether it happened could not be compared against the oracle and this
-    # would stop being a differential case.  `tab-entries-oom` above is where the
-    # message is the contract.
+    # earlier.  The allocation deliberately asks for MORE than the arena holds,
+    # counted from spec -- at 512 it asked for 520, and raising the arena to 1024
+    # left this case still PASSING while testing nothing: no OOM, nothing to
+    # recover from.  A case that keeps its verdict after the thing it measures has
+    # moved is worse than a failing one.  The refilling loop stays under the new
+    # ceiling so it succeeds.  The failure itself is deliberately NOT printed:
+    # PUC has no entry limit, so a line saying whether it happened could not be
+    # compared against the oracle and this would stop being a differential case.
+    # `tab-entries-oom` above is where the message is the contract.
     ("tab-entries-recover", "local t = {} pcall(function() "
-     "for i = 1, 520 do t[i] = i end end) "
-     "for i = 1, 520 do t[i] = nil end "
-     "for i = 1, 400 do t[i] = i * 2 end "
-     "print(#t, t[1], t[400])", None, "run", {"ticks": 60000}),
+     "for i = 1, %d do t[i] = i end end) "
+     "for i = 1, %d do t[i] = nil end "
+     "for i = 1, %d do t[i] = i * 2 end "
+     "print(#t, t[1], t[%d])"
+     % (spec.MAX_HEAP + 8, spec.MAX_HEAP + 8, spec.MAX_HEAP - 112,
+        spec.MAX_HEAP - 112), None, "run", {"ticks": 60000}),
     ("tab-bubble", "t = {5, 3, 8, 1, 9, 2, 7, 4} i = 1 "
      "while i <= 8 do j = 1 "
      "while j <= 8 - i do "

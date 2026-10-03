@@ -23,15 +23,23 @@ two-second answer.  This runs the cheap half of the test matrix instead:
                        inputs before the first tick AND the sim raises an edge for
                        that first value, so a chip that learned a sticky input
                        only from an edge passed 731 cases and read nil in game
+  tools/chip/ladder.py --check
+                        locFind's local-resolution ladder and the guard that
+                        refuses what the ladder cannot reach have to be the same
+                        number.  They are two pieces of text, and only their
+                        agreement makes an unresolved name mean 'global' rather
+                        than 'wrong answer' -- so the check is that they have
+                        not drifted.  Instant, and the only one here that does
+                        not build
 
 One chip build is shared by every case in the last one, so the whole run is
 build-sized.  It is not a substitute for the suite -- it does not check
 results, only shapes -- so run the suite before committing, and this one
 after every edit.
 
-The five checks are independent and each is a build-sized single process, so
-they run at once: five of them in series is 65s of one core, and the slowest
-of the five is 31s.  Their output is collected and printed in the same order,
+The seven checks are independent, and each but `ladder` is a build-sized
+single process, so they run at once: in series they are 65s of one core, and
+the slowest is 31s.  Their output is collected and printed in the same order,
 so a failure reads the same as it always did.
 
   python -u tools/preflight.py
@@ -53,6 +61,7 @@ CHECKS = [
     ('syntax', ['tests/syntax_check.py'], 'FAIL=0'),
     ('hostcompat', ['tests/host_compat_check.py'],
      'every input reached the program'),
+    ('ladder', ['tools/chip/ladder.py', '--check'], '-- OK'),
 ]
 
 

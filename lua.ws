@@ -311,9 +311,19 @@ const MAX_FUNCS = 96
 // moment pcall took slot 39.  The number that matters is MAX_GLOBALS minus the
 // builtin slots, and it should stay well clear of what a real program declares.
 const MAX_GLOBALS = 96
-const MAX_CALLS = 32
-const MAX_TABLES = 68
-const MAX_HEAP = 512
+const MAX_CALLS = 64
+// Frames are 1-based on fnDepth (the main chunk is frame 1), so every array
+// indexed by fnDepth needs one slot more than the call limit.  This used to be a
+// bare 33 in twelve places and a bare 33 in four MORE that are sized by CAPTURE
+// count instead -- the same number, two different meanings, which is exactly why
+// raising MAX_CALLS nearly resized the wrong four.
+const FRAMES = 65
+// the register file is MAX_CALLS frames of MAX_REGS slots.  Spelled as a
+// literal, not MAX_CALLS * MAX_REGS: a const computed from a const is one node
+// more per use than the number it works out to (measured, both here).
+const VREGS = 4096
+const MAX_TABLES = 132
+const MAX_HEAP = 1024
 // live vararg values across all active frames
 const MAX_VA = 256
 // Upvalue descriptors per function, and the stride of fUpSrc/cloU: one per
@@ -2148,9 +2158,9 @@ mod vmReset() {  tmap.clear()
   vtag.clear()
   vnum.clear()
   vstr.clear()
-  vtag.resize(2048, 0)
-  vnum.resize(2048, 0.0)
-  vstr.resize(2048, "")
+  vtag.resize(VREGS, 0)
+  vnum.resize(VREGS, 0.0)
+  vstr.resize(VREGS, "")
   forCtrl.resize(16, 0)
   forRem.resize(16, 0.0)
   forDepth = 0
@@ -3472,7 +3482,7 @@ mod parseInit() {
   fUpDepth.clear()
   fUpDepth.resize(MAX_FUNCS * MAX_UP, 0)
   fidAt.clear()
-  fidAt.resize(33, -1)
+  fidAt.resize(FRAMES, -1)
   cfNext.clear()
   cfMax.clear()
   cfBase.clear()
@@ -3482,19 +3492,19 @@ mod parseInit() {
   selfFid.clear()
   funcEntryLoc.clear()
   opBase.clear()
-  cfNext.resize(33, 0)
-  cfMax.resize(33, 0)
-  cfBase.resize(33, 0)
-  cfMaxLoc.resize(33, -1)
-  selfName.resize(33, "")
-  selfClean.resize(33, true)
+  cfNext.resize(FRAMES, 0)
+  cfMax.resize(FRAMES, 0)
+  cfBase.resize(FRAMES, 0)
+  cfMaxLoc.resize(FRAMES, -1)
+  selfName.resize(FRAMES, "")
+  selfClean.resize(FRAMES, true)
   fnVar.clear()
-  fnVar.resize(33, false)
+  fnVar.resize(FRAMES, false)
   fnSelfArg.clear()
-  fnSelfArg.resize(33, false)
-  selfFid.resize(33, -1)
-  funcEntryLoc.resize(33, 0)
-  opBase.resize(33, 0)
+  fnSelfArg.resize(FRAMES, false)
+  selfFid.resize(FRAMES, -1)
+  funcEntryLoc.resize(FRAMES, 0)
+  opBase.resize(FRAMES, 0)
   fnKey.clear()
   gslotNext = 0
   fnDepth = 0
@@ -4559,6 +4569,24 @@ chip locFind(name: string) {
     lkFid = selfFid[fnDepth]
     lkDone = true
   }
+// The ladder below checks the 32 most recent live locals, so a MISS is only
+  // proof that the name is a global when it saw all of them.  With more than
+  // 32 live it does not: a local the ladder never reached resolves as a global
+  // and the program answers wrong with no error anywhere.
+  //
+  // So the shortfall is refused rather than compiled.  The alternative is to
+  // treat an unreached local as a global, which is the bug; and the check has to
+  // live here, before any name is resolved, because every later caller reads
+  // lkKind and cannot tell a proven global from an unchecked one.
+  //
+  // 32 is one whole frame of locals, the most a single function can declare.
+  // Reaching across frames can still exceed it, and that case is refused rather
+  // than guessed.  tools/chip/ladder.py keeps this number and the arm count in
+  // step, because a hand-edited one silently desynchronises them.
+  if 32 < locLen {
+    perr = true
+    perrMsg = "too many locals in scope (max 32)"
+  }
   var ix = locLen - 1
   if !lkDone && 0 <= ix && locName[ix] == name {
     lkIx = ix
@@ -4709,6 +4737,17 @@ chip locFind(name: string) {
     lkIx = ix
     lkDone = true
   }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
+  if !lkDone && 0 <= ix && locName[ix] == name {
+    lkIx = ix
+    lkDone = true
+  }
+  ix = ix - 1
   if lkDone && lkKind == 0 {
     if locDepth[lkIx] != fnDepth {
       resolveUp(lkIx)
