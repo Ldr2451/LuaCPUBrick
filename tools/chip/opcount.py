@@ -27,6 +27,7 @@ are the real ones.
   python -u tools/chip/opcount.py                       # the perfbench set
   python -u tools/chip/opcount.py "for i=1,10 do t[i]=i end"
 """
+import importlib.util
 import os
 import re
 import shutil
@@ -38,22 +39,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "irrun"))
 
-PROGRAMS = {
-    "hello": "print('hello')",
-    "loop-60": "local s = 0 local i = 1 while i <= 60 do s = s + i i = i + 1 "
-               "end print(s)",
-    "calls": "local function f(n) if n == 0 then return 0 end return f(n - 1) "
-             "+ 1 end print(f(20))",
-    "table": "local t = {} for i = 1, 20 do t[i] = i * i end local s = 0 for "
-             "_, v in pairs(t) do s = s + v end print(s)",
-    "closures": "local function counter() local n = 0 return function() n = n "
-                "+ 1 return n end end local c = counter() for i = 1, 20 do c() "
-                "end print(c())",
-    "pcall": "local s = 0 for i = 1, 20 do local ok, v = pcall(function() s = s "
-             "+ i return s end) end print(s)",
-    "string": "local s = 'abcdef' for i = 1, 10 do s = s:upper():sub(2, -2) end "
-              "print(s, s:byte(1, -1))",
-}
+# perfbench's list, imported not copied -- this file had its own and went stale
+# the moment a benchmark was added, which is the second time in this work that a
+# duplicated list of benchmarks measured something that was not there.
+_spec = importlib.util.spec_from_file_location(
+    "_pb", os.path.join(HERE, "perfbench.py"))
+_pb = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_pb)
+PROGRAMS = dict(_pb.PROGRAMS)
 
 
 def names():
@@ -66,16 +59,23 @@ def names():
 
 
 def fast_set():
-    """The opcodes vmStepFast handles, read out of the guard it actually uses."""
+    """The opcodes vmStepFast handles, read out of the guard it actually uses.
+
+    Parsed structurally rather than by a fixed pattern: the guard has grown
+    terms as arms were added (`|| op == 29 || op == 30`) and a regex shaped for
+    the original five groups stopped matching, which is how this tool came to
+    answer "the fast-path guard is not the shape this reads" instead of a
+    count.
+    """
     src = open(os.path.join(ROOT, "lua.ws"), encoding="utf-8").read()
-    m = re.search(r"if \(\(op <= (\d+) && op != (\d+)\) \|\| "
-                  r"op == (\d+) \|\| op == (\d+) \|\| op == (\d+)\)", src)
+    m = re.search(r"if \(\(op <= (\d+) && op != (\d+)\)(.*?)\)\s*\n\s*&& !advanced",
+                  src, re.S)
     if not m:
         raise SystemExit("the fast-path guard is not the shape this reads")
     hi, skip = int(m.group(1)), int(m.group(2))
     out = set(range(0, hi + 1))
     out.discard(skip)
-    for g in m.groups()[2:]:
+    for g in re.findall(r"op == (\d+)", m.group(3)):
         out.add(int(g))
     return out, skip
 

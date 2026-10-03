@@ -40,6 +40,14 @@ PROGRAMS = {
               "t.a = t.a + i t.b = t.b + t.a t.c = t.c + t.b "
               "t.d = t.d + t.c s = s + t.d end print(s)",
     "concat": "local s = '' for i = 1, 60 do s = s .. 'x' end print(#s)",
+    # Calls in a LOOP, and recursion, for the same reason as `fields`: `calls`
+    # recurses 20 deep and dispatches 16 instructions in TOTAL, so it is almost
+    # all boot and cannot price the CALL arm at all.  CALL is the most frequent
+    # opcode in ordinary Lua and it is NOT in the fast set.
+    "callloop": "local function f(a, b) return a + b end local s = 0 "
+                "for i = 1, 150 do s = f(s, i) end print(s)",
+    "recurse": "local function d(n) if n == 0 then return 0 end "
+               "return 1 + d(n - 1) end print(d(30))",
     # Exponentiation, because there was no benchmark that used it and that is why
     # the cost of the negative-zero guard on the pow arm was unmeasurable for so
     # long: a wall-clock comparison of two chips read 1.66 -> 2.22ms for a change
