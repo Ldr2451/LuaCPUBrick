@@ -2335,10 +2335,17 @@ class Sim:
                             pins.append(w.dst_id)
             # Pins the reachable gates read as values (they are sources in
             # in_wires, not exec-reachable, so the fill above never sees them).
-            for g in seen:
+            # Walk BACKWARD through pure gates too: an argument like `k` is read
+            # only by pure comparisons (`1 <= k`), which are pulled on demand and
+            # never exec-reachable. Missing them left `k`/`n` unsnapshotted, so a
+            # multi-value return copied nothing and `string.find` lost its
+            # captures. Bounded: values fan in, and a malformed dump could cycle.
+            def collect_pin_sources(g, depth=0):
+                if depth > 24:
+                    return
                 gn = self.nodes.get(g)
                 if gn is None or "Internal_Microchip" in gn.cls:
-                    continue
+                    return
                 for p in [x[0] for x in gn.pin]:
                     for w in self.in_wires.get((g, p), []):
                         dn = self.nodes.get(w.src_id)
@@ -2347,6 +2354,13 @@ class Sim:
                                 and not self._port_is_exec(dn, "RER_Output")
                                 and w.src_id not in pins):
                             pins.append(w.src_id)
+                        elif (dn and self._is_pure(dn.cls)
+                                and w.src_id not in seen_pure):
+                            seen_pure.add(w.src_id)
+                            collect_pin_sources(w.src_id, depth + 1)
+            seen_pure: set[int] = set()
+            for g in seen:
+                collect_pin_sources(g)
             self._call_pins[nid] = pins
 
     def _published_val(self, nid: int, port: str):

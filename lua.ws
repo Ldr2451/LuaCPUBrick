@@ -2009,7 +2009,9 @@ mod vStr(r: int) -> string {
 // callee's frame (absolute src) into the caller's (absolute dst), then nil-fill
 // up to n so a fixed-arity caller sees nil for values the callee did not return.
 // k values are the ones actually produced; n is what the caller asked for.
-mod retAdjust(src: int, dst: int, k: int, n: int) {
+// A CHIP, not a mod: five call sites (every return path) each carried
+// an inlined copy of this 16-arm ladder. One shared body instead.
+chip retAdjust(src: int, dst: int, k: int, n: int) {
   if 1 <= k { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] } else if 1 <= n { vtag[dst] = 0 vnum[dst] = 0.0 vstr[dst] = "" }
   if 2 <= k { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] } else if 2 <= n { vtag[dst+1] = 0 vnum[dst+1] = 0.0 vstr[dst+1] = "" }
   if 3 <= k { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] } else if 3 <= n { vtag[dst+2] = 0 vnum[dst+2] = 0.0 vstr[dst+2] = "" }
