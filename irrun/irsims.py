@@ -209,6 +209,15 @@ class Sim:
         self.host_baselines = False
         self.input_ids: list[int] = []
         self.inputs: dict[str, Any] = {}
+        # A chip call's argument pins, grouped by the `_exec_in` pin that
+        # triggers the call. A value pin snapshots when its call fires and HOLDS
+        # until the next call -- it must NOT track every publish. The argument
+        # sources read a shared, advancing stack: one arm's source published
+        # 1.0, 2.0, 3.0 across three ticks, so a pin that re-snapshots on every
+        # publish hands its body the LAST value (`{1,2,3}` came back as 3, 3, 3)
+        # instead of the value current at its own call.
+        self._call_pins: dict[int, list[int]] = {}
+        self._build_call_pins()
         self._eval_stack: set[int] = set()
         self._unimpl_warned: set[str] = set()
         self._loglines_id: int | None = None
@@ -335,6 +344,14 @@ class Sim:
 
     def _seed_inputs(self):
         for nid in self.input_ids:
+            # A nested chip's boundary pin is kind=Input in the dump, exactly
+            # like a root module port -- but it must NOT be seeded. Seeding fires
+            # it at tick 0 before its source has published anything, pushing an
+            # empty edge downstream (the phantom body run at tick 0). A pin fires
+            # when its source publishes (see `_pin_src`), or via the exec chain
+            # for `_exec_in`. Only a port with no incoming wire is a true input.
+            if self.in_wires.get((nid, "RER_Input")):
+                continue
             self.exec_queue.add((nid, "RER_Output"))
 
     def reset(self):
@@ -836,12 +853,11 @@ class Sim:
                     if isinstance(label, str) and label in self.inputs:
                         return self.inputs[label]
             elif "Internal_Microchip" in src.cls:
-                # A chip boundary pin is a WIRE, not a value: read through it to
-                # whatever drove it. The pin deliberately publishes nothing (see
-                # the handler), so without this every argument came back None --
-                # the arguments come from expression gates (`Expr_Select`,
-                # `Expr_BitwiseOR`) whose values this same function pulls on
-                # demand.
+                # A chip boundary pin is a WIRE, not a value: read this tick's
+                # value for it, forcing the source fresh if the queue has not
+                # brought it yet (see `_pin_value`). The pin deliberately holds
+                # no cache of its own beyond what it snapshots, so without this
+                # every argument came back None.
                 #
                 # EXCEPT on an Exec pin, and that exception is load-bearing.
                 # Reading through one pulls the body's last gate *speculatively*,
@@ -851,7 +867,7 @@ class Sim:
                 # read happened first. Exec must arrive by execution, never by
                 # evaluation.
                 if not self._port_is_exec(src, "RER_Input"):
-                    through = self._in_val(w.src_id, "RER_Input")
+                    through = self._pin_value(w.src_id)
                     if through is not None:
                         return through
         if not tail:
@@ -887,6 +903,13 @@ class Sim:
             src = self.nodes.get(w.src_id)
             if src and "WireGraphPseudo_Var" in src.cls:
                 return w.src_id
+            # A chip body reaches a top-level var through a `Ref(...)` boundary
+            # pin. Without following it, `_var_id` returns None and every
+            # Var_Get/Var_Set/Increment on it silently does nothing -- `tHeap`
+            # never incremented and every table slot came back 0. Same class of
+            # bug as `_arr_id`/`_map_id` before they followed the pin.
+            if src and "Internal_Microchip" in src.cls:
+                return self._ref_node(w.src_id)
         for w in self.in_wires.get((nid, port), []):
             src = self.nodes.get(w.src_id)
             if src and ("Var_Get" in src.cls or "Var_Set" in src.cls or "Var_Increment" in src.cls):
@@ -1243,16 +1266,37 @@ class Sim:
                 # the body reported success. References resolve through
                 # `_arr_id`/`_map_id`, which follow the pin.
                 #
-                # Snapshot what the source PUBLISHED, never a pulled value, and
-                # publish nothing when there is none: the unpulled default was
-                # what filled `tmap` with 0, 0, 0.
-                for w in self.in_wires.get((nid, "RER_Input"), []):
-                    got = self._published_val(w.src_id, w.src_port)
-                    if isinstance(got, (bool, int, float, str)):
-                        self._out_val(nid, 'RER_Output', got)
-                        break
-                for w in self.out_wires.get((nid, "RER_Output"), []):
-                    nq.add((w.dst_id, w.dst_port))
+                # Snapshot at the call and hold until the next call. Latest
+                # published wins; a pure source is pulled (it never publishes on
+                # its own). No tick check: the snapshot happens at the call, so
+                # whatever the source holds IS the call's value. Re-snapshotting
+                # on every publish hands the body a LATER call's value -- one
+                # arm's source published 1.0, 2.0, 3.0 across three ticks and
+                # `{1,2,3}` came back as 3, 3, 3.
+                #
+                # Only SCALARS. A `Ref(...)` pin carries a reference and caching
+                # it snapshots it: the pin is reached before the referent exists,
+                # and the body then reads and writes that throwaway object forever
+                # while the caller writes the real one -- `tmap` stayed empty while
+                # the body reported success. References resolve through
+                # `_arr_id`/`_map_id`, which follow the pin.
+                #
+                # Propagate ONLY from `_exec_in`. Pushing a value pin's consumers
+                # schedules body gates BEFORE the body's exec chain reaches them:
+                # they speculatively execute with stale arguments, exec gates
+                # among them PERFORM WRITES, and `tick_done` suppresses the real
+                # run. Value pins are read from cache when the body chain arrives.
+                if self._port_is_exec(node, "RER_Output"):
+                    for pin in self._call_pins.get(nid, ()):
+                        got = self._pin_value(pin)
+                        if got is not None:
+                            self._out_val(pin, 'RER_Output', got)
+                    for w in self.out_wires.get((nid, "RER_Output"), []):
+                        nq.add((w.dst_id, w.dst_port))
+                    return
+                got = self._pin_value(nid)
+                if got is not None:
+                    self._out_val(nid, 'RER_Output', got)
                 return
             # `host_baselines` models the host observed in game: the port's value
             # is there for a reader to find, and NOTHING downstream is told about
@@ -2200,20 +2244,95 @@ class Sim:
         props = self.nodes[nid].props.get("Value", ("raw", "false"))
         return _extract(props) if isinstance(props, tuple) else props
 
-    def _published_val(self, nid: int, port: str):
-        """What `nid` has ALREADY published on `port`, or None. Never pulls.
+    def _build_call_pins(self):
+        """Group each chip call's value pins under its `_exec_in` pin.
 
-        A boundary pin must snapshot the argument the caller published at the
-        moment it published it. `_in_val` cannot be used for that: it pulls
-        `Exec_*` value outputs on demand, re-evaluating them against the stack as
-        it stands NOW rather than as it stood at the call -- which made all
-        sixteen arms of a table constructor read one value, `{1,2,3}` coming back
-        as 3, 3, 3.
+        A body is the exec-reachable set from its `_exec_in`; any boundary pin
+        those gates read is one of the call's arguments. Flood-fill through exec
+        ports only, so a value wire out of the body cannot escape into the
+        caller. Bounded: bodies are hundreds of nodes, and a malformed dump could
+        cycle.
         """
+        for nid, nd in self.nodes.items():
+            if "Internal_MicrochipInput" not in nd.cls:
+                continue
+            if not self.in_wires.get((nid, "RER_Input")):
+                continue
+            if not self._port_is_exec(nd, "RER_Output"):
+                continue
+            seen, stack, pins = {nid}, [nid], []
+            for _ in range(60000):
+                if not stack:
+                    break
+                cur = stack.pop()
+                for oport in [p[0] for p in self.nodes[cur].pout
+                              if "Exec" in p[1]]:
+                    for w in self.out_wires.get((cur, oport), []):
+                        if w.dst_id in seen:
+                            continue
+                        dn = self.nodes.get(w.dst_id)
+                        # Stop at the boundary going out: following `_exec_out`
+                        # into the caller walks the whole program and every other
+                        # body with it (one group came out with 464 pins from 17
+                        # bodies). The body is what `_exec_in` can reach without
+                        # leaving through an Output pin.
+                        if dn is not None and "MicrochipOutput" in dn.cls:
+                            seen.add(w.dst_id)
+                            continue
+                        seen.add(w.dst_id)
+                        stack.append(w.dst_id)
+                        if (dn and "Internal_MicrochipInput" in dn.cls
+                                and self.in_wires.get((w.dst_id, "RER_Input"))
+                                and not self._port_is_exec(dn, "RER_Output")):
+                            pins.append(w.dst_id)
+            # Pins the reachable gates read as values (they are sources in
+            # in_wires, not exec-reachable, so the fill above never sees them).
+            for g in seen:
+                gn = self.nodes.get(g)
+                if gn is None or "Internal_Microchip" in gn.cls:
+                    continue
+                for p in [x[0] for x in gn.pin]:
+                    for w in self.in_wires.get((g, p), []):
+                        dn = self.nodes.get(w.src_id)
+                        if (dn and "Internal_MicrochipInput" in dn.cls
+                                and self.in_wires.get((w.src_id, "RER_Input"))
+                                and not self._port_is_exec(dn, "RER_Output")
+                                and w.src_id not in pins):
+                            pins.append(w.src_id)
+            self._call_pins[nid] = pins
+
+    def _published_val(self, nid: int, port: str):
+        """What `nid` has ALREADY published on `port`, or None. Never pulls."""
         if (nid, port) not in self.value_ready:
             return None
         pv = self.nodes[nid].props.get(port)
         return _extract(pv) if pv else None
+
+    def _pin_value(self, pin_nid: int):
+        """This call's value for a boundary pin, or None when there is none.
+
+        Latest published wins; a pure source is pulled (it never publishes on
+        its own). No tick check and no forcing of exec sources: the snapshot
+        happens at the call (`_exec_in` firing), so whatever the source holds IS
+        the call's value. Forcing an exec source runs a chain-dependent gate
+        with unready inputs and poisons it; trusting only same-tick publishes
+        drops values published on earlier ticks of a multi-tick call.
+        """
+        for w in self.in_wires.get((pin_nid, "RER_Input"), []):
+            got = self._published_val(w.src_id, w.src_port)
+            if not isinstance(got, (bool, int, float, str)):
+                src = self.nodes.get(w.src_id)
+                if (src is not None and self._is_pure(src.cls)
+                        and w.src_id not in self._eval_stack):
+                    self._eval_stack.add(w.src_id)
+                    try:
+                        self._exec_node(w.src_id, src, set())
+                    finally:
+                        self._eval_stack.discard(w.src_id)
+                    got = self._published_val(w.src_id, w.src_port)
+            if isinstance(got, (bool, int, float, str)):
+                return got
+        return None
 
     def _port_is_exec(self, node, port: str) -> bool:
         """True when `port` on `node` is Exec-typed per the dump's port spec."""
