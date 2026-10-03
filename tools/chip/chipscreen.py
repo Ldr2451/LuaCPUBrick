@@ -1,21 +1,36 @@
-"""Void mods that a chip would shrink, counted HONESTLY, with the rules attached.
+"""Void mods that a chip would shrink, ranked, with the traps that cost builds.
 
-A `mod` inlines at every call site; a `chip` compiles to one shared body, and a
-chip costs no tick per run from a runtime call site.  So a void mod called from
-N places is worth (N-1) copies of its body -- which is how the chip is now worth
-520 nodes on `vSet` (137 sites) and 3,110 on `vmStepFast` (4 sites).
+A `mod` inlines at every call site; a `chip` compiles to one shared body and
+costs no tick per run from a runtime call site.  So a void mod called from N
+places is worth (N-1) copies of its body -- which is how a chip is worth 520
+nodes on `vSet` (137 sites), 3,110 on `vmStepFast` (4 sites) and 1,638 on
+`lexStep` (2 sites, 453 lines).
 
-The first screen counted every `name(` in the file including inside comments, so
-`vmBurst` scored two call sites when it has one (lua.ws documents it in a
-comment).  Comments and string literals are stripped first here.
+Call sites alone are a BAD rank, and finding out why cost a build.  A mod's body
+is instantiated once per call site *per copy of whatever calls it*: emitTok has
+38 lexical call sites but 34 of them are inside lexStep, which lexChunk calls
+TWICE, so emitTok really existed ~72 times over.  After lexStep became a chip it
+exists ~37 times, and chipping emitTok then ADDS 443 nodes -- one body against 38
+sets of pin wiring.  So the column that matters is `under`, the mod that most of
+the call sites sit inside: if that mod has more than one site of its own, its own
+chipping may already have collected the saving.  Measure before converting.
 
-It also prints the two things measured about a chip body that decide whether it
-CAN be one, because both were learned by bisecting a broken batch:
+Comments and string literals are stripped first: the first version of this screen
+counted `vmBurst` as having two call sites when it has one, because lua.ws
+documents it in a comment.
+
+The two flags are the measured reasons a chip body cannot be one at all:
 
   indexes   the body reads a shared array element.  bumpMax does, and it is six
             lines that silently empty the whole parse: the store is lost.
   reads str the body reads a STRING variable.  patSetBegin does, and it breaks
             the pattern matcher in two places.
+
+AND THE NODE EFFECT IS NOT PREDICTABLE FROM THE SHAPE, so measure it.  `vSet`
+(137 sites, a 3-line body) is worth -520 and `emitTok` (38 sites, a 10-line
+body) is worth +443 -- one body against 38 sets of pin wiring.  Both are
+write-only, both take a string parameter, both are pure.  So the columns below
+find candidates and flag the two shapes known to be fatal; they do not decide.
 
   python -u tools/chip/chipscreen.py
 """
@@ -56,6 +71,16 @@ def strip(line):
 
 CODE = [strip(l) for l in LINES]
 
+# which mod/chip/handler each line belongs to
+OWNER, cur = [], "<top level>"
+for l in CODE:
+    m = re.match(r"(mod|chip) (\w+)\(", l)
+    if m:
+        cur = m.group(2)
+    elif re.match(r"on \w+", l):
+        cur = "on " + l.split()[1]
+    OWNER.append(cur)
+
 
 def main():
     decl = {}
@@ -63,37 +88,52 @@ def main():
         m = re.match(r"(mod|chip) (\w+)\(", l)
         if m:
             decl[m.group(2)] = (i, m.group(1))
+    span = {}
+    for name, (start, _k) in decl.items():
+        span[name] = next((j for j in range(start + 1, len(CODE))
+                           if re.match(r"(mod|chip) \w+\(", CODE[j])), len(CODE))
 
-    uses = collections.Counter()
-    for l in CODE:
+    sites = collections.defaultdict(list)     # callee -> [(caller, line)]
+    for i, l in enumerate(CODE):
         for m in re.finditer(r"(?<![\w.])([A-Za-z_]\w*)\(", l):
-            uses[m.group(1)] += 1
+            nm = m.group(1)
+            if nm == OWNER[i]:
+                continue
+            if decl.get(nm, ("", ""))[1] == "chip":
+                continue
+            sites[nm].append((OWNER[i], i))
 
     rows = []
     for name, (start, kind) in sorted(decl.items()):
-        if kind != "mod":
+        if kind != "mod" or "->" in CODE[start].split("{")[0]:
             continue
-        if "->" in CODE[start].split("{")[0]:
-            continue                      # returns a value: not measured
-        end = next((j for j in range(start + 1, len(CODE))
-                    if re.match(r"(mod|chip) \w+\(", CODE[j])), len(CODE))
-        n = uses[name] - 1
-        if n < 2:
+        where = sites.get(name, [])
+        if len(where) < 2:
             continue
-        body = "\n".join(CODE[start + 1:end])
-        rows.append((name, n, end - start,
+        body = "\n".join(CODE[start + 1:span[name]])
+        tally = collections.Counter(c for c, _ in where)
+        top, topn = tally.most_common(1)[0]
+        # a parent with sites of its own may already have collected this saving
+        parent_multi = tally.get(top, 0) and len(sites.get(top, [])) > 1
+        rows.append((name, len(where), span[name] - start,
                      bool(re.search(r"\w+\s*\[\s*[^\]]", body)),
-                     bool(re.search(r'Substring|ToCharCode|\.Length\(\)|\w+\.\w+\(',
-                                    body))))
+                     top, topn, parent_multi))
     rows.sort(key=lambda r: -(r[1] * r[2]))
-    print("void mods with >=2 real call sites (comments excluded)")
-    print(" %-16s %-6s %-6s %-8s %s"
-          % ("mod", "sites", "lines", "indexes", "reads str"))
-    for name, n, ln, elem, s in rows:
-        print(" %-16s %-6d %-6d %-8s %s"
-              % (name, n, ln, "YES" if elem else "-", "YES" if s else "-"))
-    print("\n%d candidates, worth at most %d extra body copies"
-          % (len(rows), sum(r[1] - 1 for r in rows)))
+
+    print("void mods with >=2 call sites (comments excluded)")
+    print(" %-14s %-6s %-6s %-8s %-14s %s"
+          % ("mod", "sites", "lines", "indexes", "most calls from", "note"))
+    for name, n, ln, elem, top, topn, multi in rows:
+        note = ""
+        if multi:
+            note = "%d/%d under %s, which has %d sites itself" % (
+                topn, n, top, len(sites.get(top, [])))
+        print(" %-14s %-6d %-6d %-8s %-14s %s"
+              % (name, n, ln, "YES" if elem else "-",
+                 "%s(%d)" % (top, topn), note))
+    print("\n%d candidates.  'note' means the parent may already have the saving:"
+          "\nmeasure one before converting it -- emitTok cost a build to learn it."
+          % len(rows))
     return 0
 
 

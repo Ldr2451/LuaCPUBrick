@@ -1742,7 +1742,7 @@ mod locBind(name: string, r: int) {
   }
 }
 
-mod blkEnter(isLoopBody: bool) {
+chip blkEnter(isLoopBody: bool) {
   blkLen.push(locLen)
   blkNext.push(cfNext[fnDepth])
   blkCapGen.push(capGen)
@@ -1813,7 +1813,7 @@ mod upStep(d: int, ix: int, src: int) -> int {
   return k
 }
 
-mod pushOp(kind: int, prec: int, a: int, b: int, c: int) {
+chip pushOp(kind: int, prec: int, a: int, b: int, c: int) {
   opKind.push(kind)
   opPrec.push(prec)
   opA.push(a)
@@ -1948,7 +1948,7 @@ mod pushCtl(kind: int, a: int, b: int, c: int, d: int, e: int, f: int) {
   ctlG.push(0)
 }
 
-mod popCtl() {
+chip popCtl() {
   ctlKind.pop()
   ctlA.pop()
   ctlB.pop()
@@ -3577,7 +3577,7 @@ mod locDeclare(name: string) -> int {
 // blkExit already knows the answer, and a `do` block that captures pays one
 // wasted tick -- harmless, since a bump only ever invalidates slots, and a
 // closure that outlived the block already holds the cell itself.
-mod blkExit() {
+chip blkExit() {
   locLen = blkLen.pop().Value
   cfNext[fnDepth] = blkNext.pop().Value
   // The depth THIS block sits at, which is what its cells' stamp counts -- a `do`
@@ -4533,7 +4533,7 @@ mod patchAt(pos: int) {
 // local or capture, because a mod call inside the arms would be inlined 32
 // times.  32 is the window, as before: a name with more live locals than that
 // in front of it reads as a global, which is the same hole the old ladder had.
-mod locFind(name: string) {
+chip locFind(name: string) {
   lkKind = 0
   lkReg = -1
   lkFid = -1
@@ -6569,7 +6569,7 @@ mod exprInfix() {
 }
 
 // One expression micro-op: a pop, a close, or a token action.
-mod closeAction() {
+chip closeAction() {
   if closeMode == 1 {
     // ')' close: top must be a call or group marker
     let mk = opTopKind()
