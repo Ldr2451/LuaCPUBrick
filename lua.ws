@@ -1469,7 +1469,8 @@ mod curStr() -> string {
   return if cpos >= tk.length() then "" else tt[cpos]
 }
 
-mod pushVal(r: int, isCall: bool, isPrefix: bool) {
+// A CHIP: 22 instances, 3 grids.
+chip pushVal(r: int, isCall: bool, isPrefix: bool) {
   valStk.push(r)
   valCall.push(isCall)
   valPrefix.push(isPrefix)
@@ -3080,7 +3081,8 @@ chip tblSplice(tid: int, sl: int, pv: int, nx: int) {
 
 // Link a slot at the tail of its table's chain, so pairs/next walk entries in
 // insertion order (the order PUC-Lua uses, which the tests compare against).
-mod tblLink(tid: int, sl: int) {
+// A CHIP: 17 instances, 1 grid.
+chip tblLink(tid: int, sl: int) {
   tblSplice(tid, sl, tLast[tid], -1)
 }
 
@@ -4344,7 +4346,8 @@ mod libMathMisc(p: string) -> string {
 // Put the allocator back inside a window bumpMax already claimed.  A call's
 // arguments are parsed after its callee register is allocated, and they belong
 // in that window, so allocation resumes at reg+1 rather than past its end.
-mod rewindTo(r: int) {
+// A CHIP: 8 instances, 1 grid.
+chip rewindTo(r: int) {
   if regAlloc() >= cfNext[fnDepth] {
     perr = true
     perrMsg = "too many registers"
@@ -7732,7 +7735,8 @@ mod fmtFScale() {
 // is only completed here, once the work is actually done.  The other outcome
 // never arrives: a machine that raises goes to the unwind with pcallBad set, and
 // pcallStep answers false, message.
-mod nxDone() {
+// A CHIP: 6 instances, 1 grid.
+chip nxDone() {
   if pcallRan {
     pcallRan = false
     pcallEnd(nxDst, if 0 <= retCountV then retCountV else 0, 0)
