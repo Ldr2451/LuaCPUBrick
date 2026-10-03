@@ -481,6 +481,53 @@
   for a change that was really +7% — drift, not a regression. Compare slopes,
   never one run per chip.
 
+## Chips: the one lever that is nodes down and ticks flat
+A `mod` **inlines at every call site**; a `chip` compiles to one shared body.
+Converting the duplicated void mods took the chip from **46,151 to 29,275 nodes
+(-36.6%)** with **ticks and gates-fired identical on all eight `perfbench`
+programs** and boot unchanged (demo.lua 2,994 ticks to first output, the same as
+before the first chip). 41 chips. `tools/chip/chipscreen.py` lists what is left
+and why; `tochip.py` converts with the refusals built in.
+
+- **A chip costs no tick per run.** This was *assumed* to be false for years —
+  "a chip call per register write would be catastrophic for ticks" is why `vSet`
+  sat at 137 call sites for the whole of this work — and it is simply not true.
+  Measured on `vmStepFast` (4 sites), then `vSet` (137), then `cloStep` (a
+  once-per-tick micro-step), all at identical ticks. The gates are the same
+  gates; only the stored copies went away.
+- **Count INLINED COPIES, not call sites.** A mod's body exists once per call
+  site *per copy of whatever calls it*: `emitTok` has 38 call sites but 34 are
+  inside `lexStep`, which `lexChunk` called **twice**, so it really existed ~72
+  times over. `lexStep` as a chip (-1,638) had already collected that saving, and
+  chipping `emitTok` afterwards **added 443 nodes** — one body against 38 sets of
+  pin wiring.
+- **Measure; the node effect is not predictable from the shape.** `vSet` (137
+  sites, 3-line body) is -520 and `emitTok` (38 sites, 10-line body) is +443.
+  Both write-only, both take a string, both pure. `doBlockClose` (2 sites, 131
+  lines) is +74 while `closeAction` (2 sites, 227) is -836.
+- **A chip body may not read-then-write the same shared array element.**
+  `bumpMax` is six lines and as a chip it silently empties the whole parse —
+  bytecode collapses to a single `RETURN0` and every case reports an empty log.
+  Reading a *length* is fine (`emitTok`'s `MAX_TOKENS` guard), pushing and
+  popping are fine, reading scalars is fine.
+- **A chip body may not read a string global.** `patSetBegin` does
+  (`patPat.Substring(...)`) and it breaks the pattern matcher where only two
+  cases noticed: `pat-match-set` answered `b` where PUC says `a`. Taking a
+  string as a *parameter* is fine — most chips do.
+- **A chip must not write state the CALLER consumes.** `andOrArrive` sets the
+  shunting-yard scalars the caller reduces with; `saveTmp` clears four arrays
+  the paired `restoreTmp` reads; both empty the parse as chips. This is also the
+  real reason `patSetBegin` fails — not "same tick", which was wrong: the
+  matcher's micro-step reads that state on its next entry.
+- **A barrier stays a mod.** `vmReset` is called from `on Change(run)` and
+  `on goParse2` and must run at an exact chain point; chip hops shift it and
+  `print(3)` comes back empty. Measured, fatal.
+- **Chips do not cost the parse a tick either.** Six parse-path chips together
+  cost +1 boot tick, and that +1 came from one specific mod — not from the parse
+  path as a category. `lexStep`, `locFind`, `closeAction`, `pushOp` and four more
+  are all parse-path and all boot-neutral, so the rule is narrower than it was
+  first written. Re-measure boot with `tools/chip/bootprobe.py`, not from memory.
+
 ## Closures
 A function value (tag 4) holds a **closure number, not a prototype**. Below
 `cloBase` a closure *is* its own prototype, so every builtin and every
