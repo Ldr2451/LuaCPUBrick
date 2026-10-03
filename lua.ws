@@ -10488,7 +10488,11 @@ mod vmStep() {
 // so no arm body is edited - an earlier attempt inserted a statement per arm and
 // the compiler reported a branch type mismatch three arms later, because an arm
 // body whose last statement is a single expression gives the block its value.
-mod vmStepFast() {
+// A CHIP: vmBurst calls this four times, so as a mod the body existed four
+// times over (1,173 nodes each, 4,692 = 13% of the chip) purely to be four
+// call sites.  As a chip it is one body with four call sites, and a chip costs
+// no ticks per run -- so this is nodes removed with the tick count unchanged.
+chip vmStepFast() {
   if vmHalted || vmBusy() {
     return
   }

@@ -1,7 +1,7 @@
 """Do vmStep and vmStepFast agree on every opcode they both implement?
 
 The opcode dispatch is written TWICE in lua.ws: `mod vmStep` is the complete
-interpreter and `mod vmStepFast` is the subset that runs when `vmBusy()` is
+interpreter and `vmStepFast` is the subset that runs when `vmBusy()` is
 false.  Every `op == N` arm therefore exists in two places, and nothing in the
 compiler stops the two from drifting.
 
@@ -72,9 +72,19 @@ def strip_noise(text):
     return ''.join(out)
 
 
-def mod_body(src, name):
-    """The text between `mod NAME(...) {` and its matching closing brace."""
-    m = re.search(r'\bmod\s+%s\s*\(' % re.escape(name), src)
+def body_of(src, name):
+    """The text between `mod NAME(...) {` or `chip NAME(...) {` and its closer.
+
+    Either keyword counts, and deliberately so.  vmStepFast used to be a `mod`
+    because vmBurst calls it four times and a mod inlines at every call site --
+    four copies of a 1,173-node body, 12% of the chip.  It is a `chip` now, one
+    body with four call sites, and the drift this tool exists to catch is a
+    property of the two BODIES, not of how they are declared.  Keying the search
+    on `mod` alone made this tool report "could not find vmStepFast" on a chip
+    that is perfectly fine, which is the worst kind of net failure: it cries wolf
+    once and then it gets ignored.
+    """
+    m = re.search(r'\b(?:mod|chip)\s+%s\s*\(' % re.escape(name), src)
     if not m:
         return None
     start = src.index('{', m.end())
@@ -184,10 +194,10 @@ def main():
         os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__)))), 'lua.ws')
     src = open(path, encoding='utf-8').read()
-    slow = mod_body(src, 'vmStep')
-    fast = mod_body(src, 'vmStepFast')
+    slow = body_of(src, 'vmStep')
+    fast = body_of(src, 'vmStepFast')
     if slow is None or fast is None:
-        print('could not find both mods (vmStep=%s vmStepFast=%s)'
+        print('could not find both bodies (vmStep=%s vmStepFast=%s)'
               % (slow is not None, fast is not None))
         return 1
     sa, fa = arms(strip_noise(slow)), arms(strip_noise(fast))
