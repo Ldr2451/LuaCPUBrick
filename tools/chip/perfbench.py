@@ -30,6 +30,16 @@ PROGRAMS = {
              "print(s)",
     "string": "local s = 'abcdef' for i = 1, 10 do "
               "s = s:upper():sub(2, -2) end print(s, s:byte(1, -1))",
+    # Field access and concatenation, which nothing above exercises in a loop.
+    # `table` does t[i] = i * i, so SETFIELD once per iteration but only 20 of
+    # them, and the pairs() half spends its time in CALL.  These two are long on
+    # purpose: the other seven are short enough that BOOT is most of their tick
+    # count, and a boot-dominated benchmark cannot show a throughput change at
+    # all -- which is how a real fast-path win can measure as nothing at all.
+    "fields": "local t = {a=0, b=0, c=0, d=0} local s = 0 for i = 1, 200 do "
+              "t.a = t.a + i t.b = t.b + t.a t.c = t.c + t.b "
+              "t.d = t.d + t.c s = s + t.d end print(s)",
+    "concat": "local s = '' for i = 1, 60 do s = s .. 'x' end print(#s)",
     # Exponentiation, because there was no benchmark that used it and that is why
     # the cost of the negative-zero guard on the pow arm was unmeasurable for so
     # long: a wall-clock comparison of two chips read 1.66 -> 2.22ms for a change

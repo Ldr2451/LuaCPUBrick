@@ -2061,6 +2061,21 @@ mod vSet(r: int, tag: int, num: float, s: string) {
   vnum[vmBase + r] = num
   vstr[vmBase + r] = s
 }
+// A nil store writes only the tag, and a store whose tag is not 2 writes no
+// string, and a string store writes no number: docs/vm-isa says those payloads
+// are ignored, and vSet is a mod, so each of those writes was a separate copy.
+chip vSetNil(r: int) {
+  vtag[vmBase + r] = 0
+}
+chip vSetN(r: int, tag: int, num: float) {
+  vtag[vmBase + r] = tag
+  vnum[vmBase + r] = num
+}
+mod vSetS(r: int, s: string) {
+  vtag[vmBase + r] = 2
+  vstr[vmBase + r] = s
+}
+
 
 mod vSetNum(r: int, v: float) {
   vtag[vmBase + r] = 1
@@ -3953,7 +3968,7 @@ mod arrNumOk(tag: int) -> bool {
 // with a computed value (#t and #s add 0.0 themselves before they get here) and
 // they have to agree about this exactly as they agree about the tag.
 chip vSetIntTag(a: int, w: float) {
-  vSet(a, 6, w + 0.0, "")
+  vSetN(a, 6, w + 0.0)
 }
 
 mod vSetInt(a: int, v: float) {
@@ -4047,7 +4062,7 @@ chip tblFill(dst: int, tid: int, idx: int) {
   if r.Found {
     vSet(dst, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
   } else {
-    vSet(dst, 0, 0.0, "")
+    vSetNil(dst)
   }
 }
 
@@ -8481,7 +8496,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
       // itself takes whatever it is given
       let line = if raw.Length() > 64 then raw.Substring(0, 63) .. "\n" else raw
       logPush(line)
-      vSet(a, 0, 0.0, "")
+      vSetNil(a)
       retCountV = 0
     }
   } else if fid == 1 || fid == 2 {
@@ -8518,7 +8533,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
     let iv = if 0 < nargs then vNum(a + 1) else 0.0
     let kv = if 1 < nargs then vNum(a + 2) else 1.0
     if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > inNumArr.length() {
-      vSet(a, 0, 0.0, "")
+      vSetNil(a)
       retCountV = 1
     } else if kv != floor(kv) || kv < 1.0 || kv > 8.0 {
       vmFail("bad argument #2 to 'innumarr' (count out of range)")
@@ -8529,28 +8544,28 @@ mod gateLow(fid: int, a: int, nargs: int) {
       let w = toInt(iv) - 1
       let cnt = toInt(kv)
       if 0 < cnt {
-        if w < inNumArr.length() { vSetNum(a, inNumArr[w]) } else { vSet(a, 0, 0.0, "") }
+        if w < inNumArr.length() { vSetNum(a, inNumArr[w]) } else { vSetNil(a) }
       }
       if 1 < cnt {
-        if w + 1 < inNumArr.length() { vSetNum(a + 1, inNumArr[w + 1]) } else { vSet(a + 1, 0, 0.0, "") }
+        if w + 1 < inNumArr.length() { vSetNum(a + 1, inNumArr[w + 1]) } else { vSetNil(a + 1) }
       }
       if 2 < cnt {
-        if w + 2 < inNumArr.length() { vSetNum(a + 2, inNumArr[w + 2]) } else { vSet(a + 2, 0, 0.0, "") }
+        if w + 2 < inNumArr.length() { vSetNum(a + 2, inNumArr[w + 2]) } else { vSetNil(a + 2) }
       }
       if 3 < cnt {
-        if w + 3 < inNumArr.length() { vSetNum(a + 3, inNumArr[w + 3]) } else { vSet(a + 3, 0, 0.0, "") }
+        if w + 3 < inNumArr.length() { vSetNum(a + 3, inNumArr[w + 3]) } else { vSetNil(a + 3) }
       }
       if 4 < cnt {
-        if w + 4 < inNumArr.length() { vSetNum(a + 4, inNumArr[w + 4]) } else { vSet(a + 4, 0, 0.0, "") }
+        if w + 4 < inNumArr.length() { vSetNum(a + 4, inNumArr[w + 4]) } else { vSetNil(a + 4) }
       }
       if 5 < cnt {
-        if w + 5 < inNumArr.length() { vSetNum(a + 5, inNumArr[w + 5]) } else { vSet(a + 5, 0, 0.0, "") }
+        if w + 5 < inNumArr.length() { vSetNum(a + 5, inNumArr[w + 5]) } else { vSetNil(a + 5) }
       }
       if 6 < cnt {
-        if w + 6 < inNumArr.length() { vSetNum(a + 6, inNumArr[w + 6]) } else { vSet(a + 6, 0, 0.0, "") }
+        if w + 6 < inNumArr.length() { vSetNum(a + 6, inNumArr[w + 6]) } else { vSetNil(a + 6) }
       }
       if 7 < cnt {
-        if w + 7 < inNumArr.length() { vSetNum(a + 7, inNumArr[w + 7]) } else { vSet(a + 7, 0, 0.0, "") }
+        if w + 7 < inNumArr.length() { vSetNum(a + 7, inNumArr[w + 7]) } else { vSetNil(a + 7) }
       }
       retCountV = cnt
     }
@@ -8589,7 +8604,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
         if 7 < nargs { outArrV[w + 6] = if vTag(a + 8) == 0 then 0.0 else vNum(a + 8) }
         if 8 < nargs && !arrNumOk(vTag(a + 9)) { vmFail("array element must be a number") }
         if 8 < nargs { outArrV[w + 7] = if vTag(a + 9) == 0 then 0.0 else vNum(a + 9) }
-        vSet(a, 0, 0.0, "")
+        vSetNil(a)
         retCountV = 0
       }
     }
@@ -8634,7 +8649,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
         // the function was in, so `local c = select(2, ...)` read the select
         // VALUE (type "function") where PUC reads nil.  tools/chip/wswarn.py's
         // "empty result" check watches for exactly this arm.
-        vSet(a, 0, 0.0, "")
+        vSetNil(a)
         retCountV = 0
       } else {
         shiftDown(a, src, cnt)
@@ -8850,7 +8865,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
       if 0 <= p && p < s.Length() {
         vSetInt(a, s.Substring(p, 1).ToCharCode().Codepoint)
       } else {
-        vSet(a, 0, 0.0, "")
+        vSetNil(a)
       }
     } else if so == 5 {
       vSet(a, 2, 0.0, FromCharCode(p).Character)
@@ -8920,7 +8935,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
         } else if x == fl + 0.0 && abs(x) < 9.2e18 {
           vSetInt(a, fl)
         } else {
-          vSet(a, 0, 0.0, "")
+          vSetNil(a)
         }
       } else {
         vSetNum(a, if mo == 3 then sqrt(x) else if mo == 4 then sin(x)
@@ -9052,7 +9067,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
         // An empty range answers no values, and PUC's empty result list still
         // makes the callee's own register nil -- that is the slot the compiler
         // puts the local in, so `local c = unpack(t, 2, 1)` read unpack itself.
-        if cnt == 0 { vSet(a, 0, 0.0, "") }
+        if cnt == 0 { vSetNil(a) }
         retCountV = cnt
       }
     }
@@ -9128,11 +9143,11 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
     // logLines push does not reach the port at all (io.write produced
     // nothing until it went through logPush)
     if nargs < 1 {
-      vSet(a, 0, 0.0, "")
+      vSetNil(a)
     } else {
       let w = fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1))
       logPush(w)
-      vSet(a, 0, 0.0, "")
+      vSetNil(a)
     }
     retCountV = 1
   } else if fid == 16 {
@@ -9195,7 +9210,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
         retCopy(vmBase + a + 1, vmBase + a, nargs)
         retCountV = nargs
       } else {
-        vSet(a, 0, 0.0, "")
+        vSetNil(a)
         retCountV = 1
       }
     }
@@ -9304,7 +9319,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
       if rdGot {
         vSet(a, 2, 0.0, rdBuf)
       } else {
-        vSet(a, 0, 0.0, "")
+        vSetNil(a)
       }
     } else if vTag(a + 1) == 1 || vTag(a + 1) == 6 {
       rdTake(toInt(vNum(a + 1)))
@@ -9319,7 +9334,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
         if rdGot {
           vSet(a, 2, 0.0, rdBuf)
         } else {
-          vSet(a, 0, 0.0, "")
+          vSetNil(a)
         }
       } else if f == "*r" || f == "r" {
         rdPos = 0
@@ -9353,7 +9368,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
     } else {
       oF4 = if ot == 0 then 0.0 else ov
     }
-    vSet(a, 0, 0.0, "")
+    vSetNil(a)
     retCountV = 0
   } else if fid == 24 {
     // outstr(i, v): one of the two string output ports, Lua-formatted.  Also
@@ -9372,7 +9387,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
     } else {
       vmFail("cannot convert to string (outstr takes a string, number or nil)")
     }
-    vSet(a, 0, 0.0, "")
+    vSetNil(a)
     retCountV = 0
   } else if fid == 25 {
     // instrarr(i) and instrarr(i, k): innumarr's two shapes, reading the string
@@ -9387,7 +9402,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
     let iv = if 0 < nargs then vNum(a + 1) else 0.0
     let kv = if 1 < nargs then vNum(a + 2) else 1.0
     if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > inStrArr.length() {
-      vSet(a, 0, 0.0, "")
+      vSetNil(a)
       retCountV = 1
     } else if kv != floor(kv) || kv < 1.0 || kv > 8.0 {
       vmFail("bad argument #2 to 'instrarr' (count out of range)")
@@ -9396,28 +9411,28 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
       let w = toInt(iv) - 1
       let cnt = toInt(kv)
       if 0 < cnt {
-        if w < inStrArr.length() { vSet(a, 2, 0.0, inStrArr[w]) } else { vSet(a, 0, 0.0, "") }
+        if w < inStrArr.length() { vSet(a, 2, 0.0, inStrArr[w]) } else { vSetNil(a) }
       }
       if 1 < cnt {
-        if w + 1 < inStrArr.length() { vSet(a + 1, 2, 0.0, inStrArr[w + 1]) } else { vSet(a + 1, 0, 0.0, "") }
+        if w + 1 < inStrArr.length() { vSet(a + 1, 2, 0.0, inStrArr[w + 1]) } else { vSetNil(a + 1) }
       }
       if 2 < cnt {
-        if w + 2 < inStrArr.length() { vSet(a + 2, 2, 0.0, inStrArr[w + 2]) } else { vSet(a + 2, 0, 0.0, "") }
+        if w + 2 < inStrArr.length() { vSet(a + 2, 2, 0.0, inStrArr[w + 2]) } else { vSetNil(a + 2) }
       }
       if 3 < cnt {
-        if w + 3 < inStrArr.length() { vSet(a + 3, 2, 0.0, inStrArr[w + 3]) } else { vSet(a + 3, 0, 0.0, "") }
+        if w + 3 < inStrArr.length() { vSet(a + 3, 2, 0.0, inStrArr[w + 3]) } else { vSetNil(a + 3) }
       }
       if 4 < cnt {
-        if w + 4 < inStrArr.length() { vSet(a + 4, 2, 0.0, inStrArr[w + 4]) } else { vSet(a + 4, 0, 0.0, "") }
+        if w + 4 < inStrArr.length() { vSet(a + 4, 2, 0.0, inStrArr[w + 4]) } else { vSetNil(a + 4) }
       }
       if 5 < cnt {
-        if w + 5 < inStrArr.length() { vSet(a + 5, 2, 0.0, inStrArr[w + 5]) } else { vSet(a + 5, 0, 0.0, "") }
+        if w + 5 < inStrArr.length() { vSet(a + 5, 2, 0.0, inStrArr[w + 5]) } else { vSetNil(a + 5) }
       }
       if 6 < cnt {
-        if w + 6 < inStrArr.length() { vSet(a + 6, 2, 0.0, inStrArr[w + 6]) } else { vSet(a + 6, 0, 0.0, "") }
+        if w + 6 < inStrArr.length() { vSet(a + 6, 2, 0.0, inStrArr[w + 6]) } else { vSetNil(a + 6) }
       }
       if 7 < cnt {
-        if w + 7 < inStrArr.length() { vSet(a + 7, 2, 0.0, inStrArr[w + 7]) } else { vSet(a + 7, 0, 0.0, "") }
+        if w + 7 < inStrArr.length() { vSet(a + 7, 2, 0.0, inStrArr[w + 7]) } else { vSetNil(a + 7) }
       }
       retCountV = cnt
     }
@@ -9735,7 +9750,7 @@ mod vmStep() {
     // by every instruction this step dispatches.  vmStepFast says the same about
     // why FORLOOP is here.
     if op == 1 {
-      vSet(a, 0, 0.0, "")
+      vSetNil(a)
     } else if op == 2 {
       if c == 1 {
         vSetIntSat(a, constNum[b])
@@ -9746,9 +9761,9 @@ mod vmStep() {
       vSet(a, 2, 0.0, constStr[b])
     } else if op == 4 {
       if b == 0 {
-        vSet(a, 3, 0.0, "")
+        vSetN(a, 3, 0.0)
       } else {
-        vSet(a, 3, 1.0, "")
+        vSetN(a, 3, 1.0)
       }
     } else if op == 5 {
       vSet(a, gTag(b), gNum(b), gStr(b))
@@ -9865,9 +9880,9 @@ mod vmStep() {
       }
     } else if op == 15 {
       if truthyOf(vTag(b), vNum(b)) {
-        vSet(a, 3, 0.0, "")
+        vSetN(a, 3, 0.0)
       } else {
-        vSet(a, 3, 1.0, "")
+        vSetN(a, 3, 1.0)
       }
     } else if op == 16 {
       let lct = vTag(b)
@@ -9890,19 +9905,19 @@ mod vmStep() {
       let rn = rt == 1 || rt == 6
       if op == 17 {
         if ln && rn {
-          vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
         } else if lt != rt {
-          vSet(a, 3, 0.0, "")
+          vSetN(a, 3, 0.0)
         } else if lt == 1 {
-          vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
         } else if lt == 2 {
-          vSet(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0, "")
+          vSetN(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0)
         } else if lt == 3 {
-          vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
         } else if lt == 4 || lt == 5 {
-          vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
         } else {
-          vSet(a, 3, 1.0, "")
+          vSetN(a, 3, 1.0)
         }
       } else if ln && rn {
         let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
@@ -9914,7 +9929,7 @@ mod vmStep() {
           }
           advanced = true
         } else {
-          vSet(a, 3, if hit then 1.0 else 0.0, "")
+          vSetN(a, 3, if hit then 1.0 else 0.0)
         }
       } else if lt == 2 && rt == 2 {
         // lexicographic string order cannot use the MathCompare gate
@@ -10007,25 +10022,25 @@ mod vmStep() {
         vaFill(base, vmBase + a, k)
         if k < want {
           // pad with nil so a fixed-arity target list sees the missing values
-          if k + 1 <= want { vSet(a + k, 0, 0.0, "") }
-          if k + 2 <= want { vSet(a + k + 1, 0, 0.0, "") }
-          if k + 3 <= want { vSet(a + k + 2, 0, 0.0, "") }
-          if k + 4 <= want { vSet(a + k + 3, 0, 0.0, "") }
-          if k + 5 <= want { vSet(a + k + 4, 0, 0.0, "") }
-          if k + 6 <= want { vSet(a + k + 5, 0, 0.0, "") }
-          if k + 7 <= want { vSet(a + k + 6, 0, 0.0, "") }
-          if k + 8 <= want { vSet(a + k + 7, 0, 0.0, "") }
-          if k + 9 <= want { vSet(a + k + 8, 0, 0.0, "") }
-          if k + 10 <= want { vSet(a + k + 9, 0, 0.0, "") }
-          if k + 11 <= want { vSet(a + k + 10, 0, 0.0, "") }
-          if k + 12 <= want { vSet(a + k + 11, 0, 0.0, "") }
-          if k + 13 <= want { vSet(a + k + 12, 0, 0.0, "") }
-          if k + 14 <= want { vSet(a + k + 13, 0, 0.0, "") }
-          if k + 15 <= want { vSet(a + k + 14, 0, 0.0, "") }
-          if k + 16 <= want { vSet(a + k + 15, 0, 0.0, "") }
+          if k + 1 <= want { vSetNil(a + k) }
+          if k + 2 <= want { vSetNil(a + k + 1) }
+          if k + 3 <= want { vSetNil(a + k + 2) }
+          if k + 4 <= want { vSetNil(a + k + 3) }
+          if k + 5 <= want { vSetNil(a + k + 4) }
+          if k + 6 <= want { vSetNil(a + k + 5) }
+          if k + 7 <= want { vSetNil(a + k + 6) }
+          if k + 8 <= want { vSetNil(a + k + 7) }
+          if k + 9 <= want { vSetNil(a + k + 8) }
+          if k + 10 <= want { vSetNil(a + k + 9) }
+          if k + 11 <= want { vSetNil(a + k + 10) }
+          if k + 12 <= want { vSetNil(a + k + 11) }
+          if k + 13 <= want { vSetNil(a + k + 12) }
+          if k + 14 <= want { vSetNil(a + k + 13) }
+          if k + 15 <= want { vSetNil(a + k + 14) }
+          if k + 16 <= want { vSetNil(a + k + 15) }
         }
       } else {
-        vSet(a, 0, 0.0, "")
+        vSetNil(a)
       }
       retCountV = want
     } else if op == 24 {
@@ -10050,7 +10065,7 @@ mod vmStep() {
         pcallEnd(vmBase + a, 0, 0)
       } else {
         vmBase = rb
-        vSet(ra, 0, 0.0, "")
+        vSetNil(ra)
         vmPc = rpc
         retCountV = 0
       }
@@ -10098,7 +10113,7 @@ mod vmStep() {
           vSet(ra, rv, rn, rs)
         } else {
           vmBase = rb
-          vSet(ra, 0, 0.0, "")
+          vSetNil(ra)
         }
         vmBase = rb
         vmPc = rpc
@@ -10172,7 +10187,7 @@ mod vmStep() {
       advanced = true
     } else if op == 25 {
       if fUpN[b] == 0 {
-        vSet(a, 4, b, "")
+        vSetN(a, 4, b)
       } else if cloF.length() <= cloTop {
         // The array's own length, which is MAX_FUNCS + MAX_CLO, rather than a
         // literal: the literal was 1000000, so this never fired and 400 closures
@@ -10213,7 +10228,7 @@ mod vmStep() {
       if 0 < cell {
         vSet(a, uTag[cell], uNum[cell], uStr[cell])
       } else {
-        vSet(a, 0, 0.0, "")
+        vSetNil(a)
       }
     } else if op == 47 {
       // SETUP a=source, b=descriptor, c=kind.  The local's own register is
@@ -10245,7 +10260,7 @@ mod vmStep() {
         vstr[abs] = vStr(a)
       }
     } else if op == 48 {
-      vSet(a, 4, curClo(), "")
+      vSetN(a, 4, curClo())
     } else if op == 49 {
       // One round of the loop body at depth b ended, so the cells of the locals
       // declared in THAT body are stale: PUC closes them at the end of the block
@@ -10262,7 +10277,7 @@ mod vmStep() {
         vmFail("too many tables (" .. (cap | 0) .. ")")
       } else {
         tLen[tCount] = 0
-        vSet(a, 5, tCount + 0.0, "")
+        vSetN(a, 5, tCount + 0.0)
         tCount = tCount + 1
       }
     } else if op == 29 {
@@ -10279,10 +10294,10 @@ mod vmStep() {
           if r.Found {
             vSet(a, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
           } else {
-            vSet(a, 0, 0.0, "")
+            vSetNil(a)
           }
         } else {
-          vSet(a, 0, 0.0, "")
+          vSetNil(a)
         }
       } else if vTag(b) != 5 {
         // PUC says WHICH kind.  Indexing nil is the common case -- a field off a
@@ -10294,13 +10309,13 @@ mod vmStep() {
       } else if kt == 0 {
         vmFail("table index is nil")
       } else if kt == 1 && vNum(c) != floor(vNum(c)) {
-        vSet(a, 0, 0.0, "")
+        vSetNil(a)
       } else {
         let r = tmap.get(tkey(toInt(vNum(b)), kt, vNum(c), vStr(c)))
         if r.Found {
           vSet(a, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
         } else {
-          vSet(a, 0, 0.0, "")
+          vSetNil(a)
         }
       }
     } else if op == 30 {
@@ -10349,10 +10364,10 @@ mod vmStep() {
         // extends across a gap that is filled later, because tblHas asks the map
         // the way the rest of the table code does.  All three were measured
         // against PUC; see AGENTS.md.
-        vSet(a, 6, tLen[toInt(vNum(b))] + 0.0, "")
+        vSetN(a, 6, tLen[toInt(vNum(b))] + 0.0)
       } else if bt == 2 {
 
-        vSet(a, 6, vStr(b).Length() + 0.0, "")
+        vSetN(a, 6, vStr(b).Length() + 0.0)
       } else {
         // PUC also names the value: "attempt to get length of a nil value", plus
         // "(global 'print')" when it is a named one, which needs a descriptor the
@@ -10513,7 +10528,7 @@ chip vmStepFast() {
   // arm costs a comparison per instruction for every instruction above it, which
   // is why FORLOOP was moved into this mod for position alone.
   if op == 1 {
-    vSet(a, 0, 0.0, "")
+    vSetNil(a)
   } else if op == 2 {
     if c == 1 {
       vSetIntSat(a, constNum[b])
@@ -10524,9 +10539,9 @@ chip vmStepFast() {
     vSet(a, 2, 0.0, constStr[b])
   } else if op == 4 {
     if b == 0 {
-      vSet(a, 3, 0.0, "")
+      vSetN(a, 3, 0.0)
     } else {
-      vSet(a, 3, 1.0, "")
+      vSetN(a, 3, 1.0)
     }
   } else if op == 5 {
     vSet(a, gTag(b), gNum(b), gStr(b))
@@ -10640,9 +10655,9 @@ chip vmStepFast() {
     }
   } else if op == 15 {
     if truthyOf(vTag(b), vNum(b)) {
-      vSet(a, 3, 0.0, "")
+      vSetN(a, 3, 0.0)
     } else {
-      vSet(a, 3, 1.0, "")
+      vSetN(a, 3, 1.0)
     }
   } else if op == 17 || op == 18 || op == 19 {
     let immK = c < 0
@@ -10654,19 +10669,19 @@ chip vmStepFast() {
     let rn = rt == 1 || rt == 6
     if op == 17 {
       if ln && rn {
-        vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
       } else if lt != rt {
-        vSet(a, 3, 0.0, "")
+        vSetN(a, 3, 0.0)
       } else if lt == 1 {
-        vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
       } else if lt == 2 {
-        vSet(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0, "")
+        vSetN(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0)
       } else if lt == 3 {
-        vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
       } else if lt == 4 || lt == 5 {
-        vSet(a, 3, if vNum(b) == rv then 1.0 else 0.0, "")
+        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
       } else {
-        vSet(a, 3, 1.0, "")
+        vSetN(a, 3, 1.0)
       }
     } else if ln && rn {
       let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
@@ -10678,7 +10693,7 @@ chip vmStepFast() {
         }
         advanced = true
       } else {
-        vSet(a, 3, if hit then 1.0 else 0.0, "")
+        vSetN(a, 3, if hit then 1.0 else 0.0)
       }
     } else if lt == 2 && rt == 2 {
       // lexicographic string order cannot use the MathCompare gate
@@ -10719,6 +10734,55 @@ chip vmStepFast() {
     advanced = true
   } else if op == 50 {
     forDepth = forDepth - 1
+  } else if op == 29 {
+    let kt = keyTag(vTag(c), vNum(c))
+    if vTag(b) == 2 {
+      // Indexing a string reaches the string library, the way PUC Lua's
+      // string metatable does.  This is what makes s:upper() work without
+      // metatables.  The table is looked up here rather than cached: the
+      // library creates it while the program runs, so a cached id would be
+      // resolved before it exists.
+      let sr = gmap.get("string")
+      if kt == 2 && sr.Found && gtag[sr.Value] == 5 {
+        let r = tmap.get(tkey(toInt(gnum[sr.Value]), kt, vNum(c), vStr(c)))
+        if r.Found {
+          vSet(a, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
+        } else {
+          vSetNil(a)
+        }
+      } else {
+        vSetNil(a)
+      }
+    } else if vTag(b) != 5 {
+      // PUC says WHICH kind.  Indexing nil is the common case -- a field off a
+      // nil return, a typo'd global, `coroutine.create` on a build with no
+      // coroutines -- and "non-table" sends the reader hunting for a number or
+      // a string when the value is nil.
+      vmFail(if vTag(b) == 0 then "attempt to index a nil value"
+        else "attempt to index a " .. typeName(vTag(b)) .. " value")
+    } else if kt == 0 {
+      vmFail("table index is nil")
+    } else if kt == 1 && vNum(c) != floor(vNum(c)) {
+      vSetNil(a)
+    } else {
+      let r = tmap.get(tkey(toInt(vNum(b)), kt, vNum(c), vStr(c)))
+      if r.Found {
+        vSet(a, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
+      } else {
+        vSetNil(a)
+      }
+    }
+  } else if op == 30 {
+    let kt = keyTag(vTag(b), vNum(b))
+    if vTag(a) != 5 {
+      vmFail("attempt to index a non-table value")
+    } else if kt == 0 {
+      vmFail("table index is nil")
+    } else if kt == 1 && vNum(b) != floor(vNum(b)) {
+      vmFail("non-integer number keys are not supported")
+    } else {
+      tblSetKey(toInt(vNum(a)), kt, vNum(b), vStr(b), vTag(c), vNum(c), vStr(c))
+    }
   } else if op == 0 {
     vmHalted = true
     advanced = true
@@ -10732,7 +10796,7 @@ chip vmStepFast() {
   // The parentheses round the WHOLE set, not just its first term: `||` binds
   // looser than `&&`, so an unbracketed tail would bind only the last term and
   // leave `!advanced` guarding nothing but it.
-  if ((op <= 22 && op != 16) || op == 24 || op == 33 || op == 50)
+  if ((op <= 22 && op != 16) || op == 24 || op == 33 || op == 50 || op == 29 || op == 30)
     && !advanced && !vmHalted {
     vmPc = vmPc + 1
     if vmPc >= bop.length() {
