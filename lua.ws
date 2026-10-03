@@ -5102,7 +5102,7 @@ mod fmtEFracDig() {
   fmtState = 31
 }
 
-mod lexStep() {
+chip lexStep() {
   if lstage != 99 && !lerr {
     let cp = if lpos < llen then lsrc.Substring(lpos, 1).ToCharCode().Codepoint else 0
     let ch = lsrc.Substring(lpos, 1)
