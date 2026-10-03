@@ -71,6 +71,37 @@ TICK_BUDGET = 20000
 # is a boot cost in seconds there and nowhere else.
 TICKS_PER_SECOND = 60.0
 
+# The probes are 46 INDEPENDENT boot-to-first-output runs, each up to 20,000
+# ticks of a gate-level simulation, and they were done one after another: 476
+# seconds, of which about 5 is the compile.  Nothing in one probe depends on
+# another, so they go to a process pool -- the GIL means threads would not help,
+# and this is the same share_dump/sim_from_dump shape the suite already uses, so
+# the chip is compiled once and every worker indexes that one dump.
+DEFAULT_WORKERS = min(12, (os.cpu_count() or 4))
+_POOL = None
+ARGS_CHIP = None
+
+
+def _pool_init(dump_path):
+    global _POOL
+    from irsims import sim_from_dump
+    _POOL = ChipRunner(sim=sim_from_dump(dump_path))
+
+
+def _pool_probe(job):
+    """One probe in a worker: (key, src) -> (key, ticks, log) or (key, None, err).
+
+    A probe that never prints is a RESULT here, not a crash: `first_run` raises
+    SystemExit because a silent run means the tool is measuring nothing, and that
+    has to reach the parent as a value so the parent can say which probe failed.
+    """
+    key, src = job
+    try:
+        at, log = first_run(_POOL, src)
+    except SystemExit as e:
+        return key, None, str(e)
+    return key, at, log
+
 
 def first_run(runner, src):
     """Ticks from boot to the first output: the parse plus the run.  (sec, log)."""
@@ -143,7 +174,7 @@ def funccap_prog(n):
         for i in range(n)) + "print(1)\n"
 
 
-def slope(runner, label, sizes, make, unit, use, reps):
+def slope(runner, label, sizes, make, unit, use, reps, results=None):
     """The cost of one unit of `label`, from the two ends of its family.
 
     Endpoints, not a fit: every point is printed so a non-linearity is visible
@@ -151,19 +182,27 @@ def slope(runner, label, sizes, make, unit, use, reps):
     the most of the dimension being measured.  `unit` is what one `n` is (a
     character, a statement, a function); `use` is which of the two rates the price
     below is allowed to use, per character or per function.
+
+    `results` is {n: [(ticks, log), ...]} measured elsewhere -- by a worker
+    process, in the parallel path -- so that this stays the single place numbers
+    become rates.  Everything downstream reads the printed table and the whole
+    point of this tool is that the table is comparable between runs, so the
+    printing must not depend on which process happened to run a probe.
     """
+    if results is None:
+        results = {n: [first_run(runner, make(n)) for _ in range(reps)]
+                   for n in sizes}
     print("  %-8s %-5s %-7s %-7s %s" % (label, "n", "chars", "ticks", "spread"))
     points = []
     for n in sizes:
-        src = make(n)
-        seen = [first_run(runner, src) for _ in range(reps)]
+        seen = results[n]
         ticks = [t for t, _ in seen]
         logs = {log for _, log in seen}
         if logs != {"1\n"}:
             raise SystemExit("%s n=%d printed %r, want '1\\n' - the probe is not "
                              "measuring a successful run" % (label, n, logs))
-        points.append((n, len(src), min(ticks), max(ticks)))
-        print("  %-8s %-5d %-7d %-7d %s" % (label, n, len(src), min(ticks),
+        points.append((n, len(make(n)), min(ticks), max(ticks)))
+        print("  %-8s %-5d %-7d %-7d %s" % (label, n, len(make(n)), min(ticks),
                                              ticks))
     (n0, c0, t0, _), (n1, c1, t1, _) = points[0], points[-1]
     per_n = (t1 - t0) / float(n1 - n0)
@@ -246,6 +285,51 @@ def price(runner, path, per_char, per_func, floor):
     return lo, hi
 
 
+def measure_all(families, reps, workers):
+    """Run every probe, in parallel if there is more than one worker.
+
+    Returns {family_index: {n: [(ticks, log), ...]}} with the reps of each point
+    in the order they were asked for, so the printed table does not depend on the
+    order the pool happened to finish in.
+    """
+    jobs = []
+    for fi, (_label, sizes, make, _unit, _use) in enumerate(families):
+        for n in sizes:
+            for _r in range(reps):
+                jobs.append(((fi, n), make(n)))
+    if workers <= 1:
+        runner = ChipRunner(ARGS_CHIP)
+        out = {}
+        for key, src in jobs:
+            at, log = first_run(runner, src)
+            out.setdefault(key, []).append((at, log))
+        return out
+
+    import multiprocessing as mp
+    import tempfile
+    from irsims import share_dump
+    fd, pkl = tempfile.mkstemp(prefix="lexrate", suffix=".pkl")
+    os.close(fd)
+    try:
+        share_dump(ARGS_CHIP, pkl)
+        got = {}
+        with mp.Pool(workers, initializer=_pool_init, initargs=(pkl,)) as pool:
+            for key, at, log in pool.imap_unordered(_pool_probe, jobs,
+                                                    chunksize=1):
+                if at is None:
+                    raise SystemExit(log)
+                got.setdefault(key, []).append((at, log))
+    finally:
+        os.unlink(pkl)
+    # imap_unordered returns results in whatever order they finished, so a
+    # point's reps would print in a different order on every run -- and the
+    # printed spread is this tool's determinism check, which is exactly the
+    # thing that must not wobble.  Sorting puts it back.
+    for key in got:
+        got[key] = sorted(got[key])
+    return got
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("piece", nargs="*",
@@ -253,28 +337,43 @@ def main():
     parser.add_argument("--repeat", type=int, default=2,
                         help="reps of each program; the tick count is "
                              "deterministic, so this is a determinism check")
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                        help="processes; 1 runs everything in this one")
     parser.add_argument("--chip", default=os.path.join(ROOT, "lua.ws"),
                         help="a .ws to measure, so a revision or a deliberately "
                              "damaged chip can be asked the same question")
     args = parser.parse_args()
+    global ARGS_CHIP
+    ARGS_CHIP = args.chip
     if args.repeat < 1:
         parser.error("--repeat must be positive")
+    if args.workers < 1:
+        parser.error("--workers must be positive")
     for path in [args.chip] + [os.path.join(ROOT, p) for p in args.piece]:
         if not os.path.exists(path):
             parser.error("no such file: %s" % path)
-    runner = ChipRunner(args.chip)
-    reps = args.repeat
 
+    families = [("scan", SIZES, scan_prog, "char", "char"),
+                ("space", SIZES, space_prog, "char", "char"),
+                ("assign", STMTS, lambda n: body_prog(SOURCE_BODY, n),
+                 "stmt", "char"),
+                ("cond", STMTS, lambda n: body_prog(COND_BODY, n),
+                 "stmt", "char"),
+                ("closure", FUNCS, closure_prog, "func", "func"),
+                ("funclit", FUNCS, funclit_prog, "func", "func"),
+                ("funccap", FUNCS, funccap_prog, "func", "func")]
+    reps = args.repeat
     print("rates, as the difference between the two ends of each family")
-    rates = [slope(runner, "scan", SIZES, scan_prog, "char", "char", reps),
-             slope(runner, "space", SIZES, space_prog, "char", "char", reps),
-             slope(runner, "assign", STMTS, lambda n: body_prog(SOURCE_BODY, n),
-                   "stmt", "char", reps),
-             slope(runner, "cond", STMTS, lambda n: body_prog(COND_BODY, n),
-                   "stmt", "char", reps),
-             slope(runner, "closure", FUNCS, closure_prog, "func", "func", reps),
-             slope(runner, "funclit", FUNCS, funclit_prog, "func", "func", reps),
-             slope(runner, "funccap", FUNCS, funccap_prog, "func", "func", reps)]
+    print("  %d probes on %d workers" % (sum(len(f[1]) for f in families) * reps,
+                                          args.workers))
+    got = measure_all(families, reps, args.workers)
+    # price() runs the piece prepended to a program that prints, so it needs a
+    # sim in THIS process -- only when a piece was actually named, because it
+    # would otherwise pay a second compile for nothing.
+    runner = ChipRunner(args.chip) if args.piece else None
+    rates = [slope(runner, label, sizes, make, unit, use, reps,
+                   results={n: got[(fi, n)] for n in sizes})
+             for fi, (label, sizes, make, unit, use) in enumerate(families)]
 
     print("summary")
     # The floor is the `space` family, and it is the floor BECAUSE `scan` went
