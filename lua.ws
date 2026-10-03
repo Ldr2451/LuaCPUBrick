@@ -2062,7 +2062,7 @@ chip vSet(r: int, tag: int, num: float, s: string) {
   vstr[vmBase + r] = s
 }
 
-mod vSetNum(r: int, v: float) {
+chip vSetNum(r: int, v: float) {
   vtag[vmBase + r] = 1
   vnum[vmBase + r] = v
 }
@@ -3956,7 +3956,7 @@ mod vSetIntTag(a: int, w: float) {
   vSet(a, 6, w + 0.0, "")
 }
 
-mod vSetInt(a: int, v: float) {
+chip vSetInt(a: int, v: float) {
   let w = intWrap(v)
   if w == floor(w) && 0.0 <= w + INT64_LIMIT && w < INT64_LIMIT {
     vSetIntTag(a, w)
