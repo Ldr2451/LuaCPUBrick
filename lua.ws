@@ -1757,7 +1757,7 @@ mod blkEnter(isLoopBody: bool) {
   }
 }
 
-mod regSync() {
+chip regSync() {
   let top = cfBase[fnDepth]
   let m = cfMaxLoc[fnDepth] + 1
   if m > top {
@@ -1964,7 +1964,7 @@ mod ctlTop() -> int {
 }
 
 // Append a patch position to a control frame's patch list (kept in B/C).
-mod lstAppendB(pos: int) {
+chip lstAppendB(pos: int) {
   plNext[pos] = ctlB[ctlB.length() - 1]
   ctlB[ctlB.length() - 1] = pos
 }
@@ -2079,7 +2079,7 @@ mod gStr(gi: int) -> string {
   return gstr[gi]
 }
 
-mod gSet(gi: int, tag: int, num: float, s: string) {
+chip gSet(gi: int, tag: int, num: float, s: string) {
   gtag[gi] = tag
   gnum[gi] = num
   gstr[gi] = s
@@ -2338,7 +2338,7 @@ mod lenStep() {
 // next()'s walk: the candidate is a tombstone or a nil value, so skip it and
 // look again -- that costs ticks but needs no loop.  Finishing writes key+value
 // (or a lone nil) and advances past the call.
-mod nxStep() {
+chip nxStep() {
   if 0 <= nxSlot && (tvTag[nxSlot] == 0 || tNext[nxSlot] == -2) {
     nxSlot = tNext[nxSlot]
   } else {
@@ -3032,7 +3032,7 @@ mod patSetHit() {
 }
 
 // n bytes from the cursor, or whatever is left of them.
-mod rdTake(n: int) {
+chip rdTake(n: int) {
   let avail = rdText.Length() - rdPos
   let k = if n < avail then n else avail
   rdBuf = if k <= 0 then "" else rdText.Substring(rdPos, k)
@@ -3952,7 +3952,7 @@ mod arrNumOk(tag: int) -> bool {
 // One function owns it because there are two places that write the integer tag
 // with a computed value (#t and #s add 0.0 themselves before they get here) and
 // they have to agree about this exactly as they agree about the tag.
-mod vSetIntTag(a: int, w: float) {
+chip vSetIntTag(a: int, w: float) {
   vSet(a, 6, w + 0.0, "")
 }
 
@@ -3965,7 +3965,7 @@ chip vSetInt(a: int, v: float) {
   }
 }
 
-mod vSetIntSat(a: int, v: float) {
+chip vSetIntSat(a: int, v: float) {
   var w = v
   if w + INT64_LIMIT < 0.0 {
     w = 0.0 - INT64_LIMIT
@@ -4080,7 +4080,7 @@ mod fmtRadixDigit() {
 // The sign for %d %i %u, and the 0x / 0X / 0 prefix for %x %X %o.  The radix
 // conversions have no sign -- they print the two's complement -- and # adds
 // nothing for a zero, in either base.
-mod fmtSign() {
+chip fmtSign() {
   if fmtBase_ == 10.0 {
     if fmtNeg {
       fmtBody = "-" .. fmtBody
@@ -4386,7 +4386,7 @@ mod binArrive(opc: int, prec: int, fl: int) {
 // string read and cannot grow without bound.  The 64-character cap is the
 // *caller's* because it is print's rule, not the log's: a write of 500 bytes is
 // one append here and 500 bytes of text, not eight dropped ones.
-mod logPush(line: string) {
+chip logPush(line: string) {
   logLines.push(line)
   logAdd(line)
   if logLines.length() > 32 {
@@ -4714,7 +4714,7 @@ mod locFind(name: string) {
   }
 }
 
-mod forDoHead() {
+chip forDoHead() {
   cpos = cpos + 1
   blkEnter(true)
   let ctrl = locDeclare(forName)
@@ -9617,7 +9617,7 @@ mod vmBusy() -> bool {
 // documents: vmBurst's four fast steps and one full step mean both must handle
 // every op, and two hand-kept copies would drift - which for a frame teardown
 // would be a popped frame under one dispatch path only.
-mod vmReturn(a: int) {
+chip vmReturn(a: int) {
   let rv = vTag(a)
   let rn = vNum(a)
   let rs = vStr(a)
@@ -9645,7 +9645,7 @@ mod vmReturn(a: int) {
   }
 }
 
-mod vmForLoop(a: int, c: int) {
+chip vmForLoop(a: int, c: int) {
   let ctrl_reg = forCtrl[forDepth - 1]
   let ctrl = vNum(ctrl_reg)
   let stp = vNum(c)
