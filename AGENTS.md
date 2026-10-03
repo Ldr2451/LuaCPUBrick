@@ -483,18 +483,32 @@
 
 ## Chips: the one lever that is nodes down and ticks flat
 A `mod` **inlines at every call site**; a `chip` compiles to one shared body.
-Converting the duplicated void mods took the chip from **46,151 to 29,275 nodes
-(-36.6%)** with **ticks and gates-fired identical on all eight `perfbench`
-programs** and boot unchanged (demo.lua 2,994 ticks to first output, the same as
-before the first chip). 41 chips. `tools/chip/chipscreen.py` lists what is left
-and why; `tochip.py` converts with the refusals built in.
+Converting the duplicated void mods took the chip from **46,151 to 30,397 nodes
+(-34.1%)** with **ticks identical on all eight `perfbench` programs** (2,716
+before and after) and boot unchanged (demo.lua 2,994 ticks to first output, the
+same as before the first chip). 38 chips. `tools/chip/chipscreen.py` lists what
+is left and why; `tochip.py` converts with the refusals built in;
+`tools/chip/gatesA.py` prices the gate side.
 
-- **A chip costs no tick per run.** This was *assumed* to be false for years —
-  "a chip call per register write would be catastrophic for ticks" is why `vSet`
-  sat at 137 call sites for the whole of this work — and it is simply not true.
-  Measured on `vmStepFast` (4 sites), then `vSet` (137), then `cloStep` (a
-  once-per-tick micro-step), all at identical ticks. The gates are the same
-  gates; only the stored copies went away.
+- **A chip costs no tick, but it DOES cost gates.** Both halves matter and they
+  point opposite ways. Ticks are what a player waits for; gates are what the
+  simulator executes. Chips are flat in ticks and *not* flat in gates, and the
+  whole conversion rests on not confusing the two — `perfbench`'s table has **no
+  gates column** (its `b/c` columns are ticks, compile and bytecode), so "the
+  gates are identical" is not something it can tell you. Measure with
+  `gatesA.py`, which counts node executions.
+- **The gain and the cost are not in the same mods.** Reverting the three
+  register writers (`vSet`, `vSetNum`, `vSetInt`) gives back **15.5% of the
+  gates** for 1,280 nodes — 83 nodes per gate-point. The other 35 chips buy
+  15,596 nodes for the remaining **6.6%** — 2,363 nodes per gate-point, 28×
+  better. So the register-write family is a bad trade and stays a mod, and the
+  conversion as it stands is **-34.1% nodes for +3.1% gates**: +3.1% is close to
+  noise, +22% was not.
+- **The old assumption was not merely wrong, it was expensive.** "A chip call
+  per register write would be catastrophic for ticks" is why `vSet` sat at 137
+  call sites for the whole of this work. It is not catastrophic for ticks — and
+  it is genuinely bad for *gates*, which is the half of the claim nobody
+  checked. Measure the currency you are actually spending.
 - **Count INLINED COPIES, not call sites.** A mod's body exists once per call
   site *per copy of whatever calls it*: `emitTok` has 38 call sites but 34 are
   inside `lexStep`, which `lexChunk` called **twice**, so it really existed ~72

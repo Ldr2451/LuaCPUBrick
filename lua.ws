@@ -2056,13 +2056,13 @@ chip retCopy(src: int, dst: int, n: int) {
 // ticks" -- on the assumption that a chip boundary costs a tick.  vmStepFast
 // measured that assumption false (four call sites, ticks identical), so the
 // class is worth measuring on its biggest member rather than assuming.
-chip vSet(r: int, tag: int, num: float, s: string) {
+mod vSet(r: int, tag: int, num: float, s: string) {
   vtag[vmBase + r] = tag
   vnum[vmBase + r] = num
   vstr[vmBase + r] = s
 }
 
-chip vSetNum(r: int, v: float) {
+mod vSetNum(r: int, v: float) {
   vtag[vmBase + r] = 1
   vnum[vmBase + r] = v
 }
@@ -3956,7 +3956,7 @@ chip vSetIntTag(a: int, w: float) {
   vSet(a, 6, w + 0.0, "")
 }
 
-chip vSetInt(a: int, v: float) {
+mod vSetInt(a: int, v: float) {
   let w = intWrap(v)
   if w == floor(w) && 0.0 <= w + INT64_LIMIT && w < INT64_LIMIT {
     vSetIntTag(a, w)
