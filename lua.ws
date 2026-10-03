@@ -7280,7 +7280,21 @@ mod patError() {
 // own place, nothing else to do) or the value goes into the entry the list does
 // hand back and the tombstone is left dead, unlinked, and still on the list
 // where a dead slot belongs.
-mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: string) -> bool {
+// A CHIP, not a mod, and the reason is arithmetic rather than taste.
+//
+// The TAPPEND arm calls this once per result slot, sixteen times in a row, and a
+// mod INLINES at every call site -- so that one arm was carrying sixteen inlined
+// copies of this body.  Measured by cutting the ladder to 8 arms and taking the
+// slope: 204 nodes and 458 wires per copy, exactly linear on two independent
+// intervals, so 3,264 nodes, 7.1% of the chip, for one table-constructor arm.
+//
+// A chip compiles to ONE shared body template reused by every call site, so the
+// sixteen sites become sixteen calls into one copy.  Measured: 46,151 -> 42,918
+// nodes (-7.0%) and 95,852 -> 89,026 wires.
+//
+// It is void because nothing ever read the result: all seventeen call sites use it
+// as a statement, and a bool nobody reads is a hidden variable for nothing.
+chip tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: string) {
   let key = tkey(tid, kt, kn, ks)
   let r = tmap.get(key)
   let kint = toInt(kn)
@@ -7307,7 +7321,7 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
       // below: that would pop the slot this line just pushed and re-link it,
       // which leaves the key in the table and the free list empty, so the table
       // never shrinks and nothing is ever recycled.
-      return true
+      return
     } else if tvTag[r.Value] == 0 {
       old = r.Value
       revived = true
@@ -7318,7 +7332,7 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
     // a key the table does not have yet
   } else {
     // assigning nil to a missing key does nothing
-    return true
+    return
   }
   if sl < 0 {
     if tFree.length() > 0 {
@@ -7339,7 +7353,7 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
       let cap = toInt(MAX_HEAP + 0.0)
       vmFail("out of table memory (" .. (cap | 0) .. " entries; "
         .. "assign nil to a key to free one)")
-      return false
+      return
     }
     tOwner[sl] = tid
     tKeyTag[sl] = kt
@@ -7372,7 +7386,7 @@ mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: 
       lenTid = tid
     }
   }
-  return true
+  return
 }
 
 // %s and %q.  %q quotes a string and leaves everything else as %s does, which

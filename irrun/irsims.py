@@ -2359,25 +2359,29 @@ class Sim:
     def _pin_value(self, pin_nid: int):
         """This call's value for a boundary pin, or None when there is none.
 
-        Latest published wins; a pure source is pulled (it never publishes on
-        its own). No tick check and no forcing of exec sources: the snapshot
-        happens at the call (`_exec_in` firing), so whatever the source holds IS
-        the call's value. Forcing an exec source runs a chain-dependent gate
-        with unready inputs and poisons it; trusting only same-tick publishes
-        drops values published on earlier ticks of a multi-tick call.
+        Two source kinds, two paths. A PURE source is ALWAYS re-executed, never
+        trusted from cache: it publishes only when pulled, so a cached value is
+        whatever its inputs held at the last pull, not what they hold now. The
+        outer call snapshotted tid=5 (tick-48 pull) while its input already held
+        4.0 (tick-49 chain run) -- re-pulling gets 4. An EXEC source publishes
+        when the chain runs it; first publish after unlock wins and stale
+        re-publishes are ignored (a shared advancing stack made one arm's source
+        publish 1.0, 2.0, 3.0 and `{1,2,3}` came back as 3, 3, 3).
         """
         for w in self.in_wires.get((pin_nid, "RER_Input"), []):
+            src = self.nodes.get(w.src_id)
+            if (src is not None and self._is_pure(src.cls)
+                    and w.src_id not in self._eval_stack):
+                self._eval_stack.add(w.src_id)
+                try:
+                    self._exec_node(w.src_id, src, set())
+                finally:
+                    self._eval_stack.discard(w.src_id)
+                got = self._published_val(w.src_id, w.src_port)
+                if isinstance(got, (bool, int, float, str)):
+                    return got
+                continue
             got = self._published_val(w.src_id, w.src_port)
-            if not isinstance(got, (bool, int, float, str)):
-                src = self.nodes.get(w.src_id)
-                if (src is not None and self._is_pure(src.cls)
-                        and w.src_id not in self._eval_stack):
-                    self._eval_stack.add(w.src_id)
-                    try:
-                        self._exec_node(w.src_id, src, set())
-                    finally:
-                        self._eval_stack.discard(w.src_id)
-                    got = self._published_val(w.src_id, w.src_port)
             if isinstance(got, (bool, int, float, str)):
                 return got
         return None
