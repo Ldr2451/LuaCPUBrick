@@ -2051,7 +2051,12 @@ chip retCopy(src: int, dst: int, n: int) {
   if 16 <= n { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] }
 }
 
-mod vSet(r: int, tag: int, num: float, s: string) {
+// A CHIP: 137 call sites, and a mod inlines at every one of them.  This was
+// written off as "a chip call per register write would be catastrophic for
+// ticks" -- on the assumption that a chip boundary costs a tick.  vmStepFast
+// measured that assumption false (four call sites, ticks identical), so the
+// class is worth measuring on its biggest member rather than assuming.
+chip vSet(r: int, tag: int, num: float, s: string) {
   vtag[vmBase + r] = tag
   vnum[vmBase + r] = num
   vstr[vmBase + r] = s
