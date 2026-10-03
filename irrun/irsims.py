@@ -218,6 +218,23 @@ class Sim:
         # instead of the value current at its own call.
         self._call_pins: dict[int, list[int]] = {}
         self._build_call_pins()
+        # A pin snapshots the FIRST publish after it unlocks, then holds (locked)
+        # until its call completes (`_exec_out` unlocks). Re-snapshotting on every
+        # publish hands the body a LATER call's value: one arm's source published
+        # 1.0, then stale 2.0, 3.0 as the shared stack advanced, and `{1,2,3}`
+        # came back as 3, 3, 3. A stale re-publish landing between the fresh
+        # publish and the snapshot is the same bug wearing another hat: an outer
+        # call snapshotted tid=5 (the inner table, republished stale) instead of
+        # tid=4, keyed `5#1`, found the inner entry and updated it -- so the
+        # outer entry was never created and `{{3}}` indexed nil.
+        self._pin_locked: set[int] = set()
+        self._pin_wake: list[tuple[int, str]] = []
+        self._pin_src: dict[tuple[int, str], list[int]] = {}
+        for w in wires:
+            dn = self.nodes.get(w.dst_id)
+            if (dn and "Internal_MicrochipInput" in dn.cls
+                    and w.dst_port == "RER_Input"):
+                self._pin_src.setdefault((w.src_id, w.src_port), []).append(w.dst_id)
         self._eval_stack: set[int] = set()
         self._unimpl_warned: set[str] = set()
         self._loglines_id: int | None = None
@@ -498,6 +515,14 @@ class Sim:
                 for item in sorted(nq, key=lambda x: x[0]):
                     if item not in self.tick_done:
                         q.append(item)
+                # Drain woken pins in the same tick so the snapshot lands while
+                # the source is fresh. A pin that already ran keeps its first
+                # snapshot (`tick_done`); a locked pin ignores the wake.
+                if self._pin_wake:
+                    for item in self._pin_wake:
+                        if item not in self.tick_done:
+                            q.append(item)
+                    self._pin_wake = []
                 guard += 1
                 if guard > 500000:
                     break
@@ -897,6 +922,13 @@ class Sim:
         for w in self.out_wires.get((nid, port), []):
             if w.dst_id in self._pure_ids:
                 self._dirty.add(w.dst_id)
+        # First publish after unlock snapshots the pin (see `_pin_value`): the
+        # call's arguments are what the sources hold NOW, before any stale
+        # re-run overwrites them. One dict lookup; almost nothing is watched.
+        pins = self._pin_src.get((nid, port))
+        if pins:
+            for pin in pins:
+                self._pin_wake.append((pin, "RER_Input"))
 
     def _var_id(self, nid: int, port: str = "VarRef") -> Optional[int]:
         for w in self.in_wires.get((nid, port), []):
@@ -1286,17 +1318,26 @@ class Sim:
                 # they speculatively execute with stale arguments, exec gates
                 # among them PERFORM WRITES, and `tick_done` suppresses the real
                 # run. Value pins are read from cache when the body chain arrives.
+                #
+                # First publish after unlock wins; a locked pin holds. `_exec_in`
+                # snapshots only unlocked siblings (args that publish late) and
+                # locks whatever it snapshots, so a stale re-publish landing
+                # between the fresh publish and the call cannot overwrite it.
                 if self._port_is_exec(node, "RER_Output"):
                     for pin in self._call_pins.get(nid, ()):
-                        got = self._pin_value(pin)
-                        if got is not None:
-                            self._out_val(pin, 'RER_Output', got)
+                        if pin not in self._pin_locked:
+                            got = self._pin_value(pin)
+                            if got is not None:
+                                self._out_val(pin, 'RER_Output', got)
+                                self._pin_locked.add(pin)
                     for w in self.out_wires.get((nid, "RER_Output"), []):
                         nq.add((w.dst_id, w.dst_port))
                     return
-                got = self._pin_value(nid)
-                if got is not None:
-                    self._out_val(nid, 'RER_Output', got)
+                if nid not in self._pin_locked:
+                    got = self._pin_value(nid)
+                    if got is not None:
+                        self._out_val(nid, 'RER_Output', got)
+                        self._pin_locked.add(nid)
                 return
             # `host_baselines` models the host observed in game: the port's value
             # is there for a reader to find, and NOTHING downstream is told about
@@ -1319,12 +1360,19 @@ class Sim:
                     nq.add((w.dst_id, w.dst_port))
         elif "Internal_MicrochipOutput" in cls:
             # The body's way back out: push RER_Input to RER_Output so the
-            # caller's chain continues. Left as a bare `pass`, the body ran to
-            # completion and stranded the caller, which re-entered the chip once
-            # a tick and never printed anything.
+            # caller's chain continues, and unlock the call's pins -- the call is
+            # done, so the next first-publish is a new call's arguments, not a
+            # stale re-run. Left as a bare `pass`, the body ran to completion and
+            # stranded the caller, which re-entered the chip once a tick and never
+            # printed anything.
             if self.in_wires.get((nid, "RER_Input")):
                 for w in self.out_wires.get((nid, "RER_Output"), []):
                     nq.add((w.dst_id, w.dst_port))
+                # Unlock every pin: a call that completed releases its arguments.
+                # Coarse (all bodies, not just this one) but safe, because the
+                # next snapshot only happens on a publish or `_exec_in`, both of
+                # which mean a new call is actually using that pin.
+                self._pin_locked.clear()
         else:
             # Unknown gate: never silent — a skipped gate corrupts the run.
             if cls not in self._unimpl_warned:
