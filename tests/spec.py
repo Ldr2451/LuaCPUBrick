@@ -36,7 +36,7 @@ N_OPS = len(OP_NAMES)
 # Chip limits.  Each has a `const` of the same name in lua.ws.
 MAX_INSTR = 1024
 MAX_TOKENS = 4096
-MAX_REGS = 64
+MAX_REGS = 200
 MAX_FUNCS = 96
 MAX_CLO = 256    # extra closure records on top of MAX_FUNCS; see cloF in lua.ws
 MAX_GLOBALS = 96

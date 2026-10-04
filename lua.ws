@@ -297,7 +297,7 @@ const MAX_TOKENS = 4096
 // checks this against spec.OUTARR, which is what actually sizes the array, so
 // the two cannot drift without the suite going red.
 const ARR_SLOTS = 64
-const MAX_REGS = 64
+const MAX_REGS = 200
 // function slots: the reserved builtins, the prepended library, and the
 // program's own functions.  The arrays grow on demand, so this is a bound, not
 // a size.
@@ -325,7 +325,7 @@ const FRAMES = 201
 // the register file is MAX_CALLS frames of MAX_REGS slots.  Spelled as a
 // literal, not MAX_CALLS * MAX_REGS: a const computed from a const is one node
 // more per use than the number it works out to (measured, both here).
-const VREGS = 12800
+const VREGS = 40000
 const MAX_TABLES = 512
 // TOTAL entries across every table, not per table -- there is no collector, so
 // this is the whole budget a program gets.  PUC sets no limit here (tables grow

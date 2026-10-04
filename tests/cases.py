@@ -2345,6 +2345,26 @@ TESTS = [
     ("out-cleared-on-restart", "outnum(1, 42) print('done')", None, "modelio",
      {"expect": {"log": "done\n",
                  "outGlobals": [42.0, 0.0, 0.0, 0.0, "", ""]}}),
+    # Divergences PUC's own test suite found (tools/chip/pucsuite.py harvests
+     # lua-5.5.1-tests and compares against the oracle).  Each is pinned here so
+     # it is a KNOWN answer rather than a surprise: without an entry a divergence
+     # is indistinguishable from a chip bug, which is the whole reason the
+     # harvested cases are worth keeping.
+    ("puc-hex-tonumber", "print(tonumber('0x10'))", None, "run"),
+    ("puc-hex-sign", "print(tonumber('+0x2'))", None, "run"),
+    ("puc-hex-decimal-ok", "print(tonumber('16'))", None, "run"),
+    # %f, the frontier pattern, is not in the matcher
+    ("puc-fpct-a", "print(string.find('a', '%f[^%l]'))", None, "run"),
+    ("puc-fpct-b", "print(string.find('aba', '%f[a%z]'))", None, "run"),
+    # (%w*)$ -- a %w* that matches empty at end of subject
+    ("puc-wstar-anchor", "print(string.match('alo ', '(%w*)$') == '')", None,
+     "run"),
+    # %+#014.0f -- the '#' with a zero-padded width and an explicit precision
+    ("puc-format-alt-zero", "print(string.format('%+#014.0f', 100))", None,
+     "run"),
+    # tostring of a function: the chip's address spelling
+    ("puc-tostring-func", "print(string.find(tostring(print), 'function:') "
+     "~= nil)", None, "run"),
     # line numbers on compile failure
     ("errline-stmt", "print(1)\nprint(2)\nend\n", None, "synfail",
      {"errline": 3}),
