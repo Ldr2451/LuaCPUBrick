@@ -606,9 +606,6 @@ var upGen: int[]
 // is emitted in front of the condition and this says so, or the block exit
 // would add a second one outside the loop.
 var blkGenDone: bool = false
-var selfName: string[]
-var selfClean: bool[]
-var selfFid: int[]
 // is the function being compiled variadic?  `...` outside one is an error, and
 // the VM keeps the same flag per function id in fVar
 var fnVar: bool[]
@@ -652,9 +649,7 @@ var ctlC: int[]
 var plNext: int[]
 var lkKind: int = 0
 var lkReg: int = -1
-var lkFid: int = -1
 var lkDone: bool = false
-var lkRaw: bool = false
 // which live local the name matched, so the one test after the ladder can tell
 // a local of this function from a capture without each of the 32 arms asking
 var lkIx: int = -1
@@ -1356,7 +1351,7 @@ mod srcUses(p: string, name: string) -> bool {
 // constNum/constStr. Globals: gmap name->slot plus gslotNext. Compile frames
 // (one per nested function, depth-indexed): cfNext/cfMax/cfBase/cfMaxLoc.
 // Locals: locName/locReg/locDepth with locLen (truncate to exit scopes).
-// Self-recursion per depth: selfName/selfClean/selfFid. Shunting-yard:
+// Shunting-yard:
 // valStk/valCall, opKind/opPrec/opA/opB. Control stack: ctlKind/ctlA/B/C.
 // Patch lists thread through plNext. Parse cursor cpos, error perr/perrMsg.
 
@@ -1765,12 +1760,6 @@ mod regFree(r: int) {
   }
 }
 
-mod dirtySelf(name: string) {
-  if selfName[fnDepth] == name {
-    selfClean[fnDepth] = false
-  }
-}
-
 mod locBind(name: string, r: int) {
   if locLen < locName.length() {
     locName[locLen] = name
@@ -1973,14 +1962,13 @@ mod funcDepthInit(islocal: bool) {
   cfMax[fnDepth] = 0
   cfBase[fnDepth] = 0
   cfMaxLoc[fnDepth] = -1
-  selfClean[fnDepth] = true
-  selfFid[fnDepth] = -1
   fnVar[fnDepth] = false
-  // selfName stays "" for every function, `local function` included.  It used
-  // to be set for `local function`, which made the parameter-list stage declare
-  // the name a SECOND time -- once there, inside f's own frame, so f could reach
-  // itself by GETCLO rather than through a cell -- and once at the body's end in
-  // the enclosing scope, which is the local the rest of the program sees.
+  // There is no self-recursion state here any more, and that is the point.
+  //
+  // `local function f` used to declare its name TWICE: once inside its own
+  // frame, so f could reach itself by GETCLO rather than through a cell, and
+  // once at the body's end in the enclosing scope, which is the local the rest
+  // of the program sees.
   //
   // Two declarations with one name is the hole: locFind scans newest-first, so
   // the body's own declaration shadowed the enclosing one and every capture in
@@ -1989,7 +1977,6 @@ mod funcDepthInit(islocal: bool) {
   // declaration, made in the enclosing scope by the head, and self-recursion is
   // an ordinary upvalue read -- GETUP instead of GETCLO, which costs one
   // instruction at the reference and nothing at the call.
-  selfName[fnDepth] = ""
   funcEntryLoc[fnDepth] = locLen
   fnSelfArg[fnDepth] = false
   fidAt[fnDepth] = tmpB
@@ -3589,17 +3576,12 @@ mod parseInit() {
   cfMax.clear()
   cfBase.clear()
   cfMaxLoc.clear()
-  selfName.clear()
-  selfClean.clear()
-  selfFid.clear()
   funcEntryLoc.clear()
   opBase.clear()
   cfNext.resize(FRAMES, 0)
   cfMax.resize(FRAMES, 0)
   cfBase.resize(FRAMES, 0)
   cfMaxLoc.resize(FRAMES, -1)
-  selfName.resize(FRAMES, "")
-  selfClean.resize(FRAMES, true)
   fnVar.clear()
   fnVar.resize(FRAMES, false)
   fnSelfArg.clear()
@@ -3607,7 +3589,6 @@ mod parseInit() {
   fnTgtK.clear()
   fnTgtR.clear()
   fnTgtI.clear()
-  selfFid.resize(FRAMES, -1)
   funcEntryLoc.resize(FRAMES, 0)
   opBase.resize(FRAMES, 0)
   fnKey.clear()
@@ -3629,7 +3610,6 @@ mod parseInit() {
   forLimit = -1
   forStep = -1
   ctlLoop = -1
-  lkRaw = false
   pdHead = -1
   pdThen = 0
   pdTarget = -1
@@ -4674,14 +4654,8 @@ mod patchAt(pos: int) {
 chip locFind(name: string) {
   lkKind = 0
   lkReg = -1
-  lkFid = -1
   lkDone = false
   lkIx = -1
-  if !lkRaw && selfName[fnDepth] == name && selfClean[fnDepth] {
-    lkKind = 2
-    lkFid = selfFid[fnDepth]
-    lkDone = true
-  }
 // The ladder below checks the 32 most recent live locals, so a MISS is only
   // proof that the name is a global when it saw all of them.  With more than
   // 32 live it does not: a local the ladder never reached resolves as a global
@@ -4885,7 +4859,6 @@ chip forDoHead() {
   cpos = cpos + 1
   blkEnter(true)
   let ctrl = locDeclare(forName)
-  dirtySelf(forName)
   if forInit != ctrl {
     bEmit(7, ctrl, forInit, 0)
     regFree(forInit)
@@ -4926,9 +4899,6 @@ mod funcParams() {
       cpos = cpos + 1
       fParams[tmpB] = cfNext[fnDepth]
       cfBase[fnDepth] = cfNext[fnDepth]
-      if selfName[fnDepth] != "" {
-        locDeclare(selfName[fnDepth])
-      }
       fStart[tmpB] = bop.length()
       fnVar[fnDepth] = true
       stState = 0
@@ -4938,7 +4908,6 @@ mod funcParams() {
     }
   } else if curKind() == 3 {
     locDeclare(curStr())
-    dirtySelf(curStr())
     cpos = cpos + 1
     if curKind() == 5 && curSub() == 16 {
       cpos = cpos + 1
@@ -4949,9 +4918,6 @@ mod funcParams() {
       if cfNext[fnDepth] > 8 {
         perr = true
         perrMsg = "too many parameters (max 8 in-gate)"
-      }
-      if selfName[fnDepth] != "" {
-        locDeclare(selfName[fnDepth])
       }
       fStart[tmpB] = bop.length()
       stState = 0
@@ -4966,9 +4932,6 @@ mod funcParams() {
     if cfNext[fnDepth] > 8 {
       perr = true
       perrMsg = "too many parameters (max 8 in-gate)"
-    }
-    if selfName[fnDepth] != "" {
-      locDeclare(selfName[fnDepth])
     }
     fStart[tmpB] = bop.length()
     stState = 0
@@ -5072,7 +5035,6 @@ mod doBlockClose() {
             bEmit(47, outer, k6, uk6)
           }
         }
-        dirtySelf(tmpS)
       } else if extra >= 2 {
         // function M.f(): the table register is extra-2, the field name the
         // one the header pushed
@@ -5119,7 +5081,6 @@ mod doBlockClose() {
         // out of the arms: it only clears a flag, so the order does not matter,
         // and one call is cheaper than two.
         if tk != 0 {
-          dirtySelf(tmpS)
         }
       }
     } else {
@@ -5854,9 +5815,7 @@ mod exprPushName(callParen: bool, callSugar: bool) {
   if callParen || callSugar {
     // the callee goes into a fresh call-frame register
     let fr = regAlloc()
-    if lkKind == 2 {
-      bEmit(48, fr, 0, 0)
-    } else if lkKind == 3 {
+    if lkKind == 3 {
       bEmit(46, fr, lkReg, upKind())
     } else if lkKind == 1 {
       bEmit(7, fr, lkReg, 0)
@@ -5892,11 +5851,7 @@ mod exprPushName(callParen: bool, callSugar: bool) {
       pushVal(lkReg, false, true)
     } else {
       let r = regAlloc()
-      if lkKind == 2 {
-        // the recursive name is the closure this frame is running, not the
-        // prototype: a local function with upvalues has one per call
-        bEmit(48, r, 0, 0)
-      } else if lkKind == 3 {
+      if lkKind == 3 {
         bEmit(46, r, lkReg, upKind())
       } else {
         bEmit(5, r, gRef(name), 0)
@@ -5951,11 +5906,9 @@ mod genForHead() {
   if sreg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = sreg }
   if creg > cfMaxLoc[fnDepth] { cfMaxLoc[fnDepth] = creg }
   let v1 = locDeclare(tmpNames[0])
-  dirtySelf(tmpNames[0])
   var v2 = -1
   if 1 < tmpNames.length() {
     v2 = locDeclare(tmpNames[1])
-    dirtySelf(tmpNames[1])
   }
   // The call gets its own base, allocated *after* the loop variables: a call
   // leaves its results in the base register and the one above it, so a base
@@ -6043,12 +5996,8 @@ mod stmtDispatch() {
       // closure goes, and both go through the same ladder.  One call site, not
       // two -- an extra locFind call site measures +790 nodes however deep it
       // sits (doBlockClose and here measured the same), so the second one is
-      // never written.  lkRaw because both are looking for somewhere to put
-      // something: self-recursion resolves a READ (GETCLO of the running
-      // frame), which is not a place a statement can store.
-      lkRaw = true
+      // never written.
       locFind(tmpS)
-      lkRaw = false
       if curKind() == 5 && (curSub() == 23 || curSub() == 31) && nextKind() == 3 {
         // function M.f(...) is M.f = function(...): keep the table in a
         // register and store the function into the field when the body ends.
@@ -8926,7 +8875,6 @@ mod doStoreStep() {
           bEmit(1, r, 0, 0)
         }
       }
-      dirtySelf(nm)
       tmpA = tmpA + 1
     }
   } else if stState == 15 {
@@ -8961,14 +8909,11 @@ mod doStoreStep() {
       perr = true
       perrMsg = "cannot assign to for loop control variable"
     } else {
-    lkRaw = true
     locFind(nm)
-    lkRaw = false
     if lkKind == 3 {
       // an upvalue has no register to fold into, so this is always its own
       // instruction
       bEmit(47, tmpB, lkReg, upKind())
-      dirtySelf(nm)
     } else if lkKind == 1 {
       // fold the store into the instruction that produced the value
       let li = bop.length() - 1
@@ -8979,7 +8924,6 @@ mod doStoreStep() {
       } else {
         bEmit(7, lkReg, tmpB, 0)
       }
-      dirtySelf(nm)
     } else if lkKind == 0 {
       bEmit(6, gDeclare(nm), tmpB, 0)
     } else {

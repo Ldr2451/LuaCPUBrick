@@ -56,22 +56,25 @@ GUARD = """// The ladder below checks the {n} most recent live locals, so a MISS
 """
 
 
-# The region to replace is everything between the self-name check's CLOSING
-# brace and the local-vs-capture decision.  Anchoring on the self-name check's
-# OPENING brace is the bug this had once: the replacement then began inside that
-# block and deleted its body (`lkKind = 2 / lkFid = ... / lkDone = true / }`),
-# which cost one closing brace and made the whole file fail to parse with
-# "expected RBrace, got Eof" -- while `--check` still reported OK, because it
-# counts arms and guards and never looks at the code around them.
+# The region to replace is everything between the end of locFind's prologue and
+# the local-vs-capture decision.
 #
-# So: find the opening, walk the braces to its match, and replace from after the
-# CLOSE.  And check what we are about to overwrite, rather than trusting it.
-HEAD = "  if !lkRaw && selfName[fnDepth] == name && selfClean[fnDepth] {\n"
-# the self-name block's own body, which no rewrite may touch
-HEAD_BODY = ("    lkKind = 2\n"
-             "    lkFid = selfFid[fnDepth]\n"
-             "    lkDone = true\n"
-             "  }\n")
+# It USED to be anchored below the self-recursion block (the one that made
+# `lkKind == 2`, a GETCLO of the running frame).  That block is gone: `local
+# function f` declares its name in the ENCLOSING scope and reaches itself through
+# an ordinary upvalue, so nothing sets lkKind to 2 any more and the whole
+# mechanism -- selfName, selfClean, selfFid, lkFid, dirtySelf and the GETCLO arm --
+# was dead code.  The anchor is the prologue's last line instead, which is stable
+# and has no body to protect.
+#
+# The warning below still stands, and it is the reason the anchor is checked
+# rather than trusted: an earlier version of this anchored on the self-name
+# block's OPENING brace and began inside it, deleting its body -- and `--check`
+# still reported OK, because it counts arms and guards and never looks at the
+# code around them.
+HEAD = "  lkIx = -1\n"
+# nothing between the anchor and the ladder
+HEAD_BODY = ""
 TAIL = "  if lkDone && lkKind == 0 {\n"
 
 
