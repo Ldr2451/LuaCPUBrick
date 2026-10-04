@@ -22,12 +22,34 @@ import cases  # noqa: E402
 TRIGGERS = ("](", "string[", "\"[", ")[", "table[", "math[")
 
 
+def computed_tonumber(tests):
+    """Cases whose `tonumber(` is followed by something that is not a quote.
+
+    These are the ones libTonumberHex's character check newly sends to the 2,779
+    character hex walk -- the trigger is precise, but "precise" is not "free", and
+    the number is what decides whether it stays.
+    """
+    out = []
+    for t in tests:
+        src = t[1]
+        i = src.find("tonumber(")
+        while i >= 0:
+            c = src[i + 9:i + 10]
+            if c and c not in "\"'":
+                out.append(t[0])
+                break
+            i = src.find("tonumber(", i + 1)
+    return out
+
+
 def main():
     tests = cases.TESTS
     print("%d cases" % len(tests))
     for trig in TRIGGERS:
         n = [t[0] for t in tests if trig in t[1]]
         print("  %-8s %4d  %s" % (repr(trig), len(n), n[:6]))
+    cn = computed_tonumber(tests)
+    print("  computed tonumber( -> %4d  %s" % (len(cn), cn[:8]))
     return 0
 
 

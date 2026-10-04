@@ -3640,9 +3640,27 @@ mod libTonumber(p: string) -> string {
 // where PUC answers a number.  Loud rather than wrong, and no static gate can
 // see it -- which is the whole trade this split makes.
 mod libTonumberHex(p: string) -> string {
-  return if srcUses(p, "tonumber")
-      && (srcUses(p, "0x") || srcUses(p, "0X")
-          || srcUses(p, "inStr") || srcUses(p, "io.read"))
+  if !srcUses(p, "tonumber") {
+    return ""
+  }
+  // A COMPUTED argument is the case the name test cannot see, and the character
+  // after `tonumber(` says which it is: a quote is a literal, and anything else --
+  // a variable, a concat, a port read -- could be a hex string the program never
+  // wrote down.  `local h = "0" .. "x1f"  tonumber(h)` raised "attempt to call"
+  // here, and PUC answers 31.
+  //
+  // This is the precise form of the hole the inStr/io.read terms below were
+  // patching one source at a time, and it costs nothing on a program that passes a
+  // literal -- which is the only kind the name test was getting right before.
+  let i = p.Find("tonumber(", true, 0)
+  if i >= 0 {
+    let c = p.Substring(i + 9, 1)
+    if !(c == "\"" || c == "'") {
+      return LIB_tonumber_hex
+    }
+  }
+  return if srcUses(p, "0x") || srcUses(p, "0X")
+      || srcUses(p, "inStr") || srcUses(p, "io.read")
       then LIB_tonumber_hex else ""
 }
 

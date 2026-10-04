@@ -1446,6 +1446,17 @@ TESTS = [
      "local b = 'min' print(math[b](9, 2)) print(math.modf(1.5))", None, "run"),
     ("lib-split-mixed-string", "local k = 'char' print(string.char(66)) "
      "print(string.byte('A', 1))", None, "run"),
+    # A hex string the program ASSEMBLED, which is the hole libTonumberHex
+    # documents: the gate is a text search and "0x" is not in this program.  The
+    # character after `tonumber(` is what answers it -- a quote is a literal, a
+    # variable or a concat could be hex -- so a computed argument installs the walk
+    # and a literal one does not.  tools/chip/dynblast.py counts 8 such programs.
+    ("tonum-hex-assembled", "local h = '0' .. 'x1f' print(tonumber(h)) "
+     "print(tonumber('0x' .. string.char(52, 48))) "
+     "print(tonumber('0x10') + tonumber('0X20'))", None, "run"),
+    ("tonum-decimal-assembled", "local a = '1' .. '234' print(tonumber(a)) "
+     "local b = '4' .. '2' print(tonumber(b) + 1) "
+     "print(tonumber('  7  '), tonumber('0x1p4'))", None, "run"),
     # What the quoted spelling must NOT cost: these words as data, inside one longer
     # string, install nothing.  Measured 15 ticks against 15 for print(1).
     ("lib-split-words-are-not-names", "print('max min pack move insert remove "

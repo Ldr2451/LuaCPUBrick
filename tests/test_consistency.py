@@ -282,10 +282,20 @@ check("no-stale-prelude-shims", not stale,
 # nothing else: the loader has no way to know a library function was supposed to
 # be there, which is exactly how gsub's replacement walk lost string.find.  So
 # every const is named in some lib mod, and every lib mod goParse calls.
+#
+# TWO SHAPES, because the loader now answers for names the program BUILDS AT RUN
+# TIME and a text search cannot see (see libTabDyn).  Both install pieces; the
+# second takes the table's dynamic-index flag:
+#
+#   mod libStrCase(p: string, d: bool) -> string      a gate
+#   mod libTabDyn(p: string) -> bool                  a FLAG: installs nothing,
+#                                                    it answers "table[ ?"
 lib_consts = set(re.findall(r"^const (LIB_\w+) =", WS, re.M))
-lib_mods = {m.group(1): mod_body(m.group(1))
-            for m in re.finditer(r"^mod (lib\w+)\(p: string\) -> string \{", WS,
-                                 re.M)}
+GATE_RE = re.compile(r"^mod (lib\w+)\(p: string(?:, d: bool)?\) -> string \{",
+                     re.M)
+FLAG_RE = re.compile(r"^mod (lib\w+)\(p: string\) -> bool \{", re.M)
+lib_mods = {m.group(1): mod_body(m.group(1)) for m in GATE_RE.finditer(WS)}
+lib_flags = {m.group(1) for m in FLAG_RE.finditer(WS)}
 installed = set()
 for name, body in lib_mods.items():
     installed |= set(re.findall(r"\b(LIB_\w+)\b", body))
@@ -293,21 +303,32 @@ missing_mod = sorted(lib_consts - installed)
 check("every-lib-piece-installed", not missing_mod,
       f"no lib mod mentions {missing_mod}")
 goparse = _braced("on goParse {")
-called = set(re.findall(r"\b(lib\w+)\(program\)", goparse))
-orphan = sorted(set(lib_mods) - called)
+# a gate or a flag may be called as f(program) or f(program, someFlag)
+called = set(re.findall(r"\b(lib\w+)\(program(?:, \w+)?\)", goparse))
+orphan = sorted((set(lib_mods) | lib_flags) - called)
 check("every-lib-mod-called", not orphan,
       f"goParse never calls {orphan}; add `let libX = libX(program)` and its")
-dangling = sorted(called - set(lib_mods))
+dangling = sorted(called - set(lib_mods) - lib_flags)
 check("no-missing-lib-mod", not dangling, f"goParse calls undefined {dangling}")
 # the pieces are local under short names, so check the assignment reaches the
-# concatenation: adding `let libX = ...` and forgetting the `.. libX` is silent
-assigned = dict(re.findall(r"let (\w+) = (lib\w+)\(program\)", goparse))
+# concatenation: adding `let libX = ...` and forgetting the `.. libX` is silent.
+# A FLAG's local must NOT be concatenated -- it is a bool -- and must be passed to
+# at least one gate, or the search that computed it was pure cost.
+assigned = {}
+flagged = {}
+for local, mod in re.findall(r"let (\w+) = (lib\w+)\(program", goparse):
+    (flagged if mod in lib_flags else assigned)[local] = mod
+for local, mod in sorted(flagged.items()):
+    uses = len(re.findall(r"\b%s\b" % local, goparse))
+    check(f"flag-used-{local}", uses > 1,
+          f"`let {local} = {mod}(program)` is computed and never passed to a gate, "
+          f"so the search behind it costs boot ticks for nothing")
 chain = goparse[goparse.index("let lib = "):goparse.index("libLines =")]
 used = set(re.findall(r"lib\w+", chain))
 for local, mod in sorted(assigned.items()):
     check(f"piece-in-concat-{local}", local in used,
-          f"`let {local} = {mod}(program)` is never concatenated")
-for local in sorted(used - set(assigned)):
+          f"`let {local} = {mod}(program...)` is never concatenated")
+for local in sorted(used - set(assigned) - set(flagged)):
     check(f"concat-has-piece-{local}", False,
           f"the chain names {local}, which no `let {local} = ...` assigns")
 
