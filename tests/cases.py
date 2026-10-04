@@ -1383,6 +1383,38 @@ TESTS = [
      None, "run"),
     ("tbl-unpack", "print(table.unpack({7,8,9}))", None, "run"),
     ("tbl-unpack-range", "print(table.unpack({1,2,3,4}, 2, 3))", None, "run"),
+    # A name built at RUN TIME.  The loader's gate is a text search, so this only
+    # works because the gate also fires on the name as a quoted literal -- see
+    # srcNames in lua.ws for the measurement and the shape it cannot see (a name
+    # assembled from pieces, or arriving from a port).
+    #
+    # Each of these is one half of a piece that was SPLIT out of a bigger one, and
+    # the case that matters is the second half of each pair: naming the sibling in
+    # text used to install both, so reaching this one dynamically worked, and a
+    # naive split turned that into "attempt to call".  The mixed pairs are here
+    # together for that reason.
+    ("lib-split-dynamic-table", "local k = 'unpack' print(table[k]({1,2})) "
+     "local j = 'pack' print(table[j](1,2).n) "
+     "local m = 'move' print(table[m]({1}, 1, 1, 1) ~= nil)", None, "run"),
+    ("lib-split-dynamic-math", "local a = 'max' print(math[a](1, 5)) "
+     "local b = 'fmod' print(math[b](7, 3))", None, "run"),
+    ("lib-split-dynamic-string", "local k = 'char' print(('')[k](65)) "
+     "local j = 'byte' print(string.byte('A', 1))", None, "run"),
+    # THE REGRESSION THESE GATES EXIST TO PREVENT: table.insert named in text,
+    # table.remove reached dynamically.  One piece installed both, so this worked;
+    # split naively it raises.  Same shape for the other three pairs.
+    ("lib-split-mixed-table", "local k = 'insert' local t = {} table[k](t, 7) "
+     "table.remove(t, 1) print(#t) "
+     "local j = 'remove' local u = {1,2} print(table[j](u), #u)", None, "run"),
+    ("lib-split-mixed-math", "local a = 'max' print(math[a](1, 5)) "
+     "print(math.fmod(7, 3)) "
+     "local b = 'min' print(math[b](9, 2)) print(math.modf(1.5))", None, "run"),
+    ("lib-split-mixed-string", "local k = 'char' print(string.char(66)) "
+     "print(string.byte('A', 1))", None, "run"),
+    # What the quoted spelling must NOT cost: these words as data, inside one longer
+    # string, install nothing.  Measured 15 ticks against 15 for print(1).
+    ("lib-split-words-are-not-names", "print('max min pack move insert remove "
+     "byte char fmod modf unpack')", None, "run"),
     ("tbl-pack", "local t = table.pack(1, nil, 3) print(t.n, t[1], t[3])",
      None, "run"),
     ("tbl-move", "local a = {1,2,3,4} local b = table.move(a, 2, 3, 1) "

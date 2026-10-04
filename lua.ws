@@ -383,9 +383,6 @@ const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.hug
 const LIB_math_int = "math = math or {}\nmath.floor = function(x) return _m(1, x, 0) end\nmath.ceil = function(x) return _m(2, x, 0) end\nmath.tointeger = function(x) return _m(13, x, 0) end\nmath.type = function(x) return _m(14, x, 0) end\nmath.abs = function(x) if type(x) == \"string\" then x = x + 0.0 end if x < 0 then return -x end if x == 0 then return x - x end return x end\nmath.sqrt = function(x) return _m(3, x, 0) end\n"
 const LIB_math_trig = "math = math or {}\nmath.sin = function(x) return _m(4, x, 0) end\nmath.cos = function(x) return _m(5, x, 0) end\nmath.tan = function(x) return _m(6, x, 0) end\nmath.asin = function(x) return _m(7, x, 0) end\nmath.acos = function(x) return _m(8, x, 0) end\nmath.atan = function(y, x) return _m(9, y, x or 1) end\n"
 const LIB_math_exp = "math = math or {}\nmath.exp = function(x) return _m(10, x, 0) end\nmath.log = function(x, b)\n  if b == nil then return _m(11, x, 0) end\n  if b == 10 then return _m(12, x, 0) end\n  return _m(11, x, 0) / _m(11, b, 0)\nend\n"
-const LIB_math_misc = "math = math or {}\nmath.max = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v > m then m = v end end\n  return m\nend\nmath.min = function(a, ...)\n  local m = a\n  for i = 1, select('#', ...) do local v = select(i, ...) if v < m then m = v end end\n  return m\nend\nmath.fmod = function(a, b)\n  if type(a) == \"string\" then a = a + 0.0 end\n  if type(b) == \"string\" then b = b + 0.0 end\n  local r = a % b\n  if r ~= 0 and (a < 0) ~= (b < 0) then r = r - b end\n  return r\nend\nmath.modf = function(x) if type(x) == \"string\" then x = x + 0.0 end local i = (x >= 0 and _m(1, x, 0)) or _m(2, x, 0) return i, x - i end\n"
-const LIB_tab_ins = "table = table or {}\ntable.insert = function(t, ...)\n  local n = #t\n  local c = select('#', ...)\n  if c == 1 then\n    t[n + 1] = (...)\n  elseif c == 2 then\n    local pos, v = ...\n    for i = n, pos, -1 do t[i + 1] = t[i] end\n    t[pos] = v\n  end\nend\ntable.remove = function(t, pos)\n  local n = #t\n  if pos == nil then pos = n end\n  if pos ~= n and (pos < 1 or n + 1 < pos) then error(\"bad argument #2 to 'remove' (position out of bounds)\", 2) end\n  local v = t[pos]\n  local i = pos\n  while i < n do t[i] = t[i + 1] i = i + 1 end\n  t[i] = nil\n  return v\nend\n"
-const LIB_tab_list = "table = table or {}\ntable.unpack = unpack\ntable.pack = function(...) local t = {...} t.n = select('#', ...) return t end\ntable.move = function(a1, f, e, t, a2)\n  a2 = a2 or a1\n  if e >= f then\n    if t > e or t <= f or a1 ~= a2 then\n      for i = 0, e - f do a2[t + i] = a1[f + i] end\n    else\n      for i = e - f, 0, -1 do a2[t + i] = a1[f + i] end\n    end\n  end\n  return a2\nend\n"
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, j)\n  sep = sep or \"\"\n  i = i or 1\n  j = j or #t\n  local r = \"\"\n  for k = i, j do\n    local v = t[k]\n    if k > i then r = r .. sep end\n    r = r .. v\n  end\n  return r\nend\n"
 const LIB_tab_sort = "table = table or {}\n_lt = function(a, b) return a < b end\ntable.sort = function(t, cmp)\n  local lt = cmp or _lt\n  for i = 2, #t do\n    local v = t[i]\n    local j = i - 1\n    while j >= 1 and lt(v, t[j]) do t[j + 1] = t[j] j = j - 1 end\n    t[j + 1] = v\n  end\nend\n"
 const LIB_io = "io = io or {}\nio.read = function(...) if select('#', ...) == 0 then return _rd('*l') end return _rd((...)) end\nio.write = function(...) for i = 1, select('#', ...) do _wr(tostring((select(i, ...)))) end end\n_io_next = function() local l = _rd('*l') if l == nil then return nil end return l end\nio.lines = function() _rd('*r') return _io_next end\n"
@@ -395,7 +392,14 @@ const LIB_math_random = "math = math or {}\nlocal _rs = 12345\nmath.random = fun
 const LIB_io_stderr = "io = io or {}\nio.stderr = {\nwrite = function(self, ...)\nfor i = 1, select(\"#\", ...) do _wr(tostring((select(i, ...)))) end\nreturn self\nend,\nflush = function(self) return self end,\n}\n"
 const LIB_os_exit = "os = os or {}\nos.exit = function(c)\nif c == nil or c == true or c == 0 then error(\"\", 0) else error(\"exit: \" .. tostring(c), 0) end\nend\n"
 const LIB_tonumber_hex = "local function _tonum_hex(s)\nlocal n = #s\nlocal i = 0\nlocal b = 0\nwhile i < n do\nb = _s(4, s, i, 0)\nif b ~= 32 and b ~= 9 and b ~= 10 and b ~= 13 and b ~= 12 and b ~= 11 then break end\ni = i + 1\nend\nlocal j = n - 1\nwhile j >= i do\nb = _s(4, s, j, 0)\nif b ~= 32 and b ~= 9 and b ~= 10 and b ~= 13 and b ~= 12 and b ~= 11 then break end\nj = j - 1\nend\nif i > j then return nil end\nlocal neg = false\nb = _s(4, s, i, 0)\nif b == 43 or b == 45 then\nneg = b == 45\ni = i + 1\nend\nif _s(1, s, i, 2) ~= \"0x\" and _s(1, s, i, 2) ~= \"0X\" then return nil end\ni = i + 2\nlocal v = 0\nlocal nsig = 0\nlocal ri = 0\nlocal ndig = 0\nlocal started = false\nlocal guard = 0\nlocal sticky = false\nwhile i <= j do\nb = _s(4, s, i, 0)\nlocal dv = nil\nif b >= 48 and b <= 57 then dv = b - 48 end\nif b >= 65 and b <= 70 then dv = b - 55 end\nif b >= 97 and b <= 102 then dv = b - 87 end\nif dv == nil then break end\nndig = ndig + 1\nif dv ~= 0 or started then\nstarted = true\nif nsig < 13 then\nv = v * 16 + dv\nnsig = nsig + 1\nelseif ri == 0 then\nguard = dv\nri = ri + 1\nelse\nif dv ~= 0 then sticky = true end\nri = ri + 1\nend\nend\ni = i + 1\nend\nif guard > 8 or (guard == 8 and (sticky or v % 2 == 1)) then\nv = v + 1\nend\nlocal vf = 0\nlocal nf = 0\nlocal fstarted = false\nlocal nodot = true\nif i <= j and _s(4, s, i, 0) == 46 then\nnodot = false\ni = i + 1\nlocal nfsig = 0\nwhile i <= j do\nb = _s(4, s, i, 0)\nlocal dv = nil\nif b >= 48 and b <= 57 then dv = b - 48 end\nif b >= 65 and b <= 70 then dv = b - 55 end\nif b >= 97 and b <= 102 then dv = b - 87 end\nif dv == nil then break end\nndig = ndig + 1\nnf = nf + 1\nif dv ~= 0 or fstarted then\nfstarted = true\nif nfsig < 13 then\nvf = vf * 16 + dv\nnfsig = nfsig + 1\nend\nend\ni = i + 1\nend\nend\nif ndig == 0 then return nil end\nlocal ep = 0\nlocal nopexp = true\nif i <= j then\nb = _s(4, s, i, 0)\nif b == 112 or b == 80 then\nnopexp = false\ni = i + 1\nlocal eneg = false\nif i <= j then\nb = _s(4, s, i, 0)\nif b == 43 or b == 45 then\neneg = b == 45\ni = i + 1\nend\nend\nlocal nd = 0\nwhile i <= j do\nb = _s(4, s, i, 0)\nif b < 48 or b > 57 then break end\nep = ep * 10 + (b - 48)\nnd = nd + 1\ni = i + 1\nend\nif nd == 0 then return nil end\nif eneg then ep = -ep end\nend\nend\nif i <= j then return nil end\nif nodot and nopexp then\nlocal full = v\nif ri ~= 0 then full = v * (16 ^ ri) end\nif full < 9007199254740992 then\nlocal iv = _m(13, full, 0)\nif iv ~= nil then\nif neg then iv = -iv end\nreturn iv\nend\nend\nend\nlocal m = 0\nif v ~= 0 then m = v * (2 ^ (4 * ri + ep)) end\nif nf > 0 and vf ~= 0 then m = m + vf * (2 ^ (-4 * nf + ep)) end\nif m == 0 then\nif neg then return -0.0 else return 0.0 end\nend\nif neg then m = -m end\nreturn m\nend\n"
-const LIB_str_bytes = "string = string or {}\nstring.byte = function(s, i, j)\ni = i or 1\nj = j or i\nif i < 0 then i = #s + i + 1 end\nif j < 0 then j = #s + j + 1 end\nif i < 1 then i = 1 end\nif j > #s then j = #s end\nif i > j then return end\nif i == j then return _s(4, s, i - 1, 0) end\nlocal r = {}\nfor k = i, j do r[#r + 1] = _s(4, s, k - 1, 0) end\nreturn unpack(r, 1, #r)\nend\nstring.char = function(...)\nlocal r = \"\"\nfor i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\nreturn r\nend\n"
+const LIB_tab_unpack = "table = table or {}\ntable.unpack = unpack\n"
+const LIB_tab_pack = "table = table or {}\ntable.pack = function(...) local t = {...} t.n = select('#', ...) return t end\ntable.move = function(a1, f, e, t, a2)\na2 = a2 or a1\nif e >= f then\nif t > e or t <= f or a1 ~= a2 then\nfor i = 0, e - f do a2[t + i] = a1[f + i] end\nelse\nfor i = e - f, 0, -1 do a2[t + i] = a1[f + i] end\nend\nend\nreturn a2\nend\n"
+const LIB_math_maxmin = "math = math or {}\nmath.max = function(a, ...)\nlocal m = a\nfor i = 1, select('#', ...) do local v = select(i, ...) if v > m then m = v end end\nreturn m\nend\nmath.min = function(a, ...)\nlocal m = a\nfor i = 1, select('#', ...) do local v = select(i, ...) if v < m then m = v end end\nreturn m\nend\n"
+const LIB_math_fmodmodf = "math = math or {}\nmath.fmod = function(a, b)\nif type(a) == \"string\" then a = a + 0.0 end\nif type(b) == \"string\" then b = b + 0.0 end\nlocal r = a % b\nif r ~= 0 and (a < 0) ~= (b < 0) then r = r - b end\nreturn r\nend\nmath.modf = function(x) if type(x) == \"string\" then x = x + 0.0 end local i = (x >= 0 and _m(1, x, 0)) or _m(2, x, 0) return i, x - i end\n"
+const LIB_tab_insert = "table = table or {}\ntable.insert = function(t, ...)\nlocal n = #t\nlocal c = select('#', ...)\nif c == 1 then\nt[n + 1] = (...)\nelseif c == 2 then\nlocal pos, v = ...\nfor i = n, pos, -1 do t[i + 1] = t[i] end\nt[pos] = v\nend\nend\n"
+const LIB_tab_remove = "table = table or {}\ntable.remove = function(t, pos)\nlocal n = #t\nif pos == nil then pos = n end\nif pos ~= n and (pos < 1 or n + 1 < pos) then error(\"bad argument #2 to 'remove' (position out of bounds)\", 2) end\nlocal v = t[pos]\nlocal i = pos\nwhile i < n do t[i] = t[i + 1] i = i + 1 end\nt[i] = nil\nreturn v\nend\n"
+const LIB_str_byte = "string = string or {}\nstring.byte = function(s, i, j)\ni = i or 1\nj = j or i\nif i < 0 then i = #s + i + 1 end\nif j < 0 then j = #s + j + 1 end\nif i < 1 then i = 1 end\nif j > #s then j = #s end\nif i > j then return end\nif i == j then return _s(4, s, i - 1, 0) end\nlocal r = {}\nfor k = i, j do r[#r + 1] = _s(4, s, k - 1, 0) end\nreturn unpack(r, 1, #r)\nend\n"
+const LIB_str_char = "string = string or {}\nstring.char = function(...)\nlocal r = \"\"\nfor i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\nreturn r\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -3355,10 +3359,88 @@ mod patSetStep() {
 // left the string table unbuilt and the method call nil.  A colon is the
 // method-call signal; a match inside a string or comment only costs a piece
 // that goes unused.
+//
+// THREE spellings, and the third is the one that is easy to forget.  A program can
+// reach a library function through a name it builds at RUN TIME -- `local k =
+// "insert"; table[k](t, 1)` -- and no amount of reading the source finds that.  A
+// run-time name has to come from somewhere, though, and in practice from a string
+// literal, so the quoted form is a gate too: `t["insert"]` and `local k = "insert"`
+// both contain `"insert"` with its quotes.
+//
+// The quotes are the point.  A bare `insert` would match the English word in a
+// comment or a variable called `inserted`, and false positives cost boot ticks on
+// every program; `"insert"` is nine characters a program only writes when it means
+// the string.  This is a heuristic and not a proof -- a name assembled as
+// `"ins" .. "ert"`, or arriving from inStr0/io.read, still cannot be seen -- but
+// it is the difference between a working program and "attempt to call a nil value"
+// for the shape real programs use.
+//
+// It also repairs a regression the SPLITS introduced.  `table.insert` and
+// `table.remove` were one piece, so a program that named one in text and reached
+// the other by a run-time name worked: the named one's gate installed both.  Split
+// them and it raises, which is a split making a program worse rather than better.
+// The rule that falls out: a piece split out of another must gate on the same
+// spellings the whole did, or the split has narrowed what was reachable.
+// A CHIP, and it has to be: this builds four strings and runs four searches, and as
+// a mod it is inlined at every name of every piece -- 44 sites -- which measured
+// srcNames is the THREE-spelling gate, and srcUsesField keeps TWO on purpose: the
+// difference is not an oversight and it is measured.
+//
+// A program can reach a library function through a name it builds at RUN TIME --
+// `local k = "insert"; table[k](t, 1)` -- and no amount of reading the source finds
+// that.  So the quoted name is a gate too: `t["insert"]` and `local k = "insert"`
+// both contain the literal `"insert"`.  The quotes are the point.  A bare `insert`
+// would match the English word in a comment or a variable called `inserted`, and
+// false positives cost boot ticks on every program -- across this name list `log`,
+// `read`, `write`, `type` and `max` are all ordinary words a program writes for
+// other reasons.  `"insert"` is nine characters a program only writes when it means
+// the string.
+//
+// It is a heuristic and not a proof: a name assembled as `"ins" .. "ert"`, or
+// arriving from inStr0/io.read, still cannot be seen.  It is the difference between
+// a working program and "attempt to call a nil value" for the shape real programs
+// use.
+//
+// WHAT IT COSTS, MEASURED, because the quotes are what make it affordable and
+// nothing else is.  A program whose text merely CONTAINS these words pays nothing:
+// print("max min pack move insert remove") boots in 15 ticks, the same as print(1),
+// because Find needs the closing quote too and the words are space-separated inside
+// one string.  A program that quotes one as DATA pays the piece it never calls:
+// local x = "max" print(x) is 345 ticks against 28 for local x = "hello", so +317.
+// That is the whole price, and it is a price worth paying for the seven shapes of
+// dynamic access it repairs -- but it is a real one and it is why this spelling is
+// not going on gates that cannot regress (below).
+//
+// It also repairs a regression the SPLITS introduced.  `table.insert` and
+// `table.remove` were one piece, so a program that named one in text and reached
+// the other by a run-time name worked: the named one's gate installed both.  Split
+// them and it raised, which is a split making a program worse rather than better.
+// The rule that falls out: a piece split out of another must reach everything the
+// whole did, or the split has narrowed what a program can do.
+//
+// WHY srcUsesField DOES NOT HAVE THE THIRD SPELLING: adding it here measured +33
+// nodes over its 14 call sites, and adding it to BOTH helpers measured +417.  The
+// difference is all of the ~30 sites here, because nothing that uses this helper
+// was split out of anything -- so a gate needs the run-time spelling exactly when
+// its piece is one half of a split, and paying 380 nodes to add it to gates that
+// cannot regress buys nothing.  The two string gates that WERE split, libStrByte
+// and libStrChar, spell out all four themselves.
+//
+// The FOURTH spelling is the one that proves the other three were not enough.  The
+// single-quoted form had been left out to save nodes, and then the tests for this
+// very feature were written with single quotes -- because that is how this repo, and
+// most Lua, spells a string -- and five of them failed.  So the cheap version was
+// covering half the realistic shapes, and the way that showed was by writing the
+// obvious test.  Cost of putting it back: +42 over this helper's 14 sites.
 mod srcUsesField(p: string, name: string) -> bool {
   let dotted = "string." .. name
   let colon = ":" .. name
   return srcUses(p, dotted) || srcUses(p, colon)
+}
+
+mod srcNames(p: string, tbl: string, name: string) -> bool {
+  return srcUses(p, tbl .. "." .. name) || srcUses(p, ":" .. name)
+      || srcUses(p, "\"" .. name .. "\"") || srcUses(p, "'" .. name .. "'")
 }
 
 mod libIter(p: string) -> string {
@@ -3371,15 +3453,29 @@ mod libMathConst(p: string) -> string {
       then LIB_math_const else ""
 }
 
-mod libTabIns(p: string) -> string {
-  return if srcUses(p, "table.insert") || srcUses(p, "table.remove")
-      || srcUses(p, ":insert") || srcUses(p, ":remove")
-      then LIB_tab_ins else ""
+// Two pieces where there was one, and the measurement is the same shape as the
+// table.unpack and math.misc splits: naming table.insert or table.remove cost
+// ~640 ticks of boot each (tools/chip/libcost.py) because each carried the other.
+// A program that appends in a loop should not parse the gap-closing loop.
+mod libTabInsert(p: string) -> string {
+  return if srcNames(p, "table", "insert") then LIB_tab_insert else ""
 }
 
-mod libTabList(p: string) -> string {
-  return if srcUses(p, "table.unpack") || srcUses(p, "table.pack")
-      || srcUses(p, "table.move") then LIB_tab_list else ""
+mod libTabRemove(p: string) -> string {
+  return if srcNames(p, "table", "remove") then LIB_tab_remove else ""
+}
+
+// Three pieces where there was one, and the reason is measured rather than
+// guessed: naming table.unpack used to cost 460 ticks of boot (tools/chip/libcost.py)
+// to parse table.pack and table.move, which a program calling unpack never
+// touches.  unpack is a gate, so the alias needs nothing and can stand alone.
+mod libTabUnpack(p: string) -> string {
+  return if srcNames(p, "table", "unpack") then LIB_tab_unpack else ""
+}
+
+mod libTabPack(p: string) -> string {
+  return if srcNames(p, "table", "pack") || srcNames(p, "table", "move")
+      then LIB_tab_pack else ""
 }
 
 mod libTabConcat(p: string) -> string {
@@ -4399,10 +4495,22 @@ mod libStrIndex(p: string) -> string {
       then LIB_str_index else ""
 }
 
-mod libStrBytes(p: string) -> string {
-  return if srcUses(p, "string.byte") || srcUses(p, "string.char")
-      || srcUsesField(p, "byte") || srcUsesField(p, "char")
-      then LIB_str_bytes else ""
+// string.byte and string.char were one piece, and each cost the other: 630 ticks
+// of boot to name either (tools/chip/libcost.py).  One reads a byte out of a
+// string, the other builds a string out of bytes, and neither calls the other.
+// Three spellings spelled out rather than through srcUsesField, because these two
+// ARE halves of a split and that is what earns the third one -- see srcNames for
+// the measurement and for why the other ~30 gates do not carry it.
+mod libStrByte(p: string) -> string {
+  return if srcUses(p, "string.byte") || srcUses(p, ":byte")
+      || srcUses(p, "\"byte\"") || srcUses(p, "'byte'")
+      then LIB_str_byte else ""
+}
+
+mod libStrChar(p: string) -> string {
+  return if srcUses(p, "string.char") || srcUses(p, ":char")
+      || srcUses(p, "\"char\"") || srcUses(p, "'char'")
+      then LIB_str_char else ""
 }
 
 mod libStrCase(p: string) -> string {
@@ -4467,12 +4575,19 @@ mod libMathExp(p: string) -> string {
       then LIB_math_exp else ""
 }
 
-mod libMathMisc(p: string) -> string {
-  return if srcUses(p, "math.max") || srcUses(p, "math.min")
-      || srcUses(p, "math.fmod") || srcUses(p, "math.modf")
-      || srcUsesField(p, "max") || srcUsesField(p, "min")
-      || srcUsesField(p, "fmod") || srcUsesField(p, "modf")
-      then LIB_math_misc else ""
+// Two pieces where there was one, same measurement as the table.unpack split:
+// naming any one of max/min/fmod/modf cost 740 ticks of boot
+// (tools/chip/libcost.py), because each was carrying the other three.  The pair
+// that shares a shape goes together -- max with min, fmod with modf -- so naming
+// one does not parse the other pair.
+mod libMathMaxMin(p: string) -> string {
+  return if srcNames(p, "math", "max") || srcNames(p, "math", "min")
+      then LIB_math_maxmin else ""
+}
+
+mod libMathFmodModf(p: string) -> string {
+  return if srcNames(p, "math", "fmod") || srcNames(p, "math", "modf")
+      then LIB_math_fmodmodf else ""
 }
 
 // Put the allocator back inside a window bumpMax already claimed.  A call's
@@ -11195,16 +11310,20 @@ on goParse {
   // all -- which is the real reason it is a gate).
   let libA = libIter(program)
   let libB = libStrIndex(program)
-  let libB2 = libStrBytes(program)
+  let libB2 = libStrByte(program)
+  let libB3 = libStrChar(program)
   let libC = libStrCase(program)
   let libD = libStrMisc(program)
   let libE = libMathConst(program)
   let libF = libMathInt(program)
   let libG = libMathTrig(program)
   let libH = libMathExp(program)
-  let libI = libMathMisc(program)
-  let libJ = libTabIns(program)
-  let libK = libTabList(program)
+  let libI = libMathMaxMin(program)
+  let libI2 = libMathFmodModf(program)
+  let libJ = libTabInsert(program)
+  let libJ2 = libTabRemove(program)
+  let libK = libTabUnpack(program)
+  let libK2 = libTabPack(program)
   let libL = libTabConcat(program)
   let libM = libTabSort(program)
   let libN = libStrFmt(program)
@@ -11220,8 +11339,9 @@ on goParse {
 let libS2 = libTonumberHex(program)
   let libS = libTonumber(program)
   let libT = libMathRandom(program)
-  let lib = libA .. libB .. libB2 .. libC .. libD .. libE .. libF .. libG
-    .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO .. libO2 .. libP
+  let lib = libA .. libB .. libB2 .. libB3 .. libC .. libD .. libE .. libF .. libG
+    .. libH .. libI .. libI2 .. libJ .. libJ2 .. libK .. libK2 .. libL .. libM .. libN
+    .. libO .. libO2 .. libP
     .. libQ .. libR .. libS2 .. libS .. libT
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program
