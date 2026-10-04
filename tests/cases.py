@@ -967,7 +967,11 @@ TESTS = [
      "run"),
     ("pat-unmatched-close", "print(string.find('hello', ')'), "
      "string.find('hello', 'a)'))", None, "run"),
-    ("pat-backref", "print(string.find('abc', '%1'))", None, "runtimerr",
+    # Renamed from pat-backref, which the WORKING backreference cases below also
+    # claimed: this one is %1 with no captures at all, which is a different test with
+    # a different answer.  Two cases with one name means a filter for one runs both
+    # under the same label, and the cost cache the suite now keeps conflates them.
+    ("pat-backref-nocap", "print(string.find('abc', '%1'))", None, "runtimerr",
      {"expect": {"err": "invalid capture index %1"}}),
     # Captures.  PUC 5.5's () is a position capture, not an empty one: it
     # answers where it stands, as a number, and %1 to %9 compare the subject
@@ -2044,7 +2048,12 @@ TESTS = [
 
     # regression: the original progOk bug (hello world must compile)
     ("hello", "print(\"Hello, World!\")", None, "run"),
-    ("fmt-int", "print(7)", None, "run"),
+    # Renamed from fmt-int, which it never was: this is print(7), and the fmt-int
+    # name belongs to the %d family at line 612.  Two cases with one name is not a
+    # cosmetic problem -- CHIP_LOG and TICKS_OVERRIDES are keyed by name, so the
+    # second definition silently inherits whatever the first was given.  See the
+    # unique-case-names check in test_consistency.py, which exists because of it.
+    ("print-int", "print(7)", None, "run"),
     ("str-lt-next", "x = 5 if 'a' < 'b' then print(x+1) end print(x+2)",
      None, "run"),
     ("str-le-next", "x = 5 if 'a' <= 'a' then print(x+1) end print(x+2)",

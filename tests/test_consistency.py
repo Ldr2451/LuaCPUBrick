@@ -404,5 +404,27 @@ except Exception as _e:
     # a check that cannot run is not a check
     check("demo-log-current", False, "the check itself failed: %r" % (_e,))
 
+# Case names are KEYS, not labels: CHIP_LOG and TICKS_OVERRIDES are dicts keyed by
+# name, and the suite's cost cache is too.  So two cases with one name means the
+# second silently inherits whatever the first was given -- a tick budget, an expected
+# divergence -- and a filter for one runs both under the same label.
+#
+# Two were live: `fmt-int` was claimed by the %d family and by a bare print(7), and
+# `pat-backref` by a working backreference and by %1-with-no-captures, which are
+# different tests with different answers.  Both renamed.  The check is here so the
+# third one is a preflight failure instead of a mystery.
+try:
+    _seen = {}
+    _dupes = []
+    for _t in _cases.TESTS:
+        _seen[_t[0]] = _seen.get(_t[0], 0) + 1
+    _dupes = sorted(k for k, v in _seen.items() if v > 1)
+    check("unique-case-names", not _dupes,
+          "%d case name(s) defined more than once: %s -- rename them, because "
+          "CHIP_LOG and TICKS_OVERRIDES are keyed by name and the second "
+          "definition inherits the first one's settings" % (len(_dupes), _dupes))
+except Exception as _e:
+    check("unique-case-names", False, "the check itself failed: %r" % (_e,))
+
 
 sys.exit(1 if FAILS else 0)

@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -999,6 +1000,35 @@ def worker(ws_path, payload, irpkl=None):
         sys.stdout.flush()
 
 
+# Measured seconds per case, from the previous run, used only to ORDER the pool.
+# It is a scheduling hint and never a verdict, so a stale, partial or missing file
+# costs wall time and nothing else -- which is why it lives beside the harness and
+# is not worth a schema, a version or a gitignore entry.
+COST_PATH = os.path.join(tempfile.gettempdir(), "tinylua-casecost.json")
+COST = {}
+
+
+def load_costs():
+    try:
+        with open(COST_PATH, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return {str(k): float(v) for k, v in d.items()}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def save_costs(costs):
+    """Merge and write, keeping the older measurement for cases this run did not
+    run: a filtered run must not throw away what it learned about the rest."""
+    merged = load_costs()
+    merged.update({k: v for k, v in costs.items() if v is not None})
+    try:
+        with open(COST_PATH, "w", encoding="utf-8") as f:
+            json.dump(merged, f, sort_keys=True)
+    except OSError:
+        pass
+
+
 def main(args):
     if args and args[0] == "--list":
         for t in cases.TESTS:
@@ -1074,6 +1104,7 @@ def main(args):
         else:
             fail += 1
             tag = "FAIL"
+        COST[name] = dt
         print("%-18s %s (%.1fs) %s" % (name, tag, dt, detail), flush=True)
 
     try:
@@ -1086,11 +1117,36 @@ def main(args):
             items = [(n, {"src": s, "kw": k, "ticks": k.get("ticks", TICKS),
                           "mode": m}, m, k)
                      for n, s, k, m, _ in prepared]
+            # LONGEST FIRST, and this is worth 100 seconds.
+            #
+            # imap_unordered hands work out in LIST order, and the list is cases.py
+            # order, so tab-entries-recover -- 131s on its own, 7.6% of all case
+            # time, and 60,000 ticks of deliberate arena work around a pcall --
+            # was dispatched about 60% of the way through.  By then roughly 86s of
+            # work was done, so it finished at ~217s and the suite took 257s: the
+            # wall time was not the work (1,722s over 12 workers is 143s) but one
+            # case starting late.  Classic Amdahl, and LPT is the standard answer.
+            #
+            # Ordering is by MEASURED time, not by the declared tick budget, because
+            # the budget is a poor proxy: func-fib declares 300,000 ticks and runs in
+            # under 16s, while tab-entries-recover declares 60,000 and takes 131s.
+            # Ticks are not seconds -- it is gates per tick that costs, and table
+            # work is gate-heavy.
+            #
+            # The costs come from the previous run, so the FIRST run after a change
+            # is still ordered by cases.py; a case with no measurement yet is given
+            # the largest cost of all, which is the safe direction: over-prioritising
+            # an unknown is free, and under-prioritising the real long one is what
+            # cost the 100 seconds.  Ordering cannot change a verdict, so a stale or
+            # missing cache costs speed and nothing else.
+            known = load_costs()
+            items.sort(key=lambda it: -known.get(it[0], 1e9))
             with mp.Pool(WORKERS, initializer=_pool_init,
                          initargs=(irpkl,)) as pool:
                 for out in pool.imap_unordered(_pool_case, items,
                                                chunksize=1):
                     report(*out)
+            save_costs(COST)
         else:
             batches = [prepared[i:i + BATCH]
                        for i in range(0, len(prepared), BATCH)]
