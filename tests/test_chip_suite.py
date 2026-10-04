@@ -112,6 +112,19 @@ SKIP = {
     # So the fix is not in patGreedy at all: it is in whatever routes a LITERAL
     # item's failure, which is a different path from the set micro-step's.  That
     # is the thing to read next.
+    #
+    # Two more facts, from tracing, which narrow it further.  patApply DOES send
+    # a quantifier-less item's miss to patBack (patSt = 4), and patBack's k0 == 1
+    # arm does set patI back and re-push at patI - 1 -- so on paper the give-back
+    # is already wired for this shape and the whole trace above should work.  It
+    # does not, and tools/chip/trace_pc.py watching patSt/patI/patP/patSp shows
+    # WHY: patSt does not change at all.  The matcher is not cycling, it is stuck
+    # on a state with no transition out of it.  patStepA covers 0..7 and patStepB
+    # covers 9..14, so state 8 is the one to look at -- it is what every error
+    # path sets, and patGreedy's failure arms are the ones that can reach it here.
+    #
+    # And it is the matcher core, not the caller's result handling: find(".*c")
+    # hangs identically, while gsub(".*") and match(".*") are both correct.
     "pat-greedy-tail-hangs": "print(('abc'):match('.*c'))",
 }
 
