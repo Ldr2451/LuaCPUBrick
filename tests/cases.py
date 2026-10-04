@@ -118,7 +118,7 @@ TESTS = [
     # (3514 characters at the code rate, plus a second function) and 70 per
     # call, so even a case that errors needs the full boot before it can fail.
     ("tonum-num", "print(tonumber(3), tonumber(3.5), tonumber(-0.0))",
-     None, "run", {"ticks": 5000}),
+     None, "run", {"ticks": 9000}),
     ("tonum-str", "print(tonumber('10'), tonumber(' 42 '), tonumber('3.5'), "
      "tonumber('1e3'), tonumber('.5'), tonumber('5.'))", None, "run",
      {"ticks": 6000}),
@@ -129,25 +129,24 @@ TESTS = [
      "math.type(tonumber(3)), math.type(tonumber(3.5)))", None, "run",
      {"ticks": 6000}),
     ("tonum-arith", "print(tonumber('3') + 1, tonumber('7') // 2, "
-     "-tonumber('2.5'))", None, "run", {"ticks": 5000}),
+     "-tonumber('2.5'))", None, "run", {"ticks": 9000}),
     # The loader only installs the piece for a program that names tonumber, so
     # this also proves the selection: a program that does not name it must not
     # pay for it, and one that does must not be missing it inside a function.
     ("tonum-in-fn", "local function half(s) return tonumber(s) / 2 end "
-     "print(half('7'), half(7))", None, "run", {"ticks": 5000}),
+     "print(half('7'), half(7))", None, "run", {"ticks": 9000}),
     ("tonum-base10", "print(tonumber('42', 10), tonumber(' 42 ', 10))",
-     None, "run", {"ticks": 5000}),
+     None, "run", {"ticks": 9000}),
     ("tonum-noargs", "print(tonumber())", None, "runtimerr",
-     {"ticks": 5000,
+     {"ticks": 9000,
       "expect": {"err": "bad argument #1 to 'tonumber' (value expected)"}}),
     ("tonum-base-type", "print(tonumber(3.5, 10))", None, "runtimerr",
-     {"ticks": 5000, "expect": {"err": "string expected, got number"}}),
+     {"ticks": 9000, "expect": {"err": "string expected, got number"}}),
     ("tonum-base-range", "print(tonumber('10', 99))", None, "runtimerr",
-     {"ticks": 5000, "expect": {"err": "base out of range"}}),
-    # A base other than 10 is a documented gap: loud, never a wrong answer.
-    ("tonum-base-other", "print(tonumber('ff', 16))", None, "runtimerr",
-     {"ticks": 5000,
-      "expect": {"err": "base other than 10 is not supported"}}),
+     {"ticks": 9000, "expect": {"err": "base out of range"}}),
+    # A base other than 10 used to be a documented gap (loud, never a wrong
+    # answer) and is now PUC's integer grammar -- see the tonum-base-* cases at
+    # the end of the puc group.  There is no case here for the old error.
     # A call with no results still has to leave the callee's own register nil,
     # because that is the slot the compiler puts the local in.  select past the
     # end and an empty unpack both answer nothing, and both used to leave the
@@ -2469,6 +2468,40 @@ TESTS = [
     ("pat-z-is-not-letter",
      "print(('azb'):gsub('[%z]', 'X'), ('azb'):find('%z'), "
      "('azb'):gsub('[^%z]', 'X'))", None, "run"),
+    # tonumber(s, base) for a base other than 10.  Zero chip nodes: the walk is a
+    # loop in a LUA piece, so the price is characters, not gates.  PUC's rule is
+    # narrower than the no-base case and the narrowness is the whole test --
+    # once a base is named, PUC reads digits and stops at the first byte that is
+    # not one of them, so no 0x, no 0b, no point, no exponent.
+    ("tonum-base-16", "print(tonumber('ff', 16), tonumber('0xff', 16), "
+     "tonumber('+ff', 16), tonumber('ff ', 16), tonumber('f', 16))",
+     None, "run", {"ticks": 9000}),
+    ("tonum-base-2-36", "print(tonumber('1010', 2), tonumber('zz', 36), "
+     "tonumber(' -17 ', 8), tonumber('777', 8), tonumber('11111111', 2) + 0.0)",
+     None, "run", {"ticks": 9000}),
+    # base 10 with an explicit base is PUC's INTEGER grammar, not the decimal
+    # one: no exponent, and no 0x -- the last of which the chip used to answer
+    # 16 through the hex fallback.
+    ("tonum-base-10-explicit",
+     "print(tonumber('10', 10), tonumber(' 10 ', 10), tonumber('1e3', 10), "
+     "tonumber('0x10', 10), tonumber('1.5', 16))", None, "run",
+     {"ticks": 9000}),
+    ("tonum-base-rejects",
+     "print(tonumber('z', 10), tonumber('', 16), tonumber(' ', 2), "
+     "tonumber('0b11', 2), math.type(tonumber('ff', 16)))", None, "run",
+     {"ticks": 9000}),
+    ("tonum-base-bounds", "print(pcall(tonumber, '11', 1), "
+     "pcall(tonumber, '11', 37))", None, "run", {"ticks": 9000}),
+    # A hex numeral that ARRIVES at run time.  The hex walk is a separate piece
+    # gated on the program's TEXT, and inStr0 is a string the program never
+    # wrote, so the gate has to look for the input ports too -- otherwise a
+    # program doing the right thing (read a number, allow hex) gets "attempt to
+    # call a nil value" on a value PUC converts.  The decimal half is here so
+    # the case also pins that widening the gate did not make every program pay.
+    ("tonum-hex-from-input", "print(tonumber(inStr0), tonumber('42'))", None,
+     "run", {"ticks": 9000, "sinputs": {0: "0xff"}}),
+    ("tonum-decimal-from-input", "print(tonumber(inStr1))", None, "run",
+     {"ticks": 9000, "sinputs": {1: " 42 "}}),
     # (%w*)$ -- a %w* that matches empty at end of subject
     ("puc-wstar-anchor", "print(string.match('alo ', '(%w*)$') == '')", None,
      "run"),

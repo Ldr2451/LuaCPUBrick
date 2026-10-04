@@ -20,14 +20,21 @@
 --   tonumber()                bad argument #1 to 'tonumber' (value expected)
 --   tonumber(3.5, 10)         bad argument #1 (string expected, got number)
 --   tonumber('10', 99)        bad argument #2 (base out of range)
---   tonumber('ff', 16)        255          base 16 and up: the digit walk below
+--   tonumber('ff', 16)        255      tonumber('1010', 2) 10
+--   tonumber(' -17 ', 8)      -15      tonumber('zz', 36) 1295
+--   tonumber('10', 10)        10       tonumber(' 10 ', 10) 10
+--   tonumber('1e3', 10)       nil      (no exponent with an explicit base)
+--   tonumber('1.5', 16)       nil      (no point either)
+--   tonumber('0x10', 16)      nil      (no prefix either -- PUC's b_str2int
+--                             only takes digits once a base is named)
+--   tonumber('0b11', 2)       nil
+--   tonumber('', 16) '  ', 2  nil
+--   tonumber('11', 1)         bad argument #2 (base out of range)
 --
--- The hex case is NOT a host limit anymore.  The host's parse is Rust's
--- FromStr, which takes no "0x10", so '0x10' + 0 raises -- and that raise is
--- exactly what selects the fallback: _tonum_hex runs only when the coercion
--- failed, and answers only for shapes the host never accepts (optional spaces,
--- an optional sign, 0x, hex digits, an optional fraction, an optional p
--- exponent), so the two cannot disagree.  The walk is a plain Lua loop -- a
+-- The hex case is NOT a host limit anymore: the host's parse takes no "0x10",
+-- so '0x10' + 0 raises, and that raise is what selects the fallback in
+-- lib/tonumber_hex.lua -- which runs only on the coercion's failure and so
+-- cannot disagree with it about any shape both accept.  The walk is a plain Lua loop -- a
 -- piece is parsed Lua, not WireScript, so it has one -- over _s byte reads,
 -- about 8 ticks a conversion on top of the failed pcall.  Integers never round
 -- (short ones stay under 2^53; long ones are divided back by exact powers of
@@ -35,9 +42,15 @@
 -- midway).  Fractions keep their position exactly; only a 14th significant
 -- digit is dropped, which is below one ulp of anything next to it.
 --
--- Cost, measured: 3514 escaped characters, and a program that NAMES tonumber
--- pays ~3700 ticks of boot before its first instruction (the characters at the
--- code rate, plus a second function) plus 70 ticks per call.  Only a program
+-- Cost, measured: 1,832 escaped characters, and a program that NAMES tonumber
+-- pays ~2,150 ticks of boot before its first instruction (the characters at the
+-- code rate, plus the two functions) plus 70 ticks per call.
+--
+-- The hex fallback is NOT here any more: it is lib/tonumber_hex.lua, installed
+-- as LIB_tonumber_hex and gated on the program's text containing 0x.  It used to
+-- be 2,654 of this piece's 4,645 characters -- about 2,900 ticks that a program
+-- calling only tonumber("42") could never reach.  That file carries the split
+-- and the one shape it changes.  Only a program
 -- that says "tonumber" pays either.  The per-call 70 is the pcall: PUC answers
 -- nil where the coercion raises, and the only way to catch a raise is a
 -- protected call.  Checking the string's shape first would be
@@ -50,9 +63,22 @@ local function _tonum_conv(v)
   return v + 0
 end
 
--- The hex fallback, for the one shape the coercion refuses.  See the header for
--- why it cannot disagree with the line above: it runs only on its failure.
-local function _tonum_hex(s)
+-- An EXPLICIT base, which is a different grammar rather than a wider one, so it
+-- gets its own walk instead of a parameter on the hex one.  Measured
+-- against PUC 5.5: spaces and a sign are allowed, and nothing else is.  No
+-- 0x/0X, no 0b, no point, no exponent -- tonumber("0x10", 16) and
+-- tonumber("1e3", 10) and tonumber("1.5", 16) are all nil, because once a base
+-- is named PUC's b_str2int reads digits and stops at the first byte that is not
+-- one of them.  That also fixes two answers the hex fallback used to give
+-- through the base-10 path: tonumber("0x10", 10) was 16 and PUC says nil.
+--
+-- Ten significant digits is the window, and it is the same number for every
+-- base because 36^10 is 3.66e15 and 2^53 is 9.0e15: the widest base still
+-- accumulates ten digits exactly.  Past the window the value is scaled rather
+-- than accumulated, so a thousand-digit numeral never overflows midway, and it
+-- comes back a float -- the same 64-bit wall the rest of the chip is against,
+-- and the same one PUC is past for a value that fits in its integer.
+local function _tonum_int(s, base)
   local n = #s
   local i = 0
   local b = 0
@@ -74,145 +100,46 @@ local function _tonum_hex(s)
     neg = b == 45
     i = i + 1
   end
-  if _s(1, s, i, 2) ~= "0x" and _s(1, s, i, 2) ~= "0X" then return nil end
-  i = i + 2
-  -- Significant digits, at most 13 of them: 13 hex digits fit under 2^53, so
-  -- every digit accumulated here is exact and so is their sum.  Leading zeros
-  -- change neither (they never start the window); digits past the window only
-  -- move the scale.  That scale is ri hex places for the integer part, counted
-  -- separately because applying it to v as it grows is what breaks the
-  -- invariant -- a digit added after a normalization is in unscaled units.
   local v = 0
   local nsig = 0
-  local ri = 0
-  local ndig = 0
+  local extra = 0
   local started = false
-  -- Correct rounding for numerals longer than the window: the first dropped
-  -- digit is the guard and whether any later digit is nonzero is the sticky.
-  -- Round up past half an ulp, and on exactly half round to even -- which is
-  -- what makes 150 f's come out 2^600, the way PUC's strtod does.  Untouched
-  -- when nothing was dropped, so short numerals are bit-exact either way.
-  local guard = 0
-  local sticky = false
+  local nd = 0
   while i <= j do
     b = _s(4, s, i, 0)
-    local dv = nil
-    if b >= 48 and b <= 57 then dv = b - 48 end
-    if b >= 65 and b <= 70 then dv = b - 55 end
-    if b >= 97 and b <= 102 then dv = b - 87 end
-    if dv == nil then break end
-    ndig = ndig + 1
-    if dv ~= 0 or started then
+    local d = nil
+    if b >= 48 and b <= 57 then d = b - 48 end
+    if b >= 65 and b <= 90 then d = b - 55 end
+    if b >= 97 and b <= 122 then d = b - 87 end
+    if d == nil or d >= base then break end
+    nd = nd + 1
+    if d ~= 0 or started then
       started = true
-      if nsig < 13 then
-        v = v * 16 + dv
+      if nsig < 10 then
+        v = v * base + d
         nsig = nsig + 1
-      elseif ri == 0 then
-        guard = dv
-        ri = ri + 1
       else
-        if dv ~= 0 then sticky = true end
-        ri = ri + 1
+        extra = extra + 1
       end
     end
     i = i + 1
   end
-  if guard > 8 or (guard == 8 and (sticky or v % 2 == 1)) then
-    v = v + 1
-  end
-  -- Same window for the fraction, except leading zeros count toward the scale:
-  -- 0x0.080 is 128 / 16^3, so the zeros have to be counted even though nothing
-  -- is accumulated for them.  nf is every fraction digit; vf holds the first
-  -- 13 significant ones.
-  local vf = 0
-  local nf = 0
-  local fstarted = false
-  local nodot = true
-  if i <= j and _s(4, s, i, 0) == 46 then
-    nodot = false
-    i = i + 1
-    local nfsig = 0
-    while i <= j do
-      b = _s(4, s, i, 0)
-      local dv = nil
-      if b >= 48 and b <= 57 then dv = b - 48 end
-      if b >= 65 and b <= 70 then dv = b - 55 end
-      if b >= 97 and b <= 102 then dv = b - 87 end
-      if dv == nil then break end
-      ndig = ndig + 1
-      nf = nf + 1
-      if dv ~= 0 or fstarted then
-        fstarted = true
-        if nfsig < 13 then
-          vf = vf * 16 + dv
-          nfsig = nfsig + 1
-        end
-      end
-      i = i + 1
-    end
-  end
-  if ndig == 0 then return nil end
-  -- Binary exponent: p or P, optional sign, decimal digits, at least one.
-  local ep = 0
-  local nopexp = true
-  if i <= j then
-    b = _s(4, s, i, 0)
-    if b == 112 or b == 80 then
-      nopexp = false
-      i = i + 1
-      local eneg = false
-      if i <= j then
-        b = _s(4, s, i, 0)
-        if b == 43 or b == 45 then
-          eneg = b == 45
-          i = i + 1
-        end
-      end
-      local nd = 0
-      while i <= j do
-        b = _s(4, s, i, 0)
-        if b < 48 or b > 57 then break end
-        ep = ep * 10 + (b - 48)
-        nd = nd + 1
-        i = i + 1
-      end
-      if nd == 0 then return nil end
-      if eneg then ep = -ep end
-    end
-  end
-  if i <= j then return nil end
-  -- PUC's int-or-float is SYNTACTIC: pure digit strings are integers (when
-  -- they fit), anything with a point or a p-exponent is a float -- so 0x10 is
-  -- int 16 and 0x10.0 is float 16.0, and print spells them "16" and "16.0".
-  -- The window above is exact, so a value under 2^53 converts exactly through
-  -- the host's own tointeger; past that the float is already rounded and
-  -- converting would freeze the rounding into the wrong integer, so it stays a
-  -- float (PUC prints more digits there, the same 64-bit wall as ever).
-  if nodot and nopexp then
-    local full = v
-    if ri ~= 0 then full = v * (16 ^ ri) end
-    if full < 9007199254740992 then
-      local iv = _m(13, full, 0)
-      if iv ~= nil then
-        if neg then iv = -iv end
-        return iv
-      end
-    end
-  end
-  -- One power of two per part, exponents combined BEFORE the pow: 16^990
-  -- alone is inf and 2^-4000 alone is 0, but 0xe03 times their product is 3587.
-  -- inf and 0 out of the pow are what PUC's strtod answers too.  Zero first:
-  -- 0 times anything is 0, and 0 * inf would be nan (0x0p10000 is 0.0, not nil).
-  local m = 0
-  if v ~= 0 then m = v * (2 ^ (4 * ri + ep)) end
-  if nf > 0 and vf ~= 0 then m = m + vf * (2 ^ (-4 * nf + ep)) end
-  if m == 0 then
-    if neg then return -0.0 else return 0.0 end
+  if nd == 0 or i <= j then return nil end
+  -- Zero first: 0 times an overflowed power is 0, and 0 * inf would be nan.
+  local m = v
+  if v == 0 then
+    m = 0
+  elseif extra > 0 then
+    m = v * (base ^ extra)
   end
   if neg then m = -m end
+  -- PUC's int-or-float is by VALUE here, not by syntax (the syntax rule belongs
+  -- to the no-base case, where a point or an exponent forces a float): a
+  -- numeral that fits comes back an integer whatever the base.
+  local iv = _m(13, m, 0)
+  if iv ~= nil then return iv end
   return m
 end
-
 
 tonumber = function(...)
   -- A vararg signature because the argument COUNT is what separates
@@ -231,13 +158,24 @@ tonumber = function(...)
     if base < 2 or base > 36 then
       error("bad argument #2 to 'tonumber' (base out of range)", 2)
     end
-    if base ~= 10 then
-      error("tonumber with a base other than 10 is not supported", 2)
-    end
+    -- Every explicit base goes to the integer walk, base 10 included: PUC
+    -- reads digits only once a base is named, so base 10 does NOT get the
+    -- decimal path's points and exponents.
+    return _tonum_int(v, base)
   end
   if type(v) == "number" then return v end
   if type(v) ~= "string" then return nil end
   local ok, r = pcall(_tonum_conv, v)
   if ok then return r end
-  return _tonum_hex(v)
+  -- The hex walk is its own piece (lib/tonumber_hex.lua), loaded only when the
+  -- PROGRAM's text contains 0x -- and this is the line that would call it, for
+  -- EVERY string the coercion rejects, not just the hex ones.  So the loader's
+  -- test is repeated here, on the string: only one that spells 0x can reach the
+  -- walk, and _tonum_hex answers nil to everything else anyway, so one search
+  -- buys the same answer.  Without it tonumber('x') is "attempt to call".
+  --
+  -- The shape that still differs is the one the split documents: a program that
+  -- assembles "0x" at RUN time finds it here, calls, and finds no piece.
+  if _pat(0, v, "0x", 1, 1) or _pat(0, v, "0X", 1, 1) then return _tonum_hex(v) end
+  return nil
 end
