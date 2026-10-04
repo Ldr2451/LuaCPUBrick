@@ -625,6 +625,18 @@ var fnSelfArg: bool[]
 var fnTgtK: int[]
 var fnTgtR: int[]
 var fnTgtI: int[]
+// The capture descriptor that belongs to a local entry: capK[ix] is what upStep
+// gave the OWNING function for that entry, written beside locCap[ix].  A store
+// made AFTER the capture needs it -- `local function f` stores its closure when
+// the body ends, by which time every closure the body made has already seeded
+// its cell from a register the store has not written -- and it cannot be asked
+// for through upIdx, because upStep runs inside the locFind CHIP and a map
+// written from a chip body does not come back out.
+//
+// Fixed size on purpose.  Growing it alongside the local entries was tried and
+// the write landed past the end, which is indistinguishable from an array write
+// being dropped at all -- so the size has to be there before the first capture.
+var capK: int[]
 var valStk: int[]
 var valCall: bool[]
 var valPrefix: bool[]
@@ -1844,6 +1856,9 @@ mod upStep(d: int, ix: int, src: int) -> int {
     // the declaring function's own reads and writes go through this cell from
     // here on, so a write from a nested function is visible to it
     locCap[ix] = true
+    // the descriptor, indexed by the local entry, so a store made after the
+    // capture can find it again -- see capK's header
+    capK[ix] = k
   }
   upIdx.set(key, k)
   return k
@@ -1960,12 +1975,20 @@ mod funcDepthInit(islocal: bool) {
   selfClean[fnDepth] = true
   selfFid[fnDepth] = -1
   fnVar[fnDepth] = false
-  if islocal {
-    selfName[fnDepth] = tmpS
-    selfFid[fnDepth] = tmpB
-  } else {
-    selfName[fnDepth] = ""
-  }
+  // selfName stays "" for every function, `local function` included.  It used
+  // to be set for `local function`, which made the parameter-list stage declare
+  // the name a SECOND time -- once there, inside f's own frame, so f could reach
+  // itself by GETCLO rather than through a cell -- and once at the body's end in
+  // the enclosing scope, which is the local the rest of the program sees.
+  //
+  // Two declarations with one name is the hole: locFind scans newest-first, so
+  // the body's own declaration shadowed the enclosing one and every capture in
+  // f resolved against a local in a frame that is gone by the time anything reads
+  // it (type(f) answered "number"; calling it said "attempt to call").  One
+  // declaration, made in the enclosing scope by the head, and self-recursion is
+  // an ordinary upvalue read -- GETUP instead of GETCLO, which costs one
+  // instruction at the reference and nothing at the call.
+  selfName[fnDepth] = ""
   funcEntryLoc[fnDepth] = locLen
   fnSelfArg[fnDepth] = false
   fidAt[fnDepth] = tmpB
@@ -3509,6 +3532,8 @@ mod parseInit() {
   locReg.clear()
   locDepth.clear()
   locCap.clear()
+  capK.clear()
+  capK.resize(1024, -1)
   locInLoop.clear()
   fUpN.clear()
   fUpSlotN.clear()
@@ -5020,8 +5045,23 @@ mod doBlockClose() {
         contKind = savedCont
         stState = savedSt
       } else if extra == 1 {
-        let outer = locDeclare(tmpS)
+        // `local function f`: the head declared the name in the enclosing
+        // scope and pushed the entry here, so this writes THAT local.  When the
+        // body captured f, a closure the body made seeded its cell from the
+        // register before this store ran -- so the closure has to land in the
+        // cell too, which is the correction locFind's own locCap arm makes for
+        // every other store.
+        let ix = fnTgtI.pop().Value
+        let outer = locReg[ix]
         bEmit(25, outer, fid, 0)
+        if locCap[ix] {
+          let k6 = capK[ix]
+          if 0 <= k6 {
+            let uk6 = if 0 <= fUpSrc[fidAt[fnDepth] * MAX_UP + k6] then 0 else 1
+            bEmit(47, outer, k6, uk6)
+          }
+        }
+        dirtySelf(tmpS)
       } else if extra >= 2 {
         // function M.f(): the table register is extra-2, the field name the
         // one the header pushed
@@ -5951,6 +5991,12 @@ mod stmtDispatch() {
       if curKind() == 3 {
         tmpS = curStr()
         cpos = cpos + 1
+        // `local function f` declares f HERE, in the enclosing scope, and only
+        // here.  That is the local the rest of the program sees and the frame a
+        // closure's cell belongs to, and declaring it before the body is parsed
+        // is what makes a capture inside the body resolve to it.
+        locDeclare(tmpS)
+        fnTgtI.push(locLen - 1)
         funcHead(true, 0, 0)
       } else {
         perr = true
