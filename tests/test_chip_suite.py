@@ -91,10 +91,27 @@ SKIP = {
     # nothing on this path reaches it.
     #
     # Pre-existing, not a regression: the only matcher line this session touched
-    # is patClassHit's %z fallback.  Not fixed here because the honest fix needs
-    # the greedy run's start position to know when it has given everything back,
-    # and that is a change to the repeat setup rather than to the tail failure --
-    # a matcher fix made without the whole shape in view is how the last one went.
+    # is patClassHit's %z fallback.
+    #
+    # Two fixes tried and measured, both rejected because they break captures --
+    # recorded so neither is tried a third time blind:
+    #
+    #   (a) patFailTo = 4 in patGreedy, so a tail failure lands on patBack, which
+    #       is the entry that gives one character back (patGreedy keeps it current
+    #       with patSl[patSp - 2] = patI and patBack's k0 == 1 arm re-pushes at
+    #       patI - 1).  Does NOT work: patAfter/patFailTo are read in exactly one
+    #       place, patSetStep's closing bracket, so they route a SET item and %f
+    #       and nothing else.  A literal tail never consults them.
+    #   (b) patSt = 4 where patGreedy gives up on an exhausted subject.  DOES
+    #       stop the loop -- ("abc"):match(".*c") and (".*b") both answered
+    #       correctly -- and breaks four other cases, because with no tail to
+    #       retry there is nothing to give back: ("abc"):match(".*") answered
+    #       "ab" where PUC says "abc", and pat-find-class, pat-match-set,
+    #       pat-capture-greedy and gsub-star-empty went with it.
+    #
+    # So the fix is not in patGreedy at all: it is in whatever routes a LITERAL
+    # item's failure, which is a different path from the set micro-step's.  That
+    # is the thing to read next.
     "pat-greedy-tail-hangs": "print(('abc'):match('.*c'))",
 }
 
