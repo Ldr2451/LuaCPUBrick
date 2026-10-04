@@ -1235,6 +1235,8 @@ var patAOff: int = 0         // where the answer's captures start
 var patAn: int = 0           // and which one is being written
 var patAdv: int = 1          // how far the item under test moved the cursor:
                              // one character for everything but a backreference
+var patNoSubj: bool = false  // the set machine has no subject character to test,
+                             // so the item misses however the set comes out
 var patSp: int = 0           // the backtrack stack's pointer, in ints
 var patSl: int[]
 var patErr: string = ""      // a malformed pattern's message
@@ -3309,7 +3311,7 @@ mod patSetStep() {
     if sc == "]" {
       if patSetSeen {
         patItemE = patSetP + 1
-        patHit = if patSetNeg then !patSetAny else patSetAny
+        patHit = if patNoSubj then false else if patSetNeg then !patSetAny else patSetAny
         patSetP = patSetP + 1
         patSt = if patHit then patAfter else patFailTo
       } else {
@@ -3467,6 +3469,11 @@ mod patSetBegin(p: int, code: int) {
   patSetHasPrev = false
   patSetPrev = 0
   patSetNeg = false
+  // Cleared here, not where it is set: patTestItem's `[` arm sets it, but this
+  // machine is also driven by %f, which never goes through that arm and DOES read
+  // patHit.  A flag cleared by its only writer would still be live when %f
+  // started, and %f on an exhausted subject would then be forced to a miss.
+  patNoSubj = false
   if p < patPEnd && patPat.Substring(p, 1) == "^" {
     patSetNeg = true
     patSetP = p + 1
@@ -8278,19 +8285,57 @@ mod fmtFetch() {
 // answer here; %b and %f are patNextItem's business.  patItemE is where the
 // quantifier is read from, which is why a set reports its end when its scan
 // finishes rather than here.
+// An item's EXTENT is a property of the pattern, not of the subject, so it is
+// written before the subject is looked at.  That order is the fix for a hang and
+// for seven wrong answers, and both came from the same line.
+//
+// ("abc"):match(".*c") tests the `c` against an exhausted subject, misses, and --
+// leaving patItemE at the `.`'s extent, one character into a `*` -- patApply read
+// a quantifier off THAT, found `*`, and gave the pattern zero more repetitions at
+// the position it was already at, for ever.  PUC cannot reach this shape: a
+// failed match() returns NULL and do_match backtracks at once, so a quantifier is
+// only ever read for an item that matched.  Every item here goes through
+// patApply, so the extent has to be honest on the miss path too.
+//
+// Which is also seven answers the other way.  An item that misses at the end of
+// the subject may still legitimately match EMPTY there, and then its own
+// quantifier is what says so: ("abc"):match("b*$"), ("abc"):match("%a*$"),
+// ("abc"):match("(%d*)$"), ("abc"):match("(.-)$") and ("abc "):match("[a]*$") are
+// all "" in PUC and nil here, because the miss never got the quantifier.  p + 1
+// is only the right extent for a one-character item; %x is p + 2 and a set is its
+// closing bracket, so an extent guessed here is a second bug wearing the first
+// one's coat.
 mod patTestItem(p: int, s: int) -> int {
   patAdv = 1
-  if s >= patLen || p >= patPEnd {
+  if p >= patPEnd {
+    patItemE = p + 1
     return 0
   }
-  let sc = patSrc.Substring(s, 1)
+  // One read of the subject, shared by all four arms: this mod is inlined at every
+  // item and a repeated Substring and a repeated `s >= patLen` are paid once per
+  // copy.  "" is the exhausted subject -- a character the subject holds is never
+  // "" -- and "" .ToCharCode() is 0, which is the reading the %f arm already
+  // relies on for the ends.
+  let sc = if s >= patLen then "" else patSrc.Substring(s, 1)
+  let noSubj = sc == ""
+  let k = patPat.Substring(p, 1)
   if patPlain {
     patItemE = p + 1
-    return if patPat.Substring(p, 1) == sc then 1 else 0
+    return if noSubj then 0 else if k == sc then 1 else 0
   }
-  let k = patPat.Substring(p, 1)
   if k == "[" {
+    // A set's extent is its closing bracket and PUC's match() finds that before it
+    // reads the subject, so a set on an exhausted subject still knows it.  The set
+    // machine is what walks to the bracket, so hand it the subject character (0
+    // when there is none) and tell it SEPARATELY that the verdict is already a miss
+    // -- it writes patItemE on the way, and its routing does not depend on patHit
+    // (patNextItem gives a set item patAfter == patFailTo == 2, so both verdicts
+    // land on patApply).  %f drives this machine too and DOES read patHit, which is
+    // why patNoSubj is cleared in patSetBegin rather than here: this arm does not
+    // run for %f, so a flag cleared by its only writer would still be live when %f
+    // started.
     patSetBegin(p + 1, sc.ToCharCode().Codepoint)
+    patNoSubj = noSubj
     return 2
   }
   if k == "%" {
@@ -8304,13 +8349,10 @@ mod patTestItem(p: int, s: int) -> int {
     }
     let neg = 65 <= code && code <= 90
     patItemE = p + 2
-    return if patClassHit(sc.ToCharCode().Codepoint, if neg then code + 32 else code, neg) then 1 else 0
+    return if noSubj then 0 else if patClassHit(sc.ToCharCode().Codepoint, if neg then code + 32 else code, neg) then 1 else 0
   }
-  patItemE = if k == "." then p + 1 else p + 1
-  if k == "." {
-    return 1
-  }
-  return if k == sc then 1 else 0
+  patItemE = p + 1
+  return if noSubj then 0 else if k == "." then 1 else if k == sc then 1 else 0
 }
 
 // The next item in the pattern.  $ at the very end is the end anchor, %b and %f
@@ -8458,14 +8500,21 @@ mod patBack() {
     let k2 = patSl[sp + 2]
     let k3 = patSl[sp + 3]
     if k0 == 1 {
+      // Every value this arm needs comes from the locals read at the top of the
+      // mod, and nothing below READS a var it has just written.  That is this
+      // mod's own header rule, and this arm broke it twice: it wrote patI and then
+      // read `patI - 1` to re-push, and it wrote patQEnd and then read patQEnd
+      // into patP.  Both are reads that follow a var write inside a nested arm,
+      // which is the shape the header says loses its Exec chain when the mod is
+      // inlined this many times.
       patSp = sp
-      patI = k2
       patItemP = k1
+      patI = k2
       patQEnd = k3
-      if 0 <= patI - 1 {
-        patPush(1, patItemP, patI - 1, patQEnd)
+      if 0 <= k2 - 1 {
+        patPush(1, k1, k2 - 1, k3)
       }
-      patP = patQEnd
+      patP = k3
       patSt = 1
     } else if k0 == 2 {
       patSp = sp

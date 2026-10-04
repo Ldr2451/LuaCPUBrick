@@ -955,6 +955,58 @@ TESTS = [
      "string.find('abc', '()()a'))", None, "run"),
     ("pat-capture-greedy", "print(string.find('2026-09-24', "
      "'(%d+)-(%d+)-(%d+)'))", None, "run"),
+    # A maximal repeat whose tail then misses AT THE END OF THE SUBJECT.  This is
+    # the case that looped for ever: ("abc"):match(".*c") never finished on a
+    # three-character subject, so a user program with `s:match(".*x")` hung.
+    #
+    # The cause was not the greedy loop, which five separate attempts blamed (and
+    # four of which were rejected for breaking other cases): patTestItem's
+    # end-of-subject miss returned without writing the item's extent, so patApply
+    # -- which reads the quantifier off that extent, because every item here goes
+    # through it -- read the `*` belonging to the `.` three pattern positions back
+    # and gave the pattern zero more repetitions at the position it was already
+    # at.  PUC cannot reach this shape, because a failed match() returns NULL and
+    # do_match backtracks without reading a quantifier at all.
+    #
+    # So the rule the cases below have to hold is: a miss at the end of the subject
+    # still leaves the item's extent honest.  Each shape is one of the ways a tail
+    # can get there -- a plain literal, a set, a %-class, and with and without a
+    # quantifier of its own -- and `a*b` is the one where the missed item's own
+    # quantifier is legitimately read and still has to give nil.
+    ("pat-greedy-tail-literal", "print(('abc'):match('.*c'), "
+     "('abc'):find('.*c'), ('abcb'):match('.*b'), ('abc'):match('.*.*c'))",
+     None, "run"),
+    ("pat-greedy-tail-empty-subject", "print(('abc'):match('.*z'), "
+     "(''):match('.*z'), ('abc'):match('a*b'), ('abc'):match('a*z'))", None,
+     "run"),
+    ("pat-greedy-tail-class", "print(('abc'):match('[a-c]*z'), "
+     "('abc'):match('%a*z'), ('abc'):match('[%a]*z'), "
+     "('abc'):match('[ab]*[bc]*'))", None, "run"),
+    ("pat-greedy-tail-capture", "print(('abc'):match('(.*)c'), "
+     "('abc'):match('(.*)(c)'), ('abc'):match('(%a.*%a)'))", None, "run"),
+    # The other half of the same rule: an item that misses at the end of the
+    # subject may still match EMPTY there, and its own quantifier is what says so.
+    # These were nil against PUC's "" before the extent was computed from the
+    # pattern, and they are the reason the fix cannot be "return a miss and guess
+    # the extent": a guessed p + 1 is right for a literal and wrong for %x and for a
+    # set, and the [%-class ones below are what catch it.
+    ("pat-empty-at-end", "print(string.match('abc', 'b*$'), "
+     "string.match('abc', 'a*$'), string.match('abc', 'abc*$'), "
+     "string.match('abc', '(%d*)$'))", None, "run"),
+    ("pat-empty-at-end-lazy", "print(string.match('abc', '(.-)$'), "
+     "string.match('abc ', '(%a*)$'), string.match('abc ', 'a*$'))", None,
+     "run"),
+    ("pat-empty-at-end-set", "print(string.match('abc', '[a]*$'), "
+     "string.match('abc ', '[a]*$'), string.match('abc', '[a]*z'), "
+     "string.match('abc', '[a-c]*'), string.match('abc', '[abc]*$'), "
+     "string.match('abc', '[%a]*$'))", None, "run"),
+    # A set's extent is its closing bracket, and it has to be found even when there
+    # is no subject character left -- so these pin the set machine running on an
+    # exhausted subject rather than being skipped by it.
+    ("pat-set-exhausted-subject", "print(string.match('abc', 'x[a]*$'), "
+     "string.match('abc', 'x[a-c]*$'), string.match('abc', 'x[%a]*$'), "
+     "string.match('abc', 'x[^a]*$'), string.match('abc', 'x[a]*'))", None,
+     "run"),
     ("pat-capture-classes", "print(string.match('hello world', "
      "'(%w+) (%w+)'), string.find('a1b2', '(%a)(%d)'))", None, "run"),
     ("pat-backref", "print(string.find('aa', '(a)%1'), "
