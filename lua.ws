@@ -368,7 +368,7 @@ const NB = 26
 // Library functions are written as field assignments, not `function string.f`:
 // the parser does not take a dotted name on `function` yet.
 const LIB_iter = "function _ipairs_iter(t, i) i = i + 1 local v = t[i] if v ~= nil then return i, v end end\nfunction ipairs(t) return _ipairs_iter, t, 0 end\nfunction pairs(t) return next, t, nil, nil end\n"
-const LIB_str_index = "string = string or {}\nstring.len = function(s) return #s end\nstring.sub = function(s, i, j)\n  local l = #s\n  i = i or 1\n  j = j or -1\n  if i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end\n  if j < 0 then j = l + j + 1 elseif j > l then j = l end\n  if i > j then return \"\" end\n  return _s(1, s, i - 1, j - i + 1)\nend\nstring.byte = function(s, i, j)\n  i = i or 1\n  j = j or i\n  if i < 0 then i = #s + i + 1 end\n  if j < 0 then j = #s + j + 1 end\n  if i < 1 then i = 1 end\n  if j > #s then j = #s end\n  if i > j then return end\n  if i == j then return _s(4, s, i - 1, 0) end\n  local r = {}\n  for k = i, j do r[#r + 1] = _s(4, s, k - 1, 0) end\n  return unpack(r, 1, #r)\nend\nstring.char = function(...)\n  local r = \"\"\n  for i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\n  return r\nend\n"
+const LIB_str_index = "string = string or {}\nstring.len = function(s) return #s end\nstring.sub = function(s, i, j)\nlocal l = #s\ni = i or 1\nj = j or -1\nif i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end\nif j < 0 then j = l + j + 1 elseif j > l then j = l end\nif i > j then return \"\" end\nreturn _s(1, s, i - 1, j - i + 1)\nend\n"
 const LIB_str_fmt = "string = string or {}\nstring.format = _fmt\n"
 // The wrappers pass their arguments straight through rather than naming them:
 // a named parameter pads a missing one with nil, and PUC's "got no value" and
@@ -395,6 +395,7 @@ const LIB_math_random = "math = math or {}\nlocal _rs = 12345\nmath.random = fun
 const LIB_io_stderr = "io = io or {}\nio.stderr = {\nwrite = function(self, ...)\nfor i = 1, select(\"#\", ...) do _wr(tostring((select(i, ...)))) end\nreturn self\nend,\nflush = function(self) return self end,\n}\n"
 const LIB_os_exit = "os = os or {}\nos.exit = function(c)\nif c == nil or c == true or c == 0 then error(\"\", 0) else error(\"exit: \" .. tostring(c), 0) end\nend\n"
 const LIB_tonumber_hex = "local function _tonum_hex(s)\nlocal n = #s\nlocal i = 0\nlocal b = 0\nwhile i < n do\nb = _s(4, s, i, 0)\nif b ~= 32 and b ~= 9 and b ~= 10 and b ~= 13 and b ~= 12 and b ~= 11 then break end\ni = i + 1\nend\nlocal j = n - 1\nwhile j >= i do\nb = _s(4, s, j, 0)\nif b ~= 32 and b ~= 9 and b ~= 10 and b ~= 13 and b ~= 12 and b ~= 11 then break end\nj = j - 1\nend\nif i > j then return nil end\nlocal neg = false\nb = _s(4, s, i, 0)\nif b == 43 or b == 45 then\nneg = b == 45\ni = i + 1\nend\nif _s(1, s, i, 2) ~= \"0x\" and _s(1, s, i, 2) ~= \"0X\" then return nil end\ni = i + 2\nlocal v = 0\nlocal nsig = 0\nlocal ri = 0\nlocal ndig = 0\nlocal started = false\nlocal guard = 0\nlocal sticky = false\nwhile i <= j do\nb = _s(4, s, i, 0)\nlocal dv = nil\nif b >= 48 and b <= 57 then dv = b - 48 end\nif b >= 65 and b <= 70 then dv = b - 55 end\nif b >= 97 and b <= 102 then dv = b - 87 end\nif dv == nil then break end\nndig = ndig + 1\nif dv ~= 0 or started then\nstarted = true\nif nsig < 13 then\nv = v * 16 + dv\nnsig = nsig + 1\nelseif ri == 0 then\nguard = dv\nri = ri + 1\nelse\nif dv ~= 0 then sticky = true end\nri = ri + 1\nend\nend\ni = i + 1\nend\nif guard > 8 or (guard == 8 and (sticky or v % 2 == 1)) then\nv = v + 1\nend\nlocal vf = 0\nlocal nf = 0\nlocal fstarted = false\nlocal nodot = true\nif i <= j and _s(4, s, i, 0) == 46 then\nnodot = false\ni = i + 1\nlocal nfsig = 0\nwhile i <= j do\nb = _s(4, s, i, 0)\nlocal dv = nil\nif b >= 48 and b <= 57 then dv = b - 48 end\nif b >= 65 and b <= 70 then dv = b - 55 end\nif b >= 97 and b <= 102 then dv = b - 87 end\nif dv == nil then break end\nndig = ndig + 1\nnf = nf + 1\nif dv ~= 0 or fstarted then\nfstarted = true\nif nfsig < 13 then\nvf = vf * 16 + dv\nnfsig = nfsig + 1\nend\nend\ni = i + 1\nend\nend\nif ndig == 0 then return nil end\nlocal ep = 0\nlocal nopexp = true\nif i <= j then\nb = _s(4, s, i, 0)\nif b == 112 or b == 80 then\nnopexp = false\ni = i + 1\nlocal eneg = false\nif i <= j then\nb = _s(4, s, i, 0)\nif b == 43 or b == 45 then\neneg = b == 45\ni = i + 1\nend\nend\nlocal nd = 0\nwhile i <= j do\nb = _s(4, s, i, 0)\nif b < 48 or b > 57 then break end\nep = ep * 10 + (b - 48)\nnd = nd + 1\ni = i + 1\nend\nif nd == 0 then return nil end\nif eneg then ep = -ep end\nend\nend\nif i <= j then return nil end\nif nodot and nopexp then\nlocal full = v\nif ri ~= 0 then full = v * (16 ^ ri) end\nif full < 9007199254740992 then\nlocal iv = _m(13, full, 0)\nif iv ~= nil then\nif neg then iv = -iv end\nreturn iv\nend\nend\nend\nlocal m = 0\nif v ~= 0 then m = v * (2 ^ (4 * ri + ep)) end\nif nf > 0 and vf ~= 0 then m = m + vf * (2 ^ (-4 * nf + ep)) end\nif m == 0 then\nif neg then return -0.0 else return 0.0 end\nend\nif neg then m = -m end\nreturn m\nend\n"
+const LIB_str_bytes = "string = string or {}\nstring.byte = function(s, i, j)\ni = i or 1\nj = j or i\nif i < 0 then i = #s + i + 1 end\nif j < 0 then j = #s + j + 1 end\nif i < 1 then i = 1 end\nif j > #s then j = #s end\nif i > j then return end\nif i == j then return _s(4, s, i - 1, 0) end\nlocal r = {}\nfor k = i, j do r[#r + 1] = _s(4, s, k - 1, 0) end\nreturn unpack(r, 1, #r)\nend\nstring.char = function(...)\nlocal r = \"\"\nfor i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\nreturn r\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -4400,11 +4401,21 @@ mod fmtIntStart() {
   fmtFNDigits()
 }
 
+// len and sub are one-liners over #s and the substring gate; byte and char each
+// build a table in a loop, and byte needs `unpack` besides.  A piece is charged
+// for its characters at boot, so a program that only ever takes a substring was
+// measured paying 1,094 ticks for a group where 404 of the 838 characters were
+// unreachable for it.  The two halves are separate pieces now.
 mod libStrIndex(p: string) -> string {
   return if srcUses(p, "string.len") || srcUses(p, "string.sub")
       || srcUsesField(p, "len") || srcUsesField(p, "sub")
-      || srcUsesField(p, "byte") || srcUsesField(p, "char")
       then LIB_str_index else ""
+}
+
+mod libStrBytes(p: string) -> string {
+  return if srcUses(p, "string.byte") || srcUses(p, "string.char")
+      || srcUsesField(p, "byte") || srcUsesField(p, "char")
+      then LIB_str_bytes else ""
 }
 
 mod libStrCase(p: string) -> string {
@@ -11191,6 +11202,7 @@ on goParse {
   // all -- which is the real reason it is a gate).
   let libA = libIter(program)
   let libB = libStrIndex(program)
+  let libB2 = libStrBytes(program)
   let libC = libStrCase(program)
   let libD = libStrMisc(program)
   let libE = libMathConst(program)
@@ -11215,7 +11227,7 @@ on goParse {
 let libS2 = libTonumberHex(program)
   let libS = libTonumber(program)
   let libT = libMathRandom(program)
-  let lib = libA .. libB .. libC .. libD .. libE .. libF .. libG
+  let lib = libA .. libB .. libB2 .. libC .. libD .. libE .. libF .. libG
     .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO .. libO2 .. libP
     .. libQ .. libR .. libS2 .. libS .. libT
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
