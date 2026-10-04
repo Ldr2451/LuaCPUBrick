@@ -1206,7 +1206,6 @@ var patQ: int = 0            // the item's quantifier: 0 none, 1 *, 2 +, 3 -, 4 
 var patItemP: int = 0        // where the item under test starts
 var patItemE: int = 0        // and just past it
 var patQEnd: int = 0         // just past the quantifier
-var patQS: int = 0           // the subject position before the item
 var patHit: bool = false     // the last item's verdict
 var patSetP: int = 0         // the set scan's cursor, just past its [
 var patSetC: int = 0         // the character it is testing
@@ -1588,6 +1587,25 @@ mod bPatch(pos: int, target: int) {
   lastPatchTarget = target
 }
 
+// NOT a chip, and that is measured: 57,865 as a mod, 57,919 as a chip, +54, for
+// FOUR call sites at 56 nodes a copy.  It reads constNum (find, then length) and
+// writes it (push), which is the read-then-write-the-same-array shape that emptied
+// the whole parse when bumpMax was chipped, so it was never going to be free -- but
+// the pin wiring beat the four duplicated bodies anyway.
+//
+// Four chip experiments in a row now, all losses, so this is a rule about the
+// compiler and not a run of bad luck:
+//
+//   srcNames + srcUsesField, 44 sites   +342   (58,201 -> 58,543)
+//   slotBase, ~4 sites, 3-line body     +151   (57,860 -> 58,011)
+//   cNum, 4 sites, 56 nodes a copy      +54   (57,865 -> 57,919)
+//   the concat line, 24 terms           +0    (and it is not a chip at all)
+//
+// The 46 earlier conversions that bought -34.1% were big bodies at many sites, and
+// the pin cost does not fall with the body size: at four sites it is the dominant
+// term whatever the body is.  So "make it a chip" is not a move to try on a small
+// function, and the screening order should be the other way round -- look for a
+// big body with many sites, and do not spend a build on anything else.
 mod cNum(v: float) -> int {
   let r = constNum.find(v)
   if !r.Found {
@@ -4074,6 +4092,10 @@ mod pdDrain() {
 
 // Where this frame's slot table starts, and the sequence number of the frame
 // that owns it (the word just below the table).
+// NOT a chip: 57,860 as a mod, 58,011 as a chip, +151 for about four call sites.
+// Three source lines is three source lines; the pin wiring is not smaller.  See the
+// four measurements on cNum and srcNames for why this is now a rule and not a
+// result about this one function.
 mod slotBase() -> int {
   return fVaB[fVaB.length() - 1] - 3 * fUpSlotN[curFid()]
 }
@@ -8488,7 +8510,6 @@ mod patNextItem() {
     // the whole pattern is literal, so a magic character is just a character:
     // $ is an anchor only when the pattern is read as a pattern
     patItemP = patP
-    patQS = patI
     patAfter = 2
     patFailTo = 2
     patHit = if patTestItem(patP, patI) == 1 then true else false
@@ -8520,7 +8541,6 @@ mod patNextItem() {
       // and "l???" is the one shape where that shows: it matches empty there and
       // finds nothing here.)
       patItemP = patP
-      patQS = patI
       patAfter = 2
       patFailTo = 2
       let rq = patTestItem(patP, patI)
@@ -8540,7 +8560,6 @@ mod patNextItem() {
         patSt = patF()
       } else {
         patItemP = patP
-        patQS = patI
         patAfter = 2
         patFailTo = 2
         let r = patTestItem(patP, patI)
@@ -8555,7 +8574,6 @@ mod patNextItem() {
       }
     } else {
       patItemP = patP
-      patQS = patI
       patAfter = 2
       patFailTo = 2
       let r = patTestItem(patP, patI)
