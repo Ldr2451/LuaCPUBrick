@@ -1450,6 +1450,73 @@ TESTS = [
     # string, install nothing.  Measured 15 ticks against 15 for print(1).
     ("lib-split-words-are-not-names", "print('max min pack move insert remove "
      "byte char fmod modf unpack')", None, "run"),
+    # A NAME ASSEMBLED AT RUN TIME, which is the case a text search cannot see and
+    # the whole reason for libTabDyn/libMathDyn/libStrDyn.  Each of these assembled
+    # a name out of pieces on purpose: a gate that matched quoted names saw `"ins"`
+    # here and nothing else, so all five raised "attempt to call a nil value".
+    #
+    # The table and math ones are the reason those two dyn flags exist: `table[` and
+    # `math[` are in the source whatever became of the key, so they install the whole
+    # table.  The string ones needed MAX_INSTR raised from 1,024 to 1,536, because
+    # every string piece together was 1,025 instructions and the install overflowed
+    # the cap before the program added one of its own -- silently, with an empty log.
+    ("lib-dyn-assembled-table", "local k = 'ins' .. 'ert' "
+     "local t = {} table[k](t, 7) table.remove(t, 1) print(#t) "
+     "local j = 'un' .. 'pack' print(table[j]({1, 2}))", None, "run"),
+    ("lib-dyn-assembled-math", "local a = 'm' .. 'ax' print(math[a](1, 5)) "
+     "local b = 'fm' .. 'od' print(math[b](7, 3)) "
+     "local c = 'fl' .. 'oor' print(math[c](1.5))", None, "run"),
+    ("lib-dyn-assembled-string", "local a = 'by' .. 'te' "
+     "print(string[a]('A', 1)) "
+     "local b = 'ch' .. 'ar' print(string[b](66)) "
+     "local c = 'up' .. 'per' print(string[c]('ab'))", None, "run"),
+    # A literal or parenthesised receiver with an assembled name: ")[ fires, so the
+    # whole string library installs and the call is answered.  The string VARIABLE
+    # form -- local s = "abc"  s[m]() -- is NOT covered and there is no case for it:
+    # the only textual signal is `](`, which is also what t[k](v) spells, so it would
+    # charge every table-dispatch program the whole string library.  25 of 863 cases
+    # contain `](` (tools/chip/dynblast.py).  See libStrDyn in lua.ws.
+    #
+    # pcall because ('abc')[m] is string.upper() called with an EMPTY argument list
+    # in PUC too -- the dot form does not pass the receiver -- so PUC raises.  The
+    # FUNCTION VALUE is the pcall argument, not a call: pcall(('abc')[m]()) would
+    # evaluate the call first and raise outside pcall, which is the shape that made
+    # the oracle reject this program when it said rc=1.
+    ("lib-dyn-literal-receiver", "local m = 'up' .. 'per' "
+     "print(pcall(('abc')[m])) "
+     "local n = 'le' .. 'n' print(pcall(('abc')[n])) "
+     "local q = 'up' .. 'per' print(('abc')[q]('xy')) "
+     "local w = 'by' .. 'te' print(('abc')[w](1))", None, "run"),
+    # The same shapes with the name written as a literal, which is what most real
+    # code does, and which the quoted gate handled before the dyn flags existed.
+    #
+    # 30,000 ticks, and that is the point rather than a nuisance: naming table,
+    # math AND string dynamically installs all three families, which is 10,214
+    # characters of prepended library and about 15,000 ticks of parse before the
+    # program runs one instruction.  Correct, and the price of being unconditional.
+    ("lib-dyn-literal-name", "local k = 'insert' local t = {} table[k](t, 7) "
+     "print(#t) local j = 'max' print(math[j](1, 5)) "
+     "local m = 'char' print(string[m](66))", None, "run",
+     {"ticks": 30000}),
+    # PUC says "got no value" for an absent argument and "got nil" for a nil one,
+    # and the chip now says both correctly -- verified against PUC directly, not
+    # through the harness.
+    #
+    # IT CANNOT BE A CASE, and that is worth recording rather than working around.
+    # oracle_log truncates every line at LOG_WIDTH - 1 = 63 characters, and the two
+    # messages agree right up to it:
+    #   false  bad argument #1 to 'string.upper' (string expected, got no value)
+    #   false  bad argument #1 to 'string.upper' (string expected, got nil
+    #                                                  ^ 63 characters, the cap
+    # So both arrive as "...expected, got " and the harness cannot see the
+    # difference.  A case here would be asserting against a string that lost the
+    # information before the comparison.  Verified instead with:
+    #   lua55 -e "print(pcall(string.upper))"      -> got no value
+    #   lua55 -e "print(pcall(string.upper, nil))" -> got nil
+    # and the chip answers both.  See lib/str_case.lua.
+    ("str-no-value-behaviour", "print(pcall(string.upper) == false) "
+     "print(pcall(string.upper, nil) == false) print(pcall(string.len) == false) "
+     "print(pcall(string.len, nil) == false)", None, "run"),
     ("tbl-pack", "local t = table.pack(1, nil, 3) print(t.n, t[1], t[3])",
      None, "run"),
     ("tbl-move", "local a = {1,2,3,4} local b = table.move(a, 2, 3, 1) "
@@ -2782,8 +2849,21 @@ def build_globals_over():
 
 
 def build_overcap():
-    """A program that must not fit: 40 statements of 26 additions is just over
-    MAX_INSTR instructions (see the limits in lua.ws and tests/spec.py)."""
+    """A program that must not fit MAX_INSTR instructions.
+
+    Sized FROM THE LIMIT rather than to a remembered number, which is what let this
+    case go stale: MAX_INSTR went from 1,024 to 4,096 so that a program reaching a
+    string function by a run-time name would fit at all (see tests/spec.py), and a
+    generator hard-coded to overflow 1,024 then produced a program the chip accepted,
+    so the case failed as "chip accepted, want reject" -- a green suite would have
+    been wrong and a red one would have said nothing about which side moved.
+
+    Each statement is a chain of 26 additions, which is one LOADNUM plus 26 ADDs per
+    operand pair, so the statement count is derived from the limit with room to
+    spare and the assertion that matters -- rejected, not how far over.
+    """
+    per_stmt = 27
+    n = spec.MAX_INSTR // per_stmt + 8
     return "\n".join(
         "v0 = %s" % "+".join(str((k + j) % 9 + 1) for j in range(26))
-        for k in range(40)) + "\n"
+        for k in range(n)) + "\n"

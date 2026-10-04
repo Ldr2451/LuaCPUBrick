@@ -34,7 +34,15 @@ OP_NAMES = (
 N_OPS = len(OP_NAMES)
 
 # Chip limits.  Each has a `const` of the same name in lua.ws.
-MAX_INSTR = 1024
+#
+# MAX_INSTR is 4,096, not the 1,024 this was when the whole-string-library install
+# did not fit: every string piece together compiles to 1,025 instructions, so a
+# program that reaches a string function through a name it built at run time
+# overflowed the old cap BEFORE ITS OWN FIRST INSTRUCTION and produced an empty log
+# with no error.  Raising it costs no nodes -- the bytecode arrays are sized from the
+# constant at reset, so it is memory and not graph (measured: 1,024 -> 1,536 and
+# 1,536 -> 4,096 both left tools/chip/audit.py at the same figure).  See libStrDyn.
+MAX_INSTR = 4096
 MAX_TOKENS = 4096
 MAX_REGS = 200
 MAX_FUNCS = 96

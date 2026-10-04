@@ -286,7 +286,7 @@
 // ---------------------------------------------------------------- tunables
 
 const STEP_INTERVAL = 0.01
-const MAX_INSTR = 1024
+const MAX_INSTR = 4096
 // the prepended library plus a full program; the token arrays are sized from
 // this, so raising it costs gates (see tools/chip/audit.py)
 const MAX_TOKENS = 4096
@@ -368,7 +368,7 @@ const NB = 26
 // Library functions are written as field assignments, not `function string.f`:
 // the parser does not take a dotted name on `function` yet.
 const LIB_iter = "function _ipairs_iter(t, i) i = i + 1 local v = t[i] if v ~= nil then return i, v end end\nfunction ipairs(t) return _ipairs_iter, t, 0 end\nfunction pairs(t) return next, t, nil, nil end\n"
-const LIB_str_index = "string = string or {}\nstring.len = function(s)\nlocal t = type(s)\nif t == \"number\" then s = tostring(s)\nelseif t ~= \"string\" then error(\"bad argument #1 to 'string.len' (string expected, got \" .. t .. \")\", 2) end\nreturn #s\nend\nstring.sub = function(s, i, j)\nlocal t0 = type(s)\nif t0 == \"number\" then s = tostring(s)\nelseif t0 ~= \"string\" then error(\"bad argument #1 to 'string.sub' (string expected, got \" .. t0 .. \")\", 2) end\nlocal l = #s\ni = i or 1\nj = j or -1\nif i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end\nif j < 0 then j = l + j + 1 elseif j > l then j = l end\nif i > j then return \"\" end\nreturn _s(1, s, i - 1, j - i + 1)\nend\n"
+const LIB_str_index = "string = string or {}\nstring.len = function(...)\nlocal nv = select('#', ...) == 0\nlocal s = select(1, ...)\nlocal t = type(s)\nif t == \"number\" then\ns = tostring(s)\nelseif t ~= \"string\" then\nlocal w = t\nif nv then w = \"no value\" end\nerror(\"bad argument #1 to 'string.len' (string expected, got \" .. w .. \")\", 2)\nend\nreturn #s\nend\nstring.sub = function(...)\nlocal nv = select('#', ...) == 0\nlocal s, i, j = select(1, ...)\nlocal t = type(s)\nif t == \"number\" then\ns = tostring(s)\nelseif t ~= \"string\" then\nlocal w = t\nif nv then w = \"no value\" end\nerror(\"bad argument #1 to 'string.sub' (string expected, got \" .. w .. \")\", 2)\nend\nlocal l = #s\ni = i or 1\nj = j or -1\nif i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end\nif j < 0 then j = l + j + 1 elseif j > l then j = l end\nif i > j then return \"\" end\nreturn _s(1, s, i - 1, j - i + 1)\nend\n"
 const LIB_str_fmt = "string = string or {}\nstring.format = _fmt\n"
 // The wrappers pass their arguments straight through rather than naming them:
 // a named parameter pads a missing one with nil, and PUC's "got no value" and
@@ -377,8 +377,8 @@ const LIB_str_pat = "string = string or {}\nstring.find = function(...) return _
 // gmatch is a gate that answers all three values itself, so the piece is the
 // binding and nothing else: 25 characters, where the gsub piece is 3109.
 const LIB_str_gmatch = "string = string or {}\nstring.gmatch = _gmatch\n"
-const LIB_str_case = "string = string or {}\nstring.upper = function(s)\nlocal t = type(s)\nif t == \"number\" then s = tostring(s)\nelseif t ~= \"string\" then error(\"bad argument #1 to 'string.upper' (string expected, got \" .. t .. \")\", 2) end\nreturn _s(2, s)\nend\nstring.lower = function(s)\nlocal t = type(s)\nif t == \"number\" then s = tostring(s)\nelseif t ~= \"string\" then error(\"bad argument #1 to 'string.lower' (string expected, got \" .. t .. \")\", 2) end\nreturn _s(3, s)\nend\n"
-const LIB_str_misc = "string = string or {}\nstring.rep = function(s, n, sep)\nlocal t = type(s)\nif t == \"number\" then s = tostring(s)\nelseif t ~= \"string\" then error(\"bad argument #1 to 'string.rep' (string expected, got \" .. t .. \")\", 2) end\nif n <= 0 then return \"\" end\nsep = sep or \"\"\nlocal r = s\nfor i = 2, n do r = r .. sep .. s end\nreturn r\nend\nstring.reverse = function(s)\nlocal t = type(s)\nif t == \"number\" then s = tostring(s)\nelseif t ~= \"string\" then error(\"bad argument #1 to 'string.reverse' (string expected, got \" .. t .. \")\", 2) end\nlocal r = \"\"\nfor i = #s, 1, -1 do r = r .. _s(1, s, i - 1, 1) end\nreturn r\nend\n"
+const LIB_str_case = "string = string or {}\nstring.upper = function(...)\nlocal nv = select('#', ...) == 0\nlocal s = select(1, ...)\nlocal t = type(s)\nif t == \"number\" then\ns = tostring(s)\nelseif t ~= \"string\" then\nlocal w = t\nif nv then w = \"no value\" end\nerror(\"bad argument #1 to 'string.upper' (string expected, got \" .. w .. \")\", 2)\nend\nreturn _s(2, s)\nend\nstring.lower = function(...)\nlocal nv = select('#', ...) == 0\nlocal s = select(1, ...)\nlocal t = type(s)\nif t == \"number\" then\ns = tostring(s)\nelseif t ~= \"string\" then\nlocal w = t\nif nv then w = \"no value\" end\nerror(\"bad argument #1 to 'string.lower' (string expected, got \" .. w .. \")\", 2)\nend\nreturn _s(3, s)\nend\n"
+const LIB_str_misc = "string = string or {}\nstring.rep = function(...)\nlocal nv = select('#', ...) == 0\nlocal s, n, sep = select(1, ...)\nlocal t = type(s)\nif t == \"number\" then\ns = tostring(s)\nelseif t ~= \"string\" then\nlocal w = t\nif nv then w = \"no value\" end\nerror(\"bad argument #1 to 'string.rep' (string expected, got \" .. w .. \")\", 2)\nend\nif n <= 0 then return \"\" end\nsep = sep or \"\"\nlocal r = s\nfor i = 2, n do r = r .. sep .. s end\nreturn r\nend\nstring.reverse = function(...)\nlocal nv = select('#', ...) == 0\nlocal s = select(1, ...)\nlocal t = type(s)\nif t == \"number\" then\ns = tostring(s)\nelseif t ~= \"string\" then\nlocal w = t\nif nv then w = \"no value\" end\nerror(\"bad argument #1 to 'string.reverse' (string expected, got \" .. w .. \")\", 2)\nend\nlocal r = \"\"\nfor i = #s, 1, -1 do r = r .. _s(1, s, i - 1, 1) end\nreturn r\nend\n"
 const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775808\n"
 const LIB_math_int = "math = math or {}\nmath.floor = function(x) return _m(1, x, 0) end\nmath.ceil = function(x) return _m(2, x, 0) end\nmath.tointeger = function(x) return _m(13, x, 0) end\nmath.type = function(x) return _m(14, x, 0) end\nmath.abs = function(x) if type(x) == \"string\" then x = x + 0.0 end if x < 0 then return -x end if x == 0 then return x - x end return x end\nmath.sqrt = function(x) return _m(3, x, 0) end\n"
 const LIB_math_trig = "math = math or {}\nmath.sin = function(x) return _m(4, x, 0) end\nmath.cos = function(x) return _m(5, x, 0) end\nmath.tan = function(x) return _m(6, x, 0) end\nmath.asin = function(x) return _m(7, x, 0) end\nmath.acos = function(x) return _m(8, x, 0) end\nmath.atan = function(y, x) return _m(9, y, x or 1) end\n"
@@ -398,7 +398,7 @@ const LIB_math_maxmin = "math = math or {}\nmath.max = function(a, ...)\nlocal m
 const LIB_math_fmodmodf = "math = math or {}\nmath.fmod = function(a, b)\nif type(a) == \"string\" then a = a + 0.0 end\nif type(b) == \"string\" then b = b + 0.0 end\nlocal r = a % b\nif r ~= 0 and (a < 0) ~= (b < 0) then r = r - b end\nreturn r\nend\nmath.modf = function(x) if type(x) == \"string\" then x = x + 0.0 end local i = (x >= 0 and _m(1, x, 0)) or _m(2, x, 0) return i, x - i end\n"
 const LIB_tab_insert = "table = table or {}\ntable.insert = function(t, ...)\nlocal n = #t\nlocal c = select('#', ...)\nif c == 1 then\nt[n + 1] = (...)\nelseif c == 2 then\nlocal pos, v = ...\nfor i = n, pos, -1 do t[i + 1] = t[i] end\nt[pos] = v\nend\nend\n"
 const LIB_tab_remove = "table = table or {}\ntable.remove = function(t, pos)\nlocal n = #t\nif pos == nil then pos = n end\nif pos ~= n and (pos < 1 or n + 1 < pos) then error(\"bad argument #2 to 'remove' (position out of bounds)\", 2) end\nlocal v = t[pos]\nlocal i = pos\nwhile i < n do t[i] = t[i + 1] i = i + 1 end\nt[i] = nil\nreturn v\nend\n"
-const LIB_str_byte = "string = string or {}\nstring.byte = function(s, i, j)\nlocal t = type(s)\nif t == \"number\" then s = tostring(s)\nelseif t ~= \"string\" then error(\"bad argument #1 to 'string.byte' (string expected, got \" .. t .. \")\", 2) end\ni = i or 1\nj = j or i\nif i < 0 then i = #s + i + 1 end\nif j < 0 then j = #s + j + 1 end\nif i < 1 then i = 1 end\nif j > #s then j = #s end\nif i > j then return end\nif i == j then return _s(4, s, i - 1, 0) end\nlocal r = {}\nfor k = i, j do r[#r + 1] = _s(4, s, k - 1, 0) end\nreturn unpack(r, 1, #r)\nend\n"
+const LIB_str_byte = "string = string or {}\nstring.byte = function(...)\nlocal nv = select('#', ...) == 0\nlocal s, i, j = select(1, ...)\nlocal t = type(s)\nif t == \"number\" then\ns = tostring(s)\nelseif t ~= \"string\" then\nlocal w = t\nif nv then w = \"no value\" end\nerror(\"bad argument #1 to 'string.byte' (string expected, got \" .. w .. \")\", 2)\nend\ni = i or 1\nj = j or i\nif i < 0 then i = #s + i + 1 end\nif j < 0 then j = #s + j + 1 end\nif i < 1 then i = 1 end\nif j > #s then j = #s end\nif i > j then return end\nif i == j then return _s(4, s, i - 1, 0) end\nlocal r = {}\nfor k = i, j do r[#r + 1] = _s(4, s, k - 1, 0) end\nreturn unpack(r, 1, #r)\nend\n"
 const LIB_str_char = "string = string or {}\nstring.char = function(...)\nlocal r = \"\"\nfor i = 1, select('#', ...) do r = r .. _s(5, \"\", select(i, ...), 0) end\nreturn r\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
@@ -3461,12 +3461,111 @@ mod srcNames(p: string, tbl: string, name: string) -> bool {
       || srcUses(p, "\"" .. name .. "\"") || srcUses(p, "'" .. name .. "'")
 }
 
+// A LIBRARY TABLE INDEXED BY A NAME THE PROGRAM BUILT AT RUN TIME.
+//
+// This is the fix for the whole family, and it is cheaper than the quoted-name gate
+// it replaces, because `table[` is in the source no matter where the key came from:
+//   local k = "ins" .. "ert"   table[k](t, 1)      assembled
+//   local k = inStr0           table[k](t, 1)      off a port
+//   local k = io.read()        table[k](t, 1)      off a stream
+// A text search cannot see the NAME, but it can see the INDEX, and one bracket on a
+// NAMED library table is a complete answer: that table's every piece is reachable.
+//
+// It also SUBSUMES the quoted-name gate for tables and math, which is why this is
+// cheaper than what it replaces: `local k = "insert"; table[k](t, 7)` contains
+// `table[`, so it no longer needs a spelling of the name at all.  Those two spellings
+// were +33 and +42 nodes to add and they were still incomplete -- they covered a
+// name written as a literal and nothing else.
+//
+// NOT applied to strings, and the reason is a hard limit rather than a preference --
+// see the note on srcNames below, which is where the string pieces' own gate lives.
+// The whole string library compiles to 1,025 instructions against a 1,024 cap, so a
+// whole-table answer for strings does not fit and the per-name gate is the best
+// available one rather than a choice between good and better.
+//
+// The over-trigger is deliberate and cheap: `mytable[k]` contains `table[`, so a
+// program with a local of that name installs the table pieces.  It costs boot ticks
+// on that program and nothing else, and the alternative -- missing a call -- is worse.
+mod libTabDyn(p: string) -> bool {
+  return srcUses(p, "table[")
+}
+
+mod libMathDyn(p: string) -> bool {
+  return srcUses(p, "math[")
+}
+
+// A string value indexed with a bracket, by a key the program built at run time.
+// `string[` is in the source whatever became of the key, so this is the same complete
+// answer libTabDyn gives for tables -- and it is now usable because MAX_INSTR is
+// 1,536 rather than 1,024.  At 1,024 every string piece together was 1,025
+// instructions and the whole-table install overflowed the cap before the program
+// added one of its own; raising the cap costs NO NODES (the bytecode arrays are sized
+// from the constant at reset, so it is memory and not graph), which is what makes
+// this fix possible at all.
+//
+// THE STRING VARIABLE IS NOT COVERED, and the price of covering it was measured
+// rather than guessed.  `local s = "abc"  local m = "up" .. "per"  s[m]()` says
+// neither `string[` nor `"[` nor `)[`: the receiver is a local, so its name never
+// appears.  The only textual signal that catches it is `](`, and `](` is also what
+// ORDINARY table dispatch spells -- t[k](v) -- so every program containing it would
+// install the whole string library, which is 9,000 ticks of parse for a function it
+// probably never calls.
+//
+// tools/chip/dynblast.py counts it: 25 of the suite's 863 cases contain `](`, and
+// the cost lands on all of them.  So this trigger is deliberately NOT `](`, and the
+// remaining hole is a name ASSEMBLED from pieces used to index a string VARIABLE --
+// which needs two unusual things at once, and which no static gate can see without
+// charging every table-dispatch program for the whole string library.
+//
+// The bias throughout is deliberate: over-triggering costs boot ticks on one
+// program, missing it costs that program its answer.
+mod libStrDyn(p: string) -> bool {
+  return srcUses(p, "string[") || srcUses(p, "\"[") || srcUses(p, ")[")
+}
+// WHY THE STRING PIECES ALSO KEEP A PER-NAME GATE
+// ---------------------------------------------------------------------
+// The obvious fix is the libTabDyn/libMathDyn one applied to strings: `string[` is in
+// the source whatever became of the key, so install every string piece.  It does not
+// work, and the reason is a hard limit rather than a preference.  Every string piece
+// together compiles to 1,025 bytecode instructions and MAX_INSTR is 1,024 -- so the
+// pieces ALONE overflow the cap before the program adds one instruction of its own:
+//
+//   table[  -> 279 instructions     fits
+//   math[   -> 606 instructions     fits
+//   string[ -> 1,025 instructions    OVER by one, before the program starts
+//
+// Measured with tools/chip/dump_vm.py.  The failure it produces is the worst shape
+// there is: `local k = "by" .. "te" print(string[k]("A", 1))` printed NOTHING and
+// reported no error, because bEmit's overflow sets perr with the message "program
+// too long" and the parse then stops with an empty log.  One instruction fewer and
+// the same program works, which is how it survived a first attempt at this fix.
+//
+// So the quoted spelling below is the best available answer for strings rather than
+// a choice between good and better.  What it cannot see is a name ASSEMBLED from
+// pieces -- local k = "up" .. "per" -- used to index a string value.  Same wall that
+// keeps string.format a gate: 11,468 characters does not fit the source buffer.
+
+mod libIoDyn(p: string) -> bool {
+  return srcUses(p, "io[") || srcUses(p, "io.")
+}
+
+mod libOsDyn(p: string) -> bool {
+  return srcUses(p, "os[") || srcUses(p, "os.")
+}
+
+// TWO spellings, for the tables whose gate is now complete on its own because
+// libTabDyn and libMathDyn answer the run-time case.  srcNames keeps the four, for
+// the string pieces, which is the only place they are still load-bearing.
+mod srcNames2(p: string, tbl: string, name: string) -> bool {
+  return srcUses(p, tbl .. "." .. name) || srcUses(p, ":" .. name)
+}
+
 mod libIter(p: string) -> string {
   return if srcUses(p, "ipairs") || srcUses(p, "pairs") then LIB_iter else ""
 }
 
-mod libMathConst(p: string) -> string {
-  return if srcUses(p, "math.pi") || srcUses(p, "math.huge")
+mod libMathConst(p: string, d: bool) -> string {
+  return if d || srcUses(p, "math.pi") || srcUses(p, "math.huge")
       || srcUses(p, "math.maxinteger") || srcUses(p, "math.mininteger")
       then LIB_math_const else ""
 }
@@ -3475,45 +3574,45 @@ mod libMathConst(p: string) -> string {
 // table.unpack and math.misc splits: naming table.insert or table.remove cost
 // ~640 ticks of boot each (tools/chip/libcost.py) because each carried the other.
 // A program that appends in a loop should not parse the gap-closing loop.
-mod libTabInsert(p: string) -> string {
-  return if srcNames(p, "table", "insert") then LIB_tab_insert else ""
+mod libTabInsert(p: string, d: bool) -> string {
+  return if d || srcNames2(p, "table", "insert") then LIB_tab_insert else ""
 }
 
-mod libTabRemove(p: string) -> string {
-  return if srcNames(p, "table", "remove") then LIB_tab_remove else ""
+mod libTabRemove(p: string, d: bool) -> string {
+  return if d || srcNames2(p, "table", "remove") then LIB_tab_remove else ""
 }
 
 // Three pieces where there was one, and the reason is measured rather than
 // guessed: naming table.unpack used to cost 460 ticks of boot (tools/chip/libcost.py)
 // to parse table.pack and table.move, which a program calling unpack never
 // touches.  unpack is a gate, so the alias needs nothing and can stand alone.
-mod libTabUnpack(p: string) -> string {
-  return if srcNames(p, "table", "unpack") then LIB_tab_unpack else ""
+mod libTabUnpack(p: string, d: bool) -> string {
+  return if d || srcNames2(p, "table", "unpack") then LIB_tab_unpack else ""
 }
 
-mod libTabPack(p: string) -> string {
-  return if srcNames(p, "table", "pack") || srcNames(p, "table", "move")
+mod libTabPack(p: string, d: bool) -> string {
+  return if d || srcNames2(p, "table", "pack") || srcNames2(p, "table", "move")
       then LIB_tab_pack else ""
 }
 
-mod libTabConcat(p: string) -> string {
-  return if srcUses(p, "table.concat") then LIB_tab_concat else ""
+mod libTabConcat(p: string, d: bool) -> string {
+  return if d || srcUses(p, "table.concat") then LIB_tab_concat else ""
 }
 
-mod libTabSort(p: string) -> string {
-  return if srcUses(p, "table.sort") then LIB_tab_sort else ""
+mod libTabSort(p: string, d: bool) -> string {
+  return if d || srcUses(p, "table.sort") then LIB_tab_sort else ""
 }
 
-mod libIo(p: string) -> string {
+mod libIo(p: string, d: bool) -> string {
   // stderr is its own piece, not part of LIB_io: io.write users must not pay
   // its parse, and stderr users must not pay for read/write/lines.
-  let r = if srcUses(p, "io.read") || srcUses(p, "io.write")
+  let r = if d || srcUses(p, "io.read") || srcUses(p, "io.write")
       || srcUses(p, "io.lines") then LIB_io else ""
   return r .. (if srcUses(p, "io.stderr") then LIB_io_stderr else "")
 }
 
-mod libOs(p: string) -> string {
-  return if srcUses(p, "os.exit") then LIB_os_exit else ""
+mod libOs(p: string, d: bool) -> string {
+  return if d || srcUses(p, "os.exit") then LIB_os_exit else ""
 }
 
 mod libTonumber(p: string) -> string {
@@ -3547,8 +3646,8 @@ mod libTonumberHex(p: string) -> string {
       then LIB_tonumber_hex else ""
 }
 
-mod libMathRandom(p: string) -> string {
-  return if srcUses(p, "math.random") then LIB_math_random else ""
+mod libMathRandom(p: string, d: bool) -> string {
+  return if d || srcUses(p, "math.random") then LIB_math_random else ""
 }
 
 // Register access, two ways, and mixing them is the bug this pair of comments
@@ -4511,8 +4610,8 @@ mod fmtIntStart() {
 // for its characters at boot, so a program that only ever takes a substring was
 // measured paying 1,094 ticks for a group where 404 of the 838 characters were
 // unreachable for it.  The two halves are separate pieces now.
-mod libStrIndex(p: string) -> string {
-  return if srcUses(p, "string.len") || srcUses(p, "string.sub")
+mod libStrIndex(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.len") || srcUses(p, "string.sub")
       || srcUsesField(p, "len") || srcUsesField(p, "sub")
       then LIB_str_index else ""
 }
@@ -4523,55 +4622,68 @@ mod libStrIndex(p: string) -> string {
 // Three spellings spelled out rather than through srcUsesField, because these two
 // ARE halves of a split and that is what earns the third one -- see srcNames for
 // the measurement and for why the other ~30 gates do not carry it.
-mod libStrByte(p: string) -> string {
-  return if srcUses(p, "string.byte") || srcUses(p, ":byte")
+mod libStrByte(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.byte") || srcUses(p, ":byte")
       || srcUses(p, "\"byte\"") || srcUses(p, "'byte'")
       then LIB_str_byte else ""
 }
 
-mod libStrChar(p: string) -> string {
-  return if srcUses(p, "string.char") || srcUses(p, ":char")
+mod libStrChar(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.char") || srcUses(p, ":char")
       || srcUses(p, "\"char\"") || srcUses(p, "'char'")
       then LIB_str_char else ""
 }
 
-mod libStrCase(p: string) -> string {
-  return if srcUses(p, "string.upper") || srcUses(p, "string.lower")
+mod libStrCase(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.upper") || srcUses(p, "string.lower")
       || srcUsesField(p, "upper") || srcUsesField(p, "lower")
       then LIB_str_case else ""
 }
 
-mod libStrFmt(p: string) -> string {
-  return if srcUses(p, "string.format") || srcUsesField(p, "format")
+mod libStrFmt(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.format") || srcUsesField(p, "format")
       then LIB_str_fmt else ""
 }
 
-mod libStrGmatch(p: string) -> string {
-  return if srcUses(p, "string.gmatch") || srcUsesField(p, "gmatch")
+mod libStrGmatch(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.gmatch") || srcUsesField(p, "gmatch")
       then LIB_str_gmatch else ""
 }
 
 // gsub's replacement walk scans for '%' with string.find, so it brings the pat
 // piece with it; libStrPat then stands down so the program pays for it once.
-mod libStrPat(p: string) -> string {
+//
+// IT MUST ALSO STAND DOWN WHEN `d` IS SET, and that is a bug this shape invites:
+// libStrGsub returns `LIB_str_pat .. LIB_str_gsub`, so a `d ||` in front of BOTH
+// gates emits the pattern piece TWICE, and the concatenated library then fails to
+// parse with "unexpected token in expression" -- silently, in the sense that the
+// program prints nothing and reports no error, because a parse failure leaves an
+// empty log rather than a message.  Found by tools/chip/whyempty.py, which exists
+// because `chip='' err=''` says nothing about which of the two limits or the parser
+// is responsible.
+mod libStrPat(p: string, d: bool) -> string {
+  if d {
+    return ""
+  }
   return if (srcUses(p, "string.find") || srcUses(p, "string.match")
       || srcUsesField(p, "find") || srcUsesField(p, "match"))
       && !(srcUses(p, "string.gsub") || srcUsesField(p, "gsub"))
       then LIB_str_pat else ""
 }
 
-mod libStrGsub(p: string) -> string {
-  return if srcUses(p, "string.gsub") || srcUsesField(p, "gsub")
+mod libStrGsub(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.gsub") || srcUsesField(p, "gsub")
       then LIB_str_pat .. LIB_str_gsub else ""
 }
 
-mod libStrMisc(p: string) -> string {
-  return if srcUses(p, "string.rep") || srcUses(p, "string.reverse")
+mod libStrMisc(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.rep") || srcUses(p, "string.reverse")
       || srcUsesField(p, "rep") || srcUsesField(p, "reverse")
       then LIB_str_misc else ""
 }
 
-mod libMathInt(p: string) -> string {
+mod libMathInt(p: string, d: bool) -> string {
+  if d { return LIB_math_int }
   return if srcUses(p, "math.floor") || srcUses(p, "math.ceil")
       || srcUses(p, "math.tointeger") || srcUses(p, "math.type")
       || srcUses(p, "math.abs") || srcUses(p, "math.sqrt")
@@ -4581,7 +4693,8 @@ mod libMathInt(p: string) -> string {
       then LIB_math_int else ""
 }
 
-mod libMathTrig(p: string) -> string {
+mod libMathTrig(p: string, d: bool) -> string {
+  if d { return LIB_math_trig }
   return if srcUses(p, "math.sin") || srcUses(p, "math.cos")
       || srcUses(p, "math.tan") || srcUses(p, "math.asin")
       || srcUses(p, "math.acos") || srcUses(p, "math.atan")
@@ -4591,7 +4704,8 @@ mod libMathTrig(p: string) -> string {
       then LIB_math_trig else ""
 }
 
-mod libMathExp(p: string) -> string {
+mod libMathExp(p: string, d: bool) -> string {
+  if d { return LIB_math_exp }
   return if srcUses(p, "math.exp") || srcUses(p, "math.log")
       || srcUsesField(p, "exp") || srcUsesField(p, "log")
       then LIB_math_exp else ""
@@ -4602,13 +4716,15 @@ mod libMathExp(p: string) -> string {
 // (tools/chip/libcost.py), because each was carrying the other three.  The pair
 // that shares a shape goes together -- max with min, fmod with modf -- so naming
 // one does not parse the other pair.
-mod libMathMaxMin(p: string) -> string {
-  return if srcNames(p, "math", "max") || srcNames(p, "math", "min")
+mod libMathMaxMin(p: string, d: bool) -> string {
+  if d { return LIB_math_maxmin }
+  return if srcNames2(p, "math", "max") || srcNames2(p, "math", "min")
       then LIB_math_maxmin else ""
 }
 
-mod libMathFmodModf(p: string) -> string {
-  return if srcNames(p, "math", "fmod") || srcNames(p, "math", "modf")
+mod libMathFmodModf(p: string, d: bool) -> string {
+  if d { return LIB_math_fmodmodf }
+  return if srcNames2(p, "math", "fmod") || srcNames2(p, "math", "modf")
       then LIB_math_fmodmodf else ""
 }
 
@@ -11327,36 +11443,44 @@ on goParse {
   // built from, and at 11,468 characters it would not fit the source buffer at
   // all -- which is the real reason it is a gate).
   let libA = libIter(program)
-  let libB = libStrIndex(program)
-  let libB2 = libStrByte(program)
-  let libB3 = libStrChar(program)
-  let libC = libStrCase(program)
-  let libD = libStrMisc(program)
-  let libE = libMathConst(program)
-  let libF = libMathInt(program)
-  let libG = libMathTrig(program)
-  let libH = libMathExp(program)
-  let libI = libMathMaxMin(program)
-  let libI2 = libMathFmodModf(program)
-  let libJ = libTabInsert(program)
-  let libJ2 = libTabRemove(program)
-  let libK = libTabUnpack(program)
-  let libK2 = libTabPack(program)
-  let libL = libTabConcat(program)
-  let libM = libTabSort(program)
-  let libN = libStrFmt(program)
-  let libO = libIo(program)
-  let libO2 = libOs(program)
-  let libP = libStrPat(program)
-  let libQ = libStrGsub(program)
-  let libR = libStrGmatch(program)
+  // The five dynamic-index flags, each searched for ONCE.  They are the run-time
+  // reachability answer for a library table, and they are computed here rather than
+  // inside each gate so a table with six pieces pays for one search and not six.
+  let dynTab = libTabDyn(program)
+  let dynMath = libMathDyn(program)
+  let dynIo = libIoDyn(program)
+  let dynOs = libOsDyn(program)
+  let dynStr = libStrDyn(program)
+  let libB = libStrIndex(program, dynStr)
+  let libB2 = libStrByte(program, dynStr)
+  let libB3 = libStrChar(program, dynStr)
+  let libC = libStrCase(program, dynStr)
+  let libD = libStrMisc(program, dynStr)
+  let libE = libMathConst(program, dynMath)
+  let libF = libMathInt(program, dynMath)
+  let libG = libMathTrig(program, dynMath)
+  let libH = libMathExp(program, dynMath)
+  let libI = libMathMaxMin(program, dynMath)
+  let libI2 = libMathFmodModf(program, dynMath)
+  let libJ = libTabInsert(program, dynTab)
+  let libJ2 = libTabRemove(program, dynTab)
+  let libK = libTabUnpack(program, dynTab)
+  let libK2 = libTabPack(program, dynTab)
+  let libL = libTabConcat(program, dynTab)
+  let libM = libTabSort(program, dynTab)
+  let libN = libStrFmt(program, dynStr)
+  let libO = libIo(program, dynIo)
+  let libO2 = libOs(program, dynOs)
+  let libP = libStrPat(program, dynStr)
+  let libQ = libStrGsub(program, dynStr)
+  let libR = libStrGmatch(program, dynStr)
   // The hex piece comes BEFORE the one that calls it: _tonum_hex is a chunk-local
   // and `tonumber = function(...)` closes over it, so the other order leaves the
   // reference resolving to a global that is nil -- "attempt to call" on the one
   // path the split exists for.
 let libS2 = libTonumberHex(program)
   let libS = libTonumber(program)
-  let libT = libMathRandom(program)
+  let libT = libMathRandom(program, dynMath)
   let lib = libA .. libB .. libB2 .. libB3 .. libC .. libD .. libE .. libF .. libG
     .. libH .. libI .. libI2 .. libJ .. libJ2 .. libK .. libK2 .. libL .. libM .. libN
     .. libO .. libO2 .. libP
