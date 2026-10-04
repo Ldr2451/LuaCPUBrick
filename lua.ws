@@ -1248,6 +1248,12 @@ var patSt: int = 0
 // themselves: the host's isalpha is not a gate, and the lexer spells digit and
 // letter out the same way.  A letter that names no class is the character
 // itself, which is how %. and %b and %q work, and an uppercase letter negates.
+// One character-class test: c against the class code, `neg` for a negated
+// set.
+// %z is PUC's NUL class; without it `c == code` made %z match the letter z.
+// It rides on the FALLBACK line rather than taking an arm of its own: an arm
+// measured +49 nodes (this is a mod, compiled at both matchers) and the test
+// only has to run where no other class claimed the code anyway.
 mod patClassHit(c: int, code: int, neg: bool) -> bool {
   if code == 97 {
     let hit = (65 <= c && c <= 90) || (97 <= c && c <= 122)
@@ -1281,7 +1287,7 @@ mod patClassHit(c: int, code: int, neg: bool) -> bool {
     let hit = (48 <= c && c <= 57) || (97 <= c && c <= 102) || (65 <= c && c <= 70)
     return if neg then !hit else hit
   }
-  let lit = c == code
+  let lit = c == (if code == 122 then 0 else code)
   return if neg then !lit else lit
 }
 
@@ -3189,10 +3195,17 @@ chip vaFill(base: int, dst: int, n: int) {
 }
 
 mod fmtVal(tag: int, num: float, s: string) -> string {
+  // An EXPRESSION chain, not an `if` chain: rewritten as statements the same
+  // ladder measured +476 nodes, because every arm of a statement chain is a
+  // branch the ones above it pay for on every call.
   return if tag == 0 then "nil"
     else if tag == 3 then if num == 0.0 then "false" else "true"
     else if tag == 2 then s
-    else if tag == 4 then "function"
+    // PUC spells both with an address, `function: %p` and `table: %p`.  The
+    // address itself cannot be -- the registers are doubles and PUC's pointer
+    // is 64-bit -- so this is the closure or table number, which is what the
+    // old "function" and "table: 0x" spellings each half-agreed with.
+    else if tag == 4 then "function: 0x" .. (num | 0)
     else if tag == 5 then "table: 0x" .. (num | 0)
     else if tag == 6 then "" .. (num | 0)
     else fmtNum(num)
@@ -5017,12 +5030,17 @@ mod doBlockClose() {
         if tk == 3 {
           let uk = if 0 <= fUpSrc[fidAt[fnDepth] * MAX_UP + tgt] then 0 else 1
           bEmit(47, fr, tgt, uk)
-          dirtySelf(tmpS)
         } else if tk == 1 {
           bEmit(7, tgt, fr, 0)
-          dirtySelf(tmpS)
         } else {
           bEmit(6, gDeclare(tmpS), fr, 0)
+        }
+        // A store, so a self-recursion reading the name from the running frame
+        // is stale -- the assignment path says the same (doStoreStep).  Hoisted
+        // out of the arms: it only clears a flag, so the order does not matter,
+        // and one call is cheaper than two.
+        if tk != 0 {
+          dirtySelf(tmpS)
         }
       }
     } else {
@@ -10148,9 +10166,12 @@ mod vmStep() {
         // nothing emits it -- there is no bEmit(41, ...) anywhere in the
         // compiler -- so both were a comparison paid by every Lua call in the
         // hottest arm in the chip.
-        let mtArg = if c == 1 || c == 3 || c == 5 || c == 7 then true else false
-        let mtSelf = if c == 2 || c == 3 || c == 6 || c == 7 then true else false
-        let isTail = 4 <= c
+        // Bits, not a list of cases: `c == 1 || c == 3 || c == 5 || c == 7`
+        // and its five siblings are nine comparisons paid by EVERY Lua call in
+        // the chip, and three masks say the same thing.
+        let mtArg = (c & 1) == 1
+        let mtSelf = (c & 2) != 0
+        let isTail = (c & 4) != 0
         // a tail argument's call already ran and reported how many values it
         // produced; the enclosing call counts those in place of its last arg
         let tailN = if mtArg then (if 0 <= retCountV then retCountV else 0) else 0

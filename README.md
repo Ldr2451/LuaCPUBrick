@@ -21,25 +21,6 @@ ports, what is supported, the limits, and every place it differs from PUC-Lua
 register triples, the 51 opcodes, the operand encoding and the asynchronous
 states. Neither belongs here.
 
-The headline limits, because a program meets them: 1,024 instructions, 4,096
-tokens, 64 registers per function, 96 functions, 96 globals, 32 active call
-frames, 64 program tables plus four library tables, 512 table entries, and 16
-values in one expanded call, return, or statement.
-
-Which port reports a limit depends on when you hit it, and the two are not the
-same channel:
-
-| | reported as | reaches a program as |
-| --- | --- | --- |
-| instructions, tokens, registers per function, functions, globals, values per expanded call | a `progDebug` line naming the line that asked for too much | a compile error, so nothing runs |
-| active call frames, program tables, table entries, closures, captured locals | an `err` line | a runtime error; `pcall` takes it as a value |
-
-Neither is ever a wrong answer: the first refuses the program, the second stops
-it where it was, and the text says which limit and how many. A table entry is
-handed back when its key is assigned nil, so a table that deletes keys it makes
-keeps going; there is no collector, so one that only grows stops at 512.
-
-
 
 ## The interface
 

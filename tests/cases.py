@@ -356,15 +356,15 @@ TESTS = [
      "  return step\n"
      "end\nprint(make('K')())", None, "run"),
     # Proper tail calls: `return f()` reuses the frame, so the depth does not
-    # grow.  MAX_CALLS is 200, so a 1000-deep tail recursion is the case that
-    # separates TCO from "call depth exceeded"; the others are the shapes a
-    # frame reuse can get wrong.
-    ("tail-deep", TAIL_LOOP + " print(loop(1000, 0))", None, "run"),
+    # grow.  250 and not 1000, because MAX_CALLS is 200 and anything past it
+    # separates TCO from "call depth exceeded" just as well -- and the suite's
+    # time is its slowest case (1000 deep cost 21s, 1001 mutual 40s).
+    ("tail-deep", TAIL_LOOP + " print(loop(250, 0))", None, "run"),
     ("tail-mutual",
      "local even, odd\n"
      "function even(n) if n == 0 then return true end return odd(n - 1) end\n"
      "function odd(n) if n == 0 then return false end return even(n - 1) end\n"
-     "print(even(1001), odd(1001))", None, "run"),
+     "print(even(251), odd(251))", None, "run"),
     ("tail-not-parenthesised",
      "local function inner(n) return n * 2 end\n"
      "local function outer() return (inner(21)) end print(outer())", None, "run"),
@@ -379,7 +379,7 @@ TESTS = [
     ("tail-inside-for",
      "local function sumto(n, a) if n == 0 then return a end "
      "return sumto(n - 1, a + n) end local t = 0\n"
-     "for i = 1, 3 do t = sumto(i * 300, t) end print(t)", None, "run"),
+     "for i = 1, 3 do t = sumto(i * 90, t) end print(t)", None, "run"),
     ("tail-callee-wants-more-cells",
      "local function wide(a, b, c, d)\n"
      "  local x1, x2, x3 = a, b, c\n"
@@ -2461,6 +2461,14 @@ TESTS = [
     ("puc-fpct-b", "print(string.find('aba', '%f[a%z]'))", None, "run"),
     ("puc-fpct-c", "print(string.find('a', '%f[^%z]'))", None, "run"),
     ("puc-fpct-d", "print(string.find('aba', '%f[%z]'))", None, "run"),
+    # %z is PUC's NUL class.  The chip's strings cannot HOLD a NUL byte -- its
+    # log framing cannot even carry one -- so these pin the class on a subject
+    # with no NUL in it: a letter z must stop matching, which is what the old
+    # `c == code` fallback did.  Both matchers are covered, the set (8255's
+    # single class is the same chip body) and the plain class.
+    ("pat-z-is-not-letter",
+     "print(('azb'):gsub('[%z]', 'X'), ('azb'):find('%z'), "
+     "('azb'):gsub('[^%z]', 'X'))", None, "run"),
     # (%w*)$ -- a %w* that matches empty at end of subject
     ("puc-wstar-anchor", "print(string.match('alo ', '(%w*)$') == '')", None,
      "run"),
@@ -2472,6 +2480,17 @@ TESTS = [
     # tostring of a function: the chip's address spelling
     ("puc-tostring-func", "print(string.find(tostring(print), 'function:') "
      "~= nil)", None, "run"),
+    # tostring(f) is PUC's `function: %p` and tostring(t) its `table: %p`, so a
+    # prefix is the decidable part -- the address itself cannot be (the chip's
+    # registers are doubles, PUC's pointer is 64-bit).  This is the shape the
+    # old CHIP_LOG entry missed: the oracle's log framing stops at the first
+    # space, so PUC's pointer prints as "function" and a prefix test was the
+    # only thing that could tell the two spellings apart.
+    ("tostr-func-shape",
+     "local s = tostring(print) print(s:sub(1, 9), s:sub(10, 11), "
+     "s:sub(12, 12) ~= ' ' and s:sub(12, 12) ~= '') "
+     "local t = tostring({}) print(t:sub(1, 5), t:sub(6, 7))",
+     None, "run"),
     # %u needs the full 64-bit range: the registers are doubles, so ~(-1 << 64)
     # is already rounded before the formatter sees it.  Same wall as integers
     # past 2^53 and as matching PUC's math.random.

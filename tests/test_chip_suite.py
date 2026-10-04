@@ -144,20 +144,22 @@ CHIP_LOG = {
     # Found by tools/chip/pucsuite.py against lua-5.5.1-tests (sha256 verified).
     # The harvest lifts every self-contained assert(EXPR) out of the suite and
     # compares it with the oracle; these are the ones that do not agree, and they
-    # are here so a known divergence reads as a known answer.  Four of them have
+    # are here so a known divergence reads as a known answer.  Five of them have
     # since been FIXED and their entries removed (the cases now compare against
     # the oracle directly): hex tonumber is a Lua fallback over _s byte reads,
     # %f tests \0 at the string's start edge, (%w*)$ matches empty at the end
-    # because the scan tries position len, and %f's sign chain keeps the # point.
-    # What is left is genuinely hard: %f with %z in its set needs %z to mean NUL
-    # in the set matcher, which is a 49-node arm through inlining, and function
-    # addresses need 64-bit formatting the registers cannot hold.
+    # because the scan tries position len, %f's sign chain keeps the # point, and
+    # %z is NUL in a character class (it rides the literal fallback line rather
+    # than taking an arm, because patClassHit is a mod compiled at both matchers
+    # and an arm there cost +49 nodes against +14 this way).
+    # tostring(f) spelling is PUC's `function: %p`, and this entry was wrong
+    # as well as the chip: it recorded `false` for an assert PUC passes, because
+    # the oracle's log framing stops at the first space, so PUC's 26-character
+    # pointer reads as "function" in a diff and nobody looked past it.  What is
+    # left is genuinely hard: %u past 2^53 is the double wall the registers put
+    # there, and an exact 64-bit pointer is the same one.
     "puc-hex-wide": "8.198552921648691e+16\n",
-    "puc-fpct-b": "1\t0\n",          # %f[a%z]: needs %z-is-NUL, see above
-    "puc-fpct-c": "nil\n",            # %f[^%z]: same %z gap, other polarity
-    "puc-fpct-d": "nil\n",            # %f[%z]: same %z gap, pure set
     "puc-format-u64": "-1\n",         # %u past 2^53: the registers are doubles
-    "puc-tostring-func": "false\n",  # the chip spells a function address its own way
     "math-random-interval":
         "false\tbad argument #1 to 'random' (interval is empty)\n",
     # NOT a lost message: the whole 66-character message is in the register (a
