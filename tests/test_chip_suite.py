@@ -113,18 +113,40 @@ SKIP = {
     # item's failure, which is a different path from the set micro-step's.  That
     # is the thing to read next.
     #
-    # Two more facts, from tracing, which narrow it further.  patApply DOES send
-    # a quantifier-less item's miss to patBack (patSt = 4), and patBack's k0 == 1
-    # arm does set patI back and re-push at patI - 1 -- so on paper the give-back
-    # is already wired for this shape and the whole trace above should work.  It
-    # does not, and tools/chip/trace_pc.py watching patSt/patI/patP/patSp shows
-    # WHY: patSt does not change at all.  The matcher is not cycling, it is stuck
-    # on a state with no transition out of it.  patStepA covers 0..7 and patStepB
-    # covers 9..14, so state 8 is the one to look at -- it is what every error
-    # path sets, and patGreedy's failure arms are the ones that can reach it here.
+    # patApply DOES send a quantifier-less item's miss to patBack (patSt = 4),
+    # patBack's k0 == 1 arm DOES set patI back and re-push at patI - 1, and a
+    # hand-trace of ("abc"):match(".*c") through patNextItem/patApply/patGreedy/
+    # patGreedyEnd/patBack terminates with the right answer in eleven states.  It
+    # does not terminate, so one of those reads is not what it looks like --
+    # patPush's slot layout is confirmed correct, so the suspect is an arm whose
+    # write is dropped rather than an offset that is wrong.
+    #
+    # Four fixes tried, all rejected because the loop survives or other cases
+    # break, so none of them is this:
+    #   (a) patFailTo = 4 in patGreedy (tail failure onto patBack).  patAfter and
+    #       patFailTo are read in exactly ONE place, patSetStep's closing bracket,
+    #       so they route a set item and %f and nothing else.  A literal tail
+    #       never consults them.
+    #   (b) patSt = 4 where patGreedy gives up on an exhausted subject.  Stops the
+    #       loop -- both .*c and .*b answer correctly -- and breaks four cases,
+    #       because with no tail there is nothing to give back: match(".*")
+    #       answered "ab", and pat-find-class, pat-match-set, pat-capture-greedy
+    #       and gsub-star-empty went with it.
+    #   (c) reading patBack's give-back position into a local before writing patI,
+    #       which is the Exec-chain trap in patBack's own header.  Loop survives.
+    #   (d) the same hoist in patGreedy, for `patSl[patSp - 2] = patI` -- the
+    #       give-back position.  If THAT write were dropped the entry would keep
+    #       its pushed position and every give-back would return to the start,
+    #       which is exactly this loop.  Loop survives, so the write lands.
+    #
+    # (trace_pc.py is NOT the tool for this: it samples once per VM instruction
+    # and the whole match happens inside one _pat gate call, so it prints one row
+    # and says nothing about patSt.  An earlier note here claimed patSt "does not
+    # change" on the strength of that trace.  It was wrong, and it is gone.)
     #
     # And it is the matcher core, not the caller's result handling: find(".*c")
-    # hangs identically, while gsub(".*") and match(".*") are both correct.
+    # hangs identically, while gsub and match with the same pattern and no tail
+    # are both correct.
     "pat-greedy-tail-hangs": "print(('abc'):match('.*c'))",
 }
 
