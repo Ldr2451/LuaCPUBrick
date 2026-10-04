@@ -99,6 +99,10 @@ def _outer_read(n):
 
 
 
+TAIL_LOOP = ("local function loop(n, a) if n == 0 then return a end "
+             "return loop(n - 1, a + n) end\n")
+
+
 TESTS = [
     ("lit-num", "print(3)", None, "run"),
     ("lit-float", "print(3.5)", None, "run"),
@@ -311,6 +315,81 @@ TESTS = [
     ("locals-past-frame", _oldest_read(64), None, "reject"),
     ("locals-global-deep", _global_read(30), None, "run"),
     ("locals-outer-29", _outer_read(29), None, "run"),
+    # `function f()` is `f = function()`, and it used to store through a
+    # SETGLOBAL whatever the name resolved to: `local a; function a() end` wrote
+    # a GLOBAL named a and left the local nil, so the first call said "attempt
+    # to call" with nothing wrong at the assignment.  One case per resolution
+    # the store can land on.
+    ("fndef-local", "local f function f() return 7 end print(f())", None, "run"),
+    ("fndef-local-redef",
+     "local f function f() return 1 end local a = f() "
+     "function f() return 2 end print(a, f())", None, "run"),
+    ("fndef-local-no-global-left",
+     # after the block the local is out of scope, so a `function g()` that had
+     # written a global would show one here
+     "do local g = 1 function g() return 'local' end print(g()) end print(g)",
+     None, "run"),
+    ("fndef-upvalue",
+     "local function o() local u = 'x' function u() return 'wrote' end return u() end "
+     "print(o())", None, "run"),
+    ("fndef-captured-by-body-after",
+     "do local q = 1 function q() return 'def' end "
+     "local function g() return q() end print(g()) end", None, "run"),
+    ("fndef-captured-by-body-before",
+     "do local q = 1 local function g() return q() end "
+     "function q() return 'def' end print(g()) end", None, "run"),
+    ("fndef-nested-still-nests",
+     "function o2() function i2() return 'inner' end return i2() end print(o2())",
+     None, "run"),
+    ("fndef-selfrec-unaffected",
+     "local function fact(n) if n <= 1 then return 1 end return n * fact(n-1) end "
+     "print(fact(6))", None, "run"),
+    ("fndef-method-still-works",
+     "local M = {v = 41} function M:add(k) return self.v + k end print(M:add(1))",
+     None, "run"),
+    # in SKIP: `local function f` that a nested function captures.  Kept as a
+    # case so the shape is named and turns green the day the double
+    # declaration is fixed; see the entry in test_chip_suite's SKIP.
+    ("localfn-captured-by-inner",
+     "local function make(k)\n"
+     "  local function step(n) return make(k) end\n"
+     "  return step\n"
+     "end\nprint(make('K')())", None, "run"),
+    # Proper tail calls: `return f()` reuses the frame, so the depth does not
+    # grow.  MAX_CALLS is 200, so a 1000-deep tail recursion is the case that
+    # separates TCO from "call depth exceeded"; the others are the shapes a
+    # frame reuse can get wrong.
+    ("tail-deep", TAIL_LOOP + " print(loop(1000, 0))", None, "run"),
+    ("tail-mutual",
+     "local even, odd\n"
+     "function even(n) if n == 0 then return true end return odd(n - 1) end\n"
+     "function odd(n) if n == 0 then return false end return even(n - 1) end\n"
+     "print(even(1001), odd(1001))", None, "run"),
+    ("tail-not-parenthesised",
+     "local function inner(n) return n * 2 end\n"
+     "local function outer() return (inner(21)) end print(outer())", None, "run"),
+    ("tail-variadic",
+     "local function va(...) return select('#', ...) end\n"
+     "local function fwd(...) return va(...) end print(fwd(1, 2, 3, 4, 5))",
+     None, "run"),
+    ("tail-multi-value",
+     "local function three() return 1, 2, 3 end\n"
+     "local function p() return three() end\n"
+     "local function o() return p() end print(o())", None, "run"),
+    ("tail-inside-for",
+     "local function sumto(n, a) if n == 0 then return a end "
+     "return sumto(n - 1, a + n) end local t = 0\n"
+     "for i = 1, 3 do t = sumto(i * 300, t) end print(t)", None, "run"),
+    ("tail-callee-wants-more-cells",
+     "local function wide(a, b, c, d)\n"
+     "  local x1, x2, x3 = a, b, c\n"
+     "  local function use(p) if p == 0 then return x1 + x2 + x3 + d end "
+     "return use(p - 1) end\n"
+     "  return use(a * 100)\n"
+     "end print(wide(2, 3, 4, 5))", None, "run"),
+    ("tail-pcall-not-a-tail",
+     "print(pcall(function(n) if n == 0 then error('boom') end "
+     "return (function() return n end)() end, 3))", None, "run"),
     ("assign-multi", "a, b = 1, 2 print(a, b)", None, "run"),
     ("assign-swap", "a, b = 10, 20 a, b = b, a print(a, b)", None, "run"),
     ("assign-short", "a, b, c = 1 print(a, b, c)", None, "run"),

@@ -65,7 +65,25 @@ TICKS = 6000
 
 # Cases the tick sim cannot reach, or that fail for a reason still open.  Every
 # entry here says what was measured, so the next attempt starts from evidence.
-SKIP = {}
+SKIP = {
+    # `local function f` declares f TWICE: once inside f's own body, so f can
+    # reach itself, and once at the body's end, in the enclosing scope, because
+    # that is the local the rest of the program sees (the body-end path is
+    # doBlockClose's `extra == 1` arm).  When a nested function CAPTURES f, the
+    # capture is registered against the FIRST entry -- so the closure the second
+    # declaration gets lands in a register no reader of the capture looks at,
+    # and the name reads as whatever else is in that register (`type(f)` answered
+    # "number"; calling it said "attempt to call").  Measured: the entry index
+    # would be funcEntryLoc[f] + fParams[f], a formula that depends on the order
+    # the three parameter-list branches declare in, so the honest fix is to
+    # carry the index from the declaration rather than recompute it -- which is
+    # a fourth stack and its own risk.  Left open rather than guessed.
+    "localfn-captured-by-inner":
+        "local function make(k)\n"
+        "  local function step(n) return make(k) end\n"
+        "  return step\n"
+        "end\nprint(make('K')())",
+}
 
 # Extra VM ticks / timeouts for heavy but reachable cases.
 TICKS_OVERRIDES = {

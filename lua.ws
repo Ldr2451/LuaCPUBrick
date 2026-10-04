@@ -615,6 +615,15 @@ var fnVar: bool[]
 // Per depth, because a function head and its parameter list are parsed at
 // different times and a global would not survive a nested head.
 var fnSelfArg: bool[]
+// Where a plain `function f()` stores the closure it makes: fnTgtK is locFind's
+// lkKind for f, fnTgtR its lkReg and fnTgtI its lkIx, all resolved at the head.
+// A STACK, per body, for the reason fnKey is one: the store happens at the end
+// of the body, and a nested `function g()` in between would land on a per-depth
+// slot.  Only the plain head pushes and only the plain store pops, so they stay
+// balanced.  0 is "global", which is what a name in no scope is.
+var fnTgtK: int[]
+var fnTgtR: int[]
+var fnTgtI: int[]
 var valStk: int[]
 var valCall: bool[]
 var valPrefix: bool[]
@@ -3528,6 +3537,9 @@ mod parseInit() {
   fnVar.resize(FRAMES, false)
   fnSelfArg.clear()
   fnSelfArg.resize(FRAMES, false)
+  fnTgtK.clear()
+  fnTgtR.clear()
+  fnTgtI.clear()
   selfFid.resize(FRAMES, -1)
   funcEntryLoc.resize(FRAMES, 0)
   opBase.resize(FRAMES, 0)
@@ -4985,7 +4997,33 @@ mod doBlockClose() {
       } else {
         let fr = regAlloc()
         bEmit(25, fr, fid, 0)
-        bEmit(6, gDeclare(tmpS), fr, 0)
+        // The head resolved this name before the body ran.  The one thing it could
+        // not know is whether the BODY captured f, because a capture turns the
+        // local's register into a seed and everything after it -- this store
+        // included -- goes through the cell.  That is the same correction
+        // locFind makes on its own (see the locCap arm), re-done here from the
+        // saved entry index, because a second locFind call site costs +790
+        // nodes and this one cannot afford it.
+        var tk = fnTgtK.pop().Value
+        var tgt = fnTgtR.pop().Value
+        let ix = fnTgtI.pop().Value
+        if tk == 1 && locCap[ix] {
+          let k2 = upSelf(ix)
+          if 0 <= k2 {
+            tk = 3
+            tgt = k2
+          }
+        }
+        if tk == 3 {
+          let uk = if 0 <= fUpSrc[fidAt[fnDepth] * MAX_UP + tgt] then 0 else 1
+          bEmit(47, fr, tgt, uk)
+          dirtySelf(tmpS)
+        } else if tk == 1 {
+          bEmit(7, tgt, fr, 0)
+          dirtySelf(tmpS)
+        } else {
+          bEmit(6, gDeclare(tmpS), fr, 0)
+        }
       }
     } else {
       blkExit()
@@ -5897,13 +5935,23 @@ mod stmtDispatch() {
     if curKind() == 3 {
       tmpS = curStr()
       cpos = cpos + 1
+      // Both heads resolve their name HERE, once, before the branch: `function
+      // M.f` reads the table it stores into, `function f` decides where the
+      // closure goes, and both go through the same ladder.  One call site, not
+      // two -- an extra locFind call site measures +790 nodes however deep it
+      // sits (doBlockClose and here measured the same), so the second one is
+      // never written.  lkRaw because both are looking for somewhere to put
+      // something: self-recursion resolves a READ (GETCLO of the running
+      // frame), which is not a place a statement can store.
+      lkRaw = true
+      locFind(tmpS)
+      lkRaw = false
       if curKind() == 5 && (curSub() == 23 || curSub() == 31) && nextKind() == 3 {
         // function M.f(...) is M.f = function(...): keep the table in a
         // register and store the function into the field when the body ends.
         // With ':' the field name is a method, so the receiver is parameter one.
         let isMethod = curSub() == 31
         let tr = regAlloc()
-        locFind(tmpS)
         if lkKind == 3 {
           bEmit(46, tr, lkReg, upKind())
         } else if lkKind == 1 {
@@ -5919,6 +5967,15 @@ mod stmtDispatch() {
           fnSelfArg[fnDepth] = true
         }
       } else {
+        // `function f()` is `f = function()`, so the ladder's answer decides
+        // the store at the end of the body: a local or an upvalue is written,
+        // and only a name in no scope becomes a global.  The answer is carried
+        // down as a stack, not per depth, because the store happens at the end
+        // of the body and a nested `function g()` in between would land on the
+        // same slot.
+        fnTgtK.push(lkKind)
+        fnTgtR.push(lkReg)
+        fnTgtI.push(lkIx)
         funcHead(false, 0, 0)
       }
     } else {
@@ -6221,6 +6278,17 @@ mod doCont() {
     } else if presIsCall {
       // `return f()` forwards all of f's values, so let the call expand
       patchAt(presCallPos)
+      // ...and it is a proper tail call, so mark bit 2: the runtime reuses
+      // this frame instead of pushing.  Idempotent by construction (a return
+      // owns its call: nothing else patches this bit), and addition preserves
+      // bits 0-1, so whichever order the two patches run in, the result is
+      // exact.  Parenthesized `(f())` never comes here -- `)` clears the call
+      // flag -- which is PUC's rule too (only bare `return f()` is proper).
+      // Bit 2 is free by measurement: the highest CALL pc across the suite is
+      // 3, so no +2 patch has ever collided with it.
+      if presCallPos >= 0 && presCallPos < bpc.length() && bpc[presCallPos] < 4 {
+        bpc[presCallPos] = bpc[presCallPos] + 4
+      }
       bEmit(27, presReg, 0, 0)
       inExpr = false
       contKind = 0
@@ -8880,7 +8948,7 @@ mod parseStep() {
 // number; `cid` is the closure the call actually names, and it goes on the
 // frame so a closure body can ask which closure it is (GETCLO, the recursive
 // name of a `local function`).
-mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
+mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool) -> bool {
   // This mod is INLINED into vmStep, which is why writing `advanced` here used to
   // work at all -- the name resolved to vmStep's local after inlining, and the
   // compiler's scope check runs before that, so it called the identifier unknown
@@ -9583,25 +9651,54 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
         // that says which frame it is (see slotBase), so the table can be
         // scratch space a later frame reuses without adopting stale cells
         let nslots = 3 * fUpSlotN[fid] + 1
-        if vaTop + nslots > MAX_VA {
+        // A tail call reuses its frame, and with it the whole region this one
+        // owned: its sequence word, its cells and its varargs are dead the
+        // moment it hands over, and they are one contiguous run ending at
+        // vaTop.  Starting the callee there is what makes the recursion
+        // constant-stack -- starting above fVaB[top] instead leaked one word a
+        // call, so 100,000 of them ran the vararg arena out with the frame
+        // stack still at one ("too many captured locals live at once").  A
+        // callee that does NOT fit -- more cells, or more varargs, than the
+        // caller had -- falls through to the usual growth, which is still
+        // bounded by the frame count and still correct.
+        //
+        // 0 <= tailB is the main chunk's exclusion: its fVaB entry is 0 and
+        // there is no region to take, so its `return f()` grows like a push.
+        let tailB = slotBase() - 1
+        let reuse = isTail && 0 <= tailB && tailB + nslots + nva <= vaTop
+        if !reuse && vaTop + nslots > MAX_VA {
           vmFail("too many captured locals live at once")
-        } else if vaTop + nslots + nva > MAX_VA {
+        } else if !reuse && vaTop + nslots + nva > MAX_VA {
           vmFail("too many varargs")
         } else {
           frameSeq = frameSeq + 1
-          let slotB = vaTop
+          let slotB = if reuse then tailB else vaTop
           vaNum[slotB] = frameSeq
           vaSpill(vmBase + a + 1 + np, slotB + nslots, nva)
-          fVaB.push(slotB + nslots)
+          if isTail {
+            fVaB[fVaB.length() - 1] = slotB + nslots
+          } else {
+            fVaB.push(slotB + nslots)
+          }
           vaTop = slotB + nslots + nva
         }
-        fFunc.push(cid)
-        fBase.push(nbase)
-        fRetA.push(a)
-        fRetBase.push(vmBase)
-        fRetPC.push(vmPc + 1)
-        fRetN.push(if mtSelf then -2 else 1)
-        fForDepth.push(forDepth)
+        // A tail call overwrites its frame instead of pushing: new function
+        // and base on top, return address KEPT -- it returns straight to our
+        // caller, with our wanted-count, which is what PUC's tailcall does.
+        // fForDepth takes the ambient value, exactly as a push would.
+        if isTail {
+          fFunc[fFunc.length() - 1] = cid
+          fBase[fBase.length() - 1] = nbase
+          fForDepth[fForDepth.length() - 1] = forDepth
+        } else {
+          fFunc.push(cid)
+          fBase.push(nbase)
+          fRetA.push(a)
+          fRetBase.push(vmBase)
+          fRetPC.push(vmPc + 1)
+          fRetN.push(if mtSelf then -2 else 1)
+          fForDepth.push(forDepth)
+        }
         vmBase = nbase
         vmPc = fStart[fid]
         advanced = true
@@ -10040,17 +10137,20 @@ mod vmStep() {
         let cid = toInt(vNum(a))
         // C operand bits: 1 = my last argument is an expanding call (so the
         // arg count is one short and the tail's own count is added at run
-        // time); 2 = I return all of my results, not just one.  Both can be
-        // set (3) when a call is both the tail of an enclosing call and itself
-        // expanded into a target list.
+        // time); 2 = I return all of my results, not just one; 4 = I am a
+        // proper tail call (`return f()`), so reuse the current frame instead
+        // of pushing.  Bit 2 survives the +2 patches (addition preserves it)
+        // and is set once, at the return that owns the call, so masking is
+        // exact here.
         //
         // The arm used to be `op == 23 || op == 41` and mtSelf also tested
         // `op == 41`, for CALLM.  It is still an opcode in docs/vm-isa and still
         // nothing emits it -- there is no bEmit(41, ...) anywhere in the
         // compiler -- so both were a comparison paid by every Lua call in the
         // hottest arm in the chip.
-        let mtArg = if c == 1 || c == 3 then true else false
-        let mtSelf = if c == 2 || c == 3 then true else false
+        let mtArg = if c == 1 || c == 3 || c == 5 || c == 7 then true else false
+        let mtSelf = if c == 2 || c == 3 || c == 6 || c == 7 then true else false
+        let isTail = 4 <= c
         // a tail argument's call already ran and reported how many values it
         // produced; the enclosing call counts those in place of its last arg
         let tailN = if mtArg then (if 0 <= retCountV then retCountV else 0) else 0
@@ -10062,7 +10162,7 @@ mod vmStep() {
           // a builtin is its own closure, so the prototype is the number again
           // until the closure records start
           let fid = if cid < cloBase then cid else cloF[cid]
-          if gateHigh(fid, a, nargs, mtSelf, cid) {
+          if gateHigh(fid, a, nargs, mtSelf, cid, isTail) {
             advanced = true
           }
         }
