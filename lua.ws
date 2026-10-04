@@ -35,7 +35,7 @@
 ///                         tab-separated plus a newline, capped at 64 chars), an
 ///                         io.write is its raw text with no tab and no newline; the
 ///                         last 32 appends are kept, cleared on restart
-///   out outNum0..outNum4: float  written by outnum(i, v), i 1..5 (nil writes 0.0;
+///   out outNum0..outNum3: float  written by outnum(i, v), i 1..4 (nil writes 0.0;
 ///                         writing a string/table/function is a runtime error)
 ///   out outStr0..outStr1: string  written by outstr(i, v), i 1..2, Lua-formatted
 ///                                (nil writes "")
@@ -275,7 +275,6 @@
 @right out outNum1: float = oF1.Value
 @right out outNum2: float = oF2.Value
 @right out outNum3: float = oF3.Value
-@right out outNum4: float = oF4.Value
 @right out outStr0: string = oS4.Value
 @right out outStr1: string = oS5.Value
 @right out outArr: float[] = outArrV
@@ -311,19 +310,29 @@ const MAX_FUNCS = 96
 // moment pcall took slot 39.  The number that matters is MAX_GLOBALS minus the
 // builtin slots, and it should stay well clear of what a real program declares.
 const MAX_GLOBALS = 96
-const MAX_CALLS = 64
+// PUC's limit, not ours: LUAI_MAXCCALLS is 200, and a Lua-to-Lua call really
+// does take a C level (luaV_execute recurses), so PUC answers "stack overflow"
+// at about this depth.  Going above it would let a program nest deeper here than
+// the reference ever does -- capacity nobody asked for, and a divergence for
+// anyone comparing.
+const MAX_CALLS = 200
 // Frames are 1-based on fnDepth (the main chunk is frame 1), so every array
 // indexed by fnDepth needs one slot more than the call limit.  This used to be a
 // bare 33 in twelve places and a bare 33 in four MORE that are sized by CAPTURE
 // count instead -- the same number, two different meanings, which is exactly why
 // raising MAX_CALLS nearly resized the wrong four.
-const FRAMES = 65
+const FRAMES = 201
 // the register file is MAX_CALLS frames of MAX_REGS slots.  Spelled as a
 // literal, not MAX_CALLS * MAX_REGS: a const computed from a const is one node
 // more per use than the number it works out to (measured, both here).
-const VREGS = 4096
-const MAX_TABLES = 132
-const MAX_HEAP = 1024
+const VREGS = 12800
+const MAX_TABLES = 512
+// TOTAL entries across every table, not per table -- there is no collector, so
+// this is the whole budget a program gets.  PUC sets no limit here (tables grow
+// until memory runs out), so the number is ours to pick and the only cost is
+// reset clearing it, which is why it is not sized for a program that cannot
+// exist: the ~4 KB source buffer caps a program long before this does.
+const MAX_HEAP = 4096
 // live vararg values across all active frames
 const MAX_VA = 256
 // Upvalue descriptors per function, and the stride of fUpSrc/cloU: one per
@@ -393,7 +402,6 @@ var oF0: float = 0.0
 var oF1: float = 0.0
 var oF2: float = 0.0
 var oF3: float = 0.0
-var oF4: float = 0.0
 var oS4: string = ""
 var oS5: string = ""
 var outArrV: float[]
@@ -837,7 +845,7 @@ var cloActive: bool = false
 // at all.
 // The two arrays below carry the seed for every slot, and that pair plus the
 // gDeclare list are the authority.  This comment used to spell the whole slot map
-// out in prose, and was wrong twice over: it listed outNum0..outNum4, invec and
+// out in prose, and was wrong twice over: it listed outNum0..outNum3, invec and
 // outvec as globals, and none of the three exists -- the outputs are calls and the
 // vector ports are gone (RESERVED_FIDS keeps the ids).  That is a hand-kept mirror
 // of numbers the chip computes, which is how a doc ends up confidently disagreeing
@@ -1622,7 +1630,7 @@ mod gDeclare(name: string) -> int {
 mod noteArity(name: string) {
   if curKind() == 5 && curSub() == 15 {
     if name == "outnum" {
-      nameWarn = nameWarn .. "warn: outnum() takes an index and a value, i in 1..5, and was given none\n"
+      nameWarn = nameWarn .. "warn: outnum() takes an index and a value, i in 1..4, and was given none\n"
     }
     if name == "outstr" {
       nameWarn = nameWarn .. "warn: outstr() takes an index and a value, i in 1..2, and was given none\n"
@@ -1643,7 +1651,7 @@ mod noteIndex(name: string) {
   if curKind() == 1 {
     let v = curNum()
     if name == "outnum" && !(1.0 <= v && v <= 5.0) {
-      nameWarn = nameWarn .. "warn: outnum index must be 1..5, and this call is out of range\n"
+      nameWarn = nameWarn .. "warn: outnum index must be 1..4, and this call is out of range\n"
     }
     if name == "outstr" && !(1.0 <= v && v <= 2.0) {
       nameWarn = nameWarn .. "warn: outstr index must be 1..2, and this call is out of range\n"
@@ -2255,7 +2263,6 @@ mod vmReset() {  tmap.clear()
   oF1 = 0.0
   oF2 = 0.0
   oF3 = 0.0
-  oF4 = 0.0
   oS4 = ""
   oS5 = ""
   outArrV.clear()
@@ -9391,7 +9398,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
     }
     retCountV = 1
   } else if fid == 23 {
-    // outnum(i, v): write one of the five numeric output ports.  A call, not an
+    // outnum(i, v): write one of the four numeric output ports.  A call, not an
     // assignment, so writing to the world reads as an action.  The index is
     // 1-BASED like every table a Lua program can already see, so outnum(1, v)
     // and outarr(1, v) are the same slot and neither has an off-by-one to
@@ -9399,8 +9406,8 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
     let oi = if 0 < nargs then toInt(vNum(a + 1)) else -1
     let ot = if 1 < nargs then vTag(a + 2) else 0
     let ov = if 1 < nargs then vNum(a + 2) else 0.0
-    if oi < 1 || oi > 5 {
-      vmFail("outnum index must be 1..5")
+    if oi < 1 || oi > 4 {
+      vmFail("outnum index must be 1..4")
     } else if ot != 1 && ot != 6 && ot != 0 && ot != 3 {
       vmFail("cannot convert to number (outnum takes numbers)")
     } else if oi == 1 {
@@ -9411,8 +9418,6 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int) -> bool {
       oF2 = if ot == 0 then 0.0 else ov
     } else if oi == 4 {
       oF3 = if ot == 0 then 0.0 else ov
-    } else {
-      oF4 = if ot == 0 then 0.0 else ov
     }
     vSetNil(a)
     retCountV = 0
@@ -11058,7 +11063,7 @@ mod staticAdvice(p: string) -> string {
     h = h .. "warn: no io/os/debug/utf8 library\n"
   }
   if srcUsesField(p, "inInt0") || srcUsesField(p, "outInt0") {
-    h = h .. "warn: there is no int port: one number type, so use inNum0..inNum3 and outnum(i, v) with i in 1..5\n"
+    h = h .. "warn: there is no int port: one number type, so use inNum0..inNum3 and outnum(i, v) with i in 1..4\n"
   }
   if srcUsesField(p, "inVec") || srcUsesField(p, "outVec")
     || srcUsesField(p, "invecx") || srcUsesField(p, "outvec") {

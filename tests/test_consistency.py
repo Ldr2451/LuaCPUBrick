@@ -155,7 +155,7 @@ outs = re.findall(r"@right out (\w+)(?:: (\S+))? = (\S+)", WS)
 outs_d = {n: (t, b) for n, t, b in outs}
 for port, typ in [("log", "string"), ("outNum0", "float"),
                   ("outNum1", "float"), ("outNum2", "float"),
-                  ("outNum3", "float"), ("outNum4", "float"),
+                  ("outNum3", "float"),
                   ("outStr0", "string"),
                   ("outStr1", "string"), ("outArr", "float[]"),
                   ("result", "string"), ("err", "string"),
@@ -166,7 +166,6 @@ for port, typ in [("log", "string"), ("outNum0", "float"),
         check(f"port-{port}-type", outs_d[port][0] == typ,
               f"got {outs_d[port][0]}")
 for port, bindvar in [("log", "logV"), ("outNum0", "oF0"),
-                      ("outNum4", "oF4"),
                       ("outStr0", "oS4"), ("result", "resultV"),
                       ("err", "errV"), ("progDebug", "progDebugV")]:
     check(f"port-{port}-bound", re.search(
@@ -202,8 +201,7 @@ for where, body in (("parseInit", pi), ("vmReset", vr)):
         check(f"clear-target-{tgt}-{where}", tgt in decls_arr,
               "clears undeclared array")
 # restart resets outputs, log and error text
-for var in ["logV", "oF0", "oF4", "oS4",
-            "resultV", "errV"]:
+for var in ["logV", "oF0", "oS4", "resultV", "errV"]:
     check(f"reset-{var}", re.search(rf"\b{var} = ", vr) is not None)
 check("reset-logLines", "logLines.clear()" in vr)
 check("reset-outArrV", "outArrV.resize(64, 0.0)" in vr)
@@ -347,12 +345,14 @@ except Exception as _e:
     check("case-inputs-in-the-inputs-slot", False, "the check failed: %r" % (_e,))
 
 # The graph the tests RUN must be the graph this lua.ws compiles to.  Four cases
-# read outNum4 as 0.0 for a whole session while a direct probe of the same program
-# read -3.5, and the reason was that the suite's graph still had outCol and
-# outInt0 - ports deleted days earlier - and no outNum4.  Nothing said so: a
-# stale graph is a silent wrong answer, and it looks exactly like a chip bug.
-# So the port sets are compared, here, by compiling the source and asking the
-# resulting Sim what ports it has.
+# read a deleted output as 0.0 for a whole session while a direct probe of the
+# same program read the real value, and the reason was that the suite's graph
+# still carried outCol and outInt0 - ports removed days earlier - while missing
+# one that existed.  Nothing said so: a stale graph is a silent wrong answer,
+# and it looks exactly like a chip bug.  So the port sets are compared, here, by
+# compiling the source and asking the resulting Sim what ports it has.  The other
+# half of that mirror now lives in chip_ports, which refuses to answer a default
+# for a port the graph does not have.
 try:
     sys.path.insert(0, os.path.join(os.path.dirname(HERE), "irrun"))
     sys.path.insert(0, HERE)

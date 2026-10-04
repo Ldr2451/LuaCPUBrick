@@ -267,17 +267,33 @@ def fatal(prog_debug):
     return any(l.startswith("err:") for l in (prog_debug or "").splitlines())
 
 
+# The output ports, in the order the `modelio` expectations read them.  This is
+# the ONE place allowed to know port names (docs/lessons.md), and it must not be
+# able to answer a default for a port that is not in the graph: that mirror is
+# exactly what made four cases read 0.0 for an output the chip was writing
+# correctly, after outCol and outInt0 had been deleted days earlier.  A name here
+# with no matching port is an error, never a 0.0.
+OUT_NUMS = ["outNum0", "outNum1", "outNum2", "outNum3"]
+OUT_STRS = ["outStr0", "outStr1"]
+
+
+def _port(og, name, default):
+    if name not in og:
+        raise AssertionError("port %r is not in the graph, so the port list in "
+                             "chip_ports is stale -- deleting a port has to "
+                             "delete its name here too" % name)
+    return og[name]
+
+
 def chip_ports(r):
     og = r["outGlobals"]
-    # five numbers then two strings: the numeric outputs are all float now, so
+    # four numbers then two strings: the numeric outputs are all float now, so
     # there is no separate int to carry and this list has one shape fewer
     return {
         "log": r["log"],
-        "outGlobals": [og.get("outNum0", 0.0), og.get("outNum1", 0.0),
-                       og.get("outNum2", 0.0), og.get("outNum3", 0.0),
-                       og.get("outNum4", 0.0),
-                       og.get("outStr0", ""), og.get("outStr1", "")],
-        "outArr": list(og.get("outArr", [0.0] * 64)),
+        "outGlobals": [_port(og, n, 0.0) for n in OUT_NUMS]
+                      + [_port(og, n, "") for n in OUT_STRS],
+        "outArr": list(_port(og, "outArr", None)),
         "result": og.get("result", ""),
         "err": og.get("err") or "",
         "progDebug": og.get("progDebug") or "",
@@ -576,6 +592,10 @@ def lifecycle_sample(sim_, tick):
         "tick": tick,
         "finished": bool(sim_.finished),
         "log": sim_.log,
+        # the whole capture, not a hand-picked few: chip_ports compares the
+        # output ports for EVERY mode, so a partial dict here would make it
+        # report the ports it was not given as missing ones
+        "outGlobals": og,
         "outNum0": float(og.get("outNum0", 0.0)),
         "busy": bool(og.get("busy", False)),
         "err": og.get("err") or "",
@@ -776,20 +796,22 @@ def run_trace(sim, src, kw, ticks):
     sim.inputs = sim_inputs(src, kw)
     r = sim.run(ticks, on_tick=lambda s, tick: marks.append(s.log))
     pd = r["outGlobals"].get("progDebug") or ""
-    return {"log": marks, "ticks": sim.tick, "err": (r["outGlobals"].get("err")
-                                                     or ""),
+    return {"log": marks, "ticks": sim.tick, "outGlobals": r["outGlobals"],
+            "err": (r["outGlobals"].get("err")
+                    or ""),
             "progDebug": pd, "progOk": not fatal(pd)}
 
 
 def _assert_graph_is_this_chip(sim):
     """A worker must be running the graph THIS lua.ws compiles to.
 
-    Four cases read outNum4 as 0.0 for a whole session while a direct probe of the
-    same program read -3.5, and the graph the suite was running still had outCol
-    and outInt0 - ports deleted days earlier.  A stale graph is a silent wrong
-    answer that looks exactly like a chip bug, so the port set a worker actually
-    has is compared with the source's, once per process, and the mismatch is said
-    out loud instead of being discovered four cases later.
+    Four cases read a deleted output as 0.0 for a whole session while a direct
+    probe of the same program read the real value, and the graph the suite was
+    running still had outCol and outInt0 - ports removed days earlier - while
+    missing one that existed.  A stale graph is a silent wrong answer that looks
+    exactly like a chip bug, so the port set a worker actually has is compared
+    with the source's, once per process, and the mismatch is said out loud
+    instead of being discovered four cases later.
     """
     global _GRAPH_CHECKED
     if _GRAPH_CHECKED:
@@ -829,10 +851,7 @@ def run_in_sim(sim, p, sim2=None):
         baseline, first, reset, second = run_lifecycle(sim, p)
         lifecycle = {"baseline": baseline, "first": first,
                      "reset": reset, "second": second}
-        r = {"log": first["log"], "outGlobals": {
-            "outNum0": first["outNum0"], "err": first["err"],
-            "progDebug": first["progDebug"],
-            "progOk": first["progOk"]}}
+        r = {"log": first["log"], "outGlobals": first["outGlobals"]}
     elif p["mode"] == "lockstep":
         # Two equal chips, the same program, the same start: the output must be the
         # same AT EVERY TICK, not merely the same at the end, or a program that
@@ -856,8 +875,7 @@ def run_in_sim(sim, p, sim2=None):
                     "errA": a["err"], "errB": b["err"],
                     "okA": a["progOk"], "okB": b["progOk"]}
         r = {"log": a["log"][-1] if a["log"] else "",
-             "outGlobals": {"err": a["err"], "progDebug": a["progDebug"],
-                            "progOk": a["progOk"]}}
+             "outGlobals": a["outGlobals"]}
     else:
         sim.reset()
         sim.inputs = sim_inputs(src, kw)
@@ -880,11 +898,13 @@ def run_in_sim(sim, p, sim2=None):
         "log": r["log"],
         # The sim's OWN capture, passed through.  This used to be a hand-written
         # dict of ports, and it drifted: it still listed outCol and outInt0 -
-        # ports deleted days earlier - and had no outNum4, so four cases read 0.0
-        # for an output the chip was writing correctly, while a direct probe of the
-        # same program read the right value.  A hand-kept mirror of somebody
-        # else's dict is a second source of truth; the shape belongs to chip_ports,
-        # which is allowed to know about ports, and the VALUES come from here.
+        # ports removed days earlier - while missing one that existed, so four
+        # cases read 0.0 for an output the chip was writing correctly, while a
+        # direct probe of the same program read the right value.  A hand-kept
+        # mirror of somebody else's dict is a second source of truth; the shape
+        # belongs to chip_ports, which is allowed to know about ports AND refuses
+        # to invent a default for a port the graph does not have, and the VALUES
+        # come from here.
         "outGlobals": og,
     }
 

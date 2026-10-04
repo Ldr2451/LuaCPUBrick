@@ -25,28 +25,40 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "irrun"))
+sys.path.insert(0, os.path.join(ROOT, "tests"))
 from irsims import ChipRunner  # noqa: E402
+import spec  # noqa: E402
 
 CAP = 40000
 
-# (label, program, what PUC answers).  Each is the SMALLEST program that reaches
-# the named ceiling: one step past it where the limit is a round number.
+# Every probe point is derived from spec, and the "over" side is always past the
+# ceiling.  Both halves used to be literals, which made this tool quietly stop
+# probing anything the moment a limit was raised: it kept reporting the old
+# ceiling in its own label and its 600th entry now succeeds, so the row reads as
+# a pass when it is measuring a program well inside the arena.
 PROBES = [
-    ("table entries (MAX_HEAP 512)", "local t = {} for i = 1, %d do t[i] = i end "
-     "print(#t)", (500, 600)),
-    ("call depth (MAX_CALLS 32)", "local function d(n) if n == 0 then return 0 "
-     "end return 1 + d(n - 1) end print(d(%d))", (30, 40)),
-    ("upvalues/function (MAX_UP 16)",
+    ("table entries (MAX_HEAP %d)" % spec.MAX_HEAP,
+     "local t = {} for i = 1, %d do t[i] = i end print(#t)",
+     (spec.MAX_HEAP - 12, spec.MAX_HEAP + 88)),
+    ("call depth (MAX_CALLS %d)" % spec.MAX_CALLS,
+     "local function d(n) if n == 0 then return 0 end "
+     "return 1 + d(n - 1) end print(d(%d))",
+     (spec.MAX_CALLS - 4, spec.MAX_CALLS + 40)),
+    ("upvalues/function (MAX_UP)",
      "local function f() %s local g = function() return u0 end return g() end "
-     "print(f())", (16, 20)),
-    ("values per call (MAXVALS 16)",
-     "local function g() return %s end print(g())", (16, 20)),
-    ("registers/function (MAX_REGS 64)",
-     "local function f() %s return r0 end print(f())", (60, 70)),
-    ("tables (MAX_TABLES 68)", "local t = {} for i = 1, %d do t[i] = {} end "
-     "print(#t)", (60, 80)),
-    ("outArr slots", "for i = 1, %d do outarr(i, i) end print('wrote')",
-     (60, 100)),
+     "print(f())", (8, 20)),
+    ("values per call (MAXVALS %d)" % spec.MAXVALS,
+     "local function g() return %s end print(g())",
+     (spec.MAXVALS - 1, spec.MAXVALS + 4)),
+    ("registers/function (MAX_REGS %d)" % spec.MAX_REGS,
+     "local function f() %s return r0 end print(f())",
+     (spec.MAX_REGS - 4, spec.MAX_REGS + 6)),
+    ("tables (MAX_TABLES %d)" % spec.MAX_TABLES,
+     "local t = {} for i = 1, %d do t[i] = {} end print(#t)",
+     (spec.MAX_TABLES - 4, spec.MAX_TABLES + 12)),
+    ("outArr slots (ARR_SLOTS %d)" % spec.OUTARR,
+     "for i = 1, %d do outarr(i, i) end print('wrote')",
+     (spec.OUTARR - 4, spec.OUTARR + 36)),
 ]
 
 

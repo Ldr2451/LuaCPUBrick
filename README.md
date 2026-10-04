@@ -52,12 +52,11 @@ A WireScript chip is wires, so everything a program can see or change is a port.
            inNum0 --|___________|-- outNum1
            inNum1 --|           |-- outNum2
            inNum2 --|  Lua 5.5  |-- outNum3
-           inNum3 --|           |-- outNum4
-           inStr0 --|___________|-- outStr0
-           inStr1 --|           |-- outStr1
-         inNumArr --|           |-- outArr
-         inStrArr --|           |-- result
-                                |-- err
+           inNum3 --|           |-- outStr0
+           inStr0 --|___________|-- outStr1
+           inStr1 --|           |-- outArr
+         inNumArr --|           |-- result
+         inStrArr --|           |-- err
                                 |-- progDebug
                                 |-- busy
 ```
@@ -74,7 +73,7 @@ strings: `outnum(i, v)`, `outstr(i, v)` and `outarr(i, v, ...)` for the array.
 A written value stays on its port until something writes there again, so whatever
 is reading the chip can take its time.
 Every index a program passes counts from 1, the way a Lua table does, in both
-families: `outnum(1..5, v)`, `outstr(1..2, v)` and `outarr(1.., v...)` all start
+families: `outnum(1..4, v)`, `outstr(1..2, v)` and `outarr(1.., v...)` all start
 at 1, so there is no off-by-one to remember between the two.
 
 ## Running the tests

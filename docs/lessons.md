@@ -41,6 +41,16 @@ declarations in `tests/test_consistency.py` (`graph-inputs-match-source`,
 `graph-outputs-match-source`) and once per suite worker
 (`_assert_graph_is_this_chip`). Both nets exist because of the mirror.
 
+**And the mirror itself now refuses to answer.** Those two nets compare the
+graph against `lua.ws`, but the mirror had already drifted *inside* the suite
+before either net ran, so the list itself had to become incapable of the
+failure: `chip_ports` reads each named port through `_port`, which raises if the
+graph does not have it. `og.get(name, default)` is the shape of the bug, not a
+way to write the fix — a default is an answer, and the wrong answer is silent.
+This was not hypothetical the second time: removing `outNum4` meant deleting a
+port, and a `chip_ports` still naming it would have read 0.0 forever with no
+case failing.
+
 ## A reset belongs to the phase that owns the state
 
 `parseInit` cleared `lerr`, `lerrMsg`, `lerrLine` and `lline` but not `lstage`.
