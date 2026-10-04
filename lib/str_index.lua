@@ -1,22 +1,31 @@
--- string.len and string.sub: the two a program reaches for in every loop.
+-- string.len and string.sub.
 --
--- Split out of the piece that used to hold len, sub, byte and char together,
--- because a piece is charged for its CHARACTERS at boot and byte/char are the
--- two that build a table with a loop.  A program that only ever takes a
--- substring was measured paying 1,094 ticks of boot for a group where 420 of the
--- 838 characters were unreachable for it; this file is 434 of them.
+-- Both take their string through luaL_checklstring, which converts a NUMBER and
+-- refuses anything else, so string.len(999) is 3 and string.sub(12345, 2, 3) is "23".
+-- Neither did: `#s` is an opcode with no coercion in front of it, so both raised
+-- "attempt to get length of a number value" on a number and len({}) answered 0
+-- silently where PUC refuses a table.
 --
--- Neither of these needs the table library or unpack, which is what makes the
--- split clean: string.byte used `unpack(r, 1, #r)`, so a program that called
--- byte also dragged in the table-list piece whether it wanted it or not.
+-- So the piece does what luaL_checklstring does.  In the piece rather than the gate:
+-- piece text is a string constant, so this costs boot ticks and no nodes, and the
+-- gate is shared with callers that already hold a string.  One `type` call per
+-- invocation; the message is built only on the failing path.
 string = string or {}
-string.len = function(s) return #s end
+string.len = function(s)
+local t = type(s)
+if t == "number" then s = tostring(s)
+elseif t ~= "string" then error("bad argument #1 to 'string.len' (string expected, got " .. t .. ")", 2) end
+return #s
+end
 string.sub = function(s, i, j)
-  local l = #s
-  i = i or 1
-  j = j or -1
-  if i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end
-  if j < 0 then j = l + j + 1 elseif j > l then j = l end
-  if i > j then return "" end
-  return _s(1, s, i - 1, j - i + 1)
+local t0 = type(s)
+if t0 == "number" then s = tostring(s)
+elseif t0 ~= "string" then error("bad argument #1 to 'string.sub' (string expected, got " .. t0 .. ")", 2) end
+local l = #s
+i = i or 1
+j = j or -1
+if i < 0 then i = l + i + 1 if i < 1 then i = 1 end elseif i == 0 then i = 1 end
+if j < 0 then j = l + j + 1 elseif j > l then j = l end
+if i > j then return "" end
+return _s(1, s, i - 1, j - i + 1)
 end

@@ -549,6 +549,37 @@ TESTS = [
      "string.sub(s, 2), string.sub(s, 0), string.sub(s, 4, 2))", None, "run"),
     ("str-byte", "print(string.byte('A'), string.byte('ABC', 2), "
      "string.byte('ABC', 1, 3))", None, "run"),
+    # PUC takes every one of these through luaL_checklstring, which ACCEPTS A NUMBER
+    # and converts it -- so string.len(999) is 3 and string.sub(12345, 2, 3) is "23".
+    # Here they raised "attempt to get length of a number value", because `#s` is an
+    # opcode with no coercion in front of it.
+    #
+    # The case that made this worth finding is str-coerce-case-upper: the _s case
+    # gate did not RAISE on a number, it answered "UPPER" -- the literal never appears
+    # in the program, so nothing anywhere said a value was mistyped.  A wrong answer
+    # is worse than an error, and this one was silent.
+    #
+    # And it is NOT a missing string metatable, which is what it looked like:
+    # ('A').byte(1) was the probe that suggested one, and op 29 already falls back to
+    # the string table for a string receiver.  PUC does not prepend the receiver for a
+    # dot call either -- ('A').byte(1) is string.byte(1) there, and that is 49 -- so
+    # the whole divergence was this one coercion.
+    ("str-coerce-number", "print(string.byte(1), string.len(999), "
+     "string.sub(12345, 2, 3), string.reverse(123))", None, "run"),
+    ("str-coerce-case", "print(string.upper(42), string.lower(42), "
+     "string.upper('ab'), string.lower('AB'), string.upper(1.5))", None, "run"),
+    ("str-coerce-method", "print(('abc'):upper(), ('123'):reverse(), "
+     "('42'):len(), ('77'):byte(1))", None, "run"),
+    # A number that does NOT convert must still raise, and with PUC's wording: the
+    # coercion is a number check, not a blanket tostring.  Three of these were SILENT
+    # -- string.len({}) answered 0 and string.rep({}, 2) answered nil, where PUC
+    # refuses a table, and a silent nil is the shape of bug that costs a session.
+    ("str-coerce-refused", "print(pcall(string.len, {})) "
+     "print(pcall(string.upper, nil)) print(pcall(string.rep, {}, 2))", None,
+     "run"),
+    ("str-coerce-refused-more", "print(pcall(string.sub, {})) "
+     "print(pcall(string.byte, {})) print(pcall(string.lower, {})) "
+     "print(pcall(string.reverse, {}))", None, "run"),
     ("str-char", "print(string.char(72, 105, 33))", None, "run"),
     ("str-rep", "print(string.rep('ab', 3), string.rep('ab', 3, '-'), "
      "string.rep('ab', 0), string.rep('x', 1))", None, "run"),
