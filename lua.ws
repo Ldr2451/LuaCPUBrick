@@ -390,8 +390,10 @@ const LIB_tab_concat = "table = table or {}\ntable.concat = function(t, sep, i, 
 const LIB_tab_sort = "table = table or {}\n_lt = function(a, b) return a < b end\ntable.sort = function(t, cmp)\n  local lt = cmp or _lt\n  for i = 2, #t do\n    local v = t[i]\n    local j = i - 1\n    while j >= 1 and lt(v, t[j]) do t[j + 1] = t[j] j = j - 1 end\n    t[j + 1] = v\n  end\nend\n"
 const LIB_io = "io = io or {}\nio.read = function(...) if select('#', ...) == 0 then return _rd('*l') end return _rd((...)) end\nio.write = function(...) for i = 1, select('#', ...) do _wr(tostring((select(i, ...)))) end end\n_io_next = function() local l = _rd('*l') if l == nil then return nil end return l end\nio.lines = function() _rd('*r') return _io_next end\n"
 const LIB_str_gsub = "string = string or {}\nstring.gsub = function(s, p, r, n)\nif type(s) == \"number\" then s = tostring(s) end\nlocal sl, out, pos, cnt, last = #s, \"\", 1, 0, -1\nlocal anch = _s(1, p, 0, 1) == \"^\"\nlocal rt = type(r)\nif r == nil then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got no value)\", 2) end\nif rt == \"number\" then r = tostring(r) rt = \"string\" end\nlocal add = function(v)\nlocal tv = type(v)\nif tv == \"string\" then return v end\nif tv == \"number\" then return tostring(v) end\nif tv == \"boolean\" then error(\"invalid replacement value (a boolean)\", 2) end\nerror(\"invalid replacement value (a \" .. tv .. \")\", 2)\nend\nlocal rep = function(kt, kr, add, res, m)\nif kt == \"function\" then\nlocal v, w\nif res[3] == 0 then v, w = kr(m) else v, w = kr(unpack(res, 4, 3 + res[3])) end\nif v == nil or v == false then return m end\nif w == nil or w == false then return add(v) end\nreturn add(v) .. add(w)\nelseif kt == \"table\" then\nlocal k = m\nif res[3] > 0 then k = res[4] end\nlocal v = kr[k]\nif v == nil or v == false then return m end\nreturn add(v)\nelse\nlocal o, i, rl = \"\", 1, #kr\nwhile i <= rl do\nlocal j = string.find(kr, \"%\", i, true)\nif j == nil then o = o .. _s(1, kr, i - 1, rl - i + 1) break end\nif i < j then o = o .. _s(1, kr, i - 1, j - i) end\nif j == rl then error(\"invalid use of '%' in replacement string\", 2) end\nlocal d = _s(1, kr, j, 1)\nif d == \"%\" then o = o .. \"%\"\nelseif d == \"0\" then o = o .. m\nelse\nlocal q = _s(4, d, 0, 0) - 48\nif q < 1 or 9 < q then error(\"invalid use of '%' in replacement string\", 2) end\nif 1 < q and res[3] < q then error(\"invalid capture index %\" .. d, 2) end\nif q == 1 and res[3] == 0 then o = o .. m else o = o .. add(res[q + 3]) end\nend\ni = j + 2\nend\nreturn o\nend\nend\nif rt ~= \"string\" and rt ~= \"table\" and rt ~= \"function\" then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got \" .. rt .. \")\", 2) end\nif n == nil then n = sl + 1 end\nif type(n) ~= \"number\" then error(\"bad argument #4 to 'string.gsub' (number expected, got \" .. type(n) .. \")\", 2) end\nn = _m(13, n, 0)\nif n == nil then error(\"bad argument #4 to 'string.gsub' (number has no integer representation)\", 2) end\nif n < 1 then return s, 0 end\nwhile cnt < n do\nlocal res = {_pat(2, s, p, pos)}\nif res[1] == nil then break end\nlocal a, b = res[1], res[2]\nif b == last then\nif pos <= sl then out = out .. _s(1, s, pos - 1, 1) pos = pos + 1 else break end\nelse\nif pos < a then out = out .. _s(1, s, pos - 1, a - pos) end\nout = out .. rep(rt, r, add, res, _s(1, s, a - 1, b - a + 1))\ncnt = cnt + 1\npos = b + 1\nend\nlast = b\nif anch then break end\nend\nreturn out .. _s(1, s, pos - 1, sl - pos + 1), cnt\nend\n"
-const LIB_tonumber = "local function _tonum_conv(v)\nreturn v + 0\nend\ntonumber = function(...)\nlocal n = select(\"#\", ...)\nlocal v = select(1, ...)\nlocal base = select(2, ...)\nif n == 0 then\nerror(\"bad argument #1 to 'tonumber' (value expected)\", 2)\nend\nif base ~= nil then\nif type(v) ~= \"string\" then\nerror(\"bad argument #1 to 'tonumber' (string expected, got \" .. type(v) .. \")\", 2)\nend\nif base < 2 or base > 36 then\nerror(\"bad argument #2 to 'tonumber' (base out of range)\", 2)\nend\nif base ~= 10 then\nerror(\"tonumber with a base other than 10 is not supported\", 2)\nend\nend\nif type(v) == \"number\" then return v end\nif type(v) ~= \"string\" then return nil end\nlocal ok, r = pcall(_tonum_conv, v)\nif not ok then return nil end\nreturn r\nend\n"
+const LIB_tonumber = "local function _tonum_conv(v)\nreturn v + 0\nend\nlocal function _tonum_hex(s)\nlocal n = #s\nlocal i = 0\nlocal b = 0\nwhile i < n do\nb = _s(4, s, i, 0)\nif b ~= 32 and b ~= 9 and b ~= 10 and b ~= 13 and b ~= 12 and b ~= 11 then break end\ni = i + 1\nend\nlocal j = n - 1\nwhile j >= i do\nb = _s(4, s, j, 0)\nif b ~= 32 and b ~= 9 and b ~= 10 and b ~= 13 and b ~= 12 and b ~= 11 then break end\nj = j - 1\nend\nif i > j then return nil end\nlocal neg = false\nb = _s(4, s, i, 0)\nif b == 43 or b == 45 then\nneg = b == 45\ni = i + 1\nend\nif _s(1, s, i, 2) ~= \"0x\" and _s(1, s, i, 2) ~= \"0X\" then return nil end\ni = i + 2\nlocal v = 0\nlocal nsig = 0\nlocal ri = 0\nlocal ndig = 0\nlocal started = false\nlocal guard = 0\nlocal sticky = false\nwhile i <= j do\nb = _s(4, s, i, 0)\nlocal dv = nil\nif b >= 48 and b <= 57 then dv = b - 48 end\nif b >= 65 and b <= 70 then dv = b - 55 end\nif b >= 97 and b <= 102 then dv = b - 87 end\nif dv == nil then break end\nndig = ndig + 1\nif dv ~= 0 or started then\nstarted = true\nif nsig < 13 then\nv = v * 16 + dv\nnsig = nsig + 1\nelseif ri == 0 then\nguard = dv\nri = ri + 1\nelse\nif dv ~= 0 then sticky = true end\nri = ri + 1\nend\nend\ni = i + 1\nend\nif guard > 8 or (guard == 8 and (sticky or v % 2 == 1)) then\nv = v + 1\nend\nlocal vf = 0\nlocal nf = 0\nlocal fstarted = false\nlocal nodot = true\nif i <= j and _s(4, s, i, 0) == 46 then\nnodot = false\ni = i + 1\nlocal nfsig = 0\nwhile i <= j do\nb = _s(4, s, i, 0)\nlocal dv = nil\nif b >= 48 and b <= 57 then dv = b - 48 end\nif b >= 65 and b <= 70 then dv = b - 55 end\nif b >= 97 and b <= 102 then dv = b - 87 end\nif dv == nil then break end\nndig = ndig + 1\nnf = nf + 1\nif dv ~= 0 or fstarted then\nfstarted = true\nif nfsig < 13 then\nvf = vf * 16 + dv\nnfsig = nfsig + 1\nend\nend\ni = i + 1\nend\nend\nif ndig == 0 then return nil end\nlocal ep = 0\nlocal nopexp = true\nif i <= j then\nb = _s(4, s, i, 0)\nif b == 112 or b == 80 then\nnopexp = false\ni = i + 1\nlocal eneg = false\nif i <= j then\nb = _s(4, s, i, 0)\nif b == 43 or b == 45 then\neneg = b == 45\ni = i + 1\nend\nend\nlocal nd = 0\nwhile i <= j do\nb = _s(4, s, i, 0)\nif b < 48 or b > 57 then break end\nep = ep * 10 + (b - 48)\nnd = nd + 1\ni = i + 1\nend\nif nd == 0 then return nil end\nif eneg then ep = -ep end\nend\nend\nif i <= j then return nil end\nif nodot and nopexp then\nlocal full = v\nif ri ~= 0 then full = v * (16 ^ ri) end\nif full < 9007199254740992 then\nlocal iv = _m(13, full, 0)\nif iv ~= nil then\nif neg then iv = -iv end\nreturn iv\nend\nend\nend\nlocal m = 0\nif v ~= 0 then m = v * (2 ^ (4 * ri + ep)) end\nif nf > 0 and vf ~= 0 then m = m + vf * (2 ^ (-4 * nf + ep)) end\nif m == 0 then\nif neg then return -0.0 else return 0.0 end\nend\nif neg then m = -m end\nreturn m\nend\ntonumber = function(...)\nlocal n = select(\"#\", ...)\nlocal v = select(1, ...)\nlocal base = select(2, ...)\nif n == 0 then\nerror(\"bad argument #1 to 'tonumber' (value expected)\", 2)\nend\nif base ~= nil then\nif type(v) ~= \"string\" then\nerror(\"bad argument #1 to 'tonumber' (string expected, got \" .. type(v) .. \")\", 2)\nend\nif base < 2 or base > 36 then\nerror(\"bad argument #2 to 'tonumber' (base out of range)\", 2)\nend\nif base ~= 10 then\nerror(\"tonumber with a base other than 10 is not supported\", 2)\nend\nend\nif type(v) == \"number\" then return v end\nif type(v) ~= \"string\" then return nil end\nlocal ok, r = pcall(_tonum_conv, v)\nif ok then return r end\nreturn _tonum_hex(v)\nend\n"
 const LIB_math_random = "math = math or {}\nlocal _rs = 12345\nmath.random = function(m, n, ...)\nif select(\"#\", m, n, ...) > 2 then\nerror(\"wrong number of arguments\", 2)\nend\nlocal v = (_rs * 1664525 + 1013904223) & 0xFFFFFFFF\n_rs = v\nif m == nil then\nreturn v / 4294967296.0\nend\nif type(m) == \"string\" then m = m + 0 end\nif _m(13, m, 0) == nil then\nerror(\"bad argument #1 to 'random' (number has no integer representation)\", 2)\nend\nlocal lo, hi\nif n == nil then\nlo, hi = 1, m\nelse\nif type(n) == \"string\" then n = n + 0 end\nif _m(13, n, 0) == nil then\nerror(\"bad argument #2 to 'random' (number has no integer representation)\", 2)\nend\nlo, hi = m, n\nargn = \"2\"\nend\nif hi < lo then\nerror(\"bad argument #1 to 'random' (interval is empty)\", 2)\nend\nreturn lo + _m(1, v / 4294967296.0 * (hi - lo + 1), 0)\nend\nmath.randomseed = function(x, y)\nlocal a = 0\nlocal b = 0\nif x ~= nil then a = _m(1, x, 0) end\nif y ~= nil then b = _m(1, y, 0) end\nlocal st = (a * 1013904223 + b) & 0xFFFFFFFF\nif st == 0 then st = 1 end\n_rs = st\nreturn a, b\nend\n"
+const LIB_io_stderr = "io = io or {}\nio.stderr = {\nwrite = function(self, ...)\nfor i = 1, select(\"#\", ...) do _wr(tostring((select(i, ...)))) end\nreturn self\nend,\nflush = function(self) return self end,\n}\n"
+const LIB_os_exit = "os = os or {}\nos.exit = function(c)\nif c == nil or c == true or c == 0 then error(\"\", 0) else error(\"exit: \" .. tostring(c), 0) end\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -2727,7 +2729,12 @@ mod fmtFPoint() {
     fmtBody = "+" .. fmtBody
   } else if fmtSpace == 1 {
     fmtBody = " " .. fmtBody
-  } else if fmtHash == 1 && fmtP == 0 {
+  }
+  // NOT part of the sign chain above: the sign and the # point are independent,
+  // and the old else-if made them exclusive -- %+#014.0f of 100 came out
+  // +0000000000100 where PUC answers +000000000100., and %#.0f of -100 lost its
+  // point the same way.  %e's arm already keeps them apart.
+  if fmtHash == 1 && fmtP == 0 {
     // # keeps the point even with no places, on this arm as on %e's: %#.1g of
     // 1.5 is 2. and not 2
     fmtBody = fmtBody .. "."
@@ -3022,12 +3029,13 @@ mod patBStep() {
   } else if patI >= patLen {
     patSt = 4
   } else {
+    // PUC checks the CLOSING delimiter first (matchbalance: `if (*s == e)` comes
+    // before `else if (*s == b)`), and the order is the whole behaviour when the
+    // two are the same character: %b'' on "'oi'" must close at the second quote,
+    // not count it as a second opening.  With distinct delimiters a character can
+    // only equal one of them, so the order changes nothing there.
     let c = patSrc.Substring(patI, 1)
-    if c == patBOpen {
-      patBC = patBC + 1
-      patI = patI + 1
-      patSt = 3
-    } else if c == patBClose {
+    if c == patBClose {
       if patBC == 1 {
         patI = patI + 1
         patP = patQEnd
@@ -3037,6 +3045,10 @@ mod patBStep() {
         patI = patI + 1
         patSt = 3
       }
+    } else if c == patBOpen {
+      patBC = patBC + 1
+      patI = patI + 1
+      patSt = 3
     } else {
       patI = patI + 1
       patSt = 3
@@ -3343,8 +3355,15 @@ mod libTabSort(p: string) -> string {
 }
 
 mod libIo(p: string) -> string {
-  return if srcUses(p, "io.read") || srcUses(p, "io.write")
+  // stderr is its own piece, not part of LIB_io: io.write users must not pay
+  // its parse, and stderr users must not pay for read/write/lines.
+  let r = if srcUses(p, "io.read") || srcUses(p, "io.write")
       || srcUses(p, "io.lines") then LIB_io else ""
+  return r .. (if srcUses(p, "io.stderr") then LIB_io_stderr else "")
+}
+
+mod libOs(p: string) -> string {
+  return if srcUses(p, "os.exit") then LIB_os_exit else ""
 }
 
 mod libTonumber(p: string) -> string {
@@ -4460,18 +4479,16 @@ mod patF() -> int {
     return 8
   }
   patItemP = patP
-  if patI == 0 {
-    // there is no character before the first one, so that test is vacuously
-    // true and only the one at the cursor is worth making
-    patFPrev = false
-    patAfter = 10
-    patFailTo = 4
-    patSetBegin(patP + 3, patSrc.Substring(patI, 1).ToCharCode().Codepoint)
-    return 7
-  }
+  // PUC tests '\0' as the character before the first one (and *s reads '\0'
+  // past the last, which the curr test below already sees: Substring past either
+  // end is "", whose ToCharCode reads 0).  So there is no start special case:
+  // the old one forced "previous not in set" at position 1, which made %f[a%z]
+  // match "aba" at 1 (PUC says 3, since \0 IS in the set and there is no
+  // transition) and %f[^%l] miss position 2 of "a" entirely.
   patAfter = 9
   patFailTo = 9
-  patSetBegin(patP + 3, patSrc.Substring(patI - 1, 1).ToCharCode().Codepoint)
+  let prevCode = if patI == 0 then 0 else patSrc.Substring(patI - 1, 1).ToCharCode().Codepoint
+  patSetBegin(patP + 3, prevCode)
   return 7
 }
 
@@ -8012,7 +8029,14 @@ mod fmtLit() {
 // rather than at the end, which is why an empty pattern's match past it comes
 // only from the first attempt.
 mod patNextStart() {
-  if patAnchor || patR + 1 >= patLen {
+  // PUC tries start positions 0..len inclusive (its loop is s <= src_end): an
+  // empty match AT the end is a match, which is how (%w*)$ finds "" and %f
+  // matches a final transition.  Stopping at len - 1 missed both.  Every
+  // consuming item already fails cleanly at patI == patLen (patTestItem answers
+  // 0 there, %b's first step misses), so the extra position can only match
+  // empty -- which is the point -- at the cost of one more start attempt on a
+  // miss.
+  if patAnchor || patR + 1 > patLen {
     patNone()
   } else {
     patR = patR + 1
@@ -10985,13 +11009,14 @@ on goParse {
   let libM = libTabSort(program)
   let libN = libStrFmt(program)
   let libO = libIo(program)
+  let libO2 = libOs(program)
   let libP = libStrPat(program)
   let libQ = libStrGsub(program)
   let libR = libStrGmatch(program)
   let libS = libTonumber(program)
   let libT = libMathRandom(program)
   let lib = libA .. libB .. libC .. libD .. libE .. libF .. libG
-    .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO .. libP
+    .. libH .. libI .. libJ .. libK .. libL .. libM .. libN .. libO .. libO2 .. libP
     .. libQ .. libR .. libS .. libT
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program

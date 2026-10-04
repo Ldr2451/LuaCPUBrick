@@ -28,6 +28,8 @@ import io
 import os
 import re
 import sys
+import time
+from concurrent.futures import ProcessPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -99,11 +101,71 @@ def harvest(path):
     return out
 
 
+_RUNNER = None
+
+
+def _init_worker(ws_path):
+    """One ChipRunner per process: the build is ~6s, so it happens once here
+    and every later run in this worker reuses it."""
+    global _RUNNER
+    _RUNNER = ChipRunner(ws_path)
+
+
+def _chip_run(item):
+    """(verdict, note) for one harvested expression, chip AND oracle together.
+
+    The oracle side is milliseconds (one lua55 spawn), so doing it here removes
+    the serial comparison tail entirely: the main process only tallies.  An
+    exception anywhere is a skip, never agreement and never the end of the
+    sweep: a harvested constant can overflow an int output (an `inf` reaching a
+    gate that does int()), and one bad program must not take down the rest.
+    Results come back out of order (imap_unordered, so a ten-second gsub
+    harvest does not hold up three hundred quick ones behind it); the caller
+    reattaches each to its expression by the index it carries.
+    """
+    idx, (expr, _fname, _lineno) = item
+    prog = "print(tostring(%s))" % expr
+    try:
+        # Two tiers: almost everything finishes in a few thousand ticks, but a
+        # piece-heavy program (tonumber boots ~3700, gsub runs long) needs more
+        # -- and a program that never finishes would eat the whole high cap in
+        # sim wall time (a 30000-tick hang is over two minutes).  So try cheap
+        # first and retry ONCE at the high cap whenever there is nothing to
+        # compare yet and no error saying why.  `halted` is NOT the test: a
+        # mid-parse micro-step can read as halted with empty queues while still
+        # needing ticks, so halted-with-nothing is retried exactly like
+        # still-going-with-nothing.  A program that is genuinely empty (no
+        # print) retries cheaply -- it halts in the same low ticks again.
+        chip = _RUNNER.run(prog, 8000)
+        cg = chip["outGlobals"]
+        clog = (cg.get("log") or "").strip()
+        cerr = (cg.get("err") or "").strip()
+        if not cerr and clog == "":
+            chip = _RUNNER.run(prog, 30000)
+            cg = chip["outGlobals"]
+            clog = (cg.get("log") or "").strip()
+            cerr = (cg.get("err") or "").strip()
+        if cerr or clog == "":
+            # The chip refused it: a limit, an unimplemented corner, or a
+            # parse error.  Counted, never called agreement.
+            return idx, ("SKIP", cerr[:60])
+        res = oracle_run(prog)
+        if not res.get("avail", True):
+            return idx, ("SKIP", "no oracle")
+        olog = oracle_log(res.get("calls") or []).strip()
+    except Exception as e:
+        return idx, ("SKIP", repr(e)[:60])
+    if clog == olog:
+        return idx, ("OK", "")
+    return idx, ("DIFF", "chip=%r oracle=%r" % (clog, olog))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--workers", type=int, default=12)
     args = ap.parse_args()
 
     files = sorted(os.path.join(args.dir, f)
@@ -114,48 +176,38 @@ def main():
     if args.limit:
         exprs = exprs[:args.limit]
 
-    runner = ChipRunner(os.path.join(ROOT, "lua.ws"))
+    # Twelve workers, each with its own Sim: the suite runs the whole machine
+    # for the same reason (twelve worker processes, each with its own Sim), and
+    # a sweep this size serial is dominated by its slowest programs -- a gsub
+    # harvest is ten seconds of wall while a plain one is a blink.  Hand out
+    # work one case at a time so a batch is not as long as its slowest member.
+    # The oracle side stays serial: spawning lua55 is milliseconds, and sharing
+    # nothing keeps every comparison independent.
+    t0 = time.time()
+    with ProcessPoolExecutor(max_workers=args.workers,
+                             initializer=_init_worker,
+                             initargs=(os.path.join(ROOT, "lua.ws"),)) as pool:
+        results = list(pool.map(_chip_run,
+                                list(enumerate(exprs)), chunksize=1))
+    dt = time.time() - t0
+
     agree = differ = skipped = 0
     fails = []
-    for expr, fname, lineno in exprs:
-        prog = "print(tostring(%s))" % expr
-        # Each expression is independent: one program that makes the simulator
-        # raise (a harvested constant can overflow an int output, e.g. an `inf`
-        # reaching a gate that does int()) must not end the sweep, and must not
-        # be counted as agreement either.
-        try:
-            chip = runner.run(prog, 8000)
-            cg = chip["outGlobals"]
-            clog = (cg.get("log") or "").strip()
-            cerr = (cg.get("err") or "").strip()
-            if cerr or clog == "":
-                # The chip refused it: a limit, an unimplemented corner, or a
-                # parse error.  Counted, never called agreement.
-                skipped += 1
-                if args.verbose:
-                    fails.append(("SKIP", expr, fname, lineno, cerr[:60]))
-                continue
-            res = oracle_run(prog)
-            if not res.get("avail", True):
-                skipped += 1
-                if args.verbose:
-                    fails.append(("SKIP", expr, fname, lineno, "no oracle"))
-                continue
-            olog = oracle_log(res.get("calls") or []).strip()
-        except Exception as e:
+    by_idx = dict(results)
+    for i, (expr, fname, lineno) in enumerate(exprs):
+        verdict, note = by_idx[i]
+        if verdict == "SKIP":
             skipped += 1
             if args.verbose:
-                fails.append(("SKIP", expr, fname, lineno, repr(e)[:60]))
-            continue
-        if clog == olog:
+                fails.append(("SKIP", expr, fname, lineno, note))
+        elif verdict == "OK":
             agree += 1
         else:
             differ += 1
-            fails.append(("DIFF", expr, fname, lineno,
-                          "chip=%r oracle=%r" % (clog, olog)))
+            fails.append(("DIFF", expr, fname, lineno, note))
 
-    print("harvested %d self-contained asserts from %d files"
-          % (len(exprs), len(files)))
+    print("harvested %d self-contained asserts from %d files in %.0fs"
+          % (len(exprs), len(files), dt))
     print("agree %d   DIFFER %d   skipped %d" % (agree, differ, skipped))
     for kind, expr, fname, lineno, note in fails[:40]:
         print("  %-4s %s:%d  %s\n         %s" % (kind, fname, lineno,

@@ -110,38 +110,39 @@ TESTS = [
     # conversion), so these are really a second reading of the coercion rules:
     # a number is itself, the whole string has to be a number, the tag follows
     # the numeral's shape, and the inf/nan spellings are nil on both sides.
-    # Each case carries a tick budget: the piece costs 565 ticks of boot and 70
-    # per call, so a case with six calls needs more than the default.
+    # Each case carries a tick budget: the piece costs ~3700 ticks of boot
+    # (3514 characters at the code rate, plus a second function) and 70 per
+    # call, so even a case that errors needs the full boot before it can fail.
     ("tonum-num", "print(tonumber(3), tonumber(3.5), tonumber(-0.0))",
-     None, "run", {"ticks": 1600}),
+     None, "run", {"ticks": 5000}),
     ("tonum-str", "print(tonumber('10'), tonumber(' 42 '), tonumber('3.5'), "
      "tonumber('1e3'), tonumber('.5'), tonumber('5.'))", None, "run",
-     {"ticks": 2400}),
+     {"ticks": 6000}),
     ("tonum-nil", "print(tonumber('x'), tonumber(''), tonumber('10abc'), "
      "tonumber(nil), tonumber({}), tonumber(true), tonumber('inf'), "
-     "tonumber('nan'))", None, "run", {"ticks": 2400}),
+     "tonumber('nan'))", None, "run", {"ticks": 6000}),
     ("tonum-tag", "print(math.type(tonumber('3')), math.type(tonumber('3.0')), "
      "math.type(tonumber(3)), math.type(tonumber(3.5)))", None, "run",
-     {"ticks": 2400}),
+     {"ticks": 6000}),
     ("tonum-arith", "print(tonumber('3') + 1, tonumber('7') // 2, "
-     "-tonumber('2.5'))", None, "run", {"ticks": 1600}),
+     "-tonumber('2.5'))", None, "run", {"ticks": 5000}),
     # The loader only installs the piece for a program that names tonumber, so
     # this also proves the selection: a program that does not name it must not
     # pay for it, and one that does must not be missing it inside a function.
     ("tonum-in-fn", "local function half(s) return tonumber(s) / 2 end "
-     "print(half('7'), half(7))", None, "run", {"ticks": 1600}),
+     "print(half('7'), half(7))", None, "run", {"ticks": 5000}),
     ("tonum-base10", "print(tonumber('42', 10), tonumber(' 42 ', 10))",
-     None, "run", {"ticks": 1600}),
+     None, "run", {"ticks": 5000}),
     ("tonum-noargs", "print(tonumber())", None, "runtimerr",
-     {"ticks": 1200,
+     {"ticks": 5000,
       "expect": {"err": "bad argument #1 to 'tonumber' (value expected)"}}),
     ("tonum-base-type", "print(tonumber(3.5, 10))", None, "runtimerr",
-     {"ticks": 1200, "expect": {"err": "string expected, got number"}}),
+     {"ticks": 5000, "expect": {"err": "string expected, got number"}}),
     ("tonum-base-range", "print(tonumber('10', 99))", None, "runtimerr",
-     {"ticks": 1200, "expect": {"err": "base out of range"}}),
+     {"ticks": 5000, "expect": {"err": "base out of range"}}),
     # A base other than 10 is a documented gap: loud, never a wrong answer.
     ("tonum-base-other", "print(tonumber('ff', 16))", None, "runtimerr",
-     {"ticks": 1200,
+     {"ticks": 5000,
       "expect": {"err": "base other than 10 is not supported"}}),
     # A call with no results still has to leave the callee's own register nil,
     # because that is the slot the compiler puts the local in.  select past the
@@ -2349,22 +2350,70 @@ TESTS = [
      # lua-5.5.1-tests and compares against the oracle).  Each is pinned here so
      # it is a KNOWN answer rather than a surprise: without an entry a divergence
      # is indistinguishable from a chip bug, which is the whole reason the
-     # harvested cases are worth keeping.
+     # harvested cases are worth keeping.  Four entries have since been FIXED
+     # and now compare against the oracle directly (no CHIP_LOG entry): hex
+     # tonumber, %f at the edges, (%w*)$ at the end, and %f's # point.
     ("puc-hex-tonumber", "print(tonumber('0x10'))", None, "run"),
     ("puc-hex-sign", "print(tonumber('+0x2'))", None, "run"),
     ("puc-hex-decimal-ok", "print(tonumber('16'))", None, "run"),
-    # %f, the frontier pattern, is not in the matcher
+    ("puc-hex-neg", "print(tonumber('-0xaA'))", None, "run"),
+    ("puc-hex-spaces", "print(tonumber('  0xFF  '))", None, "run"),
+    ("puc-hex-frac", "print(tonumber('0x1.8'))", None, "run"),
+    ("puc-hex-pexp", "print(tonumber('0x1p4'))", None, "run"),
+    ("puc-hex-nil", "print(tonumber('0x'), tonumber('0x1g'))", None, "run"),
+    # Past 2^53 a hex numeral is already rounded before it can become an
+    # integer: 15 hex digits need 60 bits and the registers hold 53, so this
+    # stays a float where PUC answers an exact int.  Same 64-bit wall as the
+    # decimal path (the host rounds "81985529216486895" the same way), which is
+    # why float here is consistency, not a second rule.
+    ("puc-hex-wide", "print(tonumber('0x123456789abcdef'))", None, "run"),
+    # %b with identical delimiters: PUC checks the closer first
+    ("puc-bsame-find", "print(string.find(\"alo 'oi' alo\", \"%b''\"))", None,
+     "run"),
+    ("puc-bsame-match", "print(string.match(\"alo 'oi' alo\", \"%b''\"))",
+     None, "run"),
+    ("puc-bsame-gsub", "print(string.gsub(\"alo 'oi' alo\", \"%b''\", '\"'))",
+     None, "run"),
+    # %f, the frontier pattern: \0 at the string's start edge, and the scan
+    # tries position len so a final transition matches.  Sets containing %z
+    # still miss: %z means NUL in PUC and the letter z here, a 49-node arm
+    # through inlining, so those three stay divergences below.
     ("puc-fpct-a", "print(string.find('a', '%f[^%l]'))", None, "run"),
     ("puc-fpct-b", "print(string.find('aba', '%f[a%z]'))", None, "run"),
+    ("puc-fpct-c", "print(string.find('a', '%f[^%z]'))", None, "run"),
+    ("puc-fpct-d", "print(string.find('aba', '%f[%z]'))", None, "run"),
     # (%w*)$ -- a %w* that matches empty at end of subject
     ("puc-wstar-anchor", "print(string.match('alo ', '(%w*)$') == '')", None,
      "run"),
-    # %+#014.0f -- the '#' with a zero-padded width and an explicit precision
+    # %+#014.0f -- the '#' point kept apart from the sign
     ("puc-format-alt-zero", "print(string.format('%+#014.0f', 100))", None,
+     "run"),
+    ("puc-format-alt-neg", "print(string.format('%#.0f', -100))", None,
      "run"),
     # tostring of a function: the chip's address spelling
     ("puc-tostring-func", "print(string.find(tostring(print), 'function:') "
      "~= nil)", None, "run"),
+    # %u needs the full 64-bit range: the registers are doubles, so ~(-1 << 64)
+    # is already rounded before the formatter sees it.  Same wall as integers
+    # past 2^53 and as matching PUC's math.random.
+    ("puc-format-u64", "print(string.format('%u', ~(-1 << 64)))", None,
+     "run"),
+    # io.stderr writes to the log (one text channel); os.exit halts
+    ("io-stderr-write", "io.stderr:write('e1') print('p1')", None, "modelio",
+     {"expect": {"log": "e1p1\n"}}),
+    ("io-stderr-flush", "io.stderr:write('e2'):flush() print('p2')", None,
+     "modelio", {"expect": {"log": "e2p2\n"}}),
+    ("os-exit-clean", "print('s1') os.exit() print('NEVER')", None, "run"),
+    ("os-exit-zero", "print('s2') os.exit(0) print('NEVER')", None, "run"),
+    ("os-exit-code", "print('s3') os.exit(3) print('NEVER')", None,
+     "runtimerr", {"expect": {"err": "exit: 3"}}),
+    # os.exit is error() underneath, so pcall catches it and the program prints
+    # false + the message; PUC's exit terminates THROUGH pcall and prints
+    # nothing (the oracle exits rc=5, so this cannot be a `run` case at all --
+    # there is no oracle log to compare against).  Unavoidable without a halt
+    # primitive the compiler does not have.
+    ("os-exit-pcall", "local ok, e = pcall(os.exit, 5) print(ok, e)", None,
+     "modelio", {"expect": {"log": "false\texit: 5\n"}}),
     # line numbers on compile failure
     ("errline-stmt", "print(1)\nprint(2)\nend\n", None, "synfail",
      {"errline": 3}),
