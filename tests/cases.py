@@ -2468,6 +2468,13 @@ TESTS = [
     ("pat-z-is-not-letter",
      "print(('azb'):gsub('[%z]', 'X'), ('azb'):find('%z'), "
      "('azb'):gsub('[^%z]', 'X'))", None, "run"),
+    # A maximal repeat with nothing after it is fine; with a tail it loops for
+    # ever.  These are the neighbours that make the distinction decidable, and
+    # they are here because a hang is invisible in a log comparison -- only the
+    # shape survives.  See SKIP in test_chip_suite.
+    ("pat-greedy-no-tail", "print(('abc'):match('.*'), ('abc'):match('a*'), "
+     "('abc'):match('.-'), ('abc'):match('a.c'), ('ab'):match('a*ab'))",
+     None, "run"),
     # tonumber(s, base) for a base other than 10.  Zero chip nodes: the walk is a
     # loop in a LUA piece, so the price is characters, not gates.  PUC's rule is
     # narrower than the no-base case and the narrowness is the whole test --

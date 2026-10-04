@@ -65,7 +65,38 @@ TICKS = 6000
 
 # Cases the tick sim cannot reach, or that fail for a reason still open.  Every
 # entry here says what was measured, so the next attempt starts from evidence.
-SKIP = {}
+SKIP = {
+    # A maximal repeat followed by more pattern LOOPS FOREVER.  Found by running
+    # PUC's own pm.lua asserts: 4 of them are `.*` with a tail, and every one hung
+    # (20,000 ticks on a THREE-character subject, so it is a loop and not
+    # slowness -- a user program with `s:match(".*x")` never finishes).
+    #
+    #   ("abc"):match(".*c")  loops      ("abc"):match("a.c")  "abc"  fine
+    #   ("abc"):match(".*b")  loops      ("ab"):match("a*ab")  "ab"  fine
+    #   ("abc"):match(".*")   "abc" fine ("abc"):match("a*")   "a"   fine
+    #   ("abc"):match(".-")   ""    fine
+    #
+    # So it is not the quantifier and not the tail: it is `.*` specifically, and
+    # only when the tail cannot match where the greedy run ended.  `a*ab` has the
+    # same shape and works, because `a*` cannot swallow the character its tail
+    # needs, so the greedy run stops one short and the tail matches first time.
+    #
+    # What the machine does, from patGreedy/patGreedyEnd: the greedy loop sets
+    # patFailTo = 14 and patAfter = 12, and when the repeated item stops matching
+    # (or the subject runs out) it goes to state 14, which is patGreedyEnd --
+    # `patP = patQEnd; patSt = 1`, i.e. run the tail.  When THAT fails it returns
+    # to patFailTo, which is state 14 again: the same tail at the same position,
+    # for ever.  The backtrack entry that would give a character back exists and
+    # is pushed as k0 == 4 (patBack's arm, patPush(4, itemP, patI, qEnd)), but
+    # nothing on this path reaches it.
+    #
+    # Pre-existing, not a regression: the only matcher line this session touched
+    # is patClassHit's %z fallback.  Not fixed here because the honest fix needs
+    # the greedy run's start position to know when it has given everything back,
+    # and that is a change to the repeat setup rather than to the tail failure --
+    # a matcher fix made without the whole shape in view is how the last one went.
+    "pat-greedy-tail-hangs": "print(('abc'):match('.*c'))",
+}
 
 # Extra VM ticks / timeouts for heavy but reachable cases.
 TICKS_OVERRIDES = {
