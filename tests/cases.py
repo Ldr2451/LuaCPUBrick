@@ -977,6 +977,15 @@ TESTS = [
      "string.match('aaab', 'a-b'))", None, "run"),
     ("pat-match-optional", "print(string.match('aab', 'a?b'), "
      "string.match('color colour', 'colou?r'))", None, "run"),
+    # A `?` that matched must give its character BACK when the tail fails:
+    # ("b"):match(".?b") takes the b, finds nothing after, and must retry with
+    # the item skipped.  The backtrack retried at the consumed position and
+    # answered nil; the pushed entry now carries the pre-item position (k2).
+    # Found by the PUC harvest (pm.lua:51), which is the oracle that keeps
+    # giving: 21 of its 23 new diffs were the int64 wall, this was the bug.
+    ("pat-optional-backtrack", "print(string.match('b', '.?b'), "
+     "string.match('ab', '.?b'), string.match('ab', 'a.?b'), "
+     "string.match('acb', 'a.?b'), string.find('b', '.?b'))", None, "run"),
     ("pat-match-set", "print(string.match('abc', '[a-c]+'), "
      "string.match('abc', '[^b]'), string.match('hello', '[el]+'))", None,
      "run"),

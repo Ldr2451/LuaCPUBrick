@@ -52,9 +52,24 @@ GLOBALS = {
 # Names that appear after a dot or a colon are fields, not bindings.
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 STRING = re.compile(r"'(\\.|[^'\\])*'|\"(\\.|[^\"\\])*\"")
-# Keywords and syntax that mean this is not a self-contained expression.
+# Keywords that mean this is not a self-contained expression.  and/or/not are
+# OPERATORS, not statements, and the chip runs them -- an earlier version of
+# this list banned them too, which threw out 83 harvestable checks including
+# the short-circuit suite (`10 or assert(nil)`, `not (nil and assert(nil))`).
+# What stays banned needs a statement: function, control flow, locals.
 BANNED = re.compile(r"\b(function|local|return|for|while|repeat|until|do|"
-                    r"then|else|elseif|end|::|goto|in|and|or|not|if)\b")
+                    r"then|else|elseif|end|::|goto|in|if)\b")
+# true/false/nil are literals, not bindings: without them `(10 or 2) == 10`
+# reads as closing over `nil`... they never did, they READ as values.
+LITERALS = {"true", "false", "nil"}
+# File locals the runner binds with the same value their file gives them, so
+# expressions using them stay self-contained.  math.lua, attrib.lua and
+# files.lua all bind maxint to math.maxinteger (and math.lua binds minint to
+# math.mininteger); anything bound DIFFERENTLY per file is excluded -- pack is
+# table.pack in api.lua and string.pack in tpack.lua, so it stays out.
+PRELUDE = {"minint": "math.mininteger", "maxint": "math.maxinteger"}
+PRELUDE_SRC = "local " + ", ".join(sorted(PRELUDE)) + " = " + ", ".join(
+    PRELUDE[k] for k in sorted(PRELUDE)) + "\n"
 
 
 def strip_strings(expr):
@@ -76,7 +91,8 @@ def self_contained(expr):
         start = m.start()
         if start and bare[start - 1] in ".:'":
             continue
-        if m.group(0) not in GLOBALS:
+        if m.group(0) not in GLOBALS and m.group(0) not in LITERALS \
+                and m.group(0) not in PRELUDE:
             return False, "closes over %r" % m.group(0)
     return True, ""
 
@@ -124,7 +140,12 @@ def _chip_run(item):
     reattaches each to its expression by the index it carries.
     """
     idx, (expr, _fname, _lineno) = item
-    prog = "print(tostring(%s))" % expr
+    # minint/maxint ride a prelude with the value their file gives them; the
+    # prelude is plain Lua (no <const> attribute -- the chip need not parse
+    # one), so the oracle runs the same text.
+    needs_pre = any(re.search(r"\b%s\b" % k, expr) for k in PRELUDE)
+    prog = ("print(tostring(%s))" % expr) if not needs_pre else (
+        PRELUDE_SRC + "print(tostring(%s))" % expr)
     try:
         # Two tiers: almost everything finishes in a few thousand ticks, but a
         # piece-heavy program (tonumber boots ~3700, gsub runs long) needs more

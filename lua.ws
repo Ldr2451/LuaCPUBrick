@@ -4641,7 +4641,12 @@ mod patApply() {
     }
   } else {
     if patHit {
-      if patPush(2, patQEnd, 0, 0) {
+      // k2 carries the subject position BEFORE the item, so the backtrack can
+      // give the character back: `?` tries with-item first and without on
+      // failure, and ("b"):match(".?b") missed until this rewound patI, because
+      // the tail retried at the consumed position.  patI (not patI - 1) because
+      // the width is the item's, not one -- a backref can take more.
+      if patPush(2, patQEnd, patI, 0) {
         patI = patI + 1
         patP = patQEnd
         patSt = 1
@@ -8872,7 +8877,13 @@ mod patBack() {
       patP = k3
       patSt = 1
     } else if k0 == 2 {
+      // The `?` alternative: the tail runs again without the item, which means
+      // the subject rewinds to where the item started (k2 above), not where it
+      // ended.  Without the rewind ("b"):match(".?b") missed: the tail retried
+      // `b` at position 1, past the end, instead of at 0.  (patItemP needs no
+      // restore: patNextItem sets it fresh for every item it tests.)
       patSp = sp
+      patI = k2
       patP = k1
       patSt = 1
     } else if k0 == 5 {
