@@ -406,6 +406,15 @@ TESTS = [
      "return use(p - 1) end\n"
      "  return use(a * 100)\n"
      "end print(wide(2, 3, 4, 5))", None, "run"),
+    # Sequential non-tail calls must not accumulate arena: every return popped
+    # to the callee's base instead of the caller's top, orphaning a word a
+    # call -- 250 fit MAX_VA and 300 died with "too many captured locals".
+    # fVaB entries hold the caller's top now, so returns restore it exactly.
+    ("callseq-no-leak",
+     "local function id() return 1 end\n"
+     "local s = 0\n"
+     "for i = 1, 400 do s = id() end\n"
+     "print(s)", None, "run", {"ticks": 30000}),
     ("tail-pcall-not-a-tail",
      "print(pcall(function(n) if n == 0 then error('boom') end "
      "return (function() return n end)() end, 3))", None, "run"),
@@ -1525,8 +1534,12 @@ TESTS = [
      "local m = 'move' print(table[m]({1}, 1, 1, 1) ~= nil)", None, "run"),
     ("lib-split-dynamic-math", "local a = 'max' print(math[a](1, 5)) "
      "local b = 'fmod' print(math[b](7, 3))", None, "run"),
+    # Whole string library via dynStr (a bracket on a string value): ~8,000
+    # chars of pieces, ~6,500 boot ticks, so the default 6,000-tick budget
+    # cannot fit it.  Sized 2.3x the measured 6,479.
     ("lib-split-dynamic-string", "local k = 'char' print(('')[k](65)) "
-     "local j = 'byte' print(string.byte('A', 1))", None, "run"),
+     "local j = 'byte' print(string.byte('A', 1))", None, "run",
+     {"ticks": 15000}),
     # THE REGRESSION THESE GATES EXIST TO PREVENT: table.insert named in text,
     # table.remove reached dynamically.  One piece installed both, so this worked;
     # split naively it raises.  Same shape for the other three pairs.
@@ -1572,7 +1585,8 @@ TESTS = [
     ("lib-dyn-assembled-string", "local a = 'by' .. 'te' "
      "print(string[a]('A', 1)) "
      "local b = 'ch' .. 'ar' print(string[b](66)) "
-     "local c = 'up' .. 'per' print(string[c]('ab'))", None, "run"),
+     "local c = 'up' .. 'per' print(string[c]('ab'))", None, "run",
+     {"ticks": 15000}),
     # A literal or parenthesised receiver with an assembled name: ")[ fires, so the
     # whole string library installs and the call is answered.  The string VARIABLE
     # form -- local s = "abc"  s[m]() -- is NOT covered and there is no case for it:
@@ -1589,7 +1603,8 @@ TESTS = [
      "print(pcall(('abc')[m])) "
      "local n = 'le' .. 'n' print(pcall(('abc')[n])) "
      "local q = 'up' .. 'per' print(('abc')[q]('xy')) "
-     "local w = 'by' .. 'te' print(('abc')[w](1))", None, "run"),
+     "local w = 'by' .. 'te' print(('abc')[w](1))", None, "run",
+     {"ticks": 15000}),
     # The same shapes with the name written as a literal, which is what most real
     # code does, and which the quoted gate handled before the dyn flags existed.
     #
@@ -2269,7 +2284,10 @@ TESTS = [
      None, "run"),
     ("tab-chain-store", "t = {a = {}} t.a[1] = 'x' print(t.a[1])", None,
      "run"),
-    ("tab-paren-index", "print(({5, 6})[2])", None, "run"),
+    # `)[` fires dynStr even though this is a table: the whole string library
+    # installs (~6,500 boot ticks, see lib-split-dynamic-string above).
+    ("tab-paren-index", "print(({5, 6})[2])", None, "run",
+     {"ticks": 15000}),
     ("tab-tostring", "print(type({}), tostring({1}))", None, "run"),
     ("tab-tostring-shape", "local t = {} local s = tostring(t) "
      "print(s:match('^table: ') ~= nil, s ~= 'table')", None, "run"),

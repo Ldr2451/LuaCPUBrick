@@ -94,7 +94,9 @@ for _name, fid in sorted(m.BUILTINS, key=lambda kv: kv[1]):
           re.search(rf"fid == {fid}\b", gate) is not None)
 check("fid-user-else", "} else {" in mod_body("gateHigh"))
 check("gate-split-call", "gateLow(cid, a, nargs)" in vm
-      and "gateHigh(fid, a, nargs, mtSelf, cid)" in vm)
+      # prefix, not the full call: TCO added a 6th arg (isTail) and the next
+      # change must not have to remember this line
+      and "gateHigh(fid, a, nargs, mtSelf, cid" in vm)
 
 # 2. global slot order ------------------------------------------------------
 model_order = list(m.GSLOT_ORDER)
@@ -390,12 +392,19 @@ try:
                 for _nid, nd in _sim.nodes.items()
                 if "Internal_MicrochipOutput" in nd.cls}
     _got_out = {g for g in _got_out if isinstance(g, str) and g}
-    check("graph-inputs-match-source", _got_in == _want_in,
-          "source %s vs graph %s" % (sorted(_want_in - _got_in),
-                                     sorted(_got_in - _want_in)))
-    check("graph-outputs-match-source", _got_out == _want_out,
-          "source %s vs graph %s; THE TESTS ARE RUNNING A DIFFERENT CHIP"
-          % (sorted(_want_out - _got_out), sorted(_got_out - _want_out)))
+    _missing_in = sorted(_want_in - _got_in)
+    _missing_out = sorted(_want_out - _got_out)
+    # Missing is the failure; EXTRA is expected and not one.  The graph holds
+    # every chip's input pins alongside the top-level ports (parameter names
+    # like a, b, blkCapGen, plus _exec_in/_exec_out), so equality fails with
+    # ~110 extras and nothing missing.  What this guards is the stale-graph
+    # direction: a declared port the build does not produce.  (The old outputs
+    # message claimed a mismatch meant the tests run a different chip; they
+    # never did -- source was [] in every failure.)
+    check("graph-inputs-match-source", not _missing_in,
+          "ports declared but not in the graph: %s" % _missing_in)
+    check("graph-outputs-match-source", not _missing_out,
+          "ports declared but not in the graph: %s" % _missing_out)
 except Exception as _e:
     check("graph-ports-match-source", False,
           "the check itself failed: %r" % (_e,))

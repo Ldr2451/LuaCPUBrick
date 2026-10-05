@@ -2196,7 +2196,12 @@ mod vmClosures() {
   frameSeq = 1
   let n = 3 * fUpSlotN[mainFid] + 1
   vaNum[0] = 1.0
-  fVaB[0] = n
+  // The entry is the frame's slotB -- 0 for the main chunk, whose region starts
+  // at 0 -- not its vararg base: every return pops to it, and a base here
+  // orphaned the table below on every return to top level.
+  // (slotBase and op-45 add the table back; main's cells sit at 1 + 3k and its
+  // varargs at n either way.)
+  fVaB[0] = 0
   vaTop = n
 }
 
@@ -4277,8 +4282,12 @@ mod pdDrain() {
 // Three source lines is three source lines; the pin wiring is not smaller.  See the
 // four measurements on cNum and srcNames for why this is now a rule and not a
 // result about this one function.
+// The frame's slotB: its own fVaB entry IS the caller's top at the call, so
+// the table starts one word above it.  (Entries used to hold the vararg base;
+// every return then restored to it and orphaned the table below -- one word a
+// non-tail call.  Readers below speak base; the entry speaks top.)
 mod slotBase() -> int {
-  return fVaB[fVaB.length() - 1] - 3 * fUpSlotN[curFid()]
+  return fVaB[fVaB.length() - 1] + 1
 }
 
 // The protected call has come back and the marker is on top, so the pcall's
@@ -7465,7 +7474,11 @@ mod pcallEnter() {
     let slotB = vaTop
     vaNum[slotB] = frameSeq
     vaSpill(nbase + np, slotB + nslots, nva)
-    fVaB.push(slotB + nslots)
+    // The entry is the CALLER's top, not the callee's base: every return pops
+    // to it, so sequential calls cannot orphan their slot tables below it.
+    // Storing base here leaked nslots a call -- 250 sequential calls fit
+    // MAX_VA and 300 did not -- because no return ever went below it.
+    fVaB.push(slotB)
     vaTop = slotB + nslots + nva
     fFunc.push(cid)
     fBase.push(nbase)
@@ -10099,9 +10112,8 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
         // callee that does NOT fit -- more cells, or more varargs, than the
         // caller had -- falls through to the usual growth, which is still
         // bounded by the frame count and still correct.
-        //
-        // 0 <= tailB is the main chunk's exclusion: its fVaB entry is 0 and
-        // there is no region to take, so its `return f()` grows like a push.
+        // 0 <= tailB keeps a negative base out; the main chunk never tail-calls
+        // (no return at top level), so its entry 0 never reaches the reuse.
         let tailB = slotBase() - 1
         let reuse = isTail && 0 <= tailB && tailB + nslots + nva <= vaTop
         if !reuse && vaTop + nslots > MAX_VA {
@@ -10114,9 +10126,11 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
           vaNum[slotB] = frameSeq
           vaSpill(vmBase + a + 1 + np, slotB + nslots, nva)
           if isTail {
-            fVaB[fVaB.length() - 1] = slotB + nslots
+            fVaB[fVaB.length() - 1] = slotB
           } else {
-            fVaB.push(slotB + nslots)
+            // The entry is the caller's top (see pcallEnter): the return pops
+            // to it, so the callee's slots below are reusable, not orphaned.
+            fVaB.push(slotB)
           }
           vaTop = slotB + nslots + nva
         }
@@ -10629,8 +10643,10 @@ mod vmStep() {
         }
       }
     } else if op == 45 {
-      // VARARG a, b: b = 1 gives one value, b = 0 gives all of them
-      let base = fVaB[fVaB.length() - 1]
+      // VARARG a, b: b = 1 gives one value, b = 0 gives all of them.
+      // The entry is the frame's slotB (see slotBase); its varargs start a
+      // table above it.
+      let base = fVaB[fVaB.length() - 1] + 3 * fUpSlotN[curFid()] + 1
       let have = vaTop - base
       let want = if b == 0 then have else b
       if 1 <= want {
