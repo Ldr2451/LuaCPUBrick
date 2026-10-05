@@ -50,6 +50,14 @@
 - While iterating run the single narrowest command that proves the change
   (`tools/check.py @file`, a suite filter, a dump), then verify wide once.
   Re-running the same file to "confirm" is wasted.
+- **A suite FILTER is the difference between 20s and 244s, so filter while you
+  iterate and sweep once at the end.** `tests/test_chip_suite.py pat` is 77 cases
+  in 20s; the whole suite is 244s and it was paid four times in one session while
+  a matcher change was being shaped. `bit`, `gsub`, `gmatch`, `arith` are the
+  other narrow ones. `pucsuite.py` is worse than useless to re-run: a sweep is
+  ~310s, so use `--file pm.lua` (repeatable) to settle one DIFF, and
+  `tools/chip/pucount.py` — pure text, seconds — to ask how many asserts are
+  harvestable at all.
 - A differential sweep's batch unit is the *program*, not the value: one
   `io.write` can carry a group (the log keeps 32 appends). Two silent ceilings:
   the source buffer is ~4 KB *including* the prepended library, and an expression
@@ -176,6 +184,14 @@
   Splitting a chain into mods is a no-op for size. The levers that work without
   a host primitive are fewer calls per tick and more useful work per bytecode
   instruction.
+- **So merge two adjacent arms before you look for a cheaper primitive.** The
+  same rule priced the other way: fixing a negative shift count with a shared
+  `vmShift(x, n, left)` cost **+49 nodes**, because a mod inlines and that has
+  two call sites. Ops 39 and 40 were one expression with a direction chosen, so
+  as **one arm** — `if (n < 0) == (op == 40) { x * 2^n } else { floor(x / 2^n) }`
+  — the same fix measured **−162**: one `2 ** n`, one `bitFail`, one arm fewer
+  in the chain. A correctness fix that needs a shared helper should first ask
+  whether the helper's two callers were one arm all along.
 - **`retAdjust` cannot be made cheap either.** It is sixteen unconditional `if`s
   inlined at ten call sites (3,004 nodes), and an early-exit ladder is the
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
@@ -323,8 +339,40 @@
   at 60 ticks/s for a program that names it once. **The first question about a
   piece is therefore how long it is, not how many functions it has**: the character
   term dominates, and eight functions is 200-500 ticks on top.
-  `tools/lib/libconst.py piece.lua LIB_x` prints the size; `--install` minifies (comments, indentation, blank lines out, nothing else - a
-  line inside a long bracket string is data) and rewrites the const in `lua.ws`.
+  `tools/lib/libconst.py piece.lua LIB_x` prints the size; `--install` minifies
+  (comments, indentation and blank lines out; a line inside a long bracket string
+  is data) **and renames the chunk's own locals to single letters**, then rewrites
+  the const in `lua.ws`. `tools/lib/installall.py` does every piece and
+  `tools/lib/nametest.py` proves the renamer's refusals bite.
+- **`lib/constmap.txt` maps a const to its master, and nothing can infer it.** A
+  master's minified+renamed text stops matching its const the moment it is
+  installed — that is the point of installing it — so the content-matching
+  installer written first worked exactly once. Ten consts had no master at all
+  before that file existed: readable Lua living only as an escaped string in
+  `lua.ws`, so the only way to change one was to hand-edit the escape.
+  `tools/lib/constcheck.py` is in preflight and holds both ends (it catches a
+  **same-length** change, which a character count cannot).
+- **A minified library piece fails SILENTLY, so the net has to be structural.**
+  A piece that stops parsing is not an error any program can see: every function
+  in it stops answering, with no message and no line. The same is true of a
+  generated prelude in the harvester. Two such bugs this session were invisible
+  that way and both passed 888 cases — a `for i` inside a table constructor,
+  where the `{key =}` guard renamed `select(i, ...)` but not its own
+  declaration, and one prelude cut mid-brace, which put an **empty log on both
+  engines** and read as "the chip cannot run anything". `lua.ws` carries a
+  banner above the const block saying all of this; do not hand-edit there.
+- **IDENTIFIER LENGTH IS NEARLY FREE, so a character count overstates a rename's
+  boot win by 10x.** Minifying and renaming all 29 installed pieces took the
+  library from 18,736 to 18,115 escaped characters, **−621 (−3.3%)** — and boot,
+  measured by running a witness program on both chips in one process
+  (`tools/chip/bootprobe.py --chip`), moved only **3,945 → 3,882** and
+  **2,216 → 2,176**: 40 to 63 ticks, not the 800 to 1,090 a flat
+  `chars × 1.3-1.75` model predicts. The lexer walks an identifier RUN rather
+  than each character, so shortening a name saves little; what the rename
+  removes is the structural characters around it. Two consequences: budget a boot
+  win by measuring it (`bootprobe.py` prints ticks, not seconds, for the reason
+  above), and do not mistake a small character cut for a failed optimization —
+  it may be nearly the whole of what was available.
 - **A gate can be dearer at boot than the piece it would replace.** Measured:
   naming `math.abs` or `math.floor` costs about 474 ticks of boot and
   `math.maxinteger` 923, because `libMathInt` and `libMathConst` are pieces the
@@ -611,6 +659,24 @@ and what they look like in the source.  	ools/chip/wswarn.py flags the visible o
   compiles to 4 nodes, so a probe that does not reach its body measures nothing.
 - Add an oracle case for the *rule* you got wrong, not just the program that
   exposed it.
+- **A quantifier's lower bound has to be enforced at BOTH ends of the walk, and
+  the give-back end is the one that gets forgotten.** `+` was enforced only where
+  the item matches nothing at all; once a repetition had happened the give-back
+  rewound to zero of them, so `("b"):match("b.+b")` matched and returned a
+  **two-character match on a one-character subject**. The floor is where the
+  repeat *began*, and it rides in the backtrack entry's item slot — patBack's
+  greedy arm never needs `patItemP` back, because `patNextItem` sets it fresh.
+  That costs one new entry KIND, no new stack slot and no new arm; a wider entry
+  and an extra arm cost the kind-7 arm its `patSp` write and hung every capture
+  closing over a repeat.
+- **`patSp = sp` is a pop, and `sp` is already the popped pointer.** Writing
+  `sp + 4` cancels it, leaves the entry on the stack and spins `patSt 4` for
+  ever. It cost four wrong shapes in a row before the stack trace gave it away,
+  because `patI` and `patItemP` *did* take effect and only `patSp` did not — so
+  it read like the Exec-chain problem the mod header warns about rather than
+  arithmetic. `tools/chip/patstack.py` reads `patSl`; `pattrace.py` reads the
+  named state and not the slots, and the floor is a comparison between two
+  slots, so the slots are the thing to read.
 - **Two rules that each cost a session, with the numbers, are in
   `docs/lessons.md`: never hand-keep a mirror of a dict somebody else builds, and
   a reset belongs to the phase that owns the state.** Read it before touching a
@@ -664,10 +730,15 @@ and what they look like in the source.  	ools/chip/wswarn.py flags the visible o
   name the gates that read them, and asking one of those gives an empty array or
   the wrong node, which is how the first version of the vararg check silently
   never fired.
-- `python -u tools/preflight.py` runs the four cheap structural nets (audit,
-  wswarn, consistency, syntax) in parallel — that plus one suite run is the
-  minimum bar for a change. `wswarn` and `consistency` have caught real bugs, so
-  keep them passing rather than skipping them to get a green run.
+- `python -u tools/preflight.py` runs the cheap structural nets (audit, wswarn,
+  twopaths, consistency, syntax, hostcompat, ladder, consts) in parallel — that
+  plus one suite run is the minimum bar for a change. `wswarn` and `consistency`
+  have caught real bugs, so keep them passing rather than skipping them to get a
+  green run. `consts` is the newest and the cheapest (0.1s, and it builds
+  nothing): every `const LIB_*` must rebuild byte for byte from its `lib/`
+  master and every master must have a const, which is what catches a hand-edited
+  or stale library piece — invisible from the program, because the piece still
+  parses and still runs.
 - After changing the sim or the runner, prove the fast path equals the slow one
   (`CHIP_BATCH=1` must give the same OK/FAIL counts).
 - **A model of the loop state finds what a diff cannot, and it is cheap** — the
