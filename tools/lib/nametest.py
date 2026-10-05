@@ -62,6 +62,30 @@ CASES = [
      "no declarations at all"),
 ]
 
+# Cases where the RESULT matters, not just OK/REFUSE: a name half-renamed is
+# the worst failure there is, because the piece still compiles and means
+# something else.  io_stderr.lua lost the first of these to the `{key =}`
+# guard mistaking a `for` header inside a table constructor for a key.
+#
+# Stated as must/must-not rather than as literal text: the fresh letters depend
+# on what else the chunk uses, so the property is the point, not the spelling.
+RESULT_CASES = [
+    # the `for` lives inside a constructor.  Its variable must rename in BOTH
+    # places, or every use reads an undefined global.
+    ('io.stderr = { write = function(self, ...)\n'
+     'for i = 1, select("#", ...) do _wr(tostring((select(i, ...)))) end\n'
+     'return self end }',
+     ['for ', 'select('], ['for i =', 'select(i,']),
+    # `local a, b = ...` in a constructor's function body: `b` sits after a
+    # comma and before an `=`, which is exactly a constructor key's shape.
+    ('t = { f = function() local a, b = 1, 2 return a + b end }',
+     ['local ', 'return '], ['return a + b']),
+    # a real constructor key whose name matches a local must NOT rename, while
+    # the variable of the same name elsewhere must.
+    ('local n = 1 return { n = 2, m = function() return n end }',
+     ['n = 2'], ['local n = 1']),
+]
+
 
 def check_case(src, expect, why):
     try:
@@ -80,6 +104,26 @@ def check_case(src, expect, why):
     return None
 
 
+def check_result_case(src, must, must_not, why):
+    """Every listed fragment must survive and every forbidden one must be gone.
+
+    Half-renaming a name is the failure worth guarding: the piece still
+    compiles, and every function in it silently means something else.
+    """
+    try:
+        out = rename_names(src)
+    except ValueError as e:
+        return "expected a rename, refused: %s -- %s" % (e, why)
+    for frag in must:
+        if frag not in out:
+            return "expected %r in the output, got %r -- %s" % (frag, out,
+                                                               why)
+    for frag in must_not:
+        if frag in out:
+            return "%r survived into %r -- %s" % (frag, out, why)
+    return None
+
+
 def main(argv):
     if argv:
         print(rename_names(open(argv[0], encoding="utf-8").read()))
@@ -90,7 +134,13 @@ def main(argv):
         err = check_case(src, expect, why)
         if err:
             fails.append(err)
-        print("%-6s %-52s %s" % (expect, src[:52], why))
+        print("%-6s %-52s %s" % (expect, src[:52].replace("\n", " "), why))
+    for src, must, must_not in RESULT_CASES:
+        err = check_result_case(src, must, must_not, "result")
+        if err:
+            fails.append(err)
+        print("%-6s %-52s keeps %s, drops %s"
+              % ("TEXT", src[:52].replace("\n", " "), must, must_not))
 
     # every master must rename cleanly: a refusal over a legitimate shape is a
     # bug in the renamer, and finding it here is cheaper than in the suite
@@ -107,9 +157,11 @@ def main(argv):
     if fails:
         for f in fails:
             print("FAIL: %s" % f)
-        print("%d case(s), %d failure(s)" % (len(CASES), len(fails)))
+        print("%d case(s), %d failure(s)"
+              % (len(CASES) + len(RESULT_CASES), len(fails)))
         return 1
-    print("all %d cases and %d masters OK" % (len(CASES), len(masters)))
+    print("all %d cases and %d masters OK"
+          % (len(CASES) + len(RESULT_CASES), len(masters)))
     return 0
 
 

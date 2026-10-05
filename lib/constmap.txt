@@ -1,0 +1,60 @@
+# const -> master: the map from what ships to what is readable.
+#
+# Nothing can infer this.  A master's minified+renamed text stops matching its
+# const the moment it is installed -- that is the point of installing it -- so a
+# tool that matched the two by content would work exactly once.  This file is
+# the map, and tests/test_consistency.py holds both ends to it: every
+# `const LIB_*` in lua.ws must name a master here, and every master here must
+# have its const.  A const with no master is library code nobody can read, and
+# ten of them were exactly that until this file existed.
+#
+# A master listed here but with no const is the opposite mistake: the piece is
+# written and never shipped.
+#
+# lib/str_format.lua, lib/gmatch.lua and lib/str_gsub_str.lua are deliberately
+# NOT here: they are reference implementations kept for gates that are too big
+# or too stateful to load as source (see each file's header for which).
+#
+# Install one piece:
+#   python -u tools/lib/libconst.py lib/<master>.lua <CONST> --install
+# Install every piece:
+#   python -u tools/lib/installall.py
+
+# -- io
+LIB_io		lib/io.lua
+LIB_iter	lib/iter.lua
+LIB_io_stderr	lib/io_stderr.lua
+LIB_os_exit	lib/os_exit.lua
+
+# -- string
+LIB_str_fmt	lib/str_fmt.lua
+LIB_str_gmatch	lib/str_gmatch.lua
+LIB_str_pat	lib/str_pat.lua
+LIB_str_index	lib/str_index.lua
+LIB_str_byte	lib/str_byte.lua
+LIB_str_char	lib/str_char.lua
+LIB_str_case	lib/str_case.lua
+LIB_str_misc	lib/str_misc.lua
+LIB_str_gsub	lib/str_gsub.lua
+
+# -- math
+LIB_math_const	lib/math_const.lua
+LIB_math_exp	lib/math_exp.lua
+LIB_math_trig	lib/math_trig.lua
+LIB_math_int	lib/math_int.lua
+LIB_math_maxmin	lib/math_maxmin.lua
+LIB_math_fmodmodf	lib/math_fmodmodf.lua
+LIB_math_random	lib/math_random.lua
+
+# -- table
+LIB_tab_concat	lib/tab_concat.lua
+LIB_tab_sort	lib/tab_sort.lua
+LIB_tab_pack	lib/tab_pack.lua
+LIB_tab_unpack	lib/tab_unpack.lua
+LIB_tab_insert	lib/tab_insert.lua
+LIB_tab_remove	lib/tab_remove.lua
+
+# -- tonumber
+LIB_tonumber	lib/tonumber.lua
+LIB_tonumber_base	lib/tonumber_base.lua
+LIB_tonumber_hex	lib/tonumber_hex.lua

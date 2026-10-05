@@ -474,13 +474,28 @@ def rename_names(src):
     # Declarations rewrite unconditionally (they are the binders); any other
     # occurrence rewrites only when it resolves to a param or a local.
     out = list(toks)
-    depth = 0
+    # Where is this token in an EXPRESSION?  Lua has no block braces, so every
+    # `{` is a table constructor -- but a constructor may contain a function
+    # body, and a function body holds STATEMENTS.  `for i = 1, ...` and
+    # `local a, b = ...` inside such a body are not constructor keys, and
+    # counting `{` alone renamed `for i` at its use but not at its declaration,
+    # which is the worst shape there is: it compiles, and means something else.
+    # So a token is in key position only when the enclosing `{` outnumbers the
+    # enclosing function bodies.
+    fdepth = [0] * len(toks)
+    for s in spans:
+        if s["kind"] != "function":
+            continue
+        for i in range(s["start"], s["end"]):
+            fdepth[i] += 1
+
+    brace = 0
     for i, (kind, text) in enumerate(toks):
         if kind == "other":
             if text == "{":
-                depth += 1
+                brace += 1
             elif text == "}":
-                depth = max(0, depth - 1)
+                brace = max(0, brace - 1)
             continue
         if kind != "ident" or text not in mapping:
             continue
@@ -488,11 +503,10 @@ def rename_names(src):
         # is two dots and must not read as one -- see _is_field_use.
         if _is_field_use(toks, i):
             continue
-        # `{key =`: next significant char is a single `=`.  It must be exactly
-        # one, because `==` is two `=` tokens and would otherwise read as a
-        # constructor key.
+        # `{key =`: next significant char is a single `=` (not the first `=` of
+        # `==`, which is two tokens) and this token is in key position.
         nxt = _significant(toks, i, 1)
-        if depth > 0 and 0 <= nxt and toks[nxt] == ("other", "="):
+        if brace > fdepth[i] and 0 <= nxt and toks[nxt] == ("other", "="):
             after = _significant(toks, nxt, 1)
             if not (0 <= after and toks[after] == ("other", "=")):
                 continue

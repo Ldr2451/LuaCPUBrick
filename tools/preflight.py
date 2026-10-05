@@ -31,16 +31,24 @@ two-second answer.  This runs the cheap half of the test matrix instead:
                         than 'wrong answer' -- so the check is that they have
                         not drifted.  Instant, and the only one here that does
                         not build
+  tools/lib/constcheck.py
+                         every `const LIB_*` in lua.ws rebuilds byte for byte
+                         from its lib/ master, and every master has a const.  A
+                         hand-edited or stale const is invisible from the
+                         program: the piece still parses and still runs, it just
+                         is not the piece lib/ says.  It catches the reverse too
+                         -- a const with no readable master, which ten of them
+                         were until lib/constmap.txt existed.  Touches nothing.
 
 One chip build is shared by every case in the last one, so the whole run is
 build-sized.  It is not a substitute for the suite -- it does not check
 results, only shapes -- so run the suite before committing, and this one
 after every edit.
 
-The seven checks are independent, and each but `ladder` is a build-sized
-single process, so they run at once: in series they are 65s of one core, and
-the slowest is 31s.  Their output is collected and printed in the same order,
-so a failure reads the same as it always did.
+The seven checks are independent, and each but `ladder` and `consts` is a
+build-sized single process, so they run at once: in series they are 65s of one
+core, and the slowest is 31s.  Their output is collected and printed in the same
+order, so a failure reads the same as it always did.
 
   python -u tools/preflight.py
 """
@@ -62,6 +70,7 @@ CHECKS = [
     ('hostcompat', ['tests/host_compat_check.py'],
      'every input reached the program'),
     ('ladder', ['tools/chip/ladder.py', '--check'], '-- OK'),
+    ('consts', ['tools/lib/constcheck.py'], '0 problem(s)'),
 ]
 
 
