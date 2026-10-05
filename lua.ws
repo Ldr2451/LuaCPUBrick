@@ -11183,16 +11183,28 @@ mod vmStep() {
         vmFail("attempt to perform bitwise operation on a " .. typeName(vt) .. " value")
       }
       vSetInt(a, -(vNum(b)) - 1.0)
-    } else if op == 39 {
+    } else if op == 39 || op == 40 {
       let lt = vTag(b)
       let rt = vTag(c)
       bitFail(lt, vNum(b), rt, vNum(c))
-      vSetInt(a, vNum(b) * (2.0 ** vNum(c)))
-    } else if op == 40 {
-      let lt = vTag(b)
-      let rt = vTag(c)
-      bitFail(lt, vNum(b), rt, vNum(c))
-      vSetInt(a, floor(vNum(b) / (2.0 ** vNum(c))))
+      // A shift by a NEGATIVE count REVERSES DIRECTION -- Lua 5.3 manual 3.4 --
+      // so `1000 << -5` is `1000 >> 5` and not a scale by 2^-5.  Computing
+      // `2 ** n` straight off got that wrong: a negative n scaled by a
+      // fraction, so `1000 << -5` was 31.25 and a match LENGTH came out
+      // fractional.  bitwise.lua:68 is the assert that found it, reachable only
+      // once the harvest stopped reading `not` as a captured variable.
+      //
+      // Both directions are ONE arm because they are one expression with the
+      // direction chosen: `shl` is the opcode's own direction, flipped when the
+      // count is negative.  As two arms with a helper mod each was 49 nodes,
+      // because a MOD INLINES at its call site and this has two of them.
+      let n0 = vNum(c)
+      let n = if n0 < 0 then 0.0 - n0 else n0
+      if (n0 < 0) == (op == 40) {
+        vSetInt(a, vNum(b) * (2.0 ** n))
+      } else {
+        vSetInt(a, floor(vNum(b) / (2.0 ** n)))
+      }
     } else if op == 0 {
       vmHalted = true
       advanced = true

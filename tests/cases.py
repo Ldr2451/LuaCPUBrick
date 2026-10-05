@@ -2935,6 +2935,20 @@ TESTS = [
     ("bit-not", "print(~0xFF)", None, "run"),
     ("bit-shl", "print(1<<3)", None, "run"),
     ("bit-shr", "print(16>>2)", None, "run"),
+    # A shift by a NEGATIVE count REVERSES DIRECTION (Lua 5.3 manual 3.4), so
+    # `1000 << -5` is `1000 >> 5`.  Computing `2 ** n` straight off scaled by a
+    # fraction instead, which made that 31.25 -- a fractional match LENGTH, and
+    # the only reason bitwise.lua:68 disagreed.  Found by the PUC harvest once
+    # it stopped reading `not` as a captured variable.
+    ("bit-shift-neg", "print(1000 << -5, 1000 >> -5, 1 << 0, 1 >> 0)", None,
+     "run"),
+    ("bit-shift-neg-zero", "print(0 << -3, 0 >> -3, 7 >> -1, 7 << -1)", None,
+     "run"),
+    ("bit-shift-neg-swap", "print(8 << -2, 8 >> -2, 12 >> -2, 12 << -2, "
+     "255 << -4, 255 >> -4)", None, "run"),
+    # `-1 >> 1` is NOT here: PUC gives maxinteger (an arithmetic shift of all
+    # ones) and the chip gives 0, which is the int64 wall, not a shift bug.
+    ("bit-shift-neg-expr", "print(('abcdef'):sub(1, 6 >> 1))", None, "run"),
     ("bit-mix", "print(5+~3)", None, "run"),
     ("bit-prec", "print(1&2|4)", None, "run"),
     ("bit-notneg", "print(~-5)", None, "run"),
