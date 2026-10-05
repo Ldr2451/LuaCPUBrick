@@ -372,6 +372,18 @@ TESTS = [
      "function even(n) if n == 0 then return true end return odd(n - 1) end\n"
      "function odd(n) if n == 0 then return false end return even(n - 1) end\n"
      "print(even(251), odd(251))", None, "run"),
+    # TCO crossed with closures: a closure escaping a frame that later tail
+    # calls must still read its cell.  Cells are append-only arena, so reuse
+    # cannot clobber them -- verified to 20k depth -- and this pins it.
+    ("tail-escape-cell",
+     "local saved\n"
+     "local function f(n)\n"
+     "  local x = n * 10\n"
+     "  if n == 5 then saved = function() return x end end\n"
+     "  if n == 0 then return 0 end\n"
+     "  return f(n - 1)\n"
+     "end\n"
+     "f(10)\nprint(saved())", None, "run"),
     ("tail-not-parenthesised",
      "local function inner(n) return n * 2 end\n"
      "local function outer() return (inner(21)) end print(outer())", None, "run"),
@@ -591,6 +603,31 @@ TESTS = [
     ("str-char", "print(string.char(72, 105, 33))", None, "run"),
     ("str-rep", "print(string.rep('ab', 3), string.rep('ab', 3, '-'), "
      "string.rep('ab', 0), string.rep('x', 1))", None, "run"),
+    # Doubling, not appending: rep('ab', 10, '-') is 10 copies and 9 dashes, and
+    # rep('', 3, '-') is '--' -- the empty-string edge the recurrence must hold.
+    ("str-rep-wide", "print(string.rep('ab', 10, '-'), string.rep('', 3, '-'), "
+     "string.rep('', 3), string.rep('a', 5, ''), string.rep(7, 3))", None,
+     "run", {"ticks": 9000}),
+    # n is luaL_checkinteger: integral numbers and numeric strings convert, a
+    # float is "no integer representation", anything else is "got T" -- and
+    # "3x" is a TYPE error, because it never parses as a number at all.
+    ("str-rep-count", "print(string.rep('ab', '3'), string.rep('ab', 2.0))",
+     None, "run", {"ticks": 9000}),
+    ("str-rep-count-bad", "print(string.rep('ab', 2.5))", None, "runtimerr",
+     {"ticks": 9000,
+      "expect": {"err": "number has no integer representation"}}),
+    ("str-rep-count-type", "print(string.rep('ab', true))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got boolean"}}),
+    ("str-rep-count-missing", "print(string.rep('ab'))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got no value"}}),
+    ("str-rep-count-str", "print(string.rep('ab', '3x'))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got string"}}),
+    # sep is luaL_optlstring: absent or nil is "", a number converts, anything
+    # else -- including false, which `or ""` used to swallow -- is "got T".
+    ("str-rep-sep", "print(string.rep('ab', 2, 5), string.rep('ab', 2, nil))",
+     None, "run", {"ticks": 9000}),
+    ("str-rep-sep-bad", "print(string.rep('ab', 2, false))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got boolean"}}),
     ("str-rev", "print(string.reverse('abc'), string.reverse(''))", None,
      "run"),
     ("str-empty-sub", "print('[' .. string.sub('abc', 9) .. ']')", None, "run"),
