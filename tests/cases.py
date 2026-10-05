@@ -986,6 +986,27 @@ TESTS = [
     ("pat-optional-backtrack", "print(string.match('b', '.?b'), "
      "string.match('ab', '.?b'), string.match('ab', 'a.?b'), "
      "string.match('acb', 'a.?b'), string.find('b', '.?b'))", None, "run"),
+    # `+` may not give back past its FIRST repetition, and that is a different
+    # rule from `?`: the give-back in patBack had no lower bound, so it unwound
+    # to zero of them.  ("b"):match("b.+b") then matched AND reported a
+    # two-character match on a one-character subject, because the tail read past
+    # the end.  Found by the PUC harvest (pm.lua:47), once the harvester stopped
+    # reading `not` as a captured variable.
+    #
+    # The last three are here because fixing this also fixed them: they are a
+    # capture closing over a repeat, and the floor is what unwinds them.
+    ("pat-plus-floor", "print(string.match('b', 'b.+b'), "
+     "string.match('ab', 'a.+b'), string.match('xb', 'x.+b'), "
+     "string.match('b', '.+b'), string.match('aaab', '.+b'))", None, "run"),
+    ("pat-plus-floor-set", "print(string.match('abc', '%a+%c'), "
+     "string.match('c', '%a+%c'), string.match('aab', 'a+b'), "
+     "string.match('ab', 'a+b'), string.match('b', 'a+b'))", None, "run"),
+    ("pat-plus-floor-walk", "print(string.match('aaaa', 'a+a'), "
+     "string.match('aaa', 'a+a'), string.match('aa', 'a+a'), "
+     "string.match('a', 'a+a'), string.match('bb', '.+b'))", None, "run"),
+    ("pat-plus-floor-capture", "print(string.match('xabcx', '(a)b(c)'), "
+     "string.match('f(a)(b)', 'f(a)(b)'), string.match('abc', '(%a*)b'), "
+     "string.match('xabcx', '(a)b(c)'))", None, "run"),
     ("pat-match-set", "print(string.match('abc', '[a-c]+'), "
      "string.match('abc', '[^b]'), string.match('hello', '[el]+'))", None,
      "run"),

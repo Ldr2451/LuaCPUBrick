@@ -62,6 +62,13 @@ BANNED = re.compile(r"\b(function|local|return|for|while|repeat|until|do|"
 # true/false/nil are literals, not bindings: without them `(10 or 2) == 10`
 # reads as closing over `nil`... they never did, they READ as values.
 LITERALS = {"true", "false", "nil"}
+# and/or/not are OPERATORS, so they appear in an expression and bind nothing.
+# They are unbanned above, which is what let them reach the identifier scan --
+# and there `not` matched IDENT, was in no allow-list, and came out as a
+# captured file local.  That was 368 asserts, the largest single bucket in the
+# harvest, and every one was this function's bug rather than a test the chip
+# could not pass.
+OPKEYWORDS = {"and", "or", "not"}
 # File locals the runner binds with the same value their file gives them, so
 # expressions using them stay self-contained.  math.lua, attrib.lua and
 # files.lua all bind maxint to math.maxinteger (and math.lua binds minint to
@@ -92,7 +99,8 @@ def self_contained(expr):
         if start and bare[start - 1] in ".:'":
             continue
         if m.group(0) not in GLOBALS and m.group(0) not in LITERALS \
-                and m.group(0) not in PRELUDE:
+                and m.group(0) not in PRELUDE \
+                and m.group(0) not in OPKEYWORDS:
             return False, "closes over %r" % m.group(0)
     return True, ""
 

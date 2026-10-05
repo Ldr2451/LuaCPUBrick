@@ -4659,11 +4659,29 @@ mod patApply() {
         patP = patQEnd
         patSt = 1
       }
-    } else if !patPush(1, patItemP, patI, patQEnd) {
-      patErr = "pattern too complex"
-      patSt = 8
     } else {
-      patSt = 11
+      // `+` may not give back past its FIRST repetition, and the check above is
+      // not enough: it only sees `+` matching nothing AT ALL.  Once a repetition
+      // has happened the give-back lives in patBack, which had no lower bound
+      // to consult, so it rewound to zero of them.  That is why
+      // ("b"):match("b.+b") matched -- and returned a two-character match on a
+      // one-character subject.  pm.lua:47 is the assert that found it, once the
+      // harvest stopped mis-reading `not` as a captured variable.
+      //
+      // The floor is WHERE THE REPEAT BEGAN, and for a `+` it rides in the
+      // entry's item slot rather than a new one, because patBack's greedy arm
+      // never needs patItemP back: patNextItem sets it fresh for every item it
+      // tests, which is what the `?` arm's comment already says.  So kind 9 is
+      // kind 1 with a floor -- one new KIND, no new stack slot, no new arm in
+      // patBack and no extra nesting, which is what makes it affordable at all.
+      let kind = if patQ == 2 then 9 else 1
+      let item = if patQ == 2 then patI else patItemP
+      if !patPush(kind, item, patI, patQEnd) {
+        patErr = "pattern too complex"
+        patSt = 8
+      } else {
+        patSt = 11
+      }
     }
   } else if patQ == 3 {
     if patHit {
@@ -8898,7 +8916,7 @@ mod patBack() {
     let k1 = patSl[sp + 1]
     let k2 = patSl[sp + 2]
     let k3 = patSl[sp + 3]
-    if k0 == 1 {
+    if k0 == 1 || k0 == 9 {
       // Every value this arm needs comes from the locals read at the top of the
       // mod, and nothing below READS a var it has just written.  That is this
       // mod's own header rule, and this arm broke it twice: it wrote patI and then
@@ -8906,15 +8924,29 @@ mod patBack() {
       // into patP.  Both are reads that follow a var write inside a nested arm,
       // which is the shape the header says loses its Exec chain when the mod is
       // inlined this many times.
+      //
+      // Kind 9 is the same give-back with a floor, and for kind 9 the item slot
+      // carries where the repeat BEGAN rather than the item's pattern position:
+      // begin >= lastStart means the last repetition already starts where the
+      // repeat starts, so giving it back would leave `+` with none.  The kind is
+      // re-pushed, so the floor holds for every step of the walk down and not
+      // just the first.
+      //
+      // `patSp = sp` is the POP, and sp is already the popped pointer -- writing
+      // `sp + 4` cancels it, leaves the entry in place and spins patSt 4 for
+      // ever.  Two flat tests and no `else`, so the floor overrides patSt after
+      // the ordinary writes rather than competing with them for the arm's depth.
       patSp = sp
       patItemP = k1
       patI = k2
       patQEnd = k3
-      if 0 <= k2 - 1 {
-        patPush(1, k1, k2 - 1, k3)
-      }
       patP = k3
       patSt = 1
+      if k0 == 9 && k1 >= k2 {
+        patSt = 4
+      } else if 0 <= k2 - 1 {
+        patPush(k0, k1, k2 - 1, k3)
+      }
     } else if k0 == 2 {
       // The `?` alternative: the tail runs again without the item, which means
       // the subject rewinds to where the item started (k2 above), not where it
