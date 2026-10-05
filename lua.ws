@@ -4741,6 +4741,15 @@ mod libStrPat(p: string, d: bool) -> string {
       then LIB_str_pat else ""
 }
 
+// No string-literal fast path, and that is measured rather than assumed.  A fast
+// piece without the function/table arms is lib/str_gsub_str.lua (1,998 chars
+// against 2,649) and it boots a literal-replacement gsub in 2,152 ticks against
+// 2,799 -- a real -647.  But the gate costs +99 nodes (57,929 -> 58,028): finding
+// the THIRD argument takes two comma Finds plus a class test per call, unrolled
+// twice so a mixed program installs everything, and that machinery exists whether
+// or not the program uses gsub.  6.5 ticks per node against the tonumber split's
+// 31, under a rule that says nodes do not go up.  Reverted; the master and the
+// numbers stay so it is not retried blind.
 mod libStrGsub(p: string, d: bool) -> string {
   return if d || srcUses(p, "string.gsub") || srcUsesField(p, "gsub")
       then LIB_str_pat .. LIB_str_gsub else ""
