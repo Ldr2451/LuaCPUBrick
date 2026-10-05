@@ -1357,6 +1357,53 @@ TESTS = [
     # spelling, and the chip prints the shortest round-trip form of the
     # fraction where PUC prints 17 digits.
     ("math-modf", "print(math.modf(3.7))", None, "run"),
+    # math.ult compares as UNSIGNED, which a double cannot hold past 2^53 -- so the
+    # signs decide: both non-negative compare directly, a negative second argument
+    # is larger (true), a negative first is not (false), and two negatives keep
+    # their order.  Exact inside +/-2^53; past it the doubles already rounded.
+    # The checks are luaL_checkinteger asked of the oracle: missing is "no value",
+    # explicit nil is "nil" (hence function(...), like the str pieces), numeric
+    # strings convert, anything else stringy is "got string".
+    ("math-ult", "print(math.ult(1, 2), math.ult(-1, 1), math.ult(1, -1), "
+     "math.ult(-1, -2), math.ult(0, 0), math.ult(9007199254740991, "
+     "9007199254740990), math.ult(-9007199254740991, 9007199254740991))",
+     None, "run", {"ticks": 9000}),
+    # Past +/-2^53 the doubles already rounded, so the chip REFUSES where PUC
+    # answers: _m(13, x, 0) is nil out there and ult errors "no integer
+    # representation".  PUC answers false, true, false for these three.  Same
+    # wall as lit-hex / int-wrap / math-maxinteger in CHIP_LOG, pinned here as
+    # the refusal rather than the log.
+    ("math-ult-large", "print(math.ult(9223372036854775807, 0))", None,
+     "runtimerr", {"ticks": 9000,
+                   "expect": {"err": "no integer representation"}}),
+    ("math-ult-coerce", "print(math.ult('3', '4'), math.ult(2.0, 3.0), "
+     "math.ult(' 4', 5), math.ult('4', '5'))", None, "run",
+     {"ticks": 9000}),
+    # A hex string converts in PUC (stringtonumber reads 0x) and not in the
+    # chip's v + 0, so this is "got string" where PUC answers true (16 < 17).
+    # A hex-integer walk would fix it and tax EVERY math.floor boot for the
+    # sake of ult("0x..") -- the walk belongs to tonumber, which already pays
+    # 2,779 characters for it.  Pinned as the refusal.
+    ("math-ult-hexstr", "print(math.ult('0x10', 17))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got string"}}),
+    ("math-ult-float-reject", "print(math.ult(1.5, 2))", None, "runtimerr",
+     {"ticks": 9000,
+      "expect": {"err": "number has no integer representation"}}),
+    ("math-ult-str-reject", "print(math.ult('3.5', 4))", None, "runtimerr",
+     {"ticks": 9000,
+      "expect": {"err": "number has no integer representation"}}),
+    ("math-ult-str-type", "print(math.ult('x', 1))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got string"}}),
+    ("math-ult-noargs", "print(math.ult())", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got no value"}}),
+    ("math-ult-onearg", "print(math.ult(1))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got no value"}}),
+    ("math-ult-badtype", "print(math.ult({}, 1))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got table"}}),
+    ("math-ult-bool", "print(math.ult(true, 1))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got boolean"}}),
+    ("math-ult-nil", "print(math.ult(nil, 1))", None, "runtimerr",
+     {"ticks": 9000, "expect": {"err": "got nil"}}),
     # math.random is a Lua piece, so it is the one builtin whose NUMBERS are not
     # PUC's: PUC seeds xoshiro256** on a 64-bit state and the chip runs a 32-bit
     # LCG, so the same seed gives a different sequence and no program can tell
