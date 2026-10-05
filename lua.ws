@@ -3470,10 +3470,11 @@ mod srcUsesField(p: string, name: string) -> bool {
   return srcUses(p, dotted) || srcUses(p, colon)
 }
 
-mod srcNames(p: string, tbl: string, name: string) -> bool {
-  return srcUses(p, tbl .. "." .. name) || srcUses(p, ":" .. name)
-      || srcUses(p, "\"" .. name .. "\"") || srcUses(p, "'" .. name .. "'")
-}
+// srcNames (dotted/colon/quoted-double/quoted-single) lived here and is gone:
+// libTabDyn/libMathDyn answer the run-time case for tables and math, so every
+// table/math gate uses srcNames2 (two spellings) and nothing called this.  An
+// unused mod is 4 nodes; the 14 call sites it once had are the +33/+42
+// measurements in the cNum note.
 
 // A LIBRARY TABLE INDEXED BY A NAME THE PROGRAM BUILT AT RUN TIME.
 //
@@ -3500,6 +3501,10 @@ mod srcNames(p: string, tbl: string, name: string) -> bool {
 // The over-trigger is deliberate and cheap: `mytable[k]` contains `table[`, so a
 // program with a local of that name installs the table pieces.  It costs boot ticks
 // on that program and nothing else, and the alternative -- missing a call -- is worse.
+//
+// The flag crosses as a PARAMETER, not a global, and that is measured: 9 string
+// gates taking a global dynStr instead were +11 nodes (57,923 -> 57,934), because a
+// persistent var plus 9 reads costs more than 9 bool pins.  Reverted.
 mod libTabDyn(p: string) -> bool {
   return srcUses(p, "table[")
 }
@@ -3559,12 +3564,19 @@ mod libStrDyn(p: string) -> bool {
 // pieces -- local k = "up" .. "per" -- used to index a string value.  Same wall that
 // keeps string.format a gate: 11,468 characters does not fit the source buffer.
 
+// Purely dynamic signals: a bracket on the table name, whatever the key became.
+// The DOTTED form ("io.", "os.") lived here and is gone, and it was load-bearing
+// in the wrong direction: every "io.write" contains "io.", so d was true for every
+// static user too -- including an io.stderr-only program, which then installed all
+// of LIB_io and defeated the split the libIo comment below exists to keep ("stderr
+// users must not pay for read/write/lines").  Static names are the name checks'
+// job; this answers only what they cannot see.
 mod libIoDyn(p: string) -> bool {
-  return srcUses(p, "io[") || srcUses(p, "io.")
+  return srcUses(p, "io[")
 }
 
 mod libOsDyn(p: string) -> bool {
-  return srcUses(p, "os[") || srcUses(p, "os.")
+  return srcUses(p, "os[")
 }
 
 // TWO spellings, for the tables whose gate is now complete on its own because
