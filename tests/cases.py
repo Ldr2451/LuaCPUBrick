@@ -137,6 +137,14 @@ TESTS = [
      "print(half('7'), half(7))", None, "run", {"ticks": 9000}),
     ("tonum-base10", "print(tonumber('42', 10), tonumber(' 42 ', 10))",
      None, "run", {"ticks": 9000}),
+    # The base walk is its own piece (LIB_tonumber_base), gated on whether ANY
+    # `tonumber(` call carries a comma -- not just the first.  Checking only the
+    # first missed a plain call followed by a base call, so the second raised
+    # "attempt to call" where PUC answers 255.  Both orders are pinned.
+    ("tonum-mixed-base", "print(tonumber('42'), tonumber('ff', 16))",
+     None, "run", {"ticks": 9000}),
+    ("tonum-mixed-base-rev", "print(tonumber('ff', 16), tonumber('42'))",
+     None, "run", {"ticks": 9000}),
     ("tonum-noargs", "print(tonumber())", None, "runtimerr",
      {"ticks": 9000,
       "expect": {"err": "bad argument #1 to 'tonumber' (value expected)"}}),
