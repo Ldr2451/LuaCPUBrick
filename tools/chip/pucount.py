@@ -30,6 +30,7 @@ def main(argv):
         return 1
     total_asserts = 0
     kept = 0
+    lifted = 0
     reasons = collections.Counter()
     per_file = collections.Counter()
     for path in files:
@@ -37,6 +38,9 @@ def main(argv):
             text = open(path, encoding="utf-8", errors="replace").read()
         except OSError:
             continue
+        # the same prelude the harvester builds, so these numbers cannot drift
+        # from the ones the run reports
+        pre, bound = P.file_prelude(text)
         for line in text.splitlines():
             s = line.strip()
             if not s.startswith("assert(") or not s.endswith(")"):
@@ -49,10 +53,19 @@ def main(argv):
             if ok:
                 kept += 1
                 per_file[os.path.basename(path)] += 1
-            else:
-                reasons[why] += 1
+                continue
+            m = re.match(r"closes over '(\w+)'$", why)
+            if pre and m and m.group(1) in bound \
+                    and len(pre) + len(expr) <= P.PRELUDE_MAX:
+                lifted += 1
+                per_file[os.path.basename(path)] += 1
+                continue
+            reasons[why] += 1
     print("%d single-line assert() in %d files" % (total_asserts, len(files)))
     print("harvested (runnable on chip): %d" % kept)
+    print("  +%d more through a file-local prelude, which tests the EXPRESSION "
+          "under a\n  substituted binding rather than PUC's context -- weaker "
+          "than the %d above" % (lifted, kept))
     print("not harvested:")
     for why, n in reasons.most_common():
         print("  %-28s %4d" % (why, n))
