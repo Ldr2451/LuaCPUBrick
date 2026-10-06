@@ -480,8 +480,13 @@ def rename_names(src):
     # `local a, b = ...` inside such a body are not constructor keys, and
     # counting `{` alone renamed `for i` at its use but not at its declaration,
     # which is the worst shape there is: it compiles, and means something else.
-    # So a token is in key position only when the enclosing `{` outnumbers the
-    # enclosing function bodies.
+    # So a token is in key position only when its nearest enclosing `{` was
+    # opened at the SAME function depth the token sits in.  Counting depth
+    # alone (`brace > fdepth`) worked at chunk level and failed inside functions:
+    # os.date's `*t` table sits in the function (brace 1, fdepth 1), so its
+    # `wday = wday` keys renamed to `ak = ak` -- compiling, and meaning
+    # something else.  The suite caught it (os-date-table); the comment above
+    # did not, because it described the heuristic instead of the rule.
     fdepth = [0] * len(toks)
     for s in spans:
         if s["kind"] != "function":
@@ -489,13 +494,14 @@ def rename_names(src):
         for i in range(s["start"], s["end"]):
             fdepth[i] += 1
 
-    brace = 0
+    brace = []          # function-depth recorded at each unclosed `{`
     for i, (kind, text) in enumerate(toks):
         if kind == "other":
             if text == "{":
-                brace += 1
+                brace.append(fdepth[i])
             elif text == "}":
-                brace = max(0, brace - 1)
+                if brace:
+                    brace.pop()
             continue
         if kind != "ident" or text not in mapping:
             continue
@@ -503,10 +509,12 @@ def rename_names(src):
         # is two dots and must not read as one -- see _is_field_use.
         if _is_field_use(toks, i):
             continue
-        # `{key =`: next significant char is a single `=` (not the first `=` of
-        # `==`, which is two tokens) and this token is in key position.
+        # `{key =`: next significant char is a single `=` (not the first `=`
+        # of `==`, which is two tokens) and the nearest enclosing `{` opened
+        # at this token's own function depth.
         nxt = _significant(toks, i, 1)
-        if brace > fdepth[i] and 0 <= nxt and toks[nxt] == ("other", "="):
+        if brace and brace[-1] == fdepth[i] and 0 <= nxt \
+                and toks[nxt] == ("other", "="):
             after = _significant(toks, nxt, 1)
             if not (0 <= after and toks[after] == ("other", "=")):
                 continue

@@ -39,10 +39,20 @@ from irsims import ChipRunner  # noqa: E402
 from lua_oracle import norm_val, oracle_log, oracle_run  # noqa: E402
 
 # Bare names an expression may use.  Anything else means it closes over a local
-# and cannot be lifted out of its file.  Deliberately excludes rawequal,
-# rawget, rawset, setmetatable, getmetatable, coroutine, load, require, io and
-# os: the chip has none of them, so an expression using one is not a test the
-# chip could pass.  `bit32` IS here because the chip has it as a piece now
+# and cannot be lifted out of its file.  Deliberately excludes
+# rawget, rawset, setmetatable, getmetatable, coroutine, load,
+# require and io: the chip has none of them (its io is ports, not
+# files), so an expression using one is not a test the chip could
+# pass.  `os` IS here: the chip has os.clock/difftime/time/date/
+# setlocale/exit (lib/os_date.lua, lib/os_exit.lua), and every form
+# that needs no wall clock answers exactly what PUC does -- an
+# explicit time is arithmetic, and the calendar is exact for any
+# year a double distinguishes.  The forms that DO need a clock
+# (os.time() and a dateless os.date()) error on the chip where PUC
+# reads the wall clock, so those asserts DIFFER honestly rather than
+# agree wrongly; a local-zone oracle also disagrees with the chip's
+# UTC by its own offset, which is the boundary, not a bug.
+# `bit32` IS here because the chip has it as a piece now
 # (lib/bit32.lua, transcribed from bitwise.lua's own reference) -- and PUC's
 # asserts bind it to that same reference via require, so both sides run the
 # same functions.  `utf8` IS here for the same reason (lib/utf8.lua plus
@@ -52,7 +62,7 @@ from lua_oracle import norm_val, oracle_log, oracle_run  # noqa: E402
 GLOBALS = {
     "assert", "error", "ipairs", "pairs", "next", "select", "tonumber",
     "tostring", "type", "pcall", "xpcall", "print", "unpack", "rawequal",
-    "math", "string", "table", "bit32", "utf8", "_VERSION",
+    "math", "string", "table", "bit32", "utf8", "os", "_VERSION",
 }
 
 # Names that appear after a dot or a colon are fields, not bindings.

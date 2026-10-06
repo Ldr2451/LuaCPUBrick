@@ -3026,6 +3026,39 @@ TESTS = [
      "math.rad(90) == math.pi / 2)", None, "run"),
     ("math-ldexp", "print(math.ldexp(3, 4), math.ldexp(1.5, -2), "
      "math.ldexp(1, 0))", None, "run"),
+    # os.clock/difftime/time/date/setlocale: everything needing no clock, no
+    # files and no OS.  os.time() and dateless os.date() error cleanly ("no
+    # clock") instead of answering from a clock that does not exist, and every
+    # date is UTC (no OS timezone exists -- a hardcoded offset would be wrong
+    # twice a year).  Logs below are UTC and PUC-verified; a local-zone oracle
+    # disagrees by its offset, which is the boundary, not a bug.
+    ("os-clock", "print(os.clock() >= 0)", None, "state",
+     {"ticks": 15000, "expect": {"log": "true\n"}}),
+    ("os-difftime", "print(os.difftime(100, 30))", None, "state",
+     {"ticks": 15000, "expect": {"log": "70.0\n"}}),
+    ("os-date-empty", "print(os.date(''), os.date('!') == '')", None, "state",
+     {"ticks": 15000, "expect": {"log": "\ttrue\n"}}),
+    ("os-date-fields", "print(os.date('%Y-%m-%d', 0))", None, "state",
+     {"ticks": 15000, "expect": {"log": "1970-01-01\n"}}),
+    ("os-date-table", "print(os.date('*t', 0).year, os.date('*t', 0).wday)",
+     None, "state", {"ticks": 15000, "expect": {"log": "1970\t5\n"}}),
+    ("os-setlocale", "print(os.setlocale('C'), os.setlocale() == 'C')", None,
+     "state", {"ticks": 15000, "expect": {"log": "C\ttrue\n"}}),
+    # NUL bytes pass through the format untouched (files.lua:838-839),
+    # and the two-arg setlocale answers "C" for any category
+    # (strings.lua:454) -- both now agree in the PUC harvest.
+    ("os-date-nul", "print(os.date('\\0\\0') == '\\0\\0', "
+     "os.date('!\\0\\0') == '\\0\\0')", None, "state",
+     {"ticks": 15000, "expect": {"log": "true\ttrue\n"}}),
+    ("os-setlocale-arg", "print(os.setlocale(nil, 'numeric') == 'C')",
+     None, "state", {"ticks": 15000, "expect": {"log": "true\n"}}),
+    # os.time reads the table as UTC (no OS timezone exists on the
+    # chip), so epoch zero is zero here -- a local-zone PUC differs
+    # by its offset, which is the recorded boundary, not a bug.  This
+    # is the calendar INVERSE (dcivil) that os.date exercises forward.
+    ("os-time-table", "print(os.time({year = 1970, month = 1, day = 1, "
+     "hour = 0, min = 0, sec = 0}))", None, "state",
+     {"ticks": 15000, "expect": {"log": "0\n"}}),
     ("bit-mix", "print(5+~3)", None, "run"),
     ("bit-prec", "print(1&2|4)", None, "run"),
     ("bit-notneg", "print(~-5)", None, "run"),

@@ -84,6 +84,12 @@ RESULT_CASES = [
     # the variable of the same name elsewhere must.
     ('local n = 1 return { n = 2, m = function() return n end }',
      ['n = 2'], ['local n = 1']),
+    # a constructor INSIDE a function body: its keys are still keys, even
+    # though brace-depth and function-depth are both 1 there.  Counting depth
+    # alone renamed os.date's `wday = wday` to `ak = ak` -- compiling, and
+    # meaning something else -- and the suite case os-date-table caught it.
+    ('local function f(a, b) return {a = a, b = b} end',
+     ['{a = a, b = b}'], ['{c = a,', '{a = c,']),
 ]
 
 
