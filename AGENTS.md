@@ -373,6 +373,15 @@
   `lua.ws`, so the only way to change one was to hand-edit the escape.
   `tools/lib/constcheck.py` is in preflight and holds both ends (it catches a
   **same-length** change, which a character count cannot).
+- **A loader trigger costs ~5 nodes per arm, so fold prefixes where they share
+  a piece -- and check collisions against the derived list, not by eye.**
+  `srcUses(p, "math.l")` names log AND ldexp in one Find (both live in
+  LIB_math_exp, no other math.l* exists): -3 nodes measured.  The same fold
+  fails everywhere else -- math.d is deg-only but math.r catches random,
+  math.t catches tointeger+type, math.a catches abs, math.s catches sqrt,
+  math.c catches ceil -- and `:l` as a FIELD would false-positive on `s:len()`.
+  `tools/chip/pucsuite.py` derives every member from lua.ws already
+  (CHIP_MEMBERS), so the collision check is one command, not a reading.
 - **A minified library piece fails SILENTLY, so the net has to be structural.**
   A piece that stops parsing is not an error any program can see: every function
   in it stops answering, with no message and no line. The same is true of a
