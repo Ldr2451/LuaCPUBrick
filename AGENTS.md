@@ -50,6 +50,13 @@
 - While iterating run the single narrowest command that proves the change
   (`tools/check.py @file`, a suite filter, a dump), then verify wide once.
   Re-running the same file to "confirm" is wasted.
+- **A CAP at the probe default is a measurement of the harness, not of the
+  chip.** `tools/check.py` runs at 1200 ticks unless `PROBE_TICKS=` says
+  otherwise, and a program that boots the gsub piece needs ~2700 of parse
+  before it runs one instruction. `string.gsub("aaab", ".+b", "X")` read as a
+  hang at the default and answers correctly in 66 matcher ticks -- the stack
+  trace said so, and a realistic cap confirmed it. Prove a hang with the
+  tracer before fixing one.
 - **A suite FILTER is the difference between 20s and 244s, so filter while you
   iterate and sweep once at the end.** `tests/test_chip_suite.py pat` is 77 cases
   in 20s; the whole suite is 244s and it was paid four times in one session while
@@ -192,6 +199,20 @@
   — the same fix measured **−162**: one `2 ** n`, one `bitFail`, one arm fewer
   in the chain. A correctness fix that needs a shared helper should first ask
   whether the helper's two callers were one arm all along.
+- **Unary binds tighter than the shifts, and `^` tighter than unary -- and the
+  chip's table has to say so with three different numbers.** Unary shared the
+  shifts' 6, so left-associativity popped the unary first and `-8 >> 4` was
+  really `-(8 >> 4)`: right exactly where the two coincide, wrong everywhere
+  else. Now `**` 8, unary 7, shifts 6. A literal with a leading `-` in front of
+  any new operator is the test, because a variable of the same value takes a
+  different path and will not catch it.
+- **A right shift has to FLOOR, and the host's `floor()` truncates.** So
+  `floor(-0.5)` is 0, and `-8 >> 4` was 0 instead of -1. This is op 34's `//`
+  idiom verbatim (`q | 0`, then step down when a negative quotient was not
+  exact) -- reused rather than wrapped, because a mod inlines. What remains is
+  PUC's UNSIGNED reading of the shifted pattern (`-1 >> 1` is 2^63-1): 63
+  mantissa bits against a double's 53, so no spelling of it -- a wall, pinned
+  in CHIP_LOG, not a bug to chase.
 - **`retAdjust` cannot be made cheap either.** It is sixteen unconditional `if`s
   inlined at ten call sites (3,004 nodes), and an early-exit ladder is the
   obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
