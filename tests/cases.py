@@ -2946,9 +2946,25 @@ TESTS = [
      "run"),
     ("bit-shift-neg-swap", "print(8 << -2, 8 >> -2, 12 >> -2, 12 << -2, "
      "255 << -4, 255 >> -4)", None, "run"),
-    # `-1 >> 1` is NOT here: PUC gives maxinteger (an arithmetic shift of all
+    # `-1 >> 0` is NOT here: PUC gives maxinteger (an arithmetic shift of all
     # ones) and the chip gives 0, which is the int64 wall, not a shift bug.
     ("bit-shift-neg-expr", "print(('abcdef'):sub(1, 6 >> 1))", None, "run"),
+    # Unary binds TIGHTER than << and >>, and `^` binds tighter than unary.
+    # Unary used to share the shifts' precedence, so left-associativity popped
+    # the unary first and every literal like `-8 >> 4` was really `-(8 >> 4)` --
+    # which agreed with PUC only where the two coincide, so `-8 >> 1` (-4)
+    # looked right and `-8 >> 4` did not.
+    #
+    # The answers below are also the FLOOR, not a truncation: the host's floor()
+    # truncates toward zero, so floor(-0.5) is 0.  `-1 >> 1` is -1.
+    #
+    # PUC prints the UNSIGNED reading of the shifted 64-bit pattern, so its
+    # `-1 >> 1` is 2^63-1 and not -1.  That is not pinned here: 2^63-1 needs 63
+    # mantissa bits and a double has 53.
+    ("prec-unary-shift", "print(-8 >> 4, -8 >> 1, -1 >> 1, -1024 >> 10, "
+     "-2 >> 1, -3 >> 1)", None, "run"),
+    ("prec-unary-pow", "print(-2^2, (-2)^2, 2^-2, -2 * 3, -2 + 3, "
+     "-2 .. 'x', -#('abc'))", None, "run"),
     ("bit-mix", "print(5+~3)", None, "run"),
     ("bit-prec", "print(1&2|4)", None, "run"),
     ("bit-notneg", "print(~-5)", None, "run"),

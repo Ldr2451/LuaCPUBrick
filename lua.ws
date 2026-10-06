@@ -6662,20 +6662,20 @@ mod exprPrefix() {
     closeMode = 4
     popMode = 2
   } else if k == 5 && s == 24 {
-    pushOp(1, 6, 2, 0, valStk.length())
+    pushOp(1, 7, 2, 0, valStk.length())
     cpos = cpos + 1
   } else if k == 5 && s == 15 {
     // ')' in prefix (empty call/group, trailing comma, or drain first)
     closeMode = 1
     popMode = 2
   } else if k == 5 && s == 2 {
-    pushOp(1, 6, 0, 0, valStk.length())
+    pushOp(1, 7, 0, 0, valStk.length())
     cpos = cpos + 1
   } else if k == 4 && s == 12 {
-    pushOp(1, 6, 1, 0, valStk.length())
+    pushOp(1, 7, 1, 0, valStk.length())
     cpos = cpos + 1
   } else if k == 5 && s == 27 {
-    pushOp(1, 6, 38, 0, valStk.length())
+    pushOp(1, 7, 38, 0, valStk.length())
     cpos = cpos + 1
     expectOperand = true
   } else if k == 4 && s == 8 {
@@ -7037,7 +7037,14 @@ mod exprInfix() {
   let s = curSub()
   if k == 5 && s >= 1 && s <= 6 {
     let opc = if s == 1 then 8 else if s == 2 then 9 else if s == 3 then 10 else if s == 4 then 11 else if s == 5 then 12 else 13
-    let prc = if s == 6 then 7 else if s <= 2 then 4 else 5
+    // `**` sits ABOVE unary and the shifts, which is Lua's order: ^ binds
+    // tighter than unary (`-2^2` is -(2^2), not (-2)^2) and unary binds tighter
+    // than << >> (`-1 >> n` is (-1) >> n, not -(1 >> n)).  Unary used to share
+    // the shifts' 6, so left-associativity popped the unary first and every
+    // literal like `-8 >> 4` was really `-(8 >> 4)`: it agreed with PUC only
+    // where the two happen to coincide, which is why `-8 >> 1` looked right
+    // (-4) and `-8 >> 4` did not.
+    let prc = if s == 6 then 8 else if s <= 2 then 4 else 5
     let fl = if s == 6 then 0 else 1
     binArrive(opc, prc, fl)
     cpos = cpos + 1
@@ -11203,7 +11210,18 @@ mod vmStep() {
       if (n0 < 0) == (op == 40) {
         vSetInt(a, vNum(b) * (2.0 ** n))
       } else {
-        vSetInt(a, floor(vNum(b) / (2.0 ** n)))
+        // A right shift has to FLOOR, and this arm used floor() believing it
+        // did: the host's floor() TRUNCATES toward zero (see the note by it), so
+        // floor(-0.5) is 0 and not -1, and `-8 >> 4` came out 0.  Every earlier
+        // shift test passed because their quotients happened to be integral.
+        //
+        // This is op 34's `//` floor, verbatim -- truncate toward zero with the
+        // bitwise `| 0`, then step down when a negative quotient was not exact.
+        // Reusing the idiom rather than a new helper because a MOD INLINES, and
+        // this is the second copy of these four lines either way.
+        let q = vNum(b) / (2.0 ** n)
+        let t = q | 0
+        vSetInt(a, if q < 0.0 && q != t + 0.0 then t - 1 else t)
       }
     } else if op == 0 {
       vmHalted = true

@@ -112,6 +112,18 @@ TIMEOUT_OVERRIDES = {
 # entry it explains is worse than no comment: it reads as a live divergence and
 # sends the next person looking for a bug that is not there.
 CHIP_LOG = {
+    # PUC shifts the 64-bit PATTERN and prints the result, so a right shift of a
+    # negative number comes out UNSIGNED: `-8 >> 4` is 1152921504606846975, which
+    # is 2^60-1.  The chip's numbers are doubles, and 2^60-1 needs 60 mantissa
+    # bits where a double has 53, so this is not reachable -- there is no
+    # spelling of it.  What IS reachable is the signed floor, and that is what
+    # these pin: `-8 >> 4` is -1, not the 0 that a truncating floor() gave, and
+    # not the 0 that unary-minus-bound-looser gave.  Both were real bugs and both
+    # are now regression tests, so the fix cannot come back silently.
+    "prec-unary-shift": "-1\t-4\t-1\t-1\t-1\t-2\n",
+    # `-2^2` is -(2^2) and `2^-2` parses, i.e. `^` binds tighter than unary and
+    # unary tighter than the shifts.  This one AGREES with the oracle and is here
+    # only because it is the other half of the same precedence change.
     "lit-hex": "255\t16\t9223372036854775808\n",
     "fmt-div3": "0.3333333333333333\n",
     "fmt-big": "1.2676506002282294e+30\t1e+20\n",
