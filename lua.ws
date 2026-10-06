@@ -440,6 +440,7 @@ const LIB_tab_remove = "table = table or {}\ntable.remove = function(a, b)\nloca
 const LIB_str_byte = "string = string or {}\nstring.byte = function(...)\nlocal a = select('#', ...) == 0\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nlocal f = e\nif a then f = \"no value\" end\nerror(\"bad argument #1 to 'string.byte' (string expected, got \" .. f .. \")\", 2)\nend\nc = c or 1\nd = d or c\nif c < 0 then c = #b + c + 1 end\nif d < 0 then d = #b + d + 1 end\nif c < 1 then c = 1 end\nif d > #b then d = #b end\nif c > d then return end\nif c == d then return _s(4, b, c - 1, 0) end\nlocal g = {}\nfor h = c, d do g[#g + 1] = _s(4, b, h - 1, 0) end\nreturn unpack(g, 1, #g)\nend\n"
 const LIB_str_char = "string = string or {}\nstring.char = function(...)\nlocal a = \"\"\nfor b = 1, select('#', ...) do a = a .. _s(5, \"\", select(b, ...), 0) end\nreturn a\nend\n"
 const LIB_tonumber_base = "local function _tonum_int(s, base)\nlocal a = #s\nlocal c = 0\nlocal e = 0\nwhile c < a do\ne = _s(4, s, c, 0)\nif e ~= 32 and e ~= 9 and e ~= 10 and e ~= 13 and e ~= 12 and e ~= 11 then break end\nc = c + 1\nend\nlocal f = a - 1\nwhile f >= c do\ne = _s(4, s, f, 0)\nif e ~= 32 and e ~= 9 and e ~= 10 and e ~= 13 and e ~= 12 and e ~= 11 then break end\nf = f - 1\nend\nif c > f then return nil end\nlocal g = false\ne = _s(4, s, c, 0)\nif e == 43 or e == 45 then\ng = e == 45\nc = c + 1\nend\nlocal h = 0\nlocal k = 0\nlocal l = 0\nlocal o = false\nlocal p = 0\nwhile c <= f do\ne = _s(4, s, c, 0)\nlocal q = nil\nif e >= 48 and e <= 57 then q = e - 48 end\nif e >= 65 and e <= 90 then q = e - 55 end\nif e >= 97 and e <= 122 then q = e - 87 end\nif q == nil or q >= base then break end\np = p + 1\nif q ~= 0 or o then\no = true\nif k < 10 then\nh = h * base + q\nk = k + 1\nelse\nl = l + 1\nend\nend\nc = c + 1\nend\nif p == 0 or c <= f then return nil end\nlocal r = h\nif h == 0 then\nr = 0\nelseif l > 0 then\nr = h * (base ^ l)\nend\nif g then r = -r end\nlocal t = _m(13, r, 0)\nif t ~= nil then return t end\nreturn r\nend\n"
+const LIB_bit32 = "bit32 = bit32 or {}\nbit32.bnot = function(c) return ~c & 0xFFFFFFFF end\nbit32.band = function(d, e, g, ...)\nif not g then\nreturn ((d or -1) & (e or -1)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d & e & g\nfor k = 1, #h do j = j & h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.bor = function(d, e, g, ...)\nif not g then\nreturn ((d or 0) | (e or 0)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d | e | g\nfor k = 1, #h do j = j | h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.bxor = function(d, e, g, ...)\nif not g then\nreturn ((d or 0) ~ (e or 0)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d ~ e ~ g\nfor k = 1, #h do j = j ~ h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.btest = function(...) return bit32.band(...) ~= 0 end\nbit32.lshift = function(c, l) return ((c & 0xFFFFFFFF) << l) & 0xFFFFFFFF end\nbit32.rshift = function(c, l) return ((c & 0xFFFFFFFF) >> l) & 0xFFFFFFFF end\nbit32.arshift = function(c, l)\nc = c & 0xFFFFFFFF\nif l <= 0 or (c & 0x80000000) == 0 then\nreturn (c >> l) & 0xFFFFFFFF\nelse\nreturn ((c >> l) | ~(0xFFFFFFFF >> l)) & 0xFFFFFFFF\nend\nend\nbit32.lrotate = function(c, l)\nl = l & 31\nc = c & 0xFFFFFFFF\nc = (c << l) | (c >> (32 - l))\nreturn c & 0xFFFFFFFF\nend\nbit32.rrotate = function(c, l) return bit32.lrotate(c, -l) end\nlocal function m(n, o)\no = o or 1\nassert(n >= 0, \"field cannot be negative\")\nassert(o > 0, \"width must be positive\")\nassert(n + o <= 32, \"trying to access non-existent bits\")\nreturn n, ~(-1 << o)\nend\nbit32.extract = function(c, n, o)\nlocal n, p = m(n, o)\nreturn (c >> n) & p\nend\nbit32.replace = function(c, q, n, o)\nlocal n, p = m(n, o)\nq = q & p\nc = (c & ~(p << n)) | (q << n)\nreturn c & 0xFFFFFFFF\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -3623,6 +3624,10 @@ mod libOsDyn(p: string) -> bool {
   return srcUses(p, "os[")
 }
 
+mod libBit32Dyn(p: string) -> bool {
+  return srcUses(p, "bit32[")
+}
+
 // TWO spellings, for the tables whose gate is now complete on its own because
 // libTabDyn and libMathDyn answer the run-time case.  srcNames keeps the four, for
 // the string pieces, which is the only place they are still load-bearing.
@@ -3683,6 +3688,16 @@ mod libIo(p: string, d: bool) -> string {
 
 mod libOs(p: string, d: bool) -> string {
   return if d || srcUses(p, "os.exit") then LIB_os_exit else ""
+}
+
+// One piece for the whole table, because a program that uses bit32 uses
+// several of its functions together -- bitwise.lua's own tests call band, bor,
+// bxor, btest, both shifts, both rotates, extract and replace in one file.
+// Splitting it per function would be twelve parses of the same shared helpers
+// (checkfield alone is in two of them).  The static check names the table;
+// the dyn flag answers `bit32[k](v)`, which the static text cannot see.
+mod libBit32(p: string, d: bool) -> string {
+  return if d || srcUses(p, "bit32.") then LIB_bit32 else ""
 }
 
 // The explicit-base walk, and the gate is the only question that separates the two
@@ -11671,6 +11686,7 @@ on goParse {
   let dynMath = libMathDyn(program)
   let dynIo = libIoDyn(program)
   let dynOs = libOsDyn(program)
+  let dynBit32 = libBit32Dyn(program)
   let dynStr = libStrDyn(program)
   let libB = libStrIndex(program, dynStr)
   let libB2 = libStrByte(program, dynStr)
@@ -11692,6 +11708,7 @@ on goParse {
   let libN = libStrFmt(program, dynStr)
   let libO = libIo(program, dynIo)
   let libO2 = libOs(program, dynOs)
+  let libO3 = libBit32(program, dynBit32)
   let libP = libStrPat(program, dynStr)
   let libQ = libStrGsub(program, dynStr)
   let libR = libStrGmatch(program, dynStr)
@@ -11705,7 +11722,7 @@ let libS2 = libTonumberHex(program)
   let libT = libMathRandom(program, dynMath)
   let lib = libA .. libB .. libB2 .. libB3 .. libC .. libD .. libE .. libF .. libG
     .. libH .. libI .. libI2 .. libJ .. libJ2 .. libK .. libK2 .. libL .. libM .. libN
-    .. libO .. libO2 .. libP
+    .. libO .. libO2 .. libO3 .. libP
     .. libQ .. libR .. libS2 .. libS3 .. libS .. libT
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program

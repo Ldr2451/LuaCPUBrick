@@ -2949,6 +2949,31 @@ TESTS = [
     # `-1 >> 0` is NOT here: PUC gives maxinteger (an arithmetic shift of all
     # ones) and the chip gives 0, which is the int64 wall, not a shift bug.
     ("bit-shift-neg-expr", "print(('abcdef'):sub(1, 6 >> 1))", None, "run"),
+    # bit32: PUC 5.5 removed the library and its own bitwise.lua test file
+    # carries the reference implementation inline ("no built-in 'bit32'
+    # library: implement it using bitwise operators").  The chip HAS those
+    # operators, so lib/bit32.lua is a transcription of that reference with the
+    # `require` wrapper taken off -- and it is proved against the reference
+    # itself (26/26 identical), because lua55 has no bit32 to diff against.
+    ("bit32-basic", "print(bit32.band(0xffffffff), bit32.bor(), "
+     "bit32.bxor(), bit32.btest(), bit32.bnot(0))", None, "state",
+     {"ticks": 15000,
+      "expect": {"log": "4294967295\t0\t0\ttrue\t4294967295\n"}}),
+    ("bit32-shifts", "print(bit32.lshift(0x12345678, 4), "
+     "bit32.rshift(0x12345678, 4), bit32.arshift(-1, 1), "
+     "bit32.arshift(0x80000000, 31))", None, "state",
+     {"ticks": 15000,
+      "expect": {"log": "591751040\t19088743\t4294967295\t4294967295\n"}}),
+    ("bit32-rotate", "print(bit32.lrotate(1, 1), bit32.lrotate(1, -1), "
+     "bit32.rrotate(1, 1), bit32.lrotate(0x12345678, 0))", None, "state",
+     {"ticks": 15000,
+      "expect": {"log": "2\t2147483648\t2147483648\t305419896\n"}}),
+    ("bit32-field", "print(bit32.extract(0x12345678, 0, 4), "
+     "bit32.extract(0x12345678, 4, 8), "
+     "bit32.replace(0x12345678, 5, 28, 4), bit32.band(5, 3, 12), "
+     "bit32.btest(5, 4))", None, "state",
+     {"ticks": 15000,
+      "expect": {"log": "8\t103\t1379161720\t0\ttrue\n"}}),
     # Unary binds TIGHTER than << and >>, and `^` binds tighter than unary.
     # Unary used to share the shifts' precedence, so left-associativity popped
     # the unary first and every literal like `-8 >> 4` was really `-(8 >> 4)` --

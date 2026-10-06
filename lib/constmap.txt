@@ -58,3 +58,6 @@ LIB_tab_remove	lib/tab_remove.lua
 LIB_tonumber	lib/tonumber.lua
 LIB_tonumber_base	lib/tonumber_base.lua
 LIB_tonumber_hex	lib/tonumber_hex.lua
+
+# -- bit32
+LIB_bit32	lib/bit32.lua

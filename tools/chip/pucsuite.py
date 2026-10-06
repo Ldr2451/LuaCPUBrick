@@ -42,11 +42,14 @@ from lua_oracle import norm_val, oracle_log, oracle_run  # noqa: E402
 # and cannot be lifted out of its file.  Deliberately excludes rawequal,
 # rawget, rawset, setmetatable, getmetatable, coroutine, load, require, io and
 # os: the chip has none of them, so an expression using one is not a test the
-# chip could pass.
+# chip could pass.  `bit32` IS here because the chip has it as a piece now
+# (lib/bit32.lua, transcribed from bitwise.lua's own reference) -- and PUC's
+# asserts bind it to that same reference via require, so both sides run the
+# same functions.
 GLOBALS = {
     "assert", "error", "ipairs", "pairs", "next", "select", "tonumber",
     "tostring", "type", "pcall", "xpcall", "print", "unpack", "rawequal",
-    "math", "string", "table", "_VERSION",
+    "math", "string", "table", "bit32", "_VERSION",
 }
 
 # Names that appear after a dot or a colon are fields, not bindings.
@@ -136,14 +139,14 @@ def chip_members():
     # strings, so `math.sin =` is preceded by a literal backslash-n and `^`
     # under re.M never matched -- which left the set EMPTY and the check
     # vacuously true, i.e. worse than not having it.
-    for m in re.finditer(r"(?:string|math|table|io|os)\.(\w+)\s*=",
+    for m in re.finditer(r"(?:string|math|table|io|os|bit32)\.(\w+)\s*=",
                          text):
         out.setdefault(m.group(0).split(".")[0], set()).add(m.group(1))
     return out
 
 
 CHIP_MEMBERS = chip_members()
-MEMBER_USE = re.compile(r"\b(string|math|table|io|os)\.(\w+)")
+MEMBER_USE = re.compile(r"\b(string|math|table|io|os|bit32)\.(\w+)")
 # The one library call whose cost its own text does not bound: string.rep
 # builds as many characters as its argument asks for, so a prelude carrying one
 # re-pays that on EVERY lifted assert.  literals.lua binds
@@ -356,6 +359,40 @@ def file_prelude(text):
     return src, chosen
 
 
+# bit32's prelude is the piece's own master, minified but NOT renamed.
+# WHY A PRELUDE AT ALL: lua55 has no bit32, so the oracle cannot run a bare
+# `bit32.band()` -- it errors with rc=1 and empty calls, which reads as a DIFF
+# against whatever the chip answered.  All 25 bit32 asserts looked broken until
+# one was run by hand.  Prepending the master to BOTH sides keeps the harvest's
+# identical-text invariant: both engines run the same functions, so agreement
+# proves the chip's OPERATORS agree with PUC's (the reference is built on them).
+# The chip ALSO auto-loads LIB_bit32 (the text mentions `bit32.`), which the
+# prelude then overwrites with identical functions -- redundant but harmless,
+# and measured to fit: ~1.8KB prelude + 1.7KB piece + expression stays under the
+# ~4KB source buffer.  Minified (comments out) but not renamed, because the
+# prelude is proof scaffolding rather than shipped code and renaming it would
+# only add a way to be wrong.
+def _bit32_prelude():
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools", "lib"))
+        from libconst import minify, master_to_const
+        src = io.open(os.path.join(ROOT, "lib", "bit32.lua"),
+                      encoding="utf-8").read()
+        return minify(master_to_const(src))
+    except (OSError, ImportError):
+        return ""
+
+BIT32_PRELUDE = _bit32_prelude()
+BIT32_USE = re.compile(r"\bbit32\.")
+# The bit32 prelude is BIGGER than PRELUDE_MAX (1,733 chars), and that is fine
+# because it was MEASURED to fit: program 2,125 chars + auto-loaded LIB_bit32
+# 1,722 = ~3.8KB against the ~4KB source buffer, and it agreed on both engines.
+# So this limit is the measurement (prelude + longest bit32 assert + margin),
+# not the generic one -- and anything over it is not lifted rather than
+# truncated, because a truncated prelude is not Lua at all.
+BIT32_MAX = 2200
+
+
 def harvest(path):
     """(expr, file, lineno, prelude) for every self-contained single-line
     assert, plus the ones a file-local prelude makes self-contained."""
@@ -374,7 +411,14 @@ def harvest(path):
             continue
         ok, why = self_contained(expr)
         if ok:
-            out.append((expr, os.path.basename(path), n, ""))
+            if BIT32_PRELUDE and BIT32_USE.search(expr) \
+                    and len(BIT32_PRELUDE) + len(expr) <= BIT32_MAX:
+                # bit32 is a GLOBAL now, so this harvested -- but bare lua55
+                # has no bit32 and would error.  Both sides get the piece's own
+                # master instead (see BIT32_PRELUDE).
+                out.append((expr, os.path.basename(path), n, BIT32_PRELUDE))
+            else:
+                out.append((expr, os.path.basename(path), n, ""))
             continue
         # blocked only by a name this file binds at top level?
         m = re.match(r"closes over '(\w+)'$", why)
