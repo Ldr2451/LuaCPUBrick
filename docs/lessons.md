@@ -1,4 +1,4 @@
-# Two lessons that cost a session each
+# Lessons that cost a session each
 
 Companion to `AGENTS.md`, which stays short. Both of these were found on
 2026-09-26 while chasing "the first `run` toggle does nothing"; each one sent the
@@ -125,3 +125,36 @@ The apparent redundancy in the SOURCE is not redundancy in the gates, and the
 lesson is the same one the register-accessor numbers teach: measure before
 believing a shape is expensive. Reverted, and recorded here so the next person
 does not spend an hour on it.
+
+## Boot cost is measured by running it, not by subtracting two totals
+
+The library-piece boot charge ("a piece is charged by the character AND
+by every function it defines", in AGENTS.md) was, for a while, derived
+by subtraction from whole program boots, and both terms were wrong by a
+factor of three to ten. The old numbers came from splitting measured
+program totals by subtraction (tonumber 760 chars/2 functions = 583
+ticks = 190 + 2×197; math.random before it was inlined 1,140/3 = 1,130
+= 285 + 3×282; string.gsub 2,783 chars and 2,933 ticks, which fits ~8
+functions) and they do not survive a direct measurement: 760 characters
+at 1.75 ticks is 1,330 ticks of parse on its own, more than the 583 the
+whole program took. So the escaped-char count is probably not what gets
+spliced, or those totals were deltas against a baseline that had already
+paid for shared library text.
+
+The one old number that WAS a delta agrees with the direct measurement:
+inlining `math.random`'s generator (randomseed does not draw) took it
+from 3 functions to 2 and its boot from 1,130 ticks to 989, and 141
+ticks is 2.3s at 60 ticks/s for a program that names it once.
+
+Measured directly, and deterministic to the tick (`tools/chip/lexrate.py
+lib/piece.lua`), the real charge is 1.30 to 1.75 ticks per character of
+real source and 24 to 62 ticks per function (an empty one 24, one with
+a parameter, a local and a return 62); the old rule said `C/2` from the
+scan floor, which is what a character that lexes to no token costs, and
+~280 ticks a function. The first question about a piece is therefore how
+long it is, not how many functions it has: the character term dominates,
+and eight functions is 200-500 ticks on top.
+
+The lesson: **derive a price by measuring the thing, not by subtracting
+two totals** - the subtraction assumes the parts are independent, and a
+piece's boot is its whole dependency chain, so they are not.

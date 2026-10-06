@@ -54,13 +54,11 @@
   chip.** `tools/check.py` runs at 1200 ticks unless `PROBE_TICKS=` says
   otherwise, and a program that boots the gsub piece needs ~2700 of parse
   before it runs one instruction. `string.gsub("aaab", ".+b", "X")` read as a
-  hang at the default and answers correctly in 66 matcher ticks -- the stack
-  trace said so, and a realistic cap confirmed it. Prove a hang with the
-  tracer before fixing one.
+  hang at the default and answers correctly in 66 matcher ticks. Prove a hang
+  with the tracer before fixing one.
 - **A suite FILTER is the difference between 20s and 244s, so filter while you
   iterate and sweep once at the end.** `tests/test_chip_suite.py pat` is 77 cases
-  in 20s; the whole suite is 244s and it was paid four times in one session while
-  a matcher change was being shaped. `bit`, `gsub`, `gmatch`, `arith` are the
+  in 20s; the whole suite is 244s. `bit`, `gsub`, `gmatch`, `arith` are the
   other narrow ones. `pucsuite.py` is worse than useless to re-run: a sweep is
   ~310s, so use `--file pm.lua` (repeatable) to settle one DIFF, and
   `tools/chip/pucount.py` — pure text, seconds — to ask how many asserts are
@@ -81,15 +79,15 @@
   sitting there looking current — so a build that does not check the exit code can
   "succeed" and ship yesterday's chip. `python -u tools/buildbrz.py` is the build
   and refuses to claim success unless `rc == 0`; `irdump.dump_source` now raises on
-  a non-zero `rc` too, which is what makes preflight catch the regression. This is
-  not hypothetical: `lua.ws` carried 53 diagnostics for a long time (46 mods called
+  a non-zero `rc` too, which is what makes preflight catch the regression. Not
+  hypothetical: `lua.ws` carried 53 diagnostics for a long time (46 mods called
   above their own declaration, a parameter assigned, a var read above its
   declaration) and **629 cases were green throughout**, because the graph those
   diagnostics still produce is a working graph and nobody looked at `rc`. Hoist a
-  declaration rather than leaving a call above it, and remember that a mod is
-  *inlined at its call site*, so a mod may write a name that belongs to the mod it
-  is inlined into — that is how `gateHigh` set `advanced` — but the scope check runs
-  before inlining and calls it unknown. Answer it as a return value instead.
+  declaration rather than leaving a call above it; a mod is *inlined at its call
+  site*, so a mod may write a name that belongs to the mod it is inlined into —
+  that is how `gateHigh` set `advanced` — but the scope check runs before
+  inlining and calls it unknown. Answer it as a return value instead.
 - **The oracle is the reference and nothing else.** Real Lua 5.5 decides what
   correct means; a diff against it is the only proof. There is no second chip
   source.
@@ -172,19 +170,19 @@
   `cfMaxLoc[fnDepth]`; a local initialiser can be the immediately preceding
   LOADNUM in the same register, and treating that as an operand lost the
   initial value in a `repeat` body.
-- **Three results that are banked, kept because each one is a rule about the next
-  change.** (1) The frame-switch hold died with the four-step burst: `vmHold` spent
-  one VM tick after every base change so later copies in a burst agreed, and the
-  one-step burst already observes it — removing the state cut 17 nodes and took
-  calls 313→271 ticks / 93,927→88,067 gates, closures 380→336 / 118,529→112,385,
-  pcall 523→483 / 143,734→137,780. (2) A one-value protected handler does not need
-  the 16-value copier, and three `retAdjust` callers know `k == n`, so both use a
-  copy-only path: 428 nodes / 1,223 wires and 400 nodes / 1,040 wires, with pcall
-  unmoved at 483 ticks / 137,780 gates. (3) An unread array is not necessarily
-  dead to the compiler — `fRegs` has no read anywhere, but deleting it and its
-  writes produced three `_Unsupported` placeholders, while four genuinely unread
-  scalar parser flags (`pMode`, `blkHadCap`, `popLeft`, `pendLeft`) did lower, by
-  30 nodes and 52 wires.
+- **Three banked results, each a rule about the next change.** (1) Removing the
+  frame-switch hold (`vmHold`, one VM tick after every base change so later
+  copies in a burst agreed — the one-step burst already observes it) cut 17
+  nodes and took calls 313→271 ticks / 93,927→88,067 gates, closures
+  380→336 / 118,529→112,385, pcall 523→483 / 143,734→137,780. (2) A
+  one-value protected handler does not need the 16-value copier, and three
+  `retAdjust` callers know `k == n`, so both use a copy-only path: 428 nodes /
+  1,223 wires and 400 nodes / 1,040 wires, with pcall unmoved at 483 ticks /
+  137,780 gates. (3) An unread array is not necessarily dead to the compiler —
+  `fRegs` has no read anywhere, but deleting it and its writes produced three
+  `_Unsupported` placeholders, while four genuinely unread scalar parser flags
+  (`pMode`, `blkHadCap`, `popLeft`, `pendLeft`) did lower, by 30 nodes and
+  52 wires.
 - **A mod is inlined at its call site, so extracting a chain does not shrink
   it.** Moving ops 34..40 (floor division and the bitwise operators) into their
   own mod and calling it from the same place measured **+20 nodes**, not fewer.
@@ -222,12 +220,12 @@
   value and a captured source cost 90 nodes and 256 wires more than the two
   specialized arms. Reverted after `tools/chip/audit.py`, not a correctness guess.
 - **The 20k budget is not reachable by tuning, and the arithmetic says so.**
-  After the unroll and parser/lexer cuts the chip is 38,187 nodes, of which the
-  builtin dispatch alone is 19,706. Going under 20k needs runtime dispatch to
-  stop being inlined, and **that is a host primitive the compiler does not
-  have**: a gate takes values on named ports and cannot index a register file by
-  a runtime value, which is exactly what a register VM's dispatch needs. The
-  parts that look like array access — the pattern matcher, the formatter — are
+  After the unroll and parser/lexer cuts the chip was 38,187 nodes, of which the
+  builtin dispatch alone was measured at 19,706. Going under 20k needs runtime
+  dispatch to stop being inlined, and **that is a host primitive the compiler
+  does not have**: a gate takes values on named ports and cannot index a register
+  file by a runtime value, which is exactly what a register VM's dispatch needs.
+  The parts that look like array access — the pattern matcher, the formatter — are
   micro-steps, which are mods, which are inlined. So the budget is a decision
   about the host, not a refactor of the CALL arm.
 - **Do not go gate-hunting one builtin at a time; the list is empty, and the ISA
@@ -265,12 +263,12 @@
 - **Exact implicit float printing is host-bound, not a formatter bug, and the
   host's law is now read rather than inferred.** The `..` gate converts a float
   operand with `if !f.is_finite() || *f == 0.0 { "0" } else { format!("{f}") }`
-  (see "the host's laws" below), so the chip's shortest round trip *is* the
-  host-faithful spelling and PUC's 17-digit `%.14g` output is the divergence;
-  there is no precision knob to ask for. A synchronous 17-digit replacement tried
-  in `fmtNum` expanded at every call site and lowered 231 unsupported gates, so do
-  not retry it without first changing the host or making the conversion
-  non-inlined.
+  (the host's laws, in the compiler's source, are listed in docs/traps.md), so
+  the chip's shortest round trip *is* the host-faithful spelling and PUC's
+  17-digit `%.14g` output is the divergence; there is no precision knob to ask
+  for. A synchronous 17-digit replacement tried in `fmtNum` expanded at every
+  call site and lowered 231 unsupported gates, so do not retry it without first
+  changing the host or making the conversion non-inlined.
 - **Integer precision and integer overflow are separate.** Every numeric register
   is a float, so a literal above 2^53 is wrong before `fmtVal` sees it. Wrap
   behaviour does not need the exact value: integer literals saturate to the two
@@ -282,8 +280,8 @@
   `tools/chip/audit.py`; ticks are what `tools/check.py` prints. Sim wall time tracks
   gates fired per tick, so fewer ticks with the same work costs the same sim
   time. **In-game a tick is 16.7ms of real time whatever the chip does**, so
-  there only fewer ticks reaches the user. A change can halve one and double the
-  other; say which one you moved.
+  there only fewer ticks reaches the user. A change can halve one and double
+  the other; say which one you moved.
 - **A comment is one `Find`, so it is O(1), and that is the cheapest boot win in
   the chip.** `lexStep`'s line-comment arm used to advance one character per step,
   which *was* the scan floor — 0.500 ticks/char, a 4-character comment costing what
@@ -300,8 +298,8 @@
   per-character tests, and perfbench has all seven programs' ticks, gates and
   bytecode byte-identical. Ticks for gates is the trade, and a host search is a
   gate. What is left walking a character at a time is whitespace and identifier
-  runs; a `Find` cannot help either, because both need the first character that
-  is NOT in a class rather than a substring.
+  runs, and a `Find` cannot help either: both need the first character that is
+  NOT in a class, not a substring.
 - **Price a file by RUNNING it, not by `chars x a rate`.** The per-char rate
   comes from synthetic programs with no comments in them, so charging every
   character of a commented file the code rate overstated demo.lua by **2.7x**
@@ -347,25 +345,16 @@
   - `LIB_str_gsub` is 2,783 escaped chars, so **3,600 to 4,900 ticks = 60 to 81s**
     at 60 ticks/s, not the 696 ticks = 11.6s the old arithmetic gave, before the
     program runs one instruction.
-  The old numbers came from splitting measured program totals (tonumber 760
-  chars/2 functions = 583 ticks = 190 + 2×197; math.random before this was inlined
-  1,140/3 = 1,130 = 285 + 3×282; string.gsub 2,783 chars and 2,933 ticks, which
-  fits ~8 functions) and they do not survive a direct measurement: 760 characters at
-  1.75 ticks is 1,330 ticks of parse on its own, more than the 583 the whole
-  program took. So the escaped-char count is probably not what gets spliced, or
-  those totals were deltas against a baseline that had already paid for shared
-  library text. The one old number that WAS a delta agrees with the direct
-  measurement: inlining `math.random`'s generator (randomseed does not draw) took it
-  from 3 functions to 2 and its boot from 1,130 ticks to 989, and 141 ticks is 2.3s
-  at 60 ticks/s for a program that names it once. **The first question about a
-  piece is therefore how long it is, not how many functions it has**: the character
-  term dominates, and eight functions is 200-500 ticks on top.
+  The subtraction-derived numbers and their post-mortem are the "Boot cost is
+  measured by running it" lesson in docs/lessons.md; the first question about a
+  piece is how long it is, not how many functions it has — the character term
+  dominates, and eight functions is 200-500 ticks on top.
   `tools/lib/libconst.py piece.lua LIB_x` prints the size; `--install` minifies
   (comments, indentation and blank lines out; a line inside a long bracket string
   is data) **and renames the chunk's own locals to single letters**, then rewrites
   the const in `lua.ws`. `tools/lib/installall.py` does every piece and
   `tools/lib/nametest.py` proves the renamer's refusals bite.
-- **`lib/constmap.txt` maps a const to its master, and nothing can infer it.** A
+- `lib/constmap.txt` maps a const to its master, and nothing can infer it.** A
   master's minified+renamed text stops matching its const the moment it is
   installed — that is the point of installing it — so the content-matching
   installer written first worked exactly once. Ten consts had no master at all
@@ -388,24 +377,23 @@
   (CHIP_MEMBERS), so the collision check is one command, not a reading.
 - **A minified library piece fails SILENTLY, so the net has to be structural.**
   A piece that stops parsing is not an error any program can see: every function
-  in it stops answering, with no message and no line. The same is true of a
-  generated prelude in the harvester. Two such bugs this session were invisible
-  that way and both passed 888 cases — a `for i` inside a table constructor,
-  where the `{key =}` guard renamed `select(i, ...)` but not its own
-  declaration, and one prelude cut mid-brace, which put an **empty log on both
-  engines** and read as "the chip cannot run anything". `lua.ws` carries a
-  banner above the const block saying all of this; do not hand-edit there.
+  in it stops answering, with no message and no line — and the same is true of a
+  generated prelude in the harvester. Two such bugs were invisible that way and
+  both passed 888 cases — a `for i` inside a table constructor, where the
+  `{key =}` guard renamed `select(i, ...)` but not its own declaration, and one
+  prelude cut mid-brace, which put an **empty log on both engines** and read as
+  "the chip cannot run anything". `lua.ws` carries a banner above the const block
+  saying all of this; do not hand-edit there.
 - **A constructor key is a key at ANY function depth -- and "brace depth
   alone" is not the test.** The `{key =}` guard above fixed the chunk-level
   case with `brace > fdepth`, which worked until a constructor sat inside a
   function body: there brace-depth and function-depth are both 1, the
   comparison failed, and os.date's `*t` table shipped as `{ak = ak,
-  al = al, ...}` -- compiling, and answering nil for wday/yday. The
-  suite caught it (os-date-table); the comment above the code did not,
-  because it described the heuristic instead of the rule. The rule:
-  a token is in key position only when its nearest enclosing `{` was
-  opened at the token's OWN function depth (a stack of function-depths,
-  one per unclosed `{`). `tools/lib/nametest.py` proves both depths.
+  al = al, ...}` — compiling, and answering nil for wday/yday. The suite
+  caught it (os-date-table); the comment did not — it described the heuristic
+  instead of the rule. The rule: a token is in key position only when its
+  nearest enclosing `{` was opened at the token's OWN function depth (a stack of
+  function-depths, one per unclosed `{`). `tools/lib/nametest.py` proves both depths.
 - **IDENTIFIER LENGTH IS NEARLY FREE, so a character count overstates a rename's
   boot win by 10x.** Minifying and renaming all 29 installed pieces took the
   library from 18,736 to 18,115 escaped characters, **−621 (−3.3%)** — and boot,
@@ -415,9 +403,9 @@
   `chars × 1.3-1.75` model predicts. The lexer walks an identifier RUN rather
   than each character, so shortening a name saves little; what the rename
   removes is the structural characters around it. Two consequences: budget a boot
-  win by measuring it (`bootprobe.py` prints ticks, not seconds, for the reason
-  above), and do not mistake a small character cut for a failed optimization —
-  it may be nearly the whole of what was available.
+  win by measuring it (`bootprobe.py` prints ticks, not seconds), and do not
+  mistake a small character cut for a failed optimization — it may be nearly the
+  whole of what was available.
 - **A gate can be dearer at boot than the piece it would replace.** Measured:
   naming `math.abs` or `math.floor` costs about 474 ticks of boot and
   `math.maxinteger` 923, because `libMathInt` and `libMathConst` are pieces the
@@ -449,15 +437,15 @@
   Three compiled probes settle it (`Random(min, max) -> int`, called from a mod,
   from a handler, and with `exec =` named at the call site): all wire the Exec
   input from the enclosing handler's exec context (`W[BrickGrid -> Random:Exec]`),
-  so "an exec gate can never run inside a mod" is false — do not argue it from
-  the catalogue. What fails is the *read*: the compiler orders a consumer that is
-  itself an exec gate along the gate's ExecOut chain, and the chip's register
-  writes are plain array writes with no Exec port, so a value an exec gate
-  produces cannot land in a register in the same instruction. An `_rnd` arm
-  written the documented way (`let r = Random(lo, hi)`, then `vSetInt(a, r)`)
-  re-ran its instruction to the tick cap. Using one would need the two-phase
-  shape `_fmt`/`_pat` use — fire on one tick, read a captured output on the next —
-  and a free-running stream would have to fire on every tick for every program.
+  so "an exec gate can never run inside a mod" is false. What fails is the *read*:
+  the compiler orders a consumer that is itself an exec gate along the gate's
+  ExecOut chain, and the chip's register writes are plain array writes with no Exec
+  port, so a value an exec gate produces cannot land in a register in the same
+  instruction. An `_rnd` arm written the documented way (`let r = Random(lo, hi)`,
+  then `vSetInt(a, r)`) re-ran its instruction to the tick cap. Using one would
+  need the two-phase shape `_fmt`/`_pat` use — fire on one tick, read a captured
+  output on the next — and a free-running stream would have to fire on every tick
+  for every program.
 - **A printed line is capped at 64 characters, and the harness caps the oracle's
   the same way.** `oracle_log` applies "the same caps the chip enforces" (one
   tab-joined line per print, `line[:LOG_WIDTH - 1] + "\n"`, 32 appends), so a
@@ -507,8 +495,8 @@
   deliver their inputs before the first tick, and the sim raises an edge for a
   port's first sight, so every one of them got an edge the real host does not
   raise. The fix seeds the latches from the ports in `on goParse2`'s completion
-  branch — a handler body, before `vmReset` copies them into the globals — and
-  the edge keeps one job, deciding *when* to restart. `tests/host_compat_check.py`
+  branch — a handler body, before `vmReset` copies them into the globals — and the
+  edge keeps one job, deciding *when* to restart. `tests/host_compat_check.py`
   runs every input kind with `Sim.host_baselines` on, which models the host that
   baselines silently; it is in preflight because a test nobody runs catches
   nothing. **Two rules from it: read a value, do not wait to be told it; and when
@@ -519,8 +507,8 @@
   `inStrArr` are two ports rather than one `inArr` that holds either, because the
   type is the port's: `any` cannot even be stored (WS025), so there is no union to
   widen it to, and a program that needs both reads both while one that needs only
-  numbers pays nothing for the string half. The naming follows the rule the
-  outputs already set — `outNum0`/`outStr0`/`outArr` are written by
+  numbers pays nothing for the string half. The naming follows the rule the outputs
+  already set — `outNum0`/`outStr0`/`outArr` are written by
   `outnum`/`outstr`/`outarr` — so `inNumArr`/`inStrArr` are read by
   `innumarr`/`instrarr`. The camelCase names a program sees as **values**
   (`inNum0`, `inStr0`) are the port mirrors, which are values and not calls, so
@@ -597,11 +585,11 @@ is left and why; `tochip.py` converts with the refusals built in;
   better. So the register-write family is a bad trade and stays a mod, and the
   conversion as it stands is **-34.1% nodes for +3.1% gates**: +3.1% is close to
   noise, +22% was not.
-- **The old assumption was not merely wrong, it was expensive.** "A chip call
-  per register write would be catastrophic for ticks" is why `vSet` sat at 137
-  call sites for the whole of this work. It is not catastrophic for ticks — and
-  it is genuinely bad for *gates*, which is the half of the claim nobody
-  checked. Measure the currency you are actually spending.
+- **The old assumption was expensive.** "A chip call per register write would be
+  catastrophic for ticks" is why `vSet` sat at 137 call sites for the whole of
+  this work. It is not catastrophic for ticks — it is genuinely bad for *gates*,
+  the half of the claim nobody checked. Measure the currency you are actually
+  spending.
 - **Count INLINED COPIES, not call sites.** A mod's body exists once per call
   site *per copy of whatever calls it*: `emitTok` has 38 call sites but 34 are
   inside `lexStep`, which `lexChunk` called **twice**, so it really existed ~72
@@ -630,10 +618,10 @@ is left and why; `tochip.py` converts with the refusals built in;
   `on goParse2` and must run at an exact chain point; chip hops shift it and
   `print(3)` comes back empty. Measured, fatal.
 - **Chips do not cost the parse a tick either.** Six parse-path chips together
-  cost +1 boot tick, and that +1 came from one specific mod — not from the parse
-  path as a category. `lexStep`, `locFind`, `closeAction`, `pushOp` and four more
-  are all parse-path and all boot-neutral, so the rule is narrower than it was
-  first written. Re-measure boot with `tools/chip/bootprobe.py`, not from memory.
+  cost +1 boot tick, and that +1 came from one specific mod, not from the parse
+  path as a category: `lexStep`, `locFind`, `closeAction`, `pushOp` and four more
+  are all parse-path and all boot-neutral. Re-measure boot with
+  `tools/chip/bootprobe.py`, not from memory.
 
 ## Closures
 A function value (tag 4) holds a **closure number, not a prototype**. Below
@@ -680,7 +668,7 @@ falls out for free.
 ## WireScript traps
 
 The measured traps are in docs/traps.md - the shapes that cost a session each,
-and what they look like in the source.  	ools/chip/wswarn.py flags the visible ones.
+and what they look like in the source. `tools/chip/wswarn.py` flags the visible ones.
 
 ## Fixing bugs
 - Fix the **class**, not the instance: ask what made it possible and make it
@@ -807,17 +795,16 @@ and what they look like in the source.  	ools/chip/wswarn.py flags the visible o
   costs, the control edit and the per-rep spread, because "noticeably" and
   "reliably" are two claims. **Proved by damaging the chip:** a parse per run edge
   fails with `restart cost [100, 100] ticks, want under 20` while the log and
-  `finished` are both correct. Three traps cost that measurement and are worth
-  more than the rule: a value port rewritten on every phase edge re-fires
-  `Change(program)`, so the harness measures the EDIT while believing it measures
-  the restart — write the port once, then only flip `run`; a permissive
-  comparison is invisible while every case supplies the value once, since all 713
-  delivered the program from `progText = ""` where `program != progText` is true
-  whatever it says, so catching it needed a SECOND, different program
-  (`life-edit-while-running`, the only one of 19 lifecycle cases that fails when
-  the comparison is damaged); and a bound is only as good as the measurement
-  behind it, which is why the tool takes `--chip` and was aimed at a damaged
-  source to confirm it can report the bad answer.
+  `finished` are both correct. Three traps cost that measurement: a value port
+  rewritten on every phase edge re-fires `Change(program)`, so the harness
+  measures the EDIT while believing it measures the restart — write the port once,
+  then only flip `run`; a permissive comparison is invisible while every case
+  supplies the value once (all 713 delivered the program from `progText = ""`
+  where `program != progText` is true whatever it says), so catching it needed a
+  SECOND, different program (`life-edit-while-running`, the only one of 19
+  lifecycle cases that fails when the comparison is damaged); and a bound is only
+  as good as the measurement behind it, which is why the tool takes `--chip` and
+  was aimed at a damaged source to confirm it can report the bad answer.
 
 ## Workflow
 - **A compacted session starts with `git status` and `git diff`.** The summary
