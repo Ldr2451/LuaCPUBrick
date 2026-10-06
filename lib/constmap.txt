@@ -65,3 +65,12 @@ LIB_bit32	lib/bit32.lua
 # -- utf8
 LIB_utf8	lib/utf8.lua
 LIB_utf8_char	lib/utf8_char.lua
+
+# -- pack
+# DELIBERATELY NOT INSTALLED: lib/str_pack.lua is a complete integer+string
+# implementation (every semantic read off lua55, all error substrings), but at
+# 9,317 escaped characters it cannot load -- nearly 2.5x the ~4KB source
+# buffer, and it is mostly FORMAT PARSER (unit/digits/bang/alignment), which
+# every split would duplicate.  Like str_format/gmatch: reference kept, gates or
+# a bigger buffer would be needed to ship it.  Floats were already refused;
+# even the integer subset does not fit.

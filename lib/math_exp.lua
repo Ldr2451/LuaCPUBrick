@@ -16,3 +16,7 @@ math.log = function(x, b)
   if b == 10 then return _m(12, x, 0) end
   return _m(11, x, 0) / _m(11, b, 0)
 end
+-- math.ldexp, pure arithmetic: x * 2^e, C's ldexp for normal ranges.  Subnormal
+-- results, overflow to inf and junk arguments behave the way the operators do,
+-- because it IS the operators -- there is no gate to be more exact behind.
+math.ldexp = function(x, e) return x * (2.0 ^ e) end

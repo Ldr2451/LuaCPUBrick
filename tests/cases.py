@@ -3018,6 +3018,14 @@ TESTS = [
      "-2 >> 1, -3 >> 1)", None, "run"),
     ("prec-unary-pow", "print(-2^2, (-2)^2, 2^-2, -2 * 3, -2 + 3, "
      "-2 .. 'x', -#('abc'))", None, "run"),
+    # math.deg/rad/ldexp live in the trig/exp pieces (angle/exponent families),
+    # so no new piece and no new wiring beyond the loader's name lists.  deg/rad
+    # spell pi as literals rather than reaching for math.pi, which is a separate
+    # piece the loader only pulls in when the program names it.
+    ("math-degrad", "print(math.deg(math.pi / 2) == 90, "
+     "math.rad(90) == math.pi / 2)", None, "run"),
+    ("math-ldexp", "print(math.ldexp(3, 4), math.ldexp(1.5, -2), "
+     "math.ldexp(1, 0))", None, "run"),
     ("bit-mix", "print(5+~3)", None, "run"),
     ("bit-prec", "print(1&2|4)", None, "run"),
     ("bit-notneg", "print(~-5)", None, "run"),
