@@ -441,6 +441,8 @@ const LIB_str_byte = "string = string or {}\nstring.byte = function(...)\nlocal 
 const LIB_str_char = "string = string or {}\nstring.char = function(...)\nlocal a = \"\"\nfor b = 1, select('#', ...) do a = a .. _s(5, \"\", select(b, ...), 0) end\nreturn a\nend\n"
 const LIB_tonumber_base = "local function _tonum_int(s, base)\nlocal a = #s\nlocal c = 0\nlocal e = 0\nwhile c < a do\ne = _s(4, s, c, 0)\nif e ~= 32 and e ~= 9 and e ~= 10 and e ~= 13 and e ~= 12 and e ~= 11 then break end\nc = c + 1\nend\nlocal f = a - 1\nwhile f >= c do\ne = _s(4, s, f, 0)\nif e ~= 32 and e ~= 9 and e ~= 10 and e ~= 13 and e ~= 12 and e ~= 11 then break end\nf = f - 1\nend\nif c > f then return nil end\nlocal g = false\ne = _s(4, s, c, 0)\nif e == 43 or e == 45 then\ng = e == 45\nc = c + 1\nend\nlocal h = 0\nlocal k = 0\nlocal l = 0\nlocal o = false\nlocal p = 0\nwhile c <= f do\ne = _s(4, s, c, 0)\nlocal q = nil\nif e >= 48 and e <= 57 then q = e - 48 end\nif e >= 65 and e <= 90 then q = e - 55 end\nif e >= 97 and e <= 122 then q = e - 87 end\nif q == nil or q >= base then break end\np = p + 1\nif q ~= 0 or o then\no = true\nif k < 10 then\nh = h * base + q\nk = k + 1\nelse\nl = l + 1\nend\nend\nc = c + 1\nend\nif p == 0 or c <= f then return nil end\nlocal r = h\nif h == 0 then\nr = 0\nelseif l > 0 then\nr = h * (base ^ l)\nend\nif g then r = -r end\nlocal t = _m(13, r, 0)\nif t ~= nil then return t end\nreturn r\nend\n"
 const LIB_bit32 = "bit32 = bit32 or {}\nbit32.bnot = function(c) return ~c & 0xFFFFFFFF end\nbit32.band = function(d, e, g, ...)\nif not g then\nreturn ((d or -1) & (e or -1)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d & e & g\nfor k = 1, #h do j = j & h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.bor = function(d, e, g, ...)\nif not g then\nreturn ((d or 0) | (e or 0)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d | e | g\nfor k = 1, #h do j = j | h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.bxor = function(d, e, g, ...)\nif not g then\nreturn ((d or 0) ~ (e or 0)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d ~ e ~ g\nfor k = 1, #h do j = j ~ h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.btest = function(...) return bit32.band(...) ~= 0 end\nbit32.lshift = function(c, l) return ((c & 0xFFFFFFFF) << l) & 0xFFFFFFFF end\nbit32.rshift = function(c, l) return ((c & 0xFFFFFFFF) >> l) & 0xFFFFFFFF end\nbit32.arshift = function(c, l)\nc = c & 0xFFFFFFFF\nif l <= 0 or (c & 0x80000000) == 0 then\nreturn (c >> l) & 0xFFFFFFFF\nelse\nreturn ((c >> l) | ~(0xFFFFFFFF >> l)) & 0xFFFFFFFF\nend\nend\nbit32.lrotate = function(c, l)\nl = l & 31\nc = c & 0xFFFFFFFF\nc = (c << l) | (c >> (32 - l))\nreturn c & 0xFFFFFFFF\nend\nbit32.rrotate = function(c, l) return bit32.lrotate(c, -l) end\nlocal function m(n, o)\no = o or 1\nassert(n >= 0, \"field cannot be negative\")\nassert(o > 0, \"width must be positive\")\nassert(n + o <= 32, \"trying to access non-existent bits\")\nreturn n, ~(-1 << o)\nend\nbit32.extract = function(c, n, o)\nlocal n, p = m(n, o)\nreturn (c >> n) & p\nend\nbit32.replace = function(c, q, n, o)\nlocal n, p = m(n, o)\nq = q & p\nc = (c & ~(p << n)) | (q << n)\nreturn c & 0xFFFFFFFF\nend\n"
+const LIB_utf8 = "utf8 = utf8 or {}\nlocal _floor = {0, 0x80, 0x800, 0x10000, 0x200000, 0x4000000}\nlocal function a(p, q, u)\nlocal b = _s(4, p, q - 1, 0)\nif b == nil then return nil end\nif b < 0x80 then return b, 1 end\nlocal e, f\nif b < 0xC2 then return nil end\nif b < 0xE0 then e, f = 2, b & 0x1F\nelseif b < 0xF0 then e, f = 3, b & 0x0F\nelseif b < 0xF8 then e, f = 4, b & 0x07\nelseif b < 0xFC then e, f = 5, b & 0x03\nelseif b < 0xFE then e, f = 6, b & 0x01\nelse return nil end\nfor g = 1, e - 1 do\nlocal h = _s(4, p, q + g - 1, 0)\nif h == nil or h < 0x80 or h > 0xBF then return nil end\nf = f * 64 + (h & 0x3F)\nend\nif f < _floor[e] then return nil end\nif u then\nif f >= 0x80000000 then return nil end\nelseif f > 0x10FFFF or (f >= 0xD800 and f <= 0xDFFF) then\nreturn nil\nend\nreturn f, e\nend\nlocal function l(p, g)\nwhile g > 1 do\nlocal b = _s(4, p, g - 1, 0)\nif b == nil or b < 0x80 or b >= 0xC0 then break end\ng = g - 1\nend\nreturn g\nend\nlocal function m(p, q, what)\nlocal o = #p\nif q == nil then return nil end\nif q < 0 then q = o + q + 1 end\nif q < 1 or q > o + 1 then\nerror(\"bad argument #3 to '\" .. what .. \"' (position out of bounds)\", 3)\nend\nreturn q, o\nend\nutf8.len = function(p, q, t, u)\nlocal e = #p\nq = q or 1\nt = t or e\nif q < 0 then q = e + q + 1 end\nif t < 0 then t = e + t + 1 end\nif q < 1 or q > e + 1 then\nerror(\"bad argument #2 to 'utf8.len' (initial position out of bounds)\", 2)\nend\nif t < 0 or t > e then\nerror(\"bad argument #3 to 'utf8.len' (final position out of bounds)\", 2)\nend\nlocal g, x = q, 0\nwhile g <= t do\nlocal _, y = a(p, g, u)\nif y == nil then return nil, g end\ng, x = g + y, x + 1\nend\nreturn x\nend\nutf8.offset = function(p, e, q)\nlocal o = #p\nif e == 0 then\nq, o = m(p, q or 1, \"utf8.offset\")\nq = l(p, q)\nlocal _, y = a(p, q, true)\nif y == nil then return nil end\nreturn q, q + y - 1\nend\nif e > 0 then\nq, o = m(p, q or 1, \"utf8.offset\")\nlocal g, y = q, 1\nfor t = 1, e do\nif g > o + 1 then return nil end\nif g == o + 1 then\nif t == e then return g, g end\nreturn nil\nend\nlocal _, z = a(p, g, true)\nif z == nil then return nil end\ng, y = g + z, z\nend\nreturn g - y, g - 1\nend\nq, o = m(p, q or o + 1, \"utf8.offset\")\nlocal g, y = q, 1\nfor _ = 1, -e do\nif g <= 1 then return nil end\ng = l(p, g - 1)\nlocal _, z = a(p, g, true)\nif z == nil then return nil end\ny = z\nend\nreturn g, g + y - 1\nend\nutf8.codepoint = function(p, q, t, u)\nlocal e = #p\nq = q or 1\nt = t or q\nif q < 0 then q = e + q + 1 end\nif t < 0 then t = e + t + 1 end\nif q < 1 or q > e + 1 then\nerror(\"bad argument #2 to 'utf8.codepoint' (out of bounds)\", 2)\nend\nif t > e then\nerror(\"bad argument #3 to 'utf8.codepoint' (out of bounds)\", 2)\nend\nif t < q then return end\nlocal x = {}\nlocal g = q\nwhile g <= t do\nlocal f, y = a(p, g, u)\nif y == nil then error(\"invalid UTF-8 code\", 2) end\nx[#x + 1] = f\ng = g + y\nend\nreturn unpack(x, 1, #x)\nend\n"
+const LIB_utf8_char = "utf8 = utf8 or {}\nlocal _lim = {0x80, 0x800, 0x10000, 0x200000, 0x4000000}\nlocal _lead = {0, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC}\nutf8.char = function(...)\nlocal a = \"\"\nfor b = 1, select('#', ...) do\nlocal c = select(b, ...)\nif c < 0 or c >= 0x80000000 then\nerror(\"bad argument #1 to 'utf8.char' (value out of range)\", 2)\nend\nif c < 0x80 then\na = a .. _s(5, \"\", c, 0)\nelse\nlocal d = 2\nwhile d < 6 and c >= _lim[d] do d = d + 1 end\na = a .. _s(5, \"\", _lead[d] + (c >> (6 * (d - 1))), 0)\nfor e = d - 2, 0, -1 do\na = a .. _s(5, \"\", 0x80 + ((c >> (6 * e)) & 0x3F), 0)\nend\nend\nend\nreturn a\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -539,9 +541,6 @@ var ts: int[]
 var tn: float[]
 var tt: string[]
 var tl: int[]
-
-// printable ASCII table for \ddd / \xXX escapes (32..126 only)
-const PRINTABLES = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
 mod hexVal(cp: int) -> int {
   return if cp >= 48 && cp <= 57 then cp - 48
@@ -3628,6 +3627,10 @@ mod libBit32Dyn(p: string) -> bool {
   return srcUses(p, "bit32[")
 }
 
+mod libUtf8Dyn(p: string) -> bool {
+  return srcUses(p, "utf8[")
+}
+
 // TWO spellings, for the tables whose gate is now complete on its own because
 // libTabDyn and libMathDyn answer the run-time case.  srcNames keeps the four, for
 // the string pieces, which is the only place they are still load-bearing.
@@ -3698,6 +3701,28 @@ mod libOs(p: string, d: bool) -> string {
 // the dyn flag answers `bit32[k](v)`, which the static text cannot see.
 mod libBit32(p: string, d: bool) -> string {
   return if d || srcUses(p, "bit32.") then LIB_bit32 else ""
+}
+
+// One piece for all four functions, because they share the codec and the
+// codec IS the piece: dec is half the characters, and splitting would either
+// duplicate it in every piece or reach across pieces for it.  At 4,043 escaped
+// characters this is the largest piece by 1.3KB -- and naming utf8 costs that
+// in boot -- so if a split ever pays, it is char (enc only, ~700) standing
+// alone while len/offset/codepoint keep dec.  Not split now: measure first.
+mod libUtf8(p: string, d: bool) -> string {
+  // NOT `utf8.`: that prefix matches `utf8.char` too, and then a char-only
+  // program would pay for both pieces -- which is the split defeated.  The
+  // three decoder names are the trigger; char has its own below.
+  return if d || srcUses(p, "utf8.len") || srcUses(p, "utf8.offset")
+      || srcUses(p, "utf8.codepoint") then LIB_utf8 else ""
+}
+
+// utf8.char stands alone: it needs only the encoder, while the rest shares
+// the decoder, so a program that emits UTF-8 pays 615 characters and not
+// 2,918.  The split is measured the way every split here is -- by the escaped
+// count, which is the boot -- and char is the half that is used alone.
+mod libUtf8Char(p: string, d: bool) -> string {
+  return if d || srcUses(p, "utf8.char") then LIB_utf8_char else ""
 }
 
 // The explicit-base walk, and the gate is the only question that separates the two
@@ -3846,10 +3871,18 @@ mod emitTok(kind: int, sub: int, num: float, text: string) {
 }
 
 mod emitEscByte(v: int) {
-  if v >= 32 && v <= 126 {
-    lidBuf = lidBuf .. PRINTABLES.Substring(v - 32, 1)
-  } else {
+  // Full 0-255, not just printable ASCII: PUC's \ddd and \xXX spell any byte,
+  // and utf8 (or any binary string) needs high bytes in literals.  This used
+  // to allow only 32-126 via the PRINTABLES table, so "\195" was a compile
+  // error -- and a SILENT one from the program's side, because the piece or
+  // program carrying it simply never parsed.  \ddd above 255 is still an error
+  // ("decimal escape too large" in PUC); \xXX cannot exceed 255 by construction.
+  // digits only ever add, so v is never negative and only the top needs
+  // checking.  \xXX cannot exceed 255 by construction (two hex digits).
+  if v > 255 {
     lexFail("bad escape")
+  } else {
+    lidBuf = lidBuf .. FromCharCode(v).Character
   }
 }
 
@@ -11687,6 +11720,7 @@ on goParse {
   let dynIo = libIoDyn(program)
   let dynOs = libOsDyn(program)
   let dynBit32 = libBit32Dyn(program)
+  let dynUtf8 = libUtf8Dyn(program)
   let dynStr = libStrDyn(program)
   let libB = libStrIndex(program, dynStr)
   let libB2 = libStrByte(program, dynStr)
@@ -11709,6 +11743,8 @@ on goParse {
   let libO = libIo(program, dynIo)
   let libO2 = libOs(program, dynOs)
   let libO3 = libBit32(program, dynBit32)
+  let libO4 = libUtf8(program, dynUtf8)
+  let libO5 = libUtf8Char(program, dynUtf8)
   let libP = libStrPat(program, dynStr)
   let libQ = libStrGsub(program, dynStr)
   let libR = libStrGmatch(program, dynStr)
@@ -11722,7 +11758,7 @@ let libS2 = libTonumberHex(program)
   let libT = libMathRandom(program, dynMath)
   let lib = libA .. libB .. libB2 .. libB3 .. libC .. libD .. libE .. libF .. libG
     .. libH .. libI .. libI2 .. libJ .. libJ2 .. libK .. libK2 .. libL .. libM .. libN
-    .. libO .. libO2 .. libO3 .. libP
+    .. libO .. libO2 .. libO3 .. libO4 .. libO5 .. libP
     .. libQ .. libR .. libS2 .. libS3 .. libS .. libT
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program

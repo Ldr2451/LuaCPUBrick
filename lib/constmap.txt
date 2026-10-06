@@ -61,3 +61,7 @@ LIB_tonumber_hex	lib/tonumber_hex.lua
 
 # -- bit32
 LIB_bit32	lib/bit32.lua
+
+# -- utf8
+LIB_utf8	lib/utf8.lua
+LIB_utf8_char	lib/utf8_char.lua

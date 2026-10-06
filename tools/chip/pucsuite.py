@@ -45,11 +45,14 @@ from lua_oracle import norm_val, oracle_log, oracle_run  # noqa: E402
 # chip could pass.  `bit32` IS here because the chip has it as a piece now
 # (lib/bit32.lua, transcribed from bitwise.lua's own reference) -- and PUC's
 # asserts bind it to that same reference via require, so both sides run the
-# same functions.
+# same functions.  `utf8` IS here for the same reason (lib/utf8.lua plus
+# lib/utf8_char.lua) -- with one gap neither side can fix: PUC's tests spell
+# high bytes as `\u{D7FF}`, which the chip's lexer does not decode, so those
+# asserts do not parse and skip correctly.
 GLOBALS = {
     "assert", "error", "ipairs", "pairs", "next", "select", "tonumber",
     "tostring", "type", "pcall", "xpcall", "print", "unpack", "rawequal",
-    "math", "string", "table", "bit32", "_VERSION",
+    "math", "string", "table", "bit32", "utf8", "_VERSION",
 }
 
 # Names that appear after a dot or a colon are fields, not bindings.
@@ -139,14 +142,14 @@ def chip_members():
     # strings, so `math.sin =` is preceded by a literal backslash-n and `^`
     # under re.M never matched -- which left the set EMPTY and the check
     # vacuously true, i.e. worse than not having it.
-    for m in re.finditer(r"(?:string|math|table|io|os|bit32)\.(\w+)\s*=",
+    for m in re.finditer(r"(?:string|math|table|io|os|bit32|utf8)\.(\w+)\s*=",
                          text):
         out.setdefault(m.group(0).split(".")[0], set()).add(m.group(1))
     return out
 
 
 CHIP_MEMBERS = chip_members()
-MEMBER_USE = re.compile(r"\b(string|math|table|io|os|bit32)\.(\w+)")
+MEMBER_USE = re.compile(r"\b(string|math|table|io|os|bit32|utf8)\.(\w+)")
 # The one library call whose cost its own text does not bound: string.rep
 # builds as many characters as its argument asks for, so a prelude carrying one
 # re-pays that on EVERY lifted assert.  literals.lua binds

@@ -1709,6 +1709,34 @@ TESTS = [
     ("while-ret-live", "while false do return 1 end print(2)", None,
      "run"),
     ("str-esc-tab", "print('a\\tb')", None, "run"),
+    # Decimal and hex escapes spell any byte 0-255, not just printable ASCII.
+    # emitEscByte used to allow only 32-126 via a table, so "\195" was a
+    # compile error -- silent from the program's side, because a program
+    # carrying one simply never parsed.  utf8 (or any binary string) needs high
+    # bytes in literals, which is what found it.  \ddd above 255 stays an
+    # error; \xXX cannot exceed it by construction.
+    ("str-esc-high", "print(string.byte('\\195'), string.byte('\\0'), "
+     "string.byte('\\255'), '\\169' == '\\169')", None, "run"),
+    ("str-esc-hex", "print(string.byte('\\xc3'), '\\x41' == 'A')", None,
+     "run"),
+    # utf8: proved against lua55 value by value (char/codepoint round trips,
+    # offsets, multibyte lengths, overlong/surrogate rejections, lax mode, all
+    # bounds errors), because lua55 HAS utf8 to diff against -- unlike bit32.
+    # "state" with pinned logs anyway: the programs are boot-heavy (the main
+    # piece is ~2,900 characters) and the logs below ARE PUC's answers.
+    ("utf8-len", "print(utf8.len('abc'))", None, "state",
+     {"ticks": 15000, "expect": {"log": "3\n"}}),
+    ("utf8-char", "print(utf8.char() == '', utf8.char(65))", None, "state",
+     {"ticks": 15000, "expect": {"log": "true\tA\n"}}),
+    ("utf8-offset", "print(utf8.offset('abc', 0), utf8.offset('abc', 2), "
+     "utf8.offset('abc', -1))", None, "state",
+     {"ticks": 15000, "expect": {"log": "1\t2\t3\t3\n"}}),
+    ("utf8-multi", "print(utf8.len('a\\195\\169b'), "
+     "utf8.codepoint('a\\195\\169b', 2))", None, "state",
+     {"ticks": 15000, "expect": {"log": "3\t233\n"}}),
+    ("utf8-errors", "print(not pcall(utf8.codepoint, '\\192\\128'), "
+     "not pcall(utf8.char, -1))", None, "state",
+     {"ticks": 15000, "expect": {"log": "true\ttrue\n"}}),
     ("str-empty", "print('')", None, "run"),
     ("concat-empty", "print('' .. '' .. 1)", None, "run"),
     ("cmp-func", "print(print==print, print~=type)", None, "run"),
