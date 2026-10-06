@@ -2,7 +2,11 @@
 
 Every limit in the chip is `resize`d at reset rather than declared with a size,
 so raising one costs no nodes -- measured, not assumed: MAX_HEAP 512->1024,
-ARR_SLOTS 64->128 and spec.OUTARR 64->128 each left the audit at 30,290.
+ARR_SLOTS 64->128 and spec.OUTARR 64->128 each left the audit at 30,290,
+and ARR_SLOTS 64->16384 (both array ports, with the outstrarr arm already
+in) left it unchanged: the size is memory, not graph.  What a wide array
+port costs is wire width in game: an @right out port carries its whole
+array every tick.
 
 So the question is not what a bigger heap costs.  It is which ceiling a real
 program meets first, and -- the part that actually matters -- whether meeting it
@@ -56,8 +60,8 @@ PROBES = [
     ("tables (MAX_TABLES %d)" % spec.MAX_TABLES,
      "local t = {} for i = 1, %d do t[i] = {} end print(#t)",
      (spec.MAX_TABLES - 4, spec.MAX_TABLES + 12)),
-    ("outArr slots (ARR_SLOTS %d)" % spec.OUTARR,
-     "for i = 1, %d do outarr(i, i) end print('wrote')",
+    ("outNumArr/outStrArr slots (ARR_SLOTS %d)" % spec.OUTARR,
+     "for i = 1, %d do outnumarr(i, i) outstrarr(i, 'w') end print('wrote')",
      (spec.OUTARR - 4, spec.OUTARR + 36)),
 ]
 

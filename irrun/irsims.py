@@ -749,7 +749,11 @@ class Sim:
         return {
             "log": self.log,
             "outGlobals": og,
-            "outArr": og.get("outArr", [0.0] * 64),
+            # A graph from before the array ports existed has no value
+            # for them; every reader either has the port or fails loudly
+            # on the missing name, so the placeholder is never compared.
+            "outNumArr": og.get("outNumArr", []),
+            "outStrArr": og.get("outStrArr", []),
             "halted": not self.exec_queue and not self._deferred,
         }
 

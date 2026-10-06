@@ -4,9 +4,9 @@
 /// Wire a Lua program into `program` (a string variable gate) and drive `run` high.
 /// The program is lexed, parsed to flat bytecode, then executed on a register VM.
 /// Numbers go in through inNum0..inNum3, strings through inStr0..inStr1, whole arrays
-/// through inNumArr and inStrArr, and the program itself in the log; outNum0..outNum3, outStr0..outStr1,
-/// outArr comes back out
-/// are writable from Lua.
+/// through inNumArr and inStrArr, and the program itself in the log; outNum0..outNum3,
+/// outStr0..outStr1, outNumArr and outStrArr come back out and are
+/// writable from Lua.
 ///
 /// Ports
 ///   in  program: string   Lua source, newlines and all. Changing it re-parses.
@@ -27,8 +27,9 @@
 ///                         numbers keeps paying nothing for the string half
 ///
 ///   Naming: a PORT is camelCase and the function that reads or writes it is the
-///   lowercase of that name -- outNum0/outStr0/outArr are written by outnum,
-///   outstr and outarr, and inNumArr/inStrArr are read by innumarr/instrarr.  The
+///   lowercase of that name -- outNum0/outStr0/outNumArr/outStrArr are written
+///   by outnum, outstr, outnumarr and outstrarr, and inNumArr/inStrArr are
+///   read by innumarr/instrarr.  The
 ///   camelCase names a program sees as VALUES (inNum0, inStr0) are the port
 ///   mirrors, which are values and not calls, so they keep the port's spelling.
 ///   out log: string       print and io.write output: a print call is one line (args
@@ -39,10 +40,14 @@
 ///                         writing a string/table/function is a runtime error)
 ///   out outStr0..outStr1: string  written by outstr(i, v), i 1..2, Lua-formatted
 ///                                (nil writes "")
-///   out outArr: float[] 64 slots, written 1-based via outarr(i, v) (nil writes 0.0).
-///                         outarr(i, v, ...) writes one slot per extra value, up to 8,
-///                         so a run of adjacent slots costs one call instead of k; a
-///                         call with more values than that writes the first 8
+///   out outNumArr: float[] 16,384 slots, written 1-based via outnumarr(i, v)
+///                         (nil writes 0.0).  outnumarr(i, v, ...) writes one
+///                         slot per extra value, up to 8, so a run of adjacent
+///                         slots costs one call instead of k; a call with more
+///                         values than that writes the first 8
+///   out outStrArr: string[] the same slots and the same shapes for strings,
+///                         via outstrarr(i, v) and outstrarr(i, v, ...): nil
+///                         writes "" and anything but a string is a runtime error
 ///   out result: string    top-level return value, "" when none
 ///   out err: string       runtime error text, "" when none; compile failures read
 ///                         "line N: message"
@@ -220,13 +225,14 @@
 ///   is the one divergence).  See lib/os_date.lua and lib/os_env.lua.
 ///   tostring of a table is address-shaped (PUC's exact address is unstable).
 ///   t[nil] reads and writes raise "table index is nil". The output ports only
-///   take numbers/booleans/nil and outArr only numbers (PUC tables take
-///   anything; fixed-size float storage is a gate limitation). The log keeps
+///   take numbers/booleans/nil, outNumArr only numbers and outStrArr only
+///   strings (PUC tables take anything; fixed-size float and string storage
+///   is a gate limitation). The log keeps
 ///   the last 32 lines at 64 chars each (about 2 KB).
 ///
 /// Limits (a compile error past them, reported as an `err: ` line)
 ///   4096 tokens, 1024 bytecode instructions, 64 registers per function, 96 functions,
-///   96 globals (34 pre-registered), 256 numeric and 256 string constants, 16 values
+///   96 globals (35 pre-registered), 256 numeric and 256 string constants, 16 values
 ///   per expanded call/return/statement, 32 nested calls, 16 upvalues per function.
 ///   At run time: 64 program tables plus four library tables, 512 table entries,
 ///   352 closure records and 1024 upvalue cells.  The records are shared with the
@@ -261,7 +267,7 @@
 /// Verification: differential tests against real Lua 5.5, structural model<->chip
 /// consistency checks (builtin ids, global slots, limits, ports, opcode and keyword
 /// coverage, re-parse/restart clearing), and simulated handler tests for run, the log,
-/// innumarr/outarr, outnum/outstr and error reporting.
+/// innumarr/outnumarr, outnum/outstr/outstrarr and error reporting.
 /// It has not been run inside Brickadia.
 
 @layout("cube")
@@ -286,7 +292,8 @@
 @right out outNum3: float = oF3.Value
 @right out outStr0: string = oS4.Value
 @right out outStr1: string = oS5.Value
-@right out outArr: float[] = outArrV
+@right out outNumArr: float[] = outNumArrV
+@right out outStrArr: string[] = outStrArrV
 @right out result: string = resultV.Value
 @right out err: string = errV.Value
 @right out progDebug: string = progDebugV.Value
@@ -299,13 +306,19 @@ const MAX_INSTR = 4096
 // the prepended library plus a full program; the token arrays are sized from
 // this, so raising it costs gates (see tools/chip/audit.py)
 const MAX_TOKENS = 4096
-// Entries in the inNumArr, inStrArr and outArr ports.  A const rather than
-// inNumArr.length() because an input PORT cannot be read during codegen - it
-// empties every program's log - and the width is needed while parsing.
-// test_consistency
-// checks this against spec.OUTARR, which is what actually sizes the array, so
-// the two cannot drift without the suite going red.
-const ARR_SLOTS = 64
+// Entries in the inNumArr, inStrArr, outNumArr and outStrArr ports.  A
+// const rather than inNumArr.length() because an input PORT cannot be
+// read during codegen - it empties every program's log - and the width
+// is needed while parsing.  test_consistency checks this against
+// spec.OUTARR, which is what actually sizes the array, so the two
+// cannot drift without the suite going red.  The size is a memory
+// bound, not a graph: the ArrayVars are resized at reset, so raising
+// it costs no nodes and no per-tick gates (measured: 64 -> 16384 left
+// tools/chip/audit.py at the same figure).  What it does cost is wire
+// width in game: an @right out array port carries its whole array every
+// tick, so 16k slots is 16k values on the wire whether or not the
+// program wrote any of them.
+const ARR_SLOTS = 16384
 const MAX_REGS = 200
 // function slots: the reserved builtins, the prepended library, and the
 // program's own functions.  The arrays grow on demand, so this is a bound, not
@@ -368,7 +381,7 @@ const MAXVALS = 16
 // at NB.  Each one is a case in the vmStep call dispatch, so adding a builtin
 // means: extend this, declare its global, extend GTAG_INIT/GNUM_INIT, and add
 // the dispatch case.  test_ws_consistency.py checks all four line up.
-const NB = 26
+const NB = 27
 
 // Library sources, prepended on demand (see libIter and friends).  These are
 // ordinary Lua: the parser sees them exactly like the user's program.  They are
@@ -467,7 +480,8 @@ var oF2: float = 0.0
 var oF3: float = 0.0
 var oS4: string = ""
 var oS5: string = ""
-var outArrV: float[]
+var outNumArrV: float[]
+var outStrArrV: string[]
 var resultV: string = ""
 var errV: string = ""
 var progOkV: bool = false
@@ -917,7 +931,7 @@ var cloActive: bool = false
 // slots 0..5 (inNum0..inNum3 then inStr0..inStr1) and are filled from the latches;
 // after them come the callables, the four library tables, and instrarr last.  The
 // writable outputs are deliberately NOT globals -- they are written by
-// outnum/outstr/outarr and read on their own ports, so there is no slot for them
+// outnum/outstr/outnumarr and read on their own ports, so there is no slot for them
 // at all.
 // The two arrays below carry the seed for every slot, and that pair plus the
 // gDeclare list are the authority.  This comment used to spell the whole slot map
@@ -926,8 +940,8 @@ var cloActive: bool = false
 // vector ports are gone (RESERVED_FIDS keeps the ids).  That is a hand-kept mirror
 // of numbers the chip computes, which is how a doc ends up confidently disagreeing
 // with the build, so it now repeats only the two facts worth having.
-var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 4]
-var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 23.0, 24.0, 0.0, 1.0, 2.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 1.0, 2.0, 3.0, 25.0]
+var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 4, 4]
+var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 23.0, 24.0, 0.0, 1.0, 2.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 1.0, 2.0, 3.0, 25.0, 26.0]
 
 // pcall, which PUC has in C and is a gate here for the same reason.
 //
@@ -1750,8 +1764,11 @@ mod noteArity(name: string) {
     if name == "outstr" {
       nameWarn = nameWarn .. "warn: outstr() takes an index and a value, i in 1..2, and was given none\n"
     }
-    if name == "outarr" {
-      nameWarn = nameWarn .. "warn: outarr() takes an index and at least one value, and was given none\n"
+    if name == "outnumarr" {
+      nameWarn = nameWarn .. "warn: outnumarr() takes an index and at least one value, and was given none\n"
+    }
+    if name == "outstrarr" {
+      nameWarn = nameWarn .. "warn: outstrarr() takes an index and at least one value, and was given none\n"
     }
     if name == "innumarr" {
       nameWarn = nameWarn .. "warn: innumarr() takes an index from 1, and was given none\n"
@@ -1771,18 +1788,26 @@ mod noteIndex(name: string) {
     if name == "outstr" && !(1.0 <= v && v <= 2.0) {
       nameWarn = nameWarn .. "warn: outstr index must be 1..2, and this call is out of range\n"
     }
-    // outArr raises on a bad index.  innumarr is bounded by the same length but
+    // outNumArr raises on a bad index.  innumarr is bounded by the same length but
     // substitutes nil and carries on, and saying THAT is worth having - a silent
     // nil is the worse failure - but it is NOT here, and the reason is worth more
     // than the check: reading an input PORT during codegen empties every program,
     // including ones that never mention innumarr, because all of noteIndex is inlined
     // into exprPushName so the read is in the graph whether or not the branch is
-    // taken.  outArrV.length() is safe because that is a chip-side array var.  The
+    // taken.  outNumArrV.length() is safe because that is a chip-side array var.  The
     // width has to come from a constant, and no such constant exists yet.
-    if name == "outarr" {
+    if name == "outnumarr" {
       if v != floor(v) || v < 1.0 || v > ARR_SLOTS {
         nameWarn = nameWarn
-          .. "warn: array index out of range, and outarr is 1-based over the outArr slots\n"
+          .. "warn: array index out of range, and outnumarr is 1-based over the outNumArr slots\n"
+      }
+    }
+    // outstrarr raises on a bad index, and the bound is ARR_SLOTS,
+    // the const that sizes every array port.
+    if name == "outstrarr" {
+      if v != floor(v) || v < 1.0 || v > ARR_SLOTS {
+        nameWarn = nameWarn
+          .. "warn: array index out of range, and outstrarr is 1-based over the outStrArr slots\n"
       }
     }
     // Same bound, different consequence: a bad innumarr index substitutes nil and the
@@ -2342,7 +2367,7 @@ mod vmReset() {  tmap.clear()
   gstr.resize(MAX_GLOBALS, "")
   gtag.copyFrom(GTAG_INIT)
   gnum.copyFrom(GNUM_INIT)
-  // CopyFrom REPLACES the array, so it leaves gtag and gnum at GTAG_INIT's 34
+  // CopyFrom REPLACES the array, so it leaves gtag and gnum at GTAG_INIT's
   // entries and the length has to be set again here.  Dropping this pair as a
   // no-op on a 64-long array left the two at 34, and every read of a global the
   // program never assigned came back out of bounds -- three cases answering 1,
@@ -2388,8 +2413,10 @@ mod vmReset() {  tmap.clear()
   oF3 = 0.0
   oS4 = ""
   oS5 = ""
-  outArrV.clear()
-  outArrV.resize(64, 0.0)
+  outNumArrV.clear()
+  outNumArrV.resize(ARR_SLOTS, 0.0)
+  outStrArrV.clear()
+  outStrArrV.resize(ARR_SLOTS, "")
   resultV = ""
   errV = ""
   fFunc.push(mainFid)
@@ -4064,7 +4091,7 @@ mod parseInit() {
   gDeclare("tostring")
   gDeclare("clock")
   gDeclare("innumarr")
-  gDeclare("outarr")
+  gDeclare("outnumarr")
   gDeclare("select")
   gDeclare("next")
   gDeclare("_s")
@@ -4085,6 +4112,7 @@ mod parseInit() {
   gDeclare("table")
   gDeclare("io")
   gDeclare("instrarr")
+  gDeclare("outstrarr")
   // The runtime wires the latches and outputs straight into these slots, so
   // take the numbers from the declarations instead of repeating them: adding a
   // builtin used to leave a stale literal behind and overwrite its id.
@@ -4475,11 +4503,20 @@ chip pcallEnd(src: int, k: int, extra: int) {
   retCountV = cnt
 }
 
-// outarr's value test, in one place because eight call sites have to agree: a
-// number (1), a float (6), nil (0) and a boolean (3) may be stored, and nil
-// stores 0.0.  Anything else is a table, a string or a function.
+// outnumarr's value test, in one place because eight call sites have to
+// agree: a number (1), a float (6), nil (0) and a boolean (3) may be
+// stored, and nil stores 0.0.  Anything else is a table, a string or a
+// function.
 mod arrNumOk(tag: int) -> bool {
   return tag == 1 || tag == 6 || tag == 0 || tag == 3
+}
+
+// outstrarr's value test, in one place because eight call sites
+// have to agree: a string (2) or nil (0) may be stored, and nil
+// stores "".  Anything else is a number, a boolean, a table or a
+// function.
+mod arrStrOk(tag: int) -> bool {
+  return tag == 2 || tag == 0
 }
 
 // An integer-tagged slot carries no sign, because integer zero does not have
@@ -9353,40 +9390,41 @@ mod gateLow(fid: int, a: int, nargs: int) {
       retCountV = cnt
     }
   } else if fid == 7 {
-    // outarr(i, v, ...) writes i and the next slots, one per extra value, up to
-    // 8.  A call with more values writes the first 8, the same way the two-value
-    // form ignored whatever came after the second.  The port is @right out, so the
-    // whole array reaches it every tick however it was filled: what this saves is
-    // the CALL, and 8 values to a call is the cheap way to pay less of it.
+    // outnumarr(i, v, ...) writes i and the next slots, one per extra
+    // value, up to 8.  A call with more values writes the first 8, the same
+    // way the two-value form ignored whatever came after the second.  The
+    // port is @right out, so the whole array reaches it every tick however
+    // it was filled: what this saves is the CALL, and 8 values to a call is
+    // the cheap way to pay less of it.
     let it = if 0 < nargs then vTag(a + 1) else 0
     let iv = if 0 < nargs then vNum(a + 1) else 0.0
-    if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > outArrV.length() {
+    if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > outNumArrV.length() {
       vmFail("array index out of range")
     } else {
       let w = toInt(iv) - 1
       // one value per extra argument, so the count is nargs - 1 and not nargs:
-      // counting the index made outarr(64, -1) ask for slot 65, which the demo
-      // caught because it writes the last slot
+      // counting the index made outnumarr(64, -1) ask for slot 65, which the
+      // demo caught because it writes the last slot
       let cnt = if nargs < 9 then nargs - 1 else 8
-      if w + cnt > outArrV.length() {
+      if w + cnt > outNumArrV.length() {
         vmFail("array index out of range")
       } else {
         if 1 < nargs && !arrNumOk(vTag(a + 2)) { vmFail("array element must be a number") }
-        if 1 < nargs { outArrV[w] = if vTag(a + 2) == 0 then 0.0 else vNum(a + 2) }
+        if 1 < nargs { outNumArrV[w] = if vTag(a + 2) == 0 then 0.0 else vNum(a + 2) }
         if 2 < nargs && !arrNumOk(vTag(a + 3)) { vmFail("array element must be a number") }
-        if 2 < nargs { outArrV[w + 1] = if vTag(a + 3) == 0 then 0.0 else vNum(a + 3) }
+        if 2 < nargs { outNumArrV[w + 1] = if vTag(a + 3) == 0 then 0.0 else vNum(a + 3) }
         if 3 < nargs && !arrNumOk(vTag(a + 4)) { vmFail("array element must be a number") }
-        if 3 < nargs { outArrV[w + 2] = if vTag(a + 4) == 0 then 0.0 else vNum(a + 4) }
+        if 3 < nargs { outNumArrV[w + 2] = if vTag(a + 4) == 0 then 0.0 else vNum(a + 4) }
         if 4 < nargs && !arrNumOk(vTag(a + 5)) { vmFail("array element must be a number") }
-        if 4 < nargs { outArrV[w + 3] = if vTag(a + 5) == 0 then 0.0 else vNum(a + 5) }
+        if 4 < nargs { outNumArrV[w + 3] = if vTag(a + 5) == 0 then 0.0 else vNum(a + 5) }
         if 5 < nargs && !arrNumOk(vTag(a + 6)) { vmFail("array element must be a number") }
-        if 5 < nargs { outArrV[w + 4] = if vTag(a + 6) == 0 then 0.0 else vNum(a + 6) }
+        if 5 < nargs { outNumArrV[w + 4] = if vTag(a + 6) == 0 then 0.0 else vNum(a + 6) }
         if 6 < nargs && !arrNumOk(vTag(a + 7)) { vmFail("array element must be a number") }
-        if 6 < nargs { outArrV[w + 5] = if vTag(a + 7) == 0 then 0.0 else vNum(a + 7) }
+        if 6 < nargs { outNumArrV[w + 5] = if vTag(a + 7) == 0 then 0.0 else vNum(a + 7) }
         if 7 < nargs && !arrNumOk(vTag(a + 8)) { vmFail("array element must be a number") }
-        if 7 < nargs { outArrV[w + 6] = if vTag(a + 8) == 0 then 0.0 else vNum(a + 8) }
+        if 7 < nargs { outNumArrV[w + 6] = if vTag(a + 8) == 0 then 0.0 else vNum(a + 8) }
         if 8 < nargs && !arrNumOk(vTag(a + 9)) { vmFail("array element must be a number") }
-        if 8 < nargs { outArrV[w + 7] = if vTag(a + 9) == 0 then 0.0 else vNum(a + 9) }
+        if 8 < nargs { outNumArrV[w + 7] = if vTag(a + 9) == 0 then 0.0 else vNum(a + 9) }
         vSetNil(a)
         retCountV = 0
       }
@@ -10126,7 +10164,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
     // outnum(i, v): write one of the four numeric output ports.  A call, not an
     // assignment, so writing to the world reads as an action.  The index is
     // 1-BASED like every table a Lua program can already see, so outnum(1, v)
-    // and outarr(1, v) are the same slot and neither has an off-by-one to
+    // and outnumarr(1, v) are the same slot and neither has an off-by-one to
     // remember.
     let oi = if 0 < nargs then toInt(vNum(a + 1)) else -1
     let ot = if 1 < nargs then vTag(a + 2) else 0
@@ -10211,6 +10249,43 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
         if w + 7 < inStrArr.length() { vSet(a + 7, 2, 0.0, inStrArr[w + 7]) } else { vSetNil(a + 7) }
       }
       retCountV = cnt
+    }
+  } else if fid == 26 {
+    // outstrarr(i, v, ...) writes i and the next slots, one string
+    // per extra value, up to 8.  A call with more values writes the
+    // first 8.  The index is 1-based over the outStrArr slots, and a
+    // call that would run past the end fails, so a run of adjacent
+    // slots costs one call instead of k.  A value may be a string or
+    // nil, and nil stores ""; anything else is a runtime error.
+    let it = if 0 < nargs then vTag(a + 1) else 0
+    let iv = if 0 < nargs then vNum(a + 1) else 0.0
+    if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > outStrArrV.length() {
+      vmFail("array index out of range")
+    } else {
+      let w = toInt(iv) - 1
+      let cnt = if nargs < 9 then nargs - 1 else 8
+      if w + cnt > outStrArrV.length() {
+        vmFail("array index out of range")
+      } else {
+        if 1 < nargs && !arrStrOk(vTag(a + 2)) { vmFail("array element must be a string") }
+        if 1 < nargs { outStrArrV[w] = if vTag(a + 2) == 0 then "" else vStr(a + 2) }
+        if 2 < nargs && !arrStrOk(vTag(a + 3)) { vmFail("array element must be a string") }
+        if 2 < nargs { outStrArrV[w + 1] = if vTag(a + 3) == 0 then "" else vStr(a + 3) }
+        if 3 < nargs && !arrStrOk(vTag(a + 4)) { vmFail("array element must be a string") }
+        if 3 < nargs { outStrArrV[w + 2] = if vTag(a + 4) == 0 then "" else vStr(a + 4) }
+        if 4 < nargs && !arrStrOk(vTag(a + 5)) { vmFail("array element must be a string") }
+        if 4 < nargs { outStrArrV[w + 3] = if vTag(a + 5) == 0 then "" else vStr(a + 5) }
+        if 5 < nargs && !arrStrOk(vTag(a + 6)) { vmFail("array element must be a string") }
+        if 5 < nargs { outStrArrV[w + 4] = if vTag(a + 6) == 0 then "" else vStr(a + 6) }
+        if 6 < nargs && !arrStrOk(vTag(a + 7)) { vmFail("array element must be a string") }
+        if 6 < nargs { outStrArrV[w + 5] = if vTag(a + 7) == 0 then "" else vStr(a + 7) }
+        if 7 < nargs && !arrStrOk(vTag(a + 8)) { vmFail("array element must be a string") }
+        if 7 < nargs { outStrArrV[w + 6] = if vTag(a + 8) == 0 then "" else vStr(a + 8) }
+        if 8 < nargs && !arrStrOk(vTag(a + 9)) { vmFail("array element must be a string") }
+        if 8 < nargs { outStrArrV[w + 7] = if vTag(a + 9) == 0 then "" else vStr(a + 9) }
+        vSetNil(a)
+        retCountV = 0
+      }
     }
   } else {
     if fFunc.length() >= MAX_CALLS {
@@ -11880,7 +11955,7 @@ mod staticAdvice(p: string) -> string {
   }
   if srcUsesField(p, "inVec") || srcUsesField(p, "outVec")
     || srcUsesField(p, "invecx") || srcUsesField(p, "outvec") {
-    h = h .. "warn: there is no vector port: use innumarr(i) and outarr(i, v, ...) with i from 1\n"
+    h = h .. "warn: there is no vector port: use innumarr(i) and outnumarr(i, v, ...) with i from 1\n"
   }
   if srcUsesField(p, "inCol") || srcUsesField(p, "outCol")
     || srcUsesField(p, "incol") || srcUsesField(p, "outcol") {
@@ -12055,7 +12130,7 @@ on Clock(interval = STEP_INTERVAL) {
 //    at 64 chars each, cleared on restart) instead of 8 slots; the 16-way slot dispatch
 //    is gone, lines stream through a small array plus a string mirror.
 // 14. the outputs are written by outnum/outstr calls, not by assigning globals
-//    globals (mirrored to their ports once per tick); innumarr/outarr bridge 1-based
+//    globals (mirrored to their ports once per tick); innumarr/outnumarr bridge 1-based
 //    float arrays.
 // 18. Number/string ports renamed by type: inNum0..inNum3, inStr0..inStr1,
 //    outNum0..outNum3, outStr0..outStr1.
@@ -12063,7 +12138,7 @@ on Clock(interval = STEP_INTERVAL) {
 //    lexer errors carry their own line).
 // 16. Duplicate targets in one assignment store right to left (a, a = 1, 2 leaves 1).
 // 17. Table constructors accept [k] = v with any key expression.
-// 19. Function ids 6 and 7 were taken by innumarr/outarr but parseJobStart still reserved only six
+// 19. Function ids 6 and 7 were taken by innumarr/outnumarr but parseJobStart still reserved only six
 //    builtin slots, so the first two user functions (and the main chunk) collided with them:
 //    any program defining a function printed nothing or failed with "array index out of range".
 //    It now reserves eight slots.

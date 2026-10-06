@@ -326,7 +326,8 @@ def chip_ports(r):
         "log": r["log"],
         "outGlobals": [_port(og, n, 0.0) for n in OUT_NUMS]
                       + [_port(og, n, "") for n in OUT_STRS],
-        "outArr": list(_port(og, "outArr", None)),
+        "outNumArr": list(_port(og, "outNumArr", None)),
+        "outStrArr": list(_port(og, "outStrArr", None)),
         "result": og.get("result", ""),
         "err": og.get("err") or "",
         "progDebug": og.get("progDebug") or "",
@@ -538,7 +539,7 @@ def compare(name, mode, kw, r, dt):
                     key, got, value), dt)
         return (name, True, "", dt)
     if mode == "modelio":
-        for key in ("log", "outGlobals", "outArr", "result"):
+        for key in ("log", "outGlobals", "outNumArr", "outStrArr", "result"):
             got, want_v = c[key], exp.get(key)
             if key in exp and (norm_log(got) if key == "log" else got) != (
                     norm_log(want_v) if key == "log" else want_v):
@@ -568,7 +569,7 @@ def compare(name, mode, kw, r, dt):
             return (name, False, "err missing %r: got %r" % (exp_err, c["err"]), dt)
         if not exp_err and not c["err"]:
             return (name, False, "chip did not fail", dt)
-        for key in ("log", "outArr"):
+        for key in ("log", "outNumArr", "outStrArr"):
             if key in exp and c[key] != exp[key]:
                 return (name, False, "%s mismatch got=%r want=%r" % (
                     key, c[key], exp[key]), dt)

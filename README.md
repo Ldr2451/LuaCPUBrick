@@ -35,7 +35,8 @@ A WireScript chip is wires, so everything a program can see or change is a port.
            inNum2 --|  Lua 5.5  |-- outNum3
            inNum3 --|           |-- outStr0
            inStr0 --|___________|-- outStr1
-           inStr1 --|           |-- outArr
+           inStr1 --|           |-- outNumArr
+           inStr1 --|           |-- outStrArr
          inNumArr --|           |-- result
          inStrArr --|           |-- err
                                 |-- progDebug
@@ -50,12 +51,15 @@ ports: `inNumArr` and `inStrArr` are read live by `innumarr()` and `instrarr()`,
 so changing one mid-run is seen by the running program and does not restart it.
 
 Everything a program *writes* is a call, including the single numbers and
-strings: `outnum(i, v)`, `outstr(i, v)` and `outarr(i, v, ...)` for the array.
+strings: `outnum(i, v)`, `outstr(i, v)`, `outnumarr(i, v, ...)` and
+`outstrarr(i, v, ...)` for the two arrays.
 A written value stays on its port until something writes there again, so whatever
 is reading the chip can take its time.
 Every index a program passes counts from 1, the way a Lua table does, in both
-families: `outnum(1..4, v)`, `outstr(1..2, v)` and `outarr(1.., v...)` all start
-at 1, so there is no off-by-one to remember between the two.
+families: `outnum(1..4, v)`, `outstr(1..2, v)` and `outnumarr(1.., v...)` /
+`outstrarr(1.., v...)` all start at 1, so there is no off-by-one to remember
+between them.  Each array holds 16,384 slots, and a call writes up to 8 of
+them (one per value), so a run of adjacent slots costs one call.
 
 ## Running the tests
 

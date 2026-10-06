@@ -34,7 +34,8 @@ TABLE = {"lbaselib.c": "", "lstrlib.c": "string.", "ltablib.c": "table.",
 HOST_IO = ("clock", "program", "run",
            "inNum0", "inNum1", "inNum2", "inNum3", "inStr0", "inStr1",
            "inNumArr", "inStrArr", "innumarr", "instrarr",
-           "outArr", "outarr", "outnum", "outstr",
+           "outNumArr", "outStrArr", "outnumarr", "outstrarr",
+           "outnum", "outstr",
            "outNum0", "outNum1", "outNum2", "outNum3",
            "outStr0", "outStr1", "last")
 

@@ -6,7 +6,7 @@ reach: builtin ids vs reserved function slots, global slot order, limits,
 port bindings, opcode coverage, keyword coverage, and re-parse/restart
 clearing of every state array. A mismatch here is a gate bug no behavior
 test can catch (e.g. the parseJobStart six-slot collision that broke every
-function once innumarr and outarr took ids 6 and 7).
+function once innumarr and outnumarr took ids 6 and 7).
 
 Run: python -u tests/test_consistency.py  (exit 0 = all green)
 """
@@ -137,9 +137,10 @@ check(f"log-lines-{m.LOG_LINES}",
 check(f"log-width-{m.LOG_WIDTH}",
       f".Length() > {m.LOG_WIDTH}" in WS
       and f"Substring(0, {m.LOG_WIDTH - 1})" in WS)
-check(f"outarr-{m.OUTARR}",
-      f"outArrV.resize({m.OUTARR}, 0.0)" in WS)
-# The inNumArr/outArr index warnings need the width while PARSING, and an input port
+check(f"outnumarr-{m.OUTARR}",
+      "outNumArrV.resize(ARR_SLOTS, 0.0)" in WS
+      and 'outStrArrV.resize(ARR_SLOTS, "")' in WS)
+# The inNumArr/outNumArr index warnings need the width while PARSING, and an input port
 # cannot be read then - it empties every program's log - so the width is a const.
 # That makes two rules that have to agree, and a comment is not a check: this one
 # is, and it also fails if the warnings go back to reading the array or a literal.
@@ -159,7 +160,8 @@ for port, typ in [("log", "string"), ("outNum0", "float"),
                   ("outNum1", "float"), ("outNum2", "float"),
                   ("outNum3", "float"),
                   ("outStr0", "string"),
-                  ("outStr1", "string"), ("outArr", "float[]"),
+                  ("outStr1", "string"), ("outNumArr", "float[]"),
+                  ("outStrArr", "string[]"),
                   ("result", "string"), ("err", "string"),
                   ("progDebug", "string"), ("busy", "bool")]:
     check(f"port-{port}", port in outs_d,
@@ -176,7 +178,8 @@ check("no-halted-port", "out halted" not in WS)
 check("no-proglen-port", "out progLen" not in WS)
 check("no-nprint-port", "out nPrint" not in WS)
 for hw, port in [("innumarr", "inNumArr"), ("instrarr", "inStrArr"),
-                 ("outarr", "outArr"), ("print", "log")]:
+                 ("outnumarr", "outNumArr"), ("outstrarr", "outStrArr"),
+                 ("print", "log")]:
     check(f"hw-{hw}-{port}", re.search(
         rf"@(?:left|right) (?:in|out) {port}\b", WS) is not None)
 # An array port cannot be watched: `Change` observes one wire value and a
@@ -206,7 +209,8 @@ for where, body in (("parseInit", pi), ("vmReset", vr)):
 for var in ["logV", "oF0", "oS4", "resultV", "errV"]:
     check(f"reset-{var}", re.search(rf"\b{var} = ", vr) is not None)
 check("reset-logLines", "logLines.clear()" in vr)
-check("reset-outArrV", "outArrV.resize(64, 0.0)" in vr)
+check("reset-outNumArrV", "outNumArrV.resize(ARR_SLOTS, 0.0)" in vr)
+check("reset-outStrArrV", 'outStrArrV.resize(ARR_SLOTS, "")' in vr)
 
 # 6. opcode coverage: every model opcode handled in vmStep -------------------
 # (8..13 share one range-dispatched arithmetic branch)

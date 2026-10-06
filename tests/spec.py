@@ -54,7 +54,7 @@ MAX_HEAP = 4096
 MAXVALS = 16       # values one call/return/statement can carry
 LOG_LINES = 32     # lines kept in the log before the oldest are dropped
 LOG_WIDTH = 64     # characters kept per log line
-OUTARR = 64        # entries in the outArr port
+OUTARR = 16384   # entries in the outNumArr and outStrArr ports
 
 # Harness defaults, shared by the suite and the oracle-diff checks.
 TICKS = 6000       # VM ticks a normal program gets
@@ -66,7 +66,7 @@ TIMEOUT = 90       # seconds per case before the worker is killed
 # lua.ws).  A program's own functions get ids from NB upward, and NB has to
 # match the `const NB` in lua.ws.
 BUILTINS = (("print", 0), ("type", 1), ("tostring", 2),
-             ("clock", 5), ("innumarr", 6), ("outarr", 7),
+             ("clock", 5), ("innumarr", 6), ("outnumarr", 7),
              ("select", 8), ("next", 9), ("_s", 10), ("_m", 11), ("unpack", 12),
              ("_fmt", 13),
              ("_rd", 14),
@@ -82,9 +82,11 @@ BUILTINS = (("print", 0), ("type", 1), ("tostring", 2),
              # reads as an action rather than as editing its state.  fid 4 was
              # outvec and stays reserved (see test_consistency's RESERVED_FIDS).
              ("outnum", 23), ("outstr", 24),
-             # instrarr reads the string array input, the other half of the two
-             # array ports.  It is last so no existing fid moves.
-             ("instrarr", 25))
+             # instrarr reads the string array input and outstrarr
+             # writes the string array output: the two halves of
+             # the string array port pair.  Both are last so no
+             # existing fid moves.
+             ("instrarr", 25), ("outstrarr", 26))
 
 
 # first id available to the program's own functions.  NOT len(BUILTINS):
@@ -105,7 +107,7 @@ GSLOT_ORDER = [    "inNum0",
     "tostring",
     "clock",
     "innumarr",
-    "outarr",
+    "outnumarr",
     "select",
     "next",
     "_s",
@@ -125,4 +127,5 @@ GSLOT_ORDER = [    "inNum0",
     "string",
     "table",
     "io",
-    "instrarr"]
+    "instrarr",
+    "outstrarr"]

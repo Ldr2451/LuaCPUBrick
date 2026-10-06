@@ -139,10 +139,15 @@ outstr(2, tostring(mixed) .. "/" .. tostring(t))
 -- reads a run back the same way -- `inputs2` above prints one, and
 -- tests/cases.py's arr-multi-read8 is where the widest form, k of 8, is checked.
 -- Every index a program passes is 1-BASED, the same as a Lua table, so
--- outarr(1, x) and outnum(1, x) are the same slot and there is no
--- off-by-one to remember.
-outarr(1, sum, fact(3), #t)
-outarr(62, -1, -2, -3)
+-- outnumarr(1, x) and outnum(1, x) are the same slot and there is no
+-- off-by-one to remember.  The array holds 16,384 slots, so the last
+-- run is the one that proves the end is really there.
+outnumarr(1, sum, fact(3), #t)
+outnumarr(16382, -1, -2, -3)
+-- outStrArr takes the same shapes for strings, and nil
+-- stores "".
+outstrarr(1, s, "done")
+outstrarr(16382, "-1", "-2", "-3")
 print("outs")
 print("outs2")
 print()

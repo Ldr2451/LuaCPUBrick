@@ -287,10 +287,12 @@ class Gen:
             return (f"local _k{k} = 1 while _k{k} <= {n} do "
                     f"{body}{brk} _k{k} = _k{k} + 1 end")
         if c < 0.84:
-            return f"outarr({r.randint(1, 4)}, {self.expr('num', 1)})"
+            return f"outnumarr({r.randint(1, 4)}, {self.expr('num', 1)})"
+        if c < 0.87:
+            return f"outstrarr({r.randint(1, 4)}, {self.expr('str', 1)})"
         if c < 0.90:
             # the closing ')' of outstr( is part of the format string, exactly as
-            # it is for outarr and outnum above.  It was missing, so every program
+            # it is for outnumarr and outnum above.  It was missing, so every program
             # that took this arm was missing a paren: the oracle rejected it as a
             # SYNTAX error before the chip ran, and the harness counted that as a
             # skip -- which is how 30 of 150 seeds went uncompared while the tool

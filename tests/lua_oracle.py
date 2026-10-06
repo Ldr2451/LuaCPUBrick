@@ -172,13 +172,14 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     pre.append("end")
     # The port writers are no-ops: the reference has no ports, so their values
     # are the chip's to check and the log is the part PUC can decide.  the output setters
-    # belongs here beside outarr for the same reason -- without one the model
+    # belongs here beside outnumarr for the same reason -- without one the model
     # raises "attempt to call a nil value (global 'outvec')" on any program that
     # writes a vector, which is every demo, and the demo's expected log had been
     # written by hand because the reference could never run the file at all.
     # test_consistency.py's declared-builtins-modelled check is what keeps them
     # all present, so this list is the one that has to stay in step.
-    pre.append("outarr = function() end")
+    pre.append("outnumarr = function() end")
+    pre.append("outstrarr = function() end")
     pre.append("outnum = function() end")
     pre.append("outstr = function() end")
     vv = vec or (0.0, 0.0, 0.0)
