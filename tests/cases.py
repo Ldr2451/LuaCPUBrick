@@ -3059,6 +3059,27 @@ TESTS = [
     ("os-time-table", "print(os.time({year = 1970, month = 1, day = 1, "
      "hour = 0, min = 0, sec = 0}))", None, "state",
      {"ticks": 15000, "expect": {"log": "0\n"}}),
+    # rawequal/rawget/rawset/rawlen (lib/raw.lua): exact because the
+    # chip has no metamethods, so each IS its plain op.  Reference
+    # equality for tables, rawset returns the table, rawlen is #.
+    ("raw-ops", "local t = {}\nrawset(t, 1, 'a')\nrawset(t, 2, 'b')\n"
+     "print(rawequal(1, 1), rawequal(1, 2), rawequal(t, t), "
+     "rawequal(t, {}))\nprint(rawget(t, 1), rawget(t, 3))\n"
+     "print(rawset(t, 1, 'c') == t, rawget(t, 1))\n"
+     "print(rawlen('abc'), rawlen(t))", None, "state",
+     {"ticks": 15000, "expect": {"log": "true\tfalse\ttrue\tfalse\n"
+      "a\tnil\ntrue\tc\n3\t2\n"}}),
+    # os.getenv (lib/os_env.lua): the chip's host exposes no
+    # environment, so it is empty and every variable is unset
+    # -- PUC's own answer for an unset variable.  This case
+    # agrees with PUC (unset -> nil, no-arg raises, a number
+    # argument is stringified and looked up -> nil).  The one
+    # divergence is a variable the host HAS set: PUC answers
+    # its value, the chip answers nil (the empty-env boundary,
+    # documented in the piece).
+    ("os-getenv", "print(os.getenv('NOT_SET_XYZ') == nil, "
+     "pcall(os.getenv), os.getenv(123) == nil)", None, "state",
+     {"ticks": 15000, "expect": {"log": "true\tfalse\ttrue\n"}}),
     ("bit-mix", "print(5+~3)", None, "run"),
     ("bit-prec", "print(1&2|4)", None, "run"),
     ("bit-notneg", "print(~-5)", None, "run"),

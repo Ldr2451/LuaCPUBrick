@@ -377,11 +377,12 @@
   a piece -- and check collisions against the derived list, not by eye.**
   `srcUses(p, "math.l")` names log AND ldexp in one Find (both live in
   LIB_math_exp, no other math.l* exists): -3 nodes measured.  `srcUses(p,
-  "os.d")` names date AND difftime the same way (-3, no other os.d*):
-  the fold list is now math.l, os.d.  The same fold fails everywhere
-  else -- math.d is deg-only but math.r catches random, math.t catches
-  tointeger+type, math.a catches abs, math.s catches sqrt, math.c
-  catches ceil, os.c/os.t/os.s are single-member prefixes with nothing
+  "os.d")` names date AND difftime the same way (-3, no other os.d*), and
+  `srcUses(p, "raw")` names rawequal/rawget/rawset/rawlen (-3, no other
+  raw* global): the fold list is now math.l, os.d, raw.  The same fold
+  fails everywhere else -- math.d is deg-only but math.r catches random,
+  math.t catches tointeger+type, math.a catches abs, math.s catches sqrt,
+  math.c catches ceil, os.c/os.t/os.s are single-member prefixes with nothing
   to fold -- and `:l` as a FIELD would false-positive on `s:len()`.
   `tools/chip/pucsuite.py` derives every member from lua.ws already
   (CHIP_MEMBERS), so the collision check is one command, not a reading.

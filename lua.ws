@@ -209,6 +209,15 @@
 ///   the 64-character log cap, and PUC's text is three characters longer before
 ///   the cut, so the chip's line ends "...integer repres" where PUC's ends
 ///   "...r".  That is the cap, not the message.
+///   os.date and os.time(t) are UTC and need an explicit time: the chip has
+///   no OS timezone (a hardcoded offset would be wrong twice a year) and no
+///   epoch clock (clock() is uptime), so os.time() and a dateless os.date()
+///   raise "no clock" rather than answer from a clock that does not exist,
+///   and a date is formatted in UTC -- a local-zone PUC differs by its own
+///   offset, which is the boundary, not a bug.  os.getenv answers nil for
+///   everything: the host exposes no environment, so the chip's environment
+///   is empty and nil is getenv's own "not set" result (a host-set variable
+///   is the one divergence).  See lib/os_date.lua and lib/os_env.lua.
 ///   tostring of a table is address-shaped (PUC's exact address is unstable).
 ///   t[nil] reads and writes raise "table index is nil". The output ports only
 ///   take numbers/booleans/nil and outArr only numbers (PUC tables take
@@ -444,6 +453,8 @@ const LIB_bit32 = "bit32 = bit32 or {}\nbit32.bnot = function(c) return ~c & 0xF
 const LIB_utf8 = "utf8 = utf8 or {}\nlocal _floor = {0, 0x80, 0x800, 0x10000, 0x200000, 0x4000000}\nlocal function a(p, q, u)\nlocal b = _s(4, p, q - 1, 0)\nif b == nil then return nil end\nif b < 0x80 then return b, 1 end\nlocal e, f\nif b < 0xC2 then return nil end\nif b < 0xE0 then e, f = 2, b & 0x1F\nelseif b < 0xF0 then e, f = 3, b & 0x0F\nelseif b < 0xF8 then e, f = 4, b & 0x07\nelseif b < 0xFC then e, f = 5, b & 0x03\nelseif b < 0xFE then e, f = 6, b & 0x01\nelse return nil end\nfor g = 1, e - 1 do\nlocal h = _s(4, p, q + g - 1, 0)\nif h == nil or h < 0x80 or h > 0xBF then return nil end\nf = f * 64 + (h & 0x3F)\nend\nif f < _floor[e] then return nil end\nif u then\nif f >= 0x80000000 then return nil end\nelseif f > 0x10FFFF or (f >= 0xD800 and f <= 0xDFFF) then\nreturn nil\nend\nreturn f, e\nend\nlocal function l(p, g)\nwhile g > 1 do\nlocal b = _s(4, p, g - 1, 0)\nif b == nil or b < 0x80 or b >= 0xC0 then break end\ng = g - 1\nend\nreturn g\nend\nlocal function m(p, q, what)\nlocal o = #p\nif q == nil then return nil end\nif q < 0 then q = o + q + 1 end\nif q < 1 or q > o + 1 then\nerror(\"bad argument #3 to '\" .. what .. \"' (position out of bounds)\", 3)\nend\nreturn q, o\nend\nutf8.len = function(p, q, t, u)\nlocal e = #p\nq = q or 1\nt = t or e\nif q < 0 then q = e + q + 1 end\nif t < 0 then t = e + t + 1 end\nif q < 1 or q > e + 1 then\nerror(\"bad argument #2 to 'utf8.len' (initial position out of bounds)\", 2)\nend\nif t < 0 or t > e then\nerror(\"bad argument #3 to 'utf8.len' (final position out of bounds)\", 2)\nend\nlocal g, x = q, 0\nwhile g <= t do\nlocal _, y = a(p, g, u)\nif y == nil then return nil, g end\ng, x = g + y, x + 1\nend\nreturn x\nend\nutf8.offset = function(p, e, q)\nlocal o = #p\nif e == 0 then\nq, o = m(p, q or 1, \"utf8.offset\")\nq = l(p, q)\nlocal _, y = a(p, q, true)\nif y == nil then return nil end\nreturn q, q + y - 1\nend\nif e > 0 then\nq, o = m(p, q or 1, \"utf8.offset\")\nlocal g, y = q, 1\nfor t = 1, e do\nif g > o + 1 then return nil end\nif g == o + 1 then\nif t == e then return g, g end\nreturn nil\nend\nlocal _, z = a(p, g, true)\nif z == nil then return nil end\ng, y = g + z, z\nend\nreturn g - y, g - 1\nend\nq, o = m(p, q or o + 1, \"utf8.offset\")\nlocal g, y = q, 1\nfor _ = 1, -e do\nif g <= 1 then return nil end\ng = l(p, g - 1)\nlocal _, z = a(p, g, true)\nif z == nil then return nil end\ny = z\nend\nreturn g, g + y - 1\nend\nutf8.codepoint = function(p, q, t, u)\nlocal e = #p\nq = q or 1\nt = t or q\nif q < 0 then q = e + q + 1 end\nif t < 0 then t = e + t + 1 end\nif q < 1 or q > e + 1 then\nerror(\"bad argument #2 to 'utf8.codepoint' (out of bounds)\", 2)\nend\nif t > e then\nerror(\"bad argument #3 to 'utf8.codepoint' (out of bounds)\", 2)\nend\nif t < q then return end\nlocal x = {}\nlocal g = q\nwhile g <= t do\nlocal f, y = a(p, g, u)\nif y == nil then error(\"invalid UTF-8 code\", 2) end\nx[#x + 1] = f\ng = g + y\nend\nreturn unpack(x, 1, #x)\nend\n"
 const LIB_utf8_char = "utf8 = utf8 or {}\nlocal _lim = {0x80, 0x800, 0x10000, 0x200000, 0x4000000}\nlocal _lead = {0, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC}\nutf8.char = function(...)\nlocal a = \"\"\nfor b = 1, select('#', ...) do\nlocal c = select(b, ...)\nif c < 0 or c >= 0x80000000 then\nerror(\"bad argument #1 to 'utf8.char' (value out of range)\", 2)\nend\nif c < 0x80 then\na = a .. _s(5, \"\", c, 0)\nelse\nlocal d = 2\nwhile d < 6 and c >= _lim[d] do d = d + 1 end\na = a .. _s(5, \"\", _lead[d] + (c >> (6 * (d - 1))), 0)\nfor e = d - 2, 0, -1 do\na = a .. _s(5, \"\", 0x80 + ((c >> (6 * e)) & 0x3F), 0)\nend\nend\nend\nreturn a\nend\n"
 const LIB_os_date = "os = os or {}\nos.clock = function() return clock() + 0.0 end\nos.difftime = function(e, g) return e - g + 0.0 end\nlocal function j(v)\nreturn (v % 4 == 0 and v % 100 ~= 0) or v % 400 == 0\nend\nlocal _md = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}\nlocal _mn = {\"January\", \"February\", \"March\", \"April\", \"May\", \"June\", \"July\",\n\"August\", \"September\", \"October\", \"November\", \"December\"}\nlocal _wn = {\"Sunday\", \"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\",\n\"Saturday\"}\nlocal function l(v, x, aa)\nif x <= 2 then v, x = v - 1, x + 12 end\nlocal o = (v >= 0 and v or v - 399) // 400\nlocal p = v - o * 400\nlocal q = (153 * (x - 3) + 2) // 5 + aa - 1\nlocal r = p * 365 + p // 4 - p // 100 + q\nreturn o * 146097 + r - 719468\nend\nos.time = function(u)\nif u == nil then\nerror(\"bad argument #1 to 'os.time' (no clock)\", 2)\nend\nlocal v, x, aa = u.year, u.month, u.day\nlocal ab, ac, ad = u.hour or 12, u.min or 0, u.sec or 0\nif v == nil or x == nil or aa == nil then\nerror(\"bad argument #1 to 'os.time' (date table incomplete)\", 2)\nend\nlocal ae = l(v, x, aa) * 86400 + ab * 3600 + ac * 60 + ad\nreturn _m(13, ae, 0) or ae\nend\nlocal function af(z)\nz = z + 719468\nlocal o = (z >= 0 and z or z - 146096) // 146097\nlocal r = z - o * 146097\nlocal p = (r - r // 1460 + r // 36524 - r // 146096) // 365\nlocal v = p + o * 400\nlocal q = r - (365 * p + p // 4 - p // 100)\nlocal ag = (5 * q + 2) // 153\nlocal aa = q - (153 * ag + 2) // 5 + 1\nlocal x = ag + 3\nif x > 12 then v, x = v + 1, x - 12 end\nreturn v, x, aa\nend\nlocal function ah(u)\nu = _m(13, u, 0) or u\nlocal ai = u // 86400\nlocal aj = u - ai * 86400\nlocal ab = aj // 3600\nlocal ac = (aj - ab * 3600) // 60\nlocal ad = aj - ab * 3600 - ac * 60\nlocal v, x, aa = af(ai)\nlocal ak = (ai + 4) % 7 + 1\nif ak < 1 then ak = ak + 7 end\nlocal al = l(v, x, aa) - l(v, 1, 1) + 1\nreturn v, x, aa, ab, ac, ad, ak, al\nend\nlocal function am(n)\nn = n - n % 1\nif n < 10 then return \"0\" .. n end\nreturn \"\" .. n\nend\nlocal function an(al, au)\nlocal ao = (7 - au) % 7\nif al - 1 < ao then return \"00\" end\nreturn am(1 + (al - 1 - ao) // 7)\nend\nos.date = function(ap, u)\nif ap == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nif ap == \"\" or ap == \"!\" then return \"\" end\nlocal aq = 1\nif _s(1, ap, 0, 1) == \"!\" then aq = 2 end\nif _s(1, ap, aq - 1, 2) == \"*t\" and aq + 2 > #ap then\nif u == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal v, x, aa, ab, ac, ad, ak, al = ah(u)\nreturn {year = v, month = x, day = aa, hour = ab, min = ac, sec = ad,\nwday = ak, yday = al, isdst = false}\nend\nlocal ar = false\nlocal as = aq\nwhile as <= #ap do\nif _s(1, ap, as - 1, 1) == \"%\" then ar = true break end\nas = as + 1\nend\nif not ar then\nif aq == 1 then return ap end\nreturn _s(1, ap, aq - 1, #ap - aq + 1)\nend\nif u == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal v, x, aa, ab, ac, ad, ak, al = ah(u)\nlocal at = ak - 1\nlocal au = (at - (al - 1)) % 7\nlocal av = \"\"\nlocal aw = aq\nwhile aw <= #ap do\nlocal ax = _s(1, ap, aw - 1, 1)\nif ax ~= \"%\" then\nav = av .. ax\naw = aw + 1\nelse\nlocal ay = _s(1, ap, aw, 1)\nif (ay == \"E\" or ay == \"O\") and aw + 1 <= #ap then\nay = ay .. _s(1, ap, aw + 1, 1)\naw = aw + 1\nend\nif ay == \"Y\" then av = av .. v\nelseif ay == \"m\" then av = av .. am(x)\nelseif ay == \"d\" then av = av .. am(aa)\nelseif ay == \"H\" then av = av .. am(ab)\nelseif ay == \"M\" then av = av .. am(ac)\nelseif ay == \"S\" then av = av .. am(ad)\nelseif ay == \"w\" then av = av .. at\nelseif ay == \"y\" or ay == \"Oy\" then av = av .. am(v % 100)\nelseif ay == \"j\" then\nlocal az = \"\" .. al\nwhile #az < 3 do az = \"0\" .. az end\nav = av .. az\nelseif ay == \"U\" then av = av .. an(al, au)\nelseif ay == \"W\" then av = av .. an(al, (au + 6) % 7)\nelseif ay == \"a\" then av = av .. _s(1, _wn[at + 1], 0, 3)\nelseif ay == \"A\" then av = av .. _wn[at + 1]\nelseif ay == \"b\" or ay == \"h\" then av = av .. _s(1, _mn[x], 0, 3)\nelseif ay == \"B\" then av = av .. _mn[x]\nelseif ay == \"p\" then av = av .. (ab < 12 and \"AM\" or \"PM\")\nelseif ay == \"c\" then\nav = av .. am(x) .. \"/\" .. am(aa) .. \"/\" .. am(v % 100) .. \" \"\n.. am(ab) .. \":\" .. am(ac) .. \":\" .. am(ad)\nelseif ay == \"x\" or ay == \"Ex\" then\nav = av .. am(x) .. \"/\" .. am(aa) .. \"/\" .. am(v % 100)\nelseif ay == \"X\" then\nav = av .. am(ab) .. \":\" .. am(ac) .. \":\" .. am(ad)\nelseif ay == \"e\" then\nav = av .. (aa < 10 and \" \" .. aa or \"\" .. aa)\nelseif ay == \"s\" then av = av .. (u - u % 1)\nelseif ay == \"%\" then av = av .. \"%\"\nelse av = av .. \"%\" .. ay\nend\naw = aw + 2\nend\nend\nreturn av\nend\nos.setlocale = function(e, g)\nif e == nil or e == \"C\" then return \"C\" end\nreturn nil\nend\n"
+const LIB_raw = "rawequal = function(c, d) return c == d end\nrawget = function(e, f) return e[f] end\nrawset = function(e, f, g) e[f] = g return e end\nrawlen = function(e) return #e end\n"
+const LIB_os_env = "os = os or {}\nos.getenv = function(...)\nif select('#', ...) == 0 then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got no value)\", 2)\nend\nlocal a = ...\nif a == nil then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got nil)\", 2)\nend\nreturn nil\nend\n"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -3698,9 +3709,14 @@ mod libOs(p: string, d: bool) -> string {
   // "os.d" covers date AND difftime in one Find (no other os.d* exists --
   // the collision map in AGENTS.md, same fold as math.l): -1 arm.
   let r = if d || srcUses(p, "os.exit") then LIB_os_exit else ""
-  return r .. (if d || srcUses(p, "os.clock") || srcUses(p, "os.d")
+  let r2 = r .. (if d || srcUses(p, "os.clock") || srcUses(p, "os.d")
       || srcUses(p, "os.time") || srcUses(p, "os.setlocale")
       then LIB_os_date else "")
+  // getenv is its own piece too: a program that reads one
+  // environment variable must not parse the whole calendar.
+  // The chip's environment is empty (the host exposes none),
+  // so getenv answers nil for everything -- see lib/os_env.lua.
+  return r2 .. (if d || srcUses(p, "os.getenv") then LIB_os_env else "")
 }
 
 // One piece for the whole table, because a program that uses bit32 uses
@@ -3709,6 +3725,16 @@ mod libOs(p: string, d: bool) -> string {
 // Splitting it per function would be twelve parses of the same shared helpers
 // (checkfield alone is in two of them).  The static check names the table;
 // the dyn flag answers `bit32[k](v)`, which the static text cannot see.
+// One piece for all four raw functions, because the chip has no
+// metatables and each is a thin wrapper over an op it already has
+// (==, index, assign, length) -- see lib/raw.lua.  One "raw"
+// prefix covers all four (no other raw* global exists), the same
+// fold rule as math.l and os.d.  No dyn flag: these are globals,
+// and a dynamic global read needs _G, which the chip does not have.
+mod libRaw(p: string) -> string {
+  return if srcUses(p, "raw") then LIB_raw else ""
+}
+
 mod libBit32(p: string, d: bool) -> string {
   return if d || srcUses(p, "bit32.") then LIB_bit32 else ""
 }
@@ -11775,10 +11801,11 @@ let libS2 = libTonumberHex(program)
   let libS3 = libTonumberBase(program)
   let libS = libTonumber(program)
   let libT = libMathRandom(program, dynMath)
+  let libU = libRaw(program)
   let lib = libA .. libB .. libB2 .. libB3 .. libC .. libD .. libE .. libF .. libG
     .. libH .. libI .. libI2 .. libJ .. libJ2 .. libK .. libK2 .. libL .. libM .. libN
     .. libO .. libO2 .. libO3 .. libO4 .. libO5 .. libP
-    .. libQ .. libR .. libS2 .. libS3 .. libS .. libT
+    .. libQ .. libR .. libS2 .. libS3 .. libS .. libT .. libU
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
   lsrc = if 0 < lib.Length() then lib .. program else program
   llen = lsrc.Length()

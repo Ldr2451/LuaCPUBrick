@@ -62,6 +62,7 @@ from lua_oracle import norm_val, oracle_log, oracle_run  # noqa: E402
 GLOBALS = {
     "assert", "error", "ipairs", "pairs", "next", "select", "tonumber",
     "tostring", "type", "pcall", "xpcall", "print", "unpack", "rawequal",
+    "rawget", "rawset", "rawlen",
     "math", "string", "table", "bit32", "utf8", "os", "_VERSION",
 }
 
