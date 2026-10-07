@@ -792,8 +792,9 @@ TESTS = [
     ("fmt-f-range", "print(string.format('%.2f', 1e16))", None, "runtimerr",
      {"expect": {"err": "number too large to format exactly on this chip"}}),
     # %e: a digit stream, because the mantissa is the value divided by 10^k and
-    # no division by ten is exact.  The exponent is three digits, which is PUC
-    # 5.5 and not C's two -- %.3e of zero measures ten characters.  The sticky
+    # no division by ten is exact.  The exponent is two digits -- the
+    # platform printf's minimum, which PUC formats floats through, so %.3e
+    # of zero measures nine characters.  The sticky
     # bit has to come from the digits as well as the double-double, because
     # when the round digit is still inside the integer part the walk has not
     # started the fraction and the leftover says nothing.
@@ -1363,7 +1364,7 @@ TESTS = [
     ("assert-zero-truthy", "print(assert(0, 'zero'), assert(''))", None, "run"),
     # wrong. The exponent is the one the value has *after* rounding to the
     # precision -- 9.5 at one digit is 10, so its exponent is 1 and the answer is
-    # 1e+001, not 10. And a precision of zero means one.
+    # 1e+01, not 10. And a precision of zero means one.
     ("fmt-g-default", "print(string.format('%g', 1.5), "
      "string.format('%g', 123456789), string.format('%g', 0.00001234))",
      None, "run"),

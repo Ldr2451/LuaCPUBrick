@@ -2724,7 +2724,7 @@ mod fmtPrecStep() {
 // Which of the two forms, and this is after the rounding on purpose.  The
 // exponent C compares against the precision is the one the value has *after*
 // being rounded to that many digits, and 9.5 at one digit is 10, so its exponent
-// is 1, 1 is at the precision, and %g gives 1e+001 and not 10.  Deciding before
+// is 1, 1 is at the precision, and %g gives 1e+01 and not 10.  Deciding before
 // the rounding, with the exponent the digits had going in, gave 10.
 mod fmtGStyle() {
   if fmtK < -4 || fmtG0 <= fmtK {
@@ -2876,13 +2876,10 @@ mod fmtEMantEnd() {
 }
 
 mod fmtEExpEnd() {
-  // three digits, whatever the exponent: one is 00, two is 0N.  Two pads, since
-  // no double's exponent passes 308, and each pad is its own write so the second
-  // sees the first's result.
-  if fmtExp.Length() < 3 {
-    fmtExp = "0" .. fmtExp
-  }
-  if fmtExp.Length() < 3 {
+  // Two digits: the walk already wrote the exponent's own digits -- three
+  // for the 100..308 no double's exponent passes -- and one pad is all a
+  // lone digit needs to reach the two every C library prints at least.
+  if fmtExp.Length() < 2 {
     fmtExp = "0" .. fmtExp
   }
   if fmtK < 0 {
@@ -3408,11 +3405,13 @@ mod fmtEMant() {
   }
 }
 
-// The exponent, three digits with a sign.  Three, not C's two: PUC 5.5 formats
-// the floats itself rather than through the platform's printf, and measures
-// %.3e of zero at ten characters, which is 0.000e+000.  Every double's exponent
-// fits in three digits -- the largest is 308 -- so the width is fixed and there
-// is no loop for it.
+// The exponent, two digits with a sign: the value's own digits, padded up
+// to the two every C library prints at least.  PUC formats floats through
+// the platform's printf, so the count is the library's -- the oracle's is
+// two, and the chip's tostring already prints two.  (The old LuaBinaries
+// oracle linked the MSVCRT printf, which pads to three; the chip matched
+// it here and so disagreed with its own tostring.)  An exponent of
+// 100..308 keeps its three digits, and no double's exponent passes 308.
 // The exponent's digits, one per state, most significant first.  Each arm says
 // where to go before it does its work: a state write after a mod call in the
 // deepest arm of a chain this deep is dropped, and the walk then wrote its zero
@@ -7963,7 +7962,7 @@ mod fmtConvExp() {
         if 0 < fmtP {
           fmtBody = fmtBody .. "." .. ZEROS16.Substring(0, fmtP)
         }
-        fmtBody = fmtBody .. (if fmtUpperE then "E+000" else "e+000")
+        fmtBody = fmtBody .. (if fmtUpperE then "E+00" else "e+00")
         fmtPre = ""
         fmtState = 6
       } else if 14 < fmtP {
