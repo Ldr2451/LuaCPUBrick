@@ -1,28 +1,24 @@
--- os.clock/difftime/time/date/setlocale: everything that needs no clock,
--- no files and no OS.
+-- os.time/date: the calendar piece, WITHOUT clock/difftime/setlocale.
+--
+-- Those three are lib/os_clock.lua: a program that times itself must not
+-- parse the calendar to do it.  What stays here needs dcivil (os.time),
+-- civil (os.date) or both (the yday line), plus PUC's field validation.
 --
 -- The boundary is honest rather than convenient: os.time() with no argument
 -- and os.date() with no time need WALL time, and the chip has uptime
 -- (clock()) but no epoch -- so those two error cleanly instead of answering
--- from a clock that does not exist.  Everything here is either uptime,
--- arithmetic, or an explicit time carried in:
+-- from a clock that does not exist.  Everything here is either arithmetic or
+-- an explicit time carried in:
 --
---   os.clock()       = clock(), the chip's monotonic seconds
---   os.difftime(a,b) = a - b, which is all PUC's is
 --   os.time(t)       = epoch seconds for a date table, UTC, by days_from_civil
 --   os.date(f[, t])  = format an EXPLICIT epoch (or a literal when f has no
 --                      conversion), UTC; "" and "!" need no time at all
---   os.setlocale(x)  = "C" when x is nil or "C", nil otherwise: the chip does
---                      C-locale behavior everywhere, so that answer is true,
---                      and anything else is an honest failure
 --
 -- UTC, not local: without OS timezone info local time is unimplementable, and
 -- a hardcoded offset would be wrong twice a year (DST).  The harvest runs both
 -- engines on one machine, so UTC-vs-local only matters where the ORACLE is
 -- local -- those asserts skip on zone, correctly, rather than agree wrongly.
 os = os or {}
-os.clock = function() return clock() + 0.0 end
-os.difftime = function(a, b) return a - b + 0.0 end
 local function isleap(y)
   return (y % 4 == 0 and y % 100 ~= 0) or y % 400 == 0
 end
@@ -227,8 +223,4 @@ os.date = function(f, t)
     end
   end
   return out
-end
-os.setlocale = function(a, b)
-  if a == nil or a == "C" then return "C" end
-  return nil
 end

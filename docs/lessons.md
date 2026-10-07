@@ -365,10 +365,12 @@
 - **A loader trigger costs ~5 nodes per arm, so fold prefixes where they share
   a piece -- and check collisions against the derived list, not by eye.**
   `srcUses(p, "math.l")` names log AND ldexp in one Find (both live in
-  LIB_math_exp, no other math.l* exists): -3 nodes measured.  `srcUses(p,
-  "os.d")` names date AND difftime the same way (-3, no other os.d*), and
-  `srcUses(p, "raw")` names rawequal/rawget/rawset/rawlen (-3, no other
-  raw* global): the fold list is now math.l, os.d, raw.  The same fold
+  LIB_math_exp, no other math.l* exists): -3 nodes measured.
+  `srcUses(p, "os.d")` did the same for date AND difftime until the clock
+  split: difftime loads with clock now (no calendar), date loads alone, so
+  the fold is gone and each spelling stands on its own.  `srcUses(p, "raw")`
+  names rawequal/rawget/rawset/rawlen (-3, no other raw* global): the fold
+  list is math.l and raw.  The same fold
   fails everywhere else -- math.d is deg-only but math.r catches random,
   math.t catches tointeger+type, math.a catches abs, math.s catches sqrt,
   math.c catches ceil, os.c/os.t/os.s are single-member prefixes with nothing

@@ -70,6 +70,7 @@ LIB_utf8_char	lib/utf8_char.lua
 LIB_raw		lib/raw.lua
 
 # -- os (os.exit lives under io above and stays its own piece)
+LIB_os_clock	lib/os_clock.lua
 LIB_os_date	lib/os_date.lua
 LIB_os_env	lib/os_env.lua
 
