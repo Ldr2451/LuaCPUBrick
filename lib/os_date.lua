@@ -48,10 +48,42 @@ os.time = function(t)
   if t == nil then
     error("bad argument #1 to 'os.time' (no clock)", 2)
   end
+  -- PUC checks the fields in order, each with its own message: a missing
+  -- year, a non-integer one, and one no calendar holds.  Only the year has
+  -- a range (month 13 and day 0 normalize); hour/min/sec default and are
+  -- integers when given.
   local y, m, d = t.year, t.month, t.day
+  if y == nil then
+    error("field 'year' missing in date table", 2)
+  end
+  local iy = _m(13, y, 0)
+  if iy == nil then
+    error("field 'year' is not an integer", 2)
+  end
+  if iy < -2147483648 or iy > 2147483647 then
+    error("field 'year' is out-of-bound", 2)
+  end
+  if m == nil then
+    error("field 'month' missing in date table", 2)
+  end
+  if _m(13, m, 0) == nil then
+    error("field 'month' is not an integer", 2)
+  end
+  if d == nil then
+    error("field 'day' missing in date table", 2)
+  end
+  if _m(13, d, 0) == nil then
+    error("field 'day' is not an integer", 2)
+  end
   local h, mi, s = t.hour or 12, t.min or 0, t.sec or 0
-  if y == nil or m == nil or d == nil then
-    error("bad argument #1 to 'os.time' (date table incomplete)", 2)
+  if _m(13, h, 0) == nil then
+    error("field 'hour' is not an integer", 2)
+  end
+  if _m(13, mi, 0) == nil then
+    error("field 'min' is not an integer", 2)
+  end
+  if _m(13, s, 0) == nil then
+    error("field 'sec' is not an integer", 2)
   end
   local total = dcivil(y, m, d) * 86400 + h * 3600 + mi * 60 + s
   return _m(13, total, 0) or total
@@ -80,6 +112,12 @@ local function parts(t)
   local mi = (sod - h * 3600) // 60
   local s = sod - h * 3600 - mi * 60
   local y, m, d = civil(days)
+  -- No installation represents every year: past the 32-bit int range the
+  -- answer is an error with PUC's own words, not a 36-billion year.  Checked
+  -- here, once, because both os.date paths come through parts.
+  if y < -2147483648 or y > 2147483647 then
+    error("date result cannot be represented in this installation", 3)
+  end
   local wday = (days + 4) % 7 + 1
   if wday < 1 then wday = wday + 7 end
   local yday = dcivil(y, m, d) - dcivil(y, 1, 1) + 1

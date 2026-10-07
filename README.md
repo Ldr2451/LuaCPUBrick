@@ -32,10 +32,10 @@ A WireScript chip is wires, so everything a program can see or change is a port.
               run --|           |-- outNum0
            inNum0 --|___________|-- outNum1
            inNum1 --|           |-- outNum2
-           inNum2 --|  Lua 5.5  |-- outNum3
-           inNum3 --|           |-- outStr0
-           inStr0 --|___________|-- outStr1
-           inStr1 --|           |-- outNumArr
+           inNum2 --|           |-- outNum3
+           inNum3 --|  Lua 5.5  |-- outStr0
+           inStr0 --|           |-- outStr1
+           inStr1 --|___________|-- outNumArr
            inStr1 --|           |-- outStrArr
          inNumArr --|           |-- result
          inStrArr --|           |-- err

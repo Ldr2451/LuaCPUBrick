@@ -15,6 +15,13 @@
 -- mantissa bits and a double has 53.  The one place that matters is lrotate's
 -- `a >> (32 - b)` with b == 0, which shifts by the full 32 -- and the chip's
 -- `>>` answers that, because it is a scale by 2^32 and not a register move.
+--
+-- The other place is `<<` itself: past 2^53 the float rounds and the low word
+-- comes back wrong (`(0xaaaaaaaa << 30) & mask` read 0x7FFFFFFF), so lshift
+-- splits at bit 16 -- the high half shifts out past bit 32 anyway -- and
+-- lrotate goes through lshift.  Counts of 32 or more (either sign) are 0,
+-- which is what the operators saturate to; the chip's own `<<`/`>>` reverse
+-- on a negative count, so the in-range negatives need no arm of their own.
 bit32 = bit32 or {}
 bit32.bnot = function(a) return ~a & 0xFFFFFFFF end
 bit32.band = function(x, y, z, ...)
@@ -48,8 +55,16 @@ bit32.bxor = function(x, y, z, ...)
   end
 end
 bit32.btest = function(...) return bit32.band(...) ~= 0 end
-bit32.lshift = function(a, b) return ((a & 0xFFFFFFFF) << b) & 0xFFFFFFFF end
-bit32.rshift = function(a, b) return ((a & 0xFFFFFFFF) >> b) & 0xFFFFFFFF end
+bit32.lshift = function(a, b)
+  if b * b >= 1024 then return 0 end
+  a = a & 0xFFFFFFFF
+  if b < 16 then return (a << b) & 0xFFFFFFFF end
+  return ((a % 65536) << b) & 0xFFFFFFFF
+end
+bit32.rshift = function(a, b)
+  if b * b >= 1024 then return 0 end
+  return ((a & 0xFFFFFFFF) >> b) & 0xFFFFFFFF
+end
 bit32.arshift = function(a, b)
   a = a & 0xFFFFFFFF
   if b <= 0 or (a & 0x80000000) == 0 then
@@ -61,7 +76,7 @@ end
 bit32.lrotate = function(a, b)
   b = b & 31
   a = a & 0xFFFFFFFF
-  a = (a << b) | (a >> (32 - b))
+  a = bit32.lshift(a, b) | (a >> (32 - b))
   return a & 0xFFFFFFFF
 end
 bit32.rrotate = function(a, b) return bit32.lrotate(a, -b) end

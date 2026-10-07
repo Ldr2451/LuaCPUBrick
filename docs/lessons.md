@@ -684,6 +684,14 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   in globals — globals get clobbered by nesting.
 - Check the neighbouring invariants: the real `local a,b,c = pairs(t)` path was
   fine while the for-in path was broken, so one working neighbour proves nothing.
+- **A precedence renumber is all operators or it is a bug: audit every level,
+  not just the reported one.** Moving `+` above `&` left `//` sitting below
+  it, so `369 * 365 + 369 // 4` parsed as `(369 * 365 + 369) // 4` -- and the
+  os-time failure that exposed it looked exactly like a renamer collision
+  (wrong values, no error), which cost the investigation until arithmetic was
+  probed directly.  The table is one chain (`| < ~ < & < << >> < .. < + -`
+  `< * / // % < unary < ^`); `arith-idiv-prec` pins the `//`-vs-`+` seam
+  because no existing case mixed them.
 - **WireScript has no loop statement at all** — asked of the compiler with a body
   reachable from `on Clock`: `for`, `while`, `loop` and `repeat` are all
   `unknown identifier` (the chip's own `for` is *Lua's* for). A loop is a
@@ -796,10 +804,15 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   What is left is dead by design: missing chip features (debug/io/coroutine/
   load/metatables/testC), helper functions (`eqT`, `eq`, `Op`), block scope
   (`NaN`, `msg`), and file-local tables the lifter cannot value.  The wider
-  harvest exposed 8 real diffs -- bit32 rotate/shift edges, `&` binding
-  looser than `+`, `tonumber` with exponent+spaces, `table.insert`
-  validation through pcall -- open, not fixed: each fix needs its own node
-  budget, and a difference the chip does not have to have is a bug.
+  harvest exposed 8 real diffs; 7 have since been fixed at zero nodes
+  (bitwise shift/rotate edges via exact piece arithmetic, `&`-vs-`+`
+  precedence via renumbering the middle band, insert/remove validation and
+  os.date/os.time field validation via pieces).  What is left open is
+  decimal-literal rounding (`tonumber(' 1.3e-2 ') == 1.3e-2`): the lexer
+  double-rounds through `mant * 10^ev`, and the only correct fix is a
+  host-parse in emitNum at ~+200 nodes (9 inlined sites) -- measured,
+  reverted.  Beyond that: integers (maxint), host env (os.getenv), and the
+  pinned %u-past-2^53 (CHIP_LOG), none of which a formatter patch reaches.
 - **A ceiling no suite case can reach is proven by the tool that owns
   ceilings, not by a slower suite.** A full 64k-entry fill is ~400k ticks,
   ~10 minutes of wall: `tab-entries-oom`/`tab-entries-recover` could not

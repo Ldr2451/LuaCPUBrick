@@ -263,6 +263,12 @@ TESTS = [
     ("concat-right", "print('a' .. 1 .. 2)", None, "run"),
     ("concat-prec", "print('a' .. 1 + 2)", None, "run"),
     ("arith-prec", "print(1+2*3, (2+3)*4)", None, "run"),
+    # `//` sits with `*`, above `+ -`: it briefly sat below them instead,
+    # and `369 * 365 + 369 // 4` parsed as `(369 * 365 + 369) // 4`.
+    # os-time-table caught it through dcivil's doe line; this pins it
+    # directly, with that same line.
+    ("arith-idiv-prec", "print(369 * 365 + 369 // 4 - 369 // 100 + 306)",
+     None, "run"),
     ("arith-unm", "print(- -5, -(2+3))", None, "run"),
     ("arith-pow", "print(2^3^2, -2^2, 2^-2)", None, "run"),
     ("arith-mod", "print(10%3, 10.5%2, 7/2)", None, "run"),
@@ -1533,13 +1539,30 @@ TESTS = [
     # table library
     ("tbl-insert", "local t = {1,2} table.insert(t, 3) table.insert(t, 1, 0) "
      "print(#t, t[1], t[2], t[3], t[4])", None, "run"),
+    # insert validates like PUC, in PUC's order: an integer first, then
+    # 1..n+1, with PUC's own messages, and the arity too.  nextvar.lua's
+    # pcall asserts are the ones that caught the missing checks, and "run"
+    # compares every line against the oracle -- including the messages.
+    ("tbl-insert-bounds", "local t = {1} "
+     "print(pcall(table.insert, t, 0, 9)) "
+     "print(pcall(table.insert, t, 3, 9)) "
+     "print(pcall(table.insert, t, 1.5, 9)) "
+     "print(pcall(table.insert, t, '2', 9)) "
+     "print(pcall(table.insert, {})) print(t[1], t[2])", None, "run"),
     ("tbl-remove", "local t = {1,2,3} print(table.remove(t), "
      "table.remove(t, 1), #t, t[1])", None, "run"),
     # PUC's bound is 1..n+1 (so remove(t, n+1) is legal and answers nil), and
     # a position outside it is an error rather than a silent shift: the piece
-    # used to write t[0] and leave the array shifted.
+    # used to write t[0] and leave the array shifted.  The position is an
+    # integer first, exactly like insert's, and the messages name
+    # `table.remove` -- the piece used to say `remove`, and to read t['2']
+    # instead of t[2].
     ("tbl-remove-bounds", "table.remove({1,2,3}, 0)", None, "runtimerr",
-     {"expect": {"err": "position out of bounds"}}),
+     {"expect": {"err": "table.remove' (position out of bounds"}}),
+    ("tbl-remove-bounds-full", "local t = {1,2,3} "
+     "print(pcall(table.remove, t, 0)) "
+     "print(pcall(table.remove, t, 1.5)) "
+     "print(pcall(table.remove, t, '2')) print(t[1], t[2])", None, "run"),
     ("tbl-remove-n-plus-1", "local t = {1,2} print(table.remove(t, 3), "
      "table.remove(t, 1), #t)", None, "run"),
     ("tbl-remove-empty", "print(pcall(table.remove, {}), "
@@ -3055,6 +3078,11 @@ TESTS = [
     ("bit-not", "print(~0xFF)", None, "run"),
     ("bit-shl", "print(1<<3)", None, "run"),
     ("bit-shr", "print(16>>2)", None, "run"),
+    # A count of 64 or more shifts every bit out, so PUC answers 0: the
+    # chip used to scale into floats it could not hold.  "run" compares
+    # against the oracle, including ~(-1 << 64), which is -1.
+    ("bit-shift-saturate", "print(-1 << 64, 1 >> 65, 3 << 64, "
+     "~(-1 << 64))", None, "run"),
     # A shift by a NEGATIVE count REVERSES DIRECTION (Lua 5.3 manual 3.4), so
     # `1000 << -5` is `1000 >> 5`.  Computing `2 ** n` straight off scaled by a
     # fraction instead, which made that 31.25 -- a fractional match LENGTH, and
@@ -3151,6 +3179,16 @@ TESTS = [
     ("os-time-table", "print(os.time({year = 1970, month = 1, day = 1, "
      "hour = 0, min = 0, sec = 0}))", None, "state",
      {"ticks": 15000, "expect": {"log": "0\n"}}),
+    # os.time validates every field the way PUC does -- missing, integer,
+    # then range for the year -- with PUC's own messages, and os.date
+    # refuses years no installation can represent.  files.lua:943 is the
+    # assert that caught the missing range check.  "run" compares every
+    # line against the oracle, messages included.
+    ("os-time-fields", "print(pcall(os.time, {})) "
+     "print(pcall(os.time, {year = 2024.5, month = 1, day = 1})) "
+     "print(pcall(os.time, {year = 36534630048, month = 1, day = 1})) "
+     "print(pcall(os.time, {year = 2024, month = 1, day = 1, hour = 1.5})) "
+     "print(pcall(os.date, '%Y', 2^60))", None, "run"),
     # rawequal/rawget/rawset/rawlen (lib/raw.lua): exact because the
     # chip has no metamethods, so each IS its plain op.  Reference
     # equality for tables, rawset returns the table, rawlen is #.
@@ -3174,6 +3212,12 @@ TESTS = [
      {"ticks": 15000, "expect": {"log": "true\tfalse\ttrue\n"}}),
     ("bit-mix", "print(5+~3)", None, "run"),
     ("bit-prec", "print(1&2|4)", None, "run"),
+    # The middle band sits where PUC puts it: | < ~ < & < << >> < .. < + -.
+    # `&` shared `*`'s level and `+` sat at `~`'s, so `0xF0 & 0x0F + 1`
+    # parsed as `(0xF0 & 0x0F) + 1`.  "run" compares against the oracle,
+    # so agreement here IS the precedence table.
+    ("prec-band-mixed", "print(0xF0 & 0x0F + 1, 1 | 2 + 4, 8 >> 1 + 1, "
+     "-2 .. 'y')", None, "run"),
     ("bit-notneg", "print(~-5)", None, "run"),
     # loop break / nesting / shadowing (regression net for for-stack,
     # scope-save and break-patch fixes)
