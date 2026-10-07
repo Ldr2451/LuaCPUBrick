@@ -1939,6 +1939,10 @@ TESTS = [
      {"expect": {"progDebug": "outnum index must be 1..4"}}),
     ("index-literal-outstr", "outstr(3, 'x')", None, "state",
      {"expect": {"progDebug": "outstr index must be 1..2"}}),
+    # ... including the top end: outnum(5) refused at run time with "1..4"
+    # but never warned, because the guard said 5.0.  One literal, one digit.
+    ("index-literal-outnum-5", "outnum(5, 1)", None, "state",
+     {"expect": {"progDebug": "outnum index must be 1..4"}}),
     # ... and a literal IN range is silent, which is the half that matters: a
     # check that fired on every outnum(1, v) in every program would be noise.
     ("index-literal-inrange-ok", "outnum(1, 1) outnum(4, 4)", None, "state",
@@ -1957,6 +1961,33 @@ TESTS = [
      {"expect": {"progDebug": "array index out of range"}}),
     ("index-literal-outstrarr-ok", "outstrarr(16384, 'a')", None, "state",
      {"expect": {"noProgDebug": "array index out of range"}}),
+    # A library table read for a member the chip never installs warns at
+    # parse time, the way an unknown bare global does: `io.time` is nil on
+    # PUC too, so the program runs on exactly as it would have.
+    ("libfield-unknown", "print(io.time)", None, "state",
+     {"expect": {"log": "nil\n",
+                 "progDebug": "warn: 'io.time' is not in the io library"}}),
+    # ... while a member the chip has stays silent.
+    ("libfield-known", "print(string.len, os.time) print(math.pi)", None,
+     "state",
+     {"expect": {"noProgDebug": "is not in the"}}),
+    # The colon form is NOT covered: `io:time()` reads the method off the
+    # receiver register rather than the global, so the provenance the dot
+    # form checks is not there to check.  The call still fails at run time,
+    # exactly as reading nil and calling it does -- only the parse-time
+    # advice is dot-form-only, and this pins that boundary.
+    ("libfield-colon-silent", "print(io:time())", None, "state",
+     {"expect": {"noProgDebug": "is not in the"}}),
+    # A shadowing local is its own table: the warning keys off the global, so
+    # a local with a library's name never warns for its own members.
+    ("libfield-shadowed", "local io = {time = 1} print(io.time)", None,
+     "state",
+     {"expect": {"log": "1\n", "noProgDebug": "is not in the"}}),
+    # ... and the base register has to BE the library's: a literal base with
+    # a missing member stays silent no matter what globals were read before,
+    # which is what the register half of the provenance is for.
+    ("libfield-stale-base", "print(io, ('s').time)", None, "state",
+     {"expect": {"noProgDebug": "is not in the"}}),
     # innumarr is bounded by the same 16,384 as outNumArr and a bad index there gives a
     # SILENT nil, which is worth warning about - but it is not implemented: an
     # input PORT cannot be read during codegen (see the note in noteIndex).  The
@@ -2381,7 +2412,7 @@ TESTS = [
     ("tab-oom", "t = {} i = 0 while i < %d do t[i] = {} i = i+1 end"
      % (spec.MAX_TABLES + 1), None,
      "runtimerr", {"expect": {"err": "too many tables"}}),
-    # The table arena is fixed (512 entries, `MAX_HEAP`) and there is no
+    # The table arena is fixed (`MAX_HEAP` entries) and there is no
     # collector, so the ONLY thing that keeps a program inside it is the slot
     # free list: `t[k] = nil` hands the entry back and the next new key takes
     # it.  That is the whole recycling story, and it is invisible until a
@@ -2424,35 +2455,25 @@ TESTS = [
      "local s = 0 for i = 1, 6 do s = s + (t[i] or 0) end "
      "print(s, #t, t[3])", None, "run"),
     # The arena's own entry limit, which `tab-oom` above does NOT reach: it runs
-    # out of TABLES long before entries, so the entry path needs a program that
-    # asks for more entries than the arena holds.  The message is the contract,
-    # and `runtimerr` also reads the arena counters through the suite's
-    # structural invariants -- an OOM that walked tHeap past its own storage
-    # would fail there rather than here.
-    ("tab-entries-oom", "local t = {} for i = 1, %d do t[i] = i end "
-     "print('unreachable')" % (spec.MAX_HEAP + 88), None, "runtimerr",
-     {"ticks": 24000,
-      "expect": {"err": "out of table memory (%d entries; assign nil to a key "
-                        "to free one)" % spec.MAX_HEAP}}),
-    # An OOM a program can catch, and recover from, because the arena is a free
-    # list rather than a wall: the failure goes to pcall as a value, the deletes
-    # hand the entries back, and the table then holds what it could not a moment
-    # earlier.  The allocation deliberately asks for MORE than the arena holds,
-    # counted from spec -- at 512 it asked for 520, and raising the arena to 1024
-    # left this case still PASSING while testing nothing: no OOM, nothing to
-    # recover from.  A case that keeps its verdict after the thing it measures has
-    # moved is worse than a failing one.  The refilling loop stays under the new
-    # ceiling so it succeeds.  The failure itself is deliberately NOT printed:
-    # PUC has no entry limit, so a line saying whether it happened could not be
-    # compared against the oracle and this would stop being a differential case.
-    # `tab-entries-oom` above is where the message is the contract.
-    ("tab-entries-recover", "local t = {} pcall(function() "
-     "for i = 1, %d do t[i] = i end end) "
-     "for i = 1, %d do t[i] = nil end "
-     "for i = 1, %d do t[i] = i * 2 end "
-     "print(#t, t[1], t[%d])"
-     % (spec.MAX_HEAP + 8, spec.MAX_HEAP + 8, spec.MAX_HEAP - 112,
-        spec.MAX_HEAP - 112), None, "run", {"ticks": 60000}),
+    # out of TABLES long before entries.  The arena holds 65,536 entries and
+    # no suite case can fill it -- a full fill is ~400k ticks, ~10 minutes of
+    # wall -- so the ceiling itself is proven by limits.py's table-entries row
+    # (slow lane) and the one-time 64k fill + OOM + recover run recorded in
+    # the raise commit.  What the suite pins is the growth: 5,000 entries
+    # OOM'd at the old 4,096 ceiling and fit now, with every value reading
+    # back.  The message is still the contract, and `runtimerr` still reads
+    # the arena counters through the suite's structural invariants -- an OOM
+    # that walked tHeap past its own storage would fail there rather than
+    # here.
+    ("tab-entries-grown", "local t = {} for i = 1, 5000 do t[i] = i end "
+     "local s = 0 for i = 1, 5000 do s = s + t[i] end print(s, #t)",
+     None, "run", {"ticks": 80000}),
+    # The free-list composition an OOM recovery needs -- catch it in pcall,
+    # hand the entries back, take them again -- needs a full arena too, so it
+    # moved to limits.py with the ceiling.  What stays in the suite is the
+    # mechanism the composition is built from: revive and steal at small
+    # scale, where the slot-level behavior is observable without 64k stores
+    # (tab-recycle, tab-recycle-tables and the tab-revive-steal* cases).
     ("tab-bubble", "t = {5, 3, 8, 1, 9, 2, 7, 4} i = 1 "
      "while i <= 8 do j = 1 "
      "while j <= 8 - i do "

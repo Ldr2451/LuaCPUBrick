@@ -242,7 +242,7 @@
 ///   ceiling rather than the limit a program meets.
 ///   A table entry is handed back when its key is assigned nil, and that is the
 ///   whole of the arena's reuse: there is no collector, so a table that grows
-///   without deleting keys stops at 512 entries with "out of table memory".
+///   without deleting keys stops at the heap limit with "out of table memory".
 ///
 /// Speed and gate count
 ///   Everything is unrolled per tick, so gates buy speed. Approximate cost of one extra
@@ -351,10 +351,15 @@ const VREGS = 40000
 const MAX_TABLES = 512
 // TOTAL entries across every table, not per table -- there is no collector, so
 // this is the whole budget a program gets.  PUC sets no limit here (tables grow
-// until memory runs out), so the number is ours to pick and the only cost is
-// reset clearing it, which is why it is not sized for a program that cannot
-// exist: the ~4 KB source buffer caps a program long before this does.
-const MAX_HEAP = 4096
+// until memory runs out), so the number is ours to pick and the only costs are
+// reset clearing it (nine arrays this wide) and the wire width in game.  It is
+// sized for a loop-filled table, not for source text: 65,536 entries holds
+// 64k numbers with room for the free list to breathe, and a program that wants
+// more gets "out of table memory" past the end.  Raising it costs no nodes --
+// every heap array is resize()d at reset, so the width is memory, not graph --
+// but every full-arena proof costs a full arena of stores, which is why the
+// suite pins the mechanism at small scale and limits.py owns the ceiling.
+const MAX_HEAP = 65536
 // live vararg values across all active frames
 const MAX_VA = 256
 // Upvalue descriptors per function, and the stride of fUpSrc/cloU: one per
@@ -468,6 +473,17 @@ const LIB_utf8_char = "utf8 = utf8 or {}\nlocal _lim = {0x80, 0x800, 0x10000, 0x
 const LIB_os_date = "os = os or {}\nos.clock = function() return clock() + 0.0 end\nos.difftime = function(e, g) return e - g + 0.0 end\nlocal function j(v)\nreturn (v % 4 == 0 and v % 100 ~= 0) or v % 400 == 0\nend\nlocal _md = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}\nlocal _mn = {\"January\", \"February\", \"March\", \"April\", \"May\", \"June\", \"July\",\n\"August\", \"September\", \"October\", \"November\", \"December\"}\nlocal _wn = {\"Sunday\", \"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\",\n\"Saturday\"}\nlocal function l(v, x, aa)\nif x <= 2 then v, x = v - 1, x + 12 end\nlocal o = (v >= 0 and v or v - 399) // 400\nlocal p = v - o * 400\nlocal q = (153 * (x - 3) + 2) // 5 + aa - 1\nlocal r = p * 365 + p // 4 - p // 100 + q\nreturn o * 146097 + r - 719468\nend\nos.time = function(u)\nif u == nil then\nerror(\"bad argument #1 to 'os.time' (no clock)\", 2)\nend\nlocal v, x, aa = u.year, u.month, u.day\nlocal ab, ac, ad = u.hour or 12, u.min or 0, u.sec or 0\nif v == nil or x == nil or aa == nil then\nerror(\"bad argument #1 to 'os.time' (date table incomplete)\", 2)\nend\nlocal ae = l(v, x, aa) * 86400 + ab * 3600 + ac * 60 + ad\nreturn _m(13, ae, 0) or ae\nend\nlocal function af(z)\nz = z + 719468\nlocal o = (z >= 0 and z or z - 146096) // 146097\nlocal r = z - o * 146097\nlocal p = (r - r // 1460 + r // 36524 - r // 146096) // 365\nlocal v = p + o * 400\nlocal q = r - (365 * p + p // 4 - p // 100)\nlocal ag = (5 * q + 2) // 153\nlocal aa = q - (153 * ag + 2) // 5 + 1\nlocal x = ag + 3\nif x > 12 then v, x = v + 1, x - 12 end\nreturn v, x, aa\nend\nlocal function ah(u)\nu = _m(13, u, 0) or u\nlocal ai = u // 86400\nlocal aj = u - ai * 86400\nlocal ab = aj // 3600\nlocal ac = (aj - ab * 3600) // 60\nlocal ad = aj - ab * 3600 - ac * 60\nlocal v, x, aa = af(ai)\nlocal ak = (ai + 4) % 7 + 1\nif ak < 1 then ak = ak + 7 end\nlocal al = l(v, x, aa) - l(v, 1, 1) + 1\nreturn v, x, aa, ab, ac, ad, ak, al\nend\nlocal function am(n)\nn = n - n % 1\nif n < 10 then return \"0\" .. n end\nreturn \"\" .. n\nend\nlocal function an(al, au)\nlocal ao = (7 - au) % 7\nif al - 1 < ao then return \"00\" end\nreturn am(1 + (al - 1 - ao) // 7)\nend\nos.date = function(ap, u)\nif ap == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nif ap == \"\" or ap == \"!\" then return \"\" end\nlocal aq = 1\nif _s(1, ap, 0, 1) == \"!\" then aq = 2 end\nif _s(1, ap, aq - 1, 2) == \"*t\" and aq + 2 > #ap then\nif u == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal v, x, aa, ab, ac, ad, ak, al = ah(u)\nreturn {year = v, month = x, day = aa, hour = ab, min = ac, sec = ad,\nwday = ak, yday = al, isdst = false}\nend\nlocal ar = false\nlocal as = aq\nwhile as <= #ap do\nif _s(1, ap, as - 1, 1) == \"%\" then ar = true break end\nas = as + 1\nend\nif not ar then\nif aq == 1 then return ap end\nreturn _s(1, ap, aq - 1, #ap - aq + 1)\nend\nif u == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal v, x, aa, ab, ac, ad, ak, al = ah(u)\nlocal at = ak - 1\nlocal au = (at - (al - 1)) % 7\nlocal av = \"\"\nlocal aw = aq\nwhile aw <= #ap do\nlocal ax = _s(1, ap, aw - 1, 1)\nif ax ~= \"%\" then\nav = av .. ax\naw = aw + 1\nelse\nlocal ay = _s(1, ap, aw, 1)\nif (ay == \"E\" or ay == \"O\") and aw + 1 <= #ap then\nay = ay .. _s(1, ap, aw + 1, 1)\naw = aw + 1\nend\nif ay == \"Y\" then av = av .. v\nelseif ay == \"m\" then av = av .. am(x)\nelseif ay == \"d\" then av = av .. am(aa)\nelseif ay == \"H\" then av = av .. am(ab)\nelseif ay == \"M\" then av = av .. am(ac)\nelseif ay == \"S\" then av = av .. am(ad)\nelseif ay == \"w\" then av = av .. at\nelseif ay == \"y\" or ay == \"Oy\" then av = av .. am(v % 100)\nelseif ay == \"j\" then\nlocal az = \"\" .. al\nwhile #az < 3 do az = \"0\" .. az end\nav = av .. az\nelseif ay == \"U\" then av = av .. an(al, au)\nelseif ay == \"W\" then av = av .. an(al, (au + 6) % 7)\nelseif ay == \"a\" then av = av .. _s(1, _wn[at + 1], 0, 3)\nelseif ay == \"A\" then av = av .. _wn[at + 1]\nelseif ay == \"b\" or ay == \"h\" then av = av .. _s(1, _mn[x], 0, 3)\nelseif ay == \"B\" then av = av .. _mn[x]\nelseif ay == \"p\" then av = av .. (ab < 12 and \"AM\" or \"PM\")\nelseif ay == \"c\" then\nav = av .. am(x) .. \"/\" .. am(aa) .. \"/\" .. am(v % 100) .. \" \"\n.. am(ab) .. \":\" .. am(ac) .. \":\" .. am(ad)\nelseif ay == \"x\" or ay == \"Ex\" then\nav = av .. am(x) .. \"/\" .. am(aa) .. \"/\" .. am(v % 100)\nelseif ay == \"X\" then\nav = av .. am(ab) .. \":\" .. am(ac) .. \":\" .. am(ad)\nelseif ay == \"e\" then\nav = av .. (aa < 10 and \" \" .. aa or \"\" .. aa)\nelseif ay == \"s\" then av = av .. (u - u % 1)\nelseif ay == \"%\" then av = av .. \"%\"\nelse av = av .. \"%\" .. ay\nend\naw = aw + 2\nend\nend\nreturn av\nend\nos.setlocale = function(e, g)\nif e == nil or e == \"C\" then return \"C\" end\nreturn nil\nend\n"
 const LIB_raw = "rawequal = function(c, d) return c == d end\nrawget = function(e, f) return e[f] end\nrawset = function(e, f, g) e[f] = g return e end\nrawlen = function(e) return #e end\n"
 const LIB_os_env = "os = os or {}\nos.getenv = function(...)\nif select('#', ...) == 0 then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got no value)\", 2)\nend\nlocal a = ...\nif a == nil then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got nil)\", 2)\nend\nreturn nil\nend\n"
+// The seven library-table names plus debug, as |name| entries.  A Find on
+// this answers "is it a library" the way LIBMEMBERS answers "is it a
+// member": one gate instead of a seven-way `==` chain (measured both here).
+// debug has NO members anywhere -- the chip loads no debug library -- so
+// every `debug.X` warns; test_consistency holds this list against the blob's.
+const LIBNAMES = "|string|math|table|io|os|bit32|utf8|debug|"
+// Every member every library table has, as |lib.member| entries.
+// DERIVED, not listed: test_consistency checks this blob against the
+// actual `lib.member =` assignments, so a new piece without a blob
+// entry fails there instead of warning spuriously here.
+const LIBMEMBERS = "|string.byte|string.char|string.find|string.format|string.gmatch|string.gsub|string.len|string.lower|string.match|string.rep|string.reverse|string.sub|string.upper|math.abs|math.acos|math.asin|math.atan|math.ceil|math.cos|math.deg|math.exp|math.floor|math.fmod|math.huge|math.ldexp|math.log|math.max|math.maxinteger|math.min|math.mininteger|math.modf|math.pi|math.rad|math.random|math.randomseed|math.sin|math.sqrt|math.tan|math.tointeger|math.type|math.ult|table.concat|table.insert|table.move|table.pack|table.remove|table.sort|table.unpack|io.lines|io.read|io.stderr|io.write|os.clock|os.date|os.difftime|os.exit|os.getenv|os.setlocale|os.time|bit32.arshift|bit32.band|bit32.bnot|bit32.bor|bit32.btest|bit32.bxor|bit32.extract|bit32.lrotate|bit32.lshift|bit32.replace|bit32.rrotate|bit32.rshift|utf8.char|utf8.codepoint|utf8.len|utf8.offset|"
 
 // ---------------------------------------------------------------- state: outputs + status
 
@@ -532,6 +548,13 @@ var lsrc: string = ""
 // One `warn: ` line per name the compiler had to invent, built while parsing and
 // handed to staticAdvice, which prefixes the rest.  Cleared with the program.
 var nameWarn: string = ""
+// The last bare GLOBAL name pushed as a value, and the register it went into.
+// A `.field` read checks the pair: the base register must still be that
+// global's, so `io.time` warns but `"s".time`, `f().time` and a shadowing
+// local's `.time` stay silent.  Cleared on every other name push and whenever
+// the register is freed, so only the tight `libname.field` shape warns.
+var lastBase: string = ""
+var lastBaseReg: int = -1
 // True when the program port holds text that has NOT been parsed yet.  The
 // text itself is the port, so this is all the chip needs to know.
 var progDirty: bool = true
@@ -1782,7 +1805,7 @@ mod noteArity(name: string) {
 mod noteIndex(name: string) {
   if curKind() == 1 {
     let v = curNum()
-    if name == "outnum" && !(1.0 <= v && v <= 5.0) {
+    if name == "outnum" && !(1.0 <= v && v <= 4.0) {
       nameWarn = nameWarn .. "warn: outnum index must be 1..4, and this call is out of range\n"
     }
     if name == "outstr" && !(1.0 <= v && v <= 2.0) {
@@ -1841,6 +1864,31 @@ mod noteUnknown(name: string) {
   }
 }
 
+// A library table read for a member the chip never installs: `io.time` is
+// nil on PUC too, so this is advice, not a divergence -- the program runs on
+// exactly as it would have.  The base is proven by REGISTER (lastBaseReg),
+// not by name: only the tight `libname.field` shape warns, so a shadowing
+// local, a call result, a literal or an index result on the same register
+// number stays silent.  One line per member (the nameWarn check), because
+// eight uses of the same missing member are one typo, not eight.
+mod noteLibField(baseReg: int, field: string) {
+  if baseReg != lastBaseReg {
+    return
+  }
+  if LIBNAMES.Find("|" .. lastBase .. "|", true, 0) < 0 {
+    return
+  }
+  let dotted = lastBase .. "." .. field
+  if LIBMEMBERS.Find("|" .. dotted .. "|", true, 0) >= 0 {
+    return
+  }
+  if srcUses(nameWarn, dotted) {
+    return
+  }
+  nameWarn = nameWarn .. "warn: '" .. dotted .. "' is not in the " .. lastBase
+    .. " library the chip loads, so it reads as nil\n"
+}
+
 mod gLookup(name: string) -> int {
   let r = gmap.get(name)
   return if r.Found then r.Value else -1
@@ -1869,6 +1917,10 @@ mod regAlloc() -> int {
 }
 
 mod regFree(r: int) {
+  // noteLibField's provenance dies with the register: a recycled number must
+  // never match a library push that no longer owns it.  Unconditional, because
+  // every live use checks before its own arm frees anything.
+  lastBaseReg = -1
   if r > cfMaxLoc[fnDepth] && r == cfNext[fnDepth] - 1 {
     cfNext[fnDepth] = r
   }
@@ -2232,11 +2284,6 @@ chip vSetN(r: int, tag: int, num: float) {
   vtag[vmBase + r] = tag
   vnum[vmBase + r] = num
 }
-mod vSetS(r: int, s: string) {
-  vtag[vmBase + r] = 2
-  vstr[vmBase + r] = s
-}
-
 
 mod vSetNum(r: int, v: float) {
   vtag[vmBase + r] = 1
@@ -6366,6 +6413,12 @@ mod finishCtorElem(isLast: bool) {
 mod exprPushName(callParen: bool, callSugar: bool) {
   let name = curStr()
   locFind(name)
+  // noteLibField's provenance starts denied: only a bare GLOBAL name sets it
+  // below, so a local, a parameter or an upvalue with a library's name never
+  // warns for its own table.  Clearing the NAME is enough: the register half
+  // is checked first and "" is no library, so a stale register alone warns
+  // for nothing.
+  lastBase = ""
   if callParen || callSugar {
     // the callee goes into a fresh call-frame register
     let fr = regAlloc()
@@ -6375,6 +6428,8 @@ mod exprPushName(callParen: bool, callSugar: bool) {
       bEmit(7, fr, lkReg, 0)
     } else {
       bEmit(5, fr, gRef(name), 0)
+      lastBase = name
+      lastBaseReg = fr
     }
     if callParen {
       pushOp(2, -1, fr, 0, valStk.length())
@@ -6409,6 +6464,8 @@ mod exprPushName(callParen: bool, callSugar: bool) {
         bEmit(46, r, lkReg, upKind())
       } else {
         bEmit(5, r, gRef(name), 0)
+        lastBase = name
+        lastBaseReg = r
       }
       pushVal(r, false, true)
     }
@@ -7279,6 +7336,9 @@ mod exprInfix() {
   } else if k == 5 && s == 23 {
     if topPrefix() && nextKind() == 3 {
       let base = popVal()
+      // A missing library member warns here, on the read both calls and plain
+      // reads flow through -- before the frees below recycle the base register.
+      noteLibField(base, curStrAhead())
       let kr = regAlloc()
       bEmit(3, kr, cStr(curStrAhead()), 0)
       regFree(kr)
@@ -11946,21 +12006,13 @@ mod staticAdvice(p: string) -> string {
     || srcUses(p, "loadfile") || srcUses(p, "loadstring") || srcUses(p, "package") {
     h = h .. "warn: no modules or file loading: require/module/dofile/loadfile/loadstring are absent\n"
   }
-  if srcUsesField(p, "io") || srcUsesField(p, "os") || srcUsesField(p, "debug")
-    || srcUsesField(p, "utf8") {
-    h = h .. "warn: no io/os/debug/utf8 library\n"
-  }
-  if srcUsesField(p, "inInt0") || srcUsesField(p, "outInt0") {
-    h = h .. "warn: there is no int port: one number type, so use inNum0..inNum3 and outnum(i, v) with i in 1..4\n"
-  }
-  if srcUsesField(p, "inVec") || srcUsesField(p, "outVec")
-    || srcUsesField(p, "invecx") || srcUsesField(p, "outvec") {
-    h = h .. "warn: there is no vector port: use innumarr(i) and outnumarr(i, v, ...) with i from 1\n"
-  }
-  if srcUsesField(p, "inCol") || srcUsesField(p, "outCol")
-    || srcUsesField(p, "incol") || srcUsesField(p, "outcol") {
-    h = h .. "warn: there is no colour port\n"
-  }
+  // No port or library lines here on purpose.  There were four: no-int-port,
+  // no-vector-port, no-colour-port and no-io/os/debug/utf8-library, all built
+  // on srcUsesField -- which checks "string.<name>" and ":<name>", so none of
+  // them ever fired for real port or library use, and all of them fired for a
+  // user method spelled ":<name>".  Bare reads are named precisely by
+  // noteUnknown, missing library members by noteLibField, and that is the
+  // whole of the port/library advice now.
   // No listing of the ports here on purpose.  It was a catch-all for a typo the
   // chip could not name, back when the only findings were a fixed list of known
   // absent names; the general rule now names every unresolved name exactly, so

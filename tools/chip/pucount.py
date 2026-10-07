@@ -42,25 +42,25 @@ def main(argv):
         # from the ones the run reports
         pre, bound = P.file_prelude(text)
         for line in text.splitlines():
-            s = line.strip()
-            if not s.startswith("assert(") or not s.endswith(")"):
-                continue
-            expr = s[len("assert("):-1].strip()
-            if not expr:
-                continue
-            total_asserts += 1
-            ok, why = P.self_contained(expr)
-            if ok:
-                kept += 1
-                per_file[os.path.basename(path)] += 1
-                continue
-            m = re.match(r"closes over '(\w+)'$", why)
-            if pre and m and m.group(1) in bound \
-                    and len(pre) + len(expr) <= P.PRELUDE_MAX:
-                lifted += 1
-                per_file[os.path.basename(path)] += 1
-                continue
-            reasons[why] += 1
+            for s in P._split_statements(line.strip()):
+                if not s.startswith("assert(") or not s.endswith(")"):
+                    continue
+                expr = s[len("assert("):-1].strip()
+                if not expr:
+                    continue
+                total_asserts += 1
+                ok, why = P.self_contained(expr)
+                if ok:
+                    kept += 1
+                    per_file[os.path.basename(path)] += 1
+                    continue
+                m = re.match(r"closes over '(\w+)'$", why)
+                if pre and m and m.group(1) in bound \
+                        and len(pre) + len(expr) <= P.PRELUDE_MAX:
+                    lifted += 1
+                    per_file[os.path.basename(path)] += 1
+                    continue
+                reasons[why] += 1
     print("%d single-line assert() in %d files" % (total_asserts, len(files)))
     print("harvested (runnable on chip): %d" % kept)
     print("  +%d more through a file-local prelude, which tests the EXPRESSION "

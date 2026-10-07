@@ -316,6 +316,34 @@ check("every-lib-mod-called", not orphan,
       f"goParse never calls {orphan}; add `let libX = libX(program)` and its")
 dangling = sorted(called - set(lib_mods) - lib_flags)
 check("no-missing-lib-mod", not dangling, f"goParse calls undefined {dangling}")
+# LIBMEMBERS is what the missing-member warning checks, so it must BE the
+# member set: every `lib.member =` assignment appears as `|lib.member|` in
+# the blob and vice versa.  A new piece without a blob entry warns
+# spuriously; a blob entry without a piece stays silent wrongly.
+blob_m = re.search(r'^const LIBMEMBERS = "([^"]*)"', WS, re.M)
+check("libmembers-declared", blob_m is not None, "no LIBMEMBERS const")
+if blob_m:
+    blob_set = set(blob_m.group(1).strip("|").split("|"))
+    ws_members = {m.group(0).split("=")[0].strip() for m in re.finditer(
+        r"(?:string|math|table|io|os|bit32|utf8)\.(\w+)\s*=", WS)}
+    check("libmembers-complete", not (ws_members - blob_set),
+          f"members with no blob entry: {sorted(ws_members - blob_set)}")
+    check("libmembers-sound", not (blob_set - ws_members),
+          f"blob entries with no member: {sorted(blob_set - ws_members)}")
+names_m = re.search(r'^const LIBNAMES = "([^"]*)"', WS, re.M)
+check("libnames-declared", names_m is not None, "no LIBNAMES const")
+if names_m and blob_m:
+    libnames = set(names_m.group(1).strip("|").split("|"))
+    blob_libs = {e.split(".")[0] for e in blob_set}
+    check("libnames-covers-blob", not (blob_libs - libnames),
+          f"blob libs missing from LIBNAMES: {sorted(blob_libs - libnames)}")
+    # A LIBNAMES name with no blob entries claims the chip loads no such
+    # library at all (debug): it must genuinely have no `lib.member =`
+    # assignment, or every read of its members stays silent wrongly.
+    for name in sorted(libnames - blob_libs):
+        check(f"libnames-memberless-{name}",
+              not re.search(r"\b%s\.\w+\s*=" % name, WS),
+              f"{name} has members but no blob entries")
 # the pieces are local under short names, so check the assignment reaches the
 # concatenation: adding `let libX = ...` and forgetting the `.. libX` is silent.
 # A FLAG's local must NOT be concatenated -- it is a bool -- and must be passed to

@@ -783,6 +783,33 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   is a different and much more expensive thing** — the chip's constants, the gates
   and the host's laws are not in it, so a green model proves the *rule* you were
   about to encode and nothing about the chip.
+- **The PUC harvest only sees what its text rules let through, so count the
+  rules' blind spots before believing the coverage.** `self_contained`
+  misread every numeric literal with a letter in it as a binding
+  (`0x12345678` closed over `x12345678`, `1e30` over `e30`) -- 70+ asserts,
+  most of bitwise.lua -- until numbers were blanked before the identifier
+  scan; it threw out any line with a `;` even inside a string, and read every
+  `{x=...}` key as a free variable.  The fixes (number-blanking, delimiter
+  checks on stripped text, top-level `;`-split, table-key skip, `;`-in-`{}`
+  allowed) took the harvest 820 to 1,050 and agreement 583 to 719
+  (`tools/chip/pucount.py` counts from the same code, so it cannot drift).
+  What is left is dead by design: missing chip features (debug/io/coroutine/
+  load/metatables/testC), helper functions (`eqT`, `eq`, `Op`), block scope
+  (`NaN`, `msg`), and file-local tables the lifter cannot value.  The wider
+  harvest exposed 8 real diffs -- bit32 rotate/shift edges, `&` binding
+  looser than `+`, `tonumber` with exponent+spaces, `table.insert`
+  validation through pcall -- open, not fixed: each fix needs its own node
+  budget, and a difference the chip does not have to have is a bug.
+- **A ceiling no suite case can reach is proven by the tool that owns
+  ceilings, not by a slower suite.** A full 64k-entry fill is ~400k ticks,
+  ~10 minutes of wall: `tab-entries-oom`/`tab-entries-recover` could not
+  survive MAX_HEAP 4096->65536, so the suite pins what it can reach (growth
+  past the old ceiling in `tab-entries-grown`, free-list mechanics in
+  `tab-recycle`/`tab-revive-steal*`) and `tools/chip/limits.py` owns the
+  ceiling itself, with a per-probe cap because the default 40k ticks cannot
+  hold a full fill.  The raise commit records the one-time full proof (64k
+  stored and read back, the OOM message at 65536, pcall-catch plus reuse);
+  a ceiling with no executed proof is a number in a comment.
 - **Skipping work is invisible to the log whenever the work also resets it, so
   assert the COST and not the output.** A re-parse calls `vmReset`, which clears
   the log, so a recompiled program prints *exactly* what a skipped parse prints —

@@ -76,6 +76,11 @@ STRING = re.compile(r"'(\\.|[^'\\])*'|\"(\\.|[^\"\\])*\"")
 # What stays banned needs a statement: function, control flow, locals.
 BANNED = re.compile(r"\b(function|local|return|for|while|repeat|until|do|"
                     r"then|else|elseif|end|::|goto|in|if)\b")
+# A bare `name =` (single `=`, not `==`) in an expression is a table-constructor
+# key (`{x = 1}`), not a binding: assignment is a statement and cannot appear
+# here.  Without this every `{x=...}` initializer read `x` as a free variable
+# and refused to lift, which kept events.lua's `a` (and its 32 asserts) out.
+KEY = re.compile(r"\s*=(?![=])")
 # true/false/nil are literals, not bindings: without them `(10 or 2) == 10`
 # reads as closing over `nil`... they never did, they READ as values.
 LITERALS = {"true", "false", "nil"}
@@ -101,19 +106,58 @@ def strip_strings(expr):
     return STRING.sub(lambda m: '"' + " " * (len(m.group(0)) - 2) + '"', expr)
 
 
+# Numeric literals are not bindings, but the identifier scan cannot tell:
+# `0x12345678` reads as `x12345678`, `1e30` as `e30`, `0x1.13aP3` as
+# `x1` + `13aP3`.  That misread 70+ asserts (most of bitwise.lua) as closing
+# over names no file binds.  Strip them after strings, same-length so
+# positions (and the `.`/`:` field check) survive.  The lookbehind keeps
+# `..5` (concat) and `a1` (identifier) intact, and `...` (vararg) still trips
+# the vararg check below because its dots are never stripped.
+NUM = re.compile(r"(?<![\w.])(0[xX][0-9a-fA-F]*\.?[0-9a-fA-F]+"
+                 r"([pP][+-]?\d+)?|\d+\.?\d*([eE][+-]?\d+)?"
+                 r"|\.\d+([eE][+-]?\d+)?)")
+
+
+def strip_numbers(s):
+    """Blank out numeric literals so hex/exponent tails are not read."""
+    return NUM.sub(lambda m: " " * len(m.group(0)), s)
+
+
+def _top_semicolon(s):
+    """True if s has a `;` outside any `{}`.  A `;` inside braces is a table
+    separator (`{10,20,30; x="10"}`), not a statement -- and the blanket `;`
+    ban threw out every initializer written that way, with the asserts that
+    depended on it (events.lua's `a`).  Strings and numbers are already
+    blanked, so their braces and semicolons are gone; an unbalanced brace
+    from a long string only ever HIDES a `;` (skip), never invents a harvest.
+    """
+    depth = 0
+    for c in s:
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth = max(0, depth - 1)
+        elif c == ";" and depth == 0:
+            return True
+    return False
+
+
 def self_contained(expr):
     """(ok, reason).  Only single-line expressions of literals and operators."""
     if len(expr) > 400:
         return False, "too long"
-    if "..." in expr or "->" in expr or ";" in expr:
+    bare = strip_numbers(strip_strings(expr))
+    if "..." in bare or "->" in bare or _top_semicolon(bare):
         return False, "has vararg/arrow/statement"
-    bare = strip_strings(expr)
     if BANNED.search(bare):
         return False, "has keyword"
     for m in IDENT.finditer(bare):
         # skip a field name: preceded by '.' or ':'
         start = m.start()
         if start and bare[start - 1] in ".:'":
+            continue
+        # skip a table-constructor key: followed by a single '='
+        if KEY.match(bare, m.end()):
             continue
         if m.group(0) not in GLOBALS and m.group(0) not in LITERALS \
                 and m.group(0) not in PRELUDE \
@@ -407,6 +451,53 @@ BIT32_USE = re.compile(r"\bbit32\.")
 BIT32_MAX = 2200
 
 
+def _split_statements(s):
+    """Split a line on top-level `;` (outside strings and long brackets).
+
+    math.lua writes `assert(1 < 1.1); assert(not (1 < 0.9))` -- two
+    harvestable asserts on one line, and the `;` check used to throw out both.
+    A bad split is harmless: every piece still has to validate as a complete
+    `assert(...)` below, so a fragment is dropped, never harvested.
+    """
+    parts, depth, quote, long_close = [], 0, None, None
+    i, start = 0, 0
+    while i < len(s):
+        c = s[i]
+        if long_close:
+            if s.startswith(long_close, i):
+                i += len(long_close)
+                long_close = None
+            else:
+                i += 1
+            continue
+        if quote:
+            if c == "\\":
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+            i += 1
+            continue
+        if c in "\"'":
+            quote = c
+        elif c == "[":
+            m = re.match(r"\[(=*)\[", s[i:])
+            if m:
+                long_close = "]" + m.group(1) + "]"
+                i += len(m.group(0))
+                continue
+        elif c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == ";" and depth == 0:
+            parts.append(s[start:i])
+            start = i + 1
+        i += 1
+    parts.append(s[start:])
+    return [p for p in (x.strip() for x in parts) if p]
+
+
 def harvest(path):
     """(expr, file, lineno, prelude) for every self-contained single-line
     assert, plus the ones a file-local prelude makes self-contained."""
@@ -417,28 +508,28 @@ def harvest(path):
         return out
     pre, bound = file_prelude(text)
     for n, line in enumerate(text.splitlines(), 1):
-        s = line.strip()
-        if not s.startswith("assert(") or not s.endswith(")"):
-            continue
-        expr = s[len("assert("):-1].strip()
-        if not expr:
-            continue
-        ok, why = self_contained(expr)
-        if ok:
-            if BIT32_PRELUDE and BIT32_USE.search(expr) \
-                    and len(BIT32_PRELUDE) + len(expr) <= BIT32_MAX:
-                # bit32 is a GLOBAL now, so this harvested -- but bare lua55
-                # has no bit32 and would error.  Both sides get the piece's own
-                # master instead (see BIT32_PRELUDE).
-                out.append((expr, os.path.basename(path), n, BIT32_PRELUDE))
-            else:
-                out.append((expr, os.path.basename(path), n, ""))
-            continue
-        # blocked only by a name this file binds at top level?
-        m = re.match(r"closes over '(\w+)'$", why)
-        if pre and m and m.group(1) in bound \
-                and len(pre) + len(expr) <= PRELUDE_MAX:
-            out.append((expr, os.path.basename(path), n, pre))
+        for s in _split_statements(line.strip()):
+            if not s.startswith("assert(") or not s.endswith(")"):
+                continue
+            expr = s[len("assert("):-1].strip()
+            if not expr:
+                continue
+            ok, why = self_contained(expr)
+            if ok:
+                if BIT32_PRELUDE and BIT32_USE.search(expr) \
+                        and len(BIT32_PRELUDE) + len(expr) <= BIT32_MAX:
+                    # bit32 is a GLOBAL now, so this harvested -- but bare lua55
+                    # has no bit32 and would error.  Both sides get the piece's own
+                    # master instead (see BIT32_PRELUDE).
+                    out.append((expr, os.path.basename(path), n, BIT32_PRELUDE))
+                else:
+                    out.append((expr, os.path.basename(path), n, ""))
+                continue
+            # blocked only by a name this file binds at top level?
+            m = re.match(r"closes over '(\w+)'$", why)
+            if pre and m and m.group(1) in bound \
+                    and len(pre) + len(expr) <= PRELUDE_MAX:
+                out.append((expr, os.path.basename(path), n, pre))
     return out
 
 
