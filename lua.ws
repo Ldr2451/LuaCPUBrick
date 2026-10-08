@@ -1717,6 +1717,20 @@ mod bPatch(pos: int, target: int) {
 // exceed them several times over to win -- small bodies never qualify,
 // however many sites call them.  (cNum's +54 at four sites is the same rule
 // at a smaller signature.)
+//
+// October size work refined it to instances against grids: a chip costs its
+// grids times its body plus its instances times its pins, and a mod costs
+// its copies times its body.  Sharing wins only when grids stay few while
+// sites are many (vmFail: 122 sites on 53 grids; tblSetKey: sixteen copies
+// on one grid), and nested chips multiply through multi-instance outers
+// (retCopy's 17 came through pcallEnd's 15).  Flipped back to mods,
+// measured: pcallEnd -341, retCopy -163, blkExit -160, pushOp -139,
+// blkEnter -117, and a Tier-2 batch (vmReturn, vmForLoop, cloStep, nxStep,
+// forDoHead, regSync, popCtl, lstAppendB, bitFail, rdTake, rdLine,
+// rewindTo) -662 together.  Kept as chips: the shared-grid bodies
+// (tblUnlink/Splice, vaSpill/vaFill, tblLink, tblFill), the big bodies
+// (vmStepFast, lexStep, locFind, tblSetKey, vmFail, retAdjust), and the hot
+// tiny ones where pins would dominate either way (vSet and kin).
 mod cNum(v: float) -> int {
   let r = constNum.find(v)
   if !r.Found {
@@ -1955,7 +1969,9 @@ mod locBind(name: string, r: int) {
   }
 }
 
-chip blkEnter(isLoopBody: bool) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod blkEnter(isLoopBody: bool) {
   blkLen.push(locLen)
   blkNext.push(cfNext[fnDepth])
   blkCapGen.push(capGen)
@@ -1970,7 +1986,9 @@ chip blkEnter(isLoopBody: bool) {
   }
 }
 
-chip regSync() {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod regSync() {
   let top = cfBase[fnDepth]
   let m = cfMaxLoc[fnDepth] + 1
   if m > top {
@@ -2029,7 +2047,9 @@ mod upStep(d: int, ix: int, src: int) -> int {
   return k
 }
 
-chip pushOp(kind: int, prec: int, a: int, b: int, c: int) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod pushOp(kind: int, prec: int, a: int, b: int, c: int) {
   opKind.push(kind)
   opPrec.push(prec)
   opA.push(a)
@@ -2170,7 +2190,9 @@ mod pushCtl(kind: int, a: int, b: int, c: int, d: int, e: int, f: int) {
   ctlG.push(0)
 }
 
-chip popCtl() {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod popCtl() {
   ctlKind.pop()
   ctlA.pop()
   ctlB.pop()
@@ -2186,7 +2208,9 @@ mod ctlTop() -> int {
 }
 
 // Append a patch position to a control frame's patch list (kept in B/C).
-chip lstAppendB(pos: int) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod lstAppendB(pos: int) {
   plNext[pos] = ctlB[ctlB.length() - 1]
   ctlB[ctlB.length() - 1] = pos
 }
@@ -2263,7 +2287,9 @@ chip retAdjust(src: int, dst: int, k: int, n: int) {
 // It stays its own chip on purpose: folding its three sites into retAdjust
 // measured +1,073 nodes (58,032 -> 59,105), because those sites inline the
 // bigger if/else body per site instead of sharing it.
-chip retCopy(src: int, dst: int, n: int) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod retCopy(src: int, dst: int, n: int) {
   if 1 <= n { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] }
   if 2 <= n { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] }
   if 3 <= n { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] }
@@ -2581,7 +2607,9 @@ mod lenStep() {
 // next()'s walk: the candidate is a tombstone or a nil value, so skip it and
 // look again -- that costs ticks but needs no loop.  Finishing writes key+value
 // (or a lone nil) and advances past the call.
-chip nxStep() {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod nxStep() {
   if 0 <= nxSlot && (tvTag[nxSlot] == 0 || tNext[nxSlot] == -2) {
     nxSlot = tNext[nxSlot]
   } else {
@@ -3273,7 +3301,9 @@ mod patSetHit() {
 }
 
 // n bytes from the cursor, or whatever is left of them.
-chip rdTake(n: int) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod rdTake(n: int) {
   let avail = rdText.Length() - rdPos
   let k = if n < avail then n else avail
   rdBuf = if k <= 0 then "" else rdText.Substring(rdPos, k)
@@ -3284,7 +3314,9 @@ chip rdTake(n: int) {
 // One line, as PUC's "*l" gives it: no newline, and a trailing CR is not part of
 // the line.  rdGot is false at the end of the text, so io.lines terminates --
 // and a blank line in the middle is a line, not the end.
-chip rdLine() {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod rdLine() {
   let nl = rdText.Find("\n", true, rdPos)
   if rdPos >= rdText.Length() {
     rdGot = false
@@ -4194,7 +4226,9 @@ mod locDeclare(name: string) -> int {
 // blkExit already knows the answer, and a `do` block that captures pays one
 // wasted tick -- harmless, since a bump only ever invalidates slots, and a
 // closure that outlived the block already holds the cell itself.
-chip blkExit() {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod blkExit() {
   locLen = blkLen.pop().Value
   cfNext[fnDepth] = blkNext.pop().Value
   // The depth THIS block sits at, which is what its cells' stamp counts -- a `do`
@@ -4501,7 +4535,9 @@ mod slotBase() -> int {
 // at vmBase + a -- because a frame starts at the very register its results go
 // to, so that is where they are in all four return forms and in a gate.
 // A CHIP: 15 instances, 4 grids.
-chip pcallEnd(src: int, k: int, extra: int) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod pcallEnd(src: int, k: int, extra: int) {
   let ra = fRetA[fRetA.length() - 1]
   let rb = fRetBase[fRetBase.length() - 1]
   let rpc = fRetPC[fRetPC.length() - 1]
@@ -5065,7 +5101,9 @@ mod libMathFmodModf(p: string, d: bool) -> string {
 // arguments are parsed after its callee register is allocated, and they belong
 // in that window, so allocation resumes at reg+1 rather than past its end.
 // A CHIP: 8 instances, 1 grid.
-chip rewindTo(r: int) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod rewindTo(r: int) {
   // regAlloc for its side effect alone (cfMax claims the slot): the old
   // `regAlloc() >= cfNext[fnDepth]` test compared the returned top against
   // itself plus one, so it never fired -- the overflow error is regAlloc's own.
@@ -5429,7 +5467,9 @@ chip locFind(name: string) {
   }
 }
 
-chip forDoHead() {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod forDoHead() {
   cpos = cpos + 1
   blkEnter(true)
   let ctrl = locDeclare(forName)
@@ -7366,7 +7406,9 @@ mod exprInfix() {
 }
 
 // One expression micro-op: a pop, a close, or a token action.
-chip closeAction() {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod closeAction() {
   if closeMode == 1 {
     // ')' close: top must be a call or group marker
     let mk = opTopKind()
@@ -7662,7 +7704,9 @@ chip vmFail(msg: string) {
 // good operands it does nothing.  PUC adds "(constant 'x')" when the operand is
 // a literal; the chip knows the register but not that it came from a literal, so
 // that note is the one part of these messages that stays.
-chip bitFail(lt: int, lv: float, rt: int, rv: float) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod bitFail(lt: int, lv: float, rt: int, rv: float) {
   if lt != 6 && !(lt == 1 && lv == floor(lv)) {
     vmFail("attempt to perform bitwise operation on a " .. typeName(lt)
       .. " value")
@@ -8444,7 +8488,9 @@ mod pcallStep() {
 // closure: the value lands in cloDst before the instruction after LOADFUNC
 // runs.  One tick per cell is the price of keeping the array stores out of
 // the op-25 arm.
-chip cloStep() {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod cloStep() {
   if cloK < cloN {
     let fid = cloCur
     let cfid = curFid()
@@ -10485,7 +10531,9 @@ mod vmBusy() -> bool {
 // documents: vmBurst's four fast steps and one full step mean both must handle
 // every op, and two hand-kept copies would drift - which for a frame teardown
 // would be a popped frame under one dispatch path only.
-chip vmReturn(a: int) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod vmReturn(a: int) {
   let rv = vTag(a)
   let rn = vNum(a)
   let rs = vStr(a)
@@ -10513,7 +10561,9 @@ chip vmReturn(a: int) {
   }
 }
 
-chip vmForLoop(a: int, c: int) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod vmForLoop(a: int, c: int) {
   let ctrl_reg = forCtrl[forDepth - 1]
   let ctrl = vNum(ctrl_reg)
   let stp = vNum(c)
