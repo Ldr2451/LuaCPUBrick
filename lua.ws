@@ -2622,15 +2622,13 @@ mod fmtArgAt() -> int {
   return fmtBase + 1 + fmtArgI
 }
 
-// The argument number for an error message.  Concatenating an int prints it as
-// a float, so "bad argument #5.0" would come out; the digits are spelled out.
+// The argument number for an error message.  The concat needs an INT operand:
+// a bare `1 + fmtArgI` is float (numeric literals are), and printed "bad
+// argument #2.0" -- `| 0` is the cast back.  Int-typed values concat cleanly
+// (probed: "err: line 2", "parse start: 16 chars"); the old FromCharCode
+// digit-spelling is gone anyway, and with it the two-digit ceiling.
 mod fmtArgName() -> string {
-  let n = 1 + fmtArgI
-  let tens = floor(n / 10.0)
-  let ones = n - tens * 10.0
-  let a = FromCharCode(48 + tens).Character
-  let b = FromCharCode(48 + ones).Character
-  return if n < 10 then b else a .. b
+  return "" .. ((1 + fmtArgI) | 0)
 }
 
 // The same fetch for the argument %q walks, which is not the spec.  fmtEof is a
