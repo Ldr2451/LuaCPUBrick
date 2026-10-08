@@ -803,9 +803,16 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   checks on stripped text, top-level `;`-split, table-key skip, `;`-in-`{}`
   allowed) took the harvest 820 to 1,050 and agreement 583 to 719
   (`tools/chip/pucount.py` counts from the same code, so it cannot drift).
+  Pure top-level `local function` helpers now join preludes too (their bodies
+  must need nothing outside params and bound names, pass _chip_can_run, and
+  not print -- agreement compares full logs): math.lua's eq/eqT took the
+  count 1,050 to 1,079 (644 + 435), events.lua's global-form Op is correctly
+  refused (setmetatable body), and the lift gate requires ALL free names
+  bound, not just the first one self_contained reports (it over-lifted
+  multi-closure asserts against nil before).
   What is left is dead by design: missing chip features (debug/io/coroutine/
-  load/metatables/testC), helper functions (`eqT`, `eq`, `Op`), block scope
-  (`NaN`, `msg`), and file-local tables the lifter cannot value.  The wider
+  load/metatables/testC), impure helpers (`Op`), block scope (`NaN`, `msg`),
+  and file-local tables the lifter cannot value.  The wider
   harvest exposed 8 real diffs; 7 have since been fixed at zero nodes
   (bitwise shift/rotate edges via exact piece arithmetic, `&`-vs-`+`
   precedence via renumbering the middle band, insert/remove validation and

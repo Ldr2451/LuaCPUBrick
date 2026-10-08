@@ -91,6 +91,13 @@ LITERALS = {"true", "false", "nil"}
 # harvest, and every one was this function's bug rather than a test the chip
 # could not pass.
 OPKEYWORDS = {"and", "or", "not"}
+# Keywords that may appear in a helper BODY (all structural; none binds a
+# value a lifted assert could mistake for a free variable).  `break` is not
+# in BANNED -- it never appears in an expression -- but reads as an
+# identifier, so it is allowed here explicitly.
+BODY_KEYWORDS = {"function", "local", "return", "for", "while", "repeat",
+                 "until", "do", "then", "else", "elseif", "end", "goto",
+                 "in", "if", "break"}
 # File locals the runner binds with the same value their file gives them, so
 # expressions using them stay self-contained.  math.lua, attrib.lua and
 # files.lua all bind maxint to math.maxinteger (and math.lua binds minint to
@@ -164,6 +171,38 @@ def self_contained(expr):
                 and m.group(0) not in OPKEYWORDS:
             return False, "closes over %r" % m.group(0)
     return True, ""
+
+
+def all_bound(expr, bound):
+    """Every free identifier of expr is bound (the lift gate's name check).
+
+    self_contained reports only the FIRST unknown identifier, so checking
+    just it over-lifts asserts that close over a second, unbound name (nil
+    on the chip, DIFF noise).  This checks them all; lifts that were already
+    whole still lift.
+    """
+    bare = strip_numbers(strip_strings(expr))
+    for m in IDENT.finditer(bare):
+        start = m.start()
+        if start and bare[start - 1] in ".:’":
+            continue
+        if KEY.match(bare, m.end()):
+            continue
+        name = m.group(0)
+        if name not in GLOBALS and name not in LITERALS \
+                and name not in PRELUDE and name not in OPKEYWORDS \
+                and name not in bound:
+            return False
+    return True
+
+
+def lift_ok(expr, why, pre, bound):
+    """The lift gate, shared by the harvest and the counter so the count
+    cannot drift from the run."""
+    m = re.match(r"closes over '(\w+)'$", why)
+    return bool(pre) and bool(m) and m.group(1) in bound \
+        and all_bound(expr, bound) \
+        and len(pre) + len(expr) <= PRELUDE_MAX
 
 
 LOCAL_BIND = re.compile(r"^local\s+([A-Za-z_][\w,\s]*?)\s*=\s*(.+)$")
@@ -353,6 +392,107 @@ def _top_level_locals(text):
     return out
 
 
+FUNC_HEAD = re.compile(
+    r"^local function\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(--.*)?$")
+FUNC_END = re.compile(r"^end\b")
+FUNC_MAX_LINES = 40
+
+
+def _top_level_functions(text):
+    """[(name, params, src)] for the file's own UNINDENTED `local function` defs.
+
+    Same column-0 convention as _top_level_locals: PUC writes helper bodies
+    indented and the closing `end` at column 0, so the first column-0 `end`
+    closes the def.  A def with no column-0 end, over FUNC_MAX_LINES long, or
+    with unparseable params is skipped rather than guessed at.  The GLOBAL
+    form (`function Op ...`, events.lua) is deliberately not collected: it
+    assigns a program global, and the one helper written that way calls
+    setmetatable, which the body check refuses anyway.
+    """
+    lines = text.splitlines()
+    out = []
+    claimed = set()
+    i = 0
+    while i < len(lines):
+        m = FUNC_HEAD.match(lines[i])
+        if not m or m.group(1) in claimed:
+            i += 1
+            continue
+        name = m.group(1)
+        claimed.add(name)               # claimed even if not liftable
+        params = [p.strip() for p in m.group(2).split(",")]
+        params = [p for p in params if p]
+        if any(p != "..." and not re.fullmatch(r"[A-Za-z_]\w*", p)
+               for p in params):
+            i += 1
+            continue
+        j = i + 1
+        while j < len(lines) and not FUNC_END.match(lines[j]):
+            j += 1
+        if j >= len(lines) or FUNC_MAX_LINES < j - i:
+            i += 1
+            continue
+        out.append((name, params, "\n".join(lines[i:j + 1]) + "\n"))
+        i = j + 1
+    return out
+
+
+_BODY_LOCAL = re.compile(r"\blocal\s+(?:function\s+)?([A-Za-z_][\w\s,]*)")
+_BODY_FOR = re.compile(r"\bfor\s+([A-Za-z_][\w\s,]*?)\s*(?:=|\bin\b)")
+
+
+def _body_free(body, extra):
+    """Names a helper body needs from outside `extra` (its params, its own
+    name, its body-locals).  Same scan as self_contained, minus the keyword
+    ban: bodies are statements, so structural keywords are allowed and only
+    genuinely unknown identifiers come back.  Comments are stripped for the
+    scan only (the emitted src keeps them): `for`/`local` words in prose
+    would otherwise read as bindings.  Stripping errs toward REJECTION (a
+    `--` inside a multi-line string cuts it, and string content then reads
+    as unknown names), which is the safe direction.
+    """
+    scan = "\n".join(_strip_comment(ln) for ln in body.splitlines())
+    bare = strip_numbers(strip_strings(scan))
+    locs = set()
+    for mm in _BODY_LOCAL.finditer(bare):
+        for part in mm.group(1).split(","):
+            part = part.strip()
+            if re.fullmatch(r"[A-Za-z_]\w*", part):
+                locs.add(part)
+    for mm in _BODY_FOR.finditer(bare):
+        for part in mm.group(1).split(","):
+            part = part.strip()
+            if re.fullmatch(r"[A-Za-z_]\w*", part):
+                locs.add(part)
+    allowed = set(extra) | locs | set(GLOBALS) | LITERALS | OPKEYWORDS \
+        | set(PRELUDE) | BODY_KEYWORDS
+    free = set()
+    for m in IDENT.finditer(bare):
+        start = m.start()
+        if start and bare[start - 1] in ".:’":
+            continue
+        if KEY.match(bare, m.end()):
+            continue
+        if m.group(0) not in allowed:
+            free.add(m.group(0))
+    return free
+
+
+def _helper_runnable(src):
+    """A helper body the chip can run without polluting agreement.
+
+    Member calls go through _chip_can_run; print and io output are refused
+    outright because agreement compares full logs (a printing helper is a
+    DIFF on every assert that calls it, and the error would blame the chip).
+    """
+    bare = strip_numbers(strip_strings(src))
+    if re.search(r"(?<![\w.:’])print\b", bare):
+        return False
+    if any(lib == "io" for lib, _ in MEMBER_USE.findall(bare)):
+        return False
+    return _chip_can_run(src)
+
+
 def file_prelude(text):
     """(prelude source, bound names) for a file's own top-level locals.
 
@@ -372,18 +512,25 @@ def file_prelude(text):
     a fixpoint: one round binds what it can, the next round binds what those
     made self-contained.  Round order IS the dependency order, because a name
     only qualifies once everything it mentions is already bound.
+
+    Helpers join the same fixpoint: a `local function` whose body needs
+    nothing outside its params, its own name, and already-bound names (so
+    eq-after-floatbits works across kinds).  math.lua's eq/eqT are the reason
+    this exists: 86 asserts call them and neither is liftable as an
+    initializer, because `function` is BANNED there.
     """
     locs = _top_level_locals(text)
-    if not locs:
+    fns = _top_level_functions(text)
+    if not locs and not fns:
         return "", set()
     known = set(GLOBALS) | LITERALS | OPKEYWORDS | set(PRELUDE)
     rounds = []
     chosen = set()        # bound, and available for another init to depend on
     done = set()          # settled either way, so a rejected one is not retried
-    for _ in range(len(locs) + 1):
+    for _ in range(len(locs) + len(fns) + 1):
         added = []
         for name, init in locs:
-            if name in done:
+            if name in done or name in chosen:
                 continue
             ok, why = self_contained(init)
             if not ok:
@@ -400,7 +547,21 @@ def file_prelude(text):
                 # depend on a name that was never bound.
                 done.add(name)
                 continue
-            added.append((name, init))
+            added.append((name, "local %s = %s" % (name, init)))
+            chosen.add(name)
+            done.add(name)
+        for name, params, src in fns:
+            if name in done or name in chosen:
+                continue
+            if name in GLOBALS or name in LITERALS or name in OPKEYWORDS:
+                done.add(name)    # never shadow a builtin in the prelude
+                continue
+            if not _body_free(src, [name] + params) <= (known | chosen):
+                continue          # not yet: a later round may bind it
+            if not _helper_runnable(src):
+                done.add(name)
+                continue
+            added.append((name, src))
             chosen.add(name)
             done.add(name)
         if not added:
@@ -410,7 +571,7 @@ def file_prelude(text):
     pairs = [pair for rnd in rounds for pair in rnd]
     if not pairs:
         return "", set()
-    src = ''.join("local %s = %s\n" % (n, i) for n, i in pairs)
+    src = "".join(s if s.endswith("\n") else s + "\n" for _, s in pairs)
     if len(src) > PRELUDE_MAX:
         # too big to run with the pieces the expression itself pulls in
         return "", set()
@@ -525,10 +686,8 @@ def harvest(path):
                 else:
                     out.append((expr, os.path.basename(path), n, ""))
                 continue
-            # blocked only by a name this file binds at top level?
-            m = re.match(r"closes over '(\w+)'$", why)
-            if pre and m and m.group(1) in bound \
-                    and len(pre) + len(expr) <= PRELUDE_MAX:
+            # blocked only by names this file binds at top level?
+            if lift_ok(expr, why, pre, bound):
                 out.append((expr, os.path.basename(path), n, pre))
     return out
 

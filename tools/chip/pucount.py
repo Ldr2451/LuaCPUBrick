@@ -54,9 +54,7 @@ def main(argv):
                     kept += 1
                     per_file[os.path.basename(path)] += 1
                     continue
-                m = re.match(r"closes over '(\w+)'$", why)
-                if pre and m and m.group(1) in bound \
-                        and len(pre) + len(expr) <= P.PRELUDE_MAX:
+                if P.lift_ok(expr, why, pre, bound):
                     lifted += 1
                     per_file[os.path.basename(path)] += 1
                     continue
