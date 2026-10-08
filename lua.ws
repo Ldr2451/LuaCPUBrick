@@ -1710,6 +1710,13 @@ mod bPatch(pos: int, target: int) {
 // term whatever the body is.  So "make it a chip" is not a move to try on a small
 // function, and the screening order should be the other way round -- look for a
 // big body with many sites, and do not spend a build on anything else.
+//
+// bEmit sharpened the rule and is why it is not tried again: ~99 sites for a
+// ~12-node body (4 int params plus a return) measured +2,096 nodes, about
+// +21 a site.  Per-site pins grow with the signature, so the body has to
+// exceed them several times over to win -- small bodies never qualify,
+// however many sites call them.  (cNum's +54 at four sites is the same rule
+// at a smaller signature.)
 mod cNum(v: float) -> int {
   let r = constNum.find(v)
   if !r.Found {
@@ -2225,25 +2232,28 @@ mod vStr(r: int) -> string {
 // callee's frame (absolute src) into the caller's (absolute dst), then nil-fill
 // up to n so a fixed-arity caller sees nil for values the callee did not return.
 // k values are the ones actually produced; n is what the caller asked for.
-// A CHIP, not a mod: five call sites (every return path) each carried
-// an inlined copy of this 16-arm ladder. One shared body instead.
+// A CHIP, not a mod: the call-result paths each carried an inlined copy
+// of this 16-arm ladder. One shared body instead.
+// The nil-fill writes the tag only: a tag-0 payload is never read (the
+// same rule vSetNil and the call's missing-parameter arms already follow),
+// so the two extra writes per arm were graph for nothing.
 chip retAdjust(src: int, dst: int, k: int, n: int) {
-  if 1 <= k { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] } else if 1 <= n { vtag[dst] = 0 vnum[dst] = 0.0 vstr[dst] = "" }
-  if 2 <= k { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] } else if 2 <= n { vtag[dst+1] = 0 vnum[dst+1] = 0.0 vstr[dst+1] = "" }
-  if 3 <= k { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] } else if 3 <= n { vtag[dst+2] = 0 vnum[dst+2] = 0.0 vstr[dst+2] = "" }
-  if 4 <= k { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] } else if 4 <= n { vtag[dst+3] = 0 vnum[dst+3] = 0.0 vstr[dst+3] = "" }
-  if 5 <= k { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] } else if 5 <= n { vtag[dst+4] = 0 vnum[dst+4] = 0.0 vstr[dst+4] = "" }
-  if 6 <= k { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] } else if 6 <= n { vtag[dst+5] = 0 vnum[dst+5] = 0.0 vstr[dst+5] = "" }
-  if 7 <= k { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] } else if 7 <= n { vtag[dst+6] = 0 vnum[dst+6] = 0.0 vstr[dst+6] = "" }
-  if 8 <= k { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] } else if 8 <= n { vtag[dst+7] = 0 vnum[dst+7] = 0.0 vstr[dst+7] = "" }
-  if 9 <= k { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] } else if 9 <= n { vtag[dst+8] = 0 vnum[dst+8] = 0.0 vstr[dst+8] = "" }
-  if 10 <= k { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] } else if 10 <= n { vtag[dst+9] = 0 vnum[dst+9] = 0.0 vstr[dst+9] = "" }
-  if 11 <= k { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] } else if 11 <= n { vtag[dst+10] = 0 vnum[dst+10] = 0.0 vstr[dst+10] = "" }
-  if 12 <= k { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] } else if 12 <= n { vtag[dst+11] = 0 vnum[dst+11] = 0.0 vstr[dst+11] = "" }
-  if 13 <= k { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] } else if 13 <= n { vtag[dst+12] = 0 vnum[dst+12] = 0.0 vstr[dst+12] = "" }
-  if 14 <= k { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] } else if 14 <= n { vtag[dst+13] = 0 vnum[dst+13] = 0.0 vstr[dst+13] = "" }
-  if 15 <= k { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] } else if 15 <= n { vtag[dst+14] = 0 vnum[dst+14] = 0.0 vstr[dst+14] = "" }
-  if 16 <= k { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] } else if 16 <= n { vtag[dst+15] = 0 vnum[dst+15] = 0.0 vstr[dst+15] = "" }
+  if 1 <= k { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] } else if 1 <= n { vtag[dst] = 0 }
+  if 2 <= k { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] } else if 2 <= n { vtag[dst+1] = 0 }
+  if 3 <= k { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] } else if 3 <= n { vtag[dst+2] = 0 }
+  if 4 <= k { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] } else if 4 <= n { vtag[dst+3] = 0 }
+  if 5 <= k { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] } else if 5 <= n { vtag[dst+4] = 0 }
+  if 6 <= k { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] } else if 6 <= n { vtag[dst+5] = 0 }
+  if 7 <= k { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] } else if 7 <= n { vtag[dst+6] = 0 }
+  if 8 <= k { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] } else if 8 <= n { vtag[dst+7] = 0 }
+  if 9 <= k { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] } else if 9 <= n { vtag[dst+8] = 0 }
+  if 10 <= k { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] } else if 10 <= n { vtag[dst+9] = 0 }
+  if 11 <= k { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] } else if 11 <= n { vtag[dst+10] = 0 }
+  if 12 <= k { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] } else if 12 <= n { vtag[dst+11] = 0 }
+  if 13 <= k { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] } else if 13 <= n { vtag[dst+12] = 0 }
+  if 14 <= k { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] } else if 14 <= n { vtag[dst+13] = 0 }
+  if 15 <= k { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] } else if 15 <= n { vtag[dst+14] = 0 }
+  if 16 <= k { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] } else if 16 <= n { vtag[dst+15] = 0 }
 }
 
 // A CHIP: inlined copies multiply through outer mods (pcallEnd, gateHigh).
@@ -2574,8 +2584,6 @@ chip nxStep() {
   } else {
     if nxSlot < 0 {
       vtag[nxDst] = 0
-      vnum[nxDst] = 0.0
-      vstr[nxDst] = ""
       retCountV = 1
     } else {
       let kt = tKeyTag[nxSlot]
@@ -2599,8 +2607,6 @@ chip nxStep() {
         vstr[nxDst] = ks
       } else {
         vtag[nxDst] = 0
-        vnum[nxDst] = 0.0
-        vstr[nxDst] = ""
       }
       vtag[nxDst + 1] = tvTag[nxSlot]
       vnum[nxDst + 1] = tvNum[nxSlot]
@@ -5104,27 +5110,9 @@ chip logPush(line: string) {
   }
 }
 
-// Copy cnt values from src down to a.  The two ranges overlap, so fill from the
-// LOW end: writing a high slot first would overwrite a source value that a
-// lower slot still has to read.
-mod shiftDown(a: int, src: int, cnt: int) {
-  if 1 <= cnt { vSet(a, vTag(src), vNum(src), vStr(src)) }
-  if 2 <= cnt { vSet(a + 1, vTag(src + 1), vNum(src + 1), vStr(src + 1)) }
-  if 3 <= cnt { vSet(a + 2, vTag(src + 2), vNum(src + 2), vStr(src + 2)) }
-  if 4 <= cnt { vSet(a + 3, vTag(src + 3), vNum(src + 3), vStr(src + 3)) }
-  if 5 <= cnt { vSet(a + 4, vTag(src + 4), vNum(src + 4), vStr(src + 4)) }
-  if 6 <= cnt { vSet(a + 5, vTag(src + 5), vNum(src + 5), vStr(src + 5)) }
-  if 7 <= cnt { vSet(a + 6, vTag(src + 6), vNum(src + 6), vStr(src + 6)) }
-  if 8 <= cnt { vSet(a + 7, vTag(src + 7), vNum(src + 7), vStr(src + 7)) }
-  if 9 <= cnt { vSet(a + 8, vTag(src + 8), vNum(src + 8), vStr(src + 8)) }
-  if 10 <= cnt { vSet(a + 9, vTag(src + 9), vNum(src + 9), vStr(src + 9)) }
-  if 11 <= cnt { vSet(a + 10, vTag(src + 10), vNum(src + 10), vStr(src + 10)) }
-  if 12 <= cnt { vSet(a + 11, vTag(src + 11), vNum(src + 11), vStr(src + 11)) }
-  if 13 <= cnt { vSet(a + 12, vTag(src + 12), vNum(src + 12), vStr(src + 12)) }
-  if 14 <= cnt { vSet(a + 13, vTag(src + 13), vNum(src + 13), vStr(src + 13)) }
-  if 15 <= cnt { vSet(a + 14, vTag(src + 14), vNum(src + 14), vStr(src + 14)) }
-  if 16 <= cnt { vSet(a + 15, vTag(src + 15), vNum(src + 15), vStr(src + 15)) }
-}
+// shiftDown lived here and is gone: its one call site (select) is
+// retAdjust(src, dst, cnt, cnt), which is the same low-to-high copy when
+// k == n.  A 16-rung mod body for one site is what it cost.
 
 // %f[set]: the frontier, a transition into the set.  It needs two set tests, the
 // character before the cursor and the one at it, and patItemP is what brings the
@@ -8660,8 +8648,6 @@ mod patAnswer() {
     vstr[d] = ""
   } else if ce == 0 {
     vtag[d] = 0
-    vnum[d] = 0.0
-    vstr[d] = ""
   } else {
     vtag[d] = 2
     vnum[d] = 0.0
@@ -8680,8 +8666,6 @@ mod patAnswer() {
 // No match anywhere: both find and match answer nil.
 mod patNone() {
   vtag[nxDst] = 0
-  vnum[nxDst] = 0.0
-  vstr[nxDst] = ""
   // a gmatch step with no match is the end of the walk, and that is *no* values:
   // one nil is a value, and a for-in that gets one calls the iterator for ever
   retCountV = if patMode == 3 then 0 else 1
@@ -8760,8 +8744,6 @@ mod patArm(iniArg: int, mode: int, dst: int, tid: int) {
   patLen = patSrc.Length()
   if patLen + 1 < ini {
     vtag[dst] = 0
-    vnum[dst] = 0.0
-    vstr[dst] = ""
     // the end of a gmatch walk answers *no* values, which is what ends the loop:
     // a single nil is a value, and a for-in that gets one runs for ever
     retCountV = if mode == 3 then 0 else 1
@@ -8769,8 +8751,6 @@ mod patArm(iniArg: int, mode: int, dst: int, tid: int) {
     // measured: a pattern that starts with ^ matches nothing at all in gmatch,
     // while find and gsub both take it as the anchor and honour it
     vtag[dst] = 0
-    vnum[dst] = 0.0
-    vstr[dst] = ""
     retCountV = 0
   } else {
     patMode = mode
@@ -9473,7 +9453,11 @@ mod gateLow(fid: int, a: int, nargs: int) {
         vSetNil(a)
         retCountV = 0
       } else {
-        shiftDown(a, src, cnt)
+        // retAdjust with k == n is a pure copy, in the same low-to-high
+        // order shiftDown used to spell out: the ranges overlap (a frame
+        // starts where its results go), so a high slot must not be written
+        // before a lower slot has read its source.
+        retAdjust(vmBase + src, vmBase + a, cnt, cnt)
         retCountV = cnt
       }
     }
