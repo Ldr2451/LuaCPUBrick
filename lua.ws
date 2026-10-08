@@ -1610,7 +1610,9 @@ mod curStr() -> string {
 }
 
 // A CHIP: 22 instances, 3 grids.
-chip pushVal(r: int, isCall: bool, isPrefix: bool) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod pushVal(r: int, isCall: bool, isPrefix: bool) {
   valStk.push(r)
   valCall.push(isCall)
   valPrefix.push(isPrefix)
@@ -1725,12 +1727,14 @@ mod bPatch(pos: int, target: int) {
 // on one grid), and nested chips multiply through multi-instance outers
 // (retCopy's 17 came through pcallEnd's 15).  Flipped back to mods,
 // measured: pcallEnd -341, retCopy -163, blkExit -160, pushOp -139,
-// blkEnter -117, and a Tier-2 batch (vmReturn, vmForLoop, cloStep, nxStep,
+// blkEnter -117, a Tier-2 batch (vmReturn, vmForLoop, cloStep, nxStep,
 // forDoHead, regSync, popCtl, lstAppendB, bitFail, rdTake, rdLine,
-// rewindTo) -662 together.  Kept as chips: the shared-grid bodies
-// (tblUnlink/Splice, vaSpill/vaFill, tblLink, tblFill), the big bodies
-// (vmStepFast, lexStep, locFind, tblSetKey, vmFail, retAdjust), and the hot
-// tiny ones where pins would dominate either way (vSet and kin).
+// rewindTo) -662 together, then gSet/vSetIntSat/vSetIntTag/pushVal/
+// cmpFinish/logPush -687 together and retAdjust -180 and vSetN -734.
+// Kept as chips: the shared-grid bodies (tblUnlink/Splice, vaSpill/vaFill,
+// tblLink, tblFill), the big bodies (vmStepFast, lexStep, locFind,
+// tblSetKey, vmFail), and the hot tiny ones where pins would dominate
+// either way (vSet and kin, already mods since the register-write revert).
 mod cNum(v: float) -> int {
   let r = constNum.find(v)
   if !r.Found {
@@ -2264,7 +2268,9 @@ mod vStr(r: int) -> string {
 // string payload is dropped the same way wherever the tag is not 2:
 // vSetNum never wrote one for numbers, so those reads already tolerate
 // whatever a reused register holds.
-chip retAdjust(src: int, dst: int, k: int, n: int) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod retAdjust(src: int, dst: int, k: int, n: int) {
   if 1 <= k { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] } else if 1 <= n { vtag[dst] = 0 }
   if 2 <= k { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] } else if 2 <= n { vtag[dst+1] = 0 }
   if 3 <= k { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] } else if 3 <= n { vtag[dst+2] = 0 }
@@ -2324,7 +2330,9 @@ mod vSet(r: int, tag: int, num: float, s: string) {
 chip vSetNil(r: int) {
   vtag[vmBase + r] = 0
 }
-chip vSetN(r: int, tag: int, num: float) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod vSetN(r: int, tag: int, num: float) {
   vtag[vmBase + r] = tag
   vnum[vmBase + r] = num
 }
@@ -2346,7 +2354,9 @@ mod gStr(gi: int) -> string {
   return gstr[gi]
 }
 
-chip gSet(gi: int, tag: int, num: float, s: string) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod gSet(gi: int, tag: int, num: float, s: string) {
   gtag[gi] = tag
   gnum[gi] = num
   gstr[gi] = s
@@ -2567,7 +2577,9 @@ mod intWrap(v: float) -> float {
     else v
 }
 
-chip cmpFinish(v: bool) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod cmpFinish(v: bool) {
   vtag[cmpDst] = 3
   if v {
     vnum[cmpDst] = 1.0
@@ -4619,7 +4631,9 @@ mod arrStrOk(tag: int) -> bool {
 // One function owns it because there are two places that write the integer tag
 // with a computed value (#t and #s add 0.0 themselves before they get here) and
 // they have to agree about this exactly as they agree about the tag.
-chip vSetIntTag(a: int, w: float) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod vSetIntTag(a: int, w: float) {
   vSetN(a, 6, w + 0.0)
 }
 
@@ -4632,7 +4646,9 @@ mod vSetInt(a: int, v: float) {
   }
 }
 
-chip vSetIntSat(a: int, v: float) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod vSetIntSat(a: int, v: float) {
   var w = v
   if w + INT64_LIMIT < 0.0 {
     w = 0.0 - INT64_LIMIT
@@ -5137,7 +5153,9 @@ mod binArrive(opc: int, prec: int, fl: int) {
 // string read and cannot grow without bound.  The 64-character cap is the
 // *caller's* because it is print's rule, not the log's: a write of 500 bytes is
 // one append here and 500 bytes of text, not eight dropped ones.
-chip logPush(line: string) {
+// A mod, not a chip: measured cheaper here (instances cost pins -- see the
+// chip screening note on cNum).
+mod logPush(line: string) {
   logLines.push(line)
   logAdd(line)
   if logLines.length() > 32 {
