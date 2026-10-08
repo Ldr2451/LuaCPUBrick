@@ -2236,7 +2236,10 @@ mod vStr(r: int) -> string {
 // of this 16-arm ladder. One shared body instead.
 // The nil-fill writes the tag only: a tag-0 payload is never read (the
 // same rule vSetNil and the call's missing-parameter arms already follow),
-// so the two extra writes per arm were graph for nothing.
+// so the two extra writes per arm were graph for nothing.  Elsewhere, a
+// string payload is dropped the same way wherever the tag is not 2:
+// vSetNum never wrote one for numbers, so those reads already tolerate
+// whatever a reused register holds.
 chip retAdjust(src: int, dst: int, k: int, n: int) {
   if 1 <= k { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] } else if 1 <= n { vtag[dst] = 0 }
   if 2 <= k { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] } else if 2 <= n { vtag[dst+1] = 0 }
@@ -2592,7 +2595,6 @@ chip nxStep() {
       if kt == 6 || kt == 1 {
         vtag[nxDst] = kt
         vnum[nxDst] = kn
-        vstr[nxDst] = ""
       } else if kt == 2 {
         vtag[nxDst] = 2
         vnum[nxDst] = 0.0
@@ -2600,7 +2602,6 @@ chip nxStep() {
       } else if kt == 3 {
         vtag[nxDst] = 3
         vnum[nxDst] = kn
-        vstr[nxDst] = ""
       } else if kt == 5 {
         vtag[nxDst] = 5
         vnum[nxDst] = kn
@@ -4526,7 +4527,6 @@ chip pcallEnd(src: int, k: int, extra: int) {
     retCopy(src, rb + ra + 1, k)
     vtag[rb + ra] = 3
     vnum[rb + ra] = 1.0
-    vstr[rb + ra] = "true"
     m = (if 1 <= k then k else 0) + extra + 1
   } else {
     let one = rb + ra + 1
@@ -4541,7 +4541,6 @@ chip pcallEnd(src: int, k: int, extra: int) {
     }
     vtag[rb + ra] = 3
     vnum[rb + ra] = 0.0
-    vstr[rb + ra] = "false"
     m = 2
   }
   let cnt = if want == -2 then m else if want < m then want else m
@@ -8375,7 +8374,6 @@ mod pcallStep() {
     // truthy thing of its own.
     vtag[rb + ra] = 3
     vnum[rb + ra] = 0.0
-    vstr[rb + ra] = "false"
     pcallMode = if pcallIsX then 1 else 0
     if pcallIsX {
       // the frames above the marker are gone, so the base is the pcall's own
@@ -8403,7 +8401,6 @@ mod pcallStep() {
         // rewritten by pcallEnd when the gate is done with the slot.
         vtag[rb + ra] = 4
         vnum[rb + ra] = hn
-        vstr[rb + ra] = ""
         vtag[rb + ra + 1] = 2
         vnum[rb + ra + 1] = 0.0
         vstr[rb + ra + 1] = pcallMsg
@@ -8471,7 +8468,6 @@ chip cloStep() {
   } else if !vmFailed {
     vtag[cloDst] = 4
     vnum[cloDst] = cloCid
-    vstr[cloDst] = ""
     cloActive = false
   }
 }
@@ -8596,14 +8592,11 @@ mod patDone() {
   } else if patMode == 0 || patMode == 2 {
     vtag[nxDst] = 6
     vnum[nxDst] = patStart + 1.0
-    vstr[nxDst] = ""
     vtag[nxDst + 1] = 6
     vnum[nxDst + 1] = patI * 1.0
-    vstr[nxDst + 1] = ""
     if patMode == 2 {
       vtag[nxDst + 2] = 6
       vnum[nxDst + 2] = patNCap * 1.0
-      vstr[nxDst + 2] = ""
     }
     // mode 2 answers the capture count in the third register, so its window is
     // one wider; the bound check is the same shape either way.
@@ -8645,7 +8638,6 @@ mod patAnswer() {
     // a position capture answers where it stands, as a number
     vtag[d] = 6
     vnum[d] = cs + 1.0
-    vstr[d] = ""
   } else if ce == 0 {
     vtag[d] = 0
   } else {
@@ -9777,7 +9769,6 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
       let t0 = vTag(a + 1)
       vtag[vmBase + a] = 3
       vnum[vmBase + a] = 0.0
-      vstr[vmBase + a] = "false"
       vtag[vmBase + a + 1] = 2
       vnum[vmBase + a + 1] = 0.0
       vstr[vmBase + a + 1] = if pcallIsX then "<no error object>"
@@ -9802,7 +9793,6 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
       pcallBase = vmBase
       vtag[vmBase + a] = 3
       vnum[vmBase + a] = 1.0
-      vstr[vmBase + a] = "true"
       pcallFid = toInt(vNum(a + 1))
       pcallHT = if pcallIsX then vTag(a + 2) else 0
       pcallH = if pcallIsX then vNum(a + 2) else 0.0
@@ -10446,10 +10436,8 @@ mod gmStep() {
     patGmPos[patGmId] = patGmIni
     vtag[nxDst] = 4
     vnum[nxDst] = 22.0
-    vstr[nxDst] = ""
     vtag[nxDst + 1] = 6
     vnum[nxDst + 1] = patGmId * 1.0
-    vstr[nxDst + 1] = ""
     vtag[nxDst + 2] = 0
     vnum[nxDst + 2] = 0.0
     vstr[nxDst + 2] = ""
