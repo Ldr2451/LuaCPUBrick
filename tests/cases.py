@@ -258,6 +258,10 @@ TESTS = [
     ("print-empty", "print()", None, "run"),
     ("print-str", "print('hi', \"yo\")", None, "run"),
     ("escapes", "print('a\\nb', 'x\\65y', 'q\\x41', 'e\\\\f')", None, "run"),
+    # \a \b \f \v are BEL BS FF VT (7 8 12 11), not "bad escape": the lexer
+    # used to reject them because a comment said the gate could not spell
+    # control characters, but string.byte('\7') reads 7, so it can.
+    ("escapes-abfv", "print(string.byte('\\a'), string.byte('\\b'), string.byte('\\f'), string.byte('\\v'))", None, "run"),
     ("concat-num", "print(5 .. 3)", None, "run"),
     ("concat-mixed", "print('n=' .. 42 .. '!')", None, "run"),
     ("concat-right", "print('a' .. 1 .. 2)", None, "run"),

@@ -1031,6 +1031,7 @@ const INT64_WRAP = 18446744073709551616.0
 
 // One VM instruction (ISA in spec.py).
 // Composite map key for table `tid`: kt is the key's value tag.
+// Normalize integral floats to the int tag so 1 and 1.0 share one key.
 mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
   return if kt == 1 || kt == 6 then tid .. "#" .. (kn | 0)
     else if kt == 2 then tid .. "$" .. ks
@@ -1453,8 +1454,8 @@ mod srcUses(p: string, name: string) -> bool {
 var cpos: int = 0
 // Position of the CALL that produced the value currently in presReg, or -1 if
 // that value is not a call.  It outlives lastCallPos (which only tracks the
-// most recent emission) so the consumers of a finished value â€” `return f()`,
-// a target list, a constructor's last element â€” can still mark the call as
+// most recent emission) so the consumers of a finished value -- `return f()`,
+// a target list, a constructor's last element -- can still mark the call as
 // returning all of its results.
 var presCallPos: int = -1
 
@@ -1481,10 +1482,10 @@ var presCallPos: int = -1
 // (68,134 -> 71,442) and 0 boot ticks, and a "%d" format call runs in 0.2s of
 // sim time where the Lua version took 9.4s.
 //
-// State: %d %i %u %s %q %x %X %o %c %%, every flag (- + space # 0), width,
-// precision, the per-conversion flag table and the error messages all match
-// lua5.5, case by case, in the fmt-* suite cases.  Not yet: %f %e %g (and %a),
-// for which lib/str_format.lua has the algorithm and the notes on why the
+// State: %d %i %u %s %q %x %X %o %c %% %f %e %g, every flag (- + space # 0),
+// width, precision, the per-conversion flag table and the error messages all
+// match lua5.5, case by case, in the fmt-* suite cases.  Not yet: %a, for
+// which lib/str_format.lua has the algorithm and the notes on why the
 // rounding needs a Dekker two-product.
 //
 // The rules this shape follows, each one learned by getting it wrong:
@@ -2246,6 +2247,9 @@ chip retAdjust(src: int, dst: int, k: int, n: int) {
 }
 
 // A CHIP: inlined copies multiply through outer mods (pcallEnd, gateHigh).
+// It stays its own chip on purpose: folding its three sites into retAdjust
+// measured +1,073 nodes (58,032 -> 59,105), because those sites inline the
+// bigger if/else body per site instead of sharing it.
 chip retCopy(src: int, dst: int, n: int) {
   if 1 <= n { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] }
   if 2 <= n { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] }
@@ -2519,13 +2523,9 @@ mod logDrop(n: int) {
 }
 
 mod intWrap(v: float) -> float {
-  var w = v
-  if w + INT64_LIMIT < 0.0 {
-    w = w + INT64_WRAP
-  } else if INT64_LIMIT <= w {
-    w = w - INT64_WRAP
-  }
-  return w
+  return if v + INT64_LIMIT < 0.0 then v + INT64_WRAP
+    else if INT64_LIMIT <= v then v - INT64_WRAP
+    else v
 }
 
 chip cmpFinish(v: bool) {
@@ -3094,7 +3094,6 @@ mod fmtPadStep() {
 // free list reads -2 to tell "dead and nobody owns it any more" from "dead but
 // still chained, unhook it and drop its stale map entry".
 // A CHIP: nested in tblSetKey; 34 instances, 1 grid.
-// A CHIP: nested in tblSetKey; 34 instances, 1 grid.
 chip tblUnlink(tid: int, sl: int) {
   let pv = tPrev[sl]
   let nx = tNext[sl]
@@ -3305,7 +3304,6 @@ chip rdLine() {
 // chain is; pv == -1 means the head and nx == -1 the tail.  tblLink is the
 // append-at-the-tail case, and a revived key is the replace-in-place case.
 // A CHIP: nested in tblSetKey; 34 instances, 2 grids.
-// A CHIP: nested in tblSetKey; 34 instances, 2 grids.
 chip tblSplice(tid: int, sl: int, pv: int, nx: int) {
   tPrev[sl] = pv
   tNext[sl] = nx
@@ -3330,7 +3328,6 @@ chip tblLink(tid: int, sl: int) {
 
 // Copy up to MAXVALS values from the register file into the vararg stack.
 // A CHIP: 4 sites, 1 grid.
-// A CHIP: 4 sites, 1 grid.
 chip vaSpill(src: int, dst: int, n: int) {
   if 1 <= n { vaTag[dst] = vtag[src] vaNum[dst] = vnum[src] vaStr[dst] = vstr[src] }
   if 2 <= n { vaTag[dst+1] = vtag[src+1] vaNum[dst+1] = vnum[src+1] vaStr[dst+1] = vstr[src+1] }
@@ -3351,7 +3348,6 @@ chip vaSpill(src: int, dst: int, n: int) {
 }
 
 // Copy up to MAXVALS values from the vararg stack into registers (VARARG).
-// A CHIP: 3 sites, 1 grid.
 // A CHIP: 3 sites, 1 grid.
 chip vaFill(base: int, dst: int, n: int) {
   if 1 <= n { vtag[dst] = vaTag[base] vnum[dst] = vaNum[base] vstr[dst] = vaStr[base] }
@@ -4500,7 +4496,6 @@ mod slotBase() -> int {
 // at vmBase + a -- because a frame starts at the very register its results go
 // to, so that is where they are in all four return forms and in a gate.
 // A CHIP: 15 instances, 4 grids.
-// A CHIP: 15 instances, 4 grids.
 chip pcallEnd(src: int, k: int, extra: int) {
   let ra = fRetA[fRetA.length() - 1]
   let rb = fRetBase[fRetBase.length() - 1]
@@ -4684,12 +4679,6 @@ chip tblFill(dst: int, tid: int, idx: int) {
   }
 }
 
-// One digit of a radix conversion, with the division done by hand: the host's
-// floor truncates toward zero, so a negative quotient never goes negative and
-// %x of -1 came out as fifteen zeros.  The quotient is a truncating cast and a
-// negative remainder is carried into the digit and taken off the quotient, which
-// is floor division; the quotient then settles at -1 and the digit count is what
-// stops the loop, which is where the 64-bit two's complement comes from.
 // One digit of a radix conversion, with the division done by hand: the host's
 // floor truncates toward zero, so a negative quotient never goes negative and
 // %x of -1 came out as fifteen zeros.  The quotient is a truncating cast and a
@@ -4910,8 +4899,7 @@ mod patSetRetry() {
 // line).  The int spelling is the one fmtVal uses for the integer tag.
 mod userLine(raw: float) -> string {
   let l = toInt(raw)
-  var u = l
-  if libLines < l { u = l - libLines } else { u = 1 }
+  let u = if libLines < l then l - libLines else 1
   return "" .. (u | 0)
 }
 
@@ -5075,10 +5063,10 @@ mod libMathFmodModf(p: string, d: bool) -> string {
 // in that window, so allocation resumes at reg+1 rather than past its end.
 // A CHIP: 8 instances, 1 grid.
 chip rewindTo(r: int) {
-  if regAlloc() >= cfNext[fnDepth] {
-    perr = true
-    perrMsg = "too many registers"
-  }
+  // regAlloc for its side effect alone (cfMax claims the slot): the old
+  // `regAlloc() >= cfNext[fnDepth]` test compared the returned top against
+  // itself plus one, so it never fired -- the overflow error is regAlloc's own.
+  regAlloc()
   cfNext[fnDepth] = r
 }
 
@@ -5118,7 +5106,6 @@ chip logPush(line: string) {
   }
 }
 
-// Normalize integral floats to the int tag so 1 and 1.0 share one key.
 // Copy cnt values from src down to a.  The two ranges overlap, so fill from the
 // LOW end: writing a high slot first would overwrite a source value that a
 // lower slot still has to read.
@@ -5682,8 +5669,6 @@ mod doBlockClose() {
         // is stale -- the assignment path says the same (doStoreStep).  Hoisted
         // out of the arms: it only clears a flag, so the order does not matter,
         // and one call is cheaper than two.
-        if tk != 0 {
-        }
       }
     } else {
       blkExit()
@@ -6261,9 +6246,14 @@ chip lexStep() {
         lstage = 4
         lpos = lpos + 1
       } else if cp == 97 || cp == 98 || cp == 102 || cp == 118 {
-        // Lua \a \b \f \v are control chars the gate cannot spell:
-        // use decimal escapes of printable chars instead (or avoid them)
-        lexFail("bad escape")
+        // \a \b \f \v are BEL BS FF VT: 7, 8, 12 and 11, spelled through
+        // FromCharCode like every other byte -- the old "the gate cannot spell
+        // them" was wrong (probe: string.byte('\7') reads 7), so they were
+        // rejected with "bad escape" where PUC answers the character.
+        let ec = if cp == 97 then 7 else if cp == 98 then 8 else if cp == 102 then 12 else 11
+        lidBuf = lidBuf .. FromCharCode(ec).Character
+        lstage = 4
+        lpos = lpos + 1
       } else if cp == 92 || cp == 34 || cp == 39 {
         lidBuf = lidBuf .. ch
         lstage = 4
@@ -6348,11 +6338,6 @@ mod patchMultiTail() {
 // (nil when f returned only one).  Mark the call to return everything, then
 // normalise however many values came back into `extra` consecutive registers so
 // the ordinary store machinery can treat them like any other value registers.
-// A call in the LAST value position of a target list expands into the targets
-// that list still has unfilled: `local a, b = f()` binds b to f's second value
-// (nil when f returned only one).  Mark the call to return everything, then
-// normalise however many values came back into `extra` consecutive registers so
-// the ordinary store machinery can treat them like any other value registers.
 mod expandTailCall() {
   var extra = tmpNames.length() - tmpRegs.length()
   if presIsCall && 0 < extra && !perr {
@@ -6384,7 +6369,7 @@ mod expandTailCall() {
 }
 
 // Finish one constructor element: the value sits on valStk above the frame.
-// isLast marks the element closed by '}' â€” a call there expands, so its results
+// isLast marks the element closed by '}' -- a call there expands, so its results
 // all land in the table (Lua expands a call only in the final list position).
 mod finishCtorElem(isLast: bool) {
   let wasCall = topFlag()
@@ -6715,9 +6700,7 @@ mod stmtDispatch() {
   } else if k == 3 {
     let nk = nextKind()
     let ns = nextSub()
-    if nk == 5 && ns == 14 {
-      startUnit(1)
-    } else if nk == 2 {
+    if nk == 2 || (nk == 5 && ns == 14) {
       startUnit(1)
     } else if nk == 5 && (ns == 21 || ns == 23) {
       itBase.clear()
@@ -6807,15 +6790,9 @@ mod exprPrefix() {
     pushVal(r, false, false)
     cpos = cpos + 1
     expectOperand = false
-  } else if k == 4 && s == 16 {
+  } else if k == 4 && (s == 16 || s == 7) {
     let r = regAlloc()
-    bEmit(4, r, 1, 0)
-    pushVal(r, false, false)
-    cpos = cpos + 1
-    expectOperand = false
-  } else if k == 4 && s == 7 {
-    let r = regAlloc()
-    bEmit(4, r, 0, 0)
+    bEmit(4, r, if s == 16 then 1 else 0, 0)
     pushVal(r, false, false)
     cpos = cpos + 1
     expectOperand = false
@@ -7224,7 +7201,9 @@ mod exprInfix() {
   let k = curKind()
   let s = curSub()
   if k == 5 && s >= 1 && s <= 6 {
-    let opc = if s == 1 then 8 else if s == 2 then 9 else if s == 3 then 10 else if s == 4 then 11 else if s == 5 then 12 else 13
+    // + - * / % ^ are sub 1..6 and opcodes 8..13, in order, so the opcode is
+    // the sub plus seven -- no chain.
+    let opc = s + 7
     // `**` sits ABOVE unary and the shifts, which is Lua's order: ^ binds
     // tighter than unary (`-2^2` is -(2^2), not (-2)^2) and unary binds tighter
     // than << >> (`-1 >> n` is (-1) >> n, not -(1 >> n)).  Unary used to share
@@ -7436,7 +7415,7 @@ chip closeAction() {
           perrMsg = "trailing comma"
         }
       } else {
-        // TEMP DEBUG: what is on the value stack at a call's close
+        // what is on the value stack at a call's close
         let wasCall = topFlag()
         let arg = popVal()
         let dst = fr + 1 + nargs
@@ -7887,11 +7866,7 @@ mod fmtConvG() {
              .. typeName(t) .. ")")
     } else {
       fmtNeg = vnum[ab] < 0.0
-      if fmtNeg {
-        fmtV = 0.0 - vnum[ab]
-      } else {
-        fmtV = vnum[ab]
-      }
+      fmtV = if fmtNeg then 0.0 - vnum[ab] else vnum[ab]
       // a precision of zero means one, which is C's rule and PUC's
       fmtP = if fmtPrec < 0 then 6 else if fmtPrec == 0 then 1 else fmtPrec
       fmtG0 = fmtP
@@ -7941,11 +7916,7 @@ mod fmtConvExp() {
              .. typeName(t) .. ")")
     } else {
       fmtNeg = vnum[ab] < 0.0
-      if fmtNeg {
-        fmtV = 0.0 - vnum[ab]
-      } else {
-        fmtV = vnum[ab]
-      }
+      fmtV = if fmtNeg then 0.0 - vnum[ab] else vnum[ab]
       fmtP = if fmtPrec < 0 then 6 else fmtPrec
       fmtInt = ""
       fmtFr = ""
@@ -8021,36 +7992,12 @@ mod fmtEFracMore() {
 // not an arbitrary one -- 10^15 is the last power of ten a double holds
 // exactly, and the double-double carries 53 bits of guard beyond it, so a
 // precision past that would be rounding a number that is not the value.
-// %e and %g, and why they are not here yet.  %f needed a double-double because
-// it scales by the precision; %e cannot do that at all, because the mantissa is
-// the value divided by 10^k and no division by ten is exact -- 1/10 is not even
-// representable.  So the work is a digit stream instead, and the shape it takes
-// is settled:
-//
-//   - the integer part's digits come off fmtFNDigits as they do here, and the
-//     fraction's come off a dd multiplied by ten per digit, which is exact for
-//     about fifteen of them and not the sixteenth -- so a value whose first
-//     significant digit is further down than that is a range error, the same
-//     kind as the two limits above.
-//   - the two digit runs join into one string with the point's index beside
-//     them, the first nonzero digit gives the exponent (index - (index of the
-//     point) + 1), and the mantissa is the p+1 digits from there read as one
-//     integer, so a carry out of them is +1 on the exponent rather than a walk
-//     back through the digits.
-//   - the rounding is the same two-half test as %f's, on the digit after the
-//     mantissa, with the dd's leftover as the sticky bit.  That leftover is why
-//     the fraction is extracted to exactly one digit past the round position:
-//     one more and the sticky needs a scan of the string, one fewer and the last
-//     digit read is a rounded one.
-//   - the multiply and the digit read cannot share a state, for the reason above,
-//     so it is two states and about thirty ticks per conversion's fraction.
-//   - %g is %e and %f chosen by the exponent (e when it is below -4 or at least
-//     the precision, f otherwise, at p-1-k places), with trailing zeros dropped
-//     unless # is given and a precision of 0 read as 1.  The trailing-zero strip
-//     is one more one-character-per-tick state.
-//
-// tools/fmt/fmtsweep.py takes the conversion letter as its second argument, so
-// `python -u tools/fmt/fmtsweep.py 64 e` is the same check for %e when it lands.
+// %e and %g live in fmtConvExp and fmtConvG.  %e is a digit stream rather than
+// a scaled value -- no division by ten is exact, so it cannot scale the way %f
+// does -- and %g chooses between the two by the rounded exponent, at p-1-k
+// places, with trailing zeros dropped unless # is given.  See those two mods
+// for the shape; tools/fmt/fmtsweep.py takes the conversion letter as its
+// second argument, so `python -u tools/fmt/fmtsweep.py 64 e` checks %e.
 mod fmtConvFloat() {
   fmtArgI = fmtArgI + 1
   let ab = fmtArgAt()
@@ -8063,11 +8010,7 @@ mod fmtConvFloat() {
              .. typeName(t) .. ")")
     } else {
       fmtNeg = vnum[ab] < 0.0
-      if fmtNeg {
-        fmtV = 0.0 - vnum[ab]
-      } else {
-        fmtV = vnum[ab]
-      }
+      fmtV = if fmtNeg then 0.0 - vnum[ab] else vnum[ab]
       fmtP = if fmtPrec < 0 then 6 else fmtPrec
       fmtInt = ""
       fmtFr = ""
@@ -8080,7 +8023,8 @@ mod fmtConvFloat() {
         vmFail("number too large to format exactly on this chip")
       } else {
         fmtState = 15
-      }    }
+      }
+    }
   }
 }
 
@@ -8512,7 +8456,6 @@ mod pcallStep() {
   }
 }
 
-// next(): one chain hop per tick, so a run of tombstones (keys assigned nil)
 // Fill one cell of a closure per tick, then publish the value.  nxActive
 // short-circuits the instruction dispatch, so nothing can read the half-built
 // closure: the value lands in cloDst before the instruction after LOADFUNC
@@ -8675,19 +8618,14 @@ mod patDone() {
       vtag[nxDst + 2] = 6
       vnum[nxDst + 2] = patNCap * 1.0
       vstr[nxDst + 2] = ""
-      if 3 + patNCap > MAXVALS {
-        patErr = "too many captures to return"
-        patSt = 8
-      } else {
-        patAOff = 3
-        patAn = 1
-        patSt = 16
-      }
-    } else if 2 + patNCap > MAXVALS {
+    }
+    // mode 2 answers the capture count in the third register, so its window is
+    // one wider; the bound check is the same shape either way.
+    patAOff = if patMode == 2 then 3 else 2
+    if patAOff + patNCap > MAXVALS {
       patErr = "too many captures to return"
       patSt = 8
     } else {
-      patAOff = 2
       patAn = 1
       patSt = 16
     }
@@ -8805,7 +8743,7 @@ mod patNextStart() {
 mod patArm(iniArg: int, mode: int, dst: int, tid: int) {
   // a parameter is not a writable target, so the clamp gets a local of its own
   // and every later use of `ini` below reads that
-  var ini = iniArg
+  let ini = if iniArg < 1 then 1 else iniArg
   patAnchor = false
   patPSkip = 0
   // a leading ^ is the anchor, but not on the plain path, which is a literal
@@ -8822,9 +8760,6 @@ mod patArm(iniArg: int, mode: int, dst: int, tid: int) {
   }
   patPEnd = patPat.Length()
   patLen = patSrc.Length()
-  if ini < 1 {
-    ini = 1
-  }
   if patLen + 1 < ini {
     vtag[dst] = 0
     vnum[dst] = 0.0
@@ -10708,11 +10643,7 @@ mod vmStep() {
     } else if op == 3 {
       vSet(a, 2, 0.0, constStr[b])
     } else if op == 4 {
-      if b == 0 {
-        vSetN(a, 3, 0.0)
-      } else {
-        vSetN(a, 3, 1.0)
-      }
+      vSetN(a, 3, if b == 0 then 0.0 else 1.0)
     } else if op == 5 {
       vSet(a, gTag(b), gNum(b), gStr(b))
     } else if op == 6 {
@@ -10827,11 +10758,7 @@ mod vmStep() {
         }
       }
     } else if op == 15 {
-      if truthyOf(vTag(b), vNum(b)) {
-        vSetN(a, 3, 0.0)
-      } else {
-        vSetN(a, 3, 1.0)
-      }
+      vSetN(a, 3, if truthyOf(vTag(b), vNum(b)) then 0.0 else 1.0)
     } else if op == 16 {
       let lct = vTag(b)
       let rct = vTag(c)
@@ -10856,16 +10783,16 @@ mod vmStep() {
           vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
         } else if lt != rt {
           vSetN(a, 3, 0.0)
-        } else if lt == 1 {
-          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
         } else if lt == 2 {
           vSetN(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0)
-        } else if lt == 3 {
-          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
-        } else if lt == 4 || lt == 5 {
-          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
-        } else {
+        } else if lt == 0 {
           vSetN(a, 3, 1.0)
+        } else {
+          // lt == rt == 3, 4 or 5 here, all compared by number: lt == 1 went
+          // through the numeric arm above (ln covers it), so its own arm --
+          // which could never fire -- is gone and the three number-compared
+          // tags share one instead of spelling it twice.
+          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
         }
       } else if ln && rn {
         let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
@@ -11322,7 +11249,6 @@ mod vmStep() {
         // against PUC; see AGENTS.md.
         vSetN(a, 6, tLen[toInt(vNum(b))] + 0.0)
       } else if bt == 2 {
-
         vSetN(a, 6, vStr(b).Length() + 0.0)
       } else {
         // PUC also names the value: "attempt to get length of a nil value", plus
@@ -11523,11 +11449,7 @@ chip vmStepFast() {
   } else if op == 3 {
     vSet(a, 2, 0.0, constStr[b])
   } else if op == 4 {
-    if b == 0 {
-      vSetN(a, 3, 0.0)
-    } else {
-      vSetN(a, 3, 1.0)
-    }
+    vSetN(a, 3, if b == 0 then 0.0 else 1.0)
   } else if op == 5 {
     vSet(a, gTag(b), gNum(b), gStr(b))
   } else if op == 6 {
@@ -11639,11 +11561,7 @@ chip vmStepFast() {
       }
     }
   } else if op == 15 {
-    if truthyOf(vTag(b), vNum(b)) {
-      vSetN(a, 3, 0.0)
-    } else {
-      vSetN(a, 3, 1.0)
-    }
+    vSetN(a, 3, if truthyOf(vTag(b), vNum(b)) then 0.0 else 1.0)
   } else if op == 17 || op == 18 || op == 19 {
     let immK = c < 0
     let immConst = if immK then -1 - c else 0
@@ -11657,16 +11575,14 @@ chip vmStepFast() {
         vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
       } else if lt != rt {
         vSetN(a, 3, 0.0)
-      } else if lt == 1 {
-        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
       } else if lt == 2 {
         vSetN(a, 3, if vStr(b) == vStr(c) then 1.0 else 0.0)
-      } else if lt == 3 {
-        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
-      } else if lt == 4 || lt == 5 {
-        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
-      } else {
+      } else if lt == 0 {
         vSetN(a, 3, 1.0)
+      } else {
+        // as vmStep's == arm above: lt == 1 cannot reach here (ln covers it),
+        // and tags 3, 4 and 5 all compare by number
+        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
       }
     } else if ln && rn {
       let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
@@ -11945,7 +11861,7 @@ on goParse {
   // and `tonumber = function(...)` closes over it, so the other order leaves the
   // reference resolving to a global that is nil -- "attempt to call" on the one
   // path the split exists for.
-let libS2 = libTonumberHex(program)
+  let libS2 = libTonumberHex(program)
   let libS3 = libTonumberBase(program)
   let libS = libTonumber(program)
   let libT = libMathRandom(program, dynMath)
@@ -12007,10 +11923,11 @@ mod staticAdvice(p: string) -> string {
     h = h .. "info: nothing to run: the program port is empty, or holds only"
       .. " whitespace and comments\n"
   }
+  // rawget/rawset/rawequal/rawlen are NOT listed here: the chip loads them as
+  // LIB_raw, so a program naming one gets the function, not this warning.
   if srcUses(p, "setmetatable") || srcUsesField(p, "setmetatable")
-    || srcUses(p, "getmetatable") || srcUses(p, "rawget") || srcUses(p, "rawset")
-    || srcUses(p, "rawequal") || srcUses(p, "rawlen") || srcUsesField(p, "metatable") {
-    h = h .. "warn: no metatables: setmetatable/getmetatable/rawget/rawset/rawequal are absent\n"
+    || srcUses(p, "getmetatable") || srcUsesField(p, "metatable") {
+    h = h .. "warn: no metatables: setmetatable/getmetatable are absent\n"
   }
   if srcUses(p, "coroutine") {
     h = h .. "warn: no coroutines\n"
