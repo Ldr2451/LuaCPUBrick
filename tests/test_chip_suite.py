@@ -555,6 +555,28 @@ def compare(name, mode, kw, r, dt):
             if smp.get("log") or smp.get("err"):
                 return (name, False, "first stale log/err at tick %d: %r %r"
                         % (t, smp.get("log"), smp.get("err")), dt)
+        # `clearedOutputs` is the stopped half of the same rule: a `run` edge to
+        # low clears the result ports but keeps history, so these ticks assert
+        # zeros, empty strings and arrays WITHOUT the log/err half that
+        # `cleared` also holds.
+        for t in (exp.get("clearedOutputs") or []):
+            stopped_samples = {s.get("tick"): s
+                               for s in life.get("first", {}).get("samples", [])}
+            smp = stopped_samples.get(t)
+            if smp is None:
+                return (name, False, "first no sample at tick %d" % t, dt)
+            og = smp.get("outGlobals") or {}
+            nums = [og.get("outNum%d" % i, 0.0) for i in range(4)]
+            strs = [og.get("outStr%d" % i, "") for i in range(2)]
+            if any(v != 0.0 for v in nums) or any(v != "" for v in strs):
+                return (name, False, "first outputs not stopped at tick %d: "
+                        "%r %r" % (t, nums, strs), dt)
+            if any(v != 0.0 for v in (og.get("outNumArr") or [])):
+                return (name, False, "first outNumArr not stopped at tick %d"
+                        % t, dt)
+            if any(v != "" for v in (og.get("outStrArr") or [])):
+                return (name, False, "first outStrArr not stopped at tick %d"
+                        % t, dt)
         if life["first"] != life["second"]:
             return (name, False, "restart differs", dt)
         return (name, True, "", dt)

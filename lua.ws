@@ -11513,6 +11513,22 @@ on Change(program) {
 on Change(run) {
   if run && progOkV && !jobBusy {
     vmReset()
+  } else if !run {
+    // Stopped means no outputs: the falling edge clears the result ports, so a
+    // halted chip never shows a previous run's values as if they were live.
+    // Log, error and parse state stay -- history must survive a stop, and the
+    // next rising edge restarts through vmReset anyway.
+    oF0 = 0.0
+    oF1 = 0.0
+    oF2 = 0.0
+    oF3 = 0.0
+    oS4 = ""
+    oS5 = ""
+    outNumArrV.clear()
+    outNumArrV.resize(ARR_SLOTS, 0.0)
+    outStrArrV.clear()
+    outStrArrV.resize(ARR_SLOTS, "")
+    resultV = ""
   }
   // The parse for text that arrived while stopped is asked for by the CLOCK, not
   // here.  A request raised in a port handler is raised and consumed inside one

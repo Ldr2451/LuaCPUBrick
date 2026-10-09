@@ -1941,6 +1941,17 @@ TESTS = [
       "phases": [{"ticks": 4500, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "ababab\nB\n",
                  "checkpoints": [1000, 1300], "cleared": [1000, 1300]}}),
+    # Stopping clears the result ports but keeps history: the program sets
+    # outputs and finishes while `run` is high, the falling edge at tick 1500
+    # clears them, and the log stays -- a halted chip shows nothing live and
+    # the stopped window samples zeros.  A chip that freezes its ports on stop
+    # still shows 7/8/'old' at tick 1700.
+    ("life-stop-clears-outputs",
+     "outnum(1, 7) outnum(2, 8) outstr(1, 'old') print('hi')", None,
+     "lifecycle",
+     {"phases": [{"ticks": 1500, "run": True}, {"ticks": 500, "run": False}],
+      "expect": {"progress": False, "finished": True, "log": "hi\n",
+                 "checkpoints": [1700], "clearedOutputs": [1700]}}),
     # and the near miss that makes the comparison a comparison: the SAME text
     # arriving again is not an edit, so the run is not disturbed and the program
     # prints exactly once.  The log cannot tell this from a re-parse (both end
