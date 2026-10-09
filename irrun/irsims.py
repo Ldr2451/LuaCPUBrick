@@ -727,13 +727,30 @@ class Sim:
                 bad.append("table lengths out of range: %s" % over[:4])
         if var("cloK") is not None and var("cloK", 0) > var("cloN", 0):
             bad.append("cloK=%s past cloN=%s" % (var("cloK"), var("cloN")))
-        # Writes past the end of an array the chip itself sized.  The sim grows
-        # its list rather than refusing, which is what let a guard that was not a
-        # guard (cloTop against a literal 1000000, against 352 slots) read as
-        # working for every case in the suite.
+        # Writes past the end of a sized array that are still past it now.
+        # _do_arr_set records every candidate; a write into a transient
+        # clear-to-resize gap (a restart tick: clear, a program write, then
+        # the same tick's resize) resolves before anything can read it, so
+        # only candidates the final state still violates are reported.  What
+        # remains is the missing-resize class: vmReset cleared the gmatch
+        # walks without re-sizing them, and the game drops those writes while
+        # the sim used to extend.
         if self.arr_oob:
-            bad.append("wrote past the end of %s"
-                       % ", ".join("%s" % w for w in self.arr_oob[:4]))
+            still = []
+            for aid, name, idx in self.arr_oob:
+                arr = self.arrays.get(aid)
+                if arr is None:
+                    target = self._ref_node(aid)
+                    arr = self.arrays.get(target if target != aid else aid,
+                                          [])
+                if idx >= len(arr):
+                    sized = self.arr_sized.get(aid)
+                    still.append("%s[%d] (len %d%s)"
+                                 % (name, idx, len(arr),
+                                    (", sized %d" % sized
+                                     if sized is not None else "")))
+            if still:
+                bad.append("wrote past the end of %s" % ", ".join(still[:4]))
         if clean:
             for name, why in (("forDepth", "numeric loop"),
                               ("pcallDepth", "protected call"),
@@ -1780,20 +1797,46 @@ class Sim:
         idx = _as_int(self._in_val(nid, "Index", 0))
         v = self._in_val(nid, "Value", None)
         if idx >= 0:
-            # Growing the list is what the host does not do: it writes past the
-            # end of the array.  The write is still carried out so the run keeps
-            # going and the damage is visible, but it is recorded, because a
-            # silently absorbed out-of-bounds write is how a guard that is not a
-            # guard reads as working.  cloF is sized MAX_FUNCS + MAX_CLO and the
-            # closure arm compared cloTop against a literal 1000000, so 400
-            # closures wrote past the end and every case stayed green.
+            # The game drops a write past the end of the array; the sim used
+            # to grow its list instead, which hid exactly the clear-without-
+            # resize class (gmatch walks died in game while the suite stayed
+            # green: vmReset cleared the walk arrays and nothing re-sized them
+            # before the walks wrote).  Drop it here too, so the damage shows
+            # as wrong answers, and record it, because a silently absorbed
+            # out-of-bounds write is how a guard that is not a guard reads as
+            # working.  cloF is sized MAX_FUNCS + MAX_CLO and the closure arm
+            # compared cloTop against a literal 1000000, so 400 closures wrote
+            # past the end and every case stayed green.
+            # Past the actual end the game drops the write; never-sized arrays
+            # still grow (the grow-on-demand discipline for gtag/gmap: sizing
+            # happens nowhere else, and the game runs globals fine), but a
+            # write past a sized bound is always a missing resize -- the
+            # clear-without-resize class that killed gmatch walks in game
+            # while the suite stayed green -- so it drops like the game and
+            # is recorded on top.
             sized = self.arr_sized.get(aid)
-            if sized is not None and idx >= sized and len(self.arr_oob) < 8:
-                self.arr_oob.append("%s[%d] (sized %d)"
-                                    % (self._arr_name(nid), idx, sized))
-            while idx >= len(arr):
-                arr.append(0.0)
+            if idx < len(arr):
+                pass
+            elif sized is None:
+                # Grow-on-demand arrays (gtag/gmap and kin, sized nowhere):
+                # extend like before.  The game runs globals fine, so this
+                # is the discipline, not a bug.
+                while idx >= len(arr):
+                    arr.append(0.0)
+            else:
+                # Past the actual end of a sized array: dropped, the way the
+                # game drops it.  Recorded as a candidate -- the verdict comes
+                # at the end of the run (see state_invariants): a write into
+                # a transient clear-to-resize gap resolves the same tick and
+                # is noise, while one that is still past the end when the run
+                # stops is the missing-resize class.
+                if not any(a == aid for a, _, _ in self.arr_oob):
+                    self.arr_oob.append(
+                        (aid, self._arr_name(nid), idx))
+                v = None
             if v is not None:
+                arr[idx] = v
+            elif v is not None:
                 arr[idx] = v
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))

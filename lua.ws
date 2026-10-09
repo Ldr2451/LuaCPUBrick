@@ -520,15 +520,6 @@ var progDebugV: string = ""
 // beside parseJobStart.
 var dbgStartV: string = ""
 var dbgTick0: float = 0.0
-// The program's first line, for the person holding the Brick: the parse
-// reports the character COUNT, which proves length but not content, and
-// every hard-to-believe failure so far has been arguments that are in the
-// source never arriving -- which is a text mismatch, not chip logic, and
-// only a content sample can tell the two apart.  First line only, 48 chars:
-// progDebug is line-checked for `err: `, and a head that kept its newline
-// could forge one.  Rebuilt into the end line with the start line, so it
-// survives completion rather than vanishing exactly when it is read.
-var dbgHeadV: string = ""
 
 // ---------------------------------------------------------------- value helpers
 // value tags: 0 nil, 1 number, 2 string, 3 boolean, 4 function, 5 table, 6 integer
@@ -2509,6 +2500,17 @@ mod vmReset() {  tmap.clear()
   patGmP.clear()
   patGmPos.clear()
   patGmMagic.clear()
+  // ...then re-established immediately: walks are made at run time, after
+  // this reset, and a write past the end of an array is dropped where this
+  // runs in game (the sim extends).  Length-zero walk arrays mean every
+  // cursor write is lost: the walk re-reads its defaults forever, never
+  // ends, and never warns.  Every other reset array above resizes with its
+  // clear for the same reason; these four were missed because gmatch kept
+  // working in the sim either way.
+  patGmS.resize(PAT_WALKS, "")
+  patGmP.resize(PAT_WALKS, "")
+  patGmPos.resize(PAT_WALKS, 1)
+  patGmMagic.resize(PAT_WALKS, false)
   patTid = 0
   patLastTid = 0
   // the text in inStr1 is the program's standard input, and a run starts at its
@@ -5771,14 +5773,9 @@ mod fmtPrecZero() {
 // The character count is what the user handed over, not what gets lexed: a
 // program that names a library has that piece's characters prepended, and the
 // tick count is where that shows up.
-mod parseInfoStart(src: string) {
+mod parseInfoStart(chars: int) {
   dbgTick0 = ServerUptime()
-  let plen = src.Length()
-  let cut = src.Find("\n", true, 0)
-  let lineL = if cut < 0 then plen else cut
-  let headL = if 48 < lineL then 48 else lineL
-  dbgHeadV = src.Substring(0, headL)
-  dbgStartV = "info: parse start: " .. ("" .. plen) .. " chars: " .. dbgHeadV .. "\n"
+  dbgStartV = "info: parse start: " .. ("" .. chars) .. " chars\n"
   progDebugV = dbgStartV
 }
 
@@ -5982,12 +5979,21 @@ chip lexStep() {
           lstage = 2
           lpos = lpos + 1
         } else if cp2 == 46 {
-          if cp3 == 46 {
+          // Two dots: `..`, or `...` if a third follows.  Decided with a fresh
+          // single-char read at the advanced cursor, never a two-ahead peek:
+          // the peek is the one host read this lexer cannot afford to get
+          // wrong (a miss silently un-marks every variadic function, and the
+          // parser stays quiet about it -- `f(..)` parses with no error and
+          // misbehaves).  A current-position read is the shape every other
+          // branch uses.  Either way the cursor ends past exactly what was
+          // emitted, so the token stream is identical when the peek agrees.
+          lpos = lpos + 2
+          let third = if lpos < llen then lsrc.Substring(lpos, 1) else ""
+          if third == "." {
             emitTok(5, 32, 0.0, "")
-            lpos = lpos + 3
+            lpos = lpos + 1
           } else {
             emitTok(5, 18, 0.0, "")
-            lpos = lpos + 2
           }
         } else {
           emitTok(5, 23, 0.0, "")
@@ -11700,7 +11706,7 @@ on sched {
 on goParse {
   // Before anything else, so the port says the job started even if the job then
   // fails: an `err:` line with no start above it is a chip that went quiet.
-  parseInfoStart(program)
+  parseInfoStart(program.Length())
   parseJobStart()
   // The library goes in front of the program, so the user's line numbers are
   // shifted by however many lines it added; libLines undoes that for errors.
