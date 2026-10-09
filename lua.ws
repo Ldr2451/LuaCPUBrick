@@ -1324,6 +1324,23 @@ var patGmMagic: bool[]        // per walk: its needle has magic characters.
                               // past the walk's init, so pos != ini is "yielded"
                               // (a magic needle is never empty).
 var patAfter: int = 0        // where a finished set scan goes on a match
+// TAPPEND's one-append-per-tick machine (nxMode 4): the table, the base key,
+// the call's base register and how many appends are left.  Sixteen unrolled
+// tblSetKey calls measured 4,553 nodes; the machine is one call and one tick
+// per append instead.
+var tapTid: int = 0
+var tapStart: float = 0.0
+var tapSrc: int = 0
+var tapLeft: int = 0
+// unpack's one-fill-per-tick machine (nxMode 5): the call's register, the
+// table, the low index and how many fills are left.  Sixteen unrolled tblFill
+// calls measured 766 nodes; the machine is one call instead, at one tick per
+// value, filling high to low exactly as the unroll did (the values move up
+// into the call's own registers, so copying down would overwrite them).
+var unfA: int = 0
+var unfTid: int = 0
+var unfLo: int = 0
+var unfLeft: int = 0
 var patFailTo: int = 0       // and on a miss
 var patSt: int = 0
 
@@ -9662,24 +9679,19 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
       if cnt > MAXVALS {
         vmFail("too many results to unpack")
       } else {
-        // fill high to low: the values move up into the call's own
-        // registers, so copying down would overwrite them
-        if 16 <= cnt { tblFill(a + 15, tid, lo + 15) }
-        if 15 <= cnt { tblFill(a + 14, tid, lo + 14) }
-        if 14 <= cnt { tblFill(a + 13, tid, lo + 13) }
-        if 13 <= cnt { tblFill(a + 12, tid, lo + 12) }
-        if 12 <= cnt { tblFill(a + 11, tid, lo + 11) }
-        if 11 <= cnt { tblFill(a + 10, tid, lo + 10) }
-        if 10 <= cnt { tblFill(a + 9, tid, lo + 9) }
-        if 9 <= cnt { tblFill(a + 8, tid, lo + 8) }
-        if 8 <= cnt { tblFill(a + 7, tid, lo + 7) }
-        if 7 <= cnt { tblFill(a + 6, tid, lo + 6) }
-        if 6 <= cnt { tblFill(a + 5, tid, lo + 5) }
-        if 5 <= cnt { tblFill(a + 4, tid, lo + 4) }
-        if 4 <= cnt { tblFill(a + 3, tid, lo + 3) }
-        if 3 <= cnt { tblFill(a + 2, tid, lo + 2) }
-        if 2 <= cnt { tblFill(a + 1, tid, lo + 1) }
-        if 1 <= cnt { tblFill(a, tid, lo) }
+        // fill high to low through unfStep (nxMode 5), one value per tick:
+        // the values move up into the call's own registers, so copying down
+        // would overwrite them.  Sixteen unrolled fills measured 766 nodes.
+        if 0 < cnt {
+          unfA = a
+          unfTid = tid
+          unfLo = lo
+          unfLeft = cnt
+          nxDst = vmBase + a
+          nxPc = vmPc
+          nxActive = true
+          nxMode = 5
+        }
         // An empty range answers no values, and PUC's empty result list still
         // makes the callee's own register nil -- that is the slot the compiler
         // puts the local in, so `local c = unpack(t, 2, 1)` read unpack itself.
@@ -10348,6 +10360,30 @@ mod gmStep() {
   }
 }
 
+// One append of TAPPEND's table per tick, highest index first (keys are
+// distinct, so order is unobservable; counting down needs only the remaining
+// count, not a second cursor).  The last one hands the instruction on.
+// A top-level step of its own, like gmStep: the chip call lands here, and an
+// arm leaves nxActive raised with the scalars set.
+mod tapStep() {
+  let idx = tapLeft - 1
+  tblSetKey(tapTid, 6, tapStart + idx + 1.0, "", vTag(tapSrc + idx), vNum(tapSrc + idx), vStr(tapSrc + idx))
+  tapLeft = idx
+  if tapLeft <= 0 {
+    nxActive = false
+    nxDone()
+  }
+}
+
+mod unfStep() {
+  tblFill(unfA + unfLeft - 1, unfTid, unfLo + unfLeft - 1)
+  unfLeft = unfLeft - 1
+  if unfLeft <= 0 {
+    nxActive = false
+    nxDone()
+  }
+}
+
 // Is a micro-step machine or a closure fill driving this tick?
 // vmStep routes on these; vmStepFast has to stand aside on the SAME set, and the
 // set is written once here so the two cannot drift.  A copied list is how
@@ -10446,6 +10482,10 @@ mod vmStep() {
       // cursor of 0 and matched at -1.  A scalar write in the same place lands,
       // so the arm only sets the phase and the id and this does the arrays.
       gmStep()
+    } else if nxMode == 4 {
+      tapStep()
+    } else if nxMode == 5 {
+      unfStep()
     } else {
       nxStep()
     }
@@ -11024,7 +11064,10 @@ mod vmStep() {
     } else if op == 44 {
       // TAPPEND a=table b=src c=max: append up to `max` of the last call's
       // results (registers b..) to the table at consecutive integer keys.  Used
-      // for a call in the last positional slot of a table constructor.
+      // for a call in the last positional slot of a table constructor.  One
+      // append per tick through tapStep (nxMode 4): sixteen unrolled tblSetKey
+      // calls measured 4,553 nodes and the machine is one call instead, at one
+      // tick per appended value.
       if vTag(a) != 5 {
         vmFail("attempt to index a non-table value")
       } else {
@@ -11032,22 +11075,16 @@ mod vmStep() {
         let start = tLen[tid]
         let have = if 0 <= retCountV then retCountV else 0
         let n = if have < c then have else c
-        if 1 <= n { tblSetKey(tid, 6, start + 1.0, "", vTag(b), vNum(b), vStr(b)) }
-        if 2 <= n { tblSetKey(tid, 6, start + 2.0, "", vTag(b+1), vNum(b+1), vStr(b+1)) }
-        if 3 <= n { tblSetKey(tid, 6, start + 3.0, "", vTag(b+2), vNum(b+2), vStr(b+2)) }
-        if 4 <= n { tblSetKey(tid, 6, start + 4.0, "", vTag(b+3), vNum(b+3), vStr(b+3)) }
-        if 5 <= n { tblSetKey(tid, 6, start + 5.0, "", vTag(b+4), vNum(b+4), vStr(b+4)) }
-        if 6 <= n { tblSetKey(tid, 6, start + 6.0, "", vTag(b+5), vNum(b+5), vStr(b+5)) }
-        if 7 <= n { tblSetKey(tid, 6, start + 7.0, "", vTag(b+6), vNum(b+6), vStr(b+6)) }
-        if 8 <= n { tblSetKey(tid, 6, start + 8.0, "", vTag(b+7), vNum(b+7), vStr(b+7)) }
-        if 9 <= n { tblSetKey(tid, 6, start + 9.0, "", vTag(b+8), vNum(b+8), vStr(b+8)) }
-        if 10 <= n { tblSetKey(tid, 6, start + 10.0, "", vTag(b+9), vNum(b+9), vStr(b+9)) }
-        if 11 <= n { tblSetKey(tid, 6, start + 11.0, "", vTag(b+10), vNum(b+10), vStr(b+10)) }
-        if 12 <= n { tblSetKey(tid, 6, start + 12.0, "", vTag(b+11), vNum(b+11), vStr(b+11)) }
-        if 13 <= n { tblSetKey(tid, 6, start + 13.0, "", vTag(b+12), vNum(b+12), vStr(b+12)) }
-        if 14 <= n { tblSetKey(tid, 6, start + 14.0, "", vTag(b+13), vNum(b+13), vStr(b+13)) }
-        if 15 <= n { tblSetKey(tid, 6, start + 15.0, "", vTag(b+14), vNum(b+14), vStr(b+14)) }
-        if 16 <= n { tblSetKey(tid, 6, start + 16.0, "", vTag(b+15), vNum(b+15), vStr(b+15)) }
+        if 0 < n {
+          tapTid = tid
+          tapStart = start
+          tapSrc = b
+          tapLeft = n
+          nxDst = vmBase + a
+          nxPc = vmPc
+          nxActive = true
+          nxMode = 4
+        }
       }
     } else if op == 31 {
       let bt = vTag(b)
