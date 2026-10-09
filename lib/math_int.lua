@@ -51,12 +51,11 @@ math.ult = function(...)
     error("bad argument #1 to 'math.ult' (number expected, got " .. mt .. ")", 2)
   end
   if mt == "string" then
-    local ok, v = pcall(_ult_num, m)
-    if ok then
-      m = v
-    else
+    local v = _m(15, m, 0)
+    if v == nil then
       error("bad argument #1 to 'math.ult' (number expected, got string)", 2)
     end
+    m = v
   end
   local a = _m(13, m, 0)
   if a == nil then
@@ -71,12 +70,11 @@ math.ult = function(...)
     error("bad argument #2 to 'math.ult' (number expected, got " .. wt .. ")", 2)
   end
   if wt == "string" then
-    local ok2, v2 = pcall(_ult_num, w)
-    if ok2 then
-      w = v2
-    else
+    local v2 = _m(15, w, 0)
+    if v2 == nil then
       error("bad argument #2 to 'math.ult' (number expected, got string)", 2)
     end
+    w = v2
   end
   local b = _m(13, w, 0)
   if b == nil then

@@ -136,16 +136,19 @@
 ///              with a float operand (math.fmod and the divide)
 ///   errors     error(msg [, level]) raises with msg as the message, assert is its
 ///              conditional form (a truthy first argument returns *all* of them, a
-///              falsey one raises), and pcall(f, ...) / xpcall(f, handler, ...)
-///              are the protected calls: true plus f's values, or false plus the
-///              message -- and for xpcall, false plus the handler's *first* result
+///              falsey one raises), and an error ENDS the run: there is no catch
+///              on this chip.  pcall and xpcall are loud stub pieces that raise
+///              "not supported on this chip" -- catching measured ~6,500 nodes
+///              here (marker frames, resume state, result relocation, and the
+///              marker test inlined into all four RETURN variants), which bought
+///              back the whole size budget and then some.  A program that wants
+///              to recover answers nil plus a message from its own function,
+///              which is what the library pieces here already do
 ///
 /// Not implemented yet (each is a loud error, never a wrong answer)
 ///   metatables               no setmetatable, no __index, no operator metamethods
 ///   goto and labels          a compile error
 ///   coroutines, modules
-///   pcall of pcall/xpcall    those are the builtins that push a frame and the
-///                             in-place dispatch has one result slot
 ///   integers as a type       one number type: math.type reports "integer" for a
 ///                             whole number, 1 == 1.0, and 64-bit wraparound is
 ///                             absent beyond 2^53
@@ -166,17 +169,12 @@
 ///
 /// Other differences from PUC-Lua 5.5
 ///   error's message has no "chunk:line:" prefix: the chip has no line at run
-///   time, so the text goes through as it is, and a protected call hands that
-///   text on as a value.
+///   time, so the text goes through as it is
 ///   a math PIECE given a string that is not a number raises the arithmetic
 ///   message ("attempt to add a 'string' with a 'number'") where PUC names the
 ///   function ("bad argument #1 to 'abs' (number expected, got string)").  The
 ///   pieces convert with `x + 0.0`, and that is the raise; the _m gate gets the
 ///   PUC wording right because it does the conversion itself.  Loud, never wrong
-///   a builtin passed to pcall as a VALUE names itself by its short name where
-///   PUC names it by its library path: pcall(string.format, '%d', 'x') says
-///   "to 'format'", PUC says "to 'string.format'".  A named call agrees with
-///   PUC, and the chip cannot tell which form it was reached through.
 ///   tostring of a nan is "nan" where PUC's C library writes "-nan" (the x86
 ///   default QNaN has its sign bit set).  The sign of an invalid operation's
 ///   result is not reachable from arithmetic, and the oracle harness normalises
@@ -444,16 +442,16 @@ const LIB_str_pat = "string = string or {}\nstring.find = function(...) return _
 // binding and nothing else: 25 characters, where the gsub piece is 3109.
 const LIB_str_gmatch = "string = string or {}\nstring.gmatch = _gmatch\n"
 const LIB_str_case = "string = string or {}\nstring.upper = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.upper' (string expected, got \" .. d .. \")\", 2)\nend\nreturn _s(2, b)\nend\nstring.lower = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.lower' (string expected, got \" .. d .. \")\", 2)\nend\nreturn _s(3, b)\nend\n"
-const LIB_str_misc = "string = string or {}\nlocal function _rep_num(j)\nreturn j + 0\nend\nstring.rep = function(...)\nlocal a = select('#', ...)\nif a == 0 then\nerror(\"bad argument #1 to 'string.rep' (string expected, got no value)\", 2)\nend\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nerror(\"bad argument #1 to 'string.rep' (string expected, got \" .. e .. \")\", 2)\nend\nif a < 2 then\nerror(\"bad argument #2 to 'string.rep' (number expected, got no value)\", 2)\nend\nlocal f = type(c)\nlocal g = c\nif f ~= \"number\" and f ~= \"string\" then\nerror(\"bad argument #2 to 'string.rep' (number expected, got \" .. f .. \")\", 2)\nend\nif f == \"string\" then\nlocal h, j = pcall(_rep_num, c)\nif h then\ng = j\nelse\nerror(\"bad argument #2 to 'string.rep' (number expected, got string)\", 2)\nend\nend\nlocal l = _m(13, g, 0)\nif l == nil then\nerror(\"bad argument #2 to 'string.rep' (number has no integer representation)\", 2)\nend\nc = l\nif d == nil then\nd = \"\"\nelse\nlocal m = type(d)\nif m == \"number\" then\nd = tostring(d)\nelseif m ~= \"string\" then\nerror(\"bad argument #3 to 'string.rep' (string expected, got \" .. m .. \")\", 2)\nend\nend\nif c <= 0 then return \"\" end\nlocal o = \"\"\nlocal p = b\nlocal q = c\nlocal u = false\nwhile 0 < q do\nif q % 2 == 1 then\nif u then\no = o .. d .. p\nelse\no = p\nu = true\nend\nend\nq = (q - q % 2) / 2\nif 0 < q then p = p .. d .. p end\nend\nreturn o\nend\nstring.reverse = function(...)\nlocal x = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal y = type(b)\nif y == \"number\" then\nb = tostring(b)\nelseif y ~= \"string\" then\nlocal z = y\nif x then z = \"no value\" end\nerror(\"bad argument #1 to 'string.reverse' (string expected, got \" .. z .. \")\", 2)\nend\nlocal o = \"\"\nfor aa = #b, 1, -1 do o = o .. _s(1, b, aa - 1, 1) end\nreturn o\nend\n"
+const LIB_str_misc = "string = string or {}\nstring.rep = function(...)\nlocal a = select('#', ...)\nif a == 0 then\nerror(\"bad argument #1 to 'string.rep' (string expected, got no value)\", 2)\nend\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nerror(\"bad argument #1 to 'string.rep' (string expected, got \" .. e .. \")\", 2)\nend\nif a < 2 then\nerror(\"bad argument #2 to 'string.rep' (number expected, got no value)\", 2)\nend\nlocal f = type(c)\nlocal g = c\nif f ~= \"number\" and f ~= \"string\" then\nerror(\"bad argument #2 to 'string.rep' (number expected, got \" .. f .. \")\", 2)\nend\nif f == \"string\" then\nlocal h = _m(15, c, 0)\nif h == nil then\nerror(\"bad argument #2 to 'string.rep' (number expected, got string)\", 2)\nend\ng = h\nend\nlocal j = _m(13, g, 0)\nif j == nil then\nerror(\"bad argument #2 to 'string.rep' (number has no integer representation)\", 2)\nend\nc = j\nif d == nil then\nd = \"\"\nelse\nlocal l = type(d)\nif l == \"number\" then\nd = tostring(d)\nelseif l ~= \"string\" then\nerror(\"bad argument #3 to 'string.rep' (string expected, got \" .. l .. \")\", 2)\nend\nend\nif c <= 0 then return \"\" end\nlocal m = \"\"\nlocal o = b\nlocal p = c\nlocal q = false\nwhile 0 < p do\nif p % 2 == 1 then\nif q then\nm = m .. d .. o\nelse\nm = o\nq = true\nend\nend\np = (p - p % 2) / 2\nif 0 < p then o = o .. d .. o end\nend\nreturn m\nend\nstring.reverse = function(...)\nlocal u = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal x = type(b)\nif x == \"number\" then\nb = tostring(b)\nelseif x ~= \"string\" then\nlocal y = x\nif u then y = \"no value\" end\nerror(\"bad argument #1 to 'string.reverse' (string expected, got \" .. y .. \")\", 2)\nend\nlocal m = \"\"\nfor z = #b, 1, -1 do m = m .. _s(1, b, z - 1, 1) end\nreturn m\nend\n"
 const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775808\n"
-const LIB_math_int = "math = math or {}\nlocal function _ult_num(g)\nreturn g + 0\nend\nmath.ult = function(...)\nlocal c = select(\"#\", ...)\nif c == 0 then\nerror(\"bad argument #1 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal d = select(1, ...)\nlocal e = type(d)\nif e ~= \"number\" and e ~= \"string\" then\nerror(\"bad argument #1 to 'math.ult' (number expected, got \" .. e .. \")\", 2)\nend\nif e == \"string\" then\nlocal f, g = pcall(_ult_num, d)\nif f then\nd = g\nelse\nerror(\"bad argument #1 to 'math.ult' (number expected, got string)\", 2)\nend\nend\nlocal h = _m(13, d, 0)\nif h == nil then\nerror(\"bad argument #1 to 'math.ult' (number has no integer representation)\", 2)\nend\nif c < 2 then\nerror(\"bad argument #2 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal i = select(2, ...)\nlocal j = type(i)\nif j ~= \"number\" and j ~= \"string\" then\nerror(\"bad argument #2 to 'math.ult' (number expected, got \" .. j .. \")\", 2)\nend\nif j == \"string\" then\nlocal k, l = pcall(_ult_num, i)\nif k then\ni = l\nelse\nerror(\"bad argument #2 to 'math.ult' (number expected, got string)\", 2)\nend\nend\nlocal o = _m(13, i, 0)\nif o == nil then\nerror(\"bad argument #2 to 'math.ult' (number has no integer representation)\", 2)\nend\nif h < 0 then\nif o < 0 then\nreturn h < o\nelse\nreturn false\nend\nelse\nif o < 0 then\nreturn true\nelse\nreturn h < o\nend\nend\nend\nmath.floor = function(p) return _m(1, p, 0) end\nmath.ceil = function(p) return _m(2, p, 0) end\nmath.tointeger = function(p) return _m(13, p, 0) end\nmath.type = function(p) return _m(14, p, 0) end\nmath.abs = function(p) if type(p) == \"string\" then p = p + 0.0 end if p < 0 then return -p end if p == 0 then return p - p end return p end\nmath.sqrt = function(p) return _m(3, p, 0) end\n"
+const LIB_math_int = "math = math or {}\nlocal function _ult_num(f)\nreturn f + 0\nend\nmath.ult = function(...)\nlocal c = select(\"#\", ...)\nif c == 0 then\nerror(\"bad argument #1 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal d = select(1, ...)\nlocal e = type(d)\nif e ~= \"number\" and e ~= \"string\" then\nerror(\"bad argument #1 to 'math.ult' (number expected, got \" .. e .. \")\", 2)\nend\nif e == \"string\" then\nlocal f = _m(15, d, 0)\nif f == nil then\nerror(\"bad argument #1 to 'math.ult' (number expected, got string)\", 2)\nend\nd = f\nend\nlocal g = _m(13, d, 0)\nif g == nil then\nerror(\"bad argument #1 to 'math.ult' (number has no integer representation)\", 2)\nend\nif c < 2 then\nerror(\"bad argument #2 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal h = select(2, ...)\nlocal i = type(h)\nif i ~= \"number\" and i ~= \"string\" then\nerror(\"bad argument #2 to 'math.ult' (number expected, got \" .. i .. \")\", 2)\nend\nif i == \"string\" then\nlocal j = _m(15, h, 0)\nif j == nil then\nerror(\"bad argument #2 to 'math.ult' (number expected, got string)\", 2)\nend\nh = j\nend\nlocal k = _m(13, h, 0)\nif k == nil then\nerror(\"bad argument #2 to 'math.ult' (number has no integer representation)\", 2)\nend\nif g < 0 then\nif k < 0 then\nreturn g < k\nelse\nreturn false\nend\nelse\nif k < 0 then\nreturn true\nelse\nreturn g < k\nend\nend\nend\nmath.floor = function(l) return _m(1, l, 0) end\nmath.ceil = function(l) return _m(2, l, 0) end\nmath.tointeger = function(l) return _m(13, l, 0) end\nmath.type = function(l) return _m(14, l, 0) end\nmath.abs = function(l) if type(l) == \"string\" then l = l + 0.0 end if l < 0 then return -l end if l == 0 then return l - l end return l end\nmath.sqrt = function(l) return _m(3, l, 0) end\n"
 const LIB_math_trig = "math = math or {}\nmath.sin = function(a) return _m(4, a, 0) end\nmath.cos = function(a) return _m(5, a, 0) end\nmath.tan = function(a) return _m(6, a, 0) end\nmath.asin = function(a) return _m(7, a, 0) end\nmath.acos = function(a) return _m(8, a, 0) end\nmath.atan = function(b, a) return _m(9, b, a or 1) end\nmath.deg = function(a) return a * 57.295779513082323 end\nmath.rad = function(a) return a * 0.017453292519943295 end\n"
 const LIB_math_exp = "math = math or {}\nmath.exp = function(a) return _m(10, a, 0) end\nmath.log = function(a, c)\nif c == nil then return _m(11, a, 0) end\nif c == 10 then return _m(12, a, 0) end\nreturn _m(11, a, 0) / _m(11, c, 0)\nend\nmath.ldexp = function(a, d) return a * (2.0 ^ d) end\n"
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(a, b, c, d)\nb = b or \"\"\nc = c or 1\nd = d or #a\nlocal e = \"\"\nfor f = c, d do\nlocal g = a[f]\nif f > c then e = e .. b end\ne = e .. g\nend\nreturn e\nend\n"
 const LIB_tab_sort = "table = table or {}\n_lt = function(c, d) return c < d end\ntable.sort = function(e, f)\nlocal g = f or _lt\nfor h = 2, #e do\nlocal k = e[h]\nlocal l = h - 1\nwhile l >= 1 and g(k, e[l]) do e[l + 1] = e[l] l = l - 1 end\ne[l + 1] = k\nend\nend\n"
 const LIB_io = "io = io or {}\nio.read = function(...) if select('#', ...) == 0 then return _rd('*l') end return _rd((...)) end\nio.write = function(...) for a = 1, select('#', ...) do _wr(tostring((select(a, ...)))) end end\n_io_next = function() local b = _rd('*l') if b == nil then return nil end return b end\nio.lines = function() _rd('*r') return _io_next end\n"
 const LIB_str_gsub = "string = string or {}\nstring.gsub = function(c, e, f, g)\nif type(c) == \"number\" then c = tostring(c) end\nlocal h, l, t, u, x = #c, \"\", 1, 0, -1\nlocal y = _s(1, e, 0, 1) == \"^\"\nlocal z = type(f)\nif f == nil then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got no value)\", 2) end\nif z == \"number\" then f = tostring(f) z = \"string\" end\nlocal aa = function(v)\nlocal tv = type(v)\nif tv == \"string\" then return v end\nif tv == \"number\" then return tostring(v) end\nif tv == \"boolean\" then error(\"invalid replacement value (a boolean)\", 2) end\nerror(\"invalid replacement value (a \" .. tv .. \")\", 2)\nend\nlocal ab = function(kt, kr, aa, ac, m)\nif kt == \"function\" then\nlocal v, w\nif ac[3] == 0 then v, w = kr(m) else v, w = kr(unpack(ac, 4, 3 + ac[3])) end\nif v == nil or v == false then return m end\nif w == nil or w == false then return aa(v) end\nreturn aa(v) .. aa(w)\nelseif kt == \"table\" then\nlocal k = m\nif ac[3] > 0 then k = ac[4] end\nlocal v = kr[k]\nif v == nil or v == false then return m end\nreturn aa(v)\nelse\nlocal o, i, rl = \"\", 1, #kr\nwhile i <= rl do\nlocal j = string.find(kr, \"%\", i, true)\nif j == nil then o = o .. _s(1, kr, i - 1, rl - i + 1) break end\nif i < j then o = o .. _s(1, kr, i - 1, j - i) end\nif j == rl then error(\"invalid use of '%' in replacement string\", 2) end\nlocal d = _s(1, kr, j, 1)\nif d == \"%\" then o = o .. \"%\"\nelseif d == \"0\" then o = o .. m\nelse\nlocal q = _s(4, d, 0, 0) - 48\nif q < 1 or 9 < q then error(\"invalid use of '%' in replacement string\", 2) end\nif 1 < q and ac[3] < q then error(\"invalid capture index %\" .. d, 2) end\nif q == 1 and ac[3] == 0 then o = o .. m else o = o .. aa(ac[q + 3]) end\nend\ni = j + 2\nend\nreturn o\nend\nend\nif z ~= \"string\" and z ~= \"table\" and z ~= \"function\" then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got \" .. z .. \")\", 2) end\nif g == nil then g = h + 1 end\nif type(g) ~= \"number\" then error(\"bad argument #4 to 'string.gsub' (number expected, got \" .. type(g) .. \")\", 2) end\ng = _m(13, g, 0)\nif g == nil then error(\"bad argument #4 to 'string.gsub' (number has no integer representation)\", 2) end\nif g < 1 then return c, 0 end\nwhile u < g do\nlocal ac = {_pat(2, c, e, t)}\nif ac[1] == nil then break end\nlocal ad, ae = ac[1], ac[2]\nif ae == x then\nif t <= h then l = l .. _s(1, c, t - 1, 1) t = t + 1 else break end\nelse\nif t < ad then l = l .. _s(1, c, t - 1, ad - t) end\nl = l .. ab(z, f, aa, ac, _s(1, c, ad - 1, ae - ad + 1))\nu = u + 1\nt = ae + 1\nend\nx = ae\nif y then break end\nend\nreturn l .. _s(1, c, t - 1, h - t + 1), u\nend\n"
-const LIB_tonumber = "local function _tonum_conv(b)\nreturn b + 0\nend\ntonumber = function(...)\nlocal a = select(\"#\", ...)\nlocal b = select(1, ...)\nlocal c = select(2, ...)\nif a == 0 then\nerror(\"bad argument #1 to 'tonumber' (value expected)\", 2)\nend\nif c ~= nil then\nif type(b) ~= \"string\" then\nerror(\"bad argument #1 to 'tonumber' (string expected, got \" .. type(b) .. \")\", 2)\nend\nif c < 2 or c > 36 then\nerror(\"bad argument #2 to 'tonumber' (base out of range)\", 2)\nend\nreturn _tonum_int(b, c)\nend\nif type(b) == \"number\" then return b end\nif type(b) ~= \"string\" then return nil end\nlocal d, e = pcall(_tonum_conv, b)\nif d then return e end\nif _pat(0, b, \"0x\", 1, 1) or _pat(0, b, \"0X\", 1, 1) then return _tonum_hex(b) end\nreturn nil\nend\n"
+const LIB_tonumber = "tonumber = function(...)\nlocal a = select(\"#\", ...)\nlocal b = select(1, ...)\nlocal c = select(2, ...)\nif a == 0 then\nerror(\"bad argument #1 to 'tonumber' (value expected)\", 2)\nend\nif c ~= nil then\nif type(b) ~= \"string\" then\nerror(\"bad argument #1 to 'tonumber' (string expected, got \" .. type(b) .. \")\", 2)\nend\nif c < 2 or c > 36 then\nerror(\"bad argument #2 to 'tonumber' (base out of range)\", 2)\nend\nreturn _tonum_int(b, c)\nend\nif type(b) == \"number\" then return b end\nif type(b) ~= \"string\" then return nil end\nlocal d = _m(15, b, 0)\nif d ~= nil then return d end\nif _pat(0, b, \"0x\", 1, 1) or _pat(0, b, \"0X\", 1, 1) then return _tonum_hex(b) end\nreturn nil\nend\n"
 const LIB_math_random = "math = math or {}\nlocal _rs = 12345\nmath.random = function(c, d, ...)\nif select(\"#\", c, d, ...) > 2 then\nerror(\"wrong number of arguments\", 2)\nend\nlocal e = (_rs * 1664525 + 1013904223) & 0xFFFFFFFF\n_rs = e\nif c == nil then\nreturn e / 4294967296.0\nend\nif type(c) == \"string\" then c = c + 0 end\nif _m(13, c, 0) == nil then\nerror(\"bad argument #1 to 'random' (number has no integer representation)\", 2)\nend\nlocal f, g\nif d == nil then\nf, g = 1, c\nelse\nif type(d) == \"string\" then d = d + 0 end\nif _m(13, d, 0) == nil then\nerror(\"bad argument #2 to 'random' (number has no integer representation)\", 2)\nend\nf, g = c, d\nargn = \"2\"\nend\nif g < f then\nerror(\"bad argument #1 to 'random' (interval is empty)\", 2)\nend\nreturn f + _m(1, e / 4294967296.0 * (g - f + 1), 0)\nend\nmath.randomseed = function(h, i)\nlocal j = 0\nlocal k = 0\nif h ~= nil then j = _m(1, h, 0) end\nif i ~= nil then k = _m(1, i, 0) end\nlocal l = (j * 1013904223 + k) & 0xFFFFFFFF\nif l == 0 then l = 1 end\n_rs = l\nreturn j, k\nend\n"
 const LIB_io_stderr = "io = io or {}\nio.stderr = {\nwrite = function(a, ...)\nfor b = 1, select(\"#\", ...) do _wr(tostring((select(b, ...)))) end\nreturn a\nend,\nflush = function(a) return a end,\n}\n"
 const LIB_os_exit = "os = os or {}\nos.exit = function(a)\nif a == nil or a == true or a == 0 then error(\"\", 0) else error(\"exit: \" .. tostring(a), 0) end\nend\n"
@@ -966,37 +964,6 @@ var cloActive: bool = false
 // with the build, so it now repeats only the two facts worth having.
 var GTAG_INIT: int[] = [1, 1, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 4, 4]
 var GNUM_INIT: float[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 23.0, 24.0, 0.0, 1.0, 2.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 0.0, 1.0, 2.0, 3.0, 25.0, 26.0]
-
-// pcall, which PUC has in C and is a gate here for the same reason.
-//
-// The shape is a marker frame: a sentinel fid on the same fFunc stack the calls
-// use, carrying the pcall's own return.  pcall pushes the marker and then makes
-// the call to f itself with that call's results one register past the pcall's
-// own, so `true` has a register of its own and the values land beside it.  The
-// marker is what makes nesting work: a pcall inside a pcall has its own, and
-// the innermost one is what an error unwinds to.
-const PCALL_MARK = 99
-var pcallH: float = 0.0         // xpcall's message handler, as a value: it has
-var pcallHT: int = 0            // to be a variable, because the protected call's
-                               // own frame is written over its register
-var pcallMsg: string = ""      // the error a protected call caught
-var pcallUnwind: bool = false  // and that there is one to unwind
-var pcallDepth: int = 0        // markers on the stack: above zero, an error is a value
-var pcallIsX: bool = false     // and the call is xpcall, so an error goes to a handler
-var pcallMode: int = 0         // 0 the protected call itself, 1 its message handler
-var pcallBase: int = 0         // the frame the call was made from: a caught error
-                               // leaves vmBase wherever it got to
-var pcallGate: bool = false    // a gate is waiting to run at pcallGatePc
-var pcallGatePc: int = 0       // which is the protected call's own instruction
-var pcallGateArgs: int = 0     // and how many arguments it should be given
-var pcallRan: bool = false     // and the dispatch now under way is that gate
-var pcallBad: int[]            // whether that dispatch raised: an array, because
-                               // a mod's write to a file variable is not read
-                               // back reliably inside the same step
-var pcallGo: bool = false      // and pcallEnter has a frame to push
-var pcallFid: int = 0          // which function
-var pcallA: int = 0            // the pcall's own register
-var pcallNArgs: int = 0        // how many arguments it was given
 
 // PUC's string-to-number coercion, which the chip did not have at all: '3' + 1
 // is 4, ' 2.5 ' * 2 is 5.0, '0x10' + 0 is 16, '1e3' + 0 is 1000.0, -'3' is -3,
@@ -1725,8 +1692,8 @@ mod bPatch(pos: int, target: int) {
 // its copies times its body.  Sharing wins only when grids stay few while
 // sites are many (vmFail: 122 sites on 53 grids; tblSetKey: sixteen copies
 // on one grid), and nested chips multiply through multi-instance outers
-// (retCopy's 17 came through pcallEnd's 15).  Flipped back to mods,
-// measured: pcallEnd -341, retCopy -163, blkExit -160, pushOp -139,
+// (retCopy's 17 came through gateHigh's 15).  Flipped back to mods,
+// measured: retCopy -163, blkExit -160, pushOp -139,
 // blkEnter -117, a Tier-2 batch (vmReturn, vmForLoop, cloStep, nxStep,
 // forDoHead, regSync, popCtl, lstAppendB, bitFail, rdTake, rdLine,
 // rewindTo) -662 together, then gSet/vSetIntSat/vSetIntTag/pushVal/
@@ -2289,7 +2256,7 @@ mod retAdjust(src: int, dst: int, k: int, n: int) {
   if 16 <= k { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] } else if 16 <= n { vtag[dst+15] = 0 }
 }
 
-// A CHIP: inlined copies multiply through outer mods (pcallEnd, gateHigh).
+// A CHIP: inlined copies multiply through outer mods (gateHigh, vmStep).
 // It stays its own chip on purpose: folding its three sites into retAdjust
 // measured +1,073 nodes (58,032 -> 59,105), because those sites inline the
 // bigger if/else body per site instead of sharing it.
@@ -2336,7 +2303,6 @@ mod vSetN(r: int, tag: int, num: float) {
   vtag[vmBase + r] = tag
   vnum[vmBase + r] = num
 }
-
 mod vSetNum(r: int, v: float) {
   vtag[vmBase + r] = 1
   vnum[vmBase + r] = v
@@ -2491,7 +2457,6 @@ mod vmReset() {  tmap.clear()
   logLen = 0
   logLines.clear()
   fmtDd.clear()
-  pcallBad.clear()
   patSl.clear()
   patCapS.clear()
   patCapE.clear()
@@ -4536,67 +4501,6 @@ mod slotBase() -> int {
   return fVaB[fVaB.length() - 1] + 1
 }
 
-// The protected call has come back and the marker is on top, so the pcall's
-// values are its own: the call's k results move up past the pcall's register,
-// `true` goes there, and the pcall's caller carries on with the count it asked
-// for.
-//
-// One mod, and one call site per return variant plus one for a gate, because
-// these are mods this size and a test in the middle of one is the trap the
-// header warns about.  Every call site passes the same thing -- the results are
-// at vmBase + a -- because a frame starts at the very register its results go
-// to, so that is where they are in all four return forms and in a gate.
-// A CHIP: 15 instances, 4 grids.
-// A mod, not a chip: measured cheaper here (instances cost pins -- see the
-// chip screening note on cNum).
-mod pcallEnd(src: int, k: int, extra: int) {
-  let ra = fRetA[fRetA.length() - 1]
-  let rb = fRetBase[fRetBase.length() - 1]
-  let rpc = fRetPC[fRetPC.length() - 1]
-  let want = fRetN[fRetN.length() - 1]
-  fFunc.pop()
-  fBase.pop()
-  fRetA.pop()
-  fRetBase.pop()
-  fRetPC.pop()
-  fRetN.pop()
-  vaTop = fVaB.pop().Value
-  forDepth = fForDepth.pop()
-  pcallDepth = pcallDepth - 1
-  // The values move up one register, into the space after the call's own, and
-  // the call's own register gets true or false: true for the protected call
-  // itself (mode 0), false for a message handler's results (modes 1 and 2 --
-  // PUC 5.5 returns false plus the handler's results, measured not assumed).
-  // A handler contributes one value even when it returns more: a handler
-  // returning 7, 8 gives false 7 and not false 7 8.  Copying up cannot overwrite
-  // anything, which copying down would.
-  var m = 1
-  if pcallMode == 0 {
-    retCopy(src, rb + ra + 1, k)
-    vtag[rb + ra] = 3
-    vnum[rb + ra] = 1.0
-    m = (if 1 <= k then k else 0) + extra + 1
-  } else {
-    let one = rb + ra + 1
-    if 1 <= k {
-      vtag[one] = vtag[src]
-      vnum[one] = vnum[src]
-      vstr[one] = vstr[src]
-    } else {
-      vtag[one] = 2
-      vnum[one] = 0.0
-      vstr[one] = "<no error object>"
-    }
-    vtag[rb + ra] = 3
-    vnum[rb + ra] = 0.0
-    m = 2
-  }
-  let cnt = if want == -2 then m else if want < m then want else m
-  vmBase = rb
-  vmPc = rpc
-  retCountV = cnt
-}
-
 // outnumarr's value test, in one place because eight call sites have to
 // agree: a number (1), a float (6), nil (0) and a boolean (3) may be
 // stored, and nil stores 0.0.  Anything else is a table, a string or a
@@ -5761,23 +5665,6 @@ mod cellRead(fid: int, k: int, parent: bool) -> int {
   return toInt(vaNum[slotBase() + 3 * fUpSlot[fid * MAX_UP + k]])
 }
 
-mod pcallEndJoin(src: int, fixed: int, tailSrc: int, tail: int) {
-  let dst = fRetBase[fRetBase.length() - 1] + fRetA[fRetA.length() - 1] + 1
-  let want = fRetN[fRetN.length() - 1]
-  let have = fixed + tail
-  let keep = if want == -2 then have else if want < have then want else have
-  let fixedKeep = if fixed < keep then fixed else keep
-  let tailKeep = keep - fixedKeep
-  let save = vaTop
-  if 0 < tail {
-    vaSpill(tailSrc, save, tail)
-  }
-  if 0 < tailKeep {
-    vaFill(save, dst + fixedKeep, tailKeep)
-  }
-  pcallEnd(src, fixed, tailKeep)
-}
-
 // One digit per tick.  Digits come out least significant first and are
 // prepended, so no array is needed to reverse them.  Base 10 divides a
 // non-negative value; the radix bases divide the signed one.
@@ -5868,7 +5755,6 @@ mod parseJobStart() {
   // One reserved function slot per gate builtin (ids 0..NB-1), so a program's
   // own functions start at NB and can never collide with one.  The rest of the
   // standard library is Lua source prepended to the program (see libIter etc).
-  pcallBad.resize(1, 0)
   patSl.resize(PAT_STACK, 0)
   patCapS.resize(33, 0)
   patCapE.resize(33, 0)
@@ -7696,23 +7582,16 @@ mod exprMicro() {
   }
 }
 
-// An error inside a pcall is a value, not the end of the program.  vmFailed is
-// set either way, because the arms that check it after a possible failure must
-// not go on to do the work that failed -- pcallStep clears it when it hands the
-// message over.
-// A CHIP: 122 lexical sites (174 instances through outer inlining) share 53
-// small grids -- one per distinct message, the largest shared by 89. Error
-// path, so per-call ticks are irrelevant; the saving is instantiated gates.
+// An error ends the program: errV carries PUC's exact words and the run
+// stops.  (Protected calls are gone -- pcall/xpcall are loud stub pieces
+// now -- so there is no unwind path anymore, only this one.)
+// A CHIP: 122 lexical sites share 53 small grids -- one per distinct
+// message, the largest shared by 89. Error path, so per-call ticks are
+// irrelevant; the saving is instantiated gates.
 chip vmFail(msg: string) {
   vmFailed = true
-  pcallBad[0] = 1
-  if pcallDepth > 0 {
-    pcallMsg = msg
-    pcallUnwind = true
-  } else {
-    errV = msg
-    vmHalted = true
-  }
+  errV = msg
+  vmHalted = true
 }
 
 // PUC's bitwise message names the FIRST operand that is not an integer -- the
@@ -7731,62 +7610,6 @@ mod bitFail(lt: int, lv: float, rt: int, rv: float) {
   } else if rt != 6 && !(rt == 1 && rv == floor(rv)) {
     vmFail("attempt to perform bitwise operation on a " .. typeName(rt)
       .. " value")
-  }
-}
-
-mod pcallEnter() {
-  let cid = pcallFid
-  let inner = if cid < cloBase then cid else cloF[cid]
-  let a = pcallA
-  let a1 = if 1 < pcallNArgs then pcallNArgs - 1 else 0
-  let base = pcallBase
-  // A protected call's frame starts one past its own register, so the true
-  // survives under it.  A message handler's starts *at* its register: the
-  // false is there already and its results belong there.
-  let nbase = if pcallMode == 0 then base + a + 1 else base + a
-  let np = fParams[inner]
-  let nslots = 3 * fUpSlotN[inner] + 1
-  let argSrc = if pcallMode != 0 then nbase else if pcallIsX then base + a + 3 else base + a + 2
-  if 8 < np {
-    vmFail("too many parameters")
-  } else if vaTop + nslots > MAX_VA {
-    // The vararg stack is what runs out, not the cell arena: a cell is three
-    // words of it, so MAX_VA/3 binds long before MAX_CELL (1024) does.  Saying
-    // which one is the difference between a message a reader can act on and one
-    // that points at the wrong arena.
-    vmFail("too many captured locals live at once")
-  } else if vaTop + nslots + (if fVar[inner] && np < a1 then a1 - np else 0) > MAX_VA {
-    vmFail("too many varargs")
-  } else {
-    // the parameters land in the new frame from one past the pcall's own
-    // register, and retAdjust's nil-fill is what a missing argument is
-    retAdjust(argSrc, nbase, a1, np)
-    let nva = if fVar[inner] && np < a1 then a1 - np else 0
-    frameSeq = frameSeq + 1
-    let slotB = vaTop
-    vaNum[slotB] = frameSeq
-    vaSpill(nbase + np, slotB + nslots, nva)
-    // The entry is the CALLER's top, not the callee's base: every return pops
-    // to it, so sequential calls cannot orphan their slot tables below it.
-    // Storing base here leaked nslots a call -- 250 sequential calls fit
-    // MAX_VA and 300 did not -- because no return ever went below it.
-    fVaB.push(slotB)
-    vaTop = slotB + nslots + nva
-    fFunc.push(cid)
-    fBase.push(nbase)
-    if pcallMode == 0 {
-      fRetA.push(a + 1)
-    } else {
-      // a message handler's results go where its own register is: the false is
-      // already there and there is no true to step over
-      fRetA.push(a)
-    }
-    fRetBase.push(base)
-    fRetPC.push(vmPc + 1)
-    fRetN.push(-2)
-    fForDepth.push(forDepth)
-    vmBase = nbase
-    vmPc = fStart[inner]
   }
 }
 
@@ -8350,7 +8173,7 @@ mod cellAt(fid: int, k: int) -> int {
   // register of the frame that owns the cell, so the register is stale from that
   // moment and an unconditional copy undoes it -- `while i <= 4 do local f =
   // function() s = s + i end f() end` answered 4 where PUC answers 10, which is
-  // lockstep-pcall's shape and the suite caught.
+  // lockstep-loop-cell's shape and the suite caught.
   if !uDirty[cell] {
     let reg = fUpSrc[fid * MAX_UP + k]
     uTag[cell] = vtag[vmBase + reg]
@@ -8384,121 +8207,6 @@ mod fmtDdMul(hi: float, lo: float, c: float) {
   let bb = s - ph
   fmtDd[0] = s
   fmtDd[1] = (ph - (s - bb)) + (t - bb)
-}
-
-// One frame per tick off a caught error, until the frame it pops is the marker:
-// then the pair is (false, message) where the pcall's results go and the pcall's
-// caller carries on.  A loop is a state machine here, like everything else on
-// the chip -- but this one is a tick of its own per frame, so a deep stack costs
-// a deep stack in ticks and nothing else.
-mod pcallStep() {
-  // A caught error abandons whatever machine raised it.  A gate that answers
-  // through a micro-step (_fmt, _pat, _gmatch) leaves that machine running with
-  // its state mid-conversion, and the unwind does not stop it: the next tick
-  // carried on from there, failed again -- this time with pcallDepth back at
-  // zero, so the second failure ended the program and lost the false, message
-  // the first one had already produced.  The pcall latches go with it, or the
-  // gate would be dispatched again after the unwind finished.
-  nxActive = false
-  fmtGo = false
-  patGo = false
-  pcallGate = false
-  pcallGo = false
-  pcallRan = false
-  let popped = fFunc[fFunc.length() - 1]
-  // the marker's own return, read before the pops take it off the stack: these
-  // are where the false and the message (or the handler's results) go
-  var ra = 0
-  var rb = 0
-  var rpc = 0
-  var want = 0
-  if popped == PCALL_MARK {
-    ra = fRetA[fRetA.length() - 1]
-    rb = fRetBase[fRetBase.length() - 1]
-    rpc = fRetPC[fRetPC.length() - 1]
-    want = fRetN[fRetN.length() - 1]
-  }
-  fFunc.pop()
-  fBase.pop()
-  fRetA.pop()
-  fRetBase.pop()
-  fRetPC.pop()
-  fRetN.pop()
-  vaTop = fVaB.pop().Value
-  forDepth = fForDepth.pop()
-  if popped == PCALL_MARK {
-    pcallUnwind = false
-    vmFailed = false
-    // false is in the pcall's own register either way: pcall puts the message
-    // beside it, xpcall puts the handler's results there and calls the handler
-    // to get them.  PUC 5.5 returns false plus whatever the handler returned --
-    // measured, not assumed: the false is there even when the handler returns a
-    // truthy thing of its own.
-    vtag[rb + ra] = 3
-    vnum[rb + ra] = 0.0
-    pcallMode = if pcallIsX then 1 else 0
-    if pcallIsX {
-      // the frames above the marker are gone, so the base is the pcall's own
-      // again: a gate handler is dispatched with the instruction's register
-      // read against it, and pcallEnter sets it again for a function handler
-      vmBase = rb
-      // the marker stays: the handler's results are its pcallEnd's to place, and
-      // pcallEnd pops it
-      fFunc.push(PCALL_MARK)
-      fBase.push(rb)
-      fRetA.push(ra)
-      fRetBase.push(rb)
-      fRetPC.push(rpc)
-      fRetN.push(want)
-      fVaB.push(vaTop)
-      fForDepth.push(forDepth)
-      let ht = pcallHT
-      let hn = pcallH
-      let hid = toInt(hn)
-      pcallBad[0] = 0
-      if ht == 4 && hid < NB {
-        // A gate handler: the function and the message go where the dispatch
-        // reads them -- the instruction's own register and the one above it --
-        // and the dispatch runs at the xpcall instruction.  The false is
-        // rewritten by pcallEnd when the gate is done with the slot.
-        vtag[rb + ra] = 4
-        vnum[rb + ra] = hn
-        vtag[rb + ra + 1] = 2
-        vnum[rb + ra + 1] = 0.0
-        vstr[rb + ra + 1] = pcallMsg
-        pcallGateArgs = 1
-        pcallRan = true
-        pcallGate = true
-        pcallMode = 2
-      } else {
-        // a Lua handler, called with the message as its only argument, and its
-        // results landing where the false's partner goes
-        vtag[rb + ra + 1] = 2
-        vnum[rb + ra + 1] = 0.0
-        vstr[rb + ra + 1] = pcallMsg
-        pcallFid = hid
-        pcallBase = rb
-        pcallA = ra + 1
-        pcallNArgs = 2
-        pcallGo = true
-      }
-    } else {
-      pcallDepth = pcallDepth - 1
-      vtag[rb + ra + 1] = 2
-      vnum[rb + ra + 1] = 0.0
-      vstr[rb + ra + 1] = pcallMsg
-      vmBase = rb
-      vmPc = rpc
-      retCountV = 2
-    }
-  } else if fFunc.length() == 0 {
-    // The error outran the protection, which pcallDepth > 0 says cannot happen.
-    // The stack is the chip's only record of where the program was, so the
-    // alternative is a pop of nothing.
-    pcallUnwind = false
-    errV = pcallMsg
-    vmHalted = true
-  }
 }
 
 // Fill one cell of a closure per tick, then publish the value.  nxActive
@@ -8560,20 +8268,11 @@ mod fmtFScale() {
 }
 
 // A micro-step gate is finished: its results are at nxDst and retCountV counts
-// them.  Normally the instruction steps past itself.  A gate a pcall dispatched
-// in place hands them to pcallEnd instead, which moves them up one and writes
-// the pcall's own true (or its handler's false) below -- so the protected call
-// is only completed here, once the work is actually done.  The other outcome
-// never arrives: a machine that raises goes to the unwind with pcallBad set, and
-// pcallStep answers false, message.
+// them, and the instruction steps past itself.  A machine that raises ends
+// the program with the message, there being no unwind anymore.
 // A CHIP: 6 instances, 1 grid.
 chip nxDone() {
-  if pcallRan {
-    pcallRan = false
-    pcallEnd(nxDst, if 0 <= retCountV then retCountV else 0, 0)
-  } else {
-    vmPc = nxPc + 1
-  }
+  vmPc = nxPc + 1
 }
 
 mod fmtDone() {
@@ -8717,6 +8416,43 @@ mod patAnswer() {
   } else {
     patSt = 16
   }
+}
+
+// One literal find/match/gsub-step answer, from the scalars fid-20 left
+// (patStart is the 0-based hit or -1, patI the end-exclusive index, patMode
+// the call's mode).  A top-level step of its own, called from vmStep: array
+// writes inside the gate arm are dropped, so the arm only computes and this
+// writes.  Shapes mirror patNone/patDone: nil counts 1, a match is one
+// string, positions are two integers, a gsub step adds the zero count.
+mod patPlainAnswer() {
+  if patStart < 0 {
+    vtag[nxDst] = 0
+    vnum[nxDst] = 0.0
+    vstr[nxDst] = ""
+    retCountV = 1
+  } else if patMode == 1 {
+    vtag[nxDst] = 2
+    vnum[nxDst] = 0.0
+    vstr[nxDst] = patSrc.Substring(patStart, patI - patStart)
+    retCountV = 1
+  } else {
+    vtag[nxDst] = 6
+    vnum[nxDst] = patStart + 1.0
+    vstr[nxDst] = ""
+    vtag[nxDst + 1] = 6
+    vnum[nxDst + 1] = patI * 1.0
+    vstr[nxDst + 1] = ""
+    if patMode == 2 {
+      vtag[nxDst + 2] = 6
+      vnum[nxDst + 2] = 0.0
+      vstr[nxDst + 2] = ""
+      retCountV = 3
+    } else {
+      retCountV = 2
+    }
+  }
+  nxActive = false
+  nxDone()
 }
 
 // No match anywhere: both find and match answer nil.
@@ -9744,6 +9480,31 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
     if mo == 14 {
       vSet(a, 2, 0.0, if vTag(a + 2) == 6 then "integer"
         else if vTag(a + 2) == 1 then "float" else "nil")
+    } else if mo == 15 {
+      // _m(15, s, 0): PUC's string-to-number coercion asked as a QUESTION --
+      // the number, or nil when the string is not a numeral.  This is what
+      // tonumber is, and it is what the library pieces need to check a
+      // numeric STRING argument without raising: string.rep('a', '3x') has to
+      // be able to tell "not a numeral" from "a numeral with no integer
+      // representation", which are two different PUC messages.  They used to
+      // get that by one pcall of a converter each, and catching is gone from
+      // the chip now (see fid 18), so the question is asked here instead.
+      //
+      // ParseInt first, exactly as arithValL does, so '2' answers an integer
+      // and '2.0' a float; a string that answers nil here is not a numeral at
+      // all ('inf' included, which is not one in Lua and is one to the host).
+      let sv = if vTag(a + 2) == 2 then vStr(a + 2) else ""
+      let i = sv.ParseInt()
+      if i.Success {
+        vSetInt(a, i)
+      } else {
+        let p = sv.ParseNumber()
+        if p.Success {
+          vSetNum(a, p)
+        } else {
+          vSetNil(a)
+        }
+      }
     } else {
       // PUC's math functions take luaL_checknumber, which COERCES a string:
       // math.floor('3') is 3, math.floor(' 2.5 ') is 2, math.sqrt('9') is 3.0,
@@ -9805,78 +9566,16 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
     }
     retCountV = 1
   } else if fid == 18 || fid == 19 {
-    // pcall(f, ...) and xpcall(f, handler, ...): the marker, `true` in the
-    // call's own register, and then the call itself.  A Lua function's frame
-    // goes up one register and is pushed by pcallEnter on the next step,
-    // because a mod cannot switch frames where it stands; a gate builtin has no
-    // frame, so its arguments move down one and the instruction runs again as
-    // the gate.  The two differ only on the error path, which is pcallStep's.
-    // The design note is by vmFail, which is where the error path starts.
-    pcallIsX = fid == 19
-    if nargs < 1 {
-      vmFail("bad argument #1 to 'pcall' (value expected)")
-    } else if pcallIsX && nargs < 2 {
-      vmFail("bad argument #2 to 'xpcall' (function expected, got no value)")
-    } else if pcallIsX && vTag(a + 2) != 4 {
-      // PUC checks the handler before it calls anything, so a handler that is
-      // not a function is xpcall's own error and not the protected call's
-      vmFail("bad argument #2 to 'xpcall' (function expected, got "
-             .. typeName(vTag(a + 2)) .. ")")
-    } else if fFunc.length() + 2 >= MAX_CALLS {
-      vmFail("call depth exceeded")
-    } else if vTag(a + 1) != 4 {
-      // PUC raises "attempt to call" at the call and pcall catches it, so a
-      // non-function is the pair, not a failure of the call itself: pcall(42)
-      // is false, "attempt to call a number value" and not an error.  xpcall
-      // gets PUC's other wording, measured: the error object it has to hand
-      // the handler is none at all, so the message is that.
-      let t0 = vTag(a + 1)
-      vtag[vmBase + a] = 3
-      vnum[vmBase + a] = 0.0
-      vtag[vmBase + a + 1] = 2
-      vnum[vmBase + a + 1] = 0.0
-      vstr[vmBase + a + 1] = if pcallIsX then "<no error object>"
-        else "attempt to call a " .. typeName(t0) .. " value"
-      retCountV = 2
-    } else if toInt(vNum(a + 1)) == 18 || toInt(vNum(a + 1)) == 19 {
-      // pcall of pcall is the one gate that pushes a frame, and the in-place
-      // dispatch has one result slot, so it cannot be nested this way
-      vmFail("pcall of pcall is not supported on this chip")
-    } else {
-      let a1 = if 1 < nargs then nargs - 1 else 0
-      fFunc.push(PCALL_MARK)
-      fBase.push(vmBase)
-      fRetA.push(a)
-      fRetBase.push(vmBase)
-      fRetPC.push(vmPc + 1)
-      fRetN.push(if mtSelf then -2 else 1)
-      fVaB.push(vaTop)
-      fForDepth.push(forDepth)
-      pcallDepth = pcallDepth + 1
-      pcallMode = 0
-      pcallBase = vmBase
-      vtag[vmBase + a] = 3
-      vnum[vmBase + a] = 1.0
-      pcallFid = toInt(vNum(a + 1))
-      pcallHT = if pcallIsX then vTag(a + 2) else 0
-      pcallH = if pcallIsX then vNum(a + 2) else 0.0
-      pcallA = a
-      pcallNArgs = nargs
-      pcallGatePc = vmPc
-      if pcallFid < NB {
-        // A gate has no frame and reads its function from the call's own
-        // register, so f and every argument move down one and the instruction
-        // runs again as the gate -- a step of its own, like pcallEnter, because
-        // a mod's write to a file variable is only read back reliably at the top
-        // of vmStep.  The gate's argument count is a1 and not a1 + 1: f moved
-        // into the call's own register, so it is no longer an argument.
-        retCopy(vmBase + a + 1, vmBase + a, a1 + 1)
-        pcallGateArgs = a1
-        pcallGate = true
-      } else {
-        pcallGo = true
-      }
-    }
+    // pcall and xpcall are loud stub pieces on this chip: catching costs
+    // ~3,875 nodes (marker frames, resume state, result relocation) and the
+    // size budget had those against plain patterns, so catching is gone.  The
+    // words are PUC's error gate raising, so a program that names pcall gets
+    // one message it can read, and error()/assert() -- separate gates -- keep
+    // working exactly as before.  Recovering from an error is the caller's:
+    // an erroring function answers nil plus a message, which is what the
+    // library pieces here already do.
+    vmFail(if fid == 18 then "pcall is not supported on this chip"
+           else "xpcall is not supported on this chip")
   } else if fid == 12 {
     // unpack(t [, i [, j]]): t[i..j] as multiple results.  Lua cannot
     // write this -- a return list is fixed length -- so it is a primitive.
@@ -10006,35 +9705,19 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
     retCountV = 1
   } else if fid == 16 {
     // error(msg [, level]) and assert, which PUC has in C (lbaselib.c)
-    // and are gates here for the same reason.  pcall and xpcall are C
-    // there too, and the shape they need is settled:
+    // and are gates here for the same reason.
     //
-    //   - pcall pushes a marker frame, a sentinel fid on the same fFunc
-    //     stack the calls use, carrying its own fRetA / fRetBase /
-    //     fRetPC; then it makes the call to f with fRetA at one past the
-    //     pcall's own register, so f's results land beside it and the
-    //     `true` has a register of its own.
-    //   - the four RETURN variants recognise the marker when it comes up
-    //     and write `true` where the results start, then return to the
-    //     pcall's caller.  The test has to be at the top of each variant:
-    //     they are mods this size, and a condition in the middle of one
-    //     of these chains is the trap the header warns about.
-    //   - vmFail gets a protected mode: it finds the marker, unwinds the
-    //     frames above it, and writes (false, message) in the same place.
-    //     Without it an error inside a pcall stops the program, which is
-    //     the whole thing pcall is for.
-    //   - xpcall is the same call with a handler, and the handler is the one
-    //     part that does not fit in a register: the protected call's own frame
-    //     is written over the register the handler was in, so the arm keeps it
-    //     in pcallH/pcallHT and pcallStep calls it from there.  It is called
-    //     through the same two steps -- a function handler by pcallEnter, a gate
-    //     handler by the in-place dispatch -- with its results landing where the
-    //     message would have gone, and pcallMode telling pcallEnd to write false
-    //     and to take one value rather than all of them.  That is measured, not
-    //     assumed: PUC 5.5 returns false plus the handler's *first* result, so a
-    //     handler returning 7, 8 gives false 7.
+    // An error ends the run: there is no catch on this chip.  pcall and
+    // xpcall were the catching half, and they are removed -- marker frames,
+    // resume state and result relocation measured ~6,500 nodes here after
+    // inlining, which is more than everything else in the budget combined.
+    // The loud stubs at fid 18/19 say so in one line.  What this gate keeps
+    // is the whole point of it: PUC's words, on the error port, with the run
+    // stopped, which is what a control-plane program does with a failure it
+    // cannot recover from.  A program that wants to recover answers nil plus
+    // a message from its own function instead.
     //
-    // The one thing none of them can do is name a position: PUC prefixes
+    // The one thing this gate cannot do is name a position: PUC prefixes
     // error's message with the chunk and line of whatever called error,
     // and the chip has no line at run time, so the message goes through
     // as it is.
@@ -10081,11 +9764,10 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
     // find whose init came from there is a find with a boolean init.
     let it = if 3 < nargs then vTag(a + 4) else 0
     let inum = if 3 < nargs then vNum(a + 4) else 0.0
-    let pl = if 4 < nargs then vTag(a + 5) else 0
-    let plv = if 4 < nargs then vNum(a + 5) else 0.0
     if patCheck(a, nargs, nm, 2) {
-      // only nil and false are false, so a plain of 0 or "" is plain all the same
-      patPlain = mode == 0 && !(pl == 0 || pl == 3 && plv == 0.0)
+      // patLen lived in patArm, which nothing calls now: the bounds below
+      // read it, so this arm sets it from the subject it just checked.
+      patLen = patSrc.Length()
       // PUC's posrelat: a positive init is itself, a negative one counts back
       // from the end plus one, and a zero goes to the clamp below.  A numeric
       // *string* init is the one thing here PUC takes and this does not: the
@@ -10100,7 +9782,29 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
         vmFail("bad argument #3 to '" .. nm .. "' (number expected, got " .. typeName(it) .. ")")
       }
       if !vmFailed {
-        patArm(ini, mode, vmBase + a, 0)
+        // Literal needle: one host search here (reads, locals and scalars
+        // are all fine in this arm); the answers go out through patPlainAnswer
+        // next tick, because array writes inside this arm are dropped.  An
+        // empty needle matches empty at the start position.  Bounds are
+        // patArm's old rules, verbatim: below 1 starts at 1, and past
+        // len + 1 finds nothing at all.
+        nxDst = vmBase + a
+        nxPc = vmPc
+        if ini < 1 {
+          ini = 1
+        }
+        var f = -2
+        if ini <= patLen + 1 {
+          f = ini - 1
+          if 0 < patPat.Length() {
+            f = patSrc.Find(patPat, true, ini - 1)
+          }
+        }
+        patStart = f
+        patI = f + patPat.Length()
+        patMode = mode
+        nxActive = true
+        nxMode = 2
       }
     }
   } else if fid == 21 || fid == 22 {
@@ -10423,7 +10127,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
           if isTail {
             fVaB[fVaB.length() - 1] = slotB
           } else {
-            // The entry is the caller's top (see pcallEnter): the return pops
+            // The entry is the caller's top: the return pops
             // to it, so the callee's slots below are reusable, not orphaned.
             fVaB.push(slotB)
           }
@@ -10511,32 +10215,60 @@ mod gmStep() {
   } else {
     patSrc = patGmS[patGmId]
     patPat = patGmP[patGmId]
-    let pos = patGmPos[patGmId]
+    // Below 1 starts at 1, as patArm's old clamp did: the walk's init can be
+    // zero through gmatch's own posrelat.
+    let pos = if patGmPos[patGmId] < 1 then 1 else patGmPos[patGmId]
     // patArm records where to come back to as vmPc, and this step runs a tick
     // *after* the call, by which time vmPc is the next instruction: without
     // putting it back the machine returns past the generic-for's nil test, the
     // loop never ends, and the walk is called again from the start for ever.
     vmPc = nxPc
-    // patArm answers a single nil itself when the walk is past the end, and it
-    // leaves the machine down: the arm raised nxActive before it knew whether a
-    // machine was coming, so without this the call re-runs the gate for ever.
-    patMode = -1
-    patArm(pos, 3, nxDst, patGmId)
-    if patMode == -1 {
+    // Literal needle: one host search per step, no machine.  Past the end the
+    // walk is over (nil, no values); an empty needle matches empty at the
+    // cursor.  The cursor rule is patDone's old mode-3 one, verbatim: past a
+    // non-empty match it stands after it, past an empty one it steps one
+    // beyond where it stood, and past the subject's end it ends the walk.
+    if patSrc.Length() + 1 < pos {
+      vtag[nxDst] = 0
+      vnum[nxDst] = 0.0
+      vstr[nxDst] = ""
+      retCountV = 0
       nxActive = false
       nxDone()
+    } else {
+      var f = pos - 1
+      if 0 < patPat.Length() {
+        f = patSrc.Find(patPat, true, pos - 1)
+      }
+      if f < 0 {
+        vtag[nxDst] = 0
+        vnum[nxDst] = 0.0
+        vstr[nxDst] = ""
+        retCountV = 0
+        nxActive = false
+        nxDone()
+      } else {
+        let s = f
+        let e = f + patPat.Length()
+        vtag[nxDst] = 2
+        vnum[nxDst] = 0.0
+        vstr[nxDst] = patSrc.Substring(s, patPat.Length())
+        retCountV = 1
+        patGmPos[patGmId] = if e == s then s + 2 else if e == patSrc.Length() then patSrc.Length() + 2 else e + 1
+        nxActive = false
+        nxDone()
+      }
     }
   }
 }
 
-// Is a micro-step machine, a protected call or a closure fill driving this tick?
+// Is a micro-step machine or a closure fill driving this tick?
 // vmStep routes on these; vmStepFast has to stand aside on the SAME set, and the
 // set is written once here so the two cannot drift.  A copied list is how
 // string.format got dispatched past: the fast step had its own idea of what
 // "busy" meant and did not include the format machine.
 mod vmBusy() -> bool {
-  return cloActive || pcallUnwind || pcallGo || pcallGate || lenChase || nxActive
-      || cmpActive
+  return cloActive || lenChase || nxActive || cmpActive
 }
 
 // FORLOOP, ONE body for both dispatch paths.  vmBurst runs four fast steps and
@@ -10569,8 +10301,6 @@ mod vmReturn(a: int) {
   if fFunc.length() == 0 {
     resultV = fmtVal(rv, rn, rs)
     vmHalted = true
-  } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
-    pcallEnd(vmBase + a, 1, 0)
   } else {
     vmBase = rb
     vSet(ra, rv, rn, rs)
@@ -10612,26 +10342,6 @@ mod vmStep() {
     // chain, the fill never finished, and every program that read an upvalue
     // produced no output at all.
     cloStep()
-  } else if pcallUnwind {
-    // a caught error: frames come off until the marker is up.  This is the
-    // first arm because the instruction that raised is still in vmPc and must
-    // not run again while the unwind is in progress.
-    pcallStep()
-  } else if pcallGo {
-    pcallGo = false
-    pcallEnter()
-  } else if pcallGate {
-    // The gate a protected call is running: a pcall's own builtin, or the
-    // message handler an xpcall caught an error with.  Put vmPc back on the
-    // instruction, which now reads the gate where its function belongs, mark
-    // the dispatch so the call site knows whose results these are, and set the
-    // argument count -- pcall's, less the function that moved, or one for a
-    // handler.  In the bytecode, where a write is read back the same step.
-    pcallGate = false
-    pcallRan = true
-    pcallBad[0] = 0
-    bpb[pcallGatePc] = pcallGateArgs
-    vmPc = pcallGatePc
   } else if lenChase {
     lenStep()
   } else if nxActive {
@@ -10641,11 +10351,7 @@ mod vmStep() {
         fmtStep()
       }
     } else if nxMode == 2 {
-      // the pattern matcher, one state per burst, the same latch fmtGo is
-      if patGo {
-        patGo = false
-        patStep()
-      }
+      patPlainAnswer()
     } else if nxMode == 3 {
       // gmatch's two halves.  They are here and not in the gate arm because an
       // array element write inside gateHigh -- which is inlined once per vmStep
@@ -10910,22 +10616,7 @@ mod vmStep() {
             advanced = true
           }
         }
-        if pcallRan && pcallBad[0] == 0 && !nxActive {
-          // a gate dispatched in place by a pcall: its results are at the
-          // pcall's own register, so they move up one and the true goes below.
-          // A gate that raised does not come here: the error is the value, and
-          // the unwind finds the marker with the message in it.
-          //
-          // Nor does one still running: _fmt, _pat and _gmatch answer through a
-          // micro-step, so the gate arm leaves nxActive set and this
-          // instruction re-runs once the machine is done.  Completing the
-          // protected call here would pop the marker and drop pcallDepth to 0
-          // before the work ran, and the failure that work raises -- one tick
-          // later -- would end the program instead of answering false, message.
-          pcallRan = false
-          pcallEnd(vmBase + a, if 0 <= retCountV then retCountV else 0, 0)
-          advanced = true
-        } else if vmPc != pc0 {
+        if vmPc != pc0 {
           // a gate that changed the frame moved vmPc; one that did not falls
           // through to the caller's vmPc + 1, as every other arm here does
           advanced = true
@@ -10982,8 +10673,6 @@ mod vmStep() {
       if fFunc.length() == 0 {
         resultV = ""
         vmHalted = true
-      } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
-        pcallEnd(vmBase + a, 0, 0)
       } else {
         vmBase = rb
         vSetNil(ra)
@@ -11022,8 +10711,6 @@ mod vmStep() {
           resultV = ""
         }
         vmHalted = true
-      } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
-        pcallEnd(vmBase + a, k, 0)
       } else {
         if want == -2 {
           // forward every value the call produced (absolute indices, so this
@@ -11083,8 +10770,6 @@ mod vmStep() {
         if fFunc.length() == 0 {
           resultV = if 1 <= k then fmtVal(vTag(a), vNum(a), vStr(a)) else ""
           vmHalted = true
-        } else if fFunc[fFunc.length() - 1] == PCALL_MARK {
-          pcallEndJoin(vmBase + a, cnt, vmBase + tailSrc, tail)
         } else {
           if 0 < tail {
             // The call's values sit in this frame and the fixed ones are copied

@@ -15,17 +15,12 @@
 -- question, which is what separates a literal, a computed argument and an explicit
 -- base.
 --
--- The conversion is its own function so the pcall below has something to call that
--- is not a fresh closure: a closure is filled one cell per tick, so building one per
--- call cost more than the parse.  Defined once, at load.  The per-call 70 is that
--- pcall -- PUC answers nil where the coercion raises, and the only way to catch a
--- raise is a protected call.  Checking the string's shape first would be cheaper per
--- call and would be a SECOND copy of PUC's numeral rules to keep in step with the
--- coercion's, which is the one thing this piece exists to avoid.
-local function _tonum_conv(v)
-  return v + 0
-end
-
+-- The conversion is a question asked of the chip, not a protected call: PUC's
+-- string-to-number coercion, answering nil when the string is not a numeral.
+-- That was one pcall of a converter per call until catching left the chip
+-- (see fid 18 in lua.ws), and it is now _m mode 15 -- the SAME coercion the
+-- arithmetic path uses, so a second copy of PUC's numeral rules is still not
+-- what this piece is.
 tonumber = function(...)
   -- A vararg signature because the argument COUNT is what separates
   -- tonumber() (an error) from tonumber(nil) (nil), and `...` is only readable
@@ -50,8 +45,8 @@ tonumber = function(...)
   end
   if type(v) == "number" then return v end
   if type(v) ~= "string" then return nil end
-  local ok, r = pcall(_tonum_conv, v)
-  if ok then return r end
+  local r = _m(15, v, 0)
+  if r ~= nil then return r end
   if _pat(0, v, "0x", 1, 1) or _pat(0, v, "0X", 1, 1) then return _tonum_hex(v) end
   return nil
 end

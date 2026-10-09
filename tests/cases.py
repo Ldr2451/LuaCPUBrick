@@ -35,9 +35,6 @@ DEMO_LOG = (              "arith	2.25	7.0	-4	-4	-0.5\n"
               "vararg	3	7	8	9\n"
               "vararg2	3	1	2	3\n"
               "closure	2	3	function	function\n"
-              "pcall	false\n"
-              "pcall2	false	false	nope\n"
-              "xpcall	false	handled\n"
               "assert	6	unreached\n"
               "loops	25	1p2q	3	2\n"
               "shadow	inner\n"
@@ -182,33 +179,48 @@ TESTS = [
     ("coerce-var", "local function half(t) return t .. ' / 2 = ' .. (t / 2) end "
      "print(half('7'), half(7))", None, "run"),
     # A string that is not a number raises with the operator's own wording, and
-    # anything else names the offending operand: PUC's two forms.  One case for
-    # the whole rule, so the recorded chip log is the only place the messages are
-    # spelled out.  PUC prefixes each with its chunk and line; the chip has no line.
-    ("coerce-err-msgs", "print(pcall(function() return 'x' + 1 end), "
-     "pcall(function() return 'x' - 1 end), "
-     "pcall(function() return 1 - 'x' end), "
-     "pcall(function() return 'x' * 1 end), "
-     "pcall(function() return 'x' / 1 end), "
-     "pcall(function() return 'x' % 1 end), "
-     "pcall(function() return 'x' // 1 end), "
-     "pcall(function() return 'x' ^ 1 end), "
-     "pcall(function() return -'x' end), "
-     "pcall(function() return {} + 1 end), "
-     "pcall(function() return 1 / nil end), "
-     "pcall(function() return '10abc' + 0 end))", None, "run"),
+    # anything else names the offending operand: PUC's two forms.  This was ONE
+    # case -- twelve pcalls in a single print, so the recorded chip log was the
+    # only place the messages were spelled out.  Catching is gone from the chip
+    # now (pcall is a loud stub), and one error ends a run, so the rule is one
+    # case per operator: twelve small cases instead of one wide one, each pinned
+    # to the words PUC uses.  PUC prefixes each with its chunk and line; the chip
+    # has no line, so the text is what the program asked for.
+    ("coerce-err-add", "return 'x' + 1", None, "runtimerr",
+     {"expect": {"err": "attempt to add a 'string' with a 'number'"}}),
+    ("coerce-err-sub", "return 'x' - 1", None, "runtimerr",
+     {"expect": {"err": "attempt to sub a 'string' with a 'number'"}}),
+    ("coerce-err-sub-r", "return 1 - 'x'", None, "runtimerr",
+     {"expect": {"err": "attempt to sub a 'number' with a 'string'"}}),
+    ("coerce-err-mul", "return 'x' * 1", None, "runtimerr",
+     {"expect": {"err": "attempt to mul a 'string' with a 'number'"}}),
+    ("coerce-err-div", "return 'x' / 1", None, "runtimerr",
+     {"expect": {"err": "attempt to div a 'string' with a 'number'"}}),
+    ("coerce-err-mod", "return 'x' % 1", None, "runtimerr",
+     {"expect": {"err": "attempt to mod a 'string' with a 'number'"}}),
+    ("coerce-err-idiv", "return 'x' // 1", None, "runtimerr",
+     {"expect": {"err": "attempt to idiv a 'string' with a 'number'"}}),
+    ("coerce-err-pow", "return 'x' ^ 1", None, "runtimerr",
+     {"expect": {"err": "attempt to pow a 'string' with a 'number'"}}),
+    ("coerce-err-unm", "return -'x'", None, "runtimerr",
+     {"expect": {"err": "attempt to unm a 'string' with a 'string'"}}),
+    ("coerce-err-table", "return {} + 1", None, "runtimerr",
+     {"expect": {"err": "attempt to perform arithmetic on a table value"}}),
+    ("coerce-err-nil", "return 1 / nil", None, "runtimerr",
+     {"expect": {"err": "attempt to perform arithmetic on a nil value"}}),
+    ("coerce-err-partial", "return '10abc' + 0", None, "runtimerr",
+     {"expect": {"err": "attempt to add a 'string' with a 'number'"}}),
     # Comparison and the bitwise operators do NOT coerce in PUC, and the chip
-    # must not start to.  The four type-error messages used to be a bare "attempt
-    # to compare" / "attempt to perform 'bitwise'" / "attempt to get length" /
-    # "attempt to concatenate" with no type in them; PUC names the operand (or
-    # both), so the cases below assert the wording, which is why they are
-    # runtimerr cases with an expected message rather than log comparisons.
-    ("coerce-nocmp", "local ok, err = pcall(function() return '3' < 5 end) "
-     "print(ok, type(err))", None, "run"),
-    ("coerce-nobits", "local ok, err = pcall(function() return '3' & 1 end) "
-     "print(ok, type(err))", None, "run"),
-    ("coerce-nocmp2", "local ok = pcall(function() return '3' == 3 end) "
-     "print(ok)", None, "run"),
+    # must not start to.  The two type-error messages used to be a bare "attempt
+    # to compare" / "attempt to perform 'bitwise'" with no type in them; PUC names
+    # the operand, so these assert the wording.  The equality case is NOT an
+    # error at all -- '3' == 3 is simply false -- which was the third pcall shape.
+    ("coerce-nocmp", "print('3' < 5)", None, "runtimerr",
+     {"expect": {"err": "attempt to compare string with number"}}),
+    ("coerce-nobits", "print('3' & 1)", None, "runtimerr",
+     {"expect": {"err": "attempt to perform bitwise operation on a string "
+                        "value"}}),
+    ("coerce-nocmp2", "print('3' == 3)", None, "run"),
     # PUC's four messages, read off the oracle rather than guessed: the compare
     # names both types unquoted, the other three name the offending operand, and
     # the bitwise one adds "(constant 'x')" when the operand is a literal, which
@@ -297,7 +309,11 @@ TESTS = [
     ("arith-idiv-zero-float", "print(1.0 // 0.0, -1.0 // 0.0)", None, "run"),
     ("assert-noargs", "print(1) assert()", None, "runtimerr",
      {"expect": {"err": "value expected"}}),
-    ("assert-noargs-pcall", "print(pcall(assert))", None, "run"),
+    # assert() with no arguments is PUC's "value expected", and reaching assert
+    # as a VALUE used to be one pcall shape: the value is the gate, so it is the
+    # same error.  With catching gone the two are one case and this is the stub.
+    ("assert-noargs-pcall", "pcall(assert)", None, "runtimerr",
+     {"expect": {"err": "pcall is not supported on this chip"}}),
     ("cmp-num", "print(1<2, 2<=2, 3>4, 4>=5)", None, "run"),
     ("cmp-str", "print('a'<'b', '10'<'9')", None, "run"),
     ("cmp-eq", "print(3=='3', nil==nil, 0==false, 1~=2)", None, "run"),
@@ -425,9 +441,9 @@ TESTS = [
      "local s = 0\n"
      "for i = 1, 400 do s = id() end\n"
      "print(s)", None, "run", {"ticks": 30000}),
-    ("tail-pcall-not-a-tail",
-     "print(pcall(function(n) if n == 0 then error('boom') end "
-     "return (function() return n end)() end, 3))", None, "run"),
+    ("arg-fn-not-a-tail",
+     "print((function(n) if n == 0 then error('boom') end "
+     "return (function() return n end)() end)(3))", None, "run"),
     ("assign-multi", "a, b = 1, 2 print(a, b)", None, "run"),
     ("assign-swap", "a, b = 10, 20 a, b = b, a print(a, b)", None, "run"),
     ("assign-short", "a, b, c = 1 print(a, b, c)", None, "run"),
@@ -613,12 +629,30 @@ TESTS = [
     # coercion is a number check, not a blanket tostring.  Three of these were SILENT
     # -- string.len({}) answered 0 and string.rep({}, 2) answered nil, where PUC
     # refuses a table, and a silent nil is the shape of bug that costs a session.
-    ("str-coerce-refused", "print(pcall(string.len, {})) "
-     "print(pcall(string.upper, nil)) print(pcall(string.rep, {}, 2))", None,
-     "run"),
-    ("str-coerce-refused-more", "print(pcall(string.sub, {})) "
-     "print(pcall(string.byte, {})) print(pcall(string.lower, {})) "
-     "print(pcall(string.reverse, {}))", None, "run"),
+    # One case per message now, because catching is gone and one error ends a
+    # run: these were three pcalls in one print.
+    ("str-coerce-refused-len", "print(string.len({}))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.len' "
+                        "(string expected, got table)"}}),
+    ("str-coerce-refused-upper", "print(string.upper(nil))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.upper' "
+                        "(string expected, got nil)"}}),
+    ("str-coerce-refused-rep", "print(string.rep({}, 2))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.rep' "
+                        "(string expected, got table)"}}),
+    ("str-coerce-refused-sub", "print(string.sub({}))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.sub' "
+                        "(string expected, got table)"}}),
+    ("str-coerce-refused-byte", "print(string.byte({}))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.byte' "
+                        "(string expected, got table)"}}),
+    ("str-coerce-refused-lower", "print(string.lower({}))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.lower' "
+                        "(string expected, got table)"}}),
+    ("str-coerce-refused-reverse", "print(string.reverse({}))", None,
+     "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.reverse' "
+                        "(string expected, got table)"}}),
     ("str-char", "print(string.char(72, 105, 33))", None, "run"),
     ("str-rep", "print(string.rep('ab', 3), string.rep('ab', 3, '-'), "
      "string.rep('ab', 0), string.rep('x', 1))", None, "run"),
@@ -738,9 +772,10 @@ TESTS = [
      "print(f())", None, "run"),
     ("fmt-in-fn-param", "local function g(x, y) "
      "return string.format('%s=%d', x, y) end print(g('k', 7))", None, "run"),
-    ("fmt-in-fn-error", "local ok, e = pcall(function() "
-     "return string.format('%d', 'x') end) "
-     "print(ok, e:find('got string') ~= nil)", None, "run"),
+    ("fmt-in-fn-error", "local function f() return string.format('%d', 'x') end "
+     "print(f())", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'format' "
+                        "(number expected, got string)"}}),
     ("fmt-err-nofmt", "print(string.format())", None, "runtimerr",
      {"expect": {"err": "bad argument #1 to 'format' (string expected, got no "
                           "value)"}}),
@@ -826,134 +861,111 @@ TESTS = [
       "this chip"}}),
     ("fmt-e-range", "print(string.format('%.2e', 1e16))", None, "runtimerr",
      {"expect": {"err": "number too large to format exactly on this chip"}}),
-    # pcall, which PUC has in C.  The interesting cases are the ones that are not
-    # just "does it catch an error": a gate builtin has no frame, so its
-    # arguments move down a register and the call instruction runs again as the
-    # gate (pcall(error, ...) and pcall(print, ...)); a non-function is the pair
-    # and not a failure of pcall, because PUC raises the attempt at the call and
-    # pcall catches it; and a caught error has to leave the program able to
-    # carry on, which is the whole point of it.
-    ("pcall-ok", "function f() return 7, 8 end print(pcall(f))", None, "run"),
-    ("pcall-targets",
-     "function f() return 7, 8 end local ok, a, b = pcall(f) "
-     "print(ok, a, b)", None, "run"),
-    ("pcall-catch", "function f() error('boom') end print(pcall(f))", None,
-     "run"),
-    ("pcall-gate", "print(pcall(print, 'hi'))", None, "run"),
-    ("pcall-gate-error", "local ok, e = pcall(error, 'bang') print(ok, e)",
-     None, "run"),
-    ("pcall-gate-value", "print(pcall(tostring, 42), pcall(type, nil))", None,
-     "run"),
-    # A gate that answers through a micro-step (_fmt, _pat, _gmatch) used to be
-    # completed the tick it started, so the protected call was already over when
-    # the work raised: the error ended the program instead of answering
-    # false, message, and a second run of the abandoned machine finished it off.
-    # The message itself names the gate by its short name where PUC names it by
-    # its library path (a value passed to pcall), so these check the shape of the
-    # answer and that the program carries on, not the exact wording.
-    ("pcall-fmt-gate-error", "local ok, e = pcall(string.format, '%d', 'x') "
-     "print(ok, e:find('number expected') ~= nil) print('after')", None, "run"),
-    # ... and this one the whole message, position prefix and name included.
-    ("pcall-gate-name", "print(pcall(string.format, '%d', 'x'))", None, "run"),
-    ("pcall-fmt-gate-ok", "print(pcall(string.format, '%d', 5))", None, "run"),
-    ("pcall-fmt-gate-ok2", "print(pcall(string.format, '%s=%d', 'a', 2))", None,
-     "run"),
-    ("pcall-fmt-gate-twice", "print(pcall(string.format, '%d', 1)) "
-     "print(pcall(string.format, '%d', 2))", None, "run"),
-    ("pcall-pat-gate-error", "print(pcall(string.find, 'abc', '[', 1))", None,
-     "run"),
-    ("pcall-pat-gate-ok", "print(pcall(string.find, 'abc', 'b'))", None, "run"),
-    ("pcall-gate-then-more", "local ok = pcall(string.format, '%d', 'x') "
-     "for i = 1, 2 do print(i) end print(ok, "
-     "pcall(string.format, '%d', 3))", None, "run"),
-    ("pcall-not-a-function", "local ok, e = pcall(42) print(ok, e)", None,
-     "run"),
-    ("pcall-not-a-function-nil", "local ok, e = pcall(nil) print(ok, e)",
-     None, "run"),
-    ("pcall-no-argument", "pcall()", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'pcall' (value expected)"}}),
-    ("pcall-nested",
-     "function f() return pcall(error, 'inner') end print(pcall(f))", None,
-     "run"),
-    ("pcall-deep-error",
-     "function d(n) if n == 0 then error('bottom') end return d(n - 1) end "
-     "print(pcall(d, 5))", None, "run"),
-    ("pcall-varargs",
-     "function f(...) print(select('#', ...), ...) end "
-     "pcall(f, 'ab', 'b', 1)", None, "run"),
-    ("pcall-varargs-fixed",
-     "function f(a, ...) return a, select('#', ...), ... end "
-     "print(pcall(f, 'ab', 'b', 1))", None, "run"),
-    ("pcall-varargs-return",
-     "function f(...) return select('#', ...), ... end "
-     "print(pcall(f, 'ab', 'b', 1))", None, "run"),
-    ("pcall-gate-args-init", "print(pcall(string.find, 'ab', 'b', 1))", None,
-     "run"),
-    ("pcall-statement", "function f() return 1 end pcall(f) print('after')",
-     None, "run"),
-    # The one thing pcall cannot do here: pcall of pcall.  pcall is the only
-    # gate that pushes a frame, and the in-place dispatch has one result slot,
-    # so it is a loud error rather than a wrong answer.
-    ("pcall-of-pcall", "function f() return 1 end print(pcall(pcall, f))",
+    # pcall and xpcall, which PUC has in C and this chip does not have: catching
+    # measured ~6,500 nodes here -- marker frames, resume state, result
+    # relocation, and a marker test inlined into all four RETURN variants -- more
+    # than everything else in the size budget together, so the two builtins are
+    # loud stub pieces and an error ends the run.  error() and assert() are
+    # separate gates and keep working, and a program that wants to recover
+    # answers nil plus a message from its own function.  What is left below is
+    # the stubs themselves plus the shapes they used to prove indirectly: a
+    # call's multiple results, its argument window, varargs both fixed and
+    # forwarding, and a gate builtin's arguments.
+    ("pcall-stub", "pcall(print, 'hi')", None, "runtimerr",
+     {"expect": {"err": "pcall is not supported on this chip"}}),
+    ("xpcall-stub", "xpcall(print, print, 'hi')", None, "runtimerr",
+     {"expect": {"err": "xpcall is not supported on this chip"}}),
+    # The stub is the arm's whole body: no argument checking survives it, so
+    # pcall() with no argument and pcall(42) say what pcall(f) says, and a
+    # non-function handler is xpcall's stub rather than xpcall's own error.
+    ("pcall-stub-no-argument", "pcall()", None, "runtimerr",
+     {"expect": {"err": "pcall is not supported on this chip"}}),
+    ("pcall-stub-not-a-function", "pcall(42)", None, "runtimerr",
+     {"expect": {"err": "pcall is not supported on this chip"}}),
+    ("pcall-stub-not-a-function-nil", "pcall(nil)", None, "runtimerr",
+     {"expect": {"err": "pcall is not supported on this chip"}}),
+    ("xpcall-stub-no-handler", "function f() error('n') end xpcall(f, 42)",
      None, "runtimerr",
-     {"expect": {"err": "pcall of pcall is not supported on this chip"}}),
-    # xpcall, which PUC also has in C.  PUC 5.5 returns false *plus* whatever
-    # the handler returned, not the handler's results alone -- the false is
-    # there even when the handler returns a truthy thing of its own.  The
-    # handler is kept in pcallH/pcallHT because the protected call's frame is
-    # written over the register the handler was in, and it gets the error object
-    # as its first argument even when the frame it starts in overlaps that slot.
-    ("xpcall-ok", "function f() return 1, 2 end function h() end "
-     "print(xpcall(f, h))", None, "run"),
-    ("xpcall-targets", "function f() return 1, 2 end function h() end "
-     "local ok, a, b = xpcall(f, h) print(ok, a, b)", None, "run"),
-    ("xpcall-catch", "function f() error('boom') end "
-     "print(xpcall(f, function(e) return 'H:' .. e end))", None, "run"),
-    ("xpcall-catch-targets", "function f() error('b') end "
-     "function h(e) return 'H' end local ok, e = xpcall(f, h) print(ok, e)",
-     None, "run"),
-    ("xpcall-two-results", "function f() error('z') end function h(e) "
-     "return 7, 8 end print(xpcall(f, h))", None, "run"),
-    ("xpcall-handler-args", "function f(a, b) return a + b end function h() end "
-     "print(xpcall(f, h, 10, 3))", None, "run"),
-    ("xpcall-no-handler", "function f() error('n') end xpcall(f, 42)", None,
+     {"expect": {"err": "xpcall is not supported on this chip"}}),
+    ("xpcall-stub-not-a-function", "function h() end xpcall(42, h)", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'xpcall' (function expected, "
-                        "got number)"}}),
-    ("xpcall-not-a-function", "function h() end print(xpcall(42, h))", None,
+     {"expect": {"err": "xpcall is not supported on this chip"}}),
+    # The stub is on the CALL, not on the catch, so it fires wherever the call
+    # is: deep in a call chain, and inside an argument function whose own comma
+    # scope is still open.
+    ("pcall-stub-nested",
+     "function f() return pcall(error, 'inner') end print(f())", None,
+     "runtimerr",
+     {"expect": {"err": "pcall is not supported on this chip"}}),
+    ("pcall-stub-deep-error",
+     "function d(n) if n == 0 then error('bottom') end return d(n - 1) end "
+     "print(pcall(d, 5))", None, "runtimerr",
+     {"expect": {"err": "pcall is not supported on this chip"}}),
+    ("pcall-stub-arg-fn", "print(pcall(function() return 1, 2 end))", None,
+     "runtimerr",
+     {"expect": {"err": "pcall is not supported on this chip"}}),
+    # An error raised by the program itself, which is the half of error() that
+    # never left: the message on the error port, the run stopped.
+    ("error-halts", "function f() error('boom') end print(f())", None,
+     "runtimerr", {"expect": {"err": "boom"}}),
+    # A gate that answers through a micro-step (_fmt, _pat, _gmatch) used to be
+    # abandoned mid-conversion by a caught error, which is what the pcall cases
+    # below were for.  The machine is the same and now simply runs to the end.
+    # A gate named in a call names itself as PUC names it, because a named call
+    # is a named call: the short-name divergence was only reachable through a
+    # value passed to pcall.
+    ("call-gate-error", "print(string.format('%d', 'x'))", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'format' "
+                        "(number expected, got string)"}}),
+    ("call-gate-args", "print(string.format('%d', 5))", None, "run"),
+    ("call-gate-args2", "print(string.format('%s=%d', 'a', 2))", None, "run"),
+    ("call-gate-twice", "print(string.format('%d', 1)) "
+     "print(string.format('%d', 2))", None, "run"),
+    ("call-gate-find", "print(string.find('ab', 'b'))", None, "run"),
+    ("call-gate-find-init", "print(string.find('ab', 'b', 1))", None, "run"),
+    ("call-gate-then-more", "for i = 1, 2 do print(i) end "
+     "print(string.format('%d', 3))", None, "run"),
+    # Multiple results, an argument window, varargs both fixed and forwarding,
+    # and a call as a statement: these were the pcall-* cases.
+    ("call-multi-return", "function f() return 7, 8 end print(f())", None, "run"),
+    ("call-multi-targets",
+     "function f() return 7, 8 end local a, b, c = f() print(a, b, c)", None,
      "run"),
-    ("xpcall-handler-message",
-     "function f() error(7) end print(xpcall(f, function(e) return e end))",
+    ("call-varargs", "function f(...) print(select('#', ...), ...) end "
+     "f('ab', 'b', 1)", None, "run"),
+    ("call-varargs-fixed",
+     "function f(a, ...) return a, select('#', ...), ... end "
+     "print(f('ab', 'b', 1))", None, "run"),
+    ("call-varargs-return",
+     "function f(...) return select('#', ...), ... end "
+     "print(f('ab', 'b', 1))", None, "run"),
+    ("call-statement", "function f() return 1 end f() print('after')", None,
+     "run"),
+    ("arg-fn-count", "print(select('#', (function() return 1, 2, 3 end)()))",
      None, "run"),
-    ("xpcall-handler-varargs",
-     "function f() error(7) end "
-     "print(xpcall(f, function(...) return select('#', ...), ... end))", None,
-     "run"),
     # A function literal as a call argument, in the shapes where the enclosing
     # call's marker is still open: these are what the two comma-scope bugs in
-    # closeAction looked like from the outside.
-    ("arg-fn-returns", "print(pcall(function() return 1, 2 end))", None, "run"),
-    ("arg-fn-count", "print(select('#', pcall(function() return 1, 2, 3 end)))",
-     None, "run"),
+    # closeAction looked like from the outside.  A bare call of the literal is
+    # the one that survives without a protected call to hide it in -- the other
+    # two shapes are arg-fn-count above and this one.
     ("arg-fn-paren-call", "print((function() return 1, 2 end)())", None, "run"),
     ("arg-fn-table", "local t = {function() return 1, 2 end} print(t[1]())", None,
      "run"),
-    # A gate as xpcall's message handler, and a gate handler that returns no
-    # value.  The number keeps PUC's error object free of a source position, so
-    # this measures the handler and the substitution rather than error()'s
-    # documented divergence.
-    ("xpcall-gate-handler", "function f() error(7) end "
-     "print(xpcall(f, tostring))", None, "run"),
-    ("xpcall-gate-handler-nil", "function f() error(7) end "
-     "local ok, v = xpcall(f, print) print(ok, v)", None, "run"),
-    # string.find and string.match, which PUC also has in C: a backtracking
-    # matcher wants a stack and a loop, so it is a gate machine here and the
-    # library piece around it is three lines of Lua.  The cases below are the
-    # shapes whose answers are not obvious: an empty match ends one position
-    # before it starts, a greedy quantifier is tried longest first and gives
-    # characters back one at a time, a lazy one the other way round, and %b is
-    # never backtracked at all (PUC's matchbalance counts to the first return
-    # to zero and either has its match or has not).
+    # string.find and string.match, which PUC also has in C.  The matcher is now
+    # PLAIN: one host Find for a literal needle, no grammar, no backtracking.  The
+    # gate kept ~2,200 nodes the budget did not have, and the cases below split
+    # three ways:
+    #   * a plain needle agrees with PUC exactly -- the ones that print the same
+    #     answer on both sides compare against the oracle and need no entry;
+    #   * a needle with a MAGIC character is that character: '%' is not a class,
+    #     '^b' anchors nothing, 'a+b' looks for the five characters.  Pinned as
+    #     divergences in CHIP_LOG, deliberately, and by design rather than by
+    #     neglect -- plain needles are what the pattern's job is here;
+    #   * a MALFORMED pattern is not an error at all: PUC raises "malformed
+    #     pattern" and the chip answers nil, because there is no grammar left to
+    #     be malformed.
+    # The empty needle is not a divergence: it matches empty at the start, both
+    # sides, which is PUC's own rule and is pinned below against the oracle.
     ("pat-find", "print(string.find('hello world', 'o'))", None, "run"),
     ("pat-find-init", "print(string.find('hello world', 'o', 6))", None,
      "run"),
@@ -1038,8 +1050,13 @@ TESTS = [
     ("pat-in-function", "local function f(s) return string.find(s, 'b') end "
      "print(f('abc'))", None, "run"),
     ("pat-in-table", "local t = {s = 'hello'} "
-     "print(string.find(t.s, 'l+'))", None, "run"),
-    ("pat-in-pcall", "print(pcall(string.find, 'abc', '%'))", None, "run"),
+     "print(string.find(t.s, 'l'))", None, "run"),
+    # A malformed pattern is not an error on this chip: patterns are PLAIN now
+    # (a needle, not a grammar), so '%' and '[' are just characters that are not
+    # found.  The pin is the divergence itself -- see the pattern note at the top
+    # of this section and CHIP_LOG.
+    ("pat-literal-meta", "print(string.find('abc', '%'))", None,
+     "state", {"expect": {"log": "nil\n"}}),
     ("pat-in-loop", "local out = '' for i = 1, 3 do out = out .. "
      "string.match('ab', 'a') end print(out)", None, "run"),
     ("pat-float-init", "print(string.find('abc', 'b', 1.0))", None, "run"),
@@ -1047,17 +1064,20 @@ TESTS = [
      "string.find('a(b)c(d)e', '%b()d'))", None, "run"),
     ("pat-match-frontier", "print(string.match('THE (quick) fox', "
      "'%f[%a]%a+%f[%A]'))", None, "run"),
+    # None of the shapes below is an error anymore: with no grammar there is
+    # nothing to be malformed, unclosed, unopened, or too many of.  Every one
+    # is a literal needle that is not found, so every one answers nil -- which
+    # is what the state pins below hold.  (The replacement STRING is still
+    # parsed, so gsub's '%2'-with-no-captures still raises; see
+    # gsub-bad-capture-index.)
     ("pat-malformed-set", "print(string.find('hello', '['))", None,
-     "runtimerr", {"expect": {"err": "malformed pattern (missing ']')"}}),
+     "state", {"expect": {"log": "nil\n"}}),
     ("pat-malformed-percent", "print(string.find('hello', '%'))", None,
-     "runtimerr",
-     {"expect": {"err": "malformed pattern (ends with '%')"}}),
+     "state", {"expect": {"log": "nil\n"}}),
     ("pat-malformed-b", "print(string.find('hello', '%b'))", None,
-     "runtimerr",
-     {"expect": {"err": "malformed pattern (missing arguments to '%b')"}}),
+     "state", {"expect": {"log": "nil\n"}}),
     ("pat-malformed-f", "print(string.find('hello', '%f'))", None,
-     "runtimerr",
-     {"expect": {"err": "missing '[' after '%f' in pattern"}}),
+     "state", {"expect": {"log": "nil\n"}}),
     ("pat-leading-quantifier", "print(string.find('hello', '*l'))", None,
      "run"),
     ("pat-unmatched-close", "print(string.find('hello', ')'), "
@@ -1066,8 +1086,8 @@ TESTS = [
     # claimed: this one is %1 with no captures at all, which is a different test with
     # a different answer.  Two cases with one name means a filter for one runs both
     # under the same label, and the cost cache the suite now keeps conflates them.
-    ("pat-backref-nocap", "print(string.find('abc', '%1'))", None, "runtimerr",
-     {"expect": {"err": "invalid capture index %1"}}),
+    ("pat-backref-nocap", "print(string.find('abc', '%1'))", None,
+     "state", {"expect": {"log": "nil\n"}}),
     # Captures.  PUC 5.5's () is a position capture, not an empty one: it
     # answers where it stands, as a number, and %1 to %9 compare the subject
     # against a capture and move both on by its length.  A capture's number is
@@ -1147,24 +1167,21 @@ TESTS = [
     ("pat-backref-quantified", "print(string.find('abc', '(a)%1*'))", None,
      "run"),
     ("pat-backref-invalid", "print(string.find('abc', '(%1)'))", None,
-     "runtimerr",
-     {"expect": {"err": "invalid capture index %1"}}),
+     "state", {"expect": {"log": "nil\n"}}),
     ("pat-backref-missing", "print(string.find('abc', '(a)%2'))", None,
-     "runtimerr",
-     {"expect": {"err": "invalid capture index %2"}}),
+     "state", {"expect": {"log": "nil\n"}}),
     ("pat-capture-unfinished", "print(string.find('abc', '(a'))", None,
-     "runtimerr", {"expect": {"err": "unfinished capture"}}),
+     "state", {"expect": {"log": "nil\n"}}),
     ("pat-capture-unfinished-nested", "print(string.find('abc', '((a)'))",
-     None, "runtimerr", {"expect": {"err": "unfinished capture"}}),
+     None, "state", {"expect": {"log": "nil\n"}}),
     ("pat-capture-close-unopened", "print(string.find('abc', 'a(b)c)'))", None,
-     "runtimerr", {"expect": {"err": "invalid pattern capture"}}),
-    # The one thing here the chip cannot do: a find answers two positions and one
-    # value per capture, and an expression has MAXVALS registers to answer in.
-    # Fifteen captures is seventeen values, so it is refused rather than written
-    # over whatever follows.
+     "state", {"expect": {"log": "nil\n"}}),
+    # Fifteen captures was refused because an answer would not fit the
+    # expression's registers.  Nothing is captured now, so the long needle is
+    # simply not found.
     ("pat-too-many-to-return", "print(string.find('abc', '" +
-     "()()()()()()()()()()()()()()()" + "'))", None, "runtimerr",
-     {"expect": {"err": "too many captures to return"}}),
+     "()()()()()()()()()()()()()()()" + "'))", None,
+     "state", {"expect": {"log": "nil\n"}}),
     ("pat-no-subject", "print(string.find('hello'))", None, "runtimerr",
      {"expect": {"err": "bad argument #2 to 'string.find' (string expected, got no "
                         "value)"}}),
@@ -1261,11 +1278,11 @@ TESTS = [
     ("gsub-bad-escape", "print(string.gsub('abc', 'a', '%z'))", None,
      "runtimerr",
      {"expect": {"err": "invalid use of '%' in replacement string"}}),
-    ("gsub-bad-capture-index", "print(string.gsub('abc', '(%w)', '%2'))", None,
+    ("gsub-bad-capture-index", "print(string.gsub('abc', 'a', '%2'))", None,
      "runtimerr", {"expect": {"err": "invalid capture index %2"}}),
-    ("gsub-boolean-value", "print(string.gsub('abc', '(a)', {a=true}))", None,
+    ("gsub-boolean-value", "print(string.gsub('abc', 'a', {a=true}))", None,
      "runtimerr", {"expect": {"err": "invalid replacement value (a boolean)"}}),
-    ("gsub-table-value", "print(string.gsub('abc', '(a)', {a={}}))", None,
+    ("gsub-table-value", "print(string.gsub('abc', 'a', {a={}}))", None,
      "runtimerr", {"expect": {"err": "invalid replacement value (a table)"}}),
     # gmatch is a stateful iterator and the state is three arrays, not a closure:
     # _gmatch makes the walk and _gmnext takes one step of it, which is two gates
@@ -1302,38 +1319,44 @@ TESTS = [
      "k, ']') end print()", None, "run"),
     ("gmatch-anchor-whole", "for k in string.gmatch('abc', '^abc$') do "
      "io.write('[', k, ']') end print()", None, "run"),
-    ("gmatch-position-capture", "local f, s, c = string.gmatch('abc', '()') "
+    # Direct calls of the walk: the first answers the match, the rest nil, and
+    # the walk survives across calls because the state is in arrays, not a
+    # closure.  The needle is a literal 'b' now (patterns are plain), which both
+    # sides find once.
+    ("gmatch-position-capture", "local f, s, c = string.gmatch('abc', 'b') "
      "print(f(s, c)) print(f(s, c)) print(f(s, c))", None, "run"),
     ("gmatch-init", "for k in string.gmatch('aab', 'a', 2) do io.write(k, '|') "
      "end print()", None, "run"),
-    ("gmatch-number-subject", "for k in string.gmatch(42, '%d') do io.write(k, "
+    ("gmatch-number-subject", "for k in string.gmatch(42, '4') do io.write(k, "
      "'|') end print()", None, "run"),
     ("gmatch-empty-subject", "for k in string.gmatch('', 'a') do io.write(k) end "
      "print('empty')", None, "run"),
     ("gmatch-count", "local n = 0 for k in string.gmatch('abcabc', 'a') do n = "
      "n + 1 end print(n)", None, "run"),
-    ("gmatch-collect", "local t = {} for k in string.gmatch('a,b,c', '[^,]+') "
+    ("gmatch-collect", "local t = {} for k in string.gmatch('a,b,c', ',') "
      "do t[#t + 1] = k end print(#t, t[1], t[3])", None, "run"),
     # the second value is the walk (a number here, nil in PUC) and the loop never
     # shows it; three values come back and the third is the control
-    ("gmatch-three-values", "local f, s, c = string.gmatch('a1b2', '(%a)(%d)') "
+    ("gmatch-three-values", "local f, s, c = string.gmatch('a1b2', 'a') "
      "print(select('#', f, s, c)) print(f(s, c)) print(f(s, c)) print(f(s, c))",
      None, "run"),
     # PUC 5.5's gmatch answers ONE value (its iterator ignores the arguments the
     # generic for hands it); this one answers three, because the generic for has
     # to get the walk's state out of the call and there are no closures here to
     # hold it.  Recorded so the difference is visible rather than accidental.
-    ("gmatch-arity", "print(string.gmatch('a b', '%a')) "
-     "print(select('#', string.gmatch('a b', '%a')))", None, "run"),
+    ("gmatch-arity", "print(string.gmatch('a b', 'a')) "
+     "print(select('#', string.gmatch('a b', 'a')))", None, "run"),
     # PUC's iterator ignores its arguments; this one falls back to the last walk
-    ("gmatch-junk-argument", "local f, s, c = string.gmatch('a1b2', '(%a)(%d)') "
+    ("gmatch-junk-argument", "local f, s, c = string.gmatch('a1b2', 'a') "
      "print(f('junk'))", None, "run"),
+    # A "malformed" needle is not an error on this chip: patterns are plain, so
+    # '[' and '%' are characters that are not found and the walk simply ends.
+    # PUC raises, so these pin the divergence in CHIP_LOG instead of comparing.
     ("gmatch-malformed-set", "for k in string.gmatch('abc', '[') do io.write(k) "
-     "end print('done')", None, "runtimerr",
-     {"expect": {"err": "malformed pattern (missing ']')"}}),
+     "end print('done')", None, "state", {"expect": {"log": "done\n"}}),
     ("gmatch-malformed-percent", "for k in string.gmatch('abc', '%') do "
-     "io.write(k) end print('done')", None, "runtimerr",
-     {"expect": {"err": "malformed pattern (ends with '%')"}}),
+     "io.write(k) end print('done')", None, "state",
+     {"expect": {"log": "done\n"}}),
     ("gmatch-no-subject", "string.gmatch()", None, "runtimerr",
      {"expect": {"err": "bad argument #1 to 'string.gmatch' (string expected, "
                         "got no value)"}}),
@@ -1516,18 +1539,28 @@ TESTS = [
      "run"),
     # PUC's two range errors, wording and argument number included.  A Lua piece
     # raises without the "file:line:" prefix a C function gets, which is the same
-    # divergence every other piece has, so only the prefix differs here.
-    ("math-random-interval", "print(pcall(math.random, 5, 1))", None, "run"),
-    ("math-random-noint", "print(pcall(math.random, 1.5))", None, "run"),
+    # divergence every other piece has.  These were pcalls, which is how the
+    # harness saw the message next to a false; with catching gone each is a
+    # runtimerr case pinned to PUC's words.
+    ("math-random-interval", "print(math.random(5, 1))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'random' (interval is empty)"}}),
+    ("math-random-noint", "print(math.random(1.5))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'random' "
+                        "(number has no integer representation)"}}),
     # PUC's math.random takes 0, 1 or 2 arguments and answers "wrong number of
     # arguments" otherwise; a Lua function ignores the extras, so the piece has to
     # ask for the count itself.  Asked of the oracle, the argument INDEX in
     # math.random's own messages is #1 for the lower bound and for an empty
-    # interval (not the upper bound's), and #2 for a non-integer upper bound.
-    ("math-random-arity", "print(pcall(math.random, 1, 9, 1))", None, "run"),
-    ("math-random-argidx",
-     "print(pcall(math.random, 1, 1.5), pcall(math.random, 1.5, 3), "
-     "pcall(math.random, 9, 1))", None, "run"),
+    # interval (not the upper bound's), and #2 for a non-integer upper bound --
+    # that pair is what these two are for.
+    ("math-random-arity", "print(math.random(1, 9, 1))", None, "runtimerr",
+     {"expect": {"err": "wrong number of arguments"}}),
+    ("math-random-argidx-lo", "print(math.random(1.5, 3))", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'random' "
+                        "(number has no integer representation)"}}),
+    ("math-random-argidx-hi", "print(math.random(1, 1.5))", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'random' "
+                        "(number has no integer representation)"}}),
     # math.type answers for a value of ANY type -- "integer"/"float" for a
     # number and nil for everything else -- so it must not go through the
     # number check the other _m modes share.  There was no case for it at all,
@@ -1546,32 +1579,48 @@ TESTS = [
      "print(#t, t[1], t[2], t[3], t[4])", None, "run"),
     # insert validates like PUC, in PUC's order: an integer first, then
     # 1..n+1, with PUC's own messages, and the arity too.  nextvar.lua's
-    # pcall asserts are the ones that caught the missing checks, and "run"
-    # compares every line against the oracle -- including the messages.
-    ("tbl-insert-bounds", "local t = {1} "
-     "print(pcall(table.insert, t, 0, 9)) "
-     "print(pcall(table.insert, t, 3, 9)) "
-     "print(pcall(table.insert, t, 1.5, 9)) "
-     "print(pcall(table.insert, t, '2', 9)) "
-     "print(pcall(table.insert, {})) print(t[1], t[2])", None, "run"),
+    # pcall asserts were the ones that caught the missing checks; with catching
+    # gone from the chip, each is a runtimerr case and the argument numbers are
+    # pinned directly rather than read off a pcall's log.
+    ("tbl-insert-bounds-0", "local t = {1} table.insert(t, 0, 9)", None,
+     "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'table.insert' "
+                        "(position out of bounds)"}}),
+    ("tbl-insert-bounds-noint", "local t = {1} table.insert(t, 1.5, 9)", None,
+     "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'table.insert' "
+                        "(number has no integer representation)"}}),
+    ("tbl-insert-arity", "table.insert({})", None, "runtimerr",
+     {"expect": {"err": "wrong number of arguments to 'insert'"}}),
+    # ... and the two that are ACCEPTED, which is the other half of the rule: a
+    # position of n+1 is legal and a numeric string coerces.  The table's
+    # contents afterwards are the state these leave behind.
+    ("tbl-insert-ok", "local t = {1} table.insert(t, 2, 9) "
+     "table.insert(t, '2', 8) print(#t, t[1], t[2])", None, "run"),
     ("tbl-remove", "local t = {1,2,3} print(table.remove(t), "
      "table.remove(t, 1), #t, t[1])", None, "run"),
     # PUC's bound is 1..n+1 (so remove(t, n+1) is legal and answers nil), and
     # a position outside it is an error rather than a silent shift: the piece
     # used to write t[0] and leave the array shifted.  The position is an
     # integer first, exactly like insert's, and the messages name
-    # `table.remove` -- the piece used to say `remove`, and to read t['2']
-    # instead of t[2].
+    # `table.remove`.
     ("tbl-remove-bounds", "table.remove({1,2,3}, 0)", None, "runtimerr",
      {"expect": {"err": "table.remove' (position out of bounds"}}),
-    ("tbl-remove-bounds-full", "local t = {1,2,3} "
-     "print(pcall(table.remove, t, 0)) "
-     "print(pcall(table.remove, t, 1.5)) "
-     "print(pcall(table.remove, t, '2')) print(t[1], t[2])", None, "run"),
+    ("tbl-remove-bounds-noint", "local t = {1,2,3} table.remove(t, 1.5)", None,
+     "runtimerr",
+     {"expect": {"err": "table.remove' (number has no integer "
+                        "representation)"}}),
+    # A numeric string position is accepted, as it is in PUC, and it removes
+    # rather than reading the key: this was the pcall that caught the piece
+    # reading t['2'] instead of t[2].
+    ("tbl-remove-str-pos", "local t = {1,2,3} local x = table.remove(t, '2') "
+     "print(x, #t, t[1], t[2])", None, "run"),
     ("tbl-remove-n-plus-1", "local t = {1,2} print(table.remove(t, 3), "
      "table.remove(t, 1), #t)", None, "run"),
-    ("tbl-remove-empty", "print(pcall(table.remove, {}), "
-     "pcall(table.remove, {}, 1))", None, "run"),
+    # An empty table, with no position and with one: PUC answers nil for both,
+    # so the pcall that used to be here is a plain print of two nils.
+    ("tbl-remove-empty", "print(table.remove({}), table.remove({}, 1))", None,
+     "run"),
     ("tbl-concat", "print(table.concat({'a','b','c'}), "
      "table.concat({'a','b','c'}, '-'), table.concat({1,2,3}, ',', 2, 3))",
      None, "run"),
@@ -1652,14 +1701,15 @@ TESTS = [
     # charge every table-dispatch program the whole string library.  25 of 863 cases
     # contain `](` (tools/chip/dynblast.py).  See libStrDyn in lua.ws.
     #
-    # pcall because ('abc')[m] is string.upper() called with an EMPTY argument list
-    # in PUC too -- the dot form does not pass the receiver -- so PUC raises.  The
-    # FUNCTION VALUE is the pcall argument, not a call: pcall(('abc')[m]()) would
-    # evaluate the call first and raise outside pcall, which is the shape that made
-    # the oracle reject this program when it said rc=1.
+    # The receiver is the FUNCTION VALUE, not a call: `('abc')[m]` is
+    # string.upper called with an EMPTY argument list in PUC too -- the dot form
+    # does not pass the receiver -- so PUC raises.  Catching is gone from the
+    # chip, so the first two prints run without a protected call and the shapes
+    # are the same: a bare receiver is a function value a program can print
+    # (both sides' "function: 0x..." is normalised by the harness) or call.
     ("lib-dyn-literal-receiver", "local m = 'up' .. 'per' "
-     "print(pcall(('abc')[m])) "
-     "local n = 'le' .. 'n' print(pcall(('abc')[n])) "
+     "print(('abc')[m]) "
+     "local n = 'le' .. 'n' print(('abc')[n]) "
      "local q = 'up' .. 'per' print(('abc')[q]('xy')) "
      "local w = 'by' .. 'te' print(('abc')[w](1))", None, "run",
      {"ticks": 15000}),
@@ -1675,24 +1725,24 @@ TESTS = [
      "local m = 'char' print(string[m](66))", None, "run",
      {"ticks": 30000}),
     # PUC says "got no value" for an absent argument and "got nil" for a nil one,
-    # and the chip now says both correctly -- verified against PUC directly, not
-    # through the harness.
-    #
-    # IT CANNOT BE A CASE, and that is worth recording rather than working around.
-    # oracle_log truncates every line at LOG_WIDTH - 1 = 63 characters, and the two
-    # messages agree right up to it:
-    #   false  bad argument #1 to 'string.upper' (string expected, got no value)
-    #   false  bad argument #1 to 'string.upper' (string expected, got nil
-    #                                                  ^ 63 characters, the cap
-    # So both arrive as "...expected, got " and the harness cannot see the
-    # difference.  A case here would be asserting against a string that lost the
-    # information before the comparison.  Verified instead with:
-    #   lua55 -e "print(pcall(string.upper))"      -> got no value
-    #   lua55 -e "print(pcall(string.upper, nil))" -> got nil
-    # and the chip answers both.  See lib/str_case.lua.
-    ("str-no-value-behaviour", "print(pcall(string.upper) == false) "
-     "print(pcall(string.upper, nil) == false) print(pcall(string.len) == false) "
-     "print(pcall(string.len, nil) == false)", None, "run"),
+    # and the chip says both.  This USED to be un-caseable: the only way to see
+    # both messages in one program was pcall, and oracle_log caps a line at 63
+    # characters, which cut both messages to "...expected, got ".  With catching
+    # gone these are four runtimerr cases, and each pins the whole of PUC's
+    # wording -- which is the better outcome, since the cap was hiding the very
+    # difference being tested.
+    ("str-no-value-upper", "string.upper()", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.upper' "
+                        "(string expected, got no value)"}}),
+    ("str-nil-upper", "string.upper(nil)", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.upper' "
+                        "(string expected, got nil)"}}),
+    ("str-no-value-len", "string.len()", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.len' "
+                        "(string expected, got no value)"}}),
+    ("str-nil-len", "string.len(nil)", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'string.len' "
+                        "(string expected, got nil)"}}),
     ("tbl-pack", "local t = table.pack(1, nil, 3) print(t.n, t[1], t[3])",
      None, "run"),
     ("tbl-move", "local a = {1,2,3,4} local b = table.move(a, 2, 3, 1) "
@@ -1762,9 +1812,13 @@ TESTS = [
     ("utf8-multi", "print(utf8.len('a\\195\\169b'), "
      "utf8.codepoint('a\\195\\169b', 2))", None, "state",
      {"ticks": 15000, "expect": {"log": "3\t233\n"}}),
-    ("utf8-errors", "print(not pcall(utf8.codepoint, '\\192\\128'), "
-     "not pcall(utf8.char, -1))", None, "state",
-     {"ticks": 15000, "expect": {"log": "true\ttrue\n"}}),
+    # utf8's two raises.  These were one print of two pcalls; with catching gone
+    # they are one case each, pinned to PUC's own wording.
+    ("utf8-errors", "utf8.codepoint('\\192\\128')", None, "runtimerr",
+     {"ticks": 15000, "expect": {"err": "invalid UTF-8 code"}}),
+    ("utf8-char-range", "utf8.char(-1)", None, "runtimerr",
+     {"ticks": 15000,
+      "expect": {"err": "bad argument #1 to 'utf8.char' (value out of range)"}}),
     ("str-empty", "print('')", None, "run"),
     ("concat-empty", "print('' .. '' .. 1)", None, "run"),
     ("cmp-func", "print(print==print, print~=type)", None, "run"),
@@ -2190,8 +2244,8 @@ TESTS = [
     # can hold the chip's own wrong answer and stay green.  This one did -- it said
     # 6, because the loop-body cell bug threw away the accumulation, and it only
     # showed up when the closure fix made the chip right.
-    ("lockstep-pcall", "local s = 0 for i = 1, 6 do local ok, v = "
-     "pcall(function() s = s + i return s end) end print(s)", None, "lockstep",
+    ("lockstep-loop-cell", "local s = 0 for i = 1, 6 do local v = "
+     "(function() s = s + i return s end)() end print(s)", None, "lockstep",
      {"expect": {"log": "21\n"}}),
     ("lockstep-string", "print(string.format('%d/%s', 42, string.rep('ab', 3)))",
      None, "lockstep", {"expect": {"log": "42/ababab\n"}}),
@@ -2293,14 +2347,16 @@ TESTS = [
     ("upvalue-while", "local out = {} local i = 0 while i < 3 do i = i + 1 "
      "local y = i out[i] = function() return y end end print(out[1](), out[3]())",
      None, "run"),
-    # pcall of a closure: the protected frame carries the closure with it
-    ("upvalue-pcall", "local x = 7 local f = function() return x end "
-     "print(pcall(f))", None, "run"),
-    # xpcall's handler is a closure too.  The handler returns a fixed string:
-    # PUC prefixes an error message with the chunk and line and the chip has no
-    # line at run time, so the text itself is not comparable.
-    ("upvalue-xpcall", "local msg = 'boom' local function bad() error(msg) end "
-     "print(xpcall(bad, function(e) return 'caught' end))", None, "run"),
+    # a closure over a local, called directly: the protected frame used to carry
+    # the closure with it, and the call is the same without it
+    ("upvalue-call", "local x = 7 local f = function() return x end "
+     "print(f())", None, "run"),
+    # a closure over an error message: the text itself is not comparable (PUC
+    # prefixes the chunk and line and the chip has no line at run time), and the
+    # raise that carried it is now the case -- the message is what stops the run
+    ("upvalue-error", "local msg = 'boom' local function bad() error(msg) end "
+     "print(bad())", None, "runtimerr",
+     {"expect": {"err": "boom"}}),
     # method sugar on a closure stored in a table
     ("upvalue-method", "local t = {} local n = 5 function t:get() return n end "
      "print(t:get())", None, "run"),
@@ -2330,10 +2386,13 @@ TESTS = [
      "function() return 1 end return g() end print(t.f())", None, "run"),
     ("nested-local-function-plain", "local function outer() local function g() "
      "return 1 end return g() end print(outer())", None, "run"),
-    # pcall of a library wrapper that calls a gate: the wrapper is variadic, so
-    # this covers both the argument the gate names in an error and the last one
-    # it reads as the init.
-    ("pcall-gate-args", "print(pcall(string.find, 'abc'))", None, "run"),
+    # A library wrapper that calls a gate with no pattern argument: PUC's
+    # message names the argument the gate did not get, and the register the init
+    # would have been read from.  It was a pcall of a variadic wrapper, which
+    # covered both at once; now it is the error itself.
+    ("gate-args-find-nopattern", "print(string.find('abc'))", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'string.find' "
+                        "(string expected, got no value)"}}),
     ("callarg-temp", "local s = 'abcdef' print('x', s, #s, s .. '!')",
      None, "run"),
     ("callarg-binop", "local a = 6 local b = 7 print(a + b, a * b, -a)",
@@ -2418,7 +2477,7 @@ TESTS = [
      {"ticks": 15000}),
     ("tab-tostring", "print(type({}), tostring({1}))", None, "run"),
     ("tab-tostring-shape", "local t = {} local s = tostring(t) "
-     "print(s:match('^table: ') ~= nil, s ~= 'table')", None, "run"),
+     "print(s:sub(1, 7) == 'table: ', s ~= 'table')", None, "run"),
     ("tab-missing", "t = {} print(t.nope, t[99])", None, "run"),
     ("tab-speckeys", "t = {} t['a#b'] = 1 t['a$b'] = 2 "
      "t['k@v'] = 3 t['x:y'] = 4 "
@@ -2987,8 +3046,9 @@ TESTS = [
      "print(tonumber('z', 10), tonumber('', 16), tonumber(' ', 2), "
      "tonumber('0b11', 2), math.type(tonumber('ff', 16)))", None, "run",
      {"ticks": 9000}),
-    ("tonum-base-bounds", "print(pcall(tonumber, '11', 1), "
-     "pcall(tonumber, '11', 37))", None, "run", {"ticks": 9000}),
+    ("tonum-base-bounds", "print(tonumber('11', 1))", None, "runtimerr",
+     {"expect": {"err": "bad argument #2 to 'tonumber' "
+                        "(base out of range)"}, "ticks": 9000}),
     # A hex numeral that ARRIVES at run time.  The hex walk is a separate piece
     # gated on the program's TEXT, and inStr0 is a string the program never
     # wrote, so the gate has to look for the input ports too -- otherwise a
@@ -3040,8 +3100,12 @@ TESTS = [
     # nothing (the oracle exits rc=5, so this cannot be a `run` case at all --
     # there is no oracle log to compare against).  Unavoidable without a halt
     # primitive the compiler does not have.
-    ("os-exit-pcall", "local ok, e = pcall(os.exit, 5) print(ok, e)", None,
-     "modelio", {"expect": {"log": "false\texit: 5\n"}}),
+    # os.exit raises, so the run stops with its message on the error port: PUC
+    # prints nothing and exits rc=5, which is why this cannot be a `run` case at
+    # all -- there is no oracle log to compare against.  The message is a chip
+    # addition and the more useful half in game, where err is what anyone reads.
+    ("os-exit-raises", "os.exit(5)", None, "runtimerr",
+     {"expect": {"err": "exit: 5"}}),
     # line numbers on compile failure
     ("errline-stmt", "print(1)\nprint(2)\nend\n", None, "synfail",
      {"errline": 3}),
@@ -3189,11 +3253,20 @@ TESTS = [
     # refuses years no installation can represent.  files.lua:943 is the
     # assert that caught the missing range check.  "run" compares every
     # line against the oracle, messages included.
-    ("os-time-fields", "print(pcall(os.time, {})) "
-     "print(pcall(os.time, {year = 2024.5, month = 1, day = 1})) "
-     "print(pcall(os.time, {year = 36534630048, month = 1, day = 1})) "
-     "print(pcall(os.time, {year = 2024, month = 1, day = 1, hour = 1.5})) "
-     "print(pcall(os.date, '%Y', 2^60))", None, "run"),
+    # os.time validates every field the way PUC does -- missing, integer,
+    # then range for the year -- with PUC's own messages.  "run" compared
+    # every line against the oracle through a pcall; with catching gone each
+    # raise is its own case, which pins the whole message instead of a line
+    # truncated at 64 characters.
+    ("os-time-missing", "os.time({})", None, "runtimerr",
+     {"expect": {"err": "field 'year' missing in date table"}}),
+    ("os-time-year-float", "os.time({year = 2024.5, month = 1, day = 1})", None,
+     "runtimerr", {"expect": {"err": "field 'year' is not an integer"}}),
+    ("os-time-year-range", "os.time({year = 36534630048, month = 1, day = 1})",
+     None, "runtimerr", {"expect": {"err": "field 'year' is out-of-bound"}}),
+    ("os-time-hour-float",
+     "os.time({year = 2024, month = 1, day = 1, hour = 1.5})", None,
+     "runtimerr", {"expect": {"err": "field 'hour' is not an integer"}}),
     # rawequal/rawget/rawset/rawlen (lib/raw.lua): exact because the
     # chip has no metamethods, so each IS its plain op.  Reference
     # equality for tables, rawset returns the table, rawlen is #.
@@ -3213,8 +3286,13 @@ TESTS = [
     # its value, the chip answers nil (the empty-env boundary,
     # documented in the piece).
     ("os-getenv", "print(os.getenv('NOT_SET_XYZ') == nil, "
-     "pcall(os.getenv), os.getenv(123) == nil)", None, "state",
-     {"ticks": 15000, "expect": {"log": "true\tfalse\ttrue\n"}}),
+     "os.getenv(123) == nil)", None, "state",
+     {"ticks": 15000, "expect": {"log": "true\ttrue\n"}}),
+    # os.getenv with no argument: PUC's own error, which used to be the middle
+    # term of the print above behind a pcall.
+    ("os-getenv-noarg", "os.getenv()", None, "runtimerr",
+     {"expect": {"err": "bad argument #1 to 'os.getenv' "
+                        "(string expected, got no value)"}}),
     ("bit-mix", "print(5+~3)", None, "run"),
     ("bit-prec", "print(1&2|4)", None, "run"),
     # The middle band sits where PUC puts it: | < ~ < & < << >> < .. < + -.
@@ -3235,10 +3313,9 @@ TESTS = [
      "for k=1,3 do print(f()) end for i=1,2 do end print('done')",
      None, "state", {"expect": {"log": "1\n1\n1\ndone\n",
                                 "state": {"forDepth": 0}}}),
-    ("for-error-depth", "for i=1,2 do pcall(function() "
-     "for j=1,2 do error('x') end end) end for j=1,2 do end print('done')",
-     None, "state", {"expect": {"log": "done\n",
-                                "state": {"forDepth": 0}}}),
+    ("for-error-depth", "for i=1,2 do local function g() "
+     "for j=1,2 do error('x') end end g() end print('never')",
+     None, "runtimerr", {"expect": {"err": "x"}}),
     ("for-nested-limit", "local function f(n) for i=1,1 do "
      "if 0 < n then f(n-1) end end end f(20)", None, "runtimerr",
      {"expect": {"err": "too many nested numeric loops"}}),

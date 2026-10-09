@@ -21,8 +21,11 @@
 --                    length op's ("attempt to get length of a
 --                    number value" where PUC's rawlen says
 --                    "table or string expected"); `not
---                    pcall(rawlen, x)` agrees, the only form
---                    PUC's tests use.
+--                    pcall(rawlen, x)` agreed, the only form
+--                    PUC's tests use -- and on the chip that
+--                    call now raises "not supported", so
+--                    what is pinned below is the message
+--                    itself, not the catching of it.
 --
 -- Loaded by one "raw" prefix -- no other raw* global exists --
 -- the same fold rule as math.l and os.d: one arm, four functions.

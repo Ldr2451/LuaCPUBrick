@@ -61,12 +61,13 @@ local tick, peek = mk()
 tick() tick()
 print("closure", peek(), tick(), mk())
 
--- errors: error raises, pcall reports, xpcall hands back the handler's value
--- only the boolean: PUC prefixes error's message with chunk:line: and the
--- chip has no run-time line, so the text is a recorded divergence
-print("pcall", (pcall(function() error("boom") end)))
-print("pcall2", pcall(error, "raw"), pcall(assert, false, "nope"))
-print("xpcall", xpcall(function() error("x") end, function() return "handled" end))
+-- errors: error raises, assert reports.  There is no pcall on this chip --
+-- catching cost more nodes than the rest of the budget combined, so the stub
+-- pieces say so in one line and the run stops.  What is shown here is the half
+-- that stays: error's message reaches the error port with PUC's wording, and a
+-- program that wants to recover answers nil plus a message instead.
+-- (The last line is unreachable by design: assert(3 == 3) passes, so the
+-- "unreached" second argument never shows.)
 print("assert", assert(fact(3), "unreached"))
 
 -- loops: numeric for with a step, generic for over a hand-written iterator,

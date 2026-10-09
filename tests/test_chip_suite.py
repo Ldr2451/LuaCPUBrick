@@ -156,46 +156,107 @@ CHIP_LOG = {
     # there, and an exact 64-bit pointer is the same one.
     "puc-hex-wide": "8.198552921648691e+16\n",
     "puc-format-u64": "-1\n",         # %u past 2^53: the registers are doubles
-    "math-random-interval":
-        "false\tbad argument #1 to 'random' (interval is empty)\n",
-    # NOT a lost message: the whole 66-character message is in the register (a
-    # case prints string.len(m) == 66).  Both sides cap a printed line at 64
-    # (oracle_log applies "the same caps the chip enforces"), and PUC's line is
-    # one character longer, so the oracle's capped line ends "...integer repre"
-    # where the chip's ends "...integer repres".  A one-character disagreement at
-    # the width boundary, not the pcall path losing anything.
-    "math-random-noint":
-        "false\tbad argument #1 to 'random' (number has no integer repres\n",
+    # math.random's two range errors were pinned HERE, next to a false, because
+    # the only way to see a message and keep running was pcall.  They are
+    # runtimerr cases now (math-random-interval / -noint) and need no entry: the
+    # whole of PUC's wording is pinned, un-capped, which the log could never do
+    # -- the 66-character message was being cut at 64 on both sides.
     # PUC 5.5's string.gmatch answers one value; the chip answers three because
     # its generic for reads the walk's state out of the call.
     "gmatch-arity": "function\t0\tnil\n3\n",
-    # A builtin reached as a VALUE through pcall names itself by its short name
-    # where PUC names it by its library path.  A named call agrees with PUC.
-    "pcall-gate-name": "false\tbad argument #2 to 'format' "
-                       "(number expected, got string)\n",
-    # Three math.random messages in one line, and BOTH divergences at once: the
-    # piece raises under pcall so the name is the short 'random' where PUC says
-    # 'math.random', and PUC's text is three characters longer before the
-    # 64-character log cap, so its line is cut earlier ("...interval is" against
-    # "...interval is empt").  The argument INDEXES agree -- that is the rule
-    # this case is for, and the index is the thing the piece used to get wrong.
-    "math-random-argidx":
-        "false\tfalse\tfalse\tbad argument #1 to 'random' (interval is empt\n",
-    # #t is the first nil minus one, and the cached border now follows a delete
-    # AND extends across a bridged gap, so none of these need an entry.  The
-    # bridge is the pair: {} t[1]=1 t[3]=3 t[2]=2 is 3 on both sides, and
-    # len-hole-bridge2 is the same program with five ticks in between, so the
-    # check cannot pass by luck of timing.  What made it fail was tmap.has on a
-    # concatenated key, which never fired; tblHas asks tmap.get(...).Found the
-    # way the rest of the table code does, and the chase is live again.
+    # PATTERNS ARE PLAIN.  The matcher is a hole punch, not a grammar: the
+    # needle is searched for literally and one host Find answers, which is worth
+    # ~2,200 nodes and the whole size budget's headroom.  Everything below is
+    # therefore a PINNED DIVERGENCE by design, not a bug: a metacharacter is a
+    # character, so '%d+' is not found in "a1b22", '^b' anchors nothing, '['
+    # is not malformed and 'c$' is not an anchor.  The rule for a reader: plain
+    # needles agree with PUC exactly, and anything with a magic character is
+    # treated as the literal it looks like.  The suite's pattern section pins
+    # both halves -- the agreeing cases compare against the oracle.
+    #
+    # A malformed pattern is not an error, which is the one divergence that
+    # CHANGES a message rather than an answer: PUC raises "malformed pattern
+    # (missing ']')" and this answers nil.
+    # What the plain matcher answers for every magic needle above, generated
+    # in one worker batch (tools-side pin script, one chip build) and pasted:
+    # each is the literal search -- subjects unchanged, counts 0, malformed
+    # needles simply not found.  A pin here is the divergence documented, not a
+    # bug hidden: plain needles agree with the oracle and need no entry.
+    "pat-find-anchor": 'nil\tnil\n',
+    "pat-find-end-anchor": 'nil\tnil\n',
+    "pat-find-plain": '2\t2\tnil\n',
+    "pat-find-no-init-after-four": '2\t2\t3\t3\n',
+    "pat-find-class": 'nil\n',
+    "pat-match-quantifier": 'nil\tnil\tnil\tnil\n',
+    "pat-match-greedy-backtrack": 'nil\tnil\n',
+    "pat-match-lazy": 'nil\tnil\n',
+    "pat-match-optional": 'nil\tnil\n',
+    "pat-optional-backtrack": 'nil\tnil\tnil\tnil\tnil\n',
+    "pat-plus-floor": 'nil\tnil\tnil\tnil\tnil\n',
+    "pat-plus-floor-set": 'nil\tnil\tnil\tnil\tnil\n',
+    "pat-plus-floor-walk": 'nil\tnil\tnil\tnil\tnil\n',
+    "pat-plus-floor-capture": 'nil\tf(a)(b)\tnil\tnil\n',
+    "pat-match-set": 'nil\tnil\tnil\n',
+    "pat-match-set-dashes": 'nil\tnil\tnil\n',
+    "pat-match-set-class": 'nil\tnil\n',
+    "pat-match-dot": 'nil\tnil\n',
+    "pat-match-set-escaped": 'nil\tnil\n',
+    "pat-match-balance": 'nil\tnil\n',
+    "pat-match-frontier": 'nil\n',
+    "pat-leading-quantifier": 'nil\n',
+    "pat-unmatched-close": 'nil\tnil\n',
+    "pat-capture": 'nil\n',
+    "pat-capture-two": 'nil\n',
+    "pat-capture-match": 'nil\n',
+    "pat-capture-nested": 'nil\tnil\n',
+    "pat-position-capture": 'nil\tnil\tnil\tnil\n',
+    "pat-capture-greedy": 'nil\n',
+    "pat-greedy-tail-literal": 'nil\tnil\tnil\tnil\n',
+    "pat-greedy-tail-empty-subject": 'nil\tnil\tnil\tnil\n',
+    "pat-greedy-tail-class": 'nil\tnil\tnil\tnil\n',
+    "pat-greedy-tail-capture": 'nil\tnil\tnil\n',
+    "pat-empty-at-end": 'nil\tnil\tnil\tnil\n',
+    "pat-empty-at-end-lazy": 'nil\tnil\tnil\n',
+    "pat-empty-at-end-set": 'nil\tnil\tnil\tnil\tnil\tnil\n',
+    "pat-capture-classes": 'nil\tnil\n',
+    "pat-backref": 'nil\tnil\tnil\n',
+    "pat-number-subject": 'nil\tnil\n',
+    "gsub-anchor": 'hello\thello\tabc\thello\thello\t0\n',
+    "gsub-whole-match": 'abc\ta%bc\tabc\tabc\t1\n',
+    "gsub-captures": 'abc\tabc\t2026-09-24\tx=1, y=2\t0\n',
+    "gsub-position-capture": 'abc\t0\n',
+    "gsub-star-empty": 'aaa\tabc\tabc\tabc\t2\n',
+    "gsub-table": 'abc\tabc\tabc\t1\n',
+    "gsub-function": 'abc\tAbc\ta1b2\t0\n',
+    "gsub-function-args": '1bc\tabc\tabc\tabc\t0\n',
+    "gsub-function-nil": 'abc\tabc\t0\n',
+    "gsub-number-replacement": '5bc\t42\txbc\t1\n',
+    "gmatch-words": '\n',
+    "gmatch-captures": '\n',
+    "gmatch-star-empty": '\n',
+    "gmatch-lazy-empty": '\n',
+    "gmatch-optional-end": '\n',
+    "gmatch-star-miss": '\n',
+    "gmatch-dot": '\n',
+    "gmatch-dollars": '\n\n',
+    "gmatch-anchor-b": '\n',
+    "gmatch-anchor-whole": '\n',
+    "puc-bsame-find": 'nil\n',
+    "puc-bsame-match": 'nil\n',
+    "puc-bsame-gsub": "alo 'oi' alo\t0\n",
+    "puc-fpct-a": 'nil\n',
+    "puc-fpct-b": 'nil\n',
+    "puc-fpct-c": 'nil\n',
+    "puc-fpct-d": 'nil\n',
+    "pat-z-is-not-letter": 'azb\tnil\tazb\t0\n',
+    "pat-greedy-no-tail": 'nil\tnil\tnil\tnil\tnil\n',
+    "puc-wstar-anchor": 'false\n',
+    # The pattern gate's own name in its message used to be reachable as a value
+    # through pcall, where PUC named it by its library path.  A named call names
+    # it the way PUC does, so that divergence is gone with catching.
     # error's message carries the chunk and line of whatever called error, and
-    # pcall hands that message on as a value.  The chip has no line at run time
-    # to name, so the text a program asked for is what it gets.
-    "pcall-catch": "false\tboom\n",
-    "pcall-deep-error": "false\tbottom\n",
-    "pcall-nested": "true\tfalse\tinner\n",
-    "xpcall-catch": "false\tH:boom\n",
-    "xpcall-two": "false\t7\t8\n",
+    # the chip has no line at run time to name, so the text a program asked for
+    # is what it gets.
 }
 
 

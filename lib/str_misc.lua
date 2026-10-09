@@ -25,16 +25,14 @@
 -- string converts ("3" works, 2.0 works), a float or float-string is "number has
 -- no integer representation", anything else is "number expected, got T" --
 -- including "3x", which never parses and is therefore a TYPE error, not a
--- representation one.  Strings go through one pcall of a load-time converter for
--- that reason, the ult shape.  sep is luaL_optlstring: absent or nil is "",
--- a number converts, anything else is "got T".
+-- representation one.  A numeric string is asked of the chip's own coercion
+-- (_m mode 15), which answers nil for exactly the strings that never parse, so
+-- the two errors stay apart without a protected call.  sep is luaL_optlstring:
+-- absent or nil is "", a number converts, anything else is "got T".
 --
 -- `function(...)` so an absent argument is tellable from a nil one; lib/str_case.lua
 -- says why.
 string = string or {}
-local function _rep_num(v)
-  return v + 0
-end
 string.rep = function(...)
 local nargs = select('#', ...)
 if nargs == 0 then
@@ -56,12 +54,11 @@ if nt ~= "number" and nt ~= "string" then
   error("bad argument #2 to 'string.rep' (number expected, got " .. nt .. ")", 2)
 end
 if nt == "string" then
-  local ok, v = pcall(_rep_num, n)
-  if ok then
-    nn = v
-  else
+  local v = _m(15, n, 0)
+  if v == nil then
     error("bad argument #2 to 'string.rep' (number expected, got string)", 2)
   end
+  nn = v
 end
 local ni = _m(13, nn, 0)
 if ni == nil then

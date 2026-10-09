@@ -1,9 +1,9 @@
 -- string.gmatch, bound to the _gmatch gate.
 --
 -- The iterator is a gate and not a piece because it is a MACHINE: it has to
--- suspend mid-pattern-match and resume, and the only way back into Lua on a
--- gate's behalf is the pcall frame, which cannot nest (pcall-of-pcall is
--- unsupported).  So gmatch is two gates plus a micro-step, and lib/gmatch.lua
+-- suspend mid-match and resume, and a gate answers through the micro-step
+-- (nxMode 3), one statement-level step per call.  So gmatch is two gates plus a
+-- micro-step, and lib/gmatch.lua
 -- is the PUC-verified Lua kept as the reference implementation the gates are
 -- proved against -- deliberately not installed.
 --

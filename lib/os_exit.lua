@@ -11,7 +11,9 @@
 -- The other half is a real divergence: PUC's exit terminates THROUGH pcall,
 -- this one is caught by it (it is error underneath).  Unavoidable without a
 -- halt primitive the compiler does not have.  Nobody pcalls os.exit except a
--- test proving exactly this, which is why the case below does.
+-- test proving exactly this, which is why the case below does -- and on the
+-- lite chip, where catching is gone, that case is a direct error assertion
+-- instead of a pcall pair.
 os = os or {}
 os.exit = function(c)
   if c == nil or c == true or c == 0 then error("", 0) else error("exit: " .. tostring(c), 0) end

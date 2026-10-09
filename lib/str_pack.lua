@@ -211,6 +211,9 @@ end
 -- unit() is reached THROUGH here, so its level-3 errors would point at pack
 -- rather than the user; pcall re-raises position-free (checkerror is substring
 -- matching, so the position prefix is load-bearing for nobody).
+-- (pcall is gone from the chip -- fid 18 raises -- so this reference, which is
+-- deliberately NOT installed, would need _m(15, ...) style checks revived with
+-- it if it ever is.)
 local function bang(fmt, pos, what)
   local c = fmt:sub(pos, pos)
   if c:match("%d") then
