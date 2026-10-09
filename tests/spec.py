@@ -66,7 +66,7 @@ TIMEOUT = 90       # seconds per case before the worker is killed
 # lua.ws).  A program's own functions get ids from NB upward, and NB has to
 # match the `const NB` in lua.ws.
 BUILTINS = (("print", 0), ("type", 1), ("tostring", 2),
-             ("clock", 5), ("innumarr", 6), ("outnumarr", 7),
+             ("clock", 5), ("inNumArr", 6), ("outNumArr", 7),
              ("select", 8), ("next", 9), ("_s", 10), ("_m", 11), ("unpack", 12),
              ("_fmt", 13),
              ("_rd", 14),
@@ -81,12 +81,12 @@ BUILTINS = (("print", 0), ("type", 1), ("tostring", 2),
              # the output setters: writing outside the chip is a call, so it
              # reads as an action rather than as editing its state.  fid 4 was
              # outvec and stays reserved (see test_consistency's RESERVED_FIDS).
-             ("outnum", 23), ("outstr", 24),
-             # instrarr reads the string array input and outstrarr
+             ("outNum", 23), ("outStr", 24),
+             # inStrArr reads the string array input and outStrArr
              # writes the string array output: the two halves of
              # the string array port pair.  Both are last so no
              # existing fid moves.
-             ("instrarr", 25), ("outstrarr", 26))
+             ("inStrArr", 25), ("outStrArr", 26))
 
 
 # first id available to the program's own functions.  NOT len(BUILTINS):
@@ -94,20 +94,20 @@ BUILTINS = (("print", 0), ("type", 1), ("tostring", 2),
 NB = max(fid for _n, fid in BUILTINS) + 1
 
 # Canonical global slot order the chip must declare (out, in, builtins, ints).
-GSLOT_ORDER = [    "inNum0",
-    "inNum1",
+GSLOT_ORDER = [    "inNum1",
     "inNum2",
     "inNum3",
-    "inStr0",
+    "inNum4",
     "inStr1",
-    "outnum",
-    "outstr",
+    "inStr2",
+    "outNum",
+    "outStr",
     "print",
     "type",
     "tostring",
     "clock",
-    "innumarr",
-    "outnumarr",
+    "inNumArr",
+    "outNumArr",
     "select",
     "next",
     "_s",
@@ -127,5 +127,5 @@ GSLOT_ORDER = [    "inNum0",
     "string",
     "table",
     "io",
-    "instrarr",
-    "outstrarr"]
+    "inStrArr",
+    "outStrArr"]

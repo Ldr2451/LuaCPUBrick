@@ -116,7 +116,7 @@ def _first_line(raw):
 
 
 def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
-               innumarr=None, instrarr=None, timeout=15, inint=None):
+               inNumArr=None, inStrArr=None, timeout=15, inint=None):
     if LUA_BIN is None:
         return {"avail": False}
     pre = []
@@ -129,42 +129,42 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     sinputs = {int(k): v for k, v in (sinputs or {}).items()}
     for k in range(4):
         v = float(inputs[k]) if inputs and k < len(inputs) else 0.0
-        pre.append(f"inNum{k} = {lua_num_lit(v)}")
+        pre.append(f"inNum{k + 1} = {lua_num_lit(v)}")
     for k in (0, 1):
         s = sinputs.get(k, "")
-        pre.append(f"inStr{k} = {lua_str_lit(s)}")
-    arr = [float(v) for v in innumarr] if innumarr else []
+        pre.append(f"inStr{k + 1} = {lua_str_lit(s)}")
+    arr = [float(v) for v in inNumArr] if inNumArr else []
     pre.append("ARR = {" + ", ".join(lua_num_lit(v) for v in arr) + "}")
-    # innumarr models the chip's PORT function, so it has to carry the port's
-    # contract: innumarr(i) is one slot and innumarr(i, k) is k of them, with a slot
+    # inNumArr models the chip's PORT function, so it has to carry the port's
+    # contract: inNumArr(i) is one slot and inNumArr(i, k) is k of them, with a slot
     # past the end reading nil.  Without the second form the model silently
     # answered one value where the chip answers k, and any program using it
     # diverged from the reference for a reason that had nothing to do with the
     # chip.  The count guard raises with level 0 because the chip has no line to
     # put in a message.
-    pre.append("innumarr = function(i, k)")
+    pre.append("inNumArr = function(i, k)")
     pre.append("  if type(i) ~= 'number' or i ~= math.floor(i)")
     pre.append("      or i < 1 or i > #ARR then return nil end")
     pre.append("  if k == nil then return ARR[i] end")
     pre.append("  if type(k) ~= 'number' or k ~= math.floor(k) or k < 1 or k > 8")
-    pre.append("      then error('bad argument #2 to \\'innumarr\\' (count out of"
+    pre.append("      then error('bad argument #2 to \\'inNumArr\\' (count out of"
                " range)', 0) end")
     pre.append("  local got = {}")
     pre.append("  for j = 0, k - 1 do got[j + 1] = ARR[i + j] end")
     pre.append("  return table.unpack(got, 1, k)")
     pre.append("end")
-    # instrarr is innumarr over SARR, and it has to be modelled rather than stubbed
+    # inStrArr is inNumArr over SARR, and it has to be modelled rather than stubbed
     # for the same reason: a stub answers one value where the chip answers k, and
     # the diff would then be about the model.  SARR holds STRINGS, so a case can
     # hand a program a list and let PUC decide what it does with them.
-    sarr = list(instrarr) if instrarr else []
+    sarr = list(inStrArr) if inStrArr else []
     pre.append("SARR = {" + ", ".join(lua_str_lit(s) for s in sarr) + "}")
-    pre.append("instrarr = function(i, k)")
+    pre.append("inStrArr = function(i, k)")
     pre.append("  if type(i) ~= 'number' or i ~= math.floor(i)")
     pre.append("      or i < 1 or i > #SARR then return nil end")
     pre.append("  if k == nil then return SARR[i] end")
     pre.append("  if type(k) ~= 'number' or k ~= math.floor(k) or k < 1 or k > 8")
-    pre.append("      then error('bad argument #2 to \\'instrarr\\' (count out of"
+    pre.append("      then error('bad argument #2 to \\'inStrArr\\' (count out of"
                " range)', 0) end")
     pre.append("  local got = {}")
     pre.append("  for j = 0, k - 1 do got[j + 1] = SARR[i + j] end")
@@ -172,16 +172,16 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     pre.append("end")
     # The port writers are no-ops: the reference has no ports, so their values
     # are the chip's to check and the log is the part PUC can decide.  the output setters
-    # belongs here beside outnumarr for the same reason -- without one the model
+    # belongs here beside outNumArr for the same reason -- without one the model
     # raises "attempt to call a nil value (global 'outvec')" on any program that
     # writes a vector, which is every demo, and the demo's expected log had been
     # written by hand because the reference could never run the file at all.
     # test_consistency.py's declared-builtins-modelled check is what keeps them
     # all present, so this list is the one that has to stay in step.
-    pre.append("outnumarr = function() end")
-    pre.append("outstrarr = function() end")
-    pre.append("outnum = function() end")
-    pre.append("outstr = function() end")
+    pre.append("outNumArr = function() end")
+    pre.append("outStrArr = function() end")
+    pre.append("outNum = function() end")
+    pre.append("outStr = function() end")
     vv = vec or (0.0, 0.0, 0.0)
     for name, v in zip(("invecx", "invecy", "invecz"), vv):
         pre.append(f"{name} = {lua_num_lit(float(v))}")
@@ -197,7 +197,7 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     pre.append("end")
     # io.write goes to the log with no tab and no newline, which is what the
     # chip's _wr does, so it is captured the same way and marked 'w' for the
-    # parser.  io.read and io.lines read the text in inStr0, which is where the
+    # parser.  io.read and io.lines read the text in inStr1, which is where the
     # chip reads standard input from -- PUC's would read the (empty) real stdin.
     pre.append("io.write = function(...)")
     pre.append("  local t = {}")
@@ -208,25 +208,25 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     pre.append("io.read = function(fmt)")
     pre.append("  if fmt == nil then fmt = '*l' end")
     pre.append("  if type(fmt) == 'number' then")
-    pre.append("    local s = inStr0:sub(SP + 1, SP + fmt)")
+    pre.append("    local s = inStr1:sub(SP + 1, SP + fmt)")
     pre.append("    SP = SP + #s")
     pre.append("    return s")
     pre.append("  end")
     pre.append("  if fmt == '*a' or fmt == 'a' then")
-    pre.append("    local s = inStr0:sub(SP + 1)")
-    pre.append("    SP = #inStr0")
+    pre.append("    local s = inStr1:sub(SP + 1)")
+    pre.append("    SP = #inStr1")
     pre.append("    return s")
     pre.append("  end")
     pre.append("  if fmt == '*l' or fmt == 'l' then")
-    pre.append("    if SP >= #inStr0 then return nil end")
-    pre.append("    local nl = inStr0:find('\\n', SP + 1, true)")
+    pre.append("    if SP >= #inStr1 then return nil end")
+    pre.append("    local nl = inStr1:find('\\n', SP + 1, true)")
     pre.append("    local s")
     pre.append("    if nl then")
-    pre.append("      s = inStr0:sub(SP + 1, nl - 1)")
+    pre.append("      s = inStr1:sub(SP + 1, nl - 1)")
     pre.append("      SP = nl")
     pre.append("    else")
-    pre.append("      s = inStr0:sub(SP + 1)")
-    pre.append("      SP = #inStr0")
+    pre.append("      s = inStr1:sub(SP + 1)")
+    pre.append("      SP = #inStr1")
     pre.append("    end")
     pre.append("    if s:sub(-1) == '\\r' then s = s:sub(1, -2) end")
     pre.append("    return s")

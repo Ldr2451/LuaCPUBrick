@@ -2,7 +2,7 @@
 
 96% of nodes carry no `_bindname` and nothing in the graph records a source
 line, so the breakdown has to come from what the nodes *are*: a class (an add, a
-compare, a literal) and a port name (`outNum0`, `self`, `program`).  Port names
+compare, a literal) and a port name (`outNum1`, `self`, `program`).  Port names
 are declared in mods, so counting by port attributes the bulk of the chip
 without needing the compiler to change.
 

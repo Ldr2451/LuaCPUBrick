@@ -32,8 +32,8 @@ PROGRAMS = [
               "local ok, v = pcall(function() s = s + i return s end) end "
               "print(s)", None),
     ("string", "print(string.format('%d/%s', 42, string.rep('ab', 3)))", None),
-    ("input", "print(inStr0, inNum0, #tostring(inNum1))", ("hi", 2.5, 7.0)),
-    ("io", "print(inStr0 .. '!')", ("x", None, None)),
+    ("input", "print(inStr1, inNum1, #tostring(inNum2))", ("hi", 2.5, 7.0)),
+    ("io", "print(inStr1 .. '!')", ("x", None, None)),
 ]
 
 
@@ -42,8 +42,8 @@ def trace(ws_path, src, sin, limit=4000):
     n, w, _ = dump_source(ws_path)
     sim = Sim(n, [Wire(*x) for x in w])
     if sin:
-        sim.inputs = {"inStr0": sin[0], "run": True}
-        sim.inputs["inNum1"] = sin[2] if len(sin) > 2 else 0.0
+        sim.inputs = {"inStr1": sin[0], "run": True}
+        sim.inputs["inNum2"] = sin[2] if len(sin) > 2 else 0.0
     sim.inputs.update({"program": src, "run": True})
     marks = []
     sim.run(max_ticks=limit, on_tick=lambda sim, tick: marks.append(sim.log))

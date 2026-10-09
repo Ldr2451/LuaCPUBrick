@@ -55,7 +55,7 @@ def describe(runner, src, ticks, sin):
     a worker sends back and the parent only prints it.
     """
     t0 = time.time()
-    r = runner.run(src, ticks, {"inStr0": sin[0]} if sin else None)
+    r = runner.run(src, ticks, {"inStr1": sin[0]} if sin else None)
     dt = time.time() - t0
     og = r.get('outGlobals', {})
     got = r.get('log', '')
@@ -119,7 +119,7 @@ def main(argv):
         else:
             progs.append(resolve_prog(a, ROOT))
     progs = progs or ["function f() return 1,2 end local a, b = f() print(a, b)"]
-    # STDIN feeds inStr0, which is where the chip reads standard input from, so
+    # STDIN feeds inStr1, which is where the chip reads standard input from, so
     # a probe of io.read can set it without writing a case
     sin = {0: os.environ["STDIN"]} if "STDIN" in os.environ else None
     with Elapsed("check(%d programs)" % len(progs)):

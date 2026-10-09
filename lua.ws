@@ -3,9 +3,9 @@
 ///
 /// Wire a Lua program into `program` (a string variable gate) and drive `run` high.
 /// The program is lexed, parsed to flat bytecode, then executed on a register VM.
-/// Numbers go in through inNum0..inNum3, strings through inStr0..inStr1, whole arrays
-/// through inNumArr and inStrArr, and the program itself in the log; outNum0..outNum3,
-/// outStr0..outStr1, outNumArr and outStrArr come back out and are
+/// Numbers go in through inNum1..inNum4, strings through inStr1..inStr2, whole arrays
+/// through inNumArr and inStrArr, and the program itself in the log; outNum1..outNum4,
+/// outStr1..outStr2, outNumArr and outStrArr come back out and are
 /// writable from Lua.
 ///
 /// Ports
@@ -14,39 +14,39 @@
 ///                         stops immediately (outputs keep their values). A rising
 ///                         edge restarts the program from the top. Left unwired it
 ///                         is low, so nothing runs: wire a constant true to auto-run.
-///   in  inNum0..inNum3: float   sticky numeric inputs, readable as globals inNum0..inNum3
-///   in  inStr0..inStr1: string  sticky string inputs, readable as globals inStr0..inStr1
-///   in  inNumArr: float[]    Lua reads it 1-based via innumarr(i); out-of-range reads nil.
-///                         innumarr(i, k) reads k of them into k results (k is 1..8, and
+///   in  inNum1..inNum4: float   sticky numeric inputs, readable as globals inNum1..inNum4
+///   in  inStr1..inStr2: string  sticky string inputs, readable as globals inStr1..inStr2
+///   in  inNumArr: float[]    Lua reads it 1-based via inNumArr(i); out-of-range reads nil.
+///                         inNumArr(i, k) reads k of them into k results (k is 1..8, and
 ///                         a slot past the end reads nil), so a run of adjacent slots
 ///                         costs one call instead of k
-///   in  inStrArr: string[]  the same two shapes for strings, via instrarr(i) and
-///                         instrarr(i, k).  A port carries one wire type, so this is
+///   in  inStrArr: string[]  the same two shapes for strings, via inStrArr(i) and
+///                         inStrArr(i, k).  A port carries one wire type, so this is
 ///                         a second port rather than a wider inNumArr: a program
 ///                         that needs both reads both, and one that has only
 ///                         numbers keeps paying nothing for the string half
 ///
 ///   Naming: a PORT is camelCase and the function that reads or writes it is the
-///   lowercase of that name -- outNum0/outStr0/outNumArr/outStrArr are written
-///   by outnum, outstr, outnumarr and outstrarr, and inNumArr/inStrArr are
-///   read by innumarr/instrarr.  The
-///   camelCase names a program sees as VALUES (inNum0, inStr0) are the port
+///   lowercase of that name -- outNum1/outStr1/outNumArr/outStrArr are written
+///   by outNum, outStr, outNumArr and outStrArr, and inNumArr/inStrArr are
+///   read by inNumArr/inStrArr.  The
+///   camelCase names a program sees as VALUES (inNum1, inStr1) are the port
 ///   mirrors, which are values and not calls, so they keep the port's spelling.
 ///   out log: string       print and io.write output: a print call is one line (args
 ///                         tab-separated plus a newline, capped at 128 chars), an
 ///                         io.write is its raw text with no tab and no newline; the
 ///                         last 32 appends are kept, cleared on restart
-///   out outNum0..outNum3: float  written by outnum(i, v), i 1..4 (nil writes 0.0;
+///   out outNum1..outNum4: float  written by outNum(i, v), i 1..4 (nil writes 0.0;
 ///                         writing a string/table/function is a runtime error)
-///   out outStr0..outStr1: string  written by outstr(i, v), i 1..2, Lua-formatted
+///   out outStr1..outStr2: string  written by outStr(i, v), i 1..2, Lua-formatted
 ///                                (nil writes "")
-///   out outNumArr: float[] 16,384 slots, written 1-based via outnumarr(i, v)
-///                         (nil writes 0.0).  outnumarr(i, v, ...) writes one
+///   out outNumArr: float[] 16,384 slots, written 1-based via outNumArr(i, v)
+///                         (nil writes 0.0).  outNumArr(i, v, ...) writes one
 ///                         slot per extra value, up to 8, so a run of adjacent
 ///                         slots costs one call instead of k; a call with more
 ///                         values than that writes the first 8
 ///   out outStrArr: string[] the same slots and the same shapes for strings,
-///                         via outstrarr(i, v) and outstrarr(i, v, ...): nil
+///                         via outStrArr(i, v) and outStrArr(i, v, ...): nil
 ///                         writes "" and anything but a string is a runtime error
 ///   out result: string    top-level return value, "" when none
 ///   out runErrors: string runtime error text, "" when none; compile failures
@@ -56,8 +56,8 @@
 ///                        `warn: ` advisory; empty when there were none
 ///   out busy: bool        true while lexing, parsing, or executing with run high
 ///   A change on any scalar input while `run` is high restarts the program with the new
-///   value. The two array ports are the exception and are read live by innumarr() and
-///   instrarr() (no restart): an array is a container and a change detector watches one
+///   value. The two array ports are the exception and are read live by inNumArr() and
+///   inStrArr() (no restart): an array is a container and a change detector watches one
 ///   wire value, so there is nothing for `on Change` to observe (the compiler says so,
 ///   WS059). Changing an input while
 ///   `run` is low leaves the outputs alone.
@@ -103,7 +103,7 @@
 ///              functions, table.unpack, next, _fmt, _rd, _wr)
 ///   io         io.write(...) appends the Lua-formatted arguments to the log with no
 ///              tab and no newline; io.read() and io.read('*l') read one line, io.read(n)
-///              n bytes and io.read('*a') the rest, all from inStr0, the program's
+///              n bytes and io.read('*a') the rest, all from inStr1, the program's
 ///              standard input; io.lines() iterates its lines. Each returns nil at end
 ///              of input. io.write returns nothing: the chip has no file objects, so
 ///              there is no io.stdout to hand back the way PUC's does
@@ -269,7 +269,7 @@
 /// Verification: differential tests against real Lua 5.5, structural model<->chip
 /// consistency checks (builtin ids, global slots, limits, ports, opcode and keyword
 /// coverage, re-parse/restart clearing), and simulated handler tests for run, the log,
-/// innumarr/outnumarr, outnum/outstr/outstrarr and error reporting.
+/// inNumArr/outNumArr, outNum/outStr/outStrArr and error reporting.
 /// It has not been run inside Brickadia.
 
 @layout("cube")
@@ -278,22 +278,22 @@
 
 @left in program: string
 @left in run: bool
-@left in inNum0: float
 @left in inNum1: float
 @left in inNum2: float
 @left in inNum3: float
-@left in inStr0: string
+@left in inNum4: float
 @left in inStr1: string
+@left in inStr2: string
 @left in inNumArr: float[]
 @left in inStrArr: string[]
 
 @right out log: string = logV.Value
-@right out outNum0: float = oF0.Value
-@right out outNum1: float = oF1.Value
-@right out outNum2: float = oF2.Value
-@right out outNum3: float = oF3.Value
-@right out outStr0: string = oS4.Value
-@right out outStr1: string = oS5.Value
+@right out outNum1: float = oF0.Value
+@right out outNum2: float = oF1.Value
+@right out outNum3: float = oF2.Value
+@right out outNum4: float = oF3.Value
+@right out outStr1: string = oS4.Value
+@right out outStr2: string = oS5.Value
 @right out outNumArr: float[] = outNumArrV
 @right out outStrArr: string[] = outStrArrV
 @right out result: string = resultV.Value
@@ -954,14 +954,14 @@ var cloDst: int = 0
 var cloActive: bool = false
 
 // Pre-registered globals, in the gDeclare order in parseInit: the six INPUTS are
-// slots 0..5 (inNum0..inNum3 then inStr0..inStr1) and are filled from the latches;
-// after them come the callables, the four library tables, and instrarr last.  The
+// slots 0..5 (inNum1..inNum4 then inStr1..inStr2) and are filled from the latches;
+// after them come the callables, the four library tables, and inStrArr last.  The
 // writable outputs are deliberately NOT globals -- they are written by
-// outnum/outstr/outnumarr and read on their own ports, so there is no slot for them
+// outNum/outStr/outNumArr and read on their own ports, so there is no slot for them
 // at all.
 // The two arrays below carry the seed for every slot, and that pair plus the
 // gDeclare list are the authority.  This comment used to spell the whole slot map
-// out in prose, and was wrong twice over: it listed outNum0..outNum3, invec and
+// out in prose, and was wrong twice over: it listed outNum1..outNum4, invec and
 // outvec as globals, and none of the three exists -- the outputs are calls and the
 // vector ports are gone (RESERVED_FIDS keeps the ids).  That is a hand-kept mirror
 // of numbers the chip computes, which is how a doc ends up confidently disagreeing
@@ -1393,9 +1393,9 @@ mod patClassHit(c: int, code: int, neg: bool) -> bool {
 
 // ==================================================================== io: stdin
 //
-// The text in the inStr0 port is the program's standard input, and two gate
+// The text in the inStr1 port is the program's standard input, and two gate
 // builtins plus a library piece give it PUC's io.read / io.write / io.lines.
-// inStr0 rather than a port of its own: it is already a string input, the
+// inStr1 rather than a port of its own: it is already a string input, the
 // harness already sets it, and a ninth input port is API surface for nothing.
 //
 //   _rd(fmt)  fmt is a byte count, "*a" (the rest), "*l" (a line, the newline
@@ -1773,7 +1773,7 @@ mod gDeclare(name: string) -> int {
 // A global the program only READS and that nothing has declared.  The chip makes
 // a slot and the read yields nil, which is exactly what PUC does, so this is NOT
 // an error and must never stop the program.  But a name that resolves to nothing
-// is nearly always a typo - `in0` for `inNum0` - and PUC cannot say so because
+// is nearly always a typo - `in0` for `inNum1` - and PUC cannot say so because
 // PUC has no ports to mistype.  Recorded once per name while compiling and
 // reported on progDebug as advice, which is the only thing that catches a typo
 // the chip cannot enumerate.
@@ -1788,38 +1788,38 @@ mod gDeclare(name: string) -> int {
 // would have, because deciding what an absent argument reads as is the runtime's
 // job and this chip is not going to disagree with it at parse time.
 // The index argument of a port call, when it is a literal.  Value-based, like
-// the runtime check it mirrors, so outnum(2.5, v) is caught too.
+// the runtime check it mirrors, so outNum(2.5, v) is caught too.
 // A port builtin called with NO arguments.  The count comes from the token, not
 // from valStk: at the call site this call's arguments have not been pushed yet,
 // so valStk counts the enclosing expression and an earlier version warned on
-// outnum(i, i).
+// outNum(i, i).
 //
 // The lexer emits `)` as sub 15 (`(` 14, `,` 16, `;` 17), so after cpos moves past
 // the paren and the callee, the current token is `)` exactly when the call had no
 // arguments at all.  That is the realistic typo and it is one comparison.
 //
-// The general count - outnum(2), one argument where two are needed - needs a scan
+// The general count - outNum(2), one argument where two are needed - needs a scan
 // to the MATCHING paren, and this language has no loop, so it would have to be a
 // hand-unrolled ladder.  Left for later rather than guessed at.
 mod noteArity(name: string) {
   if curKind() == 5 && curSub() == 15 {
-    if name == "outnum" {
-      nameWarn = nameWarn .. "warn: outnum() takes an index and a value, i in 1..4, and was given none\n"
+    if name == "outNum" {
+      nameWarn = nameWarn .. "warn: outNum() takes an index and a value, i in 1..4, and was given none\n"
     }
-    if name == "outstr" {
-      nameWarn = nameWarn .. "warn: outstr() takes an index and a value, i in 1..2, and was given none\n"
+    if name == "outStr" {
+      nameWarn = nameWarn .. "warn: outStr() takes an index and a value, i in 1..2, and was given none\n"
     }
-    if name == "outnumarr" {
-      nameWarn = nameWarn .. "warn: outnumarr() takes an index and at least one value, and was given none\n"
+    if name == "outNumArr" {
+      nameWarn = nameWarn .. "warn: outNumArr() takes an index and at least one value, and was given none\n"
     }
-    if name == "outstrarr" {
-      nameWarn = nameWarn .. "warn: outstrarr() takes an index and at least one value, and was given none\n"
+    if name == "outStrArr" {
+      nameWarn = nameWarn .. "warn: outStrArr() takes an index and at least one value, and was given none\n"
     }
-    if name == "innumarr" {
-      nameWarn = nameWarn .. "warn: innumarr() takes an index from 1, and was given none\n"
+    if name == "inNumArr" {
+      nameWarn = nameWarn .. "warn: inNumArr() takes an index from 1, and was given none\n"
     }
-    if name == "instrarr" {
-      nameWarn = nameWarn .. "warn: instrarr() takes an index from 1, and was given none\n"
+    if name == "inStrArr" {
+      nameWarn = nameWarn .. "warn: inStrArr() takes an index from 1, and was given none\n"
     }
   }
 }
@@ -1827,51 +1827,51 @@ mod noteArity(name: string) {
 mod noteIndex(name: string) {
   if curKind() == 1 {
     let v = curNum()
-    if name == "outnum" && !(1.0 <= v && v <= 4.0) {
-      nameWarn = nameWarn .. "warn: outnum index must be 1..4, and this call is out of range\n"
+    if name == "outNum" && !(1.0 <= v && v <= 4.0) {
+      nameWarn = nameWarn .. "warn: outNum index must be 1..4, and this call is out of range\n"
     }
-    if name == "outstr" && !(1.0 <= v && v <= 2.0) {
-      nameWarn = nameWarn .. "warn: outstr index must be 1..2, and this call is out of range\n"
+    if name == "outStr" && !(1.0 <= v && v <= 2.0) {
+      nameWarn = nameWarn .. "warn: outStr index must be 1..2, and this call is out of range\n"
     }
-    // outNumArr raises on a bad index.  innumarr is bounded by the same length but
+    // outNumArr raises on a bad index.  inNumArr is bounded by the same length but
     // substitutes nil and carries on, and saying THAT is worth having - a silent
     // nil is the worse failure - but it is NOT here, and the reason is worth more
     // than the check: reading an input PORT during codegen empties every program,
-    // including ones that never mention innumarr, because all of noteIndex is inlined
+    // including ones that never mention inNumArr, because all of noteIndex is inlined
     // into exprPushName so the read is in the graph whether or not the branch is
     // taken.  outNumArrV.length() is safe because that is a chip-side array var.  The
     // width has to come from a constant, and no such constant exists yet.
-    if name == "outnumarr" {
+    if name == "outNumArr" {
       if v != floor(v) || v < 1.0 || v > ARR_SLOTS {
         nameWarn = nameWarn
-          .. "warn: array index out of range, and outnumarr is 1-based over the outNumArr slots\n"
+          .. "warn: array index out of range, and outNumArr is 1-based over the outNumArr slots\n"
       }
     }
-    // outstrarr raises on a bad index, and the bound is ARR_SLOTS,
+    // outStrArr raises on a bad index, and the bound is ARR_SLOTS,
     // the const that sizes every array port.
-    if name == "outstrarr" {
+    if name == "outStrArr" {
       if v != floor(v) || v < 1.0 || v > ARR_SLOTS {
         nameWarn = nameWarn
-          .. "warn: array index out of range, and outstrarr is 1-based over the outStrArr slots\n"
+          .. "warn: array index out of range, and outStrArr is 1-based over the outStrArr slots\n"
       }
     }
-    // Same bound, different consequence: a bad innumarr index substitutes nil and the
+    // Same bound, different consequence: a bad inNumArr index substitutes nil and the
     // program carries on, so there is no crash - which is exactly why it is worth
     // saying, because a silent nil is the worse of the two failures.  PUC agrees
     // (t[65] over 64 slots is nil), so this is advice and not a divergence.
-    if name == "innumarr" {
+    if name == "inNumArr" {
       if v != floor(v) || v < 1.0 || v > ARR_SLOTS {
         nameWarn = nameWarn
-          .. "warn: innumarr reads past the end of inNumArr and gives nil, silently, as in PUC\n"
+          .. "warn: inNumArr reads past the end of inNumArr and gives nil, silently, as in PUC\n"
       }
     }
-    // instrarr's bound and its consequence are innumarr's, and they are the same
+    // inStrArr's bound and its consequence are inNumArr's, and they are the same
     // ARR_SLOTS const: the host sizes both array ports alike, and reading either
     // port while parsing is what emptied every program's log (see above).
-    if name == "instrarr" {
+    if name == "inStrArr" {
       if v != floor(v) || v < 1.0 || v > ARR_SLOTS {
         nameWarn = nameWarn
-          .. "warn: instrarr reads past the end of inStrArr and gives nil, silently, as in PUC\n"
+          .. "warn: inStrArr reads past the end of inStrArr and gives nil, silently, as in PUC\n"
       }
     }
   }
@@ -2496,9 +2496,9 @@ mod vmReset() {  tmap.clear()
   patGmMagic.clear()
   patTid = 0
   patLastTid = 0
-  // the text in inStr0 is the program's standard input, and a run starts at its
+  // the text in inStr1 is the program's standard input, and a run starts at its
   // beginning; the cursors are state, so they go with everything else
-  rdText = inStr0
+  rdText = inStr1
   rdPos = 0
   rdBuf = ""
   rdGot = false
@@ -3572,7 +3572,7 @@ mod patSetStep() {
 // comment or a variable called `inserted`, and false positives cost boot ticks on
 // every program; `"insert"` is nine characters a program only writes when it means
 // the string.  This is a heuristic and not a proof -- a name assembled as
-// `"ins" .. "ert"`, or arriving from inStr0/io.read, still cannot be seen -- but
+// `"ins" .. "ert"`, or arriving from inStr1/io.read, still cannot be seen -- but
 // it is the difference between a working program and "attempt to call a nil value"
 // for the shape real programs use.
 //
@@ -3598,7 +3598,7 @@ mod patSetStep() {
 // the string.
 //
 // It is a heuristic and not a proof: a name assembled as `"ins" .. "ert"`, or
-// arriving from inStr0/io.read, still cannot be seen.  It is the difference between
+// arriving from inStr1/io.read, still cannot be seen.  It is the difference between
 // a working program and "attempt to call a nil value" for the shape real programs
 // use.
 //
@@ -3650,7 +3650,7 @@ mod srcUsesField(p: string, name: string) -> bool {
 // This is the fix for the whole family, and it is cheaper than the quoted-name gate
 // it replaces, because `table[` is in the source no matter where the key came from:
 //   local k = "ins" .. "ert"   table[k](t, 1)      assembled
-//   local k = inStr0           table[k](t, 1)      off a port
+//   local k = inStr1           table[k](t, 1)      off a port
 //   local k = io.read()        table[k](t, 1)      off a stream
 // A text search cannot see the NAME, but it can see the INDEX, and one bracket on a
 // NAMED library table is a complete answer: that table's every piece is reachable.
@@ -3920,7 +3920,7 @@ mod libTonumber(p: string) -> string {
 // The hex fallback is its own piece, gated on the program TEXT.  Three ways to
 // reach it, and all three are needed: a hex numeral the lexer takes (0xff in the
 // source), a hex string the program hands to tonumber ("0xff"), and a hex
-// numeral that ARRIVES at run time -- inStr0/inStr1/inStrArr/io.read carry
+// numeral that ARRIVES at run time -- inStr1/inStr2/inStrArr/io.read carry
 // strings the program never wrote, so a program that reads one and parses it
 // needs the walk whatever its source says.  Missing the third is the shape this
 // comment exists for: the gate is static and the string is not, so without
@@ -4165,20 +4165,20 @@ mod parseInit() {
   pendKind = -1
   mainFid = 0
   closeTrig = 0
-  gDeclare("inNum0")
   gDeclare("inNum1")
   gDeclare("inNum2")
   gDeclare("inNum3")
-  gDeclare("inStr0")
+  gDeclare("inNum4")
   gDeclare("inStr1")
-  gDeclare("outnum")
-  gDeclare("outstr")
+  gDeclare("inStr2")
+  gDeclare("outNum")
+  gDeclare("outStr")
   gDeclare("print")
   gDeclare("type")
   gDeclare("tostring")
   gDeclare("clock")
-  gDeclare("innumarr")
-  gDeclare("outnumarr")
+  gDeclare("inNumArr")
+  gDeclare("outNumArr")
   gDeclare("select")
   gDeclare("next")
   gDeclare("_s")
@@ -4198,12 +4198,12 @@ mod parseInit() {
   gDeclare("string")
   gDeclare("table")
   gDeclare("io")
-  gDeclare("instrarr")
-  gDeclare("outstrarr")
+  gDeclare("inStrArr")
+  gDeclare("outStrArr")
   // The runtime wires the latches and outputs straight into these slots, so
   // take the numbers from the declarations instead of repeating them: adding a
   // builtin used to leave a stale literal behind and overwrite its id.
-  slotInLatch = gLookup("inNum0")
+  slotInLatch = gLookup("inNum1")
 }
 
 // Claim register slots up to n.  Both the frame size and the allocator move:
@@ -4530,7 +4530,7 @@ mod slotBase() -> int {
   return fVaB[fVaB.length() - 1] + 1
 }
 
-// outnumarr's value test, in one place because eight call sites have to
+// outNumArr's value test, in one place because eight call sites have to
 // agree: a number (1), a float (6), nil (0) and a boolean (3) may be
 // stored, and nil stores 0.0.  Anything else is a table, a string or a
 // function.
@@ -4538,7 +4538,7 @@ mod arrNumOk(tag: int) -> bool {
   return tag == 1 || tag == 6 || tag == 0 || tag == 3
 }
 
-// outstrarr's value test, in one place because eight call sites
+// outStrArr's value test, in one place because eight call sites
 // have to agree: a string (2) or nil (0) may be stored, and nil
 // stores "".  Anything else is a number, a boolean, a table or a
 // function.
@@ -6404,7 +6404,7 @@ mod exprPushName(callParen: bool, callSugar: bool) {
       // The peek reads the CURRENT TOKEN, which is the first argument, so it is not
       // affected by the value stack.  valStk.length() cannot be used for an arity
       // count here: this call's arguments are not pushed yet at this point, which
-      // is what made an earlier arity check warn on outnum(i, i).
+      // is what made an earlier arity check warn on outNum(i, i).
       //
       if lkKind == 0 {
         noteArity(name)
@@ -9197,10 +9197,10 @@ mod gateLow(fid: int, a: int, nargs: int) {
       retCountV = 1
     }
   } else if fid == 6 {
-    // innumarr(i) reads one slot; innumarr(i, k) reads k of them into k results, so a
+    // inNumArr(i) reads one slot; inNumArr(i, k) reads k of them into k results, so a
     // run of adjacent slots costs one call instead of k.  k is capped at 8: the
     // results go into consecutive registers and MAXVALS is 16, and a wider read
-    // wants a table, which is a different question (see AGENTS.md on innumarr).
+    // wants a table, which is a different question (see AGENTS.md on inNumArr).
     let it = if 0 < nargs then vTag(a + 1) else 0
     let iv = if 0 < nargs then vNum(a + 1) else 0.0
     let kv = if 1 < nargs then vNum(a + 2) else 1.0
@@ -9208,7 +9208,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
       vSetNil(a)
       retCountV = 1
     } else if kv != floor(kv) || kv < 1.0 || kv > 8.0 {
-      vmFail("bad argument #2 to 'innumarr' (count out of range)")
+      vmFail("bad argument #2 to 'inNumArr' (count out of range)")
     } else {
       // i and k are captured into locals BEFORE any result is written: the
       // results land in the registers the arguments are in, so reading them after
@@ -9242,7 +9242,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
       retCountV = cnt
     }
   } else if fid == 7 {
-    // outnumarr(i, v, ...) writes i and the next slots, one per extra
+    // outNumArr(i, v, ...) writes i and the next slots, one per extra
     // value, up to 8.  A call with more values writes the first 8, the same
     // way the two-value form ignored whatever came after the second.  The
     // port is @right out, so the whole array reaches it every tick however
@@ -9255,7 +9255,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
     } else {
       let w = toInt(iv) - 1
       // one value per extra argument, so the count is nargs - 1 and not nargs:
-      // counting the index made outnumarr(64, -1) ask for slot 65, which the
+      // counting the index made outNumArr(64, -1) ask for slot 65, which the
       // demo caught because it writes the last slot
       let cnt = if nargs < 9 then nargs - 1 else 8
       if w + cnt > outNumArrV.length() {
@@ -9956,7 +9956,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
       }
     }
   } else if fid == 14 {
-    // _rd(fmt): one read from the text in inStr0, the way io.read does it
+    // _rd(fmt): one read from the text in inStr1, the way io.read does it
     if nargs < 1 {
       rdLine()
       if rdGot {
@@ -9988,18 +9988,18 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
     }
     retCountV = 1
   } else if fid == 23 {
-    // outnum(i, v): write one of the four numeric output ports.  A call, not an
+    // outNum(i, v): write one of the four numeric output ports.  A call, not an
     // assignment, so writing to the world reads as an action.  The index is
-    // 1-BASED like every table a Lua program can already see, so outnum(1, v)
-    // and outnumarr(1, v) are the same slot and neither has an off-by-one to
+    // 1-BASED like every table a Lua program can already see, so outNum(1, v)
+    // and outNumArr(1, v) are the same slot and neither has an off-by-one to
     // remember.
     let oi = if 0 < nargs then toInt(vNum(a + 1)) else -1
     let ot = if 1 < nargs then vTag(a + 2) else 0
     let ov = if 1 < nargs then vNum(a + 2) else 0.0
     if oi < 1 || oi > 4 {
-      vmFail("outnum index must be 1..4")
+      vmFail("outNum index must be 1..4")
     } else if ot != 1 && ot != 6 && ot != 0 && ot != 3 {
-      vmFail("cannot convert to number (outnum takes numbers)")
+      vmFail("cannot convert to number (outNum takes numbers)")
     } else if oi == 1 {
       oF0 = if ot == 0 then 0.0 else ov
     } else if oi == 2 {
@@ -10012,28 +10012,28 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
     vSetNil(a)
     retCountV = 0
   } else if fid == 24 {
-    // outstr(i, v): one of the two string output ports, Lua-formatted.  Also
-    // 1-based, for the same reason as outnum.
+    // outStr(i, v): one of the two string output ports, Lua-formatted.  Also
+    // 1-based, for the same reason as outNum.
     let si = if 0 < nargs then toInt(vNum(a + 1)) else -1
     let st = if 1 < nargs then vTag(a + 2) else 0
     let sn = if 1 < nargs then vNum(a + 2) else 0.0
     let su = if 1 < nargs then vStr(a + 2) else ""
     if si < 1 || si > 2 {
-      vmFail("outstr index must be 1..2")
+      vmFail("outStr index must be 1..2")
     } else if st == 0 {
       if si == 1 { oS4 = "" } else { oS5 = "" }
     } else if st == 1 || st == 6 || st == 2 || st == 3 {
       let sv = fmtVal(st, sn, su)
       if si == 1 { oS4 = sv } else { oS5 = sv }
     } else {
-      vmFail("cannot convert to string (outstr takes a string, number or nil)")
+      vmFail("cannot convert to string (outStr takes a string, number or nil)")
     }
     vSetNil(a)
     retCountV = 0
   } else if fid == 25 {
-    // instrarr(i) and instrarr(i, k): innumarr's two shapes, reading the string
+    // inStrArr(i) and inStrArr(i, k): inNumArr's two shapes, reading the string
     // array.  Every bound, the 1-based index, the k cap of 8 and the nil past
-    // the end are innumarr's, deliberately -- one reader for an array input is a
+    // the end are inNumArr's, deliberately -- one reader for an array input is a
     // rule, and two hand-written copies of the bounds is how they stop agreeing.
     // A port carries one wire type, so this reads a SECOND port rather than a
     // wider inNumArr; the header says why that is not the same thing.  The arm
@@ -10046,9 +10046,9 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
       vSetNil(a)
       retCountV = 1
     } else if kv != floor(kv) || kv < 1.0 || kv > 8.0 {
-      vmFail("bad argument #2 to 'instrarr' (count out of range)")
+      vmFail("bad argument #2 to 'inStrArr' (count out of range)")
     } else {
-      // i and k captured first, for the reason the innumarr arm gives.
+      // i and k captured first, for the reason the inNumArr arm gives.
       let w = toInt(iv) - 1
       let cnt = toInt(kv)
       if 0 < cnt {
@@ -10078,7 +10078,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
       retCountV = cnt
     }
   } else if fid == 26 {
-    // outstrarr(i, v, ...) writes i and the next slots, one string
+    // outStrArr(i, v, ...) writes i and the next slots, one string
     // per extra value, up to 8.  A call with more values writes the
     // first 8.  The index is 1-based over the outStrArr slots, and a
     // call that would run past the end fails, so a run of adjacent
@@ -10517,7 +10517,7 @@ mod vmStep() {
     } else if op == 5 {
       vSet(a, gTag(b), gNum(b), gStr(b))
     } else if op == 6 {
-      // The output ports are written by outnum/outstr now, not by
+      // The output ports are written by outNum/outStr now, not by
       // assigning a global, so a store to a global is just a store.
       gSet(a, vTag(b), vNum(b), vStr(b))
     } else if op == 7 {
@@ -11299,7 +11299,7 @@ chip vmStepFast() {
   } else if op == 5 {
     vSet(a, gTag(b), gNum(b), gStr(b))
   } else if op == 6 {
-    // The output ports are written by outnum/outstr now, not by
+    // The output ports are written by outNum/outStr now, not by
     // assigning a global, so a store to a global is just a store.
     gSet(a, vTag(b), vNum(b), vStr(b))
   } else if op == 7 {
@@ -11767,7 +11767,7 @@ on goParse {
 //
 // A finding is advice, never a refusal: PUC also lets an undefined global read
 // as nil, so the program still runs and still prints what PUC would print.  A
-// typo is the common case - `in0` for `inNum0` - and it is caught by the general
+// typo is the common case - `in0` for `inNum1` - and it is caught by the general
 // rule in gRef rather than by anything listed here, because that names every
 // unresolved name instead of the ones somebody thought to write down.
 mod staticAdvice(p: string) -> string {
@@ -11856,12 +11856,12 @@ on goParse2 {
     // Latches, not globals, so that every LATER reset (a `run` edge, a grid read)
     // copies the same correct value.  Seeding the globals directly would be
     // undone by the next vmReset.
-    latchN0 = inNum0
-    latchN1 = inNum1
-    latchN2 = inNum2
-    latchN3 = inNum3
-    latchS0 = inStr0
-    latchS1 = inStr1
+    latchN0 = inNum1
+    latchN1 = inNum2
+    latchN2 = inNum3
+    latchN3 = inNum4
+    latchS0 = inStr1
+    latchS1 = inStr2
     vmReset()
     vmClosures()
     if perr {
@@ -11882,43 +11882,43 @@ on goParse2 {
   }
 }
 
-on Change(inNum0) {
-  latchN0 = inNum0
-  if run && progOkV && !jobBusy {
-    vmReset()
-  }
-}
-
 on Change(inNum1) {
-  latchN1 = inNum1
+  latchN0 = inNum1
   if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
 on Change(inNum2) {
-  latchN2 = inNum2
+  latchN1 = inNum2
   if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
 on Change(inNum3) {
-  latchN3 = inNum3
+  latchN2 = inNum3
   if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
-on Change(inStr0) {
-  latchS0 = inStr0
+on Change(inNum4) {
+  latchN3 = inNum4
   if run && progOkV && !jobBusy {
     vmReset()
   }
 }
 
 on Change(inStr1) {
-  latchS1 = inStr1
+  latchS0 = inStr1
+  if run && progOkV && !jobBusy {
+    vmReset()
+  }
+}
+
+on Change(inStr2) {
+  latchS1 = inStr2
   if run && progOkV && !jobBusy {
     vmReset()
   }
@@ -11973,16 +11973,16 @@ on Clock(interval = STEP_INTERVAL) {
 // 13. print feeds one multiline log port (one tab-separated line per call, last 32 lines
 //    at 64 chars each, cleared on restart) instead of 8 slots; the 16-way slot dispatch
 //    is gone, lines stream through a small array plus a string mirror.
-// 14. the outputs are written by outnum/outstr calls, not by assigning globals
-//    globals (mirrored to their ports once per tick); innumarr/outnumarr bridge 1-based
+// 14. the outputs are written by outNum/outStr calls, not by assigning globals
+//    globals (mirrored to their ports once per tick); inNumArr/outNumArr bridge 1-based
 //    float arrays.
-// 18. Number/string ports renamed by type: inNum0..inNum3, inStr0..inStr1,
-//    outNum0..outNum3, outStr0..outStr1.
+// 18. Number/string ports renamed by type: inNum1..inNum4, inStr1..inStr2,
+//    outNum1..outNum4, outStr1..outStr2.
 // 15. Compile failures report "line N: message" in err (token lines ride a parallel array,
 //    lexer errors carry their own line).
 // 16. Duplicate targets in one assignment store right to left (a, a = 1, 2 leaves 1).
 // 17. Table constructors accept [k] = v with any key expression.
-// 19. Function ids 6 and 7 were taken by innumarr/outnumarr but parseJobStart still reserved only six
+// 19. Function ids 6 and 7 were taken by inNumArr/outNumArr but parseJobStart still reserved only six
 //    builtin slots, so the first two user functions (and the main chunk) collided with them:
 //    any program defining a function printed nothing or failed with "array index out of range".
 //    It now reserves eight slots.

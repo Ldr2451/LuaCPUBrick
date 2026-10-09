@@ -367,8 +367,8 @@ def fatal(prog_debug):
 # exactly what made four cases read 0.0 for an output the chip was writing
 # correctly, after outCol and outInt0 had been deleted days earlier.  A name here
 # with no matching port is an error, never a 0.0.
-OUT_NUMS = ["outNum0", "outNum1", "outNum2", "outNum3"]
-OUT_STRS = ["outStr0", "outStr1"]
+OUT_NUMS = ["outNum1", "outNum2", "outNum3", "outNum4"]
+OUT_STRS = ["outStr1", "outStr2"]
 
 
 def _port(og, name, default):
@@ -409,7 +409,7 @@ def compare(name, mode, kw, r, dt):
     if mode == "run":
         o = OR.oracle_run(r["src"], inputs=kw.get("inputs"),
                           sinputs=kw.get("sinputs"), vec=kw.get("vec"),
-                          col=kw.get("col"), innumarr=kw.get("innumarr"), instrarr=kw.get("instrarr"),
+                          col=kw.get("col"), inNumArr=kw.get("inNumArr"), inStrArr=kw.get("inStrArr"),
                           inint=kw.get("inint"))
         if not o.get("avail"):
             return (name, None, "SKIP no oracle", dt)
@@ -475,7 +475,7 @@ def compare(name, mode, kw, r, dt):
             # for progress: false rather than having those assumptions applied to
             # it; a case with checkpoints means them, as it always did.
             if exp.get("progress", bool(checkpoints)):
-                values = [sample.get("outNum0", 0.0) for sample in samples]
+                values = [sample.get("outNum1", 0.0) for sample in samples]
                 if not values or values[0] <= 0.0 or any(
                         left >= right for left, right in zip(values, values[1:])):
                     return (name, False, "%s no progress: %r" % (run_name, values), dt)
@@ -617,8 +617,8 @@ def compare(name, mode, kw, r, dt):
                 lk["finalA"], want), dt)
         o = OR.oracle_run(r["src"], inputs=kw.get("inputs"),
                           sinputs=kw.get("sinputs"),
-                          innumarr=kw.get("innumarr"),
-                          instrarr=kw.get("instrarr"))
+                          inNumArr=kw.get("inNumArr"),
+                          inStrArr=kw.get("inStrArr"))
         if not o.get("avail"):
             return (name, None, "SKIP no oracle", dt)
         if o["rc"] == 0 and o["calls"] is not None:
@@ -727,13 +727,13 @@ def compare(name, mode, kw, r, dt):
 def sim_inputs(src, kw):
     si = {"program": src, "run": True}
     for k, v in enumerate(kw.get("inputs") or []):
-        si["inNum%d" % k] = float(v)
+        si["inNum%d" % (k + 1)] = float(v)
     for k, v in (kw.get("sinputs") or {}).items():
-        si["inStr%d" % int(k)] = v
-    if kw.get("innumarr") is not None:
-        si["inNumArr"] = [float(v) for v in kw["innumarr"]]
-    if kw.get("instrarr") is not None:
-        si["inStrArr"] = [str(v) for v in kw["instrarr"]]
+        si["inStr%d" % (int(k) + 1)] = v
+    if kw.get("inNumArr") is not None:
+        si["inNumArr"] = [float(v) for v in kw["inNumArr"]]
+    if kw.get("inStrArr") is not None:
+        si["inStrArr"] = [str(v) for v in kw["inStrArr"]]
     if kw.get("inint") is not None:
         si["inInt0"] = int(kw["inint"])
     return si
@@ -749,7 +749,7 @@ def lifecycle_sample(sim_, tick):
         # output ports for EVERY mode, so a partial dict here would make it
         # report the ports it was not given as missing ones
         "outGlobals": og,
-        "outNum0": float(og.get("outNum0", 0.0)),
+        "outNum1": float(og.get("outNum1", 0.0)),
         "busy": bool(og.get("busy", False)),
         "runErrors": og.get("runErrors") or "",
         "progDebug": og.get("progDebug") or "",

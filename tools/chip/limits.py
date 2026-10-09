@@ -3,7 +3,7 @@
 Every limit in the chip is `resize`d at reset rather than declared with a size,
 so raising one costs no nodes -- measured, not assumed: MAX_HEAP 512->1024,
 ARR_SLOTS 64->128 and spec.OUTARR 64->128 each left the audit at 30,290,
-ARR_SLOTS 64->16384 (both array ports, with the outstrarr arm already
+ARR_SLOTS 64->16384 (both array ports, with the outStrArr arm already
 in) left it unchanged, and MAX_HEAP 4096->65536 left it at 58,094: the
 size is memory, not graph.  What a wide array port costs is wire width
 in game: an @right out port carries its whole array every tick.
@@ -69,7 +69,7 @@ PROBES = [
      "local t = {} for i = 1, %d do t[i] = {} end print(#t)",
      (spec.MAX_TABLES - 4, spec.MAX_TABLES + 12)),
     ("outNumArr/outStrArr slots (ARR_SLOTS %d)" % spec.OUTARR,
-     "for i = 1, %d do outnumarr(i, i) outstrarr(i, 'w') end print('wrote')",
+     "for i = 1, %d do outNumArr(i, i) outStrArr(i, 'w') end print('wrote')",
      (spec.OUTARR - 4, spec.OUTARR + 36)),
 ]
 

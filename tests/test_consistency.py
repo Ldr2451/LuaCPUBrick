@@ -6,7 +6,7 @@ reach: builtin ids vs reserved function slots, global slot order, limits,
 port bindings, opcode coverage, keyword coverage, and re-parse/restart
 clearing of every state array. A mismatch here is a gate bug no behavior
 test can catch (e.g. the parseJobStart six-slot collision that broke every
-function once innumarr and outnumarr took ids 6 and 7).
+function once inNumArr and outNumArr took ids 6 and 7).
 
 Run: python -u tests/test_consistency.py  (exit 0 = all green)
 """
@@ -137,7 +137,7 @@ check(f"log-lines-{m.LOG_LINES}",
 check(f"log-width-{m.LOG_WIDTH}",
       f".Length() > {m.LOG_WIDTH}" in WS
       and f"Substring(0, {m.LOG_WIDTH - 1})" in WS)
-check(f"outnumarr-{m.OUTARR}",
+check(f"outNumArr-{m.OUTARR}",
       "outNumArrV.resize(ARR_SLOTS, 0.0)" in WS
       and 'outStrArrV.resize(ARR_SLOTS, "")' in WS)
 # The inNumArr/outNumArr index warnings need the width while PARSING, and an input port
@@ -156,11 +156,11 @@ check("call-params-8", "max 8 in-gate" in WS)
 # 4. ports ------------------------------------------------------------------
 outs = re.findall(r"@right out (\w+)(?:: (\S+))? = (\S+)", WS)
 outs_d = {n: (t, b) for n, t, b in outs}
-for port, typ in [("log", "string"), ("outNum0", "float"),
-                  ("outNum1", "float"), ("outNum2", "float"),
-                  ("outNum3", "float"),
-                  ("outStr0", "string"),
-                  ("outStr1", "string"), ("outNumArr", "float[]"),
+for port, typ in [("log", "string"), ("outNum1", "float"),
+                  ("outNum2", "float"), ("outNum3", "float"),
+                  ("outNum4", "float"),
+                  ("outStr1", "string"),
+                  ("outStr2", "string"), ("outNumArr", "float[]"),
                   ("outStrArr", "string[]"),
                   ("result", "string"), ("runErrors", "string"),
                   ("progDebug", "string"), ("busy", "bool")]:
@@ -169,16 +169,16 @@ for port, typ in [("log", "string"), ("outNum0", "float"),
     if port in outs_d and typ:
         check(f"port-{port}-type", outs_d[port][0] == typ,
               f"got {outs_d[port][0]}")
-for port, bindvar in [("log", "logV"), ("outNum0", "oF0"),
-                      ("outStr0", "oS4"), ("result", "resultV"),
+for port, bindvar in [("log", "logV"), ("outNum1", "oF0"),
+                      ("outStr1", "oS4"), ("result", "resultV"),
                       ("runErrors", "errV"), ("progDebug", "progDebugV")]:
     check(f"port-{port}-bound", re.search(
         rf"^(var|let) {bindvar}\b", WS, re.M) is not None)
 check("no-halted-port", "out halted" not in WS)
 check("no-proglen-port", "out progLen" not in WS)
 check("no-nprint-port", "out nPrint" not in WS)
-for hw, port in [("innumarr", "inNumArr"), ("instrarr", "inStrArr"),
-                 ("outnumarr", "outNumArr"), ("outstrarr", "outStrArr"),
+for hw, port in [("inNumArr", "inNumArr"), ("inStrArr", "inStrArr"),
+                 ("outNumArr", "outNumArr"), ("outStrArr", "outStrArr"),
                  ("print", "log")]:
     check(f"hw-{hw}-{port}", re.search(
         rf"@(?:left|right) (?:in|out) {port}\b", WS) is not None)
@@ -453,8 +453,8 @@ try:
     _kw["inputs"] = [3, 1, 4, 1.5]
     _o = _or.oracle_run(_cases.DEMO_SRC, inputs=_kw["inputs"],
                         sinputs=_kw.get("sinputs"), vec=_kw.get("vec"),
-                        innumarr=_kw.get("innumarr"),
-                        instrarr=_kw.get("instrarr"))
+                        inNumArr=_kw.get("inNumArr"),
+                        inStrArr=_kw.get("inStrArr"))
     if not _o.get("avail") or _o["calls"] is None:
         check("demo-log-current", False, "no oracle, so DEMO_LOG is unchecked")
     else:

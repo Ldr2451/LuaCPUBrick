@@ -29,14 +29,14 @@ A WireScript chip is wires, so everything a program can see or change is a port.
 
 ```
           program --|           |-- log
-              run --|           |-- outNum0
-           inNum0 --|___________|-- outNum1
-           inNum1 --|           |-- outNum2
+              run --|           |-- outNum1
+           inNum1 --|___________|-- outNum2
            inNum2 --|           |-- outNum3
-           inNum3 --|  Lua 5.5  |-- outStr0
-           inStr0 --|           |-- outStr1
-           inStr1 --|___________|-- outNumArr
-           inStr1 --|           |-- outStrArr
+           inNum3 --|           |-- outNum4
+           inNum4 --|  Lua 5.5  |-- outStr1
+           inStr1 --|           |-- outStr2
+           inStr2 --|___________|-- outNumArr
+           inStr2 --|           |-- outStrArr
          inNumArr --|           |-- result
          inStrArr --|           |-- runErrors
                                 |-- progDebug
@@ -49,8 +49,8 @@ always begins from the top. Changing any other input while the program runs
 starts it over -- except `inNumArr` and `inStrArr`, which the running program
 reads live, so changing one never restarts it.
 
-Programs send numbers and text out with `outnum(i, v)`, `outstr(i, v)`,
-`outnumarr(i, v, ...)` and `outstrarr(i, v, ...)` for the two arrays.
+Programs send numbers and text out with `outNum(i, v)`, `outStr(i, v)`,
+`outNumArr(i, v, ...)` and `outStrArr(i, v, ...)` for the two arrays.
 Counting starts at 1 everywhere, the way Lua tables do. Each array holds up
 to 16,384 slots.
 

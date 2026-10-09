@@ -102,7 +102,7 @@ class Gen:
                 # an int there, which no string comparison can tell
                 # apart from a printed int-looking string)
                 return f"((#{self.expr('str', depth + 1)}) + 0)"
-            return f"(innumarr({r.choice(['1', '2', '3'])}) + 0)"
+            return f"(inNumArr({r.choice(['1', '2', '3'])}) + 0)"
         if typ == "str":
             if c < 0.35:
                 return self.leaf("str")
@@ -133,7 +133,7 @@ class Gen:
                 t = r.choice(sorted(self.tinfo))
                 return f"({t}[{r.randint(50, 99)}])"
             if c < 0.75:
-                return "(innumarr(99))"
+                return "(inNumArr(99))"
             return "nil"
         # `typ` and NOT a hardcoded "nil", which is what this said.  Every type
         # with a case above returns from inside it, so the only thing that reaches
@@ -159,11 +159,11 @@ class Gen:
         if v is not None and (typ == "func" or r.random() < 0.7):
             return v
         if typ == "num":
-            return r.choice(NUMC + ["inNum0", "inNum1", "inNum2", "inNum3",
-                                   "innumarr(1)"])
+            return r.choice(NUMC + ["inNum1", "inNum2", "inNum3", "inNum4",
+                                   "inNumArr(1)"])
         if typ == "str":
             return r.choice([f"'{s}'" for s in SAFE_STRS]
-                            + ["inStr0", "inStr1"])
+                            + ["inStr1", "inStr2"])
         if typ == "bool":
             return r.choice(["true", "false"])
         return "nil"
@@ -287,19 +287,19 @@ class Gen:
             return (f"local _k{k} = 1 while _k{k} <= {n} do "
                     f"{body}{brk} _k{k} = _k{k} + 1 end")
         if c < 0.84:
-            return f"outnumarr({r.randint(1, 4)}, {self.expr('num', 1)})"
+            return f"outNumArr({r.randint(1, 4)}, {self.expr('num', 1)})"
         if c < 0.87:
-            return f"outstrarr({r.randint(1, 4)}, {self.expr('str', 1)})"
+            return f"outStrArr({r.randint(1, 4)}, {self.expr('str', 1)})"
         if c < 0.90:
-            # the closing ')' of outstr( is part of the format string, exactly as
-            # it is for outnumarr and outnum above.  It was missing, so every program
+            # the closing ')' of outStr( is part of the format string, exactly as
+            # it is for outNumArr and outNum above.  It was missing, so every program
             # that took this arm was missing a paren: the oracle rejected it as a
             # SYNTAX error before the chip ran, and the harness counted that as a
             # skip -- which is how 30 of 150 seeds went uncompared while the tool
             # still reported a clean run.
-            return (f"outnum({r.randint(1, 4)}, {self.expr('num', 1)})"
+            return (f"outNum({r.randint(1, 4)}, {self.expr('num', 1)})"
                     if r.random() < 0.6 else
-                    f"outstr({r.randint(1, 2)}, {self.expr('str', 1)})")
+                    f"outStr({r.randint(1, 2)}, {self.expr('str', 1)})")
         args = ", ".join(self.printable(1) for _ in range(r.randint(0, 2)))
         return f"print({args})"
 
@@ -400,10 +400,10 @@ def main():
     seed0 = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     # The numeric inputs go in kw, not in run_case's `inputs` argument: that
     # argument is not forwarded (run_case only passes kw through), so passing
-    # them there left inNum0..3 nil on BOTH sides and two thirds of the
+    # them there left inNum1..4 nil on BOTH sides and two thirds of the
     # programs came back "oracle rejected".
     kw = {"inputs": INPUTS, "sinputs": SINPUTS, "vec": VEC, "col": COL,
-          "innumarr": INARR}
+          "inNumArr": INARR}
     jobs = [("fuzz-%d" % (seed0 + k), one(seed0 + k)) for k in range(count)]
     # One shared IR dump for every seed: each seed used to spawn its own worker
     # subprocess that compiled lua.ws fresh (~4.5s), so 400 seeds paid the build

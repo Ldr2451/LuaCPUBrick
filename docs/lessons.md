@@ -470,19 +470,19 @@
 - **The array ports are already whole-array on the wire; only the Lua-side call
   is per element, so batch it by widening the call, not with a machine.**
   `outNumArr` is `@right out outNumArr: float[] = outNumArrV`, so the whole array reaches
-  the port every tick however it was filled, and `innumarr(i)` is a live
+  the port every tick however it was filled, and `inNumArr(i)` is a live
   `inNumArr[toInt(iv) - 1]` — one index and one tag write, with no per-element copy
   to remove. So the cost is the CALL: a 64-slot fill is 367 ticks against 205 for
   the same empty loop, **about 5 ticks per element**, and a whole 64-slot write
-  is 6.1s in game at 60 ticks/s. `outnumarr(i, v...)` therefore writes one slot per
-  extra value (up to 8) and `innumarr(i, k)` returns k of them, and **measured on a
+  is 6.1s in game at 60 ticks/s. `outNumArr(i, v...)` therefore writes one slot per
+  extra value (up to 8) and `inNumArr(i, k)` returns k of them, and **measured on a
   64-slot fill that is 367 → 257 ticks, a 30% cut, for 7,272 bytes of chip and no
   new state** — 4.3s in game instead of 6.1s. The read side is much weaker: 544
   → 521, a 4% cut, because a loop that consumes each value spends its ticks on
   the `or` and the add, not on the call. A whole-array setter instead of a wider
   call would have to walk a Lua table in a micro-step machine at 1 tick per
   element: 367 → ~270, a *smaller* cut than the wide call for a new state
-  machine, so do not build it. A whole-array `innumarr` read is a **loss** for any
+  machine, so do not build it. A whole-array `inNumArr` read is a **loss** for any
   program that reads fewer than 64, since it pays a table build (193 ticks) to
   save ~2 ticks an element the caller's own loop was going to spend.
 - **A sticky input's VALUE comes from the port; only its restart comes from an
@@ -490,7 +490,7 @@
   difference.** The six scalar inputs were latched inside `on Change(port)`, so a
   value already on the port when the chip started was never latched: an edge
   needs a *transition*, and a value that is simply present produces none. In game
-  `inStr0` and `inStr1` read `""` while wired to `"test"`, and changed to `hello`
+  `inStr1` and `inStr2` read `""` while wired to `"test"`, and changed to `hello`
   worked, because that is a transition. 731 cases were green throughout: they all
   deliver their inputs before the first tick, and the sim raises an edge for a
   port's first sight, so every one of them got an edge the real host does not
@@ -508,15 +508,15 @@
   type is the port's: `any` cannot even be stored (WS025), so there is no union to
   widen it to, and a program that needs both reads both while one that needs only
   numbers pays nothing for the string half. The naming follows the rule the outputs
-  already set — `outNum0`/`outStr0`/`outNumArr`/`outStrArr` are written by
-  `outnum`/`outstr`/`outnumarr`/`outstrarr` — so `inNumArr`/`inStrArr` are read by
-  `innumarr`/`instrarr`. The camelCase names a program sees as **values**
-  (`inNum0`, `inStr0`) are the port mirrors, which are values and not calls, so
+  already set — `outNum1`/`outStr1`/`outNumArr`/`outStrArr` are written by
+  `outNum`/`outStr`/`outNumArr`/`outStrArr` — so `inNumArr`/`inStrArr` are read by
+  `inNumArr`/`inStrArr`. The camelCase names a program sees as **values**
+  (`inNum1`, `inStr1`) are the port mirrors, which are values and not calls, so
   they keep the port's spelling. Two spellings for one thing is the failure this
   avoids: a program cannot wonder whether `inarr` or `inNumArr` is the call.
 - **Every index a program passes is 1-based, and an output is not readable.**
-  `outnum(1..4)`, `outstr(1..2)` and `outnumarr(1..)` / `outstrarr(1..)` all count from 1, the way a
-  Lua table does, so `outnum(1, v)` and `outnumarr(1, v)` are the same slot and
+  `outNum(1..4)`, `outStr(1..2)` and `outNumArr(1..)` / `outStrArr(1..)` all count from 1, the way a
+  Lua table does, so `outNum(1, v)` and `outNumArr(1, v)` are the same slot and
   there is no off-by-one for a program to remember. 0-based was tried and is
   wrong: a Lua author has one indexing rule in their head already. A written
   value is **sticky** - it stays on the port until something writes there
@@ -527,11 +527,11 @@
   an assignment, so a program cannot read an output back: the ports are not
   globals, and a program that wants the value keeps its own copy.
 - **A value count is not an index, and the index is checked first.** The wide
-  `outnumarr`'s range check counts the values, so it is `nargs - 1`: counting the
-  index made `outnumarr(16384, -1)` ask for slot 16385 and raise, which the demo caught
-  because it writes the last slot. And `innumarr(1, 9)` with an *empty* array
+  `outNumArr`'s range check counts the values, so it is `nargs - 1`: counting the
+  index made `outNumArr(16384, -1)` ask for slot 16385 and raise, which the demo caught
+  because it writes the last slot. And `inNumArr(1, 9)` with an *empty* array
   answers nil and never reaches the count guard, so a case for the count has to
-  set `innumarr` — two mistakes that each looked like a chip bug and were not.
+  set `inNumArr` — two mistakes that each looked like a chip bug and were not.
 - **A rarely-taken path does not belong in `vmStep`** — it fires every tick,
   and the old burst inlined it four times. A closure cell-fill there cost every
   program 20% of its per-tick time; moved to `vmBurst` it cost 2,133 nodes
@@ -905,7 +905,7 @@ measurement quoted here still counts as kept.
 ports by name:
 
 ```python
-"outGlobals": {"outNum0": og.get("outNum0", 0.0), ... "outInt0": og.get("outInt0", 0),
+"outGlobals": {"outNum1": og.get("outNum1", 0.0), ... "outInt0": og.get("outInt0", 0),
                "outCol": list(og.get("outCol", [0.0] * 4)), ...}
 ```
 

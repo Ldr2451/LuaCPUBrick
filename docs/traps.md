@@ -101,7 +101,7 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
 - **A call that answers no values still has to nil the callee's own register.**
   A call's results land in the register the function was in, and that is the
   register the compiler puts the local in, so PUC's empty result list is a nil
-  there. `print`, `outvec`, `outnumarr` and `_s`'s byte-out-of-range all
+  there. `print`, `outvec`, `outNumArr` and `_s`'s byte-out-of-range all
   write it; `select` past the end and `unpack` over an empty range did not, and
   `local c = select(2, ...)` read `type(c) == "function"`. It hides best in a
   **vararg function**, where the local cannot be the callee's register and the

@@ -30,14 +30,14 @@ LIBS = ("lbaselib.c", "lstrlib.c", "ltablib.c", "lmathlib.c")
 TABLE = {"lbaselib.c": "", "lstrlib.c": "string.", "ltablib.c": "table.",
          "lmathlib.c": "math."}
 # the chip's own host ports: the game drives the chip through these, so they are
-# not "PUC does not have it" candidates -- they are the point of the chip
+# not "PUC does not have it" candidates -- they are the point of the chip.
+# Port and function spellings coincide since the consistency rename.
 HOST_IO = ("clock", "program", "run",
-           "inNum0", "inNum1", "inNum2", "inNum3", "inStr0", "inStr1",
-           "inNumArr", "inStrArr", "innumarr", "instrarr",
-           "outNumArr", "outStrArr", "outnumarr", "outstrarr",
-           "outnum", "outstr",
-           "outNum0", "outNum1", "outNum2", "outNum3",
-           "outStr0", "outStr1", "last")
+           "inNum1", "inNum2", "inNum3", "inNum4", "inStr1", "inStr2",
+           "inNumArr", "inStrArr",
+           "outNumArr", "outStrArr",
+           "outNum1", "outNum2", "outNum3", "outNum4",
+           "outStr1", "outStr2", "last")
 
 
 def find_src():

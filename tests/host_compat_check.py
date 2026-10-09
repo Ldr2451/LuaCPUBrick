@@ -5,8 +5,8 @@ Every case in the suite delivers its inputs before the first tick, and with the
 sim's default a change detector fires on a port's first sight -- so every input
 case has been passing on an edge that a real host does not necessarily raise.  A
 chip that learns a sticky input only from an edge therefore looks correct here
-and reads nil in game, which is exactly what happened: inStr0 and inStr1 came
-through as "" while inNum0 did not.
+and reads nil in game, which is exactly what happened: inStr1 and inStr2 came
+through as "" while inNum1 did not.
 
 So this runs with `host_baselines` on, which is the observed host behaviour: the
 detector's baseline is established before the chip can act, and a value already
@@ -29,17 +29,17 @@ from timing import Elapsed  # noqa: E402
 
 # (name, source, inputs, sinputs, num array, str array, expected log)
 CASES = [
-    ("num0", "print('v', inNum0)", [3.5], None, None, None, "v\t3.5\n"),
-    ("num3", "print('v', inNum3)", [1.0, 2.0, 3.0, 4.5], None, None, None,
+    ("num0", "print('v', inNum1)", [3.5], None, None, None, "v\t3.5\n"),
+    ("num3", "print('v', inNum4)", [1.0, 2.0, 3.0, 4.5], None, None, None,
      "v\t4.5\n"),
-    ("str0", "print('v', inStr0)", None, {0: "foo"}, None, None, "v\tfoo\n"),
-    ("str1", "print('v', inStr1)", None, {1: "bar"}, None, None, "v\tbar\n"),
-    ("numarr", "print('v', innumarr(1), innumarr(2))", None, None,
+    ("str0", "print('v', inStr1)", None, {0: "foo"}, None, None, "v\tfoo\n"),
+    ("str1", "print('v', inStr2)", None, {1: "bar"}, None, None, "v\tbar\n"),
+    ("numarr", "print('v', inNumArr(1), inNumArr(2))", None, None,
      [10.0, 20.0], None, "v\t10.0\t20.0\n"),
-    ("strarr", "print('v', instrarr(1), instrarr(2))", None, None,
+    ("strarr", "print('v', inStrArr(1), inStrArr(2))", None, None,
      None, ["alpha", "beta"], "v\talpha\tbeta\n"),
     # every kind at once, which is how a program actually meets them
-    ("all", "print('v', inNum0, inStr0, innumarr(1), instrarr(1))",
+    ("all", "print('v', inNum1, inStr1, inNumArr(1), inStrArr(1))",
      [7.0], {0: "foo"}, [9.0], ["x"], "v\t7.0\tfoo\t9.0\tx\n"),
 ]
 
