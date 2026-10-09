@@ -3029,6 +3029,11 @@ TESTS = [
      None, "modelio", {"expect": {"log": "done\n",
                                   "outGlobals": [0.0, 0.0, 0.0, 0.0,
                                                  "", "held"]}}),
+    # A computed top-level return lands on the result port as Lua formats it.
+    # Demo pins a string concat there; this is the number the other half of
+    # every benchmark reads, and nothing else held it down.
+    ("result-computed", "local s = 0 for i = 1, 10 do s = s + i end "
+     "return s", None, "modelio", {"expect": {"result": "55"}}),
     ("out-sticky-int",
      "outNum(4, 7) local s = 0 for i = 1, 30 do s = s + i end print('done')", None,
      "modelio", {"expect": {"log": "done\n",

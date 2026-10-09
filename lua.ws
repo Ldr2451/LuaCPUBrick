@@ -5798,10 +5798,16 @@ mod parseJobStart() {
   oF3 = 0.0
   oS4 = ""
   oS5 = ""
+  // The arrays clear WITHOUT resize: vmReset re-establishes all 16,384 slots
+  // before the run, and nothing between here and there reads them (compile
+  // checks use the ARR_SLOTS const, the run arms read .length() after the
+  // reset).  A resize writes every slot and the game charges per slot --
+  // two of them here cost ~2,500 parse ticks in game while the sim calls
+  // them free, which is exactly the kind of cost bootprobe cannot see.
+  // Lesson recorded: host bulk ops are priced by the game, so parse-path
+  // additions need in-game measurement, never sim ticks alone.
   outNumArrV.clear()
-  outNumArrV.resize(ARR_SLOTS, 0.0)
   outStrArrV.clear()
-  outStrArrV.resize(ARR_SLOTS, "")
   logV = ""
   logLen = 0
   logLines.clear()

@@ -19,8 +19,7 @@ The chip's own header is the description of the *language* it implements: the
 ports, what is supported, the limits, and every place it differs from PUC-Lua
 5.5. `docs/vm-isa.md` is the description of the machine underneath it — the
 register triples, the 51 opcodes, the operand encoding and the asynchronous
-states. Neither belongs here.
-
+states.
 
 ## The interface
 
