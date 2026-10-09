@@ -1057,6 +1057,26 @@ TESTS = [
     # of this section and CHIP_LOG.
     ("pat-literal-meta", "print(string.find('abc', '%'))", None,
      "state", {"expect": {"log": "nil\n"}}),
+    # A magic needle that matches nothing warns once into progDebug instead of
+    # answering a bare nil: patterns are literal here, so silence would read as
+    # the call being broken.  Three shapes in one program: a magic miss warns,
+    # the repeat call is latched quiet, a magic needle that HITS stays quiet
+    # (it worked), and a magic-free miss has nothing to say.  The count is the
+    # assertion -- exactly one warn line, so a second occurrence fails it.
+    ("pat-warn-find", "print(string.find('abc', '%d+')) "
+     "print(string.find('abc', '%d+')) print(string.find('a.b', '.')) "
+     "print(string.find('xyz', 'b'))", None, "lifecycle",
+     {"phases": [{"ticks": 1500, "run": True}],
+      "expect": {"progress": False, "finished": True,
+                 "log": "nil\nnil\n2\t2\nnil\n",
+                 "warn": "has magic characters"}}),
+    # The same rule for a walk: an empty magic gmatch warns once at its end,
+    # while a walk that yields stays quiet.
+    ("pat-warn-gmatch", "for m in string.gmatch('abc', '%d+') do print(m) end "
+     "for m in string.gmatch('abc', 'b') do print(m) end", None, "lifecycle",
+     {"phases": [{"ticks": 1500, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "b\n",
+                 "warn": "has magic characters"}}),
     ("pat-in-loop", "local out = '' for i = 1, 3 do out = out .. "
      "string.match('ab', 'a') end print(out)", None, "run"),
     ("pat-float-init", "print(string.find('abc', 'b', 1.0))", None, "run"),

@@ -1312,6 +1312,13 @@ var patGmPos: int[]
 var patGmId: int = 0          // the walk this call is about
 var patGmPhase: int = 0       // 0 make the walk, 1 take a step
 var patGmIni: int = 1         // where the walk starts: gmatch takes an init
+var patWarned: bool = false   // a magic-needle warn is already in progDebug:
+                              // one per program, not one per call
+var patGmMagic: bool[]        // per walk: its needle has magic characters.
+                              // Whether it ever matched needs no array: a
+                              // non-empty literal match always moves the cursor
+                              // past the walk's init, so pos != ini is "yielded"
+                              // (a magic needle is never empty).
 var patAfter: int = 0        // where a finished set scan goes on a match
 var patFailTo: int = 0       // and on a miss
 var patSt: int = 0
@@ -2465,6 +2472,7 @@ mod vmReset() {  tmap.clear()
   patGmS.clear()
   patGmP.clear()
   patGmPos.clear()
+  patGmMagic.clear()
   patTid = 0
   patLastTid = 0
   // the text in inStr0 is the program's standard input, and a run starts at its
@@ -5784,6 +5792,8 @@ mod parseJobStart() {
   patGmS.resize(PAT_WALKS, "")
   patGmP.resize(PAT_WALKS, "")
   patGmPos.resize(PAT_WALKS, 1)
+  patGmMagic.resize(PAT_WALKS, false)
+  patWarned = false
   fStart.resize(NB, -1)
   fParams.resize(NB, -1)
   fRegs.resize(NB, -1)
@@ -8476,6 +8486,34 @@ mod patPlainAnswer() {
   nxDone()
 }
 
+// Whether a needle was probably meant as a pattern: any of PUC's magic
+// characters in it.  Twelve host searches, so callers only ask on a miss --
+// a needle that matched needs no comment.  A mod (two call sites, both in
+// gateHigh): measured against a chip if the audit complains.
+mod patHasMagic(s: string) -> bool {
+  // most frequent magic first: || short-circuits, so a '.' or '%' needle
+  // pays one search and only a '?' pays all twelve.
+  return 0 <= s.Find(".", true, 0) || 0 <= s.Find("%", true, 0)
+      || 0 <= s.Find("*", true, 0) || 0 <= s.Find("+", true, 0)
+      || 0 <= s.Find("?", true, 0) || 0 <= s.Find("[", true, 0)
+      || 0 <= s.Find("]", true, 0) || 0 <= s.Find("(", true, 0)
+      || 0 <= s.Find(")", true, 0) || 0 <= s.Find("^", true, 0)
+      || 0 <= s.Find("$", true, 0) || 0 <= s.Find("-", true, 0)
+}
+
+// One warn per program into progDebug: a magic needle that matched nothing
+// was almost certainly meant as a pattern, and patterns are literal here, so
+// silence would read as the call being broken.  The latch (reset per program
+// in parseJobStart, kept across restarts) is what keeps a loop over a missing
+// needle to one line.
+mod patWarn() {
+  if !patWarned {
+    patWarned = true
+    progDebugV = progDebugV .. "warn: '" .. patPat
+      .. "' has magic characters; patterns are literal on this chip\n"
+  }
+}
+
 // No match anywhere: both find and match answer nil.
 mod patNone() {
   vtag[nxDst] = 0
@@ -9821,6 +9859,16 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
             f = patSrc.Find(patPat, true, ini - 1)
           }
         }
+        // A miss with magic in the needle is the shape ported pattern code
+        // takes: warn once (patWarn latches) rather than answering a bare nil
+        // that reads as the call being broken.  Statement form, not folded
+        // into the expression: a mod call in value position runs whether its
+        // arm does or not, and a hit must not pay for twelve searches.
+        if f < 0 {
+          if patHasMagic(patPat) {
+            patWarn()
+          }
+        }
         patStart = f
         patI = f + patPat.Length()
         patMode = mode
@@ -10223,6 +10271,7 @@ mod gmStep() {
     patGmS[patGmId] = patSrc
     patGmP[patGmId] = patPat
     patGmPos[patGmId] = patGmIni
+    patGmMagic[patGmId] = patHasMagic(patPat)
     vtag[nxDst] = 4
     vnum[nxDst] = 22.0
     vtag[nxDst + 1] = 6
@@ -10254,6 +10303,13 @@ mod gmStep() {
       vnum[nxDst] = 0.0
       vstr[nxDst] = ""
       retCountV = 0
+      // A magic walk that never yielded warned: pos still at its init means
+      // no match ever moved it (a non-empty literal always does).
+      if patGmMagic[patGmId] {
+        if patGmPos[patGmId] == patGmIni {
+          patWarn()
+        }
+      }
       nxActive = false
       nxDone()
     } else {
@@ -10266,6 +10322,11 @@ mod gmStep() {
         vnum[nxDst] = 0.0
         vstr[nxDst] = ""
         retCountV = 0
+        if patGmMagic[patGmId] {
+          if patGmPos[patGmId] == patGmIni {
+            patWarn()
+          }
+        }
         nxActive = false
         nxDone()
       } else {

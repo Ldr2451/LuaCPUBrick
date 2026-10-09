@@ -577,6 +577,16 @@ def compare(name, mode, kw, r, dt):
             if any(v != "" for v in (og.get("outStrArr") or [])):
                 return (name, False, "first outStrArr not stopped at tick %d"
                         % t, dt)
+        # `warn` is a progDebug substring that must appear exactly once in the
+        # final sample: runtime warns latch per program, so a second occurrence
+        # is a latch failure and zero is a missing warn.
+        want_warn = exp.get("warn")
+        if want_warn:
+            all_samples = life.get("first", {}).get("samples", []) or [{}]
+            pd = all_samples[-1].get("progDebug") or ""
+            if pd.count(want_warn) != 1:
+                return (name, False, "warn %r appears %d times, want once: %r"
+                        % (want_warn, pd.count(want_warn), pd), dt)
         if life["first"] != life["second"]:
             return (name, False, "restart differs", dt)
         return (name, True, "", dt)
