@@ -529,6 +529,32 @@ def compare(name, mode, kw, r, dt):
         if reset != baseline:
             return (name, False, "dirty reset: got=%r want=%r" % (
                 reset, baseline), dt)
+        # `cleared` names ticks at which every result port must already read
+        # empty: a new program clears its predecessor's outputs, log and error
+        # when its parse STARTS, not when the run starts, so sampling mid-parse
+        # must see zeros, empty strings, empty arrays and no log or error.  A
+        # chip that only clears at run start still shows the old program here.
+        for t in (exp.get("cleared") or []):
+            first_samples = {s.get("tick"): s
+                             for s in life.get("first", {}).get("samples", [])}
+            smp = first_samples.get(t)
+            if smp is None:
+                return (name, False, "first no sample at tick %d" % t, dt)
+            og = smp.get("outGlobals") or {}
+            nums = [og.get("outNum%d" % i, 0.0) for i in range(4)]
+            strs = [og.get("outStr%d" % i, "") for i in range(2)]
+            if any(v != 0.0 for v in nums) or any(v != "" for v in strs):
+                return (name, False, "first outputs not cleared at tick %d: "
+                        "%r %r" % (t, nums, strs), dt)
+            if any(v != 0.0 for v in (og.get("outNumArr") or [])):
+                return (name, False, "first outNumArr not cleared at tick %d"
+                        % t, dt)
+            if any(v != "" for v in (og.get("outStrArr") or [])):
+                return (name, False, "first outStrArr not cleared at tick %d"
+                        % t, dt)
+            if smp.get("log") or smp.get("err"):
+                return (name, False, "first stale log/err at tick %d: %r %r"
+                        % (t, smp.get("log"), smp.get("err")), dt)
         if life["first"] != life["second"]:
             return (name, False, "restart differs", dt)
         return (name, True, "", dt)

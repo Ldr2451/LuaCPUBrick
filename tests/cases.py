@@ -1899,6 +1899,48 @@ TESTS = [
                 {"ticks": 400, "src": "print(2)"}],
       "phases": [{"ticks": 2400, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "2\n"}}),
+    # A new program clears its predecessor's RESULTS when its parse starts, not
+    # when the run starts: the parse is thousands of ticks and until it finishes
+    # every result port still shows the old program, which reads as the new one
+    # not having loaded.  Found in game as stale outnum values surviving a
+    # program swap.  Program A sets outputs and finishes; program B arrives at
+    # tick 1500 with a fat parse (the comment pad plus the string library it
+    # pulls), so ticks 1600 and 1900 are mid-parse and must already read
+    # cleared -- zeros, empty strings and arrays, no log, no error.  A chip
+    # that only clears at run start still shows A's 7/8/'old' here.  (The steps
+    # clock is cumulative: each entry's ticks END when its successor arrives,
+    # so B lands at 800 + 100 = tick 900 and the checkpoints sit 100 and 400
+    # ticks into its parse.)
+    ("life-edit-clears-outputs",
+     "outnum(1, 9) outstr(1, 'new') print('B')", None, "lifecycle",
+     {"steps": [{"ticks": 800,
+                 "src": "outnum(1, 7) outnum(2, 8) outstr(1, 'old') print('A')"},
+                {"ticks": 100,
+                 "src": "-- hold the parse window open: pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "-- pad pad pad pad pad pad pad pad pad pad pad pad pad\n"
+                        "print(string.rep('ab', 3)) "
+                        "outnum(1, 9) outstr(1, 'new') print('B')"}],
+      "phases": [{"ticks": 4500, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "ababab\nB\n",
+                 "checkpoints": [1000, 1300], "cleared": [1000, 1300]}}),
     # and the near miss that makes the comparison a comparison: the SAME text
     # arriving again is not an edit, so the run is not disturbed and the program
     # prints exactly once.  The log cannot tell this from a re-parse (both end

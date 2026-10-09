@@ -5751,6 +5751,27 @@ mod parseInfoEnd() -> string {
 }
 
 mod parseJobStart() {
+  // A new program clears its predecessor's results BEFORE the parse, not after:
+  // the parse is hundreds of ticks and until it finishes every result port still
+  // shows the old program, which reads as the new one not having loaded.  The
+  // run-start vmReset below keeps its own copies (a `run` edge with no new text
+  // clears nothing here, and the second lifecycle window must still start
+  // clean), so these are the arrival half and those are the run half.
+  oF0 = 0.0
+  oF1 = 0.0
+  oF2 = 0.0
+  oF3 = 0.0
+  oS4 = ""
+  oS5 = ""
+  outNumArrV.clear()
+  outNumArrV.resize(ARR_SLOTS, 0.0)
+  outStrArrV.clear()
+  outStrArrV.resize(ARR_SLOTS, "")
+  logV = ""
+  logLen = 0
+  logLines.clear()
+  errV = ""
+  resultV = ""
   parseInit()
   // One reserved function slot per gate builtin (ids 0..NB-1), so a program's
   // own functions start at NB and can never collide with one.  The rest of the
