@@ -38,28 +38,21 @@ A WireScript chip is wires, so everything a program can see or change is a port.
            inStr1 --|___________|-- outNumArr
            inStr1 --|           |-- outStrArr
          inNumArr --|           |-- result
-         inStrArr --|           |-- err
+         inStrArr --|           |-- runErrors
                                 |-- progDebug
                                 |-- busy
 ```
 
 
-`run` is the only one that decides anything: high runs the program, low stops it
-where it is, and a rising edge starts again from the top. Every other input
-restarts the program when it changes while `run` is high, except the two array
-ports: `inNumArr` and `inStrArr` are read live by `innumarr()` and `instrarr()`,
-so changing one mid-run is seen by the running program and does not restart it.
+`run` = true starts the program, `run` = false stops it. Starting again
+always begins from the top. Changing any other input while the program runs
+starts it over -- except `inNumArr` and `inStrArr`, which the running program
+reads live, so changing one never restarts it.
 
-Everything a program *writes* is a call, including the single numbers and
-strings: `outnum(i, v)`, `outstr(i, v)`, `outnumarr(i, v, ...)` and
-`outstrarr(i, v, ...)` for the two arrays.
-A written value stays on its port until something writes there again, so whatever
-is reading the chip can take its time.
-Every index a program passes counts from 1, the way a Lua table does, in both
-families: `outnum(1..4, v)`, `outstr(1..2, v)` and `outnumarr(1.., v...)` /
-`outstrarr(1.., v...)` all start at 1, so there is no off-by-one to remember
-between them.  Each array holds 16,384 slots, and a call writes up to 8 of
-them (one per value), so a run of adjacent slots costs one call.
+Programs send numbers and text out with `outnum(i, v)`, `outstr(i, v)`,
+`outnumarr(i, v, ...)` and `outstrarr(i, v, ...)` for the two arrays.
+Counting starts at 1 everywhere, the way Lua tables do. Each array holds up
+to 16,384 slots.
 
 ## Running the tests
 

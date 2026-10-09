@@ -448,15 +448,13 @@
   need the two-phase shape `_fmt`/`_pat` use — fire on one tick, read a captured
   output on the next — and a free-running stream would have to fire on every tick
   for every program.
-- **A printed line is capped at 64 characters, and the harness caps the oracle's
+- **A printed line is capped at 128 characters, and the harness caps the oracle's
   the same way.** `oracle_log` applies "the same caps the chip enforces" (one
   tab-joined line per print, `line[:LOG_WIDTH - 1] + "\n"`, 32 appends), so a
   long line matches PUC only up to the cap. Do not read a short line as a lost
   message: check `string.len` on the value first, because the cap hides the
   difference and a DIFF on a long line is usually one character at the
-  boundary, not data loss. Measured on `math.random(1.5)`'s 66-character error
-  message: whole in the register, chip line ends `...repres`, oracle's capped
-  line ends `...repre`.
+  boundary, not data loss.
 - **A gate that must call back into Lua is a separate mechanism nothing needs
   yet.** The only place the chip calls Lua on a gate's behalf is the pcall frame,
   and pcall-of-pcall is unsupported, so a machine cannot suspend mid-loop for a
@@ -524,7 +522,8 @@
   value is **sticky** - it stays on the port until something writes there
   again, because whoever reads the chip may not be looking this tick
   (`out-sticky-num/-str/-int/-arr` spin 30 ticks and read the port after).
-  `vmReset` is the only thing that clears one. Writing is a *call* rather than
+  Three things clear one: a new program (its parse start), `run` going low,
+  and a restart (`vmReset`). Writing is a *call* rather than
   an assignment, so a program cannot read an output back: the ports are not
   globals, and a program that wants the value keeps its own copy.
 - **A value count is not an index, and the index is checked first.** The wide
@@ -743,6 +742,11 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   Otherwise make the code say it.
 - Prefer deleting a concept over documenting it; remove a workaround once the
   real thing exists.
+- The README is for humans, not implementers: plain words for what the chip
+  does (`run` = true starts the program), never jargon (no "rising edge", no
+  port-clearing internals, no sermons about what the reader can already see in
+  game). Facts a user needs (what runs when, counting from 1, array sizes)
+  stay; everything else lives in `lua.ws` header comments and lessons.
 
 ## Verification
 - Verify by execution, never by reasoning alone. All cases run unless a filter

@@ -34,4 +34,4 @@ for name, slot in sorted((gm or {}).items(), key=lambda kv: kv[1]):
     i = int(slot)
     if i < len(gt) and gt[i] != 0:
         print('  %-8s slot=%-3d tag=%d num=%.6g str=%r' % (name, i, gt[i], gn[i], gs[i]))
-print('log', repr(r.get('log')), 'err', repr(r.get('outGlobals', {}).get('err')))
+print('log', repr(r.get('log')), 'err', repr(r.get('outGlobals', {}).get('runErrors')))

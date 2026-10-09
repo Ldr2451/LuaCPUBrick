@@ -33,7 +33,7 @@
 ///   camelCase names a program sees as VALUES (inNum0, inStr0) are the port
 ///   mirrors, which are values and not calls, so they keep the port's spelling.
 ///   out log: string       print and io.write output: a print call is one line (args
-///                         tab-separated plus a newline, capped at 64 chars), an
+///                         tab-separated plus a newline, capped at 128 chars), an
 ///                         io.write is its raw text with no tab and no newline; the
 ///                         last 32 appends are kept, cleared on restart
 ///   out outNum0..outNum3: float  written by outnum(i, v), i 1..4 (nil writes 0.0;
@@ -49,8 +49,9 @@
 ///                         via outstrarr(i, v) and outstrarr(i, v, ...): nil
 ///                         writes "" and anything but a string is a runtime error
 ///   out result: string    top-level return value, "" when none
-///   out err: string       runtime error text, "" when none; compile failures read
-///                         "line N: message"
+///   out runErrors: string runtime error text, "" when none; compile failures
+///                         read "line N: message" on progDebug instead -- the two
+///                         channels never mix, which is what the names say
 ///   out progDebug: string  one line per static finding, `err: ` fatal or
 ///                        `warn: ` advisory; empty when there were none
 ///   out busy: bool        true while lexing, parsing, or executing with run high
@@ -182,6 +183,10 @@
 ///   string.gmatch answers three values where PUC answers one (its iterator
 ///   ignores the arguments the generic for hands it); the chip's generic for
 ///   reads the walk's state out of the call.  See CHIP_LOG gmatch-arity.
+///   patterns are literal: the needle is searched for as written, so '%d+' is
+///   five characters and '^b' anchors nothing.  A needle with magic characters
+///   that matches nothing warns once into progDebug ("has magic characters");
+///   a needle that hits stays quiet, and so does a magic-free miss.
 ///   #t is the FIRST nil minus one, and the cached border agrees with it on all
 ///   three of the ways a border can move: an append, a delete at or below it
 ///   (t[2] = nil on {1,2,3} is 1, t[1] = nil is 0, a key above it changes
@@ -208,10 +213,9 @@
 ///   Random gate would give a stream, but an
 ///   exec gate's value cannot land in a register in the same instruction (see
 ///   AGENTS.md), so the piece is the honest way to have both.  CHIP_LOG
-///   math-random-seed42, math-random-ten.  Its two long error messages are cut at
-///   the 64-character log cap, and PUC's text is three characters longer before
-///   the cut, so the chip's line ends "...integer repres" where PUC's ends
-///   "...r".  That is the cap, not the message.
+///   math-random-seed42, math-random-ten.  Its two long error messages are
+///   runtimerr pins, so the whole of PUC's wording is held -- the 128-character
+///   log cap no longer touches the 66-character one at all.
 ///   os.date and os.time(t) are UTC and need an explicit time: the chip has
 ///   no OS timezone (a hardcoded offset would be wrong twice a year) and no
 ///   epoch clock (clock() is uptime), so os.time() and a dateless os.date()
@@ -226,7 +230,7 @@
 ///   take numbers/booleans/nil, outNumArr only numbers and outStrArr only
 ///   strings (PUC tables take anything; fixed-size float and string storage
 ///   is a gate limitation). The log keeps
-///   the last 32 lines at 64 chars each (about 2 KB).
+///   the last 32 lines at 128 chars each (about 4 KB).
 ///
 /// Limits (a compile error past them, reported as an `err: ` line)
 ///   4096 tokens, 1024 bytecode instructions, 64 registers per function, 96 functions,
@@ -293,7 +297,7 @@
 @right out outNumArr: float[] = outNumArrV
 @right out outStrArr: string[] = outStrArrV
 @right out result: string = resultV.Value
-@right out err: string = errV.Value
+@right out runErrors: string = errV.Value
 @right out progDebug: string = progDebugV.Value
 @right out busy: bool = jobBusy || (run && progOkV && !vmHalted)
 
@@ -505,7 +509,7 @@ var progOkV: bool = false
 // will not run) or `warn: ` (it runs, and will misbehave), because those two
 // have opposite consequences and must not be told apart by guessing.
 //
-// `err` is the runtime channel and keeps PUC's exact words.  This is
+// `runErrors` is the runtime channel and keeps PUC's exact words.  This is
 // deliberately NOT cleared by vmReset: the program has not changed, so its
 // findings have not either.  It is a report, NOT the gate - progOkV is the
 // gate, because a warning does not stop a program and a non-empty string
@@ -5060,9 +5064,9 @@ mod binArrive(opc: int, prec: int, fl: int) {
 }
 
 // One append to the log, by print or by io.write.  The caller has already made
-// the text what it wants -- print's line and its 64-character cap, or io.write's
+// the text what it wants -- print's line and its 128-character cap, or io.write's
 // raw chunk -- and the log keeps the last 32 appends, so the port stays a plain
-// string read and cannot grow without bound.  The 64-character cap is the
+// string read and cannot grow without bound.  The 128-character cap is the
 // *caller's* because it is print's rule, not the log's: a write of 500 bytes is
 // one append here and 500 bytes of text, not eight dropped ones.
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
@@ -9145,7 +9149,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
       let raw = (if 0 < nargs then fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)) else "") .. (if 1 < nargs then "\t" .. fmtVal(vTag(a + 2), vNum(a + 2), vStr(a + 2)) else "") .. (if 2 < nargs then "\t" .. fmtVal(vTag(a + 3), vNum(a + 3), vStr(a + 3)) else "") .. (if 3 < nargs then "\t" .. fmtVal(vTag(a + 4), vNum(a + 4), vStr(a + 4)) else "") .. (if 4 < nargs then "\t" .. fmtVal(vTag(a + 5), vNum(a + 5), vStr(a + 5)) else "") .. (if 5 < nargs then "\t" .. fmtVal(vTag(a + 6), vNum(a + 6), vStr(a + 6)) else "") .. (if 6 < nargs then "\t" .. fmtVal(vTag(a + 7), vNum(a + 7), vStr(a + 7)) else "") .. (if 7 < nargs then "\t" .. fmtVal(vTag(a + 8), vNum(a + 8), vStr(a + 8)) else "") .. (if 8 < nargs then "\t" .. fmtVal(vTag(a + 9), vNum(a + 9), vStr(a + 9)) else "") .. (if 9 < nargs then "\t" .. fmtVal(vTag(a + 10), vNum(a + 10), vStr(a + 10)) else "") .. (if 10 < nargs then "\t" .. fmtVal(vTag(a + 11), vNum(a + 11), vStr(a + 11)) else "") .. (if 11 < nargs then "\t" .. fmtVal(vTag(a + 12), vNum(a + 12), vStr(a + 12)) else "") .. (if 12 < nargs then "\t" .. fmtVal(vTag(a + 13), vNum(a + 13), vStr(a + 13)) else "") .. (if 13 < nargs then "\t" .. fmtVal(vTag(a + 14), vNum(a + 14), vStr(a + 14)) else "") .. (if 14 < nargs then "\t" .. fmtVal(vTag(a + 15), vNum(a + 15), vStr(a + 15)) else "") .. (if 15 < nargs then "\t" .. fmtVal(vTag(a + 16), vNum(a + 16), vStr(a + 16)) else "") .. "\n"
       // the 64-character cap is print's, and it stays here so the log
       // itself takes whatever it is given
-      let line = if raw.Length() > 64 then raw.Substring(0, 63) .. "\n" else raw
+      let line = if raw.Length() > 128 then raw.Substring(0, 127) .. "\n" else raw
       logPush(line)
       vSetNil(a)
       retCountV = 0

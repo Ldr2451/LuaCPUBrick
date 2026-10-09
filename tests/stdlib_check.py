@@ -87,9 +87,9 @@ def run_case(runner, src, inputs, ticks):
         return False, "oracle failed: %s" % oracle.get("stderr"), sim_seconds, oracle_seconds
     want = OR.oracle_log(oracle["calls"])
     if any(l.startswith("err:") for l in (og.get("progDebug") or "").splitlines()):
-        return False, "chip rejected: %s" % og.get("err", ""), sim_seconds, oracle_seconds
-    if og.get("err"):
-        return False, "chip error: %s" % og["err"], sim_seconds, oracle_seconds
+        return False, "chip rejected: %s" % og.get("runErrors", ""), sim_seconds, oracle_seconds
+    if og.get("runErrors"):
+        return False, "chip error: %s" % og["runErrors"], sim_seconds, oracle_seconds
     if not sim.finished:
         return False, "CAP at tick %d" % sim.tick, sim_seconds, oracle_seconds
     if got != want:

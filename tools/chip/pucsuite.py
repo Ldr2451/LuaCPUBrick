@@ -721,12 +721,12 @@ def _prelude_probe(item):
     try:
         r = _RUNNER.run(prog, 8000)
         cg = r["outGlobals"]
-        err = (cg.get("err") or "").strip()
+        err = (cg.get("runErrors") or "").strip()
         log = (cg.get("log") or "").strip()
         if not err and log != "PRELUDE_OK":
             r = _RUNNER.run(prog, 30000)
             cg = r["outGlobals"]
-            err = (cg.get("err") or "").strip()
+            err = (cg.get("runErrors") or "").strip()
             log = (cg.get("log") or "").strip()
         if err:
             return idx, False, err[:60]
@@ -771,12 +771,12 @@ def _chip_run(item):
         chip = _RUNNER.run(prog, 8000)
         cg = chip["outGlobals"]
         clog = (cg.get("log") or "").strip()
-        cerr = (cg.get("err") or "").strip()
+        cerr = (cg.get("runErrors") or "").strip()
         if not cerr and clog == "":
             chip = _RUNNER.run(prog, 30000)
             cg = chip["outGlobals"]
             clog = (cg.get("log") or "").strip()
-            cerr = (cg.get("err") or "").strip()
+            cerr = (cg.get("runErrors") or "").strip()
         if cerr or clog == "":
             # The chip refused it: a limit, an unimplemented corner, or a
             # parse error.  Counted, never called agreement.

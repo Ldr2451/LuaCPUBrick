@@ -59,7 +59,7 @@ def describe(runner, src, ticks, sin):
     dt = time.time() - t0
     og = r.get('outGlobals', {})
     got = r.get('log', '')
-    err = og.get('err', '')
+    err = og.get('runErrors', '')
     capped = not err and not runner.sim.finished
     want = None
     oerr = ''
@@ -84,7 +84,7 @@ def describe(runner, src, ticks, sin):
         # the budget ran out, so whatever the log says is a prefix: say so
         # rather than let a truncated run read like a finished one
         mark = 'CAP  '
-    lines = ['%s %5.1fs chip=%r err=%r :: %s' % (mark, dt, got, err, one[:90])]
+    lines = ['%s %5.1fs chip=%r runErrors=%r :: %s' % (mark, dt, got, err, one[:90])]
     if capped:
         lines.append('     hit the %d-tick cap; PROBE_TICKS= to raise it' % ticks)
     if want is not None and got != want:

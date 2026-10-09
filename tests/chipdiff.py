@@ -52,7 +52,7 @@ def diff(src, ticks=8000, norm=False):
     want = oracle(src)
     try:
         r = runner().run(src, ticks)
-        got, err = r.get('log', ''), r.get('outGlobals', {}).get('err', '')
+        got, err = r.get('log', ''), r.get('outGlobals', {}).get('runErrors', '')
     except Exception as e:                      # a sim build error is a failure
         got, err = '<sim error: %s>' % e, ''
     a, b = (norm_fn(got), norm_fn(want)) if norm else (got, want)

@@ -55,7 +55,7 @@ for i, src in enumerate(progs):
     sim._exec_node = orig
     print("%6.2fs  ticks=%5d  execs=%8d  log=%r  err=%r :: %s"
           % (dt, sim.tick + 1, n_exec[0], r.get('log', '')[:24],
-             r.get('outGlobals', {}).get('err', ''), src), flush=True)
+             r.get('outGlobals', {}).get('runErrors', ''), src), flush=True)
     if prof and i == 0:
         s = io.StringIO()
         pstats.Stats(pr, stream=s).sort_stats('tottime').print_stats(rows)

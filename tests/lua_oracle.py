@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 
 LOG_LINES = 32
-LOG_WIDTH = 64
+LOG_WIDTH = 128
 
 
 def _find_oracle():

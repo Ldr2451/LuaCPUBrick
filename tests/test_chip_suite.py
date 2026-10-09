@@ -390,7 +390,7 @@ def chip_ports(r):
         "outNumArr": list(_port(og, "outNumArr", None)),
         "outStrArr": list(_port(og, "outStrArr", None)),
         "result": og.get("result", ""),
-        "err": og.get("err") or "",
+        "runErrors": og.get("runErrors") or "",
         "progDebug": og.get("progDebug") or "",
         "progOk": not fatal(og.get("progDebug")),
     }
@@ -440,9 +440,9 @@ def compare(name, mode, kw, r, dt):
             if not run.get("progOk"):
                 return (name, False, "%s chip rejected: %r" % (
                     run_name, run.get("progDebug")), dt)
-            if run.get("err"):
+            if run.get("runErrors"):
                 return (name, False, "%s error: %r" % (
-                    run_name, run.get("err")), dt)
+                    run_name, run.get("runErrors")), dt)
             if run.get("finished") != want_finished:
                 return (name, False, "%s finished got=%r want=%r" % (
                     run_name, run.get("finished"), want_finished), dt)
@@ -552,9 +552,9 @@ def compare(name, mode, kw, r, dt):
             if any(v != "" for v in (og.get("outStrArr") or [])):
                 return (name, False, "first outStrArr not cleared at tick %d"
                         % t, dt)
-            if smp.get("log") or smp.get("err"):
+            if smp.get("log") or smp.get("runErrors"):
                 return (name, False, "first stale log/err at tick %d: %r %r"
-                        % (t, smp.get("log"), smp.get("err")), dt)
+                        % (t, smp.get("log"), smp.get("runErrors")), dt)
         # `clearedOutputs` is the stopped half of the same rule: a `run` edge to
         # low clears the result ports but keeps history, so these ticks assert
         # zeros, empty strings and arrays WITHOUT the log/err half that
@@ -683,10 +683,10 @@ def compare(name, mode, kw, r, dt):
                 kw["errText"], c["progDebug"]), dt)
         return (name, True, "", dt)
     if mode == "runtimerr":
-        exp_err = (exp.get("err") or "") if exp else ""
-        if exp_err and exp_err not in c["err"]:
-            return (name, False, "err missing %r: got %r" % (exp_err, c["err"]), dt)
-        if not exp_err and not c["err"]:
+        exp_err = (exp.get("runErrors") or "") if exp else ""
+        if exp_err and exp_err not in c["runErrors"]:
+            return (name, False, "runErrors missing %r: got %r" % (exp_err, c["runErrors"]), dt)
+        if not exp_err and not c["runErrors"]:
             return (name, False, "chip did not fail", dt)
         for key in ("log", "outNumArr", "outStrArr"):
             if key in exp and c[key] != exp[key]:
@@ -711,7 +711,7 @@ def compare(name, mode, kw, r, dt):
         o = OR.oracle_run(r["src"])
         if not o.get("avail"):
             return (name, None, "SKIP no oracle", dt)
-        if c["progOk"] and not c["err"]:
+        if c["progOk"] and not c["runErrors"]:
             return (name, False, "chip did not fail", dt)
         if o["rc"] == 0:
             return (name, False, "lua accepted, want error", dt)
@@ -751,7 +751,7 @@ def lifecycle_sample(sim_, tick):
         "outGlobals": og,
         "outNum0": float(og.get("outNum0", 0.0)),
         "busy": bool(og.get("busy", False)),
-        "err": og.get("err") or "",
+        "runErrors": og.get("runErrors") or "",
         "progDebug": og.get("progDebug") or "",
         "progOk": not fatal(og.get("progDebug")),
     }
@@ -950,7 +950,7 @@ def run_trace(sim, src, kw, ticks):
     r = sim.run(ticks, on_tick=lambda s, tick: marks.append(s.log))
     pd = r["outGlobals"].get("progDebug") or ""
     return {"log": marks, "ticks": sim.tick, "outGlobals": r["outGlobals"],
-            "err": (r["outGlobals"].get("err")
+            "runErrors": (r["outGlobals"].get("runErrors")
                     or ""),
             "progDebug": pd, "progOk": not fatal(pd)}
 
@@ -1025,7 +1025,7 @@ def run_in_sim(sim, p, sim2=None):
                     "finalB": b["log"][-1] if b["log"] else "",
                     # A program that raises is still a program the two chips must
                     # agree about, so the error is compared rather than refused.
-                    "errA": a["err"], "errB": b["err"],
+                    "errA": a["runErrors"], "errB": b["runErrors"],
                     "okA": a["progOk"], "okB": b["progOk"]}
         r = {"log": a["log"][-1] if a["log"] else "",
              "outGlobals": a["outGlobals"]}
@@ -1044,7 +1044,7 @@ def run_in_sim(sim, p, sim2=None):
         "secs": time.time() - t_case,
         "finished": bool(sim.finished),
         "invariants": sim.state_invariants(
-            bool(sim.finished) and not og.get("err")),
+            bool(sim.finished) and not og.get("runErrors")),
         "lifecycle": lifecycle,
         "lockstep": lockstep,
         "state": state,

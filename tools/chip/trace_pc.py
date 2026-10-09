@@ -84,6 +84,6 @@ def hook(s, tick):
     rows.append("t=%-5s pc=%s %s %s" % (tick, pc, head, " ".join(vals)))
 
 r = sim.run(max_ticks=int(os.environ.get('TRACE_TICKS', '6000')), on_tick=hook)
-print("log:", repr(r.get('log')), "err:", repr(r.get('outGlobals', {}).get('err')))
+print("log:", repr(r.get('log')), "err:", repr(r.get('outGlobals', {}).get('runErrors')))
 for line in rows[-int(os.environ.get('TRACE_ROWS', '40')):]:
     print(line)

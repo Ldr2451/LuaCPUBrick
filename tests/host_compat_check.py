@@ -61,7 +61,7 @@ def run_case(runner, name, src, inputs, sinputs, narr, sarr):
     sim.inputs = si
     sim.run(6000)
     og = sim._out_globals()
-    err = og.get("err") or ""
+    err = og.get("runErrors") or ""
     bad = [l for l in (og.get("progDebug") or "").splitlines()
            if l.startswith("err:")]
     return sim.log, err, bad

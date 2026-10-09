@@ -32,7 +32,7 @@ def dump(runner, src, tokens=False):
     runner.reset()
     sim.inputs = {'program': src, 'run': True}
     r = sim.run(max_ticks=int(os.environ.get('PROBE_TICKS', '8000')))
-    err = r.get('outGlobals', {}).get('err', '') if r else ''
+    err = r.get('outGlobals', {}).get('runErrors', '') if r else ''
     labels = {}
     for nid, nd in sim.nodes.items():
         lbl = _extract(nd.props.get('_label', ('raw', '')))

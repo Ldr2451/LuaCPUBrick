@@ -144,11 +144,11 @@ TESTS = [
      None, "run", {"ticks": 9000}),
     ("tonum-noargs", "print(tonumber())", None, "runtimerr",
      {"ticks": 9000,
-      "expect": {"err": "bad argument #1 to 'tonumber' (value expected)"}}),
+      "expect": {"runErrors": "bad argument #1 to 'tonumber' (value expected)"}}),
     ("tonum-base-type", "print(tonumber(3.5, 10))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "string expected, got number"}}),
+     {"ticks": 9000, "expect": {"runErrors": "string expected, got number"}}),
     ("tonum-base-range", "print(tonumber('10', 99))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "base out of range"}}),
+     {"ticks": 9000, "expect": {"runErrors": "base out of range"}}),
     # A base other than 10 used to be a documented gap (loud, never a wrong
     # answer) and is now PUC's integer grammar -- see the tonum-base-* cases at
     # the end of the puc group.  There is no case here for the old error.
@@ -187,38 +187,38 @@ TESTS = [
     # to the words PUC uses.  PUC prefixes each with its chunk and line; the chip
     # has no line, so the text is what the program asked for.
     ("coerce-err-add", "return 'x' + 1", None, "runtimerr",
-     {"expect": {"err": "attempt to add a 'string' with a 'number'"}}),
+     {"expect": {"runErrors": "attempt to add a 'string' with a 'number'"}}),
     ("coerce-err-sub", "return 'x' - 1", None, "runtimerr",
-     {"expect": {"err": "attempt to sub a 'string' with a 'number'"}}),
+     {"expect": {"runErrors": "attempt to sub a 'string' with a 'number'"}}),
     ("coerce-err-sub-r", "return 1 - 'x'", None, "runtimerr",
-     {"expect": {"err": "attempt to sub a 'number' with a 'string'"}}),
+     {"expect": {"runErrors": "attempt to sub a 'number' with a 'string'"}}),
     ("coerce-err-mul", "return 'x' * 1", None, "runtimerr",
-     {"expect": {"err": "attempt to mul a 'string' with a 'number'"}}),
+     {"expect": {"runErrors": "attempt to mul a 'string' with a 'number'"}}),
     ("coerce-err-div", "return 'x' / 1", None, "runtimerr",
-     {"expect": {"err": "attempt to div a 'string' with a 'number'"}}),
+     {"expect": {"runErrors": "attempt to div a 'string' with a 'number'"}}),
     ("coerce-err-mod", "return 'x' % 1", None, "runtimerr",
-     {"expect": {"err": "attempt to mod a 'string' with a 'number'"}}),
+     {"expect": {"runErrors": "attempt to mod a 'string' with a 'number'"}}),
     ("coerce-err-idiv", "return 'x' // 1", None, "runtimerr",
-     {"expect": {"err": "attempt to idiv a 'string' with a 'number'"}}),
+     {"expect": {"runErrors": "attempt to idiv a 'string' with a 'number'"}}),
     ("coerce-err-pow", "return 'x' ^ 1", None, "runtimerr",
-     {"expect": {"err": "attempt to pow a 'string' with a 'number'"}}),
+     {"expect": {"runErrors": "attempt to pow a 'string' with a 'number'"}}),
     ("coerce-err-unm", "return -'x'", None, "runtimerr",
-     {"expect": {"err": "attempt to unm a 'string' with a 'string'"}}),
+     {"expect": {"runErrors": "attempt to unm a 'string' with a 'string'"}}),
     ("coerce-err-table", "return {} + 1", None, "runtimerr",
-     {"expect": {"err": "attempt to perform arithmetic on a table value"}}),
+     {"expect": {"runErrors": "attempt to perform arithmetic on a table value"}}),
     ("coerce-err-nil", "return 1 / nil", None, "runtimerr",
-     {"expect": {"err": "attempt to perform arithmetic on a nil value"}}),
+     {"expect": {"runErrors": "attempt to perform arithmetic on a nil value"}}),
     ("coerce-err-partial", "return '10abc' + 0", None, "runtimerr",
-     {"expect": {"err": "attempt to add a 'string' with a 'number'"}}),
+     {"expect": {"runErrors": "attempt to add a 'string' with a 'number'"}}),
     # Comparison and the bitwise operators do NOT coerce in PUC, and the chip
     # must not start to.  The two type-error messages used to be a bare "attempt
     # to compare" / "attempt to perform 'bitwise'" with no type in them; PUC names
     # the operand, so these assert the wording.  The equality case is NOT an
     # error at all -- '3' == 3 is simply false -- which was the third pcall shape.
     ("coerce-nocmp", "print('3' < 5)", None, "runtimerr",
-     {"expect": {"err": "attempt to compare string with number"}}),
+     {"expect": {"runErrors": "attempt to compare string with number"}}),
     ("coerce-nobits", "print('3' & 1)", None, "runtimerr",
-     {"expect": {"err": "attempt to perform bitwise operation on a string "
+     {"expect": {"runErrors": "attempt to perform bitwise operation on a string "
                         "value"}}),
     ("coerce-nocmp2", "print('3' == 3)", None, "run"),
     # PUC's four messages, read off the oracle rather than guessed: the compare
@@ -226,23 +226,23 @@ TESTS = [
     # the bitwise one adds "(constant 'x')" when the operand is a literal, which
     # the chip cannot know and deliberately stops short of.
     ("err-cmp-types", "print(1 < 'x')", None, "runtimerr",
-     {"expect": {"err": "attempt to compare number with string"}}),
+     {"expect": {"runErrors": "attempt to compare number with string"}}),
     ("err-cmp-types2", "print('a' < 1)", None, "runtimerr",
-     {"expect": {"err": "attempt to compare string with number"}}),
+     {"expect": {"runErrors": "attempt to compare string with number"}}),
     ("err-bitwise", "print(1 & 'x')", None, "runtimerr",
-     {"expect": {"err": "attempt to perform bitwise operation on a string "
+     {"expect": {"runErrors": "attempt to perform bitwise operation on a string "
                          "value"}}),
     ("err-length", "print(#nil)", None, "runtimerr",
-     {"expect": {"err": "attempt to get length of a nil value"}}),
+     {"expect": {"runErrors": "attempt to get length of a nil value"}}),
     ("err-length-fn", "print(#print)", None, "runtimerr",
-     {"expect": {"err": "attempt to get length of a function value"}}),
+     {"expect": {"runErrors": "attempt to get length of a function value"}}),
     ("err-concat", "print(1 .. {})", None, "runtimerr",
-     {"expect": {"err": "attempt to concatenate a table value"}}),
+     {"expect": {"runErrors": "attempt to concatenate a table value"}}),
     # The host's parse is Rust's FromStr, which takes no "0x10", so this raises
     # where PUC says 16: a host limit, so the case asserts the chip is loud and
     # the header records the gap.
     ("coerce-hex", "print('0x10' + 0)", None,
-     "runtimerr", {"expect": {"err": "attempt to add a 'string' with a 'number'"}}),
+     "runtimerr", {"expect": {"runErrors": "attempt to add a 'string' with a 'number'"}}),
 
     ("int-mod", "print(7%3, -7%3, 7%-3, 7.5%2)", None, "run"),
     ("int-eq", "print(1 == 1.0, 1 < 1.5, 2 > 1.9, 0 == false)", None, "run"),
@@ -264,7 +264,7 @@ TESTS = [
     # a raw float never reaches a host text gate here -- see CHIP_LOG.
     ("fmt-nan0", "print(0/0 ~= 0/0, 0/0 == 0/0, 0/0 ~= 0)", None, "run"),
     ("fmt-mod0", "print(5%0)", None, "runtimerr",
-     {"expect": {"err": "attempt to perform 'n%0'"}}),
+     {"expect": {"runErrors": "attempt to perform 'n%0'"}}),
     ("fmt-intmil", "print(1000000)", None, "run"),
     ("lit-boolnil", "print(true, false, nil)", None, "run"),
     ("print-empty", "print()", None, "run"),
@@ -303,17 +303,17 @@ TESTS = [
     ("arith-sqrt-neg", "print(math.sqrt(-1) ~= 0, math.sqrt(4))", None, "run"),
     ("arith-negzero", "print(-0.0, 1/(-0.0), 0.0 * -1)", None, "run"),
     ("arith-idiv-zero", "print(1 // 0)", None, "runtimerr",
-     {"expect": {"err": "attempt to divide by zero"}}),
+     {"expect": {"runErrors": "attempt to divide by zero"}}),
     ("arith-mod-zero", "print(1 % 0)", None, "runtimerr",
-     {"expect": {"err": "attempt to perform 'n%0'"}}),
+     {"expect": {"runErrors": "attempt to perform 'n%0'"}}),
     ("arith-idiv-zero-float", "print(1.0 // 0.0, -1.0 // 0.0)", None, "run"),
     ("assert-noargs", "print(1) assert()", None, "runtimerr",
-     {"expect": {"err": "value expected"}}),
+     {"expect": {"runErrors": "value expected"}}),
     # assert() with no arguments is PUC's "value expected", and reaching assert
     # as a VALUE used to be one pcall shape: the value is the gate, so it is the
     # same error.  With catching gone the two are one case and this is the stub.
     ("assert-noargs-pcall", "pcall(assert)", None, "runtimerr",
-     {"expect": {"err": "pcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "pcall is not supported on this chip"}}),
     ("cmp-num", "print(1<2, 2<=2, 3>4, 4>=5)", None, "run"),
     ("cmp-str", "print('a'<'b', '10'<'9')", None, "run"),
     ("cmp-eq", "print(3=='3', nil==nil, 0==false, 1~=2)", None, "run"),
@@ -566,7 +566,7 @@ TESTS = [
     ("sel-va", "function f(...) return select(2, ...) end "
      "print(f('x', 'y', 'z'))", None, "run"),
     ("sel-oob", "print(select(0, 1, 2))", None, "runtimerr",
-     {"expect": {"err": "index out of range"}}),
+     {"expect": {"runErrors": "index out of range"}}),
     ("type-all", "print(type(1), type('s'), type(true), type(nil), "
      "type(print))", None, "run"),    ("tostring-all", "print(tostring(2.5), tostring('s'), "
      "tostring(false), tostring(nil))", None, "run"),
@@ -632,26 +632,26 @@ TESTS = [
     # One case per message now, because catching is gone and one error ends a
     # run: these were three pcalls in one print.
     ("str-coerce-refused-len", "print(string.len({}))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.len' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.len' "
                         "(string expected, got table)"}}),
     ("str-coerce-refused-upper", "print(string.upper(nil))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.upper' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.upper' "
                         "(string expected, got nil)"}}),
     ("str-coerce-refused-rep", "print(string.rep({}, 2))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.rep' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.rep' "
                         "(string expected, got table)"}}),
     ("str-coerce-refused-sub", "print(string.sub({}))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.sub' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.sub' "
                         "(string expected, got table)"}}),
     ("str-coerce-refused-byte", "print(string.byte({}))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.byte' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.byte' "
                         "(string expected, got table)"}}),
     ("str-coerce-refused-lower", "print(string.lower({}))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.lower' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.lower' "
                         "(string expected, got table)"}}),
     ("str-coerce-refused-reverse", "print(string.reverse({}))", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.reverse' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.reverse' "
                         "(string expected, got table)"}}),
     ("str-char", "print(string.char(72, 105, 33))", None, "run"),
     ("str-rep", "print(string.rep('ab', 3), string.rep('ab', 3, '-'), "
@@ -668,19 +668,19 @@ TESTS = [
      None, "run", {"ticks": 9000}),
     ("str-rep-count-bad", "print(string.rep('ab', 2.5))", None, "runtimerr",
      {"ticks": 9000,
-      "expect": {"err": "number has no integer representation"}}),
+      "expect": {"runErrors": "number has no integer representation"}}),
     ("str-rep-count-type", "print(string.rep('ab', true))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got boolean"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got boolean"}}),
     ("str-rep-count-missing", "print(string.rep('ab'))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got no value"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got no value"}}),
     ("str-rep-count-str", "print(string.rep('ab', '3x'))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got string"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got string"}}),
     # sep is luaL_optlstring: absent or nil is "", a number converts, anything
     # else -- including false, which `or ""` used to swallow -- is "got T".
     ("str-rep-sep", "print(string.rep('ab', 2, 5), string.rep('ab', 2, nil))",
      None, "run", {"ticks": 9000}),
     ("str-rep-sep-bad", "print(string.rep('ab', 2, false))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got boolean"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got boolean"}}),
     ("str-rev", "print(string.reverse('abc'), string.reverse(''))", None,
      "run"),
     ("str-empty-sub", "print('[' .. string.sub('abc', 9) .. ']')", None, "run"),
@@ -745,22 +745,22 @@ TESTS = [
      "string.format('%-c|', 65), string.byte(string.format('%c', 256)), "
      "string.byte(string.format('%c', -1)))", None, "run"),
     ("fmt-spec-hash-d", "print(string.format('%#d', 5))", None, "runtimerr",
-     {"expect": {"err": "invalid conversion specification: '%#d'"}}),
+     {"expect": {"runErrors": "invalid conversion specification: '%#d'"}}),
     ("fmt-spec-prec-c", "print(string.format('%.2c', 65))", None, "runtimerr",
-     {"expect": {"err": "invalid conversion specification: '%.2c'"}}),
+     {"expect": {"runErrors": "invalid conversion specification: '%.2c'"}}),
     ("fmt-spec-plus-x", "print(string.format('%+x', 15))", None, "runtimerr",
-     {"expect": {"err": "invalid conversion specification: '%+x'"}}),
+     {"expect": {"runErrors": "invalid conversion specification: '%+x'"}}),
     ("fmt-spec-space-s", "print(string.format('% s', 'x'))", None, "runtimerr",
-     {"expect": {"err": "invalid conversion specification: '% s'"}}),
+     {"expect": {"runErrors": "invalid conversion specification: '% s'"}}),
     ("fmt-spec-q-mod", "print(string.format('%5q', 'x'))", None, "runtimerr",
-     {"expect": {"err": "specifier '%q' cannot have modifiers"}}),
+     {"expect": {"runErrors": "specifier '%q' cannot have modifiers"}}),
     ("fmt-err-noarg", "print(string.format('%d'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'format' (no value)"}}),
+     {"expect": {"runErrors": "bad argument #2 to 'format' (no value)"}}),
     ("fmt-err-notnum", "print(string.format('%d', 'x'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'format' (number expected, got "
+     {"expect": {"runErrors": "bad argument #2 to 'format' (number expected, got "
                           "string)"}}),
     ("fmt-err-noint", "print(string.format('%d', 1.5))", None, "runtimerr",
-     {"expect": {"err": "number has no integer representation"}}),
+     {"expect": {"runErrors": "number has no integer representation"}}),
     # string.format called from inside a function reads its arguments through
     # an index that had vmBase in it twice, so every argument but the last came
     # from two registers too high.  At top level vmBase is 0 and it worked, which
@@ -774,10 +774,10 @@ TESTS = [
      "return string.format('%s=%d', x, y) end print(g('k', 7))", None, "run"),
     ("fmt-in-fn-error", "local function f() return string.format('%d', 'x') end "
      "print(f())", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'format' "
+     {"expect": {"runErrors": "bad argument #2 to 'format' "
                         "(number expected, got string)"}}),
     ("fmt-err-nofmt", "print(string.format())", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'format' (string expected, got no "
+     {"expect": {"runErrors": "bad argument #1 to 'format' (string expected, got no "
                           "value)"}}),
     # io: the text in inStr0 is the program's standard input, and io.write appends
     # raw text to the log -- no tab, no newline -- through the same 32-append cap
@@ -801,7 +801,7 @@ TESTS = [
     ("io-lines-then-read", "for l in io.lines() do io.write(l) end "
      "print(io.read('*l'))", None, "run", {"sinputs": {"0": "p\nq\n"}}),
     ("io-read-bad", "print(io.read('*x'))", None, "runtimerr",
-     {"expect": {"err": "bad argument to 'read' (invalid format)"}}),
+     {"expect": {"runErrors": "bad argument to 'read' (invalid format)"}}),
     # %f: the digits have to be the value's own, which is the whole difficulty.
     # 0.15 at one place is 0.1 and not 0.2, and 344.95 is 344.9 and not 345.0,
     # because the exact double sits just below the tie -- a single rounding puts
@@ -826,10 +826,10 @@ TESTS = [
     # the two limits are errors, not approximations: past 15 places the scale
     # would not be exact, and past 2^53 the integer part is not this chip's
     ("fmt-f-prec-limit", "print(string.format('%.16f', 0.1))", None, "runtimerr",
-     {"expect": {"err": "precision above 15 cannot be formatted exactly on "
+     {"expect": {"runErrors": "precision above 15 cannot be formatted exactly on "
       "this chip"}}),
     ("fmt-f-range", "print(string.format('%.2f', 1e16))", None, "runtimerr",
-     {"expect": {"err": "number too large to format exactly on this chip"}}),
+     {"expect": {"runErrors": "number too large to format exactly on this chip"}}),
     # %e: a digit stream, because the mantissa is the value divided by 10^k and
     # no division by ten is exact.  The exponent is two digits -- the
     # platform printf's minimum, which PUC formats floats through, so %.3e
@@ -857,10 +857,10 @@ TESTS = [
     # the mantissa is p+1 digits read as one integer, and ten of them is past
     # 2^53 -- so 15 places is a range error and not an approximation
     ("fmt-e-prec-limit", "print(string.format('%.15e', 1.5))", None, "runtimerr",
-     {"expect": {"err": "precision above 14 cannot be formatted exactly on "
+     {"expect": {"runErrors": "precision above 14 cannot be formatted exactly on "
       "this chip"}}),
     ("fmt-e-range", "print(string.format('%.2e', 1e16))", None, "runtimerr",
-     {"expect": {"err": "number too large to format exactly on this chip"}}),
+     {"expect": {"runErrors": "number too large to format exactly on this chip"}}),
     # pcall and xpcall, which PUC has in C and this chip does not have: catching
     # measured ~6,500 nodes here -- marker frames, resume state, result
     # relocation, and a marker test inlined into all four RETURN variants -- more
@@ -872,42 +872,42 @@ TESTS = [
     # call's multiple results, its argument window, varargs both fixed and
     # forwarding, and a gate builtin's arguments.
     ("pcall-stub", "pcall(print, 'hi')", None, "runtimerr",
-     {"expect": {"err": "pcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "pcall is not supported on this chip"}}),
     ("xpcall-stub", "xpcall(print, print, 'hi')", None, "runtimerr",
-     {"expect": {"err": "xpcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "xpcall is not supported on this chip"}}),
     # The stub is the arm's whole body: no argument checking survives it, so
     # pcall() with no argument and pcall(42) say what pcall(f) says, and a
     # non-function handler is xpcall's stub rather than xpcall's own error.
     ("pcall-stub-no-argument", "pcall()", None, "runtimerr",
-     {"expect": {"err": "pcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "pcall is not supported on this chip"}}),
     ("pcall-stub-not-a-function", "pcall(42)", None, "runtimerr",
-     {"expect": {"err": "pcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "pcall is not supported on this chip"}}),
     ("pcall-stub-not-a-function-nil", "pcall(nil)", None, "runtimerr",
-     {"expect": {"err": "pcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "pcall is not supported on this chip"}}),
     ("xpcall-stub-no-handler", "function f() error('n') end xpcall(f, 42)",
      None, "runtimerr",
-     {"expect": {"err": "xpcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "xpcall is not supported on this chip"}}),
     ("xpcall-stub-not-a-function", "function h() end xpcall(42, h)", None,
      "runtimerr",
-     {"expect": {"err": "xpcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "xpcall is not supported on this chip"}}),
     # The stub is on the CALL, not on the catch, so it fires wherever the call
     # is: deep in a call chain, and inside an argument function whose own comma
     # scope is still open.
     ("pcall-stub-nested",
      "function f() return pcall(error, 'inner') end print(f())", None,
      "runtimerr",
-     {"expect": {"err": "pcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "pcall is not supported on this chip"}}),
     ("pcall-stub-deep-error",
      "function d(n) if n == 0 then error('bottom') end return d(n - 1) end "
      "print(pcall(d, 5))", None, "runtimerr",
-     {"expect": {"err": "pcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "pcall is not supported on this chip"}}),
     ("pcall-stub-arg-fn", "print(pcall(function() return 1, 2 end))", None,
      "runtimerr",
-     {"expect": {"err": "pcall is not supported on this chip"}}),
+     {"expect": {"runErrors": "pcall is not supported on this chip"}}),
     # An error raised by the program itself, which is the half of error() that
     # never left: the message on the error port, the run stopped.
     ("error-halts", "function f() error('boom') end print(f())", None,
-     "runtimerr", {"expect": {"err": "boom"}}),
+     "runtimerr", {"expect": {"runErrors": "boom"}}),
     # A gate that answers through a micro-step (_fmt, _pat, _gmatch) used to be
     # abandoned mid-conversion by a caught error, which is what the pcall cases
     # below were for.  The machine is the same and now simply runs to the end.
@@ -915,7 +915,7 @@ TESTS = [
     # is a named call: the short-name divergence was only reachable through a
     # value passed to pcall.
     ("call-gate-error", "print(string.format('%d', 'x'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'format' "
+     {"expect": {"runErrors": "bad argument #2 to 'format' "
                         "(number expected, got string)"}}),
     ("call-gate-args", "print(string.format('%d', 5))", None, "run"),
     ("call-gate-args2", "print(string.format('%s=%d', 'a', 2))", None, "run"),
@@ -1203,21 +1203,21 @@ TESTS = [
      "()()()()()()()()()()()()()()()" + "'))", None,
      "state", {"expect": {"log": "nil\n"}}),
     ("pat-no-subject", "print(string.find('hello'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'string.find' (string expected, got no "
+     {"expect": {"runErrors": "bad argument #2 to 'string.find' (string expected, got no "
                         "value)"}}),
     ("pat-no-pattern-match", "print(string.match('hello'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'string.match' (string expected, got no "
+     {"expect": {"runErrors": "bad argument #2 to 'string.match' (string expected, got no "
                         "value)"}}),
     ("pat-nil-pattern", "print(string.find('hello', nil))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'string.find' (string expected, got nil)"}}),
+     {"expect": {"runErrors": "bad argument #2 to 'string.find' (string expected, got nil)"}}),
     ("pat-bad-subject", "print(string.find({}, 'l'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.find' (string expected, got "
+     {"expect": {"runErrors": "bad argument #1 to 'string.find' (string expected, got "
                         "table)"}}),
     ("pat-number-subject", "print(string.find(5, 'l'), string.find('a1b', "
      "'%d'))", None, "run"),
     ("pat-bad-init", "print(string.find('hello', 'l', 'x'))", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #3 to 'string.find' (number expected, got "
+     {"expect": {"runErrors": "bad argument #3 to 'string.find' (number expected, got "
                          "string)"}}),
     # gsub is a library loop over the matcher: the gate answers one match at a
     # time and the loop is PUC's own.  Three things in that loop are the whole
@@ -1278,32 +1278,32 @@ TESTS = [
     # Both the missing and wrong-type replacement errors use PUC's qualified
     # function name.
     ("gsub-no-replacement", "print(string.gsub('abc', 'a'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #3 to 'string.gsub' (string/function/table "
+     {"expect": {"runErrors": "bad argument #3 to 'string.gsub' (string/function/table "
                         "expected, got no value)"}}),
     ("gsub-bad-replacement", "print(string.gsub('abc', 'a', true))", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #3 to 'string.gsub' (string/function/"
+     {"expect": {"runErrors": "bad argument #3 to 'string.gsub' (string/function/"
                         "table expected, got boolean)"}}),
     ("gsub-bad-limit", "print(string.gsub('abc', 'a', 'b', 'x'))", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #4 to 'string.gsub' (number expected, "
+     {"expect": {"runErrors": "bad argument #4 to 'string.gsub' (number expected, "
                         "got string)"}}),
     ("gsub-fractional-limit", "print(string.gsub('abc', 'a', 'b', 1.9))", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #4 to 'string.gsub' (number has no integer "
+     {"expect": {"runErrors": "bad argument #4 to 'string.gsub' (number has no integer "
                         "representation)"}}),
     ("gsub-bad-percent", "print(string.gsub('abc', 'a', '%'))", None,
      "runtimerr",
-     {"expect": {"err": "invalid use of '%' in replacement string"}}),
+     {"expect": {"runErrors": "invalid use of '%' in replacement string"}}),
     ("gsub-bad-escape", "print(string.gsub('abc', 'a', '%z'))", None,
      "runtimerr",
-     {"expect": {"err": "invalid use of '%' in replacement string"}}),
+     {"expect": {"runErrors": "invalid use of '%' in replacement string"}}),
     ("gsub-bad-capture-index", "print(string.gsub('abc', 'a', '%2'))", None,
-     "runtimerr", {"expect": {"err": "invalid capture index %2"}}),
+     "runtimerr", {"expect": {"runErrors": "invalid capture index %2"}}),
     ("gsub-boolean-value", "print(string.gsub('abc', 'a', {a=true}))", None,
-     "runtimerr", {"expect": {"err": "invalid replacement value (a boolean)"}}),
+     "runtimerr", {"expect": {"runErrors": "invalid replacement value (a boolean)"}}),
     ("gsub-table-value", "print(string.gsub('abc', 'a', {a={}}))", None,
-     "runtimerr", {"expect": {"err": "invalid replacement value (a table)"}}),
+     "runtimerr", {"expect": {"runErrors": "invalid replacement value (a table)"}}),
     # gmatch is a stateful iterator and the state is three arrays, not a closure:
     # _gmatch makes the walk and _gmnext takes one step of it, which is two gates
     # because PUC's iterator is a different value from string.gmatch (a call with
@@ -1378,16 +1378,16 @@ TESTS = [
      "io.write(k) end print('done')", None, "state",
      {"expect": {"log": "done\n"}}),
     ("gmatch-no-subject", "string.gmatch()", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.gmatch' (string expected, "
+     {"expect": {"runErrors": "bad argument #1 to 'string.gmatch' (string expected, "
                         "got no value)"}}),
     ("gmatch-bad-subject", "string.gmatch({}, 'a')", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.gmatch' (string expected, "
+     {"expect": {"runErrors": "bad argument #1 to 'string.gmatch' (string expected, "
                         "got table)"}}),
     ("gmatch-bad-pattern", "string.gmatch('a', {})", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'string.gmatch' (string expected, "
+     {"expect": {"runErrors": "bad argument #2 to 'string.gmatch' (string expected, "
                         "got table)"}}),
     ("gmatch-no-pattern", "string.gmatch('a')", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'string.gmatch' (string expected, "
+     {"expect": {"runErrors": "bad argument #2 to 'string.gmatch' (string expected, "
                         "got no value)"}}),
 
     # error and assert, both C in PUC and gates here.  assert returns *all* of
@@ -1396,17 +1396,17 @@ TESTS = [
     # whatever called error; the chip has no line at run time, so the text a
     # program asked for is what it gets -- the case below pins that.
     ("err-error", "error('boom')", None, "runtimerr",
-     {"expect": {"err": "boom"}}),
+     {"expect": {"runErrors": "boom"}}),
     ("err-error-value", "error(42)", None, "runtimerr",
-     {"expect": {"err": "42"}}),
+     {"expect": {"runErrors": "42"}}),
     ("err-error-level", "local ok, e = 1 error('x', 2)", None, "runtimerr",
-     {"expect": {"err": "x"}}),
+     {"expect": {"runErrors": "x"}}),
     ("assert-args", "print(assert(1, 'a', 'b'))", None, "run"),
     ("assert-count", "print(select('#', assert(1, 2, 3)))", None, "run"),
     ("assert-nil", "assert(nil, 'nope')", None, "runtimerr",
-     {"expect": {"err": "nope"}}),
+     {"expect": {"runErrors": "nope"}}),
     ("assert-false", "assert(false)", None, "runtimerr",
-     {"expect": {"err": "assertion failed!"}}),
+     {"expect": {"runErrors": "assertion failed!"}}),
     # 0 and "" are truthy in Lua, so only nil and false reach the error
     ("assert-zero-truthy", "print(assert(0, 'zero'), assert(''))", None, "run"),
     # wrong. The exponent is the one the value has *after* rounding to the
@@ -1430,7 +1430,7 @@ TESTS = [
     # more, and the double-double carries sixteen exactly: below 10^(p-14) there
     # is no exact conversion and saying so beats a digit that is not the value's
     ("fmt-g-small-limit", "print(string.format('%.2g', 1e-300))", None, "runtimerr",
-     {"expect": {"err": "value too small to format exactly on this chip"}}),
+     {"expect": {"runErrors": "value too small to format exactly on this chip"}}),
     # suite passes case sources on the command line: two of them in a batch is
     # already most of the way to Windows' 32 KB limit.  The first line pins the
     # shapes that always worked, the rest the two that used to fail -- one per
@@ -1476,13 +1476,13 @@ TESTS = [
     # rather than a run: PUC prefixes the message with its chunk and line, which
     # the chip has no way to name.
     ("math-coerce-bad", "print(math.floor('x'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'floor' "
+     {"expect": {"runErrors": "bad argument #1 to 'floor' "
                          "(number expected, got string)"}}),
     # A math PIECE given a string that is not a number gets the arithmetic
     # message, not PUC's "bad argument #1 to 'abs'": the piece converts with
     # `x + 0.0` and that is the raise.  Loud, and the value is never wrong.
     ("math-coerce-bad-piece", "print(math.abs('x'))", None, "runtimerr",
-     {"expect": {"err": "attempt to add a 'string' with a 'number'"}}),
+     {"expect": {"runErrors": "attempt to add a 'string' with a 'number'"}}),
     # modf returns floats, so the integral part prints with the chip's float
     # spelling, and the chip prints the shortest round-trip form of the
     # fraction where PUC prints 17 digits.
@@ -1505,7 +1505,7 @@ TESTS = [
     # the refusal rather than the log.
     ("math-ult-large", "print(math.ult(9223372036854775807, 0))", None,
      "runtimerr", {"ticks": 9000,
-                   "expect": {"err": "no integer representation"}}),
+                   "expect": {"runErrors": "no integer representation"}}),
     ("math-ult-coerce", "print(math.ult('3', '4'), math.ult(2.0, 3.0), "
      "math.ult(' 4', 5), math.ult('4', '5'))", None, "run",
      {"ticks": 9000}),
@@ -1515,25 +1515,25 @@ TESTS = [
     # sake of ult("0x..") -- the walk belongs to tonumber, which already pays
     # 2,779 characters for it.  Pinned as the refusal.
     ("math-ult-hexstr", "print(math.ult('0x10', 17))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got string"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got string"}}),
     ("math-ult-float-reject", "print(math.ult(1.5, 2))", None, "runtimerr",
      {"ticks": 9000,
-      "expect": {"err": "number has no integer representation"}}),
+      "expect": {"runErrors": "number has no integer representation"}}),
     ("math-ult-str-reject", "print(math.ult('3.5', 4))", None, "runtimerr",
      {"ticks": 9000,
-      "expect": {"err": "number has no integer representation"}}),
+      "expect": {"runErrors": "number has no integer representation"}}),
     ("math-ult-str-type", "print(math.ult('x', 1))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got string"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got string"}}),
     ("math-ult-noargs", "print(math.ult())", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got no value"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got no value"}}),
     ("math-ult-onearg", "print(math.ult(1))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got no value"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got no value"}}),
     ("math-ult-badtype", "print(math.ult({}, 1))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got table"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got table"}}),
     ("math-ult-bool", "print(math.ult(true, 1))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got boolean"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got boolean"}}),
     ("math-ult-nil", "print(math.ult(nil, 1))", None, "runtimerr",
-     {"ticks": 9000, "expect": {"err": "got nil"}}),
+     {"ticks": 9000, "expect": {"runErrors": "got nil"}}),
     # math.random is a Lua piece, so it is the one builtin whose NUMBERS are not
     # PUC's: PUC seeds xoshiro256** on a 64-bit state and the chip runs a 32-bit
     # LCG, so the same seed gives a different sequence and no program can tell
@@ -1563,9 +1563,9 @@ TESTS = [
     # harness saw the message next to a false; with catching gone each is a
     # runtimerr case pinned to PUC's words.
     ("math-random-interval", "print(math.random(5, 1))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'random' (interval is empty)"}}),
+     {"expect": {"runErrors": "bad argument #1 to 'random' (interval is empty)"}}),
     ("math-random-noint", "print(math.random(1.5))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'random' "
+     {"expect": {"runErrors": "bad argument #1 to 'random' "
                         "(number has no integer representation)"}}),
     # PUC's math.random takes 0, 1 or 2 arguments and answers "wrong number of
     # arguments" otherwise; a Lua function ignores the extras, so the piece has to
@@ -1574,12 +1574,12 @@ TESTS = [
     # interval (not the upper bound's), and #2 for a non-integer upper bound --
     # that pair is what these two are for.
     ("math-random-arity", "print(math.random(1, 9, 1))", None, "runtimerr",
-     {"expect": {"err": "wrong number of arguments"}}),
+     {"expect": {"runErrors": "wrong number of arguments"}}),
     ("math-random-argidx-lo", "print(math.random(1.5, 3))", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'random' "
+     {"expect": {"runErrors": "bad argument #1 to 'random' "
                         "(number has no integer representation)"}}),
     ("math-random-argidx-hi", "print(math.random(1, 1.5))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'random' "
+     {"expect": {"runErrors": "bad argument #2 to 'random' "
                         "(number has no integer representation)"}}),
     # math.type answers for a value of ANY type -- "integer"/"float" for a
     # number and nil for everything else -- so it must not go through the
@@ -1604,14 +1604,14 @@ TESTS = [
     # pinned directly rather than read off a pcall's log.
     ("tbl-insert-bounds-0", "local t = {1} table.insert(t, 0, 9)", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'table.insert' "
+     {"expect": {"runErrors": "bad argument #2 to 'table.insert' "
                         "(position out of bounds)"}}),
     ("tbl-insert-bounds-noint", "local t = {1} table.insert(t, 1.5, 9)", None,
      "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'table.insert' "
+     {"expect": {"runErrors": "bad argument #2 to 'table.insert' "
                         "(number has no integer representation)"}}),
     ("tbl-insert-arity", "table.insert({})", None, "runtimerr",
-     {"expect": {"err": "wrong number of arguments to 'insert'"}}),
+     {"expect": {"runErrors": "wrong number of arguments to 'insert'"}}),
     # ... and the two that are ACCEPTED, which is the other half of the rule: a
     # position of n+1 is legal and a numeric string coerces.  The table's
     # contents afterwards are the state these leave behind.
@@ -1625,10 +1625,10 @@ TESTS = [
     # integer first, exactly like insert's, and the messages name
     # `table.remove`.
     ("tbl-remove-bounds", "table.remove({1,2,3}, 0)", None, "runtimerr",
-     {"expect": {"err": "table.remove' (position out of bounds"}}),
+     {"expect": {"runErrors": "table.remove' (position out of bounds"}}),
     ("tbl-remove-bounds-noint", "local t = {1,2,3} table.remove(t, 1.5)", None,
      "runtimerr",
-     {"expect": {"err": "table.remove' (number has no integer "
+     {"expect": {"runErrors": "table.remove' (number has no integer "
                         "representation)"}}),
     # A numeric string position is accepted, as it is in PUC, and it removes
     # rather than reading the key: this was the pcall that caught the piece
@@ -1752,16 +1752,16 @@ TESTS = [
     # wording -- which is the better outcome, since the cap was hiding the very
     # difference being tested.
     ("str-no-value-upper", "string.upper()", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.upper' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.upper' "
                         "(string expected, got no value)"}}),
     ("str-nil-upper", "string.upper(nil)", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.upper' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.upper' "
                         "(string expected, got nil)"}}),
     ("str-no-value-len", "string.len()", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.len' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.len' "
                         "(string expected, got no value)"}}),
     ("str-nil-len", "string.len(nil)", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'string.len' "
+     {"expect": {"runErrors": "bad argument #1 to 'string.len' "
                         "(string expected, got nil)"}}),
     ("tbl-pack", "local t = table.pack(1, nil, 3) print(t.n, t[1], t[3])",
      None, "run"),
@@ -1835,10 +1835,10 @@ TESTS = [
     # utf8's two raises.  These were one print of two pcalls; with catching gone
     # they are one case each, pinned to PUC's own wording.
     ("utf8-errors", "utf8.codepoint('\\192\\128')", None, "runtimerr",
-     {"ticks": 15000, "expect": {"err": "invalid UTF-8 code"}}),
+     {"ticks": 15000, "expect": {"runErrors": "invalid UTF-8 code"}}),
     ("utf8-char-range", "utf8.char(-1)", None, "runtimerr",
      {"ticks": 15000,
-      "expect": {"err": "bad argument #1 to 'utf8.char' (value out of range)"}}),
+      "expect": {"runErrors": "bad argument #1 to 'utf8.char' (value out of range)"}}),
     ("str-empty", "print('')", None, "run"),
     ("concat-empty", "print('' .. '' .. 1)", None, "run"),
     ("cmp-func", "print(print==print, print~=type)", None, "run"),
@@ -2220,7 +2220,7 @@ TESTS = [
      "while i <= 400 do t[i] = function() return x end i = i + 1 end "
      "print('unreachable')", None, "runtimerr",
      {"ticks": 24000,
-      "expect": {"err": "too many closures (%d records)"
+      "expect": {"runErrors": "too many closures (%d records)"
                         % (spec.MAX_FUNCS + spec.MAX_CLO)}}),
     # ... and the same loop under the limit, so the case above is a limit being
     # reached rather than the arena simply being small.  The captured name is one
@@ -2429,7 +2429,7 @@ TESTS = [
     # raise that carried it is now the case -- the message is what stops the run
     ("upvalue-error", "local msg = 'boom' local function bad() error(msg) end "
      "print(bad())", None, "runtimerr",
-     {"expect": {"err": "boom"}}),
+     {"expect": {"runErrors": "boom"}}),
     # method sugar on a closure stored in a table
     ("upvalue-method", "local t = {} local n = 5 function t:get() return n end "
      "print(t:get())", None, "run"),
@@ -2464,7 +2464,7 @@ TESTS = [
     # would have been read from.  It was a pcall of a variadic wrapper, which
     # covered both at once; now it is the error itself.
     ("gate-args-find-nopattern", "print(string.find('abc'))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'string.find' "
+     {"expect": {"runErrors": "bad argument #2 to 'string.find' "
                         "(string expected, got no value)"}}),
     ("callarg-temp", "local s = 'abcdef' print('x', s, #s, s .. '!')",
      None, "run"),
@@ -2556,11 +2556,11 @@ TESTS = [
      "t['k@v'] = 3 t['x:y'] = 4 "
      "print(t['a#b'], t['a$b'], t['k@v'], t['x:y'])", None, "run"),
     ("tab-getnil-diff", "t = {} print(t[nil])", None, "runtimerr",
-     {"expect": {"err": "table index is nil"}}),
+     {"expect": {"runErrors": "table index is nil"}}),
     ("tab-set-nonint", "t = {} t[1.5] = 1", None, "runtimerr",
-     {"expect": {"err": "non-integer number keys"}}),
+     {"expect": {"runErrors": "non-integer number keys"}}),
     ("tab-set-nil-key", "t = {} t[nil] = 1", None, "runtimerr",
-     {"expect": {"err": "table index is nil"}}),
+     {"expect": {"runErrors": "table index is nil"}}),
     ("tab-idx-nontable", "x = 5 print(x[1])", None, "haltfail"),
     ("tab-len-nontable", "print(#5)", None, "haltfail"),
     # Both table limits are counted from spec, so raising one cannot quietly
@@ -2568,10 +2568,10 @@ TESTS = [
     # would stop raising, and `runtimerr` fails on the missing error.
     ("tab-toomany", "t = {} i = 0 while i < %d do t[#t+1] = {} "
      "i = i+1 end" % spec.MAX_TABLES, None, "runtimerr",
-     {"expect": {"err": "too many tables (%d)" % spec.MAX_TABLES}}),
+     {"expect": {"runErrors": "too many tables (%d)" % spec.MAX_TABLES}}),
     ("tab-oom", "t = {} i = 0 while i < %d do t[i] = {} i = i+1 end"
      % (spec.MAX_TABLES + 1), None,
-     "runtimerr", {"expect": {"err": "too many tables"}}),
+     "runtimerr", {"expect": {"runErrors": "too many tables"}}),
     # The table arena is fixed (`MAX_HEAP` entries) and there is no
     # collector, so the ONLY thing that keeps a program inside it is the slot
     # free list: `t[k] = nil` hands the entry back and the next new key takes
@@ -2650,7 +2650,7 @@ TESTS = [
     ("log-many", "i = 1 while i <= 40 do print(i) i = i + 1 end", None,
      "run"),
     ("log-wide", "print('" + "y" * 100 + "')", None, "modelio",
-     {"expect": {"log": "y" * 63 + "\n"}}),
+     {"expect": {"log": "y" * 100 + "\n"}}),
     # array ports
     ("arr-read", "print(innumarr(1), innumarr(2), innumarr(3))", None, "modelio",
      {"innumarr": [1.5, 2.5], "expect": {"log": "1.5\t2.5\tnil\n"}}),
@@ -2662,13 +2662,13 @@ TESTS = [
      None, "modelio",
      {"innumarr": [7.0], "expect": {"log": "nil\tnil\tnil\tnil\n"}}),
     ("arr-oob-write", "outnumarr(0, 1)", None, "runtimerr",
-     {"expect": {"err": "array index out of range"}}),
+     {"expect": {"runErrors": "array index out of range"}}),
     ("arr-oob-write2", "outnumarr(16385, 1)", None, "runtimerr",
-     {"expect": {"err": "array index out of range"}}),
+     {"expect": {"runErrors": "array index out of range"}}),
     ("arr-badval", "outnumarr(1, 'x')", None, "runtimerr",
-     {"expect": {"err": "array element must be a number"}}),
+     {"expect": {"runErrors": "array element must be a number"}}),
     ("arr-badval2", "outnumarr(1, {})", None, "runtimerr",
-     {"expect": {"err": "array element must be a number"}}),
+     {"expect": {"runErrors": "array element must be a number"}}),
     ("arr-nil-write", "outnumarr(1, nil)", None, "modelio",
      {"expect": {"outNumArr": [0.0] * spec.OUTARR}}),
     ("arr-missing", "print(innumarr())", None, "modelio",
@@ -2695,7 +2695,7 @@ TESTS = [
                              "log": ""}}),
     ("arr-multi-oob", "outnumarr(16382, 1, 2, 3, 4)",
      None, "runtimerr",
-     {"expect": {"err": "array index out of range"}}),
+     {"expect": {"runErrors": "array index out of range"}}),
     # the last run of four that fits: slots 16381..16384.  This
     # is the case the off-by-one in the value count broke, because
     # it asked for one slot too many
@@ -2705,7 +2705,7 @@ TESTS = [
                  + [1.0, 2.0, 3.0, 4.0], "log": "ok\n"}}),
     ("arr-multi-badval", "outnumarr(1, 1, 1, {})",
      None, "runtimerr",
-     {"expect": {"err": "array element must be a number"}}),
+     {"expect": {"runErrors": "array element must be a number"}}),
     # the string array port: the same shapes as the numeric
     # one, one string per value, and nil stores ""
     ("strarr-write", "outstrarr(1, 'a') outstrarr(2, 'b')",
@@ -2735,17 +2735,17 @@ TESTS = [
                  + ["a", "b", "c", "d"], "log": "ok\n"}}),
     ("strarr-multi-oob", "outstrarr(16382, 'a', 'b', 'c', 'd')",
      None, "runtimerr",
-     {"expect": {"err": "array index out of range"}}),
+     {"expect": {"runErrors": "array index out of range"}}),
     ("strarr-oob-write", "outstrarr(0, 'a')", None, "runtimerr",
-     {"expect": {"err": "array index out of range"}}),
+     {"expect": {"runErrors": "array index out of range"}}),
     ("strarr-oob-write2", "outstrarr(16385, 'a')", None, "runtimerr",
-     {"expect": {"err": "array index out of range"}}),
+     {"expect": {"runErrors": "array index out of range"}}),
     ("strarr-badval", "outstrarr(1, 5)", None, "runtimerr",
-     {"expect": {"err": "array element must be a string"}}),
+     {"expect": {"runErrors": "array element must be a string"}}),
     ("strarr-badval2", "outstrarr(1, true)", None, "runtimerr",
-     {"expect": {"err": "array element must be a string"}}),
+     {"expect": {"runErrors": "array element must be a string"}}),
     ("strarr-badval3", "outstrarr(1, {})", None, "runtimerr",
-     {"expect": {"err": "array element must be a string"}}),
+     {"expect": {"runErrors": "array element must be a string"}}),
     # the arity warning is the numeric array's, on this
     # port's own name
     ("strarr-arity-none", "outstrarr()", None, "state",
@@ -2778,11 +2778,11 @@ TESTS = [
     # innumarr, because the INDEX is checked first: with an empty array innumarr(1, 9)
     # answers nil and never reaches the count.
     ("arr-multi-count0", "print(innumarr(1, 0))", None, "runtimerr",
-     {"innumarr": [1.0], "expect": {"err": "count out of range"}}),
+     {"innumarr": [1.0], "expect": {"runErrors": "count out of range"}}),
     ("arr-multi-count9", "print(innumarr(1, 9))", None, "runtimerr",
-     {"innumarr": [1.0], "expect": {"err": "count out of range"}}),
+     {"innumarr": [1.0], "expect": {"runErrors": "count out of range"}}),
     ("arr-multi-countfrac", "print(innumarr(1, 1.5))", None, "runtimerr",
-     {"innumarr": [1.0], "expect": {"err": "count out of range"}}),
+     {"innumarr": [1.0], "expect": {"runErrors": "count out of range"}}),
     # inStrArr is the string array input, and instrarr(i) / instrarr(i, k) are
     # innumarr's two shapes on it.  A port carries one wire type, so this is a
     # SECOND port rather than a wider inNumArr -- the header says why, and the
@@ -2819,11 +2819,11 @@ TESTS = [
     # the count is a count, not an index, and the index is checked FIRST: an empty
     # array answers nil and never reaches the count guard, so each case sets it
     ("sarr-multi-count0", "print(instrarr(1, 0))", None, "runtimerr",
-     {"instrarr": ["a"], "expect": {"err": "count out of range"}}),
+     {"instrarr": ["a"], "expect": {"runErrors": "count out of range"}}),
     ("sarr-multi-count9", "print(instrarr(1, 9))", None, "runtimerr",
-     {"instrarr": ["a"], "expect": {"err": "count out of range"}}),
+     {"instrarr": ["a"], "expect": {"runErrors": "count out of range"}}),
     ("sarr-multi-countfrac", "print(instrarr(1, 1.5))", None, "runtimerr",
-     {"instrarr": ["a"], "expect": {"err": "count out of range"}}),
+     {"instrarr": ["a"], "expect": {"runErrors": "count out of range"}}),
     # past the end on the way IN is the silent nil, so it gets the parse-time
     # advice innumarr gets -- same bound, same const, same reason
     ("index-instrarr-past-end", "print(instrarr(16385))",
@@ -3001,19 +3001,19 @@ TESTS = [
      {"expect": {"log": "done\n",
                  "outGlobals": [0.0, 0.0, 0.0, 7.0, "", ""]}}),
     ("io-int-bad", "outnum(4, 'x')", None, "runtimerr",
-     {"expect": {"err": "cannot convert"}}),
+     {"expect": {"runErrors": "cannot convert"}}),
     ("inputs-int", "print(inNum3 + 1)", [0, 0, 0, 41], "run", {}),
     # an output is not readable: there is no global to read, so a program that
     # wants the value back has to keep it
     ("out-not-readable", "outnum(1, 5) print(outNum0)", None, "run"),
     ("out-badnum", "outnum(1, 'x')", None, "runtimerr",
-     {"expect": {"err": "cannot convert"}}),
+     {"expect": {"runErrors": "cannot convert"}}),
     ("out-badnum2", "outnum(2, {})", None, "runtimerr",
-     {"expect": {"err": "cannot convert"}}),
+     {"expect": {"runErrors": "cannot convert"}}),
     ("out-badindex", "outnum(5, 1)", None, "runtimerr",
-     {"expect": {"err": "index must be 1..4"}}),
+     {"expect": {"runErrors": "index must be 1..4"}}),
     ("out-badindex-str", "outstr(3, 'x')", None, "runtimerr",
-     {"expect": {"err": "index must be 1..2"}}),
+     {"expect": {"runErrors": "index must be 1..2"}}),
     ("out-nil-str", "outstr(1, nil) print('done')", None, "modelio",
      {"expect": {"log": "done\n",
                  "outGlobals": [0.0, 0.0, 0.0, 0.0, "", ""]}}),
@@ -3120,7 +3120,7 @@ TESTS = [
      "tonumber('0b11', 2), math.type(tonumber('ff', 16)))", None, "run",
      {"ticks": 9000}),
     ("tonum-base-bounds", "print(tonumber('11', 1))", None, "runtimerr",
-     {"expect": {"err": "bad argument #2 to 'tonumber' "
+     {"expect": {"runErrors": "bad argument #2 to 'tonumber' "
                         "(base out of range)"}, "ticks": 9000}),
     # A hex numeral that ARRIVES at run time.  The hex walk is a separate piece
     # gated on the program's TEXT, and inStr0 is a string the program never
@@ -3167,7 +3167,7 @@ TESTS = [
     ("os-exit-clean", "print('s1') os.exit() print('NEVER')", None, "run"),
     ("os-exit-zero", "print('s2') os.exit(0) print('NEVER')", None, "run"),
     ("os-exit-code", "print('s3') os.exit(3) print('NEVER')", None,
-     "runtimerr", {"expect": {"err": "exit: 3"}}),
+     "runtimerr", {"expect": {"runErrors": "exit: 3"}}),
     # os.exit is error() underneath, so pcall catches it and the program prints
     # false + the message; PUC's exit terminates THROUGH pcall and prints
     # nothing (the oracle exits rc=5, so this cannot be a `run` case at all --
@@ -3178,7 +3178,7 @@ TESTS = [
     # all -- there is no oracle log to compare against.  The message is a chip
     # addition and the more useful half in game, where err is what anyone reads.
     ("os-exit-raises", "os.exit(5)", None, "runtimerr",
-     {"expect": {"err": "exit: 5"}}),
+     {"expect": {"runErrors": "exit: 5"}}),
     # line numbers on compile failure
     ("errline-stmt", "print(1)\nprint(2)\nend\n", None, "synfail",
      {"errline": 3}),
@@ -3332,14 +3332,14 @@ TESTS = [
     # raise is its own case, which pins the whole message instead of a line
     # truncated at 64 characters.
     ("os-time-missing", "os.time({})", None, "runtimerr",
-     {"expect": {"err": "field 'year' missing in date table"}}),
+     {"expect": {"runErrors": "field 'year' missing in date table"}}),
     ("os-time-year-float", "os.time({year = 2024.5, month = 1, day = 1})", None,
-     "runtimerr", {"expect": {"err": "field 'year' is not an integer"}}),
+     "runtimerr", {"expect": {"runErrors": "field 'year' is not an integer"}}),
     ("os-time-year-range", "os.time({year = 36534630048, month = 1, day = 1})",
-     None, "runtimerr", {"expect": {"err": "field 'year' is out-of-bound"}}),
+     None, "runtimerr", {"expect": {"runErrors": "field 'year' is out-of-bound"}}),
     ("os-time-hour-float",
      "os.time({year = 2024, month = 1, day = 1, hour = 1.5})", None,
-     "runtimerr", {"expect": {"err": "field 'hour' is not an integer"}}),
+     "runtimerr", {"expect": {"runErrors": "field 'hour' is not an integer"}}),
     # rawequal/rawget/rawset/rawlen (lib/raw.lua): exact because the
     # chip has no metamethods, so each IS its plain op.  Reference
     # equality for tables, rawset returns the table, rawlen is #.
@@ -3364,7 +3364,7 @@ TESTS = [
     # os.getenv with no argument: PUC's own error, which used to be the middle
     # term of the print above behind a pcall.
     ("os-getenv-noarg", "os.getenv()", None, "runtimerr",
-     {"expect": {"err": "bad argument #1 to 'os.getenv' "
+     {"expect": {"runErrors": "bad argument #1 to 'os.getenv' "
                         "(string expected, got no value)"}}),
     ("bit-mix", "print(5+~3)", None, "run"),
     ("bit-prec", "print(1&2|4)", None, "run"),
@@ -3388,10 +3388,10 @@ TESTS = [
                                 "state": {"forDepth": 0}}}),
     ("for-error-depth", "for i=1,2 do local function g() "
      "for j=1,2 do error('x') end end g() end print('never')",
-     None, "runtimerr", {"expect": {"err": "x"}}),
+     None, "runtimerr", {"expect": {"runErrors": "x"}}),
     ("for-nested-limit", "local function f(n) for i=1,1 do "
      "if 0 < n then f(n-1) end end end f(20)", None, "runtimerr",
-     {"expect": {"err": "too many nested numeric loops"}}),
+     {"expect": {"runErrors": "too many nested numeric loops"}}),
     ("for-nest", "for i=1,2 do for j=1,2 do print(i*10+j) end end",
      None, "run"),
     ("for-multi", "for i=1,2 do print(i) print(i+1) end", None, "run"),

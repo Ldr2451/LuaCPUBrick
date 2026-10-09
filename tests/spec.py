@@ -53,7 +53,7 @@ MAX_TABLES = 512
 MAX_HEAP = 65536   # total table entries across every table (no collector)
 MAXVALS = 16       # values one call/return/statement can carry
 LOG_LINES = 32     # lines kept in the log before the oldest are dropped
-LOG_WIDTH = 64     # characters kept per log line
+LOG_WIDTH = 128    # characters kept per log line
 OUTARR = 16384   # entries in the outNumArr and outStrArr ports
 
 # Harness defaults, shared by the suite and the oracle-diff checks.

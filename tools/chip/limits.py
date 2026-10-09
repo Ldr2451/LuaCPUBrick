@@ -80,7 +80,7 @@ def run(runner, src, cap):
     out = runner.run(src, cap)
     g = out["outGlobals"]
     log = (g.get("log") or "").strip()
-    msg = (g.get("err") or "").strip()
+    msg = (g.get("runErrors") or "").strip()
     if not msg:
         # a parse error is the last "err: line N: ..." line of progDebug
         for line in (g.get("progDebug") or "").split("\n"):

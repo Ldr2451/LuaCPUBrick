@@ -31,7 +31,7 @@ def main(argv):
     r = runner.run(src, ticks, None)
     print("program: %r" % src[:60])
     print("log: %r err: %r finished: %r" % (
-        r.get('log', ''), r.get('outGlobals', {}).get('err', ''),
+        r.get('log', ''), r.get('outGlobals', {}).get('runErrors', ''),
         runner.sim.finished))
     for v in VARS:
         print("  var %-10s %r" % (v, runner.sim.chip_var(v, "<absent>")))

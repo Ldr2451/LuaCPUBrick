@@ -2,7 +2,7 @@
 
 tools/chip/whyempty.py reads the PARSE flags, so a program that raises at run
 time looks identical to one that stalls (empty log, progOkV true).  The suite
-reads outGlobals['err'] instead.  This prints all three, so empty-log failures
+reads outGlobals['runErrors'] instead.  This prints all three, so empty-log failures
 can be told apart.
 
 The dump is cached by lua.ws mtime: compiling and indexing costs ~6s, loading
@@ -40,7 +40,7 @@ def main(argv):
     r = runner.run(src, ticks, None)
     print("program: %r" % src)
     print("log:     %r" % r.get('log', ''))
-    print("err:     %r" % r.get('outGlobals', {}).get('err', ''))
+    print("err:     %r" % r.get('outGlobals', {}).get('runErrors', ''))
     print("finished: %r" % runner.sim.finished)
     return 0
 
