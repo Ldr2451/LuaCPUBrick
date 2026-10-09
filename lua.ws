@@ -1341,6 +1341,12 @@ var unfA: int = 0
 var unfTid: int = 0
 var unfLo: int = 0
 var unfLeft: int = 0
+// VARARG's nil-pad machine (nxMode 6): the pad's base register, the next pad
+// index and where the pads end.  Sixteen unrolled vSetNil guards padded every
+// short vararg call; the machine is one call and one tick per pad instead.
+var vrgDst: int = 0
+var vrgI: int = 0
+var vrgEnd: int = 0
 var patFailTo: int = 0       // and on a miss
 var patSt: int = 0
 
@@ -10384,6 +10390,15 @@ mod unfStep() {
   }
 }
 
+mod vrgStep() {
+  vSetNil(vrgDst + vrgI)
+  vrgI = vrgI + 1
+  if vrgEnd <= vrgI {
+    nxActive = false
+    nxDone()
+  }
+}
+
 // Is a micro-step machine or a closure fill driving this tick?
 // vmStep routes on these; vmStepFast has to stand aside on the SAME set, and the
 // set is written once here so the two cannot drift.  A copied list is how
@@ -10486,6 +10501,8 @@ mod vmStep() {
       tapStep()
     } else if nxMode == 5 {
       unfStep()
+    } else if nxMode == 6 {
+      vrgStep()
     } else {
       nxStep()
     }
@@ -10759,23 +10776,16 @@ mod vmStep() {
         let k = if have < want then have else want
         vaFill(base, vmBase + a, k)
         if k < want {
-          // pad with nil so a fixed-arity target list sees the missing values
-          if k + 1 <= want { vSetNil(a + k) }
-          if k + 2 <= want { vSetNil(a + k + 1) }
-          if k + 3 <= want { vSetNil(a + k + 2) }
-          if k + 4 <= want { vSetNil(a + k + 3) }
-          if k + 5 <= want { vSetNil(a + k + 4) }
-          if k + 6 <= want { vSetNil(a + k + 5) }
-          if k + 7 <= want { vSetNil(a + k + 6) }
-          if k + 8 <= want { vSetNil(a + k + 7) }
-          if k + 9 <= want { vSetNil(a + k + 8) }
-          if k + 10 <= want { vSetNil(a + k + 9) }
-          if k + 11 <= want { vSetNil(a + k + 10) }
-          if k + 12 <= want { vSetNil(a + k + 11) }
-          if k + 13 <= want { vSetNil(a + k + 12) }
-          if k + 14 <= want { vSetNil(a + k + 13) }
-          if k + 15 <= want { vSetNil(a + k + 14) }
-          if k + 16 <= want { vSetNil(a + k + 15) }
+          // pad with nil through vrgStep (nxMode 6), one per tick, so a
+          // fixed-arity target list sees the missing values.  Sixteen
+          // unrolled guards lived here; the machine is one call instead.
+          vrgDst = a + k
+          vrgI = 0
+          vrgEnd = want - k
+          nxDst = vmBase + a
+          nxPc = vmPc
+          nxActive = true
+          nxMode = 6
         }
       } else {
         vSetNil(a)
