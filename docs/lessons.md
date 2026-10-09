@@ -747,6 +747,11 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   port-clearing internals, no sermons about what the reader can already see in
   game). Facts a user needs (what runs when, counting from 1, array sizes)
   stay; everything else lives in `lua.ws` header comments and lessons.
+- Working agreement, Oct 2026 (the user never saw the question-tool popups --
+  app restarts swallow them -- so an agent that "asked" still acted unasked):
+  propose, then STOP. Multi-step work starts only on an explicit user "go";
+  decisions live in plain chat text, never in a popup alone; no surprise
+  builds.
 
 ## Verification
 - Verify by execution, never by reasoning alone. All cases run unless a filter
