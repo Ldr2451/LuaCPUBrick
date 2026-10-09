@@ -176,6 +176,19 @@ for port, bindvar in [("log", "logV"), ("outNum1", "oF0"),
         rf"^(var|let) {bindvar}\b", WS, re.M) is not None)
 check("no-halted-port", "out halted" not in WS)
 check("no-proglen-port", "out progLen" not in WS)
+# No file-scope bool[] outside the same-phase allowlist.  A bool written in
+# one phase and read in another does not survive where this runs (fVar did
+# not: variadic calls arrived with no extras and no error, while int arrays
+# survive the same trip everywhere they are used -- so the flag is 0/1 in an
+# int[] instead).  Same-phase arrays are fine and stay: the six parse-only
+# ones never leave compilation, and uDirty/patGmMagic never leave the run
+# (closures and the gmatch warn prove both live).  Anything new here fails
+# the commit it arrives in, because the sim cannot see the difference.
+same_phase = {"locCap", "blkIsLoop", "fnVar", "fnSelfArg", "valCall",
+              "valPrefix", "uDirty", "patGmMagic"}
+found_bools = set(re.findall(r"^var (\w+): bool\[\]", WS, re.M))
+check("no-bool-arrays", found_bools <= same_phase,
+      f"new bool[] outside allowlist: {sorted(found_bools - same_phase)}")
 check("no-nprint-port", "out nPrint" not in WS)
 for hw, port in [("inNumArr", "inNumArr"), ("inStrArr", "inStrArr"),
                  ("outNumArr", "outNumArr"), ("outStrArr", "outStrArr"),

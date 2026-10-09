@@ -619,7 +619,6 @@ var constStr: string[]
 var fStart: int[]
 var fParams: int[]
 var fRegs: int[]
-var fVar: bool[]
 var mainFid: int = 0
 var gmap: Map<string, int>
 var gslotNext: int = 0
@@ -702,8 +701,9 @@ var upGen: int[]
 // is emitted in front of the condition and this says so, or the block exit
 // would add a second one outside the loop.
 var blkGenDone: bool = false
-// is the function being compiled variadic?  `...` outside one is an error, and
-// the VM keeps the same flag per function id in fVar
+// is the function being compiled variadic?  `...` outside one is an error;
+// the VM needs no flag for it: extra arguments spill by count (nargs - np),
+// so there is nothing to keep per function id.
 var fnVar: bool[]
 // `function M:f(...)` compiles as `M.f = function(M, ...)`: the receiver name
 // is not written, so the parameter list has to be told to declare it first.
@@ -2146,7 +2146,6 @@ mod newFunc() -> int {
   fStart.push(-1)
   fParams.push(0)
   fRegs.push(-1)
-  fVar.push(false)
   fUpN.push(0)
   fUpSlotN.push(0)
   let bad = fStart.length() > MAX_FUNCS
@@ -4075,7 +4074,6 @@ mod parseInit() {
   fStart.clear()
   fParams.clear()
   fRegs.clear()
-  fVar.clear()
   gmap.clear()
   locName.clear()
   locReg.clear()
@@ -5466,7 +5464,7 @@ mod forDoHead() {
 }
 
 // stState 20: parameter list.  `...` may appear last and makes the function
-// variadic: extra arguments land in the vararg stack (fVar marks the fid).
+// variadic: extra arguments land in the vararg stack by count.
 mod funcParams() {
   // `function M:f(a)` puts M in the first parameter slot, so `self` has to be
   // the first local or every parameter shifts by one
@@ -5476,7 +5474,6 @@ mod funcParams() {
   }
   if curKind() == 5 && curSub() == 32 {
     cpos = cpos + 1
-    fVar[tmpB] = true
     if curKind() == 5 && curSub() == 15 {
       cpos = cpos + 1
       fParams[tmpB] = cfNext[fnDepth]
@@ -10212,8 +10209,15 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
           vtag[nbase + 7] = 0
         }
         // a variadic function keeps the arguments past its named
-        // parameters in the vararg stack; the frame records the base
-        let nva = if fVar[fid] && np < nargs then nargs - np else 0
+        // parameters in the vararg stack; the frame records the base.
+        // Counted, not flagged: a parse-written flag read back here proved
+        // unreadable where this runs -- variadic calls arrived with no
+        // extras and no error -- while counts read fine everywhere.  A
+        // non-variadic callee with extras now spills them too; nothing can
+        // observe them (`...` is compile-gated to variadic bodies), the
+        // frame is restored on return either way, and the guards bound the
+        // arena exactly as before.
+        let nva = if np < nargs then nargs - np else 0
         // above the varargs come this frame's slot table and the word below it
         // that says which frame it is (see slotBase), so the table can be
         // scratch space a later frame reuses without adopting stale cells
