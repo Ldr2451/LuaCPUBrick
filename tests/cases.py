@@ -2080,8 +2080,11 @@ TESTS = [
      {"expect": {"log": "nil\n", "progDebug": "'in0'"}}),
     # ... and the other direction, which is the one that would make the warning
     # noise: a global the program DEFINES is not a typo.  PUC gives it nil before
-    # the assignment and the value after, so warning here would be wrong.
-    ("unknown-name-assigned", "count = 0 count = count + 1 print(count)", None,
+    # the assignment and the value after, so warning here would be wrong.  The
+    # `local` sits on its own first line because the parse-start echo quotes
+    # line 1 into progDebug, and noProgDebug below is a plain substring check.
+    ("unknown-name-assigned", "local _ = 0\n"
+     "count = 0 count = count + 1 print(count)", None,
      "state", {"expect": {"log": "1\n", "noProgDebug": "count"}}),
     # A call to one of the chip's own builtins with too few arguments cannot do
     # anything, and the COUNT is known while parsing - it is already the CALL's

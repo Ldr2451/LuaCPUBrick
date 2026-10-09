@@ -520,6 +520,15 @@ var progDebugV: string = ""
 // beside parseJobStart.
 var dbgStartV: string = ""
 var dbgTick0: float = 0.0
+// The program's first line, for the person holding the Brick: the parse
+// reports the character COUNT, which proves length but not content, and
+// every hard-to-believe failure so far has been arguments that are in the
+// source never arriving -- which is a text mismatch, not chip logic, and
+// only a content sample can tell the two apart.  First line only, 48 chars:
+// progDebug is line-checked for `err: `, and a head that kept its newline
+// could forge one.  Rebuilt into the end line with the start line, so it
+// survives completion rather than vanishing exactly when it is read.
+var dbgHeadV: string = ""
 
 // ---------------------------------------------------------------- value helpers
 // value tags: 0 nil, 1 number, 2 string, 3 boolean, 4 function, 5 table, 6 integer
@@ -5762,9 +5771,14 @@ mod fmtPrecZero() {
 // The character count is what the user handed over, not what gets lexed: a
 // program that names a library has that piece's characters prepended, and the
 // tick count is where that shows up.
-mod parseInfoStart(chars: int) {
+mod parseInfoStart(src: string) {
   dbgTick0 = ServerUptime()
-  dbgStartV = "info: parse start: " .. ("" .. chars) .. " chars\n"
+  let plen = src.Length()
+  let cut = src.Find("\n", true, 0)
+  let lineL = if cut < 0 then plen else cut
+  let headL = if 48 < lineL then 48 else lineL
+  dbgHeadV = src.Substring(0, headL)
+  dbgStartV = "info: parse start: " .. ("" .. plen) .. " chars: " .. dbgHeadV .. "\n"
   progDebugV = dbgStartV
 }
 
@@ -11686,7 +11700,7 @@ on sched {
 on goParse {
   // Before anything else, so the port says the job started even if the job then
   // fails: an `err:` line with no start above it is a chip that went quiet.
-  parseInfoStart(program.Length())
+  parseInfoStart(program)
   parseJobStart()
   // The library goes in front of the program, so the user's line numbers are
   // shifted by however many lines it added; libLines undoes that for errors.
