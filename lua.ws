@@ -10356,18 +10356,20 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
 
 // Lex one chunk per call; the driver loops these across ticks.
 mod lexChunk() {
-  // Two lexStep calls per tick, not four.  Same inlining as vmBurst and
-  // parseChunk: four calls compiled the lexer four times over, 6,692 nodes for
-  // what is one step's work at four copies.  Two is the middle of the road --
-  // one call is 5,019 nodes cheaper again but costs 83% more boot, and boot is
-  // what a library piece is charged in (its characters, at 1.3 to 1.75 ticks each,
-  // tools/chip/lexrate.py).
+  // FOUR lexStep calls per tick, and the reason this is cheap now where it
+  // was not before: lexStep is a CHIP (one shared body), so a call site costs
+  // its pins and not an inlined copy.  The two-call shape below was measured
+  // when lexStep was still a mod, where four calls compiled the lexer four
+  // times over (6,692 nodes) -- that measurement no longer describes this
+  // chip, and holding to it cost every program half its lexer throughput.
   //
-  // Measured: a gsub program ran 2,400 ticks with four calls, 3,067 with two,
-  // 4,401 with one.  Two takes a third of the available saving for half the
-  // boot cost, and the string Find fast path already cut the piece's own boot
-  // from 692 to 617 ticks, so the rate is not the whole story any more.
+  // Measured on this chip: 4 calls cut the benchmark's parse from 3,733 to
+  // 2,683 ticks (-28%) for a fraction of the nodes the un-chip cost, because
+  // the body is shared.  The one-call shape costs 83% more boot, so the
+  // direction of the trade is unchanged -- only the price of the fast end is.
   lexStep()
+  if !lerr { lexStep() }
+  if !lerr { lexStep() }
   if !lerr { lexStep() }
 }
 
@@ -11522,6 +11524,24 @@ chip vmStepFast() {
     }
   } else if op == 15 {
     vSetN(a, 3, if truthyOf(vTag(b), vNum(b)) then 0.0 else 1.0)
+  } else if op == 16 {
+    // CONCAT, on the fast path.  It was left off the fast set purely as an
+    // artefact of writing "0..15 and 17..22" compactly, and the cost is real:
+    // a loop whose body concatenates (`s = s .. string.char(...)`) spends a
+    // whole tick on the concat alone, because the four fast steps cannot touch
+    // it and only the fifth does.  Measured on the benchmark: joining it cut
+    // the run by 32 ticks.  Same body as vmStep's arm, same PUC messages, and
+    // the failing branch builds the message only on failure.
+    let lct = vTag(b)
+    let rct = vTag(c)
+    if (lct == 1 || lct == 6 || lct == 2) && (rct == 1 || rct == 6 || rct == 2) {
+      let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. (vNum(b) | 0) else fmtNum(vNum(b))
+      let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. (vNum(c) | 0) else fmtNum(vNum(c))
+      vSet(a, 2, 0.0, ls .. rs)
+    } else {
+      vmFail("attempt to concatenate a "
+        .. typeName(if lct == 1 || lct == 6 then rct else lct) .. " value")
+    }
   } else if op == 17 || op == 18 || op == 19 {
     let immK = c < 0
     let immConst = if immK then -1 - c else 0
@@ -11664,7 +11684,13 @@ chip vmStepFast() {
   // The parentheses round the WHOLE set, not just its first term: `||` binds
   // looser than `&&`, so an unbracketed tail would bind only the last term and
   // leave `!advanced` guarding nothing but it.
-  if ((op <= 22 && op != 16) || op == 24 || op == 33 || op == 50 || op == 29 || op == 30 || op == 43)
+  // The set is now "0..22, 24, 29, 30, 33, 43, 50": CONCAT (16) joined the fast
+  // path, which also makes the guard one comparison cheaper than the
+  // "0..22 and not 16" spelling it replaces.  The parentheses round the WHOLE
+  // set, not just its first term: `||` binds looser than `&&`, so an
+  // unbracketed tail would bind only the last term and leave `!advanced`
+  // guarding nothing but it.
+  if (op <= 22 || op == 24 || op == 33 || op == 50 || op == 29 || op == 30 || op == 43)
     && !advanced && !vmHalted {
     vmPc = vmPc + 1
     if vmPc >= bop.length() {
@@ -11679,11 +11705,18 @@ mod vmBurst() {
   if cloActive {
     cloStep()
   } else {
-    // Four cheap dispatches and one full one.  Each vmStep re-reads the routing
-    // flags, so a closure fill, a pcall or a micro-step machine that the first
-    // step started is serviced by the second instead of dispatched past - which
-    // is what made every upvalue program produce no output at all before the
-    // guard moved out of vmBurst and into vmStep.
+    // FIVE cheap dispatches and one full one.  vmStepFast is a CHIP -- one
+    // shared body -- so a call site costs its pins and not an inlined copy,
+    // which is what makes the fifth one affordable (the mod era priced every
+    // extra dispatch at ~19k nodes; a chip-boundary call is ~0.9k).  Each
+    // vmStep re-reads the routing flags, so a closure fill, a pcall or a
+    // micro-step machine that the first step started is serviced by the second
+    // instead of dispatched past - which is what made every upvalue program
+    // produce no output at all before the guard moved out of vmBurst and into
+    // vmStep.
+    // Measured on the benchmark: 4+1 gives 1,056 run ticks, 5+1 gives 902 --
+    // the run is instruction-bound at the slot budget, so a slot is a tick.
+    vmStepFast()
     vmStepFast()
     vmStepFast()
     vmStepFast()

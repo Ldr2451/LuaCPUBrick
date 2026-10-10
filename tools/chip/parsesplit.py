@@ -19,6 +19,7 @@ def main(argv):
     chips = []
     files = []
     repeat = 1
+    rename = {}
     i = 0
     while i < len(argv):
         if argv[i] == "--chip":
@@ -31,8 +32,35 @@ def main(argv):
             continue
         files.append(argv[i])
         i += 1
-    chips = chips or [os.path.join(ROOT, "lua.ws")]
-    runners = [(c, ChipRunner(os.path.abspath(c))) for c in chips]
+    # OPTIONAL LABELS: a chip path may be followed by "=label"; parsesplit
+    # prints the basename, so a revision needs a readable name (histbisect.py
+    # passes the path twice, once as path once as label).
+    labelled = []
+    for c in chips:
+        if "=" in c and not os.path.exists(c):
+            path, name = c.split("=", 1)
+            labelled.append((path, name))
+        else:
+            labelled.append((c, os.path.basename(c)))
+    orig_base = os.path.basename
+
+    def base(p):
+        for path, name in labelled:
+            if os.path.abspath(path) == os.path.abspath(p):
+                return name
+        return orig_base(p)
+
+    os.path.basename = base
+    try:
+        return _run(labelled, files, repeat)
+    finally:
+        os.path.basename = orig_base
+
+
+def _run(labelled, files, repeat):
+    runners = [(name, ChipRunner(os.path.abspath(path)))
+               for path, name in labelled] or [
+        ("lua.ws", ChipRunner(os.path.join(ROOT, "lua.ws")))]
     for f in files:
         src = open(f, encoding="utf-8").read()
         for rep in range(repeat):

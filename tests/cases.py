@@ -2094,15 +2094,26 @@ TESTS = [
       "phases": [{"ticks": 2100, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "7\n60\n"}}),
     # A scalar input that changes EVERY tick while run is high.  The header says
-    # such a change restarts the program, so this shape can restart forever and
-    # never print anything -- which is what an input wired to something live
-    # looks like in game, and it is the shape a case could not ask about until
-    # the sim re-read its ports.  The expectation is the CONTRACT, not a wish:
-    # an unstable input means an unstable program.
+    # such a change restarts the program, so this shape restarts forever and can
+    # never finish -- which is what an input wired to something live looks like
+    # in game, and it is the shape a case could not ask about until the sim
+    # re-read its ports.  The expectation is the CONTRACT, not a wish: an
+    # unstable input means an unstable program.
+    #
+    # NOT pinned on the log, deliberately: it is a function of how much ONE TICK
+    # can now do.  With 6 dispatches a tick the program prints before the next
+    # jitter arrives, and the last restart before the budget ends leaves its
+    # line behind (a reset clears the log, so the log holds the final run's
+    # output); with fewer it never got to print at all, which is what this case
+    # used to assert.  Neither is a correctness claim -- the contract is that the
+    # program never finishes and never makes progress, which is what
+    # `finished: false` and `progress: false` pin, and those are unchanged.  A
+    # case whose expectation encodes a timing is a case that fails on every
+    # speedup, so the timing is not what it asserts.
     ("life-input-jitter-while-running", "print('hi')", None, "lifecycle",
      {"phases": [{"ticks": 1200, "run": False},
                  {"ticks": 900, "run": True, "jitter": "inNum1"}],
-      "expect": {"progress": False, "finished": False, "log": ""}}),
+      "expect": {"progress": False, "finished": False}}),
     # the same jitter while run is low must not break the next start: the program
     # is not running, so there is nothing to restart, and the first high after it
     # has to work like any other
