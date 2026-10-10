@@ -282,6 +282,14 @@
   time. **In-game a tick is 16.7ms of real time whatever the chip does**, so
   there only fewer ticks reaches the user. A change can halve one and double
   the other; say which one you moved.
+- **Game wall tracks TOTAL gates, not gates per tick -- and the tick rate itself
+  drifts between sessions, so rate-match game comparisons.** Fewer ticks with
+  the same total gates is the same game seconds at the same rate: the bench
+  ran 5,148 ticks / 1.96M gates on tag 1.0 against 4,982 / 1.96M on HEAD
+  (`tools/chip/rungates.py`), so the 16.5s-to-17s "regression" was the server
+  (79 ticks/s one session, 64 the next), not the chip. A game number from one
+  session never convicts a chip measured in another; re-run both builds back
+  to back before calling a 5% wall delta real.
 - **A comment is one `Find`, so it is O(1), and that is the cheapest boot win in
   the chip.** `lexStep`'s line-comment arm used to advance one character per step,
   which *was* the scan floor — 0.500 ticks/char, a 4-character comment costing what

@@ -1676,8 +1676,29 @@ TESTS = [
     ("lib-split-mixed-math", "local a = 'max' print(math[a](1, 5)) "
      "print(math.fmod(7, 3)) "
      "local b = 'min' print(math[b](9, 2)) print(math.modf(1.5))", None, "run"),
+    # math.ult split out of the floor family: floor in text installs only the
+    # one-liners, ult reached dynamically needs the dynMath chain to carry the
+    # new piece, and ult named directly needs its own trigger.  A naive split
+    # drops one of the two and this raises "attempt to call".
+    ("lib-split-mixed-math-ult", "print(math.floor(1.5)) "
+     "local u = 'ult' print(math[u](1, 2)) print(math.ult(1, -1))", None,
+     "run"),
     ("lib-split-mixed-string", "local k = 'char' print(string.char(66)) "
      "print(string.byte('A', 1))", None, "run"),
+    # rep split out of the reverse half: rep in text installs only the
+    # doubling ladder, reverse reached dynamically needs the dynStr chain to
+    # carry the new piece, and reverse named directly needs its own trigger.
+    ("lib-split-mixed-string-rep", "print(string.rep('ab', 3)) "
+     "local k = 'reverse' print(('')[k]('abc')) print(string.reverse('xy'))",
+     None, "run", {"ticks": 15000}),
+    # upper split out of the lower half: same three spellings as rep above.
+    ("lib-split-mixed-string-case", "print(string.upper('ab')) "
+     "local k = 'lower' print(('')[k]('ABC')) print(string.lower('XY'))",
+     None, "run", {"ticks": 15000}),
+    # len split out of the sub half: same three spellings as rep above.
+    ("lib-split-mixed-string-index", "print(string.sub('abcdef', 2, 4)) "
+     "local k = 'len' print(('')[k]('abcd')) print(string.len('xyz'))",
+     None, "run", {"ticks": 15000}),
     # A hex string the program ASSEMBLED, which is the hole libTonumberHex
     # documents: the gate is a text search and "0x" is not in this program.  The
     # character after `tonumber(` is what answers it -- a quote is a literal, a

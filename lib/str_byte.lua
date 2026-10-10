@@ -15,7 +15,7 @@
 -- is the byte gate.  Negative indices count from the end on both ends, then both are
 -- clamped into the string, and an empty range returns nothing at all.
 --
--- `function(...)` so an absent argument is tellable from a nil one; lib/str_case.lua
+-- `function(...)` so an absent argument is tellable from a nil one; lib/str_upper.lua
 -- says why, and why the other two shapes are wrong.  Statement forms only: a piece
 -- is Lua.
 string = string or {}

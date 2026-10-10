@@ -30,11 +30,14 @@ LIB_os_exit	lib/os_exit.lua
 LIB_str_fmt	lib/str_fmt.lua
 LIB_str_gmatch	lib/str_gmatch.lua
 LIB_str_pat	lib/str_pat.lua
-LIB_str_index	lib/str_index.lua
+LIB_str_len	lib/str_len.lua
+LIB_str_sub	lib/str_sub.lua
 LIB_str_byte	lib/str_byte.lua
 LIB_str_char	lib/str_char.lua
-LIB_str_case	lib/str_case.lua
-LIB_str_misc	lib/str_misc.lua
+LIB_str_upper	lib/str_upper.lua
+LIB_str_lower	lib/str_lower.lua
+LIB_str_rep	lib/str_rep.lua
+LIB_str_reverse	lib/str_reverse.lua
 LIB_str_gsub	lib/str_gsub.lua
 
 # -- math
@@ -42,6 +45,7 @@ LIB_math_const	lib/math_const.lua
 LIB_math_exp	lib/math_exp.lua
 LIB_math_trig	lib/math_trig.lua
 LIB_math_int	lib/math_int.lua
+LIB_math_ult	lib/math_ult.lua
 LIB_math_maxmin	lib/math_maxmin.lua
 LIB_math_fmodmodf	lib/math_fmodmodf.lua
 LIB_math_random	lib/math_random.lua

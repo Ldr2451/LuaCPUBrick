@@ -436,7 +436,6 @@ const NB = 27
 // Library functions are written as field assignments, not `function string.f`:
 // the parser does not take a dotted name on `function` yet.
 const LIB_iter = "function _ipairs_iter(a, b) b = b + 1 local c = a[b] if c ~= nil then return b, c end end\nfunction ipairs(a) return _ipairs_iter, a, 0 end\nfunction pairs(a) return next, a, nil, nil end\n"
-const LIB_str_index = "string = string or {}\nstring.len = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.len' (string expected, got \" .. d .. \")\", 2)\nend\nreturn #b\nend\nstring.sub = function(...)\nlocal a = select('#', ...) == 0\nlocal b, e, f = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.sub' (string expected, got \" .. d .. \")\", 2)\nend\nlocal g = #b\ne = e or 1\nf = f or -1\nif e < 0 then e = g + e + 1 if e < 1 then e = 1 end elseif e == 0 then e = 1 end\nif f < 0 then f = g + f + 1 elseif f > g then f = g end\nif e > f then return \"\" end\nreturn _s(1, b, e - 1, f - e + 1)\nend\n"
 const LIB_str_fmt = "string = string or {}\nstring.format = _fmt\n"
 // The wrappers pass their arguments straight through rather than naming them:
 // a named parameter pads a missing one with nil, and PUC's "got no value" and
@@ -445,10 +444,8 @@ const LIB_str_pat = "string = string or {}\nstring.find = function(...) return _
 // gmatch is a gate that answers all three values itself, so the piece is the
 // binding and nothing else: 25 characters, where the gsub piece is 3109.
 const LIB_str_gmatch = "string = string or {}\nstring.gmatch = _gmatch\n"
-const LIB_str_case = "string = string or {}\nstring.upper = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.upper' (string expected, got \" .. d .. \")\", 2)\nend\nreturn _s(2, b)\nend\nstring.lower = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.lower' (string expected, got \" .. d .. \")\", 2)\nend\nreturn _s(3, b)\nend\n"
-const LIB_str_misc = "string = string or {}\nstring.rep = function(...)\nlocal a = select('#', ...)\nif a == 0 then\nerror(\"bad argument #1 to 'string.rep' (string expected, got no value)\", 2)\nend\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nerror(\"bad argument #1 to 'string.rep' (string expected, got \" .. e .. \")\", 2)\nend\nif a < 2 then\nerror(\"bad argument #2 to 'string.rep' (number expected, got no value)\", 2)\nend\nlocal f = type(c)\nlocal g = c\nif f ~= \"number\" and f ~= \"string\" then\nerror(\"bad argument #2 to 'string.rep' (number expected, got \" .. f .. \")\", 2)\nend\nif f == \"string\" then\nlocal h = _m(15, c, 0)\nif h == nil then\nerror(\"bad argument #2 to 'string.rep' (number expected, got string)\", 2)\nend\ng = h\nend\nlocal j = _m(13, g, 0)\nif j == nil then\nerror(\"bad argument #2 to 'string.rep' (number has no integer representation)\", 2)\nend\nc = j\nif d == nil then\nd = \"\"\nelse\nlocal l = type(d)\nif l == \"number\" then\nd = tostring(d)\nelseif l ~= \"string\" then\nerror(\"bad argument #3 to 'string.rep' (string expected, got \" .. l .. \")\", 2)\nend\nend\nif c <= 0 then return \"\" end\nlocal m = \"\"\nlocal o = b\nlocal p = c\nlocal q = false\nwhile 0 < p do\nif p % 2 == 1 then\nif q then\nm = m .. d .. o\nelse\nm = o\nq = true\nend\nend\np = (p - p % 2) / 2\nif 0 < p then o = o .. d .. o end\nend\nreturn m\nend\nstring.reverse = function(...)\nlocal u = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal x = type(b)\nif x == \"number\" then\nb = tostring(b)\nelseif x ~= \"string\" then\nlocal y = x\nif u then y = \"no value\" end\nerror(\"bad argument #1 to 'string.reverse' (string expected, got \" .. y .. \")\", 2)\nend\nlocal m = \"\"\nfor z = #b, 1, -1 do m = m .. _s(1, b, z - 1, 1) end\nreturn m\nend\n"
 const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775808\n"
-const LIB_math_int = "math = math or {}\nlocal function _ult_num(f)\nreturn f + 0\nend\nmath.ult = function(...)\nlocal c = select(\"#\", ...)\nif c == 0 then\nerror(\"bad argument #1 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal d = select(1, ...)\nlocal e = type(d)\nif e ~= \"number\" and e ~= \"string\" then\nerror(\"bad argument #1 to 'math.ult' (number expected, got \" .. e .. \")\", 2)\nend\nif e == \"string\" then\nlocal f = _m(15, d, 0)\nif f == nil then\nerror(\"bad argument #1 to 'math.ult' (number expected, got string)\", 2)\nend\nd = f\nend\nlocal g = _m(13, d, 0)\nif g == nil then\nerror(\"bad argument #1 to 'math.ult' (number has no integer representation)\", 2)\nend\nif c < 2 then\nerror(\"bad argument #2 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal h = select(2, ...)\nlocal i = type(h)\nif i ~= \"number\" and i ~= \"string\" then\nerror(\"bad argument #2 to 'math.ult' (number expected, got \" .. i .. \")\", 2)\nend\nif i == \"string\" then\nlocal j = _m(15, h, 0)\nif j == nil then\nerror(\"bad argument #2 to 'math.ult' (number expected, got string)\", 2)\nend\nh = j\nend\nlocal k = _m(13, h, 0)\nif k == nil then\nerror(\"bad argument #2 to 'math.ult' (number has no integer representation)\", 2)\nend\nif g < 0 then\nif k < 0 then\nreturn g < k\nelse\nreturn false\nend\nelse\nif k < 0 then\nreturn true\nelse\nreturn g < k\nend\nend\nend\nmath.floor = function(l) return _m(1, l, 0) end\nmath.ceil = function(l) return _m(2, l, 0) end\nmath.tointeger = function(l) return _m(13, l, 0) end\nmath.type = function(l) return _m(14, l, 0) end\nmath.abs = function(l) if type(l) == \"string\" then l = l + 0.0 end if l < 0 then return -l end if l == 0 then return l - l end return l end\nmath.sqrt = function(l) return _m(3, l, 0) end\n"
+const LIB_math_int = "math = math or {}\nmath.floor = function(a) return _m(1, a, 0) end\nmath.ceil = function(a) return _m(2, a, 0) end\nmath.tointeger = function(a) return _m(13, a, 0) end\nmath.type = function(a) return _m(14, a, 0) end\nmath.abs = function(a) if type(a) == \"string\" then a = a + 0.0 end if a < 0 then return -a end if a == 0 then return a - a end return a end\nmath.sqrt = function(a) return _m(3, a, 0) end\n"
 const LIB_math_trig = "math = math or {}\nmath.sin = function(a) return _m(4, a, 0) end\nmath.cos = function(a) return _m(5, a, 0) end\nmath.tan = function(a) return _m(6, a, 0) end\nmath.asin = function(a) return _m(7, a, 0) end\nmath.acos = function(a) return _m(8, a, 0) end\nmath.atan = function(b, a) return _m(9, b, a or 1) end\nmath.deg = function(a) return a * 57.295779513082323 end\nmath.rad = function(a) return a * 0.017453292519943295 end\n"
 const LIB_math_exp = "math = math or {}\nmath.exp = function(a) return _m(10, a, 0) end\nmath.log = function(a, c)\nif c == nil then return _m(11, a, 0) end\nif c == 10 then return _m(12, a, 0) end\nreturn _m(11, a, 0) / _m(11, c, 0)\nend\nmath.ldexp = function(a, d) return a * (2.0 ^ d) end\n"
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(a, b, c, d)\nb = b or \"\"\nc = c or 1\nd = d or #a\nlocal e = \"\"\nfor f = c, d do\nlocal g = a[f]\nif f > c then e = e .. b end\ne = e .. g\nend\nreturn e\nend\n"
@@ -476,6 +473,13 @@ const LIB_os_date = "os = os or {}\nlocal function a(p)\nreturn (p % 4 == 0 and 
 const LIB_raw = "rawequal = function(c, d) return c == d end\nrawget = function(e, f) return e[f] end\nrawset = function(e, f, g) e[f] = g return e end\nrawlen = function(e) return #e end\n"
 const LIB_os_env = "os = os or {}\nos.getenv = function(...)\nif select('#', ...) == 0 then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got no value)\", 2)\nend\nlocal a = ...\nif a == nil then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got nil)\", 2)\nend\nreturn nil\nend\n"
 const LIB_os_clock = "os = os or {}\nos.clock = function() return clock() + 0.0 end\nos.difftime = function(c, d) return c - d + 0.0 end\nos.setlocale = function(c, d)\nif c == nil or c == \"C\" then return \"C\" end\nreturn nil\nend\n"
+const LIB_math_ult = "math = math or {}\nlocal function _ult_num(f)\nreturn f + 0\nend\nmath.ult = function(...)\nlocal c = select(\"#\", ...)\nif c == 0 then\nerror(\"bad argument #1 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal d = select(1, ...)\nlocal e = type(d)\nif e ~= \"number\" and e ~= \"string\" then\nerror(\"bad argument #1 to 'math.ult' (number expected, got \" .. e .. \")\", 2)\nend\nif e == \"string\" then\nlocal f = _m(15, d, 0)\nif f == nil then\nerror(\"bad argument #1 to 'math.ult' (number expected, got string)\", 2)\nend\nd = f\nend\nlocal g = _m(13, d, 0)\nif g == nil then\nerror(\"bad argument #1 to 'math.ult' (number has no integer representation)\", 2)\nend\nif c < 2 then\nerror(\"bad argument #2 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal h = select(2, ...)\nlocal i = type(h)\nif i ~= \"number\" and i ~= \"string\" then\nerror(\"bad argument #2 to 'math.ult' (number expected, got \" .. i .. \")\", 2)\nend\nif i == \"string\" then\nlocal j = _m(15, h, 0)\nif j == nil then\nerror(\"bad argument #2 to 'math.ult' (number expected, got string)\", 2)\nend\nh = j\nend\nlocal k = _m(13, h, 0)\nif k == nil then\nerror(\"bad argument #2 to 'math.ult' (number has no integer representation)\", 2)\nend\nif g < 0 then\nif k < 0 then\nreturn g < k\nelse\nreturn false\nend\nelse\nif k < 0 then\nreturn true\nelse\nreturn g < k\nend\nend\nend\n"
+const LIB_str_rep = "string = string or {}\nstring.rep = function(...)\nlocal a = select('#', ...)\nif a == 0 then\nerror(\"bad argument #1 to 'string.rep' (string expected, got no value)\", 2)\nend\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nerror(\"bad argument #1 to 'string.rep' (string expected, got \" .. e .. \")\", 2)\nend\nif a < 2 then\nerror(\"bad argument #2 to 'string.rep' (number expected, got no value)\", 2)\nend\nlocal f = type(c)\nlocal g = c\nif f ~= \"number\" and f ~= \"string\" then\nerror(\"bad argument #2 to 'string.rep' (number expected, got \" .. f .. \")\", 2)\nend\nif f == \"string\" then\nlocal h = _m(15, c, 0)\nif h == nil then\nerror(\"bad argument #2 to 'string.rep' (number expected, got string)\", 2)\nend\ng = h\nend\nlocal i = _m(13, g, 0)\nif i == nil then\nerror(\"bad argument #2 to 'string.rep' (number has no integer representation)\", 2)\nend\nc = i\nif d == nil then\nd = \"\"\nelse\nlocal j = type(d)\nif j == \"number\" then\nd = tostring(d)\nelseif j ~= \"string\" then\nerror(\"bad argument #3 to 'string.rep' (string expected, got \" .. j .. \")\", 2)\nend\nend\nif c <= 0 then return \"\" end\nlocal l = \"\"\nlocal m = b\nlocal o = c\nlocal p = false\nwhile 0 < o do\nif o % 2 == 1 then\nif p then\nl = l .. d .. m\nelse\nl = m\np = true\nend\nend\no = (o - o % 2) / 2\nif 0 < o then m = m .. d .. m end\nend\nreturn l\nend\n"
+const LIB_str_reverse = "string = string or {}\nstring.reverse = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.reverse' (string expected, got \" .. d .. \")\", 2)\nend\nlocal e = \"\"\nfor f = #b, 1, -1 do e = e .. _s(1, b, f - 1, 1) end\nreturn e\nend\n"
+const LIB_str_upper = "string = string or {}\nstring.upper = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.upper' (string expected, got \" .. d .. \")\", 2)\nend\nreturn _s(2, b)\nend\n"
+const LIB_str_lower = "string = string or {}\nstring.lower = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.lower' (string expected, got \" .. d .. \")\", 2)\nend\nreturn _s(3, b)\nend\n"
+const LIB_str_len = "string = string or {}\nstring.len = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.len' (string expected, got \" .. d .. \")\", 2)\nend\nreturn #b\nend\n"
+const LIB_str_sub = "string = string or {}\nstring.sub = function(...)\nlocal a = select('#', ...) == 0\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nlocal f = e\nif a then f = \"no value\" end\nerror(\"bad argument #1 to 'string.sub' (string expected, got \" .. f .. \")\", 2)\nend\nlocal g = #b\nc = c or 1\nd = d or -1\nif c < 0 then c = g + c + 1 if c < 1 then c = 1 end elseif c == 0 then c = 1 end\nif d < 0 then d = g + d + 1 elseif d > g then d = g end\nif c > d then return \"\" end\nreturn _s(1, b, c - 1, d - c + 1)\nend\n"
 // The seven library-table names plus debug, as |name| entries.  A Find on
 // this answers "is it a library" the way LIBMEMBERS answers "is it a
 // member": one gate instead of a seven-way `==` chain (measured both here).
@@ -4918,15 +4922,18 @@ mod fmtIntStart() {
   fmtFNDigits()
 }
 
-// len and sub are one-liners over #s and the substring gate; byte and char each
-// build a table in a loop, and byte needs `unpack` besides.  A piece is charged
-// for its characters at boot, so a program that only ever takes a substring was
-// measured paying 1,094 ticks for a group where 404 of the 838 characters were
-// unreachable for it.  The two halves are separate pieces now.
-mod libStrIndex(p: string, d: bool) -> string {
-  return if d || srcUses(p, "string.len") || srcUses(p, "string.sub")
-      || srcUsesField(p, "len") || srcUsesField(p, "sub")
-      then LIB_str_index else ""
+// len and sub were one piece and each cost the other: the tab insert/remove
+// split measured the same shape, and a program that only ever takes a
+// substring was measured paying for the length half it never reaches.
+mod libStrLen(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.len") || srcUsesField(p, "len")
+      then LIB_str_len else ""
+}
+
+mod libStrSub(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.sub")
+      || srcUsesField(p, "sub")
+      then LIB_str_sub else ""
 }
 
 // string.byte and string.char were one piece, and each cost the other: 630 ticks
@@ -4947,10 +4954,16 @@ mod libStrChar(p: string, d: bool) -> string {
       then LIB_str_char else ""
 }
 
-mod libStrCase(p: string, d: bool) -> string {
-  return if d || srcUses(p, "string.upper") || srcUses(p, "string.lower")
-      || srcUsesField(p, "upper") || srcUsesField(p, "lower")
-      then LIB_str_case else ""
+// upper and lower were one piece and each cost the other: the tab
+// insert/remove split measured the same shape.
+mod libStrUpper(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.upper") || srcUsesField(p, "upper")
+      then LIB_str_upper else ""
+}
+
+mod libStrLower(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.lower") || srcUsesField(p, "lower")
+      then LIB_str_lower else ""
 }
 
 mod libStrFmt(p: string, d: bool) -> string {
@@ -4998,10 +5011,17 @@ mod libStrGsub(p: string, d: bool) -> string {
       then LIB_str_pat .. LIB_str_gsub else ""
 }
 
-mod libStrMisc(p: string, d: bool) -> string {
-  return if d || srcUses(p, "string.rep") || srcUses(p, "string.reverse")
-      || srcUsesField(p, "rep") || srcUsesField(p, "reverse")
-      then LIB_str_misc else ""
+// rep and reverse were one piece and each cost the other: the tab
+// insert/remove split measured the same shape, and a program that repeats in
+// a loop should not parse the reversal loop (or vice versa).
+mod libStrRep(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.rep") || srcUsesField(p, "rep")
+      then LIB_str_rep else ""
+}
+
+mod libStrReverse(p: string, d: bool) -> string {
+  return if d || srcUses(p, "string.reverse") || srcUsesField(p, "reverse")
+      then LIB_str_reverse else ""
 }
 
 mod libMathInt(p: string, d: bool) -> string {
@@ -5009,12 +5029,20 @@ mod libMathInt(p: string, d: bool) -> string {
   return if srcUses(p, "math.floor") || srcUses(p, "math.ceil")
       || srcUses(p, "math.tointeger") || srcUses(p, "math.type")
       || srcUses(p, "math.abs") || srcUses(p, "math.sqrt")
-      || srcUses(p, "math.ult")
       || srcUsesField(p, "floor") || srcUsesField(p, "ceil")
       || srcUsesField(p, "abs") || srcUsesField(p, "sqrt")
       || srcUsesField(p, "tointeger") || srcUsesField(p, "type")
-      || srcUsesField(p, "ult")
       then LIB_math_int else ""
+}
+
+// math.ult split out of libMathInt: the argument ladder outweighs the six
+// one-liners ten to one, and a program that only ever floors paid all of it
+// at boot.  Same trigger shape as its siblings, so the dynamic (`math[`,
+// which loads every math piece) and mixed (one sibling in text, ult reached
+// dynamically) cases keep working -- lib-split-mixed-math-ult pins both.
+mod libMathUlt(p: string, d: bool) -> string {
+  return if d || srcUses(p, "math.ult") || srcUsesField(p, "ult")
+      then LIB_math_ult else ""
 }
 
 mod libMathTrig(p: string, d: bool) -> string {
@@ -11733,13 +11761,17 @@ on goParse {
   let dynBit32 = libBit32Dyn(program)
   let dynUtf8 = libUtf8Dyn(program)
   let dynStr = libStrDyn(program)
-  let libB = libStrIndex(program, dynStr)
+  let libB = libStrLen(program, dynStr)
+  let libB4 = libStrSub(program, dynStr)
   let libB2 = libStrByte(program, dynStr)
   let libB3 = libStrChar(program, dynStr)
-  let libC = libStrCase(program, dynStr)
-  let libD = libStrMisc(program, dynStr)
+  let libC = libStrUpper(program, dynStr)
+  let libC2 = libStrLower(program, dynStr)
+  let libD = libStrRep(program, dynStr)
+  let libD2 = libStrReverse(program, dynStr)
   let libE = libMathConst(program, dynMath)
   let libF = libMathInt(program, dynMath)
+  let libF2 = libMathUlt(program, dynMath)
   let libG = libMathTrig(program, dynMath)
   let libH = libMathExp(program, dynMath)
   let libI = libMathMaxMin(program, dynMath)
@@ -11768,7 +11800,7 @@ on goParse {
   let libS = libTonumber(program)
   let libT = libMathRandom(program, dynMath)
   let libU = libRaw(program)
-  let lib = libA .. libB .. libB2 .. libB3 .. libC .. libD .. libE .. libF .. libG
+  let lib = libA .. libB .. libB2 .. libB3 .. libB4 .. libC .. libC2 .. libD .. libD2 .. libE .. libF .. libF2 .. libG
     .. libH .. libI .. libI2 .. libJ .. libJ2 .. libK .. libK2 .. libL .. libM .. libN
     .. libO .. libO2 .. libO3 .. libO4 .. libO5 .. libP
     .. libQ .. libR .. libS2 .. libS3 .. libS .. libT .. libU

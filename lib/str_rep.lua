@@ -1,15 +1,4 @@
--- string.rep and string.reverse.
---
--- Both take their string through luaL_checklstring: convert a NUMBER, refuse anything
--- else, and say "no value" for an absent argument.  string.reverse(123) is "321" in
--- PUC; here it raised "attempt to get length of a number value", because the loop
--- counts #s down and there is no coercion in front of that opcode.
---
--- rep's check earns its place on correctness rather than on the message: `r .. s`
--- already CONVERTS a number, so rep(7, 3) was "777" and agreed with PUC by accident.
--- But rep({}, 2) answered NIL silently where PUC refuses a table, and a silent nil
--- is the shape of bug that costs a session.  The asymmetry between the two halves of
--- this piece was an accident of the concatenation, not a decision.
+-- string.rep, split out of str_misc.lua.
 --
 -- rep was the slowest string function at run time, so it doubles instead of
 -- appending: `for i = 2, n do r = r .. sep .. s end` copied O(n^2) characters
@@ -30,8 +19,16 @@
 -- the two errors stay apart without a protected call.  sep is luaL_optlstring:
 -- absent or nil is "", a number converts, anything else is "got T".
 --
--- `function(...)` so an absent argument is tellable from a nil one; lib/str_case.lua
+-- Split out of LIB_str_misc because reverse is dead weight for a program that
+-- only repeats (and vice versa): the tab insert/remove split measured the same
+-- shape.  reverse is lib/str_reverse.lua now.
+--
+-- `function(...)` so an absent argument is tellable from a nil one; lib/str_upper.lua
 -- says why.
+--
+-- This is a MASTER file, installed with
+--   tools/lib/libconst.py lib/str_rep.lua LIB_str_rep --install
+-- so the text the chip parses is generated rather than hand-typed into lua.ws.
 string = string or {}
 string.rep = function(...)
 local nargs = select('#', ...)
@@ -92,20 +89,5 @@ while 0 < k do
   k = (k - k % 2) / 2
   if 0 < k then chunk = chunk .. sep .. chunk end
 end
-return r
-end
-string.reverse = function(...)
-local nv = select('#', ...) == 0
-local s = select(1, ...)
-local t = type(s)
-if t == "number" then
-  s = tostring(s)
-elseif t ~= "string" then
-  local w = t
-  if nv then w = "no value" end
-  error("bad argument #1 to 'string.reverse' (string expected, got " .. w .. ")", 2)
-end
-local r = ""
-for i = #s, 1, -1 do r = r .. _s(1, s, i - 1, 1) end
 return r
 end
