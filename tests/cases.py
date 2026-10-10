@@ -2045,6 +2045,27 @@ TESTS = [
      "lifecycle",
      {"phases": [{"ticks": 1800, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # THE CASE FOR "a second run is the first run": the same program, stopped
+    # and started again with nothing changed in between.  Every input port is
+    # identical, so the second window must print exactly what the first did,
+    # land the same value on `result`, and leave the same array slot written.
+    # The log is cleared by the reset on each start, so the expectation is the
+    # program's own output -- a second run that printed twice, printed nothing,
+    # or lost an output reads as a mismatch here.
+    # The array write is the point: a written slot is sticky until something
+    # rewrites it, and the heap reuse adds the risk of a second run reading the
+    # first one's table entries.  `secondRunUnder` bounds the restart so a
+    # re-parse cannot hide behind identical output (a re-parse clears the log
+    # too, so the log alone cannot tell the two apart).
+    ("life-second-run-identical",
+     "local t = {}\nfor i = 1, 5 do t[i] = i * i end\n"
+     "outNumArr(1, 7)\nprint(t[1], t[5])\nprint(#t)\n"
+     "return t[1] + t[5]", None, "lifecycle",
+     {"phases": [{"ticks": 900, "run": True},
+                 {"ticks": 300, "run": False},
+                 {"ticks": 900, "run": True}],
+      "expect": {"progress": False, "finished": True,
+                 "log": "1\t25\n5\n", "secondRunUnder": 20}}),
     # and the shape that works today, kept so the fix cannot quietly change it:
     # low, high, low, high
     ("life-run-toggle-twice", "print('hi') outNum(1, 7)", None, "lifecycle",

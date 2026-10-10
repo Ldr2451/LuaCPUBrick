@@ -101,6 +101,18 @@ def install(sim, acc):
         acc[phase()]["gates"] += 1
         return o_exec(nid, node, nq)
 
+    # PORT PAYLOAD: the host syncs an @right out array port EVERY tick and
+    # carries its whole array, whatever the program wrote (AGENTS.md's wire
+    # rule).  The sim models the write and not the wire, so a port's width is
+    # invisible here -- which is how 16,384-slot ports read as free.  These
+    # are the port node ids the per-tick watch counts.
+    port_ids = []
+    for nid2, nd in sim.nodes.items():
+        if "Internal_MicrochipOutput" in nd.cls:
+            lab = _extract(nd.props.get("PortLabel", ("raw", "")))
+            if isinstance(lab, str) and lab in ("outNumArr", "outStrArr"):
+                port_ids.append(nid2)
+
     S._do_arr_resize, S._do_arr_copy = _do_arr_resize, _do_arr_copy
     S._do_arr_clear, S._do_arr_slice = _do_arr_clear, _do_arr_slice
     S._do_concat, S._do_substr = _do_concat, _do_substr
@@ -113,11 +125,11 @@ def new_acc():
             "parse": {"gates": 0, "resize_elts": 0, "resizes": 0,
                       "copy_elts": 0, "clear_elts": 0, "slices": 0,
                       "concats": 0, "substrs": 0, "finds": 0,
-                      "ticks": 0},
+                      "ticks": 0, "port_elts": 0, "port_ticks": 0},
             "run": {"gates": 0, "resize_elts": 0, "resizes": 0,
                     "copy_elts": 0, "clear_elts": 0, "slices": 0,
                     "concats": 0, "substrs": 0, "finds": 0,
-                    "ticks": 0}}
+                    "ticks": 0, "port_elts": 0, "port_ticks": 0}}
 
 
 def main(argv):
@@ -146,11 +158,24 @@ def main(argv):
                 if isinstance(label, str):
                     labels[label] = nid
             prog_ok = labels.get("progOkV")
+            # the @right out array ports, by their bind vars: their whole
+            # contents cross the wire every tick, which the sim does not
+            # charge for (see new_acc)
+            port_aids = []
+            for nid2, nd in sim.nodes.items():
+                nm = _extract(nd.props.get("_label", ("raw", "")))
+                if nm in ("outNumArrV", "outStrArrV"):
+                    port_aids.append(sim._arr_id(nid2))
+            port_aids = list(dict.fromkeys(port_aids))
 
             def watch(sim_now, tick):
                 if not acc["parsed"] and sim_now.vars.get(prog_ok):
                     acc["parsed"] = True
-                (acc["run"] if acc["parsed"] else acc["parse"])["ticks"] = tick + 1
+                ph = acc["run"] if acc["parsed"] else acc["parse"]
+                ph["ticks"] = tick + 1
+                for aid in port_aids:
+                    arr = sim_now.arrays.get(aid)
+                    ph["port_elts"] += len(arr) if arr else 0
 
             sim.inputs = {"program": src, "run": True}
             sim.run(CAP, on_tick=watch)
@@ -158,13 +183,13 @@ def main(argv):
                 d = acc[ph]
                 print("%-16s %-5s ticks=%-5d gates=%-8d resizes=%-4d "
                       "rsz_elts=%-9d copy_elts=%-9d clr_elts=%-8d "
-                      "concats=%-4d substrs=%-4d finds=%-5d" % (
+                      "concats=%-4d substrs=%-4d finds=%-5d port=%-10d" % (
                           os.path.basename(c), ph, d["ticks"], d["gates"],
                           d["resizes"], d["resize_elts"], d["copy_elts"],
                           d["clear_elts"], d["concats"], d["substrs"],
-                          d["finds"]))
+                          d["finds"], d["port_elts"]))
                 ranked = sorted(d.get("by_array", {}).items(),
-                                key=lambda kv: -(kv[1][0] + kv[1][1] + kv[1][2]))[:12]
+                                key=lambda kv: -(kv[1][0] + kv[1][1] + kv[1][2]))
                 for name, (rz, cp, cl) in ranked:
                     print("    %-22s rsz=%-9d copy=%-9d clr=%-9d" % (
                         name, rz, cp, cl))
