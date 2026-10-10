@@ -1261,7 +1261,9 @@ const PAT_STACK = 200
 // resets between programs, so this is not a total-iterations budget.
 const PAT_WALKS = 16
 
-var patGo: bool = false      // one pattern step per burst, like fmtGo
+// patGo is gone: it was written once in vmBurst and never read by anything
+// (deadvars.py), so every program paid a store per tick for a flag no
+// pattern machine consults.  fmtGo stays -- the formatter reads it.
 var patMode: int = 0         // 0 find, 1 match, 2 gsub's one match at a time
 var patSrc: string = ""      // the subject
 var patPat: string = ""      // the pattern, with a leading ^ already skipped
@@ -10370,7 +10372,6 @@ mod lexChunk() {
   lexStep()
   if !lerr { lexStep() }
   if !lerr { lexStep() }
-  if !lerr { lexStep() }
 }
 
 mod parseChunk() {
@@ -11701,7 +11702,6 @@ chip vmStepFast() {
 
 mod vmBurst() {
   fmtGo = true
-  patGo = true
   if cloActive {
     cloStep()
   } else {
