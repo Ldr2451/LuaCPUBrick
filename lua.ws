@@ -445,8 +445,8 @@ const LIB_str_pat = "string = string or {}\nstring.find = function(...) return _
 // binding and nothing else: 25 characters, where the gsub piece is 3109.
 const LIB_str_gmatch = "string = string or {}\nstring.gmatch = _gmatch\n"
 const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775808\n"
-const LIB_math_int = "math = math or {}\nmath.floor = function(a) return _m(1, a, 0) end\nmath.ceil = function(a) return _m(2, a, 0) end\nmath.tointeger = function(a) return _m(13, a, 0) end\nmath.type = function(a) return _m(14, a, 0) end\nmath.abs = function(a) if type(a) == \"string\" then a = a + 0.0 end if a < 0 then return -a end if a == 0 then return a - a end return a end\nmath.sqrt = function(a) return _m(3, a, 0) end\n"
-const LIB_math_trig = "math = math or {}\nmath.sin = function(a) return _m(4, a, 0) end\nmath.cos = function(a) return _m(5, a, 0) end\nmath.tan = function(a) return _m(6, a, 0) end\nmath.asin = function(a) return _m(7, a, 0) end\nmath.acos = function(a) return _m(8, a, 0) end\nmath.atan = function(b, a) return _m(9, b, a or 1) end\nmath.deg = function(a) return a * 57.295779513082323 end\nmath.rad = function(a) return a * 0.017453292519943295 end\n"
+const LIB_math_int = "math = math or {}\nmath.floor = function(a) return _m(1, a, 0) end\nmath.ceil = function(a) return _m(2, a, 0) end\nmath.tointeger = function(a) return _m(13, a, 0) end\nmath.type = function(a) return _m(14, a, 0) end\nmath.sqrt = function(a) return _m(3, a, 0) end\n"
+const LIB_math_trig = "math = math or {}\nmath.sin = function(a) return _m(4, a, 0) end\nmath.cos = function(a) return _m(5, a, 0) end\nmath.tan = function(a) return _m(6, a, 0) end\nmath.asin = function(a) return _m(7, a, 0) end\nmath.acos = function(a) return _m(8, a, 0) end\nmath.atan = function(b, a) return _m(9, b, a or 1) end\n"
 const LIB_math_exp = "math = math or {}\nmath.exp = function(a) return _m(10, a, 0) end\nmath.log = function(a, c)\nif c == nil then return _m(11, a, 0) end\nif c == 10 then return _m(12, a, 0) end\nreturn _m(11, a, 0) / _m(11, c, 0)\nend\nmath.ldexp = function(a, d) return a * (2.0 ^ d) end\n"
 const LIB_tab_concat = "table = table or {}\ntable.concat = function(a, b, c, d)\nb = b or \"\"\nc = c or 1\nd = d or #a\nlocal e = \"\"\nfor f = c, d do\nlocal g = a[f]\nif f > c then e = e .. b end\ne = e .. g\nend\nreturn e\nend\n"
 const LIB_tab_sort = "table = table or {}\n_lt = function(c, d) return c < d end\ntable.sort = function(e, f)\nlocal g = f or _lt\nfor h = 2, #e do\nlocal k = e[h]\nlocal l = h - 1\nwhile l >= 1 and g(k, e[l]) do e[l + 1] = e[l] l = l - 1 end\ne[l + 1] = k\nend\nend\n"
@@ -458,9 +458,7 @@ const LIB_io_stderr = "io = io or {}\nio.stderr = {\nwrite = function(a, ...)\nf
 const LIB_os_exit = "os = os or {}\nos.exit = function(a)\nif a == nil or a == true or a == 0 then error(\"\", 0) else error(\"exit: \" .. tostring(a), 0) end\nend\n"
 const LIB_tonumber_hex = "local function _tonum_hex(s)\nlocal a = #s\nlocal c = 0\nlocal d = 0\nwhile c < a do\nd = _s(4, s, c, 0)\nif d ~= 32 and d ~= 9 and d ~= 10 and d ~= 13 and d ~= 12 and d ~= 11 then break end\nc = c + 1\nend\nlocal e = a - 1\nwhile e >= c do\nd = _s(4, s, e, 0)\nif d ~= 32 and d ~= 9 and d ~= 10 and d ~= 13 and d ~= 12 and d ~= 11 then break end\ne = e - 1\nend\nif c > e then return nil end\nlocal f = false\nd = _s(4, s, c, 0)\nif d == 43 or d == 45 then\nf = d == 45\nc = c + 1\nend\nif _s(1, s, c, 2) ~= \"0x\" and _s(1, s, c, 2) ~= \"0X\" then return nil end\nc = c + 2\nlocal g = 0\nlocal h = 0\nlocal k = 0\nlocal l = 0\nlocal o = false\nlocal p = 0\nlocal q = false\nwhile c <= e do\nd = _s(4, s, c, 0)\nlocal r = nil\nif d >= 48 and d <= 57 then r = d - 48 end\nif d >= 65 and d <= 70 then r = d - 55 end\nif d >= 97 and d <= 102 then r = d - 87 end\nif r == nil then break end\nl = l + 1\nif r ~= 0 or o then\no = true\nif h < 13 then\ng = g * 16 + r\nh = h + 1\nelseif k == 0 then\np = r\nk = k + 1\nelse\nif r ~= 0 then q = true end\nk = k + 1\nend\nend\nc = c + 1\nend\nif p > 8 or (p == 8 and (q or g % 2 == 1)) then\ng = g + 1\nend\nlocal t = 0\nlocal u = 0\nlocal w = false\nlocal x = true\nif c <= e and _s(4, s, c, 0) == 46 then\nx = false\nc = c + 1\nlocal y = 0\nwhile c <= e do\nd = _s(4, s, c, 0)\nlocal r = nil\nif d >= 48 and d <= 57 then r = d - 48 end\nif d >= 65 and d <= 70 then r = d - 55 end\nif d >= 97 and d <= 102 then r = d - 87 end\nif r == nil then break end\nl = l + 1\nu = u + 1\nif r ~= 0 or w then\nw = true\nif y < 13 then\nt = t * 16 + r\ny = y + 1\nend\nend\nc = c + 1\nend\nend\nif l == 0 then return nil end\nlocal z = 0\nlocal aa = true\nif c <= e then\nd = _s(4, s, c, 0)\nif d == 112 or d == 80 then\naa = false\nc = c + 1\nlocal ab = false\nif c <= e then\nd = _s(4, s, c, 0)\nif d == 43 or d == 45 then\nab = d == 45\nc = c + 1\nend\nend\nlocal ac = 0\nwhile c <= e do\nd = _s(4, s, c, 0)\nif d < 48 or d > 57 then break end\nz = z * 10 + (d - 48)\nac = ac + 1\nc = c + 1\nend\nif ac == 0 then return nil end\nif ab then z = -z end\nend\nend\nif c <= e then return nil end\nif x and aa then\nlocal ad = g\nif k ~= 0 then ad = g * (16 ^ k) end\nif ad < 9007199254740992 then\nlocal ae = _m(13, ad, 0)\nif ae ~= nil then\nif f then ae = -ae end\nreturn ae\nend\nend\nend\nlocal af = 0\nif g ~= 0 then af = g * (2 ^ (4 * k + z)) end\nif u > 0 and t ~= 0 then af = af + t * (2 ^ (-4 * u + z)) end\nif af == 0 then\nif f then return -0.0 else return 0.0 end\nend\nif f then af = -af end\nreturn af\nend\n"
 const LIB_tab_unpack = "table = table or {}\ntable.unpack = unpack\n"
-const LIB_tab_pack = "table = table or {}\ntable.pack = function(...) local a = {...} a.n = select('#', ...) return a end\ntable.move = function(b, c, d, a, g)\ng = g or b\nif d >= c then\nif a > d or a <= c or b ~= g then\nfor h = 0, d - c do g[a + h] = b[c + h] end\nelse\nfor h = d - c, 0, -1 do g[a + h] = b[c + h] end\nend\nend\nreturn g\nend\n"
-const LIB_math_maxmin = "math = math or {}\nmath.max = function(b, ...)\nlocal c = b\nfor d = 1, select('#', ...) do local e = select(d, ...) if e > c then c = e end end\nreturn c\nend\nmath.min = function(b, ...)\nlocal c = b\nfor d = 1, select('#', ...) do local e = select(d, ...) if e < c then c = e end end\nreturn c\nend\n"
-const LIB_math_fmodmodf = "math = math or {}\nmath.fmod = function(c, d)\nif type(c) == \"string\" then c = c + 0.0 end\nif type(d) == \"string\" then d = d + 0.0 end\nlocal e = c % d\nif e ~= 0 and (c < 0) ~= (d < 0) then e = e - d end\nreturn e\nend\nmath.modf = function(f) if type(f) == \"string\" then f = f + 0.0 end local g = (f >= 0 and _m(1, f, 0)) or _m(2, f, 0) return g, f - g end\n"
+const LIB_tab_pack = "table = table or {}\ntable.pack = function(...) local a = {...} a.n = select('#', ...) return a end\n"
 const LIB_tab_insert = "table = table or {}\ntable.insert = function(a, ...)\nlocal b = #a\nlocal d = select('#', ...)\nif d == 1 then\na[b + 1] = (...)\nelseif d == 2 then\nlocal e, f = ...\nlocal g = _m(13, e, 0)\nif g == nil then\nerror(\"bad argument #2 to 'table.insert' (number has no integer representation)\", 2)\nend\nif g < 1 or g > b + 1 then\nerror(\"bad argument #2 to 'table.insert' (position out of bounds)\", 2)\nend\nfor h = b, g, -1 do a[h + 1] = a[h] end\na[g] = f\nelse\nerror(\"wrong number of arguments to 'insert'\", 2)\nend\nend\n"
 const LIB_tab_remove = "table = table or {}\ntable.remove = function(a, b)\nlocal c = #a\nif b == nil then b = c end\nlocal d = _m(13, b, 0)\nif d == nil then\nerror(\"bad argument #2 to 'table.remove' (number has no integer representation)\", 2)\nend\nif d ~= c and (d < 1 or c + 1 < d) then error(\"bad argument #2 to 'table.remove' (position out of bounds)\", 2) end\nlocal e = a[d]\nlocal f = d\nwhile f < c do a[f] = a[f + 1] f = f + 1 end\na[f] = nil\nreturn e\nend\n"
 const LIB_str_byte = "string = string or {}\nstring.byte = function(...)\nlocal a = select('#', ...) == 0\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nlocal f = e\nif a then f = \"no value\" end\nerror(\"bad argument #1 to 'string.byte' (string expected, got \" .. f .. \")\", 2)\nend\nc = c or 1\nd = d or c\nif c < 0 then c = #b + c + 1 end\nif d < 0 then d = #b + d + 1 end\nif c < 1 then c = 1 end\nif d > #b then d = #b end\nif c > d then return end\nif c == d then return _s(4, b, c - 1, 0) end\nlocal g = {}\nfor h = c, d do g[#g + 1] = _s(4, b, h - 1, 0) end\nreturn unpack(g, 1, #g)\nend\n"
@@ -469,7 +467,7 @@ const LIB_tonumber_base = "local function _tonum_int(s, base)\nlocal a = #s\nloc
 const LIB_bit32 = "bit32 = bit32 or {}\nbit32.bnot = function(c) return ~c & 0xFFFFFFFF end\nbit32.band = function(d, e, g, ...)\nif not g then\nreturn ((d or -1) & (e or -1)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d & e & g\nfor k = 1, #h do j = j & h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.bor = function(d, e, g, ...)\nif not g then\nreturn ((d or 0) | (e or 0)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d | e | g\nfor k = 1, #h do j = j | h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.bxor = function(d, e, g, ...)\nif not g then\nreturn ((d or 0) ~ (e or 0)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d ~ e ~ g\nfor k = 1, #h do j = j ~ h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.btest = function(...) return bit32.band(...) ~= 0 end\nbit32.lshift = function(c, l)\nif l * l >= 1024 then return 0 end\nc = c & 0xFFFFFFFF\nif l < 16 then return (c << l) & 0xFFFFFFFF end\nreturn ((c % 65536) << l) & 0xFFFFFFFF\nend\nbit32.rshift = function(c, l)\nif l * l >= 1024 then return 0 end\nreturn ((c & 0xFFFFFFFF) >> l) & 0xFFFFFFFF\nend\nbit32.arshift = function(c, l)\nc = c & 0xFFFFFFFF\nif l <= 0 or (c & 0x80000000) == 0 then\nreturn (c >> l) & 0xFFFFFFFF\nelse\nreturn ((c >> l) | ~(0xFFFFFFFF >> l)) & 0xFFFFFFFF\nend\nend\nbit32.lrotate = function(c, l)\nl = l & 31\nc = c & 0xFFFFFFFF\nc = bit32.lshift(c, l) | (c >> (32 - l))\nreturn c & 0xFFFFFFFF\nend\nbit32.rrotate = function(c, l) return bit32.lrotate(c, -l) end\nlocal function m(n, o)\no = o or 1\nassert(n >= 0, \"field cannot be negative\")\nassert(o > 0, \"width must be positive\")\nassert(n + o <= 32, \"trying to access non-existent bits\")\nreturn n, ~(-1 << o)\nend\nbit32.extract = function(c, n, o)\nlocal n, p = m(n, o)\nreturn (c >> n) & p\nend\nbit32.replace = function(c, q, n, o)\nlocal n, p = m(n, o)\nq = q & p\nc = (c & ~(p << n)) | (q << n)\nreturn c & 0xFFFFFFFF\nend\n"
 const LIB_utf8 = "utf8 = utf8 or {}\nlocal _floor = {0, 0x80, 0x800, 0x10000, 0x200000, 0x4000000}\nlocal function a(p, q, u)\nlocal b = _s(4, p, q - 1, 0)\nif b == nil then return nil end\nif b < 0x80 then return b, 1 end\nlocal e, f\nif b < 0xC2 then return nil end\nif b < 0xE0 then e, f = 2, b & 0x1F\nelseif b < 0xF0 then e, f = 3, b & 0x0F\nelseif b < 0xF8 then e, f = 4, b & 0x07\nelseif b < 0xFC then e, f = 5, b & 0x03\nelseif b < 0xFE then e, f = 6, b & 0x01\nelse return nil end\nfor g = 1, e - 1 do\nlocal h = _s(4, p, q + g - 1, 0)\nif h == nil or h < 0x80 or h > 0xBF then return nil end\nf = f * 64 + (h & 0x3F)\nend\nif f < _floor[e] then return nil end\nif u then\nif f >= 0x80000000 then return nil end\nelseif f > 0x10FFFF or (f >= 0xD800 and f <= 0xDFFF) then\nreturn nil\nend\nreturn f, e\nend\nlocal function l(p, g)\nwhile g > 1 do\nlocal b = _s(4, p, g - 1, 0)\nif b == nil or b < 0x80 or b >= 0xC0 then break end\ng = g - 1\nend\nreturn g\nend\nlocal function m(p, q, what)\nlocal o = #p\nif q == nil then return nil end\nif q < 0 then q = o + q + 1 end\nif q < 1 or q > o + 1 then\nerror(\"bad argument #3 to '\" .. what .. \"' (position out of bounds)\", 3)\nend\nreturn q, o\nend\nutf8.len = function(p, q, t, u)\nlocal e = #p\nq = q or 1\nt = t or e\nif q < 0 then q = e + q + 1 end\nif t < 0 then t = e + t + 1 end\nif q < 1 or q > e + 1 then\nerror(\"bad argument #2 to 'utf8.len' (initial position out of bounds)\", 2)\nend\nif t < 0 or t > e then\nerror(\"bad argument #3 to 'utf8.len' (final position out of bounds)\", 2)\nend\nlocal g, x = q, 0\nwhile g <= t do\nlocal _, y = a(p, g, u)\nif y == nil then return nil, g end\ng, x = g + y, x + 1\nend\nreturn x\nend\nutf8.offset = function(p, e, q)\nlocal o = #p\nif e == 0 then\nq, o = m(p, q or 1, \"utf8.offset\")\nq = l(p, q)\nlocal _, y = a(p, q, true)\nif y == nil then return nil end\nreturn q, q + y - 1\nend\nif e > 0 then\nq, o = m(p, q or 1, \"utf8.offset\")\nlocal g, y = q, 1\nfor t = 1, e do\nif g > o + 1 then return nil end\nif g == o + 1 then\nif t == e then return g, g end\nreturn nil\nend\nlocal _, z = a(p, g, true)\nif z == nil then return nil end\ng, y = g + z, z\nend\nreturn g - y, g - 1\nend\nq, o = m(p, q or o + 1, \"utf8.offset\")\nlocal g, y = q, 1\nfor _ = 1, -e do\nif g <= 1 then return nil end\ng = l(p, g - 1)\nlocal _, z = a(p, g, true)\nif z == nil then return nil end\ny = z\nend\nreturn g, g + y - 1\nend\nutf8.codepoint = function(p, q, t, u)\nlocal e = #p\nq = q or 1\nt = t or q\nif q < 0 then q = e + q + 1 end\nif t < 0 then t = e + t + 1 end\nif q < 1 or q > e + 1 then\nerror(\"bad argument #2 to 'utf8.codepoint' (out of bounds)\", 2)\nend\nif t > e then\nerror(\"bad argument #3 to 'utf8.codepoint' (out of bounds)\", 2)\nend\nif t < q then return end\nlocal x = {}\nlocal g = q\nwhile g <= t do\nlocal f, y = a(p, g, u)\nif y == nil then error(\"invalid UTF-8 code\", 2) end\nx[#x + 1] = f\ng = g + y\nend\nreturn unpack(x, 1, #x)\nend\n"
 const LIB_utf8_char = "utf8 = utf8 or {}\nlocal _lim = {0x80, 0x800, 0x10000, 0x200000, 0x4000000}\nlocal _lead = {0, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC}\nutf8.char = function(...)\nlocal a = \"\"\nfor b = 1, select('#', ...) do\nlocal c = select(b, ...)\nif c < 0 or c >= 0x80000000 then\nerror(\"bad argument #1 to 'utf8.char' (value out of range)\", 2)\nend\nif c < 0x80 then\na = a .. _s(5, \"\", c, 0)\nelse\nlocal d = 2\nwhile d < 6 and c >= _lim[d] do d = d + 1 end\na = a .. _s(5, \"\", _lead[d] + (c >> (6 * (d - 1))), 0)\nfor e = d - 2, 0, -1 do\na = a .. _s(5, \"\", 0x80 + ((c >> (6 * e)) & 0x3F), 0)\nend\nend\nend\nreturn a\nend\n"
-const LIB_os_date = "os = os or {}\nlocal function a(p)\nreturn (p % 4 == 0 and p % 100 ~= 0) or p % 400 == 0\nend\nlocal _md = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}\nlocal _mn = {\"January\", \"February\", \"March\", \"April\", \"May\", \"June\", \"July\",\n\"August\", \"September\", \"October\", \"November\", \"December\"}\nlocal _wn = {\"Sunday\", \"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\",\n\"Saturday\"}\nlocal function b(p, q, r)\nif q <= 2 then p, q = p - 1, q + 12 end\nlocal e = (p >= 0 and p or p - 399) // 400\nlocal g = p - e * 400\nlocal j = (153 * (q - 3) + 2) // 5 + r - 1\nlocal l = g * 365 + g // 4 - g // 100 + j\nreturn e * 146097 + l - 719468\nend\nos.time = function(o)\nif o == nil then\nerror(\"bad argument #1 to 'os.time' (no clock)\", 2)\nend\nlocal p, q, r = o.year, o.month, o.day\nif p == nil then\nerror(\"field 'year' missing in date table\", 2)\nend\nlocal u = _m(13, p, 0)\nif u == nil then\nerror(\"field 'year' is not an integer\", 2)\nend\nif u < -2147483648 or u > 2147483647 then\nerror(\"field 'year' is out-of-bound\", 2)\nend\nif q == nil then\nerror(\"field 'month' missing in date table\", 2)\nend\nif _m(13, q, 0) == nil then\nerror(\"field 'month' is not an integer\", 2)\nend\nif r == nil then\nerror(\"field 'day' missing in date table\", 2)\nend\nif _m(13, r, 0) == nil then\nerror(\"field 'day' is not an integer\", 2)\nend\nlocal v, x, aa = o.hour or 12, o.min or 0, o.sec or 0\nif _m(13, v, 0) == nil then\nerror(\"field 'hour' is not an integer\", 2)\nend\nif _m(13, x, 0) == nil then\nerror(\"field 'min' is not an integer\", 2)\nend\nif _m(13, aa, 0) == nil then\nerror(\"field 'sec' is not an integer\", 2)\nend\nlocal ab = b(p, q, r) * 86400 + v * 3600 + x * 60 + aa\nreturn _m(13, ab, 0) or ab\nend\nlocal function ac(z)\nz = z + 719468\nlocal e = (z >= 0 and z or z - 146096) // 146097\nlocal l = z - e * 146097\nlocal g = (l - l // 1460 + l // 36524 - l // 146096) // 365\nlocal p = g + e * 400\nlocal j = l - (365 * g + g // 4 - g // 100)\nlocal ad = (5 * j + 2) // 153\nlocal r = j - (153 * ad + 2) // 5 + 1\nlocal q = ad + 3\nif q > 12 then p, q = p + 1, q - 12 end\nreturn p, q, r\nend\nlocal function ae(o)\no = _m(13, o, 0) or o\nlocal af = o // 86400\nlocal ag = o - af * 86400\nlocal v = ag // 3600\nlocal x = (ag - v * 3600) // 60\nlocal aa = ag - v * 3600 - x * 60\nlocal p, q, r = ac(af)\nif p < -2147483648 or p > 2147483647 then\nerror(\"date result cannot be represented in this installation\", 3)\nend\nlocal ah = (af + 4) % 7 + 1\nif ah < 1 then ah = ah + 7 end\nlocal ai = b(p, q, r) - b(p, 1, 1) + 1\nreturn p, q, r, v, x, aa, ah, ai\nend\nlocal function aj(n)\nn = n - n % 1\nif n < 10 then return \"0\" .. n end\nreturn \"\" .. n\nend\nlocal function ak(ai, ar)\nlocal al = (7 - ar) % 7\nif ai - 1 < al then return \"00\" end\nreturn aj(1 + (ai - 1 - al) // 7)\nend\nos.date = function(am, o)\nif am == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nif am == \"\" or am == \"!\" then return \"\" end\nlocal an = 1\nif _s(1, am, 0, 1) == \"!\" then an = 2 end\nif _s(1, am, an - 1, 2) == \"*t\" and an + 2 > #am then\nif o == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal p, q, r, v, x, aa, ah, ai = ae(o)\nreturn {year = p, month = q, day = r, hour = v, min = x, sec = aa,\nwday = ah, yday = ai, isdst = false}\nend\nlocal ao = false\nlocal ap = an\nwhile ap <= #am do\nif _s(1, am, ap - 1, 1) == \"%\" then ao = true break end\nap = ap + 1\nend\nif not ao then\nif an == 1 then return am end\nreturn _s(1, am, an - 1, #am - an + 1)\nend\nif o == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal p, q, r, v, x, aa, ah, ai = ae(o)\nlocal aq = ah - 1\nlocal ar = (aq - (ai - 1)) % 7\nlocal as = \"\"\nlocal at = an\nwhile at <= #am do\nlocal au = _s(1, am, at - 1, 1)\nif au ~= \"%\" then\nas = as .. au\nat = at + 1\nelse\nlocal av = _s(1, am, at, 1)\nif (av == \"E\" or av == \"O\") and at + 1 <= #am then\nav = av .. _s(1, am, at + 1, 1)\nat = at + 1\nend\nif av == \"Y\" then as = as .. p\nelseif av == \"m\" then as = as .. aj(q)\nelseif av == \"d\" then as = as .. aj(r)\nelseif av == \"H\" then as = as .. aj(v)\nelseif av == \"M\" then as = as .. aj(x)\nelseif av == \"S\" then as = as .. aj(aa)\nelseif av == \"w\" then as = as .. aq\nelseif av == \"y\" or av == \"Oy\" then as = as .. aj(p % 100)\nelseif av == \"j\" then\nlocal aw = \"\" .. ai\nwhile #aw < 3 do aw = \"0\" .. aw end\nas = as .. aw\nelseif av == \"U\" then as = as .. ak(ai, ar)\nelseif av == \"W\" then as = as .. ak(ai, (ar + 6) % 7)\nelseif av == \"a\" then as = as .. _s(1, _wn[aq + 1], 0, 3)\nelseif av == \"A\" then as = as .. _wn[aq + 1]\nelseif av == \"b\" or av == \"h\" then as = as .. _s(1, _mn[q], 0, 3)\nelseif av == \"B\" then as = as .. _mn[q]\nelseif av == \"p\" then as = as .. (v < 12 and \"AM\" or \"PM\")\nelseif av == \"c\" then\nas = as .. aj(q) .. \"/\" .. aj(r) .. \"/\" .. aj(p % 100) .. \" \"\n.. aj(v) .. \":\" .. aj(x) .. \":\" .. aj(aa)\nelseif av == \"x\" or av == \"Ex\" then\nas = as .. aj(q) .. \"/\" .. aj(r) .. \"/\" .. aj(p % 100)\nelseif av == \"X\" then\nas = as .. aj(v) .. \":\" .. aj(x) .. \":\" .. aj(aa)\nelseif av == \"e\" then\nas = as .. (r < 10 and \" \" .. r or \"\" .. r)\nelseif av == \"s\" then as = as .. (o - o % 1)\nelseif av == \"%\" then as = as .. \"%\"\nelse as = as .. \"%\" .. av\nend\nat = at + 2\nend\nend\nreturn as\nend\n"
+const LIB_os_date = "os = os or {}\nlocal function a(p)\nreturn (p % 4 == 0 and p % 100 ~= 0) or p % 400 == 0\nend\nlocal _md = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}\nlocal _mn = {\"January\", \"February\", \"March\", \"April\", \"May\", \"June\", \"July\",\n\"August\", \"September\", \"October\", \"November\", \"December\"}\nlocal _wn = {\"Sunday\", \"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\",\n\"Saturday\"}\nlocal function b(p, u, r)\nif u <= 2 then p, u = p - 1, u + 12 end\nlocal e = (p >= 0 and p or p - 399) // 400\nlocal g = p - e * 400\nlocal j = (153 * (u - 3) + 2) // 5 + r - 1\nlocal l = g * 365 + g // 4 - g // 100 + j\nreturn e * 146097 + l - 719468\nend\nlocal function o(z)\nz = z + 719468\nlocal e = (z >= 0 and z or z - 146096) // 146097\nlocal l = z - e * 146097\nlocal g = (l - l // 1460 + l // 36524 - l // 146096) // 365\nlocal p = g + e * 400\nlocal j = l - (365 * g + g // 4 - g // 100)\nlocal q = (5 * j + 2) // 153\nlocal r = j - (153 * q + 2) // 5 + 1\nlocal u = q + 3\nif u > 12 then p, u = p + 1, u - 12 end\nreturn p, u, r\nend\nlocal function v(ak)\nak = _m(13, ak, 0) or ak\nlocal x = ak // 86400\nlocal aa = ak - x * 86400\nlocal ab = aa // 3600\nlocal ac = (aa - ab * 3600) // 60\nlocal ad = aa - ab * 3600 - ac * 60\nlocal p, u, r = o(x)\nif p < -2147483648 or p > 2147483647 then\nerror(\"date result cannot be represented in this installation\", 3)\nend\nlocal ae = (x + 4) % 7 + 1\nif ae < 1 then ae = ae + 7 end\nlocal af = b(p, u, r) - b(p, 1, 1) + 1\nreturn p, u, r, ab, ac, ad, ae, af\nend\nlocal function ag(n)\nn = n - n % 1\nif n < 10 then return \"0\" .. n end\nreturn \"\" .. n\nend\nlocal function ah(af, ap)\nlocal ai = (7 - ap) % 7\nif af - 1 < ai then return \"00\" end\nreturn ag(1 + (af - 1 - ai) // 7)\nend\nos.date = function(aj, ak)\nif aj == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nif aj == \"\" or aj == \"!\" then return \"\" end\nlocal al = 1\nif _s(1, aj, 0, 1) == \"!\" then al = 2 end\nif _s(1, aj, al - 1, 2) == \"*t\" and al + 2 > #aj then\nif ak == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal p, u, r, ab, ac, ad, ae, af = v(ak)\nreturn {year = p, month = u, day = r, hour = ab, min = ac, sec = ad,\nwday = ae, yday = af, isdst = false}\nend\nlocal am = false\nlocal an = al\nwhile an <= #aj do\nif _s(1, aj, an - 1, 1) == \"%\" then am = true break end\nan = an + 1\nend\nif not am then\nif al == 1 then return aj end\nreturn _s(1, aj, al - 1, #aj - al + 1)\nend\nif ak == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal p, u, r, ab, ac, ad, ae, af = v(ak)\nlocal ao = ae - 1\nlocal ap = (ao - (af - 1)) % 7\nlocal aq = \"\"\nlocal ar = al\nwhile ar <= #aj do\nlocal as = _s(1, aj, ar - 1, 1)\nif as ~= \"%\" then\naq = aq .. as\nar = ar + 1\nelse\nlocal at = _s(1, aj, ar, 1)\nif (at == \"E\" or at == \"O\") and ar + 1 <= #aj then\nat = at .. _s(1, aj, ar + 1, 1)\nar = ar + 1\nend\nif at == \"Y\" then aq = aq .. p\nelseif at == \"m\" then aq = aq .. ag(u)\nelseif at == \"d\" then aq = aq .. ag(r)\nelseif at == \"H\" then aq = aq .. ag(ab)\nelseif at == \"M\" then aq = aq .. ag(ac)\nelseif at == \"S\" then aq = aq .. ag(ad)\nelseif at == \"w\" then aq = aq .. ao\nelseif at == \"y\" or at == \"Oy\" then aq = aq .. ag(p % 100)\nelseif at == \"j\" then\nlocal au = \"\" .. af\nwhile #au < 3 do au = \"0\" .. au end\naq = aq .. au\nelseif at == \"U\" then aq = aq .. ah(af, ap)\nelseif at == \"W\" then aq = aq .. ah(af, (ap + 6) % 7)\nelseif at == \"a\" then aq = aq .. _s(1, _wn[ao + 1], 0, 3)\nelseif at == \"A\" then aq = aq .. _wn[ao + 1]\nelseif at == \"b\" or at == \"h\" then aq = aq .. _s(1, _mn[u], 0, 3)\nelseif at == \"B\" then aq = aq .. _mn[u]\nelseif at == \"p\" then aq = aq .. (ab < 12 and \"AM\" or \"PM\")\nelseif at == \"c\" then\naq = aq .. ag(u) .. \"/\" .. ag(r) .. \"/\" .. ag(p % 100) .. \" \"\n.. ag(ab) .. \":\" .. ag(ac) .. \":\" .. ag(ad)\nelseif at == \"x\" or at == \"Ex\" then\naq = aq .. ag(u) .. \"/\" .. ag(r) .. \"/\" .. ag(p % 100)\nelseif at == \"X\" then\naq = aq .. ag(ab) .. \":\" .. ag(ac) .. \":\" .. ag(ad)\nelseif at == \"e\" then\naq = aq .. (r < 10 and \" \" .. r or \"\" .. r)\nelseif at == \"s\" then aq = aq .. (ak - ak % 1)\nelseif at == \"%\" then aq = aq .. \"%\"\nelse aq = aq .. \"%\" .. at\nend\nar = ar + 2\nend\nend\nreturn aq\nend\n"
 const LIB_raw = "rawequal = function(c, d) return c == d end\nrawget = function(e, f) return e[f] end\nrawset = function(e, f, g) e[f] = g return e end\nrawlen = function(e) return #e end\n"
 const LIB_os_env = "os = os or {}\nos.getenv = function(...)\nif select('#', ...) == 0 then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got no value)\", 2)\nend\nlocal a = ...\nif a == nil then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got nil)\", 2)\nend\nreturn nil\nend\n"
 const LIB_os_clock = "os = os or {}\nos.clock = function() return clock() + 0.0 end\nos.difftime = function(c, d) return c - d + 0.0 end\nos.setlocale = function(c, d)\nif c == nil or c == \"C\" then return \"C\" end\nreturn nil\nend\n"
@@ -480,6 +478,14 @@ const LIB_str_upper = "string = string or {}\nstring.upper = function(...)\nloca
 const LIB_str_lower = "string = string or {}\nstring.lower = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.lower' (string expected, got \" .. d .. \")\", 2)\nend\nreturn _s(3, b)\nend\n"
 const LIB_str_len = "string = string or {}\nstring.len = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.len' (string expected, got \" .. d .. \")\", 2)\nend\nreturn #b\nend\n"
 const LIB_str_sub = "string = string or {}\nstring.sub = function(...)\nlocal a = select('#', ...) == 0\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nlocal f = e\nif a then f = \"no value\" end\nerror(\"bad argument #1 to 'string.sub' (string expected, got \" .. f .. \")\", 2)\nend\nlocal g = #b\nc = c or 1\nd = d or -1\nif c < 0 then c = g + c + 1 if c < 1 then c = 1 end elseif c == 0 then c = 1 end\nif d < 0 then d = g + d + 1 elseif d > g then d = g end\nif c > d then return \"\" end\nreturn _s(1, b, c - 1, d - c + 1)\nend\n"
+const LIB_math_abs = "math = math or {}\nmath.abs = function(a) if type(a) == \"string\" then a = a + 0.0 end if a < 0 then return -a end if a == 0 then return a - a end return a end\n"
+const LIB_tab_move = "table = table or {}\ntable.move = function(a, b, c, d, g)\ng = g or a\nif c >= b then\nif d > c or d <= b or a ~= g then\nfor h = 0, c - b do g[d + h] = a[b + h] end\nelse\nfor h = c - b, 0, -1 do g[d + h] = a[b + h] end\nend\nend\nreturn g\nend\n"
+const LIB_math_fmod = "math = math or {}\nmath.fmod = function(c, d)\nif type(c) == \"string\" then c = c + 0.0 end\nif type(d) == \"string\" then d = d + 0.0 end\nlocal e = c % d\nif e ~= 0 and (c < 0) ~= (d < 0) then e = e - d end\nreturn e\nend\n"
+const LIB_math_modf = "math = math or {}\nmath.modf = function(a) if type(a) == \"string\" then a = a + 0.0 end local b = (a >= 0 and _m(1, a, 0)) or _m(2, a, 0) return b, a - b end\n"
+const LIB_math_max = "math = math or {}\nmath.max = function(b, ...)\nlocal c = b\nfor d = 1, select('#', ...) do local e = select(d, ...) if e > c then c = e end end\nreturn c\nend\n"
+const LIB_math_min = "math = math or {}\nmath.min = function(b, ...)\nlocal c = b\nfor d = 1, select('#', ...) do local e = select(d, ...) if e < c then c = e end end\nreturn c\nend\n"
+const LIB_math_deg = "math = math or {}\nmath.deg = function(a) return a * 57.295779513082323 end\nmath.rad = function(a) return a * 0.017453292519943295 end\n"
+const LIB_os_time = "os = os or {}\nlocal function a(i, j, k)\nif j <= 2 then i, j = i - 1, j + 12 end\nlocal b = (i >= 0 and i or i - 399) // 400\nlocal c = i - b * 400\nlocal e = (153 * (j - 3) + 2) // 5 + k - 1\nlocal f = c * 365 + c // 4 - c // 100 + e\nreturn b * 146097 + f - 719468\nend\nos.time = function(g)\nif g == nil then\nerror(\"bad argument #1 to 'os.time' (no clock)\", 2)\nend\nlocal i, j, k = g.year, g.month, g.day\nif i == nil then\nerror(\"field 'year' missing in date table\", 2)\nend\nlocal l = _m(13, i, 0)\nif l == nil then\nerror(\"field 'year' is not an integer\", 2)\nend\nif l < -2147483648 or l > 2147483647 then\nerror(\"field 'year' is out-of-bound\", 2)\nend\nif j == nil then\nerror(\"field 'month' missing in date table\", 2)\nend\nif _m(13, j, 0) == nil then\nerror(\"field 'month' is not an integer\", 2)\nend\nif k == nil then\nerror(\"field 'day' missing in date table\", 2)\nend\nif _m(13, k, 0) == nil then\nerror(\"field 'day' is not an integer\", 2)\nend\nlocal n, o, p = g.hour or 12, g.min or 0, g.sec or 0\nif _m(13, n, 0) == nil then\nerror(\"field 'hour' is not an integer\", 2)\nend\nif _m(13, o, 0) == nil then\nerror(\"field 'min' is not an integer\", 2)\nend\nif _m(13, p, 0) == nil then\nerror(\"field 'sec' is not an integer\", 2)\nend\nlocal q = a(i, j, k) * 86400 + n * 3600 + o * 60 + p\nreturn _m(13, q, 0) or q\nend\n"
 // The seven library-table names plus debug, as |name| entries.  A Find on
 // this answers "is it a library" the way LIBMEMBERS answers "is it a
 // member": one gate instead of a seven-way `==` chain (measured both here).
@@ -3814,8 +3820,13 @@ mod libTabUnpack(p: string, d: bool) -> string {
 }
 
 mod libTabPack(p: string, d: bool) -> string {
-  return if d || srcNames2(p, "table", "pack") || srcNames2(p, "table", "move")
-      then LIB_tab_pack else ""
+  return if d || srcNames2(p, "table", "pack") then LIB_tab_pack else ""
+}
+
+// move split out of the pack piece: a gap-closing loop next to a constructor
+// plus select.  Same shape as insert/remove.
+mod libTabMove(p: string, d: bool) -> string {
+  return if d || srcNames2(p, "table", "move") then LIB_tab_move else ""
 }
 
 mod libTabConcat(p: string, d: bool) -> string {
@@ -3844,13 +3855,18 @@ mod libOs(p: string, d: bool) -> string {
   let r = if d || srcUses(p, "os.exit") then LIB_os_exit else ""
   let r2 = r .. (if d || srcUses(p, "os.clock") || srcUses(p, "os.difftime")
       || srcUses(p, "os.setlocale") then LIB_os_clock else "")
-  let r3 = r2 .. (if d || srcUses(p, "os.time") || srcUses(p, "os.date")
-      then LIB_os_date else "")
+  // os.time and os.date were one 5,000-char piece and a program stamping
+  // epochs paid the whole calendar: time is days_to_civil plus validation,
+  // date is the formatting bulk.  "os.date" and "os.time" stay spelled out --
+  // the old "os.d" fold covered difftime too, which loads elsewhere now (the
+  // fold list in docs/lessons.md loses os.d to this split).
+  let r3 = r2 .. (if d || srcUses(p, "os.time") then LIB_os_time else "")
+  let r4 = r3 .. (if d || srcUses(p, "os.date") then LIB_os_date else "")
   // getenv is its own piece too: a program that reads one
   // environment variable must not parse the whole calendar.
   // The chip's environment is empty (the host exposes none),
   // so getenv answers nil for everything -- see lib/os_env.lua.
-  return r3 .. (if d || srcUses(p, "os.getenv") then LIB_os_env else "")
+  return r4 .. (if d || srcUses(p, "os.getenv") then LIB_os_env else "")
 }
 
 // One piece for the whole table, because a program that uses bit32 uses
@@ -5028,11 +5044,18 @@ mod libMathInt(p: string, d: bool) -> string {
   if d { return LIB_math_int }
   return if srcUses(p, "math.floor") || srcUses(p, "math.ceil")
       || srcUses(p, "math.tointeger") || srcUses(p, "math.type")
-      || srcUses(p, "math.abs") || srcUses(p, "math.sqrt")
+      || srcUses(p, "math.sqrt")
       || srcUsesField(p, "floor") || srcUsesField(p, "ceil")
-      || srcUsesField(p, "abs") || srcUsesField(p, "sqrt")
+      || srcUsesField(p, "sqrt")
       || srcUsesField(p, "tointeger") || srcUsesField(p, "type")
       then LIB_math_int else ""
+}
+
+// math.abs split out of libMathInt: its string coercion and signed-zero guard
+// outweigh the one-liners several to one.  Same trigger shape as its siblings.
+mod libMathAbs(p: string, d: bool) -> string {
+  return if d || srcUses(p, "math.abs") || srcUsesField(p, "abs")
+      then LIB_math_abs else ""
 }
 
 // math.ult split out of libMathInt: the argument ladder outweighs the six
@@ -5050,12 +5073,19 @@ mod libMathTrig(p: string, d: bool) -> string {
   return if srcUses(p, "math.sin") || srcUses(p, "math.cos")
       || srcUses(p, "math.tan") || srcUses(p, "math.asin")
       || srcUses(p, "math.acos") || srcUses(p, "math.atan")
-      || srcUses(p, "math.deg") || srcUses(p, "math.rad")
       || srcUsesField(p, "sin") || srcUsesField(p, "cos")
       || srcUsesField(p, "tan") || srcUsesField(p, "asin")
       || srcUsesField(p, "acos") || srcUsesField(p, "atan")
-      || srcUsesField(p, "deg") || srcUsesField(p, "rad")
       then LIB_math_trig else ""
+}
+
+// deg/rad split out of libMathTrig: pure arithmetic over pi literals, dead
+// weight for a sine program and vice versa.  One piece for both: each is one
+// line and neither calls the other.
+mod libMathDeg(p: string, d: bool) -> string {
+  return if d || srcUses(p, "math.deg") || srcUses(p, "math.rad")
+      || srcUsesField(p, "deg") || srcUsesField(p, "rad")
+      then LIB_math_deg else ""
 }
 
 mod libMathExp(p: string, d: bool) -> string {
@@ -5072,21 +5102,23 @@ mod libMathExp(p: string, d: bool) -> string {
       then LIB_math_exp else ""
 }
 
-// Two pieces where there was one, same measurement as the table.unpack split:
-// naming any one of max/min/fmod/modf cost 740 ticks of boot
-// (tools/chip/libcost.py), because each was carrying the other three.  The pair
-// that shares a shape goes together -- max with min, fmod with modf -- so naming
-// one does not parse the other pair.
-mod libMathMaxMin(p: string, d: bool) -> string {
-  if d { return LIB_math_maxmin }
-  return if srcNames2(p, "math", "max") || srcNames2(p, "math", "min")
-      then LIB_math_maxmin else ""
+// max and min were one piece and each cost the other; fmod and modf the same.
+// The pairs stay pairs -- max with min was the old shape -- but a single
+// function must not parse its sibling: the insert/remove split measured it.
+mod libMathMax(p: string, d: bool) -> string {
+  return if d || srcNames2(p, "math", "max") then LIB_math_max else ""
 }
 
-mod libMathFmodModf(p: string, d: bool) -> string {
-  if d { return LIB_math_fmodmodf }
-  return if srcNames2(p, "math", "fmod") || srcNames2(p, "math", "modf")
-      then LIB_math_fmodmodf else ""
+mod libMathMin(p: string, d: bool) -> string {
+  return if d || srcNames2(p, "math", "min") then LIB_math_min else ""
+}
+
+mod libMathFmod(p: string, d: bool) -> string {
+  return if d || srcNames2(p, "math", "fmod") then LIB_math_fmod else ""
+}
+
+mod libMathModf(p: string, d: bool) -> string {
+  return if d || srcNames2(p, "math", "modf") then LIB_math_modf else ""
 }
 
 // Put the allocator back inside a window bumpMax already claimed.  A call's
@@ -11771,15 +11803,20 @@ on goParse {
   let libD2 = libStrReverse(program, dynStr)
   let libE = libMathConst(program, dynMath)
   let libF = libMathInt(program, dynMath)
+  let libF1 = libMathAbs(program, dynMath)
   let libF2 = libMathUlt(program, dynMath)
   let libG = libMathTrig(program, dynMath)
+  let libG2 = libMathDeg(program, dynMath)
   let libH = libMathExp(program, dynMath)
-  let libI = libMathMaxMin(program, dynMath)
-  let libI2 = libMathFmodModf(program, dynMath)
+  let libI = libMathMax(program, dynMath)
+  let libI3 = libMathMin(program, dynMath)
+  let libI2 = libMathFmod(program, dynMath)
+  let libI4 = libMathModf(program, dynMath)
   let libJ = libTabInsert(program, dynTab)
   let libJ2 = libTabRemove(program, dynTab)
   let libK = libTabUnpack(program, dynTab)
   let libK2 = libTabPack(program, dynTab)
+  let libK3 = libTabMove(program, dynTab)
   let libL = libTabConcat(program, dynTab)
   let libM = libTabSort(program, dynTab)
   let libN = libStrFmt(program, dynStr)
@@ -11800,8 +11837,8 @@ on goParse {
   let libS = libTonumber(program)
   let libT = libMathRandom(program, dynMath)
   let libU = libRaw(program)
-  let lib = libA .. libB .. libB2 .. libB3 .. libB4 .. libC .. libC2 .. libD .. libD2 .. libE .. libF .. libF2 .. libG
-    .. libH .. libI .. libI2 .. libJ .. libJ2 .. libK .. libK2 .. libL .. libM .. libN
+  let lib = libA .. libB .. libB2 .. libB3 .. libB4 .. libC .. libC2 .. libD .. libD2 .. libE .. libF .. libF1 .. libF2 .. libG .. libG2
+    .. libH .. libI .. libI3 .. libI2 .. libI4 .. libJ .. libJ2 .. libK .. libK2 .. libK3 .. libL .. libM .. libN
     .. libO .. libO2 .. libO3 .. libO4 .. libO5 .. libP
     .. libQ .. libR .. libS2 .. libS3 .. libS .. libT .. libU
   libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0

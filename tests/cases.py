@@ -1683,6 +1683,27 @@ TESTS = [
     ("lib-split-mixed-math-ult", "print(math.floor(1.5)) "
      "local u = 'ult' print(math[u](1, 2)) print(math.ult(1, -1))", None,
      "run"),
+    # math.abs split out of the floor family: same three spellings as ult.
+    ("lib-split-mixed-math-abs", "print(math.floor(1.5)) "
+     "local a = 'abs' print(math[a](-3)) print(math.abs('-4'))", None,
+     "run"),
+    # pack/move, max/min, fmod/modf, trig/deg: one half in text, the other
+    # reached dynamically (needs the dyn flag to carry the new piece) and
+    # named directly (needs its own trigger).  Same three spellings as ult.
+    ("lib-split-mixed-table-pack", "print(table.pack(7).n) "
+     "local n = 'move' print(table[n]({1}, 1, 1, 1) ~= nil) "
+     "local w = table.move({5}, 1, 1, 1) print(w[1])", None, "run"),
+    ("lib-split-mixed-math-min", "print(math.max(1, 9)) "
+     "local b = 'min' print(math[b](9, 2)) print(math.min(4, 7))", None,
+     "run"),
+    ("lib-split-mixed-math-modf", "print(math.fmod(7, 3)) "
+     "local m = 'modf' print(math[m](1.5)) print(math.modf(2.5))", None,
+     "run"),
+    # zeros only: deg answers are a multiply both sides must round the same,
+    # and that is math-degrad's question, not this split's.
+    ("lib-split-mixed-math-deg", "print(math.sin(0)) "
+     "local d = 'deg' print(math[d](0)) print(math.deg(0))", None,
+     "run"),
     ("lib-split-mixed-string", "local k = 'char' print(string.char(66)) "
      "print(string.byte('A', 1))", None, "run"),
     # rep split out of the reverse half: rep in text installs only the
@@ -3366,6 +3387,13 @@ TESTS = [
     ("os-time-hour-float",
      "os.time({year = 2024, month = 1, day = 1, hour = 1.5})", None,
      "runtimerr", {"expect": {"runErrors": "field 'hour' is not an integer"}}),
+    # os.time split out of the os.date calendar: time in text installs only
+    # days_to_civil plus validation, date reached dynamically needs the dynOs
+    # chain to carry the calendar.  State, not run: dates are UTC on the chip
+    # and local on a local-zone oracle (see the note above os-clock).
+    ("lib-split-mixed-os", "print(os.time({year = 1970, month = 1, day = 1})"
+     " ~= nil) local d = 'date' print(os[d]('%Y-%m-%d', 0))", None, "state",
+     {"ticks": 15000, "expect": {"log": "true\n1970-01-01\n"}}),
     # rawequal/rawget/rawset/rawlen (lib/raw.lua): exact because the
     # chip has no metamethods, so each IS its plain op.  Reference
     # equality for tables, rawset returns the table, rawlen is #.

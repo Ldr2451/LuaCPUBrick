@@ -27,6 +27,18 @@ FEATURES = [
     ("select", "print(select('#', 1))"),
     ("ipairs", "for k in ipairs({1}) do end print(1)"),
     ("clock", "print(clock())"),
+    ("pack", "print(table.pack(1).n)"),
+    ("move", "print(table.move({1}, 1, 1, 1) ~= nil)"),
+    ("fmod", "print(math.fmod(7, 3))"),
+    ("modf", "print(math.modf(1.5))"),
+    ("max", "print(math.max(1, 5))"),
+    ("min", "print(math.min(1, 5))"),
+    ("deg", "print(math.deg(1))"),
+    ("sin", "print(math.sin(0))"),
+    ("randomseed", "math.randomseed(1) print(1)"),
+    ("random", "print(math.random(1))"),
+    ("ostime", "print(os.time({year=2024, month=1, day=1}) ~= nil)"),
+    ("osdate", "print(os.date('%Y-%m-%d', 0))"),
 ]
 
 

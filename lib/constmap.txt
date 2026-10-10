@@ -44,16 +44,21 @@ LIB_str_gsub	lib/str_gsub.lua
 LIB_math_const	lib/math_const.lua
 LIB_math_exp	lib/math_exp.lua
 LIB_math_trig	lib/math_trig.lua
+LIB_math_deg	lib/math_deg.lua
 LIB_math_int	lib/math_int.lua
+LIB_math_abs	lib/math_abs.lua
 LIB_math_ult	lib/math_ult.lua
-LIB_math_maxmin	lib/math_maxmin.lua
-LIB_math_fmodmodf	lib/math_fmodmodf.lua
+LIB_math_max	lib/math_max.lua
+LIB_math_min	lib/math_min.lua
+LIB_math_fmod	lib/math_fmod.lua
+LIB_math_modf	lib/math_modf.lua
 LIB_math_random	lib/math_random.lua
 
 # -- table
 LIB_tab_concat	lib/tab_concat.lua
 LIB_tab_sort	lib/tab_sort.lua
 LIB_tab_pack	lib/tab_pack.lua
+LIB_tab_move	lib/tab_move.lua
 LIB_tab_unpack	lib/tab_unpack.lua
 LIB_tab_insert	lib/tab_insert.lua
 LIB_tab_remove	lib/tab_remove.lua
@@ -75,6 +80,7 @@ LIB_raw		lib/raw.lua
 
 # -- os (os.exit lives under io above and stays its own piece)
 LIB_os_clock	lib/os_clock.lua
+LIB_os_time	lib/os_time.lua
 LIB_os_date	lib/os_date.lua
 LIB_os_env	lib/os_env.lua
 
