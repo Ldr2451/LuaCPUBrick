@@ -26,6 +26,10 @@ print("cmp", inStr1 < inStr2, "a\nb")
 print("logic", 1 and 2, nil or "dflt")
 print("logic2", not "", type(nil), type(print))
 
+-- clock(): seconds of uptime as a float (os.clock() is the same value)
+local started = clock()
+print("clock", type(clock()), clock() >= started)
+
 -- tables: mixed ctor, computed keys, nesting, len, delete, identity
 local t = {10, 20, name = inStr1, [2 + 3] = a}
 t[3] = inNum2
@@ -125,6 +129,8 @@ print("inputs2", inNumArr(9), type(inNumArr(9)), inNumArr(1, 3))
 -- is the length of the string "alpha" and not a count of the array.
 local names = inStrArr(1, 2)
 print("names", names, inStrArr(9), #names)
+
+local started = clock()
 
 -- The outputs are written by CALL, and there is nothing to read them back with:
 -- a port is not a global, so a program that wants the value keeps its own copy.

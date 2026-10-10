@@ -27,6 +27,7 @@ DEMO_LOG = (              "arith	2.25	7.0	-4	-4	-0.5\n"
               "b\n"
               "logic	2	dflt\n"
               "logic2	false	nil	function\n"
+              "clock	number	true\n"
               "tab	3	2.25	foo\n"
               "tab2	1.0	yes	7.0\n"
               "tab3	true	true\n"
@@ -2605,7 +2606,7 @@ TESTS = [
      ("demo", "DEMO", [3, 1, 4, 1.5], "modelio",
       {"expect": {"log": DEMO_LOG,
                   "outGlobals": [7.0, 79.0, 608.0, 11.0,
-                                 "foo-bar!|foo", "21.75/table: 0x4"],
+                                 "foo-bar!|foo", "21.75/table: 0x5"],
                   "outNumArr": [55.0, 6.0, 3.0] + [0.0] * (spec.OUTARR - 6)
                                   + [-1.0, -2.0, -3.0],
                   "outStrArr": ["foo-bar!", "done"]
