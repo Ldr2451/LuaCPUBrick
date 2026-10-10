@@ -130,8 +130,6 @@ print("inputs2", inNumArr(9), type(inNumArr(9)), inNumArr(1, 3))
 local names = inStrArr(1, 2)
 print("names", names, inStrArr(9), #names)
 
-local started = clock()
-
 -- The outputs are written by CALL, and there is nothing to read them back with:
 -- a port is not a global, so a program that wants the value keeps its own copy.
 -- A written value stays on its port until it is written again, which is why
