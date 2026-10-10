@@ -11770,10 +11770,21 @@ on Change(run) {
   if run && progOkV && !jobBusy {
     vmReset()
   } else if !run {
-    // Stopped means no outputs: the falling edge clears the result ports, so a
-    // halted chip never shows a previous run's values as if they were live.
-    // Log, error and parse state stay -- history must survive a stop, and the
-    // next rising edge restarts through vmReset anyway.
+    // Stopped means NO outputs at all: the falling edge clears every result port
+    // -- the four numbers, the two strings, both arrays and `result` -- and the
+    // LOG goes with them, so a halted chip never shows a previous run's values
+    // or its text as if they were live.
+    // It used to not clear the log, on the theory that history must survive a
+    // stop: the log is a built-in diagnostic signal and a stopped chip looked
+    // wrong on a wall of old output.  The next rising edge clears it anyway
+    // (vmReset), so the window where clearing it costs anybody anything is one
+    // that is about to be overwritten -- and one where a reader cannot tell
+    // "stopped" from "still running" is worse.
+    // `progDebug` is NOT a run result and stays: it describes the PROGRAM (a
+    // port typo, a rejected fragment) and the port-list advice a user needs is
+    // exactly as useful while stopped.  The parse-time state is not cleared
+    // either -- an edit while stopped waits for its run edge, which is where
+    // the log is cleared again.
     oF0 = 0.0
     oF1 = 0.0
     oF2 = 0.0
@@ -11785,6 +11796,10 @@ on Change(run) {
     outStrArrV.clear()
     outStrArrV.resize(ARR_SLOTS, "")
     resultV = ""
+    logV = ""
+    logLen = 0
+    logLines.clear()
+    errV = ""
   }
   // The parse for text that arrived while stopped is asked for by the CLOCK, not
   // here.  A request raised in a port handler is raised and consumed inside one

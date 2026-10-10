@@ -2003,17 +2003,21 @@ TESTS = [
       "phases": [{"ticks": 4500, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "ababab\nB\n",
                  "checkpoints": [1000, 1300], "cleared": [1000, 1300]}}),
-    # Stopping clears the result ports but keeps history: the program sets
-    # outputs and finishes while `run` is high, the falling edge at tick 1500
-    # clears them, and the log stays -- a halted chip shows nothing live and
-    # the stopped window samples zeros.  A chip that freezes its ports on stop
-    # still shows 7/8/'old' at tick 1700.
+    # Stopping clears EVERY output, the log included.  The program sets
+    # outputs and prints while `run` is high, the falling edge at tick 1500
+    # clears them all, and the stopped window samples zeros, empty arrays and
+    # an empty log.  A chip that freezes its ports on stop still shows 7/8/'old'
+    # at tick 1700, and one that leaves the log behind says "hi" when nothing
+    # has run for 200 ticks -- which on a wall of these reads as a live chip.
+    # The log is cleared, not frozen, because the rising edge clears it anyway
+    # (vmReset): the only window the history could have served is one that is
+    # about to be overwritten.
     ("life-stop-clears-outputs",
      "outNum(1, 7) outNum(2, 8) outStr(1, 'old') print('hi')", None,
      "lifecycle",
      {"phases": [{"ticks": 1500, "run": True}, {"ticks": 500, "run": False}],
-      "expect": {"progress": False, "finished": True, "log": "hi\n",
-                 "checkpoints": [1700], "clearedOutputs": [1700]}}),
+      "expect": {"progress": False, "finished": True, "log": "",
+                 "checkpoints": [1700], "cleared": [1700]}}),
     # and the near miss that makes the comparison a comparison: the SAME text
     # arriving again is not an edit, so the run is not disturbed and the program
     # prints exactly once.  The log cannot tell this from a re-parse (both end
