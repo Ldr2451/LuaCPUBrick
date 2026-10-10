@@ -2049,6 +2049,29 @@ TESTS = [
      "lifecycle",
      {"phases": [{"ticks": 1800, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # A still-wired scalar input across a STOP -- the first case to deliver a
+    # scalar input through a stop/start at all, so it covers a combination
+    # nothing else did.  The falling edge clears the result ports and the log,
+    # and the inputs deliberately DO NOT go with them: a variable left wired
+    # must come back on the next start.
+    # The input list is the case's THIRD element, not a key in the dict: the
+    # suite writes kw["inputs"] = inputs from that element, so a key of the same
+    # name in the dict is silently overwritten and the case delivers nothing at
+    # all -- which reads exactly like a chip that lost the input.  An earlier
+    # version of this case had it in the dict and reported a stop/start bug that
+    # does not exist.
+    # It was written to test a "clear the inputs on stop so a user can reset
+    # them" feature, which was built and dropped: such a feature must re-read the
+    # ports on the rising edge, and re-reading brings back whatever the port
+    # still holds -- which for a DELETED gate is the old value -- so the reset
+    # was never observable, and it cost 29 nodes for nothing.  This case remains
+    # as the guard for the half that must not break: a live wire never reading
+    # zero after a start.
+    ("life-input-across-stop", "print('v', inNum1)", [3.5],
+     "lifecycle",
+     {"phases": [{"ticks": 700, "run": True}, {"ticks": 300, "run": False},
+                 {"ticks": 900, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "v\t3.5\n"}}),
     # THE CASE FOR "a second run is the first run": the same program, stopped
     # and started again with nothing changed in between.  Every input port is
     # identical, so the second window must print exactly what the first did,
