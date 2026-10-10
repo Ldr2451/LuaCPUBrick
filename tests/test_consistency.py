@@ -212,8 +212,31 @@ pi = mod_body("parseInit")
 vr = mod_body("vmReset")
 cleared = (set(re.findall(r"(\w+)\.clear\(\)", pi))
            | set(re.findall(r"(\w+)\.clear\(\)", vr)))
-missing = sorted(n for n in must_clear if n not in cleared)
+# Reset by convergence, not by clear: eight frame arrays converge by
+# resize(1) plus the parse-end main-frame refresh (racing clear+push settled
+# build-dependently, and a racing push could carry a mid-parse mainFid), and
+# nine heap arrays keep high-water length and grow one slot at a time in
+# heapEnsure (old entries unreachable: tmap wiped, chains/lengths/freelist
+# restarted, every field written before observation).  Clearing any of them
+# again would reintroduce the bulk this removed (~1.8M slot writes a run in
+# game) -- but dropping them from the discipline silently would lose the
+# guarantee, so each half is asserted below rather than merely listed.
+converge_frame = {"fFunc", "fBase", "fRetA", "fRetBase", "fRetPC", "fRetN",
+                  "fVaB", "fForDepth"}
+converge_heap = {"tOwner", "tKeyTag", "tKeyNum", "tKeyStr", "tPrev", "tNext",
+                 "tvTag", "tvNum", "tvStr"}
+missing = sorted(n for n in must_clear - converge_frame - converge_heap
+                 if n not in cleared)
 check("all-state-cleared", not missing, f"never cleared: {missing}")
+for name in sorted(converge_frame):
+    check(f"converge-frame-{name}",
+          re.search(rf"{name}\.resize\(1,", vr) is not None)
+he = mod_body("heapEnsure")
+for name in sorted(converge_heap):
+    check(f"converge-heap-{name}", f"{name}.push(" in he)
+check("converge-liveness-roots",
+      "tmap.clear()" in vr and "tHeap = 0" in vr
+      and "fFunc[0] = mainFid" in WS)
 for where, body in (("parseInit", pi), ("vmReset", vr)):
     for tgt in set(re.findall(r"(\w+)\.clear\(\)", body)):
         check(f"clear-target-{tgt}-{where}", tgt in decls_arr,

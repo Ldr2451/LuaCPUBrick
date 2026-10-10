@@ -626,6 +626,17 @@ is left and why; `tochip.py` converts with the refusals built in;
 - **A barrier stays a mod.** `vmReset` is called from `on Change(run)` and
   `on goParse2` and must run at an exact chain point; chip hops shift it and
   `print(3)` comes back empty. Measured, fatal.
+- **Racing resets must converge, not merely run: clear+push does not.**
+  Every Change edge fires at once on a fresh sim, so up to eight `vmReset`
+  copies interleave clears and pushes in build-dependent order -- and one
+  order left `fVaB=1/rest=0` while another left a mid-parse `mainFid` (0,
+  before `newFunc` runs) that broke every closure. Both were green on one
+  numbering and red on the next; neither was a logic bug. Converging state
+  uses idempotent writes (frame arrays `resize(1)` plus a parse-end rewrite
+  of index 0 with the settled `mainFid`), and bulk state the chip cannot
+  re-establish per run grows on demand (`heapEnsure`) with its roots wiped.
+  A reset that is correct in one order is not correct until it is correct in
+  all of them.
 - **Chips do not cost the parse a tick either.** Six parse-path chips together
   cost +1 boot tick, and that +1 came from one specific mod, not from the parse
   path as a category: `lexStep`, `locFind`, `closeAction`, `pushOp` and four more

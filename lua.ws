@@ -2392,29 +2392,19 @@ mod vmClosures() {
 }
 
 mod vmReset() {  tmap.clear()
-  tvTag.clear()
-  tvNum.clear()
-  tvStr.clear()
-  tvTag.resize(MAX_HEAP, 0)
-  tvNum.resize(MAX_HEAP, 0.0)
-  tvStr.resize(MAX_HEAP, "")
+  // The nine heap arrays are NOT cleared or resized here: they keep their
+  // high-water length across runs and grow one slot at a time in heapEnsure.
+  // Two full clear+resize cycles a run was ~1.77M slot writes in game for
+  // what the sim calls free.  Old entries are unreachable after the wipe
+  // above and the restarts below (chains, lengths, freelist, cursors), and
+  // every field of a handed-out slot is written before it can be observed.
   tLen.clear()
   tLen.resize(MAX_TABLES, 0)
   tFree.clear()
   tHeap = 0
   tCount = 4
-  tOwner.clear()
-  tOwner.resize(MAX_HEAP, -1)
-  tKeyTag.clear()
-  tKeyTag.resize(MAX_HEAP, 0)
-  tKeyNum.clear()
-  tKeyNum.resize(MAX_HEAP, 0.0)
-  tKeyStr.clear()
-  tKeyStr.resize(MAX_HEAP, "")
-  tPrev.clear()
-  tPrev.resize(MAX_HEAP, -2)
-  tNext.clear()
-  tNext.resize(MAX_HEAP, -2)
+  // ...then the owner/key/link arrays are left alone too, lengths and all:
+  // heapEnsure grows them past the high-water mark as needed (see above).
   tFirst.clear()
   tFirst.resize(MAX_TABLES, -1)
   tLast.clear()
@@ -2430,14 +2420,18 @@ mod vmReset() {  tmap.clear()
   forCtrl.resize(16, 0)
   forRem.resize(16, 0.0)
   forDepth = 0
-  fFunc.clear()
-  fBase.clear()
-  fRetA.clear()
-  fRetBase.clear()
-  fRetPC.clear()
-  fRetN.clear()
-  fVaB.clear()
-  fForDepth.clear()
+  // Frame arrays converge by RESIZE, not clear-then-push (racing resets
+  // interleave in build-dependent order; see the parse-end refresh below for
+  // the other half).  Values are main-frame constants; index 0 is refreshed
+  // there because a racing resize can truncate to a mid-parse mainFid.
+  fFunc.resize(1, mainFid)
+  fBase.resize(1, 0)
+  fRetA.resize(1, -1)
+  fRetBase.resize(1, 0)
+  fRetPC.resize(1, -1)
+  fRetN.resize(1, -1)
+  fVaB.resize(1, 0)
+  fForDepth.resize(1, 0)
   vaTag.clear()
   vaNum.clear()
   vaStr.clear()
@@ -2540,14 +2534,6 @@ mod vmReset() {  tmap.clear()
   outStrArrV.resize(ARR_SLOTS, "")
   resultV = ""
   errV = ""
-  fFunc.push(mainFid)
-  fBase.push(0)
-  fRetA.push(-1)
-  fRetBase.push(0)
-  fRetPC.push(-1)
-  fRetN.push(-1)
-  fVaB.push(0)
-  fForDepth.push(0)
 }
 
 mod arithValL(t: int, v: float, s: string) -> float {
@@ -8097,6 +8083,31 @@ mod patError() {
 // own place, nothing else to do) or the value goes into the entry the list does
 // hand back and the tombstone is left dead, unlinked, and still on the list
 // where a dead slot belongs.
+// The heap grows here, one slot at a time, and NOT at reset.  Pre-sizing nine
+// 65,536-entry arrays on every run was ~590k slot writes the game prices per
+// slot while the sim calls free -- the bulk behind the parse-time gap to tag
+// 1.0.  The arrays keep their high-water length across runs instead: old
+// entries are unreachable (tmap is wiped, the chains/lengths restart, the
+// freelist is cleared, every field of a handed-out slot is written below
+// before it can be observed), so garbage is overwritten, never read, and a
+// fresh slot past the high water is appended right here.  Fills match the old
+// reset fills.  Reading a length and pushing are both fine inside a chip body;
+// read-then-write of one element would not be, and nothing here does that.
+// A mod: one call site, so this is the same nodes as writing it inline.
+mod heapEnsure() {
+  if tHeap >= tOwner.length() {
+    tOwner.push(-1)
+    tKeyTag.push(0)
+    tKeyNum.push(0.0)
+    tKeyStr.push("")
+    tPrev.push(-2)
+    tNext.push(-2)
+    tvTag.push(0)
+    tvNum.push(0.0)
+    tvStr.push("")
+  }
+}
+
 // A CHIP, not a mod, and the reason is arithmetic rather than taste.
 //
 // The TAPPEND arm calls this once per result slot, sixteen times in a row, and a
@@ -8162,6 +8173,9 @@ chip tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs:
         tmap.remove(tkey(ot, tKeyTag[sl], tKeyNum[sl], tKeyStr[sl]))
       }
     } else if tHeap < MAX_HEAP {
+      // past the high-water mark: append one slot to every heap array first,
+      // because an indexed write past the end is dropped where this runs.
+      heapEnsure()
       sl = tHeap
       tHeap = tHeap + 1
     } else {
@@ -11972,6 +11986,22 @@ on goParse2 {
     latchS0 = inStr1
     latchS1 = inStr2
     vmReset()
+    // Refresh the main frame with the settled mainFid.  A reset racing parse
+    // start can truncate to a mid-parse mainFid (0, before newFunc runs in
+    // parseJobStart), and resize keeps whatever is there -- which broke every
+    // closure, curFid resolving to a builtin.  newFunc has run by now (it is
+    // parseJobStart's, before any lexing), and it returns the same fid every
+    // parse, so this is the repair and later resets only ever see this value.
+    // Index writes: the resizes in vmReset guarantee length 1, so these can
+    // never run past the end.
+    fFunc[0] = mainFid
+    fBase[0] = 0
+    fRetA[0] = -1
+    fRetBase[0] = 0
+    fRetPC[0] = -1
+    fRetN[0] = -1
+    fVaB[0] = 0
+    fForDepth[0] = 0
     vmClosures()
     if perr {
       // cpos sits at (or just past) the offending token in nearly every perr

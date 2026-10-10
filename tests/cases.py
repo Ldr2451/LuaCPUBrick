@@ -2051,6 +2051,27 @@ TESTS = [
      {"phases": [{"ticks": 1200, "run": False}, {"ticks": 300, "run": True},
                  {"ticks": 100, "run": False}, {"ticks": 600, "run": True}],
       "expect": {"progress": False, "finished": True, "log": "hi\n"}}),
+    # The heap keeps its high-water length across runs and grows on demand
+    # (heapEnsure) instead of clear+resize at reset, so the second program to
+    # run on one chip reuses the first one's slots.  A reuses B's slots here
+    # with indenting values (thousands vs ones): a chain escaping into stale
+    # entries prints a thousand where a one belongs, and a stale length or
+    # tombstone breaks the counts.  Plain tables, no library, so both halves
+    # fit small budgets; the re-parse between steps clears the log, so the
+    # expectation is B's output only.
+    ("life-heap-clean",
+     "local u = {} for i = 1, 60 do u[i] = i end "
+     "for k, v in pairs(u) do if k == 7 then print(v) end end print(#u)",
+     None, "lifecycle",
+     {"steps": [{"ticks": 600,
+                 "src": "local t = {} for i = 1, 60 do t[i] = i * 1000 end "
+                        "print(t[7])"},
+                {"ticks": 600,
+                 "src": "local u = {} for i = 1, 60 do u[i] = i end "
+                        "for k, v in pairs(u) do if k == 7 then print(v) end end "
+                        "print(#u)"}],
+      "phases": [{"ticks": 2100, "run": True}],
+      "expect": {"progress": False, "finished": True, "log": "7\n60\n"}}),
     # A scalar input that changes EVERY tick while run is high.  The header says
     # such a change restarts the program, so this shape can restart forever and
     # never print anything -- which is what an input wired to something live
