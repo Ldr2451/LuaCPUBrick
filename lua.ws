@@ -353,14 +353,16 @@ const VREGS = 40000
 const MAX_TABLES = 512
 // TOTAL entries across every table, not per table -- there is no collector, so
 // this is the whole budget a program gets.  PUC sets no limit here (tables grow
-// until memory runs out), so the number is ours to pick and the only costs are
-// reset clearing it (nine arrays this wide) and the wire width in game.  It is
-// sized for a loop-filled table, not for source text: 65,536 entries holds
+// until memory runs out), so the number is ours to pick.  Raising it costs no
+// nodes -- the heap arrays keep their high-water length across runs and grow on
+// demand in heapEnsure, so the width is memory, not graph -- and an in-game
+// probe showed bulk resizes cost nothing anyway (ARR_SLOTS 1024 vs 16384
+// measured identical).  A full-arena proof still costs a full arena of stores
+// in the sim, which is why the suite pins the mechanism at small scale and
+// limits.py owns the ceiling.
+// It is sized for a loop-filled table, not for source text: 65,536 entries holds
 // 64k numbers with room for the free list to breathe, and a program that wants
-// more gets "out of table memory" past the end.  Raising it costs no nodes --
-// every heap array is resize()d at reset, so the width is memory, not graph --
-// but every full-arena proof costs a full arena of stores, which is why the
-// suite pins the mechanism at small scale and limits.py owns the ceiling.
+// more gets "out of table memory" past the end.
 const MAX_HEAP = 65536
 // live vararg values across all active frames
 const MAX_VA = 256
@@ -2396,8 +2398,11 @@ mod vmClosures() {
 mod vmReset() {  tmap.clear()
   // The nine heap arrays are NOT cleared or resized here: they keep their
   // high-water length across runs and grow one slot at a time in heapEnsure.
-  // Two full clear+resize cycles a run was ~1.77M slot writes in game for
-  // what the sim calls free.  Old entries are unreachable after the wipe
+  // That is a NODES saving, not a game-speed fix: it measured -124 nodes, and
+  // the per-slot game cost it was first built on does not exist -- an in-game
+  // probe with ARR_SLOTS 1024 vs 16384 measured parse 6237 vs 6235 and
+  // identical elapsed, so bulk resizes are free in game as in the sim.
+  // Old entries are unreachable after the wipe
   // above and the restarts below (chains, lengths, freelist, cursors), and
   // every field of a handed-out slot is written before it can be observed.
   tLen.clear()
@@ -5857,11 +5862,11 @@ mod parseJobStart() {
   // The arrays clear WITHOUT resize: vmReset re-establishes all 16,384 slots
   // before the run, and nothing between here and there reads them (compile
   // checks use the ARR_SLOTS const, the run arms read .length() after the
-  // reset).  A resize writes every slot and the game charges per slot --
-  // two of them here cost ~2,500 parse ticks in game while the sim calls
-  // them free, which is exactly the kind of cost bootprobe cannot see.
-  // Lesson recorded: host bulk ops are priced by the game, so parse-path
-  // additions need in-game measurement, never sim ticks alone.
+  // reset).  The old comment here claimed a resize costs the game per slot
+  // (~2,500 parse ticks); an in-game probe disproved it (ARR_SLOTS 1024 vs
+  // 16384 measured parse 6237 vs 6235, elapsed unchanged), so bulk resizes
+  // are free in game as in the sim.  The shape stays -- correct and harmless --
+  // but the pricing theory is withdrawn.
   outNumArrV.clear()
   outStrArrV.clear()
   logV = ""
@@ -8085,10 +8090,12 @@ mod patError() {
 // own place, nothing else to do) or the value goes into the entry the list does
 // hand back and the tombstone is left dead, unlinked, and still on the list
 // where a dead slot belongs.
-// The heap grows here, one slot at a time, and NOT at reset.  Pre-sizing nine
-// 65,536-entry arrays on every run was ~590k slot writes the game prices per
-// slot while the sim calls free -- the bulk behind the parse-time gap to tag
-// 1.0.  The arrays keep their high-water length across runs instead: old
+// The heap grows here, one slot at a time, and NOT at reset.  The old comment
+// claimed pre-sizing nine 65,536-entry arrays cost ~590k per-slot game writes
+// and explained the parse-time gap to tag 1.0 that way; an in-game probe
+// disproved it (ARR_SLOTS 1024 vs 16384 measured identical), so bulk resizes
+// are free in game as in the sim and the growth stays for its measured -124
+// nodes, not for speed.  The arrays keep their high-water length across runs instead: old
 // entries are unreachable (tmap is wiped, the chains/lengths restart, the
 // freelist is cleared, every field of a handed-out slot is written below
 // before it can be observed), so garbage is overwritten, never read, and a
