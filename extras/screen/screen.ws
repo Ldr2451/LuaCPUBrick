@@ -13,13 +13,23 @@
 // dispatched).  Unchanged values cost nothing on the wire: ports are
 // sticky, and re-sending what is already there is not an edit.
 //
-// Protocol: pushRect latches one rect (color + bounds), redrawAll paints
-// the CURRENT drawing (the latched rect, else the last rect again).  Two
-// signals so the CPU can write its params across ticks and commit
-// atomically -- no torn rects.  Bounds are normalized (x0>x1 works) and
-// clipped; a fully off-screen rect paints nothing.  Brick colors persist
-// until rewritten, so there is no keepalive and no expiry: the chip emits
-// one rect burst per redrawAll and is silent otherwise.
+// Protocol: pushRect latches one rect (color + bounds), pushTri latches
+// a triangle (the same four bound pins as the first two vertices plus
+// triX2/triY2 for the third), and redrawAll paints the CURRENT
+// drawing: the latched shape, else the last rect again (a triangle
+// replays from its first row).  Two stage signals so the CPU can write
+// its params across ticks and commit atomically -- no torn shapes; the
+// last push before a redrawAll wins.  Rect bounds are normalized
+// (x0>x1 works) and clipped; a fully off-screen shape paints nothing.
+// Brick colors persist until rewritten, so there is no keepalive and no
+// expiry: the chip emits one burst per redrawAll and is silent
+// otherwise.
+//
+// Shapes paint at different speeds by construction.  A rect walks its
+// bounding box row-major, so a burst is ceil(area/64) ticks.  A triangle
+// walks spans row by row, so a burst is one tick per row -- the honest
+// price of a shape that is not a rectangle.  Clearing the wall is still
+// one rect command; a triangle clear is two.
 //
 // Tuning (top of gen.py): LANES is the speed knob (~6 nodes a lane).
 // Placement is physical: the wall builder lays the 64x64 bricks, so there
@@ -38,7 +48,10 @@ const LANES = 64
 @left in rectY0: float
 @left in rectX1: float
 @left in rectY1: float
+@left in triX2: float
+@left in triY2: float
 @left in pushRect: bool
+@left in pushTri: bool
 @left in redrawAll: bool
 
 var fb: color[]
@@ -55,6 +68,30 @@ var area: float = 0.0
 var rw: float = 1.0
 var cx0: float = 0.0
 var cy0: float = 0.0
+var tX0: float = 0.0
+var tY0: float = 0.0
+var tX1: float = 0.0
+var tY1: float = 0.0
+var tX2: float = 0.0
+var tY2: float = 0.0
+var tCol: float = 0.0
+var tRow: float = 0.0
+var tSpanL: float = 0.0
+var tSpanR: float = 0.0
+var tFirstRow: float = 0.0
+var tLastRow: float = 0.0
+var sAB: float = 0.0
+var sAC: float = 0.0
+var sBC: float = 0.0
+var vAx: float = 0.0
+var vAy: float = 0.0
+var vBx: float = 0.0
+var vBy: float = 0.0
+var vCx: float = 0.0
+var vCy: float = 0.0
+var pTri: bool = false
+var tOn: bool = false
+var tLive: bool = false
 var g0: color = Color(0.0, 0.0, 0.0, 1.0)
 out px0: color = g0
 var g1: color = Color(0.0, 0.0, 0.0, 1.0)
@@ -8260,6 +8297,25 @@ on Change(pushRect) {
     pX1 = rectX1
     pY1 = rectY1
     pending = true
+    pTri = false
+  }
+}
+
+// A triangle latches the same four bound pins (the first two vertices)
+// plus the third point's own two.  Each push clears the other shape's
+// stage, so the last push before a redrawAll is the one that arms -- and
+// a load-time edge on an unwired stage cannot fire later.
+on Change(pushTri) {
+  if pushTri {
+    pCol = rectColor
+    tX0 = rectX0
+    tY0 = rectY0
+    tX1 = rectX1
+    tY1 = rectY1
+    tX2 = triX2
+    tY2 = triY2
+    pTri = true
+    pending = false
   }
 }
 
@@ -8285,15 +8341,104 @@ on Change(redrawAll) {
         lt = 0.0
         rectOn = true
         pending = false
+        tOn = false
       }
+    }
+    if pTri {
+      if tY0 <= tY1 && tY1 <= tY2 {
+        vAx = tX0
+        vAy = tY0
+        vBx = tX1
+        vBy = tY1
+        vCx = tX2
+        vCy = tY2
+      }
+      if tY0 <= tY2 && tY2 <= tY1 {
+        vAx = tX0
+        vAy = tY0
+        vBx = tX2
+        vBy = tY2
+        vCx = tX1
+        vCy = tY1
+      }
+      if tY1 <= tY0 && tY0 <= tY2 {
+        vAx = tX1
+        vAy = tY1
+        vBx = tX0
+        vBy = tY0
+        vCx = tX2
+        vCy = tY2
+      }
+      if tY1 <= tY2 && tY2 <= tY0 {
+        vAx = tX1
+        vAy = tY1
+        vBx = tX2
+        vBy = tY2
+        vCx = tX0
+        vCy = tY0
+      }
+      if tY2 <= tY0 && tY0 <= tY1 {
+        vAx = tX2
+        vAy = tY2
+        vBx = tX0
+        vBy = tY0
+        vCx = tX1
+        vCy = tY1
+      }
+      if tY2 <= tY1 && tY1 <= tY0 {
+        vAx = tX2
+        vAy = tY2
+        vBx = tX1
+        vBy = tY1
+        vCx = tX0
+        vCy = tY0
+      }
+      let dyAB = vBy - vAy
+      sAB = if dyAB > 0.0 then (vBx - vAx) / dyAB else 0.0
+      let dyAC = vCy - vAy
+      sAC = if dyAC > 0.0 then (vCx - vAx) / dyAC else 0.0
+      let dyBC = vCy - vBy
+      sBC = if dyBC > 0.0 then (vCx - vBx) / dyBC else 0.0
+      let vxmin = if vAx < vBx then (if vAx < vCx then vAx else vCx) else (if vBx < vCx then vBx else vCx)
+      let vxmax = if vAx > vBx then (if vAx > vCx then vAx else vCx) else (if vBx > vCx then vBx else vCx)
+      if vCy >= 0.0 && vAy < SWF && vxmax >= 0.0 && vxmin < SWF {
+        tFirstRow = if vAy < 0.0 then 0.0 else (vAy | 0)
+        tLastRow = if vCy >= SWF then SWF - 1.0 else (vCy | 0)
+        tRow = tFirstRow
+        let ex = if tRow < vBy then vAx + sAB * (tRow - vAy) else vBx + sBC * (tRow - vBy)
+        let fx = vAx + sAC * (tRow - vAy)
+        let sl = if ex < fx then ex else fx
+        let sr = if ex < fx then fx else ex
+        if sl >= SWF || sr < 0.0 {
+          tSpanL = 1.0
+          tSpanR = -1.0
+        } else {
+          tSpanL = if sl < 0.0 then 0.0 else (sl | 0)
+          tSpanR = if sr >= SWF then SWF - 1.0 else (sr | 0)
+        }
+        tCol = tSpanL
+        tOn = true
+        tLive = true
+      }
+      rectOn = false
+      pTri = false
     }
     // Replay is a SEPARATE depth-1 if, not an else-if of the arming above.
     // Sequential flat ifs keep every arm observable and every outcome
     // correct: firing right after an arming restates the same state, and
-    // !rectOn keeps a mid-burst redrawAll from restarting the burst.
-    if area > 0.0 && !rectOn {
+    // !rectOn keeps a mid-burst redrawAll from restarting the burst.  The
+    // !tOn guards keep a triangle walk and a rect replay from colliding.
+    if area > 0.0 && !rectOn && !tOn {
       lt = 0.0
       rectOn = true
+    }
+    // A triangle replay restarts the walk from its first row: vertices,
+    // slopes and the first row's span are still staged, so the walk state
+    // is all that resets.
+    if tLive && !tOn && !rectOn {
+      tRow = tFirstRow
+      tCol = tSpanL
+      tOn = true
     }
   }
 }
@@ -8823,6 +8968,350 @@ mod paintTick() {
     lt = lt + 64.0
     if lt >= area {
       rectOn = false
+    }
+  }
+  if tOn {
+    if tCol > tSpanR {
+      tRow = tRow + 1.0
+      if tRow > tLastRow {
+        tOn = false
+      } else {
+        let ex = if tRow < vBy then vAx + sAB * (tRow - vAy) else vBx + sBC * (tRow - vBy)
+        let fx = vAx + sAC * (tRow - vAy)
+        let sl = if ex < fx then ex else fx
+        let sr = if ex < fx then fx else ex
+        if sl >= SWF || sr < 0.0 {
+          tSpanL = 1.0
+          tSpanR = -1.0
+        } else {
+          tSpanL = if sl < 0.0 then 0.0 else (sl | 0)
+          tSpanR = if sr >= SWF then SWF - 1.0 else (sr | 0)
+        }
+        tCol = tSpanL
+      }
+    }
+    if tOn {
+      let tj0 = tCol + 0.0
+      if tj0 <= tSpanR {
+        let ridx0 = ((tRow * SWF + tj0) | 0)
+        fb[ridx0] = pCol
+      }
+      let tj1 = tCol + 1.0
+      if tj1 <= tSpanR {
+        let ridx1 = ((tRow * SWF + tj1) | 0)
+        fb[ridx1] = pCol
+      }
+      let tj2 = tCol + 2.0
+      if tj2 <= tSpanR {
+        let ridx2 = ((tRow * SWF + tj2) | 0)
+        fb[ridx2] = pCol
+      }
+      let tj3 = tCol + 3.0
+      if tj3 <= tSpanR {
+        let ridx3 = ((tRow * SWF + tj3) | 0)
+        fb[ridx3] = pCol
+      }
+      let tj4 = tCol + 4.0
+      if tj4 <= tSpanR {
+        let ridx4 = ((tRow * SWF + tj4) | 0)
+        fb[ridx4] = pCol
+      }
+      let tj5 = tCol + 5.0
+      if tj5 <= tSpanR {
+        let ridx5 = ((tRow * SWF + tj5) | 0)
+        fb[ridx5] = pCol
+      }
+      let tj6 = tCol + 6.0
+      if tj6 <= tSpanR {
+        let ridx6 = ((tRow * SWF + tj6) | 0)
+        fb[ridx6] = pCol
+      }
+      let tj7 = tCol + 7.0
+      if tj7 <= tSpanR {
+        let ridx7 = ((tRow * SWF + tj7) | 0)
+        fb[ridx7] = pCol
+      }
+      let tj8 = tCol + 8.0
+      if tj8 <= tSpanR {
+        let ridx8 = ((tRow * SWF + tj8) | 0)
+        fb[ridx8] = pCol
+      }
+      let tj9 = tCol + 9.0
+      if tj9 <= tSpanR {
+        let ridx9 = ((tRow * SWF + tj9) | 0)
+        fb[ridx9] = pCol
+      }
+      let tj10 = tCol + 10.0
+      if tj10 <= tSpanR {
+        let ridx10 = ((tRow * SWF + tj10) | 0)
+        fb[ridx10] = pCol
+      }
+      let tj11 = tCol + 11.0
+      if tj11 <= tSpanR {
+        let ridx11 = ((tRow * SWF + tj11) | 0)
+        fb[ridx11] = pCol
+      }
+      let tj12 = tCol + 12.0
+      if tj12 <= tSpanR {
+        let ridx12 = ((tRow * SWF + tj12) | 0)
+        fb[ridx12] = pCol
+      }
+      let tj13 = tCol + 13.0
+      if tj13 <= tSpanR {
+        let ridx13 = ((tRow * SWF + tj13) | 0)
+        fb[ridx13] = pCol
+      }
+      let tj14 = tCol + 14.0
+      if tj14 <= tSpanR {
+        let ridx14 = ((tRow * SWF + tj14) | 0)
+        fb[ridx14] = pCol
+      }
+      let tj15 = tCol + 15.0
+      if tj15 <= tSpanR {
+        let ridx15 = ((tRow * SWF + tj15) | 0)
+        fb[ridx15] = pCol
+      }
+      let tj16 = tCol + 16.0
+      if tj16 <= tSpanR {
+        let ridx16 = ((tRow * SWF + tj16) | 0)
+        fb[ridx16] = pCol
+      }
+      let tj17 = tCol + 17.0
+      if tj17 <= tSpanR {
+        let ridx17 = ((tRow * SWF + tj17) | 0)
+        fb[ridx17] = pCol
+      }
+      let tj18 = tCol + 18.0
+      if tj18 <= tSpanR {
+        let ridx18 = ((tRow * SWF + tj18) | 0)
+        fb[ridx18] = pCol
+      }
+      let tj19 = tCol + 19.0
+      if tj19 <= tSpanR {
+        let ridx19 = ((tRow * SWF + tj19) | 0)
+        fb[ridx19] = pCol
+      }
+      let tj20 = tCol + 20.0
+      if tj20 <= tSpanR {
+        let ridx20 = ((tRow * SWF + tj20) | 0)
+        fb[ridx20] = pCol
+      }
+      let tj21 = tCol + 21.0
+      if tj21 <= tSpanR {
+        let ridx21 = ((tRow * SWF + tj21) | 0)
+        fb[ridx21] = pCol
+      }
+      let tj22 = tCol + 22.0
+      if tj22 <= tSpanR {
+        let ridx22 = ((tRow * SWF + tj22) | 0)
+        fb[ridx22] = pCol
+      }
+      let tj23 = tCol + 23.0
+      if tj23 <= tSpanR {
+        let ridx23 = ((tRow * SWF + tj23) | 0)
+        fb[ridx23] = pCol
+      }
+      let tj24 = tCol + 24.0
+      if tj24 <= tSpanR {
+        let ridx24 = ((tRow * SWF + tj24) | 0)
+        fb[ridx24] = pCol
+      }
+      let tj25 = tCol + 25.0
+      if tj25 <= tSpanR {
+        let ridx25 = ((tRow * SWF + tj25) | 0)
+        fb[ridx25] = pCol
+      }
+      let tj26 = tCol + 26.0
+      if tj26 <= tSpanR {
+        let ridx26 = ((tRow * SWF + tj26) | 0)
+        fb[ridx26] = pCol
+      }
+      let tj27 = tCol + 27.0
+      if tj27 <= tSpanR {
+        let ridx27 = ((tRow * SWF + tj27) | 0)
+        fb[ridx27] = pCol
+      }
+      let tj28 = tCol + 28.0
+      if tj28 <= tSpanR {
+        let ridx28 = ((tRow * SWF + tj28) | 0)
+        fb[ridx28] = pCol
+      }
+      let tj29 = tCol + 29.0
+      if tj29 <= tSpanR {
+        let ridx29 = ((tRow * SWF + tj29) | 0)
+        fb[ridx29] = pCol
+      }
+      let tj30 = tCol + 30.0
+      if tj30 <= tSpanR {
+        let ridx30 = ((tRow * SWF + tj30) | 0)
+        fb[ridx30] = pCol
+      }
+      let tj31 = tCol + 31.0
+      if tj31 <= tSpanR {
+        let ridx31 = ((tRow * SWF + tj31) | 0)
+        fb[ridx31] = pCol
+      }
+      let tj32 = tCol + 32.0
+      if tj32 <= tSpanR {
+        let ridx32 = ((tRow * SWF + tj32) | 0)
+        fb[ridx32] = pCol
+      }
+      let tj33 = tCol + 33.0
+      if tj33 <= tSpanR {
+        let ridx33 = ((tRow * SWF + tj33) | 0)
+        fb[ridx33] = pCol
+      }
+      let tj34 = tCol + 34.0
+      if tj34 <= tSpanR {
+        let ridx34 = ((tRow * SWF + tj34) | 0)
+        fb[ridx34] = pCol
+      }
+      let tj35 = tCol + 35.0
+      if tj35 <= tSpanR {
+        let ridx35 = ((tRow * SWF + tj35) | 0)
+        fb[ridx35] = pCol
+      }
+      let tj36 = tCol + 36.0
+      if tj36 <= tSpanR {
+        let ridx36 = ((tRow * SWF + tj36) | 0)
+        fb[ridx36] = pCol
+      }
+      let tj37 = tCol + 37.0
+      if tj37 <= tSpanR {
+        let ridx37 = ((tRow * SWF + tj37) | 0)
+        fb[ridx37] = pCol
+      }
+      let tj38 = tCol + 38.0
+      if tj38 <= tSpanR {
+        let ridx38 = ((tRow * SWF + tj38) | 0)
+        fb[ridx38] = pCol
+      }
+      let tj39 = tCol + 39.0
+      if tj39 <= tSpanR {
+        let ridx39 = ((tRow * SWF + tj39) | 0)
+        fb[ridx39] = pCol
+      }
+      let tj40 = tCol + 40.0
+      if tj40 <= tSpanR {
+        let ridx40 = ((tRow * SWF + tj40) | 0)
+        fb[ridx40] = pCol
+      }
+      let tj41 = tCol + 41.0
+      if tj41 <= tSpanR {
+        let ridx41 = ((tRow * SWF + tj41) | 0)
+        fb[ridx41] = pCol
+      }
+      let tj42 = tCol + 42.0
+      if tj42 <= tSpanR {
+        let ridx42 = ((tRow * SWF + tj42) | 0)
+        fb[ridx42] = pCol
+      }
+      let tj43 = tCol + 43.0
+      if tj43 <= tSpanR {
+        let ridx43 = ((tRow * SWF + tj43) | 0)
+        fb[ridx43] = pCol
+      }
+      let tj44 = tCol + 44.0
+      if tj44 <= tSpanR {
+        let ridx44 = ((tRow * SWF + tj44) | 0)
+        fb[ridx44] = pCol
+      }
+      let tj45 = tCol + 45.0
+      if tj45 <= tSpanR {
+        let ridx45 = ((tRow * SWF + tj45) | 0)
+        fb[ridx45] = pCol
+      }
+      let tj46 = tCol + 46.0
+      if tj46 <= tSpanR {
+        let ridx46 = ((tRow * SWF + tj46) | 0)
+        fb[ridx46] = pCol
+      }
+      let tj47 = tCol + 47.0
+      if tj47 <= tSpanR {
+        let ridx47 = ((tRow * SWF + tj47) | 0)
+        fb[ridx47] = pCol
+      }
+      let tj48 = tCol + 48.0
+      if tj48 <= tSpanR {
+        let ridx48 = ((tRow * SWF + tj48) | 0)
+        fb[ridx48] = pCol
+      }
+      let tj49 = tCol + 49.0
+      if tj49 <= tSpanR {
+        let ridx49 = ((tRow * SWF + tj49) | 0)
+        fb[ridx49] = pCol
+      }
+      let tj50 = tCol + 50.0
+      if tj50 <= tSpanR {
+        let ridx50 = ((tRow * SWF + tj50) | 0)
+        fb[ridx50] = pCol
+      }
+      let tj51 = tCol + 51.0
+      if tj51 <= tSpanR {
+        let ridx51 = ((tRow * SWF + tj51) | 0)
+        fb[ridx51] = pCol
+      }
+      let tj52 = tCol + 52.0
+      if tj52 <= tSpanR {
+        let ridx52 = ((tRow * SWF + tj52) | 0)
+        fb[ridx52] = pCol
+      }
+      let tj53 = tCol + 53.0
+      if tj53 <= tSpanR {
+        let ridx53 = ((tRow * SWF + tj53) | 0)
+        fb[ridx53] = pCol
+      }
+      let tj54 = tCol + 54.0
+      if tj54 <= tSpanR {
+        let ridx54 = ((tRow * SWF + tj54) | 0)
+        fb[ridx54] = pCol
+      }
+      let tj55 = tCol + 55.0
+      if tj55 <= tSpanR {
+        let ridx55 = ((tRow * SWF + tj55) | 0)
+        fb[ridx55] = pCol
+      }
+      let tj56 = tCol + 56.0
+      if tj56 <= tSpanR {
+        let ridx56 = ((tRow * SWF + tj56) | 0)
+        fb[ridx56] = pCol
+      }
+      let tj57 = tCol + 57.0
+      if tj57 <= tSpanR {
+        let ridx57 = ((tRow * SWF + tj57) | 0)
+        fb[ridx57] = pCol
+      }
+      let tj58 = tCol + 58.0
+      if tj58 <= tSpanR {
+        let ridx58 = ((tRow * SWF + tj58) | 0)
+        fb[ridx58] = pCol
+      }
+      let tj59 = tCol + 59.0
+      if tj59 <= tSpanR {
+        let ridx59 = ((tRow * SWF + tj59) | 0)
+        fb[ridx59] = pCol
+      }
+      let tj60 = tCol + 60.0
+      if tj60 <= tSpanR {
+        let ridx60 = ((tRow * SWF + tj60) | 0)
+        fb[ridx60] = pCol
+      }
+      let tj61 = tCol + 61.0
+      if tj61 <= tSpanR {
+        let ridx61 = ((tRow * SWF + tj61) | 0)
+        fb[ridx61] = pCol
+      }
+      let tj62 = tCol + 62.0
+      if tj62 <= tSpanR {
+        let ridx62 = ((tRow * SWF + tj62) | 0)
+        fb[ridx62] = pCol
+      }
+      let tj63 = tCol + 63.0
+      if tj63 <= tSpanR {
+        let ridx63 = ((tRow * SWF + tj63) | 0)
+        fb[ridx63] = pCol
+      }
+      tCol = tCol + 64.0
     }
   }
   // The scanout: every pixel global mirrors its fb slot, every tick.

@@ -31,21 +31,28 @@ without it.
            rectY0    --|  screen   |
            rectX1    --|           |
            rectY1    --|           |
+           triX2     --|           |
+           triY2     --|           |
            pushRect  --|           |
+           pushTri   --|           |
            redrawAll --|           |
 ```
 
-`pushRect` latches one rect (color + bounds), `redrawAll` paints it:
-the painter walks 64 pixels a tick and the ports mirror the framebuffer
-every tick.  Bounds are normalized (x0>x1 works) and clipped; a fully
-off-screen rect paints nothing.  Colors persist until rewritten, so a
-frame is a sequence of push-then-redraw pairs, and the wall keeps the
-last color forever -- there is no keepalive and no expiry.  Pixel `i`
-is column `i%64`, row `i/64`, row 0 at the top.
+`pushRect` latches one rect, `pushTri` latches one triangle (the first
+two vertices ride the shared bound pins, the third is `triX2`/`triY2`),
+and `redrawAll` paints the latched shape: the rect painter walks 64
+pixels a tick, the triangle walk one row a tick, and the ports mirror
+the framebuffer every tick.  Bounds are normalized (x0>x1 works) and
+clipped; a fully off-screen shape paints nothing.  Colors persist until
+rewritten, so a frame is a sequence of push-then-redraw pairs, and the
+wall keeps the last color forever -- there is no keepalive and no
+expiry.  The last push before a `redrawAll` wins, so a stale stage can
+never fire.  Pixel `i` is column `i%64`, row `i/64`, row 0 at the top.
 
-`anim.lua` drives the same seven inputs from the tinylua chip:
+`anim.lua` drives the same inputs from the tinylua chip:
 `outNum1 -> pushRect`, `outNum2 -> redrawAll`, and `outNumArr ->
-x0, y0, x1, y1, r, g, b, a`.
+x0, y0, x1, y1, r, g, b, a` (a triangle driver adds the third point as
+`outNum3`/`outNum4` on `triX2`/`triY2`).
 
 ## Running the tests
 
