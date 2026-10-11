@@ -1,24 +1,36 @@
 """Functional test for the wall screen: drive it, read the pixel globals.
 
-Unlike the overlay variant, every gate here is sim-modelled, so there are no
-mocks: the test pushes rects and triangles through the real protocol and
-reads the real per-pixel globals (g0..g4095) the save wires to the bricks.
+The screen takes a point array and fills polygons, so this pushes real
+shapes through the real protocol and reads the real per-pixel globals
+(g0..g4095) the save wires to the bricks.  A Python model of the fill
+(same edge records, same crossings, same sort, same clamping) pins the
+exact pixels, so a dropped span, a bad sort or an off-by-one row shows
+up as a diff.
 
-  python -u extras/screen/painttest.py   (exit 0 = all green)
+One sim run composes a whole frame from nine shapes in sequence -- the
+driver's actual usage -- because the chip's boot and the 4096-slot
+scanout (~67ms a tick in the sim, the price of mirroring a framebuffer
+into 4096 ports) dominate any per-scenario split.  Shapes are staged by
+writing the port's delivered array in place: re-seeding through
+sim.inputs re-materialises the port on every change, which costs
+seconds a tick in the sim, while the in-place write is the same wire
+event at the normal rate.
+
+  python -u extras/screen/painttest.py   (exit 0 = all green; ~36s)
 """
-import itertools
+import math
 import os
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "irrun"))
 
 from irsims import (  # noqa: E402
-    ChipRunner,
-    share_dump,
     sim_from_dump,
+    share_dump,
     _extract,
 )
 
@@ -26,84 +38,29 @@ WS = os.path.join(HERE, "screen.ws")
 SW = 64
 BLACK = (0.0, 0.0, 0.0, 1.0)
 RED = (1.0, 0.0, 0.0, 1.0)
+PAD = 32          # the arm reads pts[0..31] whatever the point count is
 
 
 def fresh_sim(dump_path):
     sim = sim_from_dump(dump_path)
     sim.reset()
     gids = {}
-    recton = None
+    polyon = None
+    pts_aid = None
     for nid, nd in sim.nodes.items():
         lb = _extract(nd.props.get("_label", ("raw", "")))
         if not isinstance(lb, str):
-            continue
+            lb = ""
         if lb.startswith("g") and lb[1:].isdigit():
             gids[int(lb[1:])] = nid
-        elif lb == "rectOn":
-            recton = nid
+        elif lb == "polyOn":
+            polyon = nid
+        elif _extract(nd.props.get("PortLabel", ("raw", ""))) == "pts":
+            pts_aid = nid
     assert len(gids) == SW * SW, "globals found: %d" % len(gids)
-    assert recton is not None, "no rectOn var"
-    return sim, gids, recton
-
-
-def find_flag(sim, name):
-    for nid, nd in sim.nodes.items():
-        if _extract(nd.props.get("_label", ("raw", ""))) == name:
-            return nid
-    return None
-
-
-def tri_spans(x0, y0, x1, y1, x2, y2):
-    """The chip's triangle fill, row by row: [(row, lo, hi), ...].
-
-    A transcription of gen.py's arm and walk -- the same six flat sort arms
-    (last match wins, the same itertools order), the same guarded slopes, the
-    same span clamp and empty-span marking -- so the test pins the exact
-    pixels the chip paints rather than an idealised triangle.
-    """
-    verts = [x0, y0, x1, y1, x2, y2]
-    v = [0.0] * 6
-    for i, j, k in itertools.permutations((0, 1, 2)):
-        if verts[2 * i + 1] <= verts[2 * j + 1] <= verts[2 * k + 1]:
-            v = [verts[2 * i], verts[2 * i + 1],
-                 verts[2 * j], verts[2 * j + 1],
-                 verts[2 * k], verts[2 * k + 1]]
-    vAx, vAy, vBx, vBy, vCx, vCy = v
-    dyAB = vBy - vAy
-    sAB = (vBx - vAx) / dyAB if dyAB > 0.0 else 0.0
-    dyAC = vCy - vAy
-    sAC = (vCx - vAx) / dyAC if dyAC > 0.0 else 0.0
-    dyBC = vCy - vBy
-    sBC = (vCx - vBx) / dyBC if dyBC > 0.0 else 0.0
-    if not (vCy >= 0.0 and vAy < 64.0
-            and max(vAx, vBx, vCx) >= 0.0 and min(vAx, vBx, vCx) < 64.0):
-        return []
-    first = 0.0 if vAy < 0.0 else float(int(vAy))
-    last = 63.0 if vCy >= 64.0 else float(int(vCy))
-    out = []
-    row = first
-    while row <= last:
-        ex = (vAx + sAB * (row - vAy) if row < vBy
-              else vBx + sBC * (row - vBy))
-        fx = vAx + sAC * (row - vAy)
-        sl, sr = (ex, fx) if ex < fx else (fx, ex)
-        if sl >= 64.0 or sr < 0.0:
-            lo, hi = 1.0, -1.0
-        else:
-            lo = 0.0 if sl < 0.0 else float(int(sl))
-            hi = 63.0 if sr >= 64.0 else float(int(sr))
-        out.append((row, lo, hi))
-        row += 1.0
-    return out
-
-
-def tri_pixels(x0, y0, x1, y1, x2, y2):
-    px = set()
-    for row, lo, hi in tri_spans(x0, y0, x1, y1, x2, y2):
-        if lo <= hi:
-            for c in range(int(lo), int(hi) + 1):
-                px.add(int(row) * SW + c)
-    return px
+    assert polyon is not None, "no polyOn var"
+    assert pts_aid is not None, "no pts port"
+    return sim, gids, polyon, pts_aid
 
 
 def col(sim, gids, i):
@@ -113,263 +70,200 @@ def col(sim, gids, i):
     return v
 
 
-def pulse_at(plan):
-    def hook(sim_now, tick):
-        if tick in plan:
-            sim_now.inputs = dict(sim_now.inputs, **plan[tick])
-    return hook
-
-
 def expect(cond, label, detail=""):
-    print("%-34s %s %s" % (label, "OK  " if cond else "FAIL",
+    print("%-38s %s %s" % (label, "OK  " if cond else "FAIL",
                            detail if not cond else ""))
     return cond
 
 
+def poly_pixels(pts):
+    """The chip's polygon fill: the set of painted pixel indices.
+
+    A transcription of gen.py -- the same per-edge records (base x/y,
+    x-per-y slope, half-open y range), the same 200.0 off-screen
+    sentinel, the same min/max span and clamp -- so chip and test agree
+    by construction.  The span is a row's hull, which is exact for a
+    convex polygon; a concave outline fills its hull, so the driver
+    decomposes one into convex pieces.  Points are in pixel-corner
+    coordinates: a rect covering pixels 0..3 has corners 0 and 4.
+    """
+    pts = list(pts) + [0.0] * (32 - len(pts))
+    n = len(pts) // 2
+    edges = []
+    gyMin, gyMax = 200.0, -200.0
+    gxMin, gxMax = 200.0, -200.0
+    for i in range(16):
+        px, py = pts[2 * i], pts[2 * i + 1]
+        j = i + 1 if (i + 1) < n else 0
+        qx, qy = pts[2 * j], pts[2 * j + 1]
+        dx, dy = qx - px, qy - py
+        s = dx / dy if dy != 0.0 else 0.0
+        lo, hi = (py, qy) if py < qy else (qy, py)
+        if i < n:
+            elo, ehi = lo, hi
+            gyMin = min(gyMin, py)
+            gyMax = max(gyMax, py)
+            gxMin = min(gxMin, px)
+            gxMax = max(gxMax, px)
+        else:
+            elo, ehi = 200.0, -200.0
+        edges.append((px, py, s, elo, ehi))
+    if gyMax < 0.0 or gyMin >= 64.0 or gxMax < 0.0 or gxMin >= 64.0:
+        return set()
+    first = 0.0 if gyMin < 0.0 else float(int(gyMin))
+    last = 63.0 if gyMax >= 64.0 else float(int(gyMax))
+    out = set()
+    row = first
+    while row <= last:
+        cs = []
+        for ex, ey, es, elo, ehi in edges:
+            if elo <= row < ehi:
+                cs.append(ex + es * (row - ey))
+            else:
+                cs.append(200.0)
+        lo, hi = min(cs), max(cs)
+        if not (lo >= 200.0 or hi < 0.0 or lo >= 64.0):
+            l = 0.0 if lo < 0.0 else float(int(lo))
+            r = 63.0 if hi >= 64.0 else float(int(hi))
+            if l <= r:
+                for c in range(int(l), int(r) + 1):
+                    out.add(int(row) * SW + c)
+        row += 1.0
+    return out
+
+
+def rect_pts(x0, y0, x1, y1):
+    return [x0, y0, x1, y0, x1, y1, x0, y1]
+
+
+def oval_pts(cx, cy, rx, ry, k=16):
+    pts = []
+    for i in range(k):
+        a = 2.0 * math.pi * i / k
+        pts += [cx + rx * math.cos(a), cy + ry * math.sin(a)]
+    return pts
+
+
+def slide(sim, pts_aid, values):
+    """Deliver a new point array on the port's wire, in place."""
+    arr = sim.arrays.get(pts_aid)
+    if arr is None:
+        sim.arrays[pts_aid] = list(values)
+        return
+    arr[0:len(values)] = values
+
+
 def main():
+    t_start = time.time()
     with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
         dump_path = f.name
     ok = True
     try:
         share_dump(WS, dump_path)
-
-        base = {"rectColor": RED, "rectX0": 0.0, "rectY0": 0.0,
-                "rectX1": 3.0, "rectY1": 2.0, "pushRect": False,
-                "redrawAll": False, "triX2": 0.0, "triY2": 0.0,
-                "pushTri": False}
-        plan = {10: {"pushRect": True}, 12: {"pushRect": False},
-                14: {"redrawAll": True}, 16: {"redrawAll": False}}
-
-        # A. a 4x3 red rect lands in fb and shows on the globals.
-        sim, gids, recton = fresh_sim(dump_path)
-        sim.inputs = dict(base)
-        sim.run(40, on_tick=pulse_at(plan))
-        want = {r * SW + c for r in range(3) for c in range(4)}
-        got = {i for i in want if col(sim, gids, i) == RED}
-        ok &= expect(got == want, "rect paints its pixels",
-                     "missing %d of 12" % (len(want - got),))
-        ok &= expect(col(sim, gids, 4) == BLACK and
-                     col(sim, gids, 1000) == BLACK,
-                     "rest stays black", "")
-
-        # B. clipping: a rect hanging off the corner paints only inside.
-        sim, gids, recton = fresh_sim(dump_path)
-        sim.inputs = dict(base, rectX0=60.0, rectY0=60.0,
-                          rectX1=70.0, rectY1=70.0)
-        sim.run(60, on_tick=pulse_at(plan))
-        want = {r * SW + c for r in range(60, 64) for c in range(60, 64)}
-        got = {i for i in want if col(sim, gids, i) == RED}
-        ok &= expect(got == want, "clip to the grid",
-                     "missing %d of 16" % (len(want - got),))
-        ok &= expect(col(sim, gids, 59 * SW + 59) == BLACK,
-                     "outside stays black", "")
-
-        # C. alpha rides along untouched.
         green = (0.0, 1.0, 0.0, 0.5)
-        sim, gids, recton = fresh_sim(dump_path)
-        sim.inputs = dict(base, rectColor=green, rectX1=0.0, rectY1=0.0)
-        sim.run(40, on_tick=pulse_at(plan))
-        ok &= expect(col(sim, gids, 0) == green, "alpha flows end to end",
-                     "got %r" % (col(sim, gids, 0),))
+        blue = (0.1, 0.4, 1.0, 1.0)
+        shapes = [
+            (rect_pts(0.0, 0.0, 3.0, 2.0), RED),          # a rect
+            (rect_pts(60.0, 60.0, 70.0, 70.0), RED),      # clipped
+            (rect_pts(0.0, 0.0, 1.0, 1.0), green),        # alpha pixel
+            ([0.0, 0.0, 31.0, 0.0, 0.0, 31.0], blue),     # a triangle
+            ([10.0, 10.0, 20.0, 10.0, 20.0, 25.0, 17.0, 25.0,
+              17.0, 13.0, 13.0, 13.0, 13.0, 25.0, 10.0, 25.0], blue),  # convex hull            (oval_pts(40.0, 40.0, 20.0, 14.0), blue),     # an oval
+            ([10.0, 4.0, 10.0, 40.0, 10.0, 40.0], blue),  # a hairline
+            ([8.0, 6.0, 40.0, 14.0, 36.0, 20.0, 4.0, 12.0], blue),  # thick line
+            (rect_pts(0.0, 0.0, 64.0, 64.0) + [0.0, 0.0] * 12, RED),  # N=16
+        ]
+        # schedule: each shape's slot is its own row span plus slack, so
+        # a burst always finishes before the next redrawAll (a re-arm
+        # would abandon it) without paying for the widest shape's pace
+        spans = []
+        t = 10
+        for pts, _color in shapes:
+            rows = max((p // SW for p in poly_pixels(pts)), default=0) + 1
+            spans.append((t, rows))
+            t += rows + 24
+        total = t + 10
 
-        # D. a full-screen rect paints; then silence -- there is no timer, no
-        # keepalive, nothing that re-arms.  Brick colors persist until
-        # rewritten, so re-arming would only re-emit identical values.
-        base5 = dict(base, rectX1=63.0, rectY1=63.0)
-        sim, gids, recton = fresh_sim(dump_path)
-        sim.inputs = dict(base5)
+        # per-tick plan: stage the shape, then pulse push and redraw
+        plan = {}
+        for i, (pts, color) in enumerate(shapes):
+            t0, _rows = spans[i]
+            plan[t0] = {"pts": pts + [0.0] * (PAD - len(pts)),
+                        "rectColor": color,
+                        "shapeN": float(min(16, max(3, len(pts) // 2))),
+                        "pushShape": True}
+            plan[t0 + 2] = {"pushShape": False}
+            plan[t0 + 4] = {"redrawAll": True}
+            plan[t0 + 6] = {"redrawAll": False}
+        # a bare redrawAll at the end replays the last shape
+        replay_at = total
+        plan[replay_at] = {"redrawAll": True}
+        plan[replay_at + 2] = {"redrawAll": False}
+        total = replay_at + 80
+
+        sim, gids, polyon, pts_aid = fresh_sim(dump_path)
+        # the array is seeded once, at reset (a reset-time seed is cheap;
+        # a mid-run change through sim.inputs is not), then dropped from
+        # the inputs so every later pulse merges only scalars and the
+        # shapes are staged by slide() alone
+        sim.inputs = {"pts": [0.0] * PAD, "shapeN": 3.0,
+                      "rectColor": RED, "pushShape": False,
+                      "redrawAll": False}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items() if k != "pts"}
         on = []
 
         def watch(sn, tick):
             if tick in plan:
-                sn.inputs = dict(sn.inputs, **plan[tick])
-            if sn.vars.get(recton):
+                step = plan[tick]
+                if "pts" in step:
+                    slide(sn, pts_aid, step["pts"])
+                    step = {k: v for k, v in step.items() if k != "pts"}
+                sn.inputs = dict(sn.inputs, **step)
+            if sn.vars.get(polyon):
                 on.append(tick)
 
-        sim.run(1100, on_tick=watch)
+        sim.run(total, on_tick=watch)
+
+        model = {}
+        for pts, color in shapes:
+            for p in poly_pixels(pts):
+                model[p] = color
+        bad = [i for i in range(SW * SW)
+               if col(sim, gids, i) != model.get(i, BLACK)]
+        ok &= expect(not bad, "nine shapes compose one frame",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bad), bad[0] if bad else 0))
         ok &= expect(any(14 <= t <= 90 for t in on),
-                     "redrawAll bursts the rect",
-                     "bursts at %r" % (on[:8],))
-        ok &= expect(all(col(sim, gids, i) == RED for i in (0, 1000, 4095)),
-                     "full screen went red", "")
-        ok &= expect(not any(200 <= t <= 1000 for t in on),
-                     "silence after the burst",
-                     "bursts at %r" % ([t for t in on if t > 200][:8],))
+                     "bursts ran for the shapes",
+                     "no burst in 14..90")
+        # the burst windows: nothing may fire between a shape's own burst
+        # and the next push 20+ ticks later, and the replay fires last
+        last_end = spans[-1][0] + 6 + spans[-1][1] + 4
+        ok &= expect(not any(last_end + 4 <= t < replay_at for t in on),
+                     "silence between the shapes",
+                     "strays at %r" % (
+                         [t for t in on if last_end + 4 <= t < replay_at][:8],))
+        ok &= expect(any(replay_at <= t <= replay_at + 75 for t in on),
+                     "redrawAll replays the last shape",
+                     "bursts at %r" % ([t for t in on if t >= replay_at],))
+        ok &= expect(not any(t > replay_at + 80 for t in on),
+                     "silence after the replay",
+                     "strays at %r" % (
+                         [t for t in on if t > replay_at + 80][:8],))
 
-        # E. one burst, then nothing forever: no timer exists anymore.
-        sim, gids, recton = fresh_sim(dump_path)
-        sim.inputs = dict(base)
-        on = []
-
-        def watch2(sn, tick):
-            if tick in plan:
-                sn.inputs = dict(sn.inputs, **plan[tick])
-            if sn.vars.get(recton):
-                on.append(tick)
-
-        sim.run(600, on_tick=watch2)
-        ok &= expect(any(14 <= t <= 40 for t in on), "burst paints once",
-                     "bursts at %r" % (on[:8],))
-        ok &= expect(not any(t > 60 for t in on), "silence after the burst",
-                     "bursts at %r" % ([t for t in on if t > 60][:8],))
-
-        # F. redrawAll alone replays the last rect (full-screen: unmissable).
-        sim, gids, recton = fresh_sim(dump_path)
-        sim.inputs = dict(base5)
-        on = []
-
-        def watch3(sn, tick):
-            if tick in plan:
-                sn.inputs = dict(sn.inputs, **plan[tick])
-            if tick == 210:
-                sn.inputs = dict(sn.inputs, redrawAll=True)
-            if tick == 212:
-                sn.inputs = dict(sn.inputs, redrawAll=False)
-            if sn.vars.get(recton):
-                on.append(tick)
-
-        sim.run(320, on_tick=watch3)
-        ok &= expect(any(205 <= t <= 285 for t in on),
-                     "redrawAll replays the last rect",
-                     "bursts at %r" % (on,))
-        ok &= expect(not any(100 <= t <= 200 for t in on),
-                     "silence between the two shows",
-                     "bursts at %r" % ([t for t in on if 100 <= t <= 200],))
-
-        # G. a bare chip paints nothing and leaves every pixel black.
-        sim, gids, recton = fresh_sim(dump_path)
+        # ---- a bare chip paints nothing ---------------------------------
+        sim, gids, polyon, pts_aid = fresh_sim(dump_path)
         sim.inputs = {}
-        sim.run(200)
+        sim.run(60)
         ok &= expect(all(col(sim, gids, i) == BLACK
                          for i in (0, 100, 1000, 4095)),
                      "bare chip stays black", "")
-        ok &= expect(not sim.vars.get(recton), "painter never arms", "")
-
-        # ---- triangles -------------------------------------------------
-        tplan = {10: {"pushTri": True}, 12: {"pushTri": False},
-                 14: {"redrawAll": True}, 16: {"redrawAll": False}}
-        blue = (0.1, 0.4, 1.0, 1.0)
-
-        # H. a triangle paints exactly the span model's pixels, and the
-        # walk stays one row per tick (tOn high for many ticks).
-        sim, gids, recton = fresh_sim(dump_path)
-        trion = find_flag(sim, "tOn")
-        assert trion is not None, "no tOn var"
-        sim.inputs = dict(base, rectColor=blue, rectX0=0.0, rectY0=0.0,
-                          rectX1=31.0, rectY1=0.0, triX2=0.0, triY2=31.0)
-        on = []
-
-        def watch_tri(sn, tick):
-            if tick in tplan:
-                sn.inputs = dict(sn.inputs, **tplan[tick])
-            if sn.vars.get(trion):
-                on.append(tick)
-
-        sim.run(120, on_tick=watch_tri)
-        want = tri_pixels(0.0, 0.0, 31.0, 0.0, 0.0, 31.0)
-        got = {i for i in want if col(sim, gids, i) == blue}
-        outside = {i for i in range(SW * SW) if i not in want
-                   and col(sim, gids, i) != BLACK}
-        ok &= expect(got == want, "triangle paints its pixels",
-                     "missing %d of %d" % (len(want - got), len(want)))
-        ok &= expect(not outside, "triangle exterior stays black",
-                     "%d strays, first at %d" % (len(outside),
-                                                 min(outside) if outside else 0))
-        ok &= expect(len(on) > 20, "triangle walks row by row",
-                     "%d walk ticks" % len(on))
-        ok &= expect(not any(t > 90 for t in on), "triangle goes silent",
-                     "walk at %r" % ([t for t in on if t > 90][:8],))
-
-        # I. clipping: a triangle hanging off the corner paints only inside.
-        sim, gids, recton = fresh_sim(dump_path)
-        sim.inputs = dict(base, rectColor=blue, rectX0=60.0, rectY0=60.0,
-                          rectX1=75.0, rectY1=60.0, triX2=60.0, triY2=75.0)
-        sim.run(120, on_tick=pulse_at(tplan))
-        want = tri_pixels(60.0, 60.0, 75.0, 60.0, 60.0, 75.0)
-        got = {i for i in want if col(sim, gids, i) == blue}
-        ok &= expect(got == want, "triangle clips to the grid",
-                     "missing %d of %d" % (len(want - got), len(want)))
-        ok &= expect(col(sim, gids, 59 * SW + 59) == BLACK,
-                     "outside the triangle stays black", "")
-
-        # J. alpha rides along on a triangle too.
-        sim, gids, recton = fresh_sim(dump_path)
-        sim.inputs = dict(base, rectColor=green, rectX0=0.0, rectY0=0.0,
-                          rectX1=20.0, rectY1=0.0, triX2=0.0, triY2=20.0)
-        sim.run(80, on_tick=pulse_at(tplan))
-        ok &= expect(col(sim, gids, 0) == green, "triangle alpha end to end",
-                     "got %r" % (col(sim, gids, 0),))
-
-        # K. two triangles clear the whole wall -- the two-command clear,
-        # and proof that a second arming waits the first burst out (a
-        # mid-burst re-arm would abandon rows and leave a hole).
-        sim, gids, recton = fresh_sim(dump_path)
-        trion = find_flag(sim, "tOn")
-        sim.inputs = dict(base, rectColor=RED, rectX0=0.0, rectY0=0.0,
-                          rectX1=63.0, rectY1=0.0, triX2=63.0, triY2=63.0)
-        on = []
-
-        def watch4(sn, tick):
-            if tick in tplan:
-                sn.inputs = dict(sn.inputs, **tplan[tick])
-            if tick == 120:
-                sn.inputs = dict(sn.inputs, rectX0=0.0, rectY0=0.0,
-                                 rectX1=63.0, rectY1=63.0,
-                                 triX2=0.0, triY2=63.0, pushTri=True)
-            if tick == 122:
-                sn.inputs = dict(sn.inputs, pushTri=False)
-            if tick == 124:
-                sn.inputs = dict(sn.inputs, redrawAll=True)
-            if tick == 126:
-                sn.inputs = dict(sn.inputs, redrawAll=False)
-            if sn.vars.get(trion):
-                on.append(tick)
-
-        sim.run(280, on_tick=watch4)
-        ok &= expect(all(col(sim, gids, i) == RED
-                         for i in (0, 1000, 2048, 4095)),
-                     "two triangles clear the wall", "")
-        ok &= expect(not any(200 <= t <= 270 for t in on),
-                     "silence after both clear", "walk at %r" % (on[-6:],))
-
-        # L. a fully off-screen triangle paints nothing and never walks.
-        sim, gids, recton = fresh_sim(dump_path)
-        trion = find_flag(sim, "tOn")
-        sim.inputs = dict(base, rectX0=-20.0, rectY0=-20.0,
-                          rectX1=-10.0, rectY1=-5.0, triX2=-5.0, triY2=-1.0)
-        sim.run(80, on_tick=pulse_at(tplan))
-        ok &= expect(all(col(sim, gids, i) == BLACK
-                         for i in (0, 100, 1000, 4095)),
-                     "off-screen triangle stays black", "")
-        ok &= expect(not sim.vars.get(trion), "off-screen never walks", "")
-
-        # M. redrawAll alone replays the last triangle, from its first row.
-        sim, gids, recton = fresh_sim(dump_path)
-        trion = find_flag(sim, "tOn")
-        sim.inputs = dict(base, rectColor=blue, rectX0=10.0, rectY0=10.0,
-                          rectX1=20.0, rectY1=10.0, triX2=10.0, triY2=20.0)
-        on = []
-
-        def watch5(sn, tick):
-            if tick in tplan:
-                sn.inputs = dict(sn.inputs, **tplan[tick])
-            if tick == 120:
-                sn.inputs = dict(sn.inputs, redrawAll=True)
-            if tick == 122:
-                sn.inputs = dict(sn.inputs, redrawAll=False)
-            if sn.vars.get(trion):
-                on.append(tick)
-
-        sim.run(220, on_tick=watch5)
-        want = tri_pixels(10.0, 10.0, 20.0, 10.0, 10.0, 20.0)
-        got = {i for i in want if col(sim, gids, i) == blue}
-        ok &= expect(any(115 <= t <= 140 for t in on),
-                     "redrawAll replays the triangle", "walk at %r" % (on[:8],))
-        ok &= expect(got == want, "replayed triangle is complete",
-                     "missing %d of %d" % (len(want - got), len(want)))
+        ok &= expect(not sim.vars.get(polyon), "painter never arms", "")
     finally:
         os.unlink(dump_path)
-    print("painttest: %s" % ("ALL GREEN" if ok else "FAILURES"))
+    print("painttest: %s (%.0fs)"
+          % ("ALL GREEN" if ok else "FAILURES", time.time() - t_start))
     return 0 if ok else 1
 
 

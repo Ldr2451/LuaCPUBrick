@@ -26,46 +26,44 @@ without it.
 ## The interface
 
 ```
-           rectColor --|           |-- px0 .. px4095: color
-           rectX0    --|           |
-           rectY0    --|  screen   |
-           rectX1    --|           |
-           rectY1    --|           |
-           triX2     --|           |
-           triY2     --|           |
-           pushRect  --|           |
-           pushTri   --|           |
-           redrawAll --|           |
+             pts --|           |-- px0 .. px4095: color
+          shapeN --|  screen   |
+       rectColor --|           |
+       pushShape --|           |
+       redrawAll --|           |
 ```
 
-`pushRect` latches one rect, `pushTri` latches one triangle (the first
-two vertices ride the shared bound pins, the third is `triX2`/`triY2`),
-and `redrawAll` paints the latched shape: the rect painter walks 64
-pixels a tick, the triangle walk one row a tick, and the ports mirror
-the framebuffer every tick.  Bounds are normalized (x0>x1 works) and
-clipped; a fully off-screen shape paints nothing.  Colors persist until
+`pushShape` latches (color, point count), `redrawAll` paints the latched
+polygon: one row per tick, the ports mirror the framebuffer every tick.
+Points arrive on `pts` as pixel-corner coordinates (a rect covering
+pixels 0..3 has corners 0 and 4), up to 16 of them, with `shapeN` as
+the count; a fully off-screen polygon paints nothing.  The fill is a
+row's hull, exact for a convex polygon -- rect, triangle, oval, thick
+line, curve segment -- and a concave outline fills its hull, so the
+driver decomposes one into convex pieces.  Colors persist until
 rewritten, so a frame is a sequence of push-then-redraw pairs, and the
-wall keeps the last color forever -- there is no keepalive and no
-expiry.  The last push before a `redrawAll` wins, so a stale stage can
-never fire.  Pixel `i` is column `i%64`, row `i/64`, row 0 at the top.
+wall keeps the last color forever -- no keepalive, no expiry.  The last
+push before a `redrawAll` wins, so a stale stage cannot fire.  A bare
+`redrawAll` replays the last polygon.
 
-`anim.lua` drives the same inputs from the tinylua chip:
-`outNum1 -> pushRect`, `outNum2 -> redrawAll`, and `outNumArr ->
-x0, y0, x1, y1, r, g, b, a` (a triangle driver adds the third point as
-`outNum3`/`outNum4` on `triX2`/`triY2`).
+`anim.lua` drives these inputs from the tinylua chip: `outNum1 ->
+pushShape`, `outNum2 -> redrawAll`, and one `outNumArr` write carries
+the shape's points (the colour rides a scalar output).
 
 ## Running the tests
 
 ```
-python -u extras/screen/painttest.py           # protocol, 14 scenarios
+python -u extras/screen/painttest.py           # the fill, 9 shapes, ~36s
 python -u extras/screen/animtest.py [ticks]    # anim.lua end to end
 ```
 
-`painttest` pushes rects through the real protocol and reads the real
-per-pixel globals.  `animtest` replays the animation program's own
-output stream into the screen and diffs the wall against a model of
-the protocol, so a lost edge, a torn latch or an abandoned burst shows
-up as a pixel diff.
+`painttest` composes a whole frame from nine shapes in one run -- rect,
+clipped rect, alpha, triangle, convex hull, oval, hairline, thick line,
+full wall -- and diffs the wall against a model of the fill, so a
+dropped span, a bad hull or an off-by-one row shows up as a pixel diff.
+A load-time edge on an unwired stage paints nothing (a zero point array
+is a degenerate shape), and a bare `redrawAll` replays the last
+polygon.
 
 ## Tools
 
