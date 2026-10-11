@@ -97,11 +97,20 @@ Contract the pass satisfies (all verified by re-parsing the artifact):
   not the microbrick's, and applying it false-fires on any spaced wall).
 - chip ports, painter and protocol untouched: without `--wall` the world is
   byte-identical to the stock compiler's output.
+- the `px` outputs carry NO `@right` side annotation.  A side annotation
+  would place a physical rerouter pin per port -- 4096 pins in an
+  ~8,200-unit line, stretching the prefab pivot to a 4,125-unit
+  half-extent.  The game deserialized and cached that file but never
+  listed the creation.  The pins bought nothing anyway: the wall wires
+  tap the inner `MicrochipOutput` gates directly by remote wire, so the
+  pass drops them and the pivot returns to 64x12x64.  Only the 7
+  driven inputs keep `@left` pins.
 
 Measured on the shipped `screen.brz`: 4096 changer structs all
-`Color=(0,0,0,255)`; 4096 changer wires + 4096 pin wires on the outer grid;
-70,366 wire endpoints re-validated against the game loader's own resolution
-rules, 0 bad; `painttest` 14/14; chip still ~17.7k nodes.
+`Color=(0,0,0,255)`; outer grid 4104 bricks / 4096 wires / 4112
+components (wall + chip shell + 7 input pins); 62,174 wire endpoints
+re-validated against the game loader's own resolution rules, 0 bad;
+`painttest` 14/14; chip still ~17.7k nodes.
 
 ## In-game checklist
 
