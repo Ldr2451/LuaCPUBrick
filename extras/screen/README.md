@@ -119,3 +119,57 @@ re-validated against the game loader's own resolution rules, 0 bad;
   a 1.0/0.0 float, else they want float edge-detect inputs.
 - Alpha: the color channel flows end to end (tested to 0.5 in-sim); whether a
   brick renders it see-through is game-only.
+
+## Animation driver (`anim.lua`)
+
+A Lua program for the tinylua chip that paints the wall as a slowly
+drawn spirograph: two 8x8 rainbow tracer blocks sweep opposite halves
+of one hypotrochoid around a softly glowing core, five parameter sets
+run in a row with a breathing hold and a one-burst black fade between
+them.  Brick colors persist until rewritten, so persistence is the
+medium: the curve accumulates instead of being redrawn.
+
+Wiring (all numeric, so 1->1 works):
+
+```
+outNum1   -> pushRect     pulse 1 then 0
+outNum2   -> redrawAll    pulse 1 then 0, after each push
+outNumArr -> x0, y0, x1, y1, r, g, b, a   (array elements 1..8)
+```
+
+The program is built around four measured chip facts, each a lesson
+worth keeping:
+
+- calls are capped at 8 parameters, so the 8 rect params leave as two
+  `outNumArr` writes (bounds at slot 1, color at slot 5) -- the first
+  version sent 9 and the compiler rejected it
+- `clock()` advances 0.01 per tick, so a pulse held across one clock
+  change is high for a full tick -- the screen's `on Change` ports see
+  a real edge, and every burst is waited out so a `redrawAll` can never
+  catch a burst mid-flight (a re-arm repaints the half-done rect with
+  the new color)
+- the painter forms its pixel index as `ly*64 + lx` and truncates the
+  SUM once, so bounds are snapped to whole pixels (`//1.0`, a third of
+  a `math.floor` call) -- a fractional y bleeds 64ths of a tile into x
+- the lexer runs 2 chars/tick, so source size is boot time: expect
+  ~2,800 ticks (~28s of sim, ~45s at 60Hz) from `run` high to the
+  first pixel
+
+Measured pace: 2 rects a frame, ~130 ticks a frame, a curve closes in
+38-75 frames (1.4-2.7 minutes at 60Hz) per set.
+
+Verify end-to-end without the game -- the test replays the program's
+real port stream into the screen chip and diffs the wall against a
+Python model of the protocol:
+
+```
+python -u extras/screen/animtest.py [ticks]    (default 3600)
+```
+
+It checks the compile is clean (errors land in `progDebug`, not
+`runErrors`), pulses alternate push-then-redraw with every burst
+awaited, colors stay in 0..1, and every painted pixel matches the
+model.  A cleared/hold/rotate cycle needs ~20k ticks and the screen
+sim is slow at that length (the 4096-slot scanout every tick), so the
+default window covers the draw loop; the full cycle was checked by
+hand.
