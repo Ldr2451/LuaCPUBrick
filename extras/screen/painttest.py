@@ -1,22 +1,26 @@
 """Functional test for the wall screen: drive it, read the pixel globals.
 
-The screen takes a point array and fills polygons, so this pushes real
-shapes through the real protocol and reads the real per-pixel globals
-(g0..g4095) the save wires to the bricks.  A Python model of the fill
-(same edge records, same crossings, same sort, same clamping) pins the
-exact pixels, so a dropped span, a bad sort or an off-by-one row shows
-up as a diff.
+The screen takes a point array and a per-point colour array, fills
+polygons with true scanline interpolation, and strokes 2px quads,
+so this pushes real shapes through the real protocol and reads the
+real per-pixel globals (g0..g4095) the save wires to the bricks.
+A Python model of the fill (same edge records, same crossings,
+same sort, same clamping) pins the exact pixels, so a dropped span,
+a bad sort or an off-by-one row shows up as a diff.  Shapes whose
+points all share one colour interpolate to that colour exactly, so
+the flat-colour model below still pins them pixel-exact; the
+per-point interpolation gets its own exact section at the end.
 
-One sim run composes a whole frame from nine shapes in sequence -- the
-driver's actual usage -- because the chip's boot and the 4096-slot
-scanout (~67ms a tick in the sim, the price of mirroring a framebuffer
-into 4096 ports) dominate any per-scenario split.  Shapes are staged by
-writing the port's delivered array in place: re-seeding through
-sim.inputs re-materialises the port on every change, which costs
-seconds a tick in the sim, while the in-place write is the same wire
-event at the normal rate.
+One sim run composes a whole frame from nine shapes in sequence --
+the driver's actual usage -- because the chip's boot and the
+4096-slot scanout (~67ms a tick in the sim, the price of mirroring
+a framebuffer into 4096 ports) dominate any per-scenario split.
+Shapes are staged by writing the port's delivered array in place:
+re-seeding through sim.inputs re-materialises the port on every
+change, which costs seconds a tick in the sim, while the in-place
+write is the same wire event at the normal rate.
 
-  python -u extras/screen/painttest.py   (exit 0 = all green; ~36s)
+  python -u extras/screen/painttest.py   (exit 0 = all green)
 """
 import math
 import os
@@ -27,12 +31,16 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "irrun"))
+sys.path.insert(0, os.path.join(HERE))
 
 from irsims import (  # noqa: E402
     sim_from_dump,
     share_dump,
     _extract,
 )
+import colormath  # noqa: E402
+
+colormath.install()
 
 WS = os.path.join(HERE, "screen.ws")
 SW = 64
@@ -48,6 +56,7 @@ def fresh_sim(dump_path):
     polyon = None
     son = None
     pts_aid = None
+    cols_aid = None
     for nid, nd in sim.nodes.items():
         lb = _extract(nd.props.get("_label", ("raw", "")))
         if not isinstance(lb, str):
@@ -60,11 +69,14 @@ def fresh_sim(dump_path):
             son = nid
         elif _extract(nd.props.get("PortLabel", ("raw", ""))) == "shapePoints":
             pts_aid = nid
+        elif _extract(nd.props.get("PortLabel", ("raw", ""))) == "shapeColors":
+            cols_aid = nid
     assert len(gids) == SW * SW, "globals found: %d" % len(gids)
     assert polyon is not None, "no polyOn var"
     assert son is not None, "no sOn var"
     assert pts_aid is not None, "no shapePoints port"
-    return sim, gids, polyon, son, pts_aid
+    assert cols_aid is not None, "no shapeColors port"
+    return sim, gids, polyon, son, pts_aid, cols_aid
 
 
 def col(sim, gids, i):
@@ -78,6 +90,16 @@ def expect(cond, label, detail=""):
     print("%-38s %s %s" % (label, "OK  " if cond else "FAIL",
                            detail if not cond else ""))
     return cond
+
+
+def close(a, b, tol=1e-9):
+    """Channel-wise near-equality (the chip multiplies by the
+    reciprocal where the model divides, so last-ulp differences
+    are expected on irrational geometry)."""
+    if isinstance(a, (tuple, list)) and isinstance(b, (tuple, list)):
+        return len(a) == len(b) and all(
+            abs(float(x) - float(y)) <= tol for x, y in zip(a, b))
+    return a == b
 
 
 def poly_pixels(pts):
@@ -207,6 +229,174 @@ def stroke_pixels(pts):
     return out
 
 
+def poly_colors(pts, colors):
+    """The chip's interpolated fill: pixel -> colour.
+
+    A transcription of gen.py's colour path -- the same edge
+    records, each straddling edge's crossing colour lerped
+    along the edge from its own start point (the endpoint
+    colours), the min/max winners' colours, then the span
+    lerp between them -- so chip and test agree by
+    construction.  A flat colour list reproduces the flat
+    model exactly; per-point lists give the gradient.
+    """
+    WHITE = (1.0, 1.0, 1.0, 1.0)
+    n = len(pts) // 2
+    if n < 3:
+        return {}
+    pts = list(pts) + [0.0] * (32 - len(pts))
+    colors = list(colors) + [WHITE] * (16 - len(colors))
+    edges = []
+    gyMin, gyMax = 200.0, -200.0
+    gxMin, gxMax = 200.0, -200.0
+    for i in range(16):
+        px, py = pts[2 * i], pts[2 * i + 1]
+        j = i + 1 if (i + 1) < n else 0
+        qx, qy = pts[2 * j], pts[2 * j + 1]
+        dx, dy = qx - px, qy - py
+        s = dx / dy if dy != 0.0 else 0.0
+        dny = qy - py
+        ein = 1.0 / dny if dny != 0.0 else 0.0
+        lo, hi = (py, qy) if py < qy else (qy, py)
+        if i < n:
+            elo, ehi = lo, hi
+            gyMin = min(gyMin, py)
+            gyMax = max(gyMax, py)
+            gxMin = min(gxMin, px)
+            gxMax = max(gxMax, px)
+        else:
+            elo, ehi = 200.0, -200.0
+        edges.append((px, py, s, elo, ehi, ein,
+                      colors[i], colors[j]))
+    if gyMax < 0.0 or gyMin >= 64.0 or gxMax < 0.0 or gxMin >= 64.0:
+        return {}
+    first = 0.0 if gyMin < 0.0 else float(int(gyMin))
+    last = 63.0 if gyMax >= 64.0 else float(int(gyMax))
+    out = {}
+    row = first
+    while row <= last:
+        # Two masks, one per reduction, exactly as the chip's trees
+        # need: the min wants its dead edges large, the max small.
+        xmn, xmx, cs = [], [], []
+        for ex, ey, es, elo, ehi, ein, ci, cj in edges:
+            if elo <= row < ehi:
+                x = ex + es * (row - ey)
+                xmn.append(x)
+                xmx.append(x)
+                t = (row - ey) * ein
+                cs.append(tuple(ci[k] + t * (cj[k] - ci[k])
+                                for k in range(4)))
+            else:
+                xmn.append(200.0)
+                xmx.append(-200.0)
+                cs.append(WHITE)
+        lo, hi = min(xmn), max(xmx)
+        if not (lo >= 200.0 or hi < 0.0 or lo >= 64.0):
+            l = 0.0 if lo < 0.0 else float(int(lo))
+            r = 63.0 if hi >= 64.0 else float(int(hi))
+            if l <= r:
+                cLo = cs[xmn.index(lo)]
+                cHi = cs[xmx.index(hi)]
+                span = hi - lo
+                inv = 1.0 / span if span > 0.0 else 0.0
+                slope = tuple((cHi[k] - cLo[k]) * inv
+                              for k in range(4))
+                for c in range(int(l), int(r) + 1):
+                    tj = float(c)
+                    out[int(row) * SW + c] = tuple(
+                        cLo[k] + slope[k] * (tj - lo)
+                        for k in range(4))
+        row += 1.0
+    return out
+
+
+def stroke_colors(pts, colors):
+    """The chip's interpolated stroke: pixel -> colour.
+
+    A transcription of gen.py's stroke colour path -- the
+    quad's four corners carry (cA, cB, cB, cA), each sloped
+    edge lerps its endpoints' colours by the row parameter,
+    the caps stay flat, the min/max winners' colours then
+    lerp across the span.  The dot takes its point's colour.
+    """
+    WHITE = (1.0, 1.0, 1.0, 1.0)
+    n = len(pts) // 2
+    if n < 1:
+        return {}
+    colors = list(colors) + [WHITE] * (16 - len(colors))
+    if n == 1:
+        x, y = pts[0], pts[1]
+        if x < 0.0 or x >= 64.0 or y < 0.0 or y >= 64.0:
+            return {}
+        out = {}
+        for dr in (0, 1):
+            for dc in (0, 1):
+                r, c = int(y) + dr, int(x) + dc
+                if r < 64 and c < 64:
+                    out[r * SW + c] = colors[0]
+        return out
+    out = {}
+    for i in range(n - 1):
+        ax, ay = pts[2 * i], pts[2 * i + 1]
+        bx, by = pts[2 * i + 2], pts[2 * i + 3]
+        dx, dy = bx - ax, by - ay
+        if dx * dx + dy * dy <= 0.0:
+            continue
+        l = math.sqrt(dx * dx + dy * dy)
+        tx, ty = dx / l, dy / l
+        nx, ny = -ty, tx
+        sax, say = ax - tx, ay - ty
+        sbx, sby = bx + tx, by + ty
+        quad = [(sax + nx, say + ny), (sbx + nx, sby + ny),
+                (sbx - nx, sby - ny), (sax - nx, say - ny)]
+        qc = [colors[i], colors[i + 1], colors[i + 1], colors[i]]
+        ys = [q[1] for q in quad]
+        first = 0.0 if min(ys) < 0.0 else float(int(min(ys)))
+        last = 63.0 if max(ys) >= 64.0 else float(int(max(ys)))
+        row = first
+        while row <= last:
+            # Two masks, one per reduction: the min wants its dead
+            # crossings large, the max small (the chip's u-trees).
+            xmn, xmx, cs = [], [], []
+            for k in range(4):
+                x0, y0 = quad[k]
+                x1, y1 = quad[(k + 1) % 4]
+                lo, hi = (y0, y1) if y0 < y1 else (y1, y0)
+                if lo <= row < hi:
+                    s = (x1 - x0) / (y1 - y0) if y1 != y0 else 0.0
+                    xmn.append(x0 + s * (row - y0))
+                    xmx.append(x0 + s * (row - y0))
+                    if y1 != y0:
+                        t = (row - y0) / (y1 - y0)
+                        cs.append(tuple(qc[k][m] + t * (qc[(k + 1) % 4][m]
+                                                        - qc[k][m])
+                                        for m in range(4)))
+                    else:
+                        cs.append(qc[k])
+                else:
+                    xmn.append(200.0)
+                    xmx.append(-200.0)
+                    cs.append(WHITE)
+            lo, hi = min(xmn), max(xmx)
+            if not (lo >= 200.0 or hi < 0.0 or lo >= 64.0):
+                l = 0.0 if lo < 0.0 else float(int(lo))
+                r = 63.0 if hi >= 64.0 else float(int(hi))
+                if l <= r:
+                    cLo = cs[xmn.index(lo)]
+                    cHi = cs[xmx.index(hi)]
+                    span = hi - lo
+                    inv = 1.0 / span if span > 0.0 else 0.0
+                    slope = tuple((cHi[k] - cLo[k]) * inv
+                                  for k in range(4))
+                    for c in range(int(l), int(r) + 1):
+                        tj = float(c)
+                        out[int(row) * SW + c] = tuple(
+                            cLo[k] + slope[k] * (tj - lo)
+                            for k in range(4))
+            row += 1.0
+    return out
+
+
 def rect_pts(x0, y0, x1, y1):
     return [x0, y0, x1, y0, x1, y1, x0, y1]
 
@@ -219,16 +409,18 @@ def oval_pts(cx, cy, rx, ry, k=16):
     return pts
 
 
-def slide(sim, pts_aid, values):
-    """Deliver a new point array on the port's wire.
+def slide(sim, pts_aid, cols_aid, values, colors=None):
+    """Deliver a new point array (and its colour array) on the ports.
 
-    The array object is replaced, not patched: the count IS the length,
-    so a shorter shape must arrive as a shorter list.  Going through
-    sim.inputs re-materialises the port on every change, which costs
-    seconds a tick in the sim, while replacing the delivered value is
-    the same wire event at the normal rate.
+    The array objects are replaced, not patched: the count IS the
+    length, so a shorter shape must arrive as a shorter list.  Going
+    through sim.inputs re-materialises the port on every change, which
+    costs seconds a tick in the sim, while replacing the delivered
+    value is the same wire event at the normal rate.
     """
     sim.arrays[pts_aid] = list(values)
+    if colors is not None:
+        sim.arrays[cols_aid] = list(colors)
 
 
 def main():
@@ -252,7 +444,7 @@ def main():
             (rect_pts(0.0, 0.0, 64.0, 64.0) + [0.0, 0.0] * 12, RED),  # N=16
         ]
         # schedule: each shape's slot is its own row span plus slack, so
-        # a burst always finishes before the next redrawAll (a re-arm
+        # a burst always finishes before the next drawAll (a re-arm
         # would abandon it) without paying for the widest shape's pace.
         # Params stage a full two ticks before the push: the sim delivers
         # a same-tick color+push merge unreliably (the detector fires but
@@ -274,27 +466,27 @@ def main():
         for i, (pts, color) in enumerate(shapes):
             t0, _rows = spans[i]
             plan[t0] = {"shapePoints": list(pts),
-                        "shapeColor": color,
+                        "shapeColors": [color] * (len(pts) // 2),
                         "wireMode": False, "shapeId": 0.0}
             plan[t0 + 2] = {"pushShape": True}
             plan[t0 + 4] = {"pushShape": False}
-            plan[t0 + 6] = {"redrawAll": True}
-            plan[t0 + 8] = {"redrawAll": False}
-        # a bare redrawAll at the end replays the last shape
+            plan[t0 + 6] = {"drawAll": True}
+            plan[t0 + 8] = {"drawAll": False}
+        # a bare drawAll at the end replays the last shape
         replay_at = total
-        plan[replay_at] = {"redrawAll": True}
-        plan[replay_at + 2] = {"redrawAll": False}
+        plan[replay_at] = {"drawAll": True}
+        plan[replay_at + 2] = {"drawAll": False}
         total = replay_at + 80
 
-        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         # the array is seeded once, at reset (a reset-time seed is cheap;
         # a mid-run change through sim.inputs is not), then dropped from
         # the inputs so every later pulse merges only scalars and the
         # shapes are staged by slide() alone.  Each shape's array is
         # exactly as long as its point list: the count IS the length.
-        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False,
+                      "shapeId": 0.0, "drawAll": False,
                       "clearAll": False}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
@@ -306,9 +498,10 @@ def main():
             if tick in plan:
                 step = plan[tick]
                 if "shapePoints" in step:
-                    slide(sn, pts_aid, step["shapePoints"])
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
                     step = {k: v for k, v in step.items()
-                            if k != "shapePoints"}
+                            if k != "shapePoints" and k != "shapeColors"}
                 sn.inputs = dict(sn.inputs, **step)
             if sn.vars.get(polyon):
                 on.append(tick)
@@ -337,7 +530,7 @@ def main():
                      "strays at %r" % (
                          [t for t in on if last_end + 4 <= t < replay_at][:8],))
         ok &= expect(any(replay_at <= t <= replay_at + 75 for t in on),
-                     "redrawAll replays the last shape",
+                     "drawAll replays the last shape",
                      "bursts at %r" % ([t for t in on if t >= replay_at],))
         ok &= expect(not any(t > replay_at + 80 for t in on),
                      "silence after the replay",
@@ -351,6 +544,72 @@ def main():
                      "phantom stroke goes silent",
                      "walk at %r" % ([t for t in son_on if t > 40][:8],))
 
+        # ---- per-point colours interpolate across the fill -------------
+        # A 4x4 rect whose four corners carry four different colours:
+        # every pixel is the scanline interpolation of its row's two
+        # crossing colours (each itself lerped along its edge), so the
+        # corners keep their colour and the interior blends.  The model
+        # transcribes the chip's colour path, so the exact channel
+        # values pin the interpolation.
+        grad_pts = [0.0, 0.0, 4.0, 0.0, 4.0, 4.0, 0.0, 4.0]
+        grad_cols = [RED, (0.0, 1.0, 0.0, 1.0),
+                     (0.0, 0.0, 1.0, 1.0), (1.0, 1.0, 0.0, 1.0)]
+        gplan = {}
+        t = 10
+        gplan[t] = {"shapePoints": list(grad_pts),
+                    "shapeColors": list(grad_cols),
+                    "wireMode": False, "shapeId": 0.0}
+        gplan[t + 2] = {"pushShape": True}
+        gplan[t + 4] = {"pushShape": False}
+        gplan[t + 6] = {"drawAll": True}
+        gplan[t + 8] = {"drawAll": False}
+        gtotal = t + 80
+
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "drawAll": False,
+                      "clearAll": False}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+
+        def watchg(sn, tick):
+            if tick in gplan:
+                step = gplan[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints" and k != "shapeColors"}
+                sn.inputs = dict(sn.inputs, **step)
+
+        sim.run(gtotal, on_tick=watchg)
+
+        gmodel = poly_colors(grad_pts, grad_cols)
+        badg = [i for i in range(SW * SW)
+                if not close(col(sim, gids, i), gmodel.get(i, BLACK))]
+        ok &= expect(not badg, "per-point colours interpolate",
+                     "%d of 4096 differ, first at %d"
+                     % (len(badg), badg[0] if badg else 0))
+        # a 4x4 rect covers rows 0..3 (the fill's y range is
+        # half-open): row 0's corners are the pure endpoint
+        # colours, row 3's edges are the 75% blends
+        ok &= expect(close(col(sim, gids, 0), RED)
+                     and close(col(sim, gids, 4), grad_cols[1]),
+                     "top corners keep their colours",
+                     "%r %r" % (col(sim, gids, 0), col(sim, gids, 4)))
+        ok &= expect(close(col(sim, gids, 3 * SW), (1.0, 0.75, 0.0, 1.0))
+                     and close(col(sim, gids, 3 * SW + 4),
+                               (0.0, 0.25, 0.75, 1.0)),
+                     "bottom row edges blend to 75%",
+                     "%r %r" % (col(sim, gids, 3 * SW),
+                                col(sim, gids, 3 * SW + 4)))
+        ok &= expect(close(col(sim, gids, 2 * SW + 2),
+                           (0.5, 0.5, 0.25, 1.0)),
+                     "centre is the four-way blend",
+                     "%r" % (col(sim, gids, 2 * SW + 2),))
+
         # ---- strokes: a wireframe, an open curve, a dot ------------------
         # One more composed run: the stroke walk paints 2px quads along
         # consecutive pairs (no wrap), so a wireframe repeats its first
@@ -358,10 +617,13 @@ def main():
         # after the array is overwritten with junk, which proves the
         # replay restores the preserved points instead of re-reading.
         strokes = [
-            ([5.0, 30.0, 20.0, 15.0, 35.0, 30.0], blue),   # open curve
-            ([40.0, 40.0], blue),                           # a dot
+            ([5.0, 30.0, 20.0, 15.0, 35.0, 30.0],
+             [blue, blue]),                        # open curve
+            ([40.0, 40.0], [blue]),                           # a dot
             ([10.0, 10.0, 20.0, 10.0, 20.0, 20.0, 10.0, 20.0,
-              10.0, 10.0], blue),                           # wireframe square
+              10.0, 10.0], [blue] * 5),                     # wireframe square
+            ([2.0, 8.0, 6.0, 12.0],
+             [RED, blue]),                   # diagonal, red -> blue
         ]
         spans2 = []
         t = 10
@@ -370,28 +632,28 @@ def main():
             spans2.append((t, rows))
             t += rows + 34
         plan2 = {}
-        for i, (pts, color) in enumerate(strokes):
+        for i, (pts, cols) in enumerate(strokes):
             t0, _rows = spans2[i]
             plan2[t0] = {"shapePoints": list(pts),
-                         "shapeColor": color,
+                         "shapeColors": list(cols),
                          "wireMode": True, "shapeId": 0.0}
             plan2[t0 + 2] = {"pushShape": True}
             plan2[t0 + 4] = {"pushShape": False}
-            plan2[t0 + 6] = {"redrawAll": True}
-            plan2[t0 + 8] = {"redrawAll": False}
+            plan2[t0 + 6] = {"drawAll": True}
+            plan2[t0 + 8] = {"drawAll": False}
         # overwrite the array with junk, then replay: the wall must still
         # show the staged square, not the junk
         junk_at = t + 4
         plan2[junk_at] = {"shapePoints": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]}
         replay2_at = t + 14
-        plan2[replay2_at] = {"redrawAll": True}
-        plan2[replay2_at + 2] = {"redrawAll": False}
+        plan2[replay2_at] = {"drawAll": True}
+        plan2[replay2_at + 2] = {"drawAll": False}
         total2 = replay2_at + 60
 
-        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
-        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False,
+                      "shapeId": 0.0, "drawAll": False,
                       "clearAll": False}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
@@ -403,9 +665,10 @@ def main():
             if tick in plan2:
                 step = plan2[tick]
                 if "shapePoints" in step:
-                    slide(sn, pts_aid, step["shapePoints"])
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
                     step = {k: v for k, v in step.items()
-                            if k != "shapePoints"}
+                            if k != "shapePoints" and k != "shapeColors"}
                 sn.inputs = dict(sn.inputs, **step)
             if sn.vars.get(son):
                 on2.append(tick)
@@ -415,19 +678,19 @@ def main():
         sim.run(total2, on_tick=watch2)
 
         model2 = {}
-        for pts, color in strokes:
-            for p in stroke_pixels(pts):
-                model2[p] = color
+        for pts, cols in strokes:
+            for p, c in stroke_colors(pts, cols).items():
+                model2[p] = c
         bad = [i for i in range(SW * SW)
-               if col(sim, gids, i) != model2.get(i, BLACK)]
-        ok &= expect(not bad, "wireframe, curve and dot compose",
+               if not close(col(sim, gids, i), model2.get(i, BLACK))]
+        ok &= expect(not bad, "wireframe, curve, dot and gradient compose",
                      "%d of 4096 differ, first at %d"
                      % (len(bad), bad[0] if bad else 0))
         ok &= expect(not on2p or not any(t > 40 for t in on2p),
                      "phantom fill goes silent",
                      "walk at %r" % ([t for t in on2p if t > 40][:8],))
         ok &= expect(any(replay2_at <= t <= replay2_at + 50 for t in on2),
-                     "redrawAll replays the staged stroke",
+                     "drawAll replays the staged stroke",
                      "bursts at %r" % ([t for t in on2 if t >= replay2_at],))
         ok &= expect(not any(t > replay2_at + 55 for t in on2),
                      "silence after the stroke replay",
@@ -455,22 +718,23 @@ def main():
         t = 10
         ends = []
         for pts, color, sid in rcommits:
-            rplan[t] = {"shapePoints": list(pts), "shapeColor": color,
+            rplan[t] = {"shapePoints": list(pts),
+                        "shapeColors": [color] * (len(pts) // 2),
                         "wireMode": False, "shapeId": sid}
             rplan[t + 2] = {"pushShape": True}
             rplan[t + 4] = {"pushShape": False}
-            rplan[t + 6] = {"redrawAll": True}
-            rplan[t + 8] = {"redrawAll": False}
+            rplan[t + 6] = {"drawAll": True}
+            rplan[t + 8] = {"drawAll": False}
             # a commit clears (64 rows) and repaints every live slot; the
             # slot below is sized for two small shapes with margin
             t += 64 + 60
             ends.append(t)
         rtotal = t + 20
 
-        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
-        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False,
+                      "shapeId": 0.0, "drawAll": False,
                       "clearAll": False}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
@@ -481,9 +745,10 @@ def main():
             if tick in rplan:
                 step = rplan[tick]
                 if "shapePoints" in step:
-                    slide(sn, pts_aid, step["shapePoints"])
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
                     step = {k: v for k, v in step.items()
-                            if k != "shapePoints"}
+                            if k != "shapePoints" and k != "shapeColors"}
                 sn.inputs = dict(sn.inputs, **step)
             if tick in ends:
                 snaps[tick] = {i: col(sn, gids, i)
@@ -519,42 +784,51 @@ def main():
         # the square would resurrect on recomposite.
         cplan = {}
         # setup commit first (ticks 2..10 stage and fire, recomposite after)
-        cplan[2] = {"shapePoints": list(sq1b), "shapeColor": green,
+        cplan[2] = {"shapePoints": list(sq1b),
+                    "shapeColors": [green] * 4,
                     "wireMode": False, "shapeId": 1.0}
         cplan[4] = {"pushShape": True}
         cplan[6] = {"pushShape": False}
-        cplan[8] = {"redrawAll": True}
-        cplan[10] = {"redrawAll": False}
-        # clear pulse once the setup recomposite is done (~90 ticks), then
-        # store the triangle in slot 2 well after the blackout ends
+        cplan[8] = {"drawAll": True}
+        cplan[10] = {"drawAll": False}
+        # clear pulse once the setup recomposite is done (~90 ticks):
+        # clearAll forgets the slots and stages the black fill, which
+        # the NEXT drawAll runs -- so pulse drawAll right after and the
+        # wall is black ~64 rows later.  A later store into slot 2 must
+        # show ONLY the new triangle -- if the clear had merely blacked
+        # without forgetting, the square would resurrect on recomposite.
         ct = 110
         cplan[ct] = {"clearAll": True}
         cplan[ct + 2] = {"clearAll": False}
+        cplan[ct + 4] = {"drawAll": True}
+        cplan[ct + 6] = {"drawAll": False}
         st = ct + 110
-        cplan[st] = {"shapePoints": list(tri2), "shapeColor": blue,
+        cplan[st] = {"shapePoints": list(tri2),
+                     "shapeColors": [blue] * 3,
                      "wireMode": False, "shapeId": 2.0}
         cplan[st + 2] = {"pushShape": True}
         cplan[st + 4] = {"pushShape": False}
-        cplan[st + 6] = {"redrawAll": True}
-        cplan[st + 8] = {"redrawAll": False}
+        cplan[st + 6] = {"drawAll": True}
+        cplan[st + 8] = {"drawAll": False}
         cblack_at = ct + 90
         cend = st + 200
 
-        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
-        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": green,
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 1.0, "redrawAll": False,
+                      "shapeId": 1.0, "drawAll": False,
                       "clearAll": False}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
         # first re-create the live square with a normal retained commit
-        cplan[2] = {"shapePoints": list(sq1b), "shapeColor": green,
+        cplan[2] = {"shapePoints": list(sq1b),
+                    "shapeColors": [green] * 4,
                     "wireMode": False, "shapeId": 1.0}
         cplan[4] = {"pushShape": True}
         cplan[6] = {"pushShape": False}
-        cplan[8] = {"redrawAll": True}
-        cplan[10] = {"redrawAll": False}
+        cplan[8] = {"drawAll": True}
+        cplan[10] = {"drawAll": False}
         cblack = {}
         cwall = {}
 
@@ -562,9 +836,10 @@ def main():
             if tick in cplan:
                 step = cplan[tick]
                 if "shapePoints" in step:
-                    slide(sn, pts_aid, step["shapePoints"])
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
                     step = {k: v for k, v in step.items()
-                            if k != "shapePoints"}
+                            if k != "shapePoints" and k != "shapeColors"}
                 sn.inputs = dict(sn.inputs, **step)
             if tick == cblack_at:
                 cblack.update({i: col(sn, gids, i)
@@ -593,10 +868,10 @@ def main():
         # pixel belongs to the square (no torn spans), and both walks end
         # on their own -- rather than the exact extent.
         sq = [10.0, 10.0, 20.0, 10.0, 20.0, 20.0, 10.0, 20.0, 10.0, 10.0]
-        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
-        sim.inputs = {"shapePoints": list(sq), "shapeColor": blue,
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": list(sq), "shapeColors": [blue] * 5,
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False,
+                      "shapeId": 0.0, "drawAll": False,
                       "clearAll": False}
         on3 = []
         on3s = []
@@ -625,10 +900,9 @@ def main():
         # unset shapeId once read back as 8 -- so defaults are seeded to
         # model unwired faithfully).  No array: a missing array reads
         # length 0, an empty shape, silent.
-        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
-        sim.inputs = {"shapeColor": (0.0, 0.0, 0.0, 1.0),
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False,
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "drawAll": False,
                       "clearAll": False}
         sim.run(60)
         sim.run(60)

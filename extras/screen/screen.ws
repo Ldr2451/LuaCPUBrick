@@ -7,19 +7,27 @@
 // bounds), and nobody outside needs them -- the wall taps the inner output
 // gates directly by remote wire.
 //
-// Protocol: pushFill latches a fill, pushStroke latches a 2px stroke,
-// and redrawAll paints the CURRENT shape: the latched one, else the last
-// one again.  The point count is the array's length -- the driver sends
-// exactly as many points as the shape has.  A fill closes its outline
-// implicitly; a stroke runs consecutive pairs with no wrap, so the driver
-// closes a wireframe by repeating the first point and leaves an open curve
-// open (butt caps; joins overlap in the same colour, so need no mitres).
-// A single point strokes as a 2x2 dot.  The array ride-along with the
-// scalar inputs means a commit is atomic anyway: the points and colour
-// land on the same tick as the push.  Bounds are clipped; a fully
-// off-screen shape paints nothing.  Brick colors persist until rewritten,
-// so there is no keepalive and no expiry: the chip emits one burst per
-// redrawAll and is silent otherwise.
+// Protocol: pushShape latches a shape -- its point colours,
+// fill-vs-stroke, and slot -- and drawAll paints the CURRENT
+// shape: the latched one, else the last one again.  The point
+// count is the array's length (the connector delivers a tight
+// list; a direct driver sends exactly as many points as the
+// shape has).  shapeColors is optional and per-point: one
+// colour per point, white where absent.  Pixels are coloured by
+// true scanline interpolation -- each row's span takes the
+// colours of its two crossing edges (lerped along the edges by
+// row), then lerps across the span -- so a polygon with
+// per-point colours fills with a smooth gradient.  Strokes
+// interpolate along the segment (the quad's corner colours)
+// and across its width the same way.  A fill closes its
+// outline implicitly; a stroke runs consecutive pairs with no
+// wrap, so the driver closes a wireframe by repeating the first
+// point and leaves an open curve open (butt caps; joins overlap
+// in the same colour, so need no mitres).  A single point
+// strokes as a 2x2 dot.  Bounds are clipped; a fully off-screen
+// shape paints nothing.  Brick colors persist until rewritten,
+// so there is no keepalive and no expiry: the chip emits one
+// burst per drawAll and is silent otherwise.
 //
 // The fill is a scanline walk.  At the arm the points are read from the
 // array into per-edge scalars (base x/y, x-per-y slope, y range);
@@ -50,11 +58,11 @@ const SWF = 64.0
 const MAXP = 16
 
 @left in shapePoints: float[]
-@left in shapeColor: color
+@left in shapeColors: color[]
 @left in pushShape: bool
 @left in wireMode: bool
 @left in shapeId: float
-@left in redrawAll: bool
+@left in drawAll: bool
 @left in clearAll: bool
 
 const SW = 64
@@ -64,7 +72,38 @@ const SWF = 64.0
 const MAXP = 16
 var fb: color[]
 var fbInit: bool = false
-var pCol: color = Color(0.0, 0.0, 0.0, 1.0)
+var pC0: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC1: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC2: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC3: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC4: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC5: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC6: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC7: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC8: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC9: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC10: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC11: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC12: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC13: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC14: color = Color(1.0, 1.0, 1.0, 1.0)
+var pC15: color = Color(1.0, 1.0, 1.0, 1.0)
+var eInv0: float = 0.0
+var eInv1: float = 0.0
+var eInv2: float = 0.0
+var eInv3: float = 0.0
+var eInv4: float = 0.0
+var eInv5: float = 0.0
+var eInv6: float = 0.0
+var eInv7: float = 0.0
+var eInv8: float = 0.0
+var eInv9: float = 0.0
+var eInv10: float = 0.0
+var eInv11: float = 0.0
+var eInv12: float = 0.0
+var eInv13: float = 0.0
+var eInv14: float = 0.0
+var eInv15: float = 0.0
 var n: float = 3.0
 var pending: bool = false
 var arming: bool = false
@@ -83,7 +122,7 @@ var pWire: bool = false
 var pId: float = 0.0
 var shPts: float[]
 var slPts: float[]
-var slCol: color[]
+var slPC: color[]
 var slMode: float[]
 var slLive: float[]
 var slCount: float[]
@@ -92,7 +131,6 @@ var rcSlot: float = 1.0
 var commitR: bool = false
 var fromSlot: bool = false
 var clearing: bool = false
-var forgetAll: bool = false
 var sPx0: float = 0.0
 var sPy0: float = 0.0
 var sPx1: float = 0.0
@@ -171,6 +209,65 @@ var sSeg: float = 0.0
 var sSegs: float = 0.0
 var sLast: float = -1.0
 var armingS: bool = false
+var sPc0: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc1: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc2: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc3: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc4: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc5: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc6: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc7: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc8: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc9: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc10: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc11: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc12: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc13: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc14: color = Color(1.0, 1.0, 1.0, 1.0)
+var sPc15: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC0: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC1: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC2: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC3: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC4: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC5: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC6: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC7: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC8: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC9: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC10: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC11: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC12: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC13: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC14: color = Color(1.0, 1.0, 1.0, 1.0)
+var rC15: color = Color(1.0, 1.0, 1.0, 1.0)
+var cA: color = Color(1.0, 1.0, 1.0, 1.0)
+var cB: color = Color(1.0, 1.0, 1.0, 1.0)
+var iAB: float = 0.0
+var iCD: float = 0.0
+var xL: float = 0.0
+var cLo: color = Color(1.0, 1.0, 1.0, 1.0)
+var rowSlope: color = Color(0.0, 0.0, 0.0, 0.0)
+var cc0: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc1: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc3: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc4: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc5: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc6: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc7: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc8: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc9: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc10: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc11: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc12: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc13: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc14: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc15: color = Color(1.0, 1.0, 1.0, 1.0)
+var uc0: color = Color(1.0, 1.0, 1.0, 1.0)
+var uc2: color = Color(1.0, 1.0, 1.0, 1.0)
+var blackPending: bool = false
+var justCleared: bool = false
 var eX0: float = 0.0
 var eY0: float = 0.0
 var eS0: float = 0.0
@@ -8450,12 +8547,11 @@ out px4095: color = g4095
 // read-then-write of one var loses the race; cross-handler flags
 // (pending, arming, polyOn) are fine, because no pass writes what it reads.
 // A push stages colour, mode and slot, and aborts anything live -- a
-// burst, a recomposite, a staged arm -- so the next redrawAll always
+// burst, a recomposite, a staged arm -- so the next drawAll always
 // starts fresh from the new stage.  (A load-time edge on an unwired
 // port stages zeroes: an empty immediate shape, which paints nothing.)
 on Change(pushShape) {
   if pushShape {
-    pCol = shapeColor
     pWire = wireMode
     pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)
     pending = true
@@ -8463,7 +8559,6 @@ on Change(pushShape) {
     sOn = false
     rcOn = false
     clearing = false
-    forgetAll = false
     fromSlot = false
     arming = false
     armingS = false
@@ -8471,15 +8566,26 @@ on Change(pushShape) {
   }
 }
 
-// A bare redrawAll replays the last shape: the edge records (fill) or the
+// A bare drawAll replays the last shape: the edge records (fill) or the
 // preserved points (stroke) are still staged, so only the walk state
 // resets.  Each replay is guarded against the other walk and every arm,
 // so a fill burst and a stroke replay can never collide.  A staged
 // retained push commits instead: the slot is stored and the wall is
-// recomposited from every live slot in order.
-on Change(redrawAll) {
-  if redrawAll {
-    if pending {
+// recomposited from every live slot in order.  A staged clearAll fill
+// (blackPending) runs here first: with a shape staged, the fill runs
+// and the shape re-arms when it ends (pending is left set on purpose);
+// with nothing staged, the wall simply goes black.
+on Change(drawAll) {
+  if drawAll {
+    if blackPending {
+      blackPending = false
+      clearing = true
+      fromSlot = true
+      arming = true
+      if pending {
+        justCleared = true
+      }
+    } else if pending {
       pending = false
       if pId >= 1.0 {
         commitR = true
@@ -8499,36 +8605,52 @@ on Change(redrawAll) {
     if sLive && !sOn && !armingS && !polyOn && !arming && !commitR {
       rX0 = sPx0
       rY0 = sPy0
+      rC0 = sPc0
       rX1 = sPx1
       rY1 = sPy1
+      rC1 = sPc1
       rX2 = sPx2
       rY2 = sPy2
+      rC2 = sPc2
       rX3 = sPx3
       rY3 = sPy3
+      rC3 = sPc3
       rX4 = sPx4
       rY4 = sPy4
+      rC4 = sPc4
       rX5 = sPx5
       rY5 = sPy5
+      rC5 = sPc5
       rX6 = sPx6
       rY6 = sPy6
+      rC6 = sPc6
       rX7 = sPx7
       rY7 = sPy7
+      rC7 = sPc7
       rX8 = sPx8
       rY8 = sPy8
+      rC8 = sPc8
       rX9 = sPx9
       rY9 = sPy9
+      rC9 = sPc9
       rX10 = sPx10
       rY10 = sPy10
+      rC10 = sPc10
       rX11 = sPx11
       rY11 = sPy11
+      rC11 = sPc11
       rX12 = sPx12
       rY12 = sPy12
+      rC12 = sPc12
       rX13 = sPx13
       rY13 = sPy13
+      rC13 = sPc13
       rX14 = sPx14
       rY14 = sPy14
+      rC14 = sPc14
       rX15 = sPx15
       rY15 = sPy15
+      rC15 = sPc15
       sSeg = -1.0
       prow = 0.0
       sLast = -1.0
@@ -8538,11 +8660,14 @@ on Change(redrawAll) {
   }
 }
 
-// clearAll forgets every retained slot and blacks the wall: it kills
-// anything live or staged, then runs a black clear through the normal
-// fill walk (64 rows, the physical floor for 4096 pixels).  Afterwards
-// no replay can resurrect anything (both live flags die here), and the
-// next retained commit starts from an empty table.  Pulse it like a
+// clearAll forgets every retained slot and stages a black
+// fill -- it does NOT touch the wall itself.  The next
+// drawAll runs the staged fill (64 rows, the physical
+// floor for 4096 pixels), so a driver can clear memory
+// and compose the next image before anything changes on
+// screen.  Afterwards no replay can resurrect anything
+// (both live flags die here), and the next retained
+// commit starts from an empty table.  Pulse it like a
 // push: only the rising edge matters.
 on Change(clearAll) {
   if clearAll {
@@ -8555,10 +8680,16 @@ on Change(clearAll) {
     sOn = false
     sLive = false
     rcOn = false
-    clearing = true
-    forgetAll = true
-    fromSlot = true
-    arming = true
+    slLive[0] = 0.0
+    slLive[1] = 0.0
+    slLive[2] = 0.0
+    slLive[3] = 0.0
+    slLive[4] = 0.0
+    slLive[5] = 0.0
+    slLive[6] = 0.0
+    slLive[7] = 0.0
+    blackPending = true
+    justCleared = false
   }
 }
 
@@ -8571,7 +8702,7 @@ mod paintTick() {
     fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))
     shPts.resize(32, 0.0)
     slPts.resize(256, 0.0)
-    slCol.resize(8, Color(0.0, 0.0, 0.0, 1.0))
+    slPC.resize(128, Color(1.0, 1.0, 1.0, 1.0))
     slMode.resize(8, 0.0)
     slLive.resize(8, 0.0)
     slCount.resize(8, 0.0)
@@ -8583,6 +8714,7 @@ mod paintTick() {
     if n > 16.0 { n = 16.0 }
     let slot = (pId - 1.0) | 0
     let sbase = slot * 32.0
+    let cbase = slot * 16.0
     if n < 1.0 {
       slLive[slot] = 0.0
     } else {
@@ -8618,16 +8750,35 @@ mod paintTick() {
       slPts[sbase + 29.0] = shapePoints[29]
       slPts[sbase + 30.0] = shapePoints[30]
       slPts[sbase + 31.0] = shapePoints[31]
-      slCol[slot] = pCol
+      slPC[cbase + 0.0] = if shapeColors.length() > 0 then shapeColors[0] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 1.0] = if shapeColors.length() > 1 then shapeColors[1] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 2.0] = if shapeColors.length() > 2 then shapeColors[2] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 3.0] = if shapeColors.length() > 3 then shapeColors[3] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 4.0] = if shapeColors.length() > 4 then shapeColors[4] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 5.0] = if shapeColors.length() > 5 then shapeColors[5] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 6.0] = if shapeColors.length() > 6 then shapeColors[6] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 7.0] = if shapeColors.length() > 7 then shapeColors[7] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 8.0] = if shapeColors.length() > 8 then shapeColors[8] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 9.0] = if shapeColors.length() > 9 then shapeColors[9] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 10.0] = if shapeColors.length() > 10 then shapeColors[10] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 11.0] = if shapeColors.length() > 11 then shapeColors[11] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 12.0] = if shapeColors.length() > 12 then shapeColors[12] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 13.0] = if shapeColors.length() > 13 then shapeColors[13] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 14.0] = if shapeColors.length() > 14 then shapeColors[14] else Color(1.0, 1.0, 1.0, 1.0)
+      slPC[cbase + 15.0] = if shapeColors.length() > 15 then shapeColors[15] else Color(1.0, 1.0, 1.0, 1.0)
       slMode[slot] = if pWire then 1.0 else 0.0
       slLive[slot] = 1.0
       slCount[slot] = n
     }
     rcOn = true
     rcSlot = 1.0
-    clearing = true
-    fromSlot = true
-    arming = true
+    if justCleared {
+      justCleared = false
+    } else {
+      clearing = true
+      fromSlot = true
+      arming = true
+    }
   }
   if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR {
     if rcSlot > 8.0 {
@@ -8669,7 +8820,22 @@ mod paintTick() {
         shPts[31] = slPts[li * 32 + 31.0]
         n = slCount[li]
         sSegs = n
-        pCol = slCol[li]
+        pC0 = slPC[li * 16 + 0.0]
+        pC1 = slPC[li * 16 + 1.0]
+        pC2 = slPC[li * 16 + 2.0]
+        pC3 = slPC[li * 16 + 3.0]
+        pC4 = slPC[li * 16 + 4.0]
+        pC5 = slPC[li * 16 + 5.0]
+        pC6 = slPC[li * 16 + 6.0]
+        pC7 = slPC[li * 16 + 7.0]
+        pC8 = slPC[li * 16 + 8.0]
+        pC9 = slPC[li * 16 + 9.0]
+        pC10 = slPC[li * 16 + 10.0]
+        pC11 = slPC[li * 16 + 11.0]
+        pC12 = slPC[li * 16 + 12.0]
+        pC13 = slPC[li * 16 + 13.0]
+        pC14 = slPC[li * 16 + 14.0]
+        pC15 = slPC[li * 16 + 15.0]
         pWire = slMode[li] > 0.5
         fromSlot = true
         if pWire {
@@ -8717,6 +8883,22 @@ mod paintTick() {
       shPts[29] = shapePoints[29]
       shPts[30] = shapePoints[30]
       shPts[31] = shapePoints[31]
+      pC0 = if shapeColors.length() > 0 then shapeColors[0] else Color(1.0, 1.0, 1.0, 1.0)
+      pC1 = if shapeColors.length() > 1 then shapeColors[1] else Color(1.0, 1.0, 1.0, 1.0)
+      pC2 = if shapeColors.length() > 2 then shapeColors[2] else Color(1.0, 1.0, 1.0, 1.0)
+      pC3 = if shapeColors.length() > 3 then shapeColors[3] else Color(1.0, 1.0, 1.0, 1.0)
+      pC4 = if shapeColors.length() > 4 then shapeColors[4] else Color(1.0, 1.0, 1.0, 1.0)
+      pC5 = if shapeColors.length() > 5 then shapeColors[5] else Color(1.0, 1.0, 1.0, 1.0)
+      pC6 = if shapeColors.length() > 6 then shapeColors[6] else Color(1.0, 1.0, 1.0, 1.0)
+      pC7 = if shapeColors.length() > 7 then shapeColors[7] else Color(1.0, 1.0, 1.0, 1.0)
+      pC8 = if shapeColors.length() > 8 then shapeColors[8] else Color(1.0, 1.0, 1.0, 1.0)
+      pC9 = if shapeColors.length() > 9 then shapeColors[9] else Color(1.0, 1.0, 1.0, 1.0)
+      pC10 = if shapeColors.length() > 10 then shapeColors[10] else Color(1.0, 1.0, 1.0, 1.0)
+      pC11 = if shapeColors.length() > 11 then shapeColors[11] else Color(1.0, 1.0, 1.0, 1.0)
+      pC12 = if shapeColors.length() > 12 then shapeColors[12] else Color(1.0, 1.0, 1.0, 1.0)
+      pC13 = if shapeColors.length() > 13 then shapeColors[13] else Color(1.0, 1.0, 1.0, 1.0)
+      pC14 = if shapeColors.length() > 14 then shapeColors[14] else Color(1.0, 1.0, 1.0, 1.0)
+      pC15 = if shapeColors.length() > 15 then shapeColors[15] else Color(1.0, 1.0, 1.0, 1.0)
     }
   }
   if arming {
@@ -8730,17 +8912,6 @@ mod paintTick() {
     if clearing {
       clearing = false
       fromSlot = false
-      if forgetAll {
-        forgetAll = false
-        slLive[0] = 0.0
-        slLive[1] = 0.0
-        slLive[2] = 0.0
-        slLive[3] = 0.0
-        slLive[4] = 0.0
-        slLive[5] = 0.0
-        slLive[6] = 0.0
-        slLive[7] = 0.0
-      }
       shPts[0] = 0.0
       shPts[1] = 0.0
       shPts[2] = 64.0
@@ -8750,7 +8921,24 @@ mod paintTick() {
       shPts[6] = 0.0
       shPts[7] = 64.0
       n = 4.0
-      pCol = Color(0.0, 0.0, 0.0, 1.0)
+      cLo = Color(0.0, 0.0, 0.0, 1.0)
+      rowSlope = Color(0.0, 0.0, 0.0, 0.0)
+      pC0 = Color(0.0, 0.0, 0.0, 1.0)
+      pC1 = Color(0.0, 0.0, 0.0, 1.0)
+      pC2 = Color(0.0, 0.0, 0.0, 1.0)
+      pC3 = Color(0.0, 0.0, 0.0, 1.0)
+      pC4 = Color(0.0, 0.0, 0.0, 1.0)
+      pC5 = Color(0.0, 0.0, 0.0, 1.0)
+      pC6 = Color(0.0, 0.0, 0.0, 1.0)
+      pC7 = Color(0.0, 0.0, 0.0, 1.0)
+      pC8 = Color(0.0, 0.0, 0.0, 1.0)
+      pC9 = Color(0.0, 0.0, 0.0, 1.0)
+      pC10 = Color(0.0, 0.0, 0.0, 1.0)
+      pC11 = Color(0.0, 0.0, 0.0, 1.0)
+      pC12 = Color(0.0, 0.0, 0.0, 1.0)
+      pC13 = Color(0.0, 0.0, 0.0, 1.0)
+      pC14 = Color(0.0, 0.0, 0.0, 1.0)
+      pC15 = Color(0.0, 0.0, 0.0, 1.0)
     } else {
       if fromSlot {
         fromSlot = false
@@ -8810,6 +8998,7 @@ mod paintTick() {
         eS0 = s0
         eLo0 = lo0
         eHi0 = hi0
+        eInv0 = 1.0 / (qy0 - py0)
         if py0 < gyMin { gyMin = py0 }
         if py0 > gyMax { gyMax = py0 }
         if px0 < gxMin { gxMin = px0 }
@@ -8831,6 +9020,7 @@ mod paintTick() {
         eS1 = s1
         eLo1 = lo1
         eHi1 = hi1
+        eInv1 = 1.0 / (qy1 - py1)
         if py1 < gyMin { gyMin = py1 }
         if py1 > gyMax { gyMax = py1 }
         if px1 < gxMin { gxMin = px1 }
@@ -8852,6 +9042,7 @@ mod paintTick() {
         eS2 = s2
         eLo2 = lo2
         eHi2 = hi2
+        eInv2 = 1.0 / (qy2 - py2)
         if py2 < gyMin { gyMin = py2 }
         if py2 > gyMax { gyMax = py2 }
         if px2 < gxMin { gxMin = px2 }
@@ -8873,6 +9064,7 @@ mod paintTick() {
         eS3 = s3
         eLo3 = lo3
         eHi3 = hi3
+        eInv3 = 1.0 / (qy3 - py3)
         if py3 < gyMin { gyMin = py3 }
         if py3 > gyMax { gyMax = py3 }
         if px3 < gxMin { gxMin = px3 }
@@ -8894,6 +9086,7 @@ mod paintTick() {
         eS4 = s4
         eLo4 = lo4
         eHi4 = hi4
+        eInv4 = 1.0 / (qy4 - py4)
         if py4 < gyMin { gyMin = py4 }
         if py4 > gyMax { gyMax = py4 }
         if px4 < gxMin { gxMin = px4 }
@@ -8915,6 +9108,7 @@ mod paintTick() {
         eS5 = s5
         eLo5 = lo5
         eHi5 = hi5
+        eInv5 = 1.0 / (qy5 - py5)
         if py5 < gyMin { gyMin = py5 }
         if py5 > gyMax { gyMax = py5 }
         if px5 < gxMin { gxMin = px5 }
@@ -8936,6 +9130,7 @@ mod paintTick() {
         eS6 = s6
         eLo6 = lo6
         eHi6 = hi6
+        eInv6 = 1.0 / (qy6 - py6)
         if py6 < gyMin { gyMin = py6 }
         if py6 > gyMax { gyMax = py6 }
         if px6 < gxMin { gxMin = px6 }
@@ -8957,6 +9152,7 @@ mod paintTick() {
         eS7 = s7
         eLo7 = lo7
         eHi7 = hi7
+        eInv7 = 1.0 / (qy7 - py7)
         if py7 < gyMin { gyMin = py7 }
         if py7 > gyMax { gyMax = py7 }
         if px7 < gxMin { gxMin = px7 }
@@ -8978,6 +9174,7 @@ mod paintTick() {
         eS8 = s8
         eLo8 = lo8
         eHi8 = hi8
+        eInv8 = 1.0 / (qy8 - py8)
         if py8 < gyMin { gyMin = py8 }
         if py8 > gyMax { gyMax = py8 }
         if px8 < gxMin { gxMin = px8 }
@@ -8999,6 +9196,7 @@ mod paintTick() {
         eS9 = s9
         eLo9 = lo9
         eHi9 = hi9
+        eInv9 = 1.0 / (qy9 - py9)
         if py9 < gyMin { gyMin = py9 }
         if py9 > gyMax { gyMax = py9 }
         if px9 < gxMin { gxMin = px9 }
@@ -9020,6 +9218,7 @@ mod paintTick() {
         eS10 = s10
         eLo10 = lo10
         eHi10 = hi10
+        eInv10 = 1.0 / (qy10 - py10)
         if py10 < gyMin { gyMin = py10 }
         if py10 > gyMax { gyMax = py10 }
         if px10 < gxMin { gxMin = px10 }
@@ -9041,6 +9240,7 @@ mod paintTick() {
         eS11 = s11
         eLo11 = lo11
         eHi11 = hi11
+        eInv11 = 1.0 / (qy11 - py11)
         if py11 < gyMin { gyMin = py11 }
         if py11 > gyMax { gyMax = py11 }
         if px11 < gxMin { gxMin = px11 }
@@ -9062,6 +9262,7 @@ mod paintTick() {
         eS12 = s12
         eLo12 = lo12
         eHi12 = hi12
+        eInv12 = 1.0 / (qy12 - py12)
         if py12 < gyMin { gyMin = py12 }
         if py12 > gyMax { gyMax = py12 }
         if px12 < gxMin { gxMin = px12 }
@@ -9083,6 +9284,7 @@ mod paintTick() {
         eS13 = s13
         eLo13 = lo13
         eHi13 = hi13
+        eInv13 = 1.0 / (qy13 - py13)
         if py13 < gyMin { gyMin = py13 }
         if py13 > gyMax { gyMax = py13 }
         if px13 < gxMin { gxMin = px13 }
@@ -9104,6 +9306,7 @@ mod paintTick() {
         eS14 = s14
         eLo14 = lo14
         eHi14 = hi14
+        eInv14 = 1.0 / (qy14 - py14)
         if py14 < gyMin { gyMin = py14 }
         if py14 > gyMax { gyMax = py14 }
         if px14 < gxMin { gxMin = px14 }
@@ -9125,6 +9328,7 @@ mod paintTick() {
         eS15 = s15
         eLo15 = lo15
         eHi15 = hi15
+        eInv15 = 1.0 / (qy15 - py15)
         if py15 < gyMin { gyMin = py15 }
         if py15 > gyMax { gyMax = py15 }
         if px15 < gxMin { gxMin = px15 }
@@ -9152,36 +9356,52 @@ mod paintTick() {
     polyLive = false
     sPx0 = shPts[0]
     sPy0 = shPts[1]
+    sPc0 = pC0
     sPx1 = shPts[2]
     sPy1 = shPts[3]
+    sPc1 = pC1
     sPx2 = shPts[4]
     sPy2 = shPts[5]
+    sPc2 = pC2
     sPx3 = shPts[6]
     sPy3 = shPts[7]
+    sPc3 = pC3
     sPx4 = shPts[8]
     sPy4 = shPts[9]
+    sPc4 = pC4
     sPx5 = shPts[10]
     sPy5 = shPts[11]
+    sPc5 = pC5
     sPx6 = shPts[12]
     sPy6 = shPts[13]
+    sPc6 = pC6
     sPx7 = shPts[14]
     sPy7 = shPts[15]
+    sPc7 = pC7
     sPx8 = shPts[16]
     sPy8 = shPts[17]
+    sPc8 = pC8
     sPx9 = shPts[18]
     sPy9 = shPts[19]
+    sPc9 = pC9
     sPx10 = shPts[20]
     sPy10 = shPts[21]
+    sPc10 = pC10
     sPx11 = shPts[22]
     sPy11 = shPts[23]
+    sPc11 = pC11
     sPx12 = shPts[24]
     sPy12 = shPts[25]
+    sPc12 = pC12
     sPx13 = shPts[26]
     sPy13 = shPts[27]
+    sPc13 = pC13
     sPx14 = shPts[28]
     sPy14 = shPts[29]
+    sPc14 = pC14
     sPx15 = shPts[30]
     sPy15 = shPts[31]
+    sPc15 = pC15
     if fromSlot {
       fromSlot = false
     } else {
@@ -9198,10 +9418,14 @@ mod paintTick() {
           sOn = false
           sLive = false
         } else {
-          prow = sPy0 | 0
+          prow = (sPy0 | 0) - 1.0
           sLast = if sPy0 >= 62.0 then 63.0 else (sPy0 | 0) + 1.0
-          pcol = if sPx0 < 0.0 then 0.0 else (sPx0 | 0)
-          pcurR = if sPx0 >= 63.0 then 63.0 else (sPx0 | 0) + 1.0
+          pcol = 200.0
+          pcurR = 100.0
+          cA = pC0
+          cB = pC0
+          iAB = 0.0
+          iCD = 0.0
           qAx = sPx0 | 0
           qAy = sPy0 | 0
           qBx = (sPx0 | 0) + 1.0
@@ -9219,36 +9443,52 @@ mod paintTick() {
         sSegs = sSegs - 1.0
         rX0 = sPx0
         rY0 = sPy0
+        rC0 = sPc0
         rX1 = sPx1
         rY1 = sPy1
+        rC1 = sPc1
         rX2 = sPx2
         rY2 = sPy2
+        rC2 = sPc2
         rX3 = sPx3
         rY3 = sPy3
+        rC3 = sPc3
         rX4 = sPx4
         rY4 = sPy4
+        rC4 = sPc4
         rX5 = sPx5
         rY5 = sPy5
+        rC5 = sPc5
         rX6 = sPx6
         rY6 = sPy6
+        rC6 = sPc6
         rX7 = sPx7
         rY7 = sPy7
+        rC7 = sPc7
         rX8 = sPx8
         rY8 = sPy8
+        rC8 = sPc8
         rX9 = sPx9
         rY9 = sPy9
+        rC9 = sPc9
         rX10 = sPx10
         rY10 = sPy10
+        rC10 = sPc10
         rX11 = sPx11
         rY11 = sPy11
+        rC11 = sPc11
         rX12 = sPx12
         rY12 = sPy12
+        rC12 = sPc12
         rX13 = sPx13
         rY13 = sPy13
+        rC13 = sPc13
         rX14 = sPx14
         rY14 = sPy14
+        rC14 = sPc14
         rX15 = sPx15
         rY15 = sPy15
+        rC15 = sPc15
         sSeg = -1.0
         prow = 0.0
         sLast = -1.0
@@ -9266,107 +9506,176 @@ mod paintTick() {
       } else {
         let cv0 = prow >= eLo0 && prow < eHi0
         let cx0 = eX0 + eS0 * (prow - eY0)
+        cc0 = pC0 + (prow - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
         let cmn0 = if cv0 then cx0 else 200.0
         let cmx0 = if cv0 then cx0 else -200.0
         let cv1 = prow >= eLo1 && prow < eHi1
         let cx1 = eX1 + eS1 * (prow - eY1)
+        cc1 = pC1 + (prow - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
         let cmn1 = if cv1 then cx1 else 200.0
         let cmx1 = if cv1 then cx1 else -200.0
         let cv2 = prow >= eLo2 && prow < eHi2
         let cx2 = eX2 + eS2 * (prow - eY2)
+        cc2 = pC2 + (prow - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
         let cmn2 = if cv2 then cx2 else 200.0
         let cmx2 = if cv2 then cx2 else -200.0
         let cv3 = prow >= eLo3 && prow < eHi3
         let cx3 = eX3 + eS3 * (prow - eY3)
+        cc3 = pC3 + (prow - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
         let cmn3 = if cv3 then cx3 else 200.0
         let cmx3 = if cv3 then cx3 else -200.0
         let cv4 = prow >= eLo4 && prow < eHi4
         let cx4 = eX4 + eS4 * (prow - eY4)
+        cc4 = pC4 + (prow - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
         let cmn4 = if cv4 then cx4 else 200.0
         let cmx4 = if cv4 then cx4 else -200.0
         let cv5 = prow >= eLo5 && prow < eHi5
         let cx5 = eX5 + eS5 * (prow - eY5)
+        cc5 = pC5 + (prow - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
         let cmn5 = if cv5 then cx5 else 200.0
         let cmx5 = if cv5 then cx5 else -200.0
         let cv6 = prow >= eLo6 && prow < eHi6
         let cx6 = eX6 + eS6 * (prow - eY6)
+        cc6 = pC6 + (prow - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
         let cmn6 = if cv6 then cx6 else 200.0
         let cmx6 = if cv6 then cx6 else -200.0
         let cv7 = prow >= eLo7 && prow < eHi7
         let cx7 = eX7 + eS7 * (prow - eY7)
+        cc7 = pC7 + (prow - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
         let cmn7 = if cv7 then cx7 else 200.0
         let cmx7 = if cv7 then cx7 else -200.0
         let cv8 = prow >= eLo8 && prow < eHi8
         let cx8 = eX8 + eS8 * (prow - eY8)
+        cc8 = pC8 + (prow - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
         let cmn8 = if cv8 then cx8 else 200.0
         let cmx8 = if cv8 then cx8 else -200.0
         let cv9 = prow >= eLo9 && prow < eHi9
         let cx9 = eX9 + eS9 * (prow - eY9)
+        cc9 = pC9 + (prow - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
         let cmn9 = if cv9 then cx9 else 200.0
         let cmx9 = if cv9 then cx9 else -200.0
         let cv10 = prow >= eLo10 && prow < eHi10
         let cx10 = eX10 + eS10 * (prow - eY10)
+        cc10 = pC10 + (prow - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
         let cmn10 = if cv10 then cx10 else 200.0
         let cmx10 = if cv10 then cx10 else -200.0
         let cv11 = prow >= eLo11 && prow < eHi11
         let cx11 = eX11 + eS11 * (prow - eY11)
+        cc11 = pC11 + (prow - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
         let cmn11 = if cv11 then cx11 else 200.0
         let cmx11 = if cv11 then cx11 else -200.0
         let cv12 = prow >= eLo12 && prow < eHi12
         let cx12 = eX12 + eS12 * (prow - eY12)
+        cc12 = pC12 + (prow - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
         let cmn12 = if cv12 then cx12 else 200.0
         let cmx12 = if cv12 then cx12 else -200.0
         let cv13 = prow >= eLo13 && prow < eHi13
         let cx13 = eX13 + eS13 * (prow - eY13)
+        cc13 = pC13 + (prow - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
         let cmn13 = if cv13 then cx13 else 200.0
         let cmx13 = if cv13 then cx13 else -200.0
         let cv14 = prow >= eLo14 && prow < eHi14
         let cx14 = eX14 + eS14 * (prow - eY14)
+        cc14 = pC14 + (prow - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
         let cmn14 = if cv14 then cx14 else 200.0
         let cmx14 = if cv14 then cx14 else -200.0
         let cv15 = prow >= eLo15 && prow < eHi15
         let cx15 = eX15 + eS15 * (prow - eY15)
+        cc15 = pC15 + (prow - eY15) * eInv15 * (pC0 - pC15)
         let cmn15 = if cv15 then cx15 else 200.0
         let cmx15 = if cv15 then cx15 else -200.0
         let n0_0 = if cmn0 < cmn1 then cmn0 else cmn1
+        let nc0_0 = if cmn0 < cmn1 then cc0 else cc1
         let n0_2 = if cmn2 < cmn3 then cmn2 else cmn3
+        let nc0_2 = if cmn2 < cmn3 then cc2 else cc3
         let n0_4 = if cmn4 < cmn5 then cmn4 else cmn5
+        let nc0_4 = if cmn4 < cmn5 then cc4 else cc5
         let n0_6 = if cmn6 < cmn7 then cmn6 else cmn7
+        let nc0_6 = if cmn6 < cmn7 then cc6 else cc7
         let n0_8 = if cmn8 < cmn9 then cmn8 else cmn9
+        let nc0_8 = if cmn8 < cmn9 then cc8 else cc9
         let n0_10 = if cmn10 < cmn11 then cmn10 else cmn11
+        let nc0_10 = if cmn10 < cmn11 then cc10 else cc11
         let n0_12 = if cmn12 < cmn13 then cmn12 else cmn13
+        let nc0_12 = if cmn12 < cmn13 then cc12 else cc13
         let n0_14 = if cmn14 < cmn15 then cmn14 else cmn15
+        let nc0_14 = if cmn14 < cmn15 then cc14 else cc15
         let n1_0 = if n0_0 < n0_2 then n0_0 else n0_2
+        let nc1_0 = if n0_0 < n0_2 then nc0_0 else nc0_2
         let n1_2 = if n0_4 < n0_6 then n0_4 else n0_6
+        let nc1_2 = if n0_4 < n0_6 then nc0_4 else nc0_6
         let n1_4 = if n0_8 < n0_10 then n0_8 else n0_10
+        let nc1_4 = if n0_8 < n0_10 then nc0_8 else nc0_10
         let n1_6 = if n0_12 < n0_14 then n0_12 else n0_14
+        let nc1_6 = if n0_12 < n0_14 then nc0_12 else nc0_14
         let n2_0 = if n1_0 < n1_2 then n1_0 else n1_2
+        let nc2_0 = if n1_0 < n1_2 then nc1_0 else nc1_2
         let n2_2 = if n1_4 < n1_6 then n1_4 else n1_6
+        let nc2_2 = if n1_4 < n1_6 then nc1_4 else nc1_6
         let n3_0 = if n2_0 < n2_2 then n2_0 else n2_2
+        let nc3_0 = if n2_0 < n2_2 then nc2_0 else nc2_2
         let x0_0 = if cmx0 < cmx1 then cmx1 else cmx0
+        let xc0_0 = if cmx0 < cmx1 then cc1 else cc0
         let x0_2 = if cmx2 < cmx3 then cmx3 else cmx2
+        let xc0_2 = if cmx2 < cmx3 then cc3 else cc2
         let x0_4 = if cmx4 < cmx5 then cmx5 else cmx4
+        let xc0_4 = if cmx4 < cmx5 then cc5 else cc4
         let x0_6 = if cmx6 < cmx7 then cmx7 else cmx6
+        let xc0_6 = if cmx6 < cmx7 then cc7 else cc6
         let x0_8 = if cmx8 < cmx9 then cmx9 else cmx8
+        let xc0_8 = if cmx8 < cmx9 then cc9 else cc8
         let x0_10 = if cmx10 < cmx11 then cmx11 else cmx10
+        let xc0_10 = if cmx10 < cmx11 then cc11 else cc10
         let x0_12 = if cmx12 < cmx13 then cmx13 else cmx12
+        let xc0_12 = if cmx12 < cmx13 then cc13 else cc12
         let x0_14 = if cmx14 < cmx15 then cmx15 else cmx14
+        let xc0_14 = if cmx14 < cmx15 then cc15 else cc14
         let x1_0 = if x0_0 < x0_2 then x0_2 else x0_0
+        let xc1_0 = if x0_0 < x0_2 then xc0_2 else xc0_0
         let x1_2 = if x0_4 < x0_6 then x0_6 else x0_4
+        let xc1_2 = if x0_4 < x0_6 then xc0_6 else xc0_4
         let x1_4 = if x0_8 < x0_10 then x0_10 else x0_8
+        let xc1_4 = if x0_8 < x0_10 then xc0_10 else xc0_8
         let x1_6 = if x0_12 < x0_14 then x0_14 else x0_12
+        let xc1_6 = if x0_12 < x0_14 then xc0_14 else xc0_12
         let x2_0 = if x1_0 < x1_2 then x1_2 else x1_0
+        let xc2_0 = if x1_0 < x1_2 then xc1_2 else xc1_0
         let x2_2 = if x1_4 < x1_6 then x1_6 else x1_4
+        let xc2_2 = if x1_4 < x1_6 then xc1_6 else xc1_4
         let x3_0 = if x2_0 < x2_2 then x2_2 else x2_0
+        let xc3_0 = if x2_0 < x2_2 then xc2_2 else xc2_0
         if n3_0 >= 200.0 || x3_0 < 0.0 || n3_0 >= SWF {
           pcol = 200.0
           pcurR = 100.0
         } else {
           pcol = if n3_0 < 0.0 then 0.0 else (n3_0 | 0)
           pcurR = if x3_0 >= SWF then SWF - 1.0 else (x3_0 | 0)
+          xL = n3_0
+          cLo = nc3_0
+          let span = x3_0 - n3_0
+          let inv = if span > 0.0 then 1.0 / span else 0.0
+          rowSlope = (xc3_0 - cLo) * inv
         }
       }
     }
+      if prow > plast {
+        polyOn = false
+        if pending {
+          pending = false
+          justCleared = true
+          if pId >= 1.0 {
+            commitR = true
+          } else {
+            if pWire {
+              armingS = true
+            } else {
+              arming = true
+            }
+          }
+        } else {
+          justCleared = false
+        }
+      }
   }
   // The stroke advance: rows of the current quad, then segments.
   // A segment's quad is rebuilt from the register head (a shift plus
@@ -9390,35 +9699,52 @@ mod paintTick() {
           if sSeg > 0.0 {
             rX0 = rX1
             rY0 = rY1
+            rC0 = rC1
             rX1 = rX2
             rY1 = rY2
+            rC1 = rC2
             rX2 = rX3
             rY2 = rY3
+            rC2 = rC3
             rX3 = rX4
             rY3 = rY4
+            rC3 = rC4
             rX4 = rX5
             rY4 = rY5
+            rC4 = rC5
             rX5 = rX6
             rY5 = rY6
+            rC5 = rC6
             rX6 = rX7
             rY6 = rY7
+            rC6 = rC7
             rX7 = rX8
             rY7 = rY8
+            rC7 = rC8
             rX8 = rX9
             rY8 = rY9
+            rC8 = rC9
             rX9 = rX10
             rY9 = rY10
+            rC9 = rC10
             rX10 = rX11
             rY10 = rY11
+            rC10 = rC11
             rX11 = rX12
             rY11 = rY12
+            rC11 = rC12
             rX12 = rX13
             rY12 = rY13
+            rC12 = rC13
             rX13 = rX14
             rY13 = rY14
+            rC13 = rC14
             rX14 = rX15
             rY14 = rY15
+            rC14 = rC15
           }
+          cA = rC0
+          cB = rC1
           let sdx = rX1 - rX0
           let sdy = rY1 - rY0
           if sdx * sdx + sdy * sdy <= 0.0 {
@@ -9442,6 +9768,10 @@ mod paintTick() {
             qCy = sby - sny
             qDx = sax - snx
             qDy = say - sny
+            let dAB = qBy - qAy
+            let dCD = qDy - qCy
+            iAB = if dAB > 0.0 then 1.0 / dAB else if dAB < 0.0 then 1.0 / dAB else 0.0
+            iCD = if dCD > 0.0 then 1.0 / dCD else if dCD < 0.0 then 1.0 / dCD else 0.0
             let qMinY = if qAy < qBy then (if qAy < qCy then (if qAy < qDy then qAy else qDy) else (if qCy < qDy then qCy else qDy)) else (if qBy < qCy then (if qBy < qDy then qBy else qDy) else (if qCy < qDy then qCy else qDy))
             let qMaxY = if qAy > qBy then (if qAy > qCy then (if qAy > qDy then qAy else qDy) else (if qCy > qDy then qCy else qDy)) else (if qBy > qCy then (if qBy > qDy then qBy else qDy) else (if qCy > qDy then qCy else qDy))
             prow = if qMinY < 0.0 then 0.0 else (qMinY | 0)
@@ -9456,6 +9786,7 @@ mod paintTick() {
           let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
           let u0x = qAx + u0s * (prow - qAy)
           let u0v = prow >= u0lo && prow < u0hi
+          uc0 = cA + (prow - qAy) * iAB * (cB - cA)
           let un0 = if u0v then u0x else 200.0
           let ux0 = if u0v then u0x else -200.0
           let u1lo = if qBy < qCy then qBy else qCy
@@ -9463,6 +9794,7 @@ mod paintTick() {
           let u1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0
           let u1x = qBx + u1s * (prow - qBy)
           let u1v = prow >= u1lo && prow < u1hi
+          let uc1 = cB
           let un1 = if u1v then u1x else 200.0
           let ux1 = if u1v then u1x else -200.0
           let u2lo = if qCy < qDy then qCy else qDy
@@ -9470,6 +9802,7 @@ mod paintTick() {
           let u2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0
           let u2x = qCx + u2s * (prow - qCy)
           let u2v = prow >= u2lo && prow < u2hi
+          uc2 = cB + (prow - qCy) * iCD * (cA - cB)
           let un2 = if u2v then u2x else 200.0
           let ux2 = if u2v then u2x else -200.0
           let u3lo = if qDy < qAy then qDy else qAy
@@ -9477,20 +9810,32 @@ mod paintTick() {
           let u3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0
           let u3x = qDx + u3s * (prow - qDy)
           let u3v = prow >= u3lo && prow < u3hi
+          let uc3 = cA
           let un3 = if u3v then u3x else 200.0
           let ux3 = if u3v then u3x else -200.0
           let umn01 = if un0 < un1 then un0 else un1
           let umn23 = if un2 < un3 then un2 else un3
           let umn = if umn01 < umn23 then umn01 else umn23
+          let umc01 = if un0 < un1 then uc0 else uc1
+          let umc23 = if un2 < un3 then uc2 else uc3
+          let umnc = if umn01 < umn23 then umc01 else umc23
           let umx01 = if ux0 < ux1 then ux1 else ux0
           let umx23 = if ux2 < ux3 then ux3 else ux2
           let umx = if umx01 < umx23 then umx23 else umx01
+          let uxc01 = if ux0 < ux1 then uc1 else uc0
+          let uxc23 = if ux2 < ux3 then uc3 else uc2
+          let umxc = if umx01 < umx23 then uxc23 else uxc01
           if umn >= 200.0 || umx < 0.0 || umn >= SWF {
             pcol = 200.0
             pcurR = 100.0
           } else {
             pcol = if umn < 0.0 then 0.0 else (umn | 0)
             pcurR = if umx >= SWF then SWF - 1.0 else (umx | 0)
+            xL = umn
+            cLo = umnc
+            let span = umx - umn
+            let inv = if span > 0.0 then 1.0 / span else 0.0
+            rowSlope = (umxc - cLo) * inv
           }
         } else {
           pcol = 200.0
@@ -9499,327 +9844,400 @@ mod paintTick() {
       }
     }
   }
-  // The shared lanes: whichever walk staged a span paints it.
+  // The shared lanes: whichever walk staged a span paints it,
+  // lerped across the span between the row's two crossing
+  // colours (cLo at xL, rowSlope per pixel).  The lane math
+  // reads the walk's vars directly: folding the per-row
+  // bases into vars (pbase, cBase) reads stale on the arm
+  // tick, when the walk's writes and the lanes share a tick
+  // -- pure lets re-evaluate per use, so the fold captures
+  // the pre-write values and the burst paints nothing or the
+  // wrong row.  The direct form is the original chip's lane
+  // shape, which never had that hazard.
   if polyOn || sOn {
       let tj0 = pcol + 0.0
       if tj0 <= pcurR {
         let ridx0 = ((prow * SWF + tj0) | 0)
-        fb[ridx0] = pCol
+        let dt0 = tj0 - xL
+        fb[ridx0] = cLo + rowSlope * dt0
       }
       let tj1 = pcol + 1.0
       if tj1 <= pcurR {
         let ridx1 = ((prow * SWF + tj1) | 0)
-        fb[ridx1] = pCol
+        let dt1 = tj1 - xL
+        fb[ridx1] = cLo + rowSlope * dt1
       }
       let tj2 = pcol + 2.0
       if tj2 <= pcurR {
         let ridx2 = ((prow * SWF + tj2) | 0)
-        fb[ridx2] = pCol
+        let dt2 = tj2 - xL
+        fb[ridx2] = cLo + rowSlope * dt2
       }
       let tj3 = pcol + 3.0
       if tj3 <= pcurR {
         let ridx3 = ((prow * SWF + tj3) | 0)
-        fb[ridx3] = pCol
+        let dt3 = tj3 - xL
+        fb[ridx3] = cLo + rowSlope * dt3
       }
       let tj4 = pcol + 4.0
       if tj4 <= pcurR {
         let ridx4 = ((prow * SWF + tj4) | 0)
-        fb[ridx4] = pCol
+        let dt4 = tj4 - xL
+        fb[ridx4] = cLo + rowSlope * dt4
       }
       let tj5 = pcol + 5.0
       if tj5 <= pcurR {
         let ridx5 = ((prow * SWF + tj5) | 0)
-        fb[ridx5] = pCol
+        let dt5 = tj5 - xL
+        fb[ridx5] = cLo + rowSlope * dt5
       }
       let tj6 = pcol + 6.0
       if tj6 <= pcurR {
         let ridx6 = ((prow * SWF + tj6) | 0)
-        fb[ridx6] = pCol
+        let dt6 = tj6 - xL
+        fb[ridx6] = cLo + rowSlope * dt6
       }
       let tj7 = pcol + 7.0
       if tj7 <= pcurR {
         let ridx7 = ((prow * SWF + tj7) | 0)
-        fb[ridx7] = pCol
+        let dt7 = tj7 - xL
+        fb[ridx7] = cLo + rowSlope * dt7
       }
       let tj8 = pcol + 8.0
       if tj8 <= pcurR {
         let ridx8 = ((prow * SWF + tj8) | 0)
-        fb[ridx8] = pCol
+        let dt8 = tj8 - xL
+        fb[ridx8] = cLo + rowSlope * dt8
       }
       let tj9 = pcol + 9.0
       if tj9 <= pcurR {
         let ridx9 = ((prow * SWF + tj9) | 0)
-        fb[ridx9] = pCol
+        let dt9 = tj9 - xL
+        fb[ridx9] = cLo + rowSlope * dt9
       }
       let tj10 = pcol + 10.0
       if tj10 <= pcurR {
         let ridx10 = ((prow * SWF + tj10) | 0)
-        fb[ridx10] = pCol
+        let dt10 = tj10 - xL
+        fb[ridx10] = cLo + rowSlope * dt10
       }
       let tj11 = pcol + 11.0
       if tj11 <= pcurR {
         let ridx11 = ((prow * SWF + tj11) | 0)
-        fb[ridx11] = pCol
+        let dt11 = tj11 - xL
+        fb[ridx11] = cLo + rowSlope * dt11
       }
       let tj12 = pcol + 12.0
       if tj12 <= pcurR {
         let ridx12 = ((prow * SWF + tj12) | 0)
-        fb[ridx12] = pCol
+        let dt12 = tj12 - xL
+        fb[ridx12] = cLo + rowSlope * dt12
       }
       let tj13 = pcol + 13.0
       if tj13 <= pcurR {
         let ridx13 = ((prow * SWF + tj13) | 0)
-        fb[ridx13] = pCol
+        let dt13 = tj13 - xL
+        fb[ridx13] = cLo + rowSlope * dt13
       }
       let tj14 = pcol + 14.0
       if tj14 <= pcurR {
         let ridx14 = ((prow * SWF + tj14) | 0)
-        fb[ridx14] = pCol
+        let dt14 = tj14 - xL
+        fb[ridx14] = cLo + rowSlope * dt14
       }
       let tj15 = pcol + 15.0
       if tj15 <= pcurR {
         let ridx15 = ((prow * SWF + tj15) | 0)
-        fb[ridx15] = pCol
+        let dt15 = tj15 - xL
+        fb[ridx15] = cLo + rowSlope * dt15
       }
       let tj16 = pcol + 16.0
       if tj16 <= pcurR {
         let ridx16 = ((prow * SWF + tj16) | 0)
-        fb[ridx16] = pCol
+        let dt16 = tj16 - xL
+        fb[ridx16] = cLo + rowSlope * dt16
       }
       let tj17 = pcol + 17.0
       if tj17 <= pcurR {
         let ridx17 = ((prow * SWF + tj17) | 0)
-        fb[ridx17] = pCol
+        let dt17 = tj17 - xL
+        fb[ridx17] = cLo + rowSlope * dt17
       }
       let tj18 = pcol + 18.0
       if tj18 <= pcurR {
         let ridx18 = ((prow * SWF + tj18) | 0)
-        fb[ridx18] = pCol
+        let dt18 = tj18 - xL
+        fb[ridx18] = cLo + rowSlope * dt18
       }
       let tj19 = pcol + 19.0
       if tj19 <= pcurR {
         let ridx19 = ((prow * SWF + tj19) | 0)
-        fb[ridx19] = pCol
+        let dt19 = tj19 - xL
+        fb[ridx19] = cLo + rowSlope * dt19
       }
       let tj20 = pcol + 20.0
       if tj20 <= pcurR {
         let ridx20 = ((prow * SWF + tj20) | 0)
-        fb[ridx20] = pCol
+        let dt20 = tj20 - xL
+        fb[ridx20] = cLo + rowSlope * dt20
       }
       let tj21 = pcol + 21.0
       if tj21 <= pcurR {
         let ridx21 = ((prow * SWF + tj21) | 0)
-        fb[ridx21] = pCol
+        let dt21 = tj21 - xL
+        fb[ridx21] = cLo + rowSlope * dt21
       }
       let tj22 = pcol + 22.0
       if tj22 <= pcurR {
         let ridx22 = ((prow * SWF + tj22) | 0)
-        fb[ridx22] = pCol
+        let dt22 = tj22 - xL
+        fb[ridx22] = cLo + rowSlope * dt22
       }
       let tj23 = pcol + 23.0
       if tj23 <= pcurR {
         let ridx23 = ((prow * SWF + tj23) | 0)
-        fb[ridx23] = pCol
+        let dt23 = tj23 - xL
+        fb[ridx23] = cLo + rowSlope * dt23
       }
       let tj24 = pcol + 24.0
       if tj24 <= pcurR {
         let ridx24 = ((prow * SWF + tj24) | 0)
-        fb[ridx24] = pCol
+        let dt24 = tj24 - xL
+        fb[ridx24] = cLo + rowSlope * dt24
       }
       let tj25 = pcol + 25.0
       if tj25 <= pcurR {
         let ridx25 = ((prow * SWF + tj25) | 0)
-        fb[ridx25] = pCol
+        let dt25 = tj25 - xL
+        fb[ridx25] = cLo + rowSlope * dt25
       }
       let tj26 = pcol + 26.0
       if tj26 <= pcurR {
         let ridx26 = ((prow * SWF + tj26) | 0)
-        fb[ridx26] = pCol
+        let dt26 = tj26 - xL
+        fb[ridx26] = cLo + rowSlope * dt26
       }
       let tj27 = pcol + 27.0
       if tj27 <= pcurR {
         let ridx27 = ((prow * SWF + tj27) | 0)
-        fb[ridx27] = pCol
+        let dt27 = tj27 - xL
+        fb[ridx27] = cLo + rowSlope * dt27
       }
       let tj28 = pcol + 28.0
       if tj28 <= pcurR {
         let ridx28 = ((prow * SWF + tj28) | 0)
-        fb[ridx28] = pCol
+        let dt28 = tj28 - xL
+        fb[ridx28] = cLo + rowSlope * dt28
       }
       let tj29 = pcol + 29.0
       if tj29 <= pcurR {
         let ridx29 = ((prow * SWF + tj29) | 0)
-        fb[ridx29] = pCol
+        let dt29 = tj29 - xL
+        fb[ridx29] = cLo + rowSlope * dt29
       }
       let tj30 = pcol + 30.0
       if tj30 <= pcurR {
         let ridx30 = ((prow * SWF + tj30) | 0)
-        fb[ridx30] = pCol
+        let dt30 = tj30 - xL
+        fb[ridx30] = cLo + rowSlope * dt30
       }
       let tj31 = pcol + 31.0
       if tj31 <= pcurR {
         let ridx31 = ((prow * SWF + tj31) | 0)
-        fb[ridx31] = pCol
+        let dt31 = tj31 - xL
+        fb[ridx31] = cLo + rowSlope * dt31
       }
       let tj32 = pcol + 32.0
       if tj32 <= pcurR {
         let ridx32 = ((prow * SWF + tj32) | 0)
-        fb[ridx32] = pCol
+        let dt32 = tj32 - xL
+        fb[ridx32] = cLo + rowSlope * dt32
       }
       let tj33 = pcol + 33.0
       if tj33 <= pcurR {
         let ridx33 = ((prow * SWF + tj33) | 0)
-        fb[ridx33] = pCol
+        let dt33 = tj33 - xL
+        fb[ridx33] = cLo + rowSlope * dt33
       }
       let tj34 = pcol + 34.0
       if tj34 <= pcurR {
         let ridx34 = ((prow * SWF + tj34) | 0)
-        fb[ridx34] = pCol
+        let dt34 = tj34 - xL
+        fb[ridx34] = cLo + rowSlope * dt34
       }
       let tj35 = pcol + 35.0
       if tj35 <= pcurR {
         let ridx35 = ((prow * SWF + tj35) | 0)
-        fb[ridx35] = pCol
+        let dt35 = tj35 - xL
+        fb[ridx35] = cLo + rowSlope * dt35
       }
       let tj36 = pcol + 36.0
       if tj36 <= pcurR {
         let ridx36 = ((prow * SWF + tj36) | 0)
-        fb[ridx36] = pCol
+        let dt36 = tj36 - xL
+        fb[ridx36] = cLo + rowSlope * dt36
       }
       let tj37 = pcol + 37.0
       if tj37 <= pcurR {
         let ridx37 = ((prow * SWF + tj37) | 0)
-        fb[ridx37] = pCol
+        let dt37 = tj37 - xL
+        fb[ridx37] = cLo + rowSlope * dt37
       }
       let tj38 = pcol + 38.0
       if tj38 <= pcurR {
         let ridx38 = ((prow * SWF + tj38) | 0)
-        fb[ridx38] = pCol
+        let dt38 = tj38 - xL
+        fb[ridx38] = cLo + rowSlope * dt38
       }
       let tj39 = pcol + 39.0
       if tj39 <= pcurR {
         let ridx39 = ((prow * SWF + tj39) | 0)
-        fb[ridx39] = pCol
+        let dt39 = tj39 - xL
+        fb[ridx39] = cLo + rowSlope * dt39
       }
       let tj40 = pcol + 40.0
       if tj40 <= pcurR {
         let ridx40 = ((prow * SWF + tj40) | 0)
-        fb[ridx40] = pCol
+        let dt40 = tj40 - xL
+        fb[ridx40] = cLo + rowSlope * dt40
       }
       let tj41 = pcol + 41.0
       if tj41 <= pcurR {
         let ridx41 = ((prow * SWF + tj41) | 0)
-        fb[ridx41] = pCol
+        let dt41 = tj41 - xL
+        fb[ridx41] = cLo + rowSlope * dt41
       }
       let tj42 = pcol + 42.0
       if tj42 <= pcurR {
         let ridx42 = ((prow * SWF + tj42) | 0)
-        fb[ridx42] = pCol
+        let dt42 = tj42 - xL
+        fb[ridx42] = cLo + rowSlope * dt42
       }
       let tj43 = pcol + 43.0
       if tj43 <= pcurR {
         let ridx43 = ((prow * SWF + tj43) | 0)
-        fb[ridx43] = pCol
+        let dt43 = tj43 - xL
+        fb[ridx43] = cLo + rowSlope * dt43
       }
       let tj44 = pcol + 44.0
       if tj44 <= pcurR {
         let ridx44 = ((prow * SWF + tj44) | 0)
-        fb[ridx44] = pCol
+        let dt44 = tj44 - xL
+        fb[ridx44] = cLo + rowSlope * dt44
       }
       let tj45 = pcol + 45.0
       if tj45 <= pcurR {
         let ridx45 = ((prow * SWF + tj45) | 0)
-        fb[ridx45] = pCol
+        let dt45 = tj45 - xL
+        fb[ridx45] = cLo + rowSlope * dt45
       }
       let tj46 = pcol + 46.0
       if tj46 <= pcurR {
         let ridx46 = ((prow * SWF + tj46) | 0)
-        fb[ridx46] = pCol
+        let dt46 = tj46 - xL
+        fb[ridx46] = cLo + rowSlope * dt46
       }
       let tj47 = pcol + 47.0
       if tj47 <= pcurR {
         let ridx47 = ((prow * SWF + tj47) | 0)
-        fb[ridx47] = pCol
+        let dt47 = tj47 - xL
+        fb[ridx47] = cLo + rowSlope * dt47
       }
       let tj48 = pcol + 48.0
       if tj48 <= pcurR {
         let ridx48 = ((prow * SWF + tj48) | 0)
-        fb[ridx48] = pCol
+        let dt48 = tj48 - xL
+        fb[ridx48] = cLo + rowSlope * dt48
       }
       let tj49 = pcol + 49.0
       if tj49 <= pcurR {
         let ridx49 = ((prow * SWF + tj49) | 0)
-        fb[ridx49] = pCol
+        let dt49 = tj49 - xL
+        fb[ridx49] = cLo + rowSlope * dt49
       }
       let tj50 = pcol + 50.0
       if tj50 <= pcurR {
         let ridx50 = ((prow * SWF + tj50) | 0)
-        fb[ridx50] = pCol
+        let dt50 = tj50 - xL
+        fb[ridx50] = cLo + rowSlope * dt50
       }
       let tj51 = pcol + 51.0
       if tj51 <= pcurR {
         let ridx51 = ((prow * SWF + tj51) | 0)
-        fb[ridx51] = pCol
+        let dt51 = tj51 - xL
+        fb[ridx51] = cLo + rowSlope * dt51
       }
       let tj52 = pcol + 52.0
       if tj52 <= pcurR {
         let ridx52 = ((prow * SWF + tj52) | 0)
-        fb[ridx52] = pCol
+        let dt52 = tj52 - xL
+        fb[ridx52] = cLo + rowSlope * dt52
       }
       let tj53 = pcol + 53.0
       if tj53 <= pcurR {
         let ridx53 = ((prow * SWF + tj53) | 0)
-        fb[ridx53] = pCol
+        let dt53 = tj53 - xL
+        fb[ridx53] = cLo + rowSlope * dt53
       }
       let tj54 = pcol + 54.0
       if tj54 <= pcurR {
         let ridx54 = ((prow * SWF + tj54) | 0)
-        fb[ridx54] = pCol
+        let dt54 = tj54 - xL
+        fb[ridx54] = cLo + rowSlope * dt54
       }
       let tj55 = pcol + 55.0
       if tj55 <= pcurR {
         let ridx55 = ((prow * SWF + tj55) | 0)
-        fb[ridx55] = pCol
+        let dt55 = tj55 - xL
+        fb[ridx55] = cLo + rowSlope * dt55
       }
       let tj56 = pcol + 56.0
       if tj56 <= pcurR {
         let ridx56 = ((prow * SWF + tj56) | 0)
-        fb[ridx56] = pCol
+        let dt56 = tj56 - xL
+        fb[ridx56] = cLo + rowSlope * dt56
       }
       let tj57 = pcol + 57.0
       if tj57 <= pcurR {
         let ridx57 = ((prow * SWF + tj57) | 0)
-        fb[ridx57] = pCol
+        let dt57 = tj57 - xL
+        fb[ridx57] = cLo + rowSlope * dt57
       }
       let tj58 = pcol + 58.0
       if tj58 <= pcurR {
         let ridx58 = ((prow * SWF + tj58) | 0)
-        fb[ridx58] = pCol
+        let dt58 = tj58 - xL
+        fb[ridx58] = cLo + rowSlope * dt58
       }
       let tj59 = pcol + 59.0
       if tj59 <= pcurR {
         let ridx59 = ((prow * SWF + tj59) | 0)
-        fb[ridx59] = pCol
+        let dt59 = tj59 - xL
+        fb[ridx59] = cLo + rowSlope * dt59
       }
       let tj60 = pcol + 60.0
       if tj60 <= pcurR {
         let ridx60 = ((prow * SWF + tj60) | 0)
-        fb[ridx60] = pCol
+        let dt60 = tj60 - xL
+        fb[ridx60] = cLo + rowSlope * dt60
       }
       let tj61 = pcol + 61.0
       if tj61 <= pcurR {
         let ridx61 = ((prow * SWF + tj61) | 0)
-        fb[ridx61] = pCol
+        let dt61 = tj61 - xL
+        fb[ridx61] = cLo + rowSlope * dt61
       }
       let tj62 = pcol + 62.0
       if tj62 <= pcurR {
         let ridx62 = ((prow * SWF + tj62) | 0)
-        fb[ridx62] = pCol
+        let dt62 = tj62 - xL
+        fb[ridx62] = cLo + rowSlope * dt62
       }
       let tj63 = pcol + 63.0
       if tj63 <= pcurR {
         let ridx63 = ((prow * SWF + tj63) | 0)
-        fb[ridx63] = pCol
+        let dt63 = tj63 - xL
+        fb[ridx63] = cLo + rowSlope * dt63
       }
       pcol = pcol + 64.0
   }

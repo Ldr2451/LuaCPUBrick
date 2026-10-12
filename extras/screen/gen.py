@@ -42,19 +42,27 @@ L.append("// rerouter pin per port (4096 pins in an 8k-unit line, wrecking the p
 L.append("// bounds), and nobody outside needs them -- the wall taps the inner output")
 L.append("// gates directly by remote wire.")
 L.append("//")
-L.append("// Protocol: pushFill latches a fill, pushStroke latches a 2px stroke,")
-L.append("// and redrawAll paints the CURRENT shape: the latched one, else the last")
-L.append("// one again.  The point count is the array's length -- the driver sends")
-L.append("// exactly as many points as the shape has.  A fill closes its outline")
-L.append("// implicitly; a stroke runs consecutive pairs with no wrap, so the driver")
-L.append("// closes a wireframe by repeating the first point and leaves an open curve")
-L.append("// open (butt caps; joins overlap in the same colour, so need no mitres).")
-L.append("// A single point strokes as a 2x2 dot.  The array ride-along with the")
-L.append("// scalar inputs means a commit is atomic anyway: the points and colour")
-L.append("// land on the same tick as the push.  Bounds are clipped; a fully")
-L.append("// off-screen shape paints nothing.  Brick colors persist until rewritten,")
-L.append("// so there is no keepalive and no expiry: the chip emits one burst per")
-L.append("// redrawAll and is silent otherwise.")
+L.append("// Protocol: pushShape latches a shape -- its point colours,")
+L.append("// fill-vs-stroke, and slot -- and drawAll paints the CURRENT")
+L.append("// shape: the latched one, else the last one again.  The point")
+L.append("// count is the array's length (the connector delivers a tight")
+L.append("// list; a direct driver sends exactly as many points as the")
+L.append("// shape has).  shapeColors is optional and per-point: one")
+L.append("// colour per point, white where absent.  Pixels are coloured by")
+L.append("// true scanline interpolation -- each row's span takes the")
+L.append("// colours of its two crossing edges (lerped along the edges by")
+L.append("// row), then lerps across the span -- so a polygon with")
+L.append("// per-point colours fills with a smooth gradient.  Strokes")
+L.append("// interpolate along the segment (the quad's corner colours)")
+L.append("// and across its width the same way.  A fill closes its")
+L.append("// outline implicitly; a stroke runs consecutive pairs with no")
+L.append("// wrap, so the driver closes a wireframe by repeating the first")
+L.append("// point and leaves an open curve open (butt caps; joins overlap")
+L.append("// in the same colour, so need no mitres).  A single point")
+L.append("// strokes as a 2x2 dot.  Bounds are clipped; a fully off-screen")
+L.append("// shape paints nothing.  Brick colors persist until rewritten,")
+L.append("// so there is no keepalive and no expiry: the chip emits one")
+L.append("// burst per drawAll and is silent otherwise.")
 L.append("//")
 L.append("// The fill is a scanline walk.  At the arm the points are read from the")
 L.append("// array into per-edge scalars (base x/y, x-per-y slope, y range);")
@@ -88,11 +96,11 @@ L.append("const MAXP = %d" % MAXP)
 L.append("")
 
 L.append("@left in shapePoints: float[]")
-L.append("@left in shapeColor: color")
+L.append("@left in shapeColors: color[]")
 L.append("@left in pushShape: bool")
 L.append("@left in wireMode: bool")
 L.append("@left in shapeId: float")
-L.append("@left in redrawAll: bool")
+L.append("@left in drawAll: bool")
 L.append("@left in clearAll: bool")
 L.append("")
 
@@ -104,7 +112,15 @@ L.append("const MAXP = %d" % MAXP)
 
 L.append("var fb: color[]")
 L.append("var fbInit: bool = false")
-L.append("var pCol: color = Color(0.0, 0.0, 0.0, 1.0)")
+# Per-point colours, staged from the shapeColors array at the arm
+# (literal reads: the connector delivers a tight list).  The walks
+# interpolate between them; white where the driver sent none.
+for i in range(MAXP):
+    L.append("var pC%d: color = Color(1.0, 1.0, 1.0, 1.0)" % i)
+# Per-edge inverse y-span (guarded): the row parameter that lerps
+# an edge's two endpoint colours at the crossing.
+for i in range(MAXP):
+    L.append("var eInv%d: float = 0.0" % i)
 L.append("var n: float = 3.0")
 L.append("var pending: bool = false")
 L.append("var arming: bool = false")
@@ -132,7 +148,7 @@ L.append("var shPts: float[]")
 # only the single load/store paths do.  Slot k (1..8) lives at points
 # base (k-1)*32 and scalar index k-1.
 L.append("var slPts: float[]")
-L.append("var slCol: color[]")
+L.append("var slPC: color[]")
 L.append("var slMode: float[]")
 L.append("var slLive: float[]")
 L.append("var slCount: float[]")
@@ -143,7 +159,6 @@ L.append("var rcSlot: float = 1.0")
 L.append("var commitR: bool = false")
 L.append("var fromSlot: bool = false")
 L.append("var clearing: bool = false")
-L.append("var forgetAll: bool = false")
 # The stroke walk's preserved point store (replays restore from it) and its
 # shift register (consumed pair by pair, so the per-tick path has no
 # selects), the current quad's corners, and the walk state.
@@ -161,6 +176,38 @@ L.append("var sSeg: float = 0.0")
 L.append("var sSegs: float = 0.0")
 L.append("var sLast: float = -1.0")
 L.append("var armingS: bool = false")
+# The stroke's preserved point COLOURS (replays restore from
+# it) and the colour register that shifts with the points, so
+# the current segment's two colours are literal reads.
+for i in range(MAXP):
+    L.append("var sPc%d: color = Color(1.0, 1.0, 1.0, 1.0)" % i)
+for i in range(MAXP):
+    L.append("var rC%d: color = Color(1.0, 1.0, 1.0, 1.0)" % i)
+# The current quad's two endpoint colours and the row
+# parameters that lerp across its two sloped edges.
+L.append("var cA: color = Color(1.0, 1.0, 1.0, 1.0)")
+L.append("var cB: color = Color(1.0, 1.0, 1.0, 1.0)")
+L.append("var iAB: float = 0.0")
+L.append("var iCD: float = 0.0")
+# Per-row span colour state, written by whichever walk staged
+# the span (xL unclamped, cLo at the span's left edge, the
+# slope lerps across): the shared lanes paint cLo + t*slope.
+L.append("var xL: float = 0.0")
+L.append("var cLo: color = Color(1.0, 1.0, 1.0, 1.0)")
+L.append("var rowSlope: color = Color(0.0, 0.0, 0.0, 0.0)")
+# The row's crossing colours and the lane math's folded base:
+# vars, not lets -- a pure let re-evaluates per use, which would
+# duplicate the whole interpolation expression in the graph once
+# per tree that reads it.
+for i in range(MAXP):
+    L.append("var cc%d: color = Color(1.0, 1.0, 1.0, 1.0)" % i)
+L.append("var uc0: color = Color(1.0, 1.0, 1.0, 1.0)")
+L.append("var uc2: color = Color(1.0, 1.0, 1.0, 1.0)")
+# clearAll defers the blacking: it forgets every slot now and
+# stages the 64-row black fill, which the NEXT drawAll runs
+# (justCleared tells a staged commit to skip its own clear).
+L.append("var blackPending: bool = false")
+L.append("var justCleared: bool = false")
 # The 16 edge records, as scalars.
 for i in range(MAXP):
     L.append("var eX%d: float = 0.0" % i)
@@ -179,12 +226,11 @@ L.append("// only on a transition, so the event IS the edge.  A same-handler")
 L.append("// read-then-write of one var loses the race; cross-handler flags")
 L.append("// (pending, arming, polyOn) are fine, because no pass writes what it reads.")
 L.append("// A push stages colour, mode and slot, and aborts anything live -- a")
-L.append("// burst, a recomposite, a staged arm -- so the next redrawAll always")
+L.append("// burst, a recomposite, a staged arm -- so the next drawAll always")
 L.append("// starts fresh from the new stage.  (A load-time edge on an unwired")
 L.append("// port stages zeroes: an empty immediate shape, which paints nothing.)")
 L.append("on Change(pushShape) {")
 L.append("  if pushShape {")
-L.append("    pCol = shapeColor")
 L.append("    pWire = wireMode")
 L.append("    pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)")
 L.append("    pending = true")
@@ -192,7 +238,6 @@ L.append("    polyOn = false")
 L.append("    sOn = false")
 L.append("    rcOn = false")
 L.append("    clearing = false")
-L.append("    forgetAll = false")
 L.append("    fromSlot = false")
 L.append("    arming = false")
 L.append("    armingS = false")
@@ -200,15 +245,26 @@ L.append("    commitR = false")
 L.append("  }")
 L.append("}")
 L.append("")
-L.append("// A bare redrawAll replays the last shape: the edge records (fill) or the")
+L.append("// A bare drawAll replays the last shape: the edge records (fill) or the")
 L.append("// preserved points (stroke) are still staged, so only the walk state")
 L.append("// resets.  Each replay is guarded against the other walk and every arm,")
 L.append("// so a fill burst and a stroke replay can never collide.  A staged")
 L.append("// retained push commits instead: the slot is stored and the wall is")
-L.append("// recomposited from every live slot in order.")
-L.append("on Change(redrawAll) {")
-L.append("  if redrawAll {")
-L.append("    if pending {")
+L.append("// recomposited from every live slot in order.  A staged clearAll fill")
+L.append("// (blackPending) runs here first: with a shape staged, the fill runs")
+L.append("// and the shape re-arms when it ends (pending is left set on purpose);")
+L.append("// with nothing staged, the wall simply goes black.")
+L.append("on Change(drawAll) {")
+L.append("  if drawAll {")
+L.append("    if blackPending {")
+L.append("      blackPending = false")
+L.append("      clearing = true")
+L.append("      fromSlot = true")
+L.append("      arming = true")
+L.append("      if pending {")
+L.append("        justCleared = true")
+L.append("      }")
+L.append("    } else if pending {")
 L.append("      pending = false")
 L.append("      if pId >= 1.0 {")
 L.append("        commitR = true")
@@ -229,6 +285,7 @@ L.append("    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR {")
 for i in range(MAXP):
     L.append("      rX%d = sPx%d" % (i, i))
     L.append("      rY%d = sPy%d" % (i, i))
+    L.append("      rC%d = sPc%d" % (i, i))
 L.append("      sSeg = -1.0")
 L.append("      prow = 0.0")
 L.append("      sLast = -1.0")
@@ -238,11 +295,14 @@ L.append("    }")
 L.append("  }")
 L.append("}")
 L.append("")
-L.append("// clearAll forgets every retained slot and blacks the wall: it kills")
-L.append("// anything live or staged, then runs a black clear through the normal")
-L.append("// fill walk (64 rows, the physical floor for 4096 pixels).  Afterwards")
-L.append("// no replay can resurrect anything (both live flags die here), and the")
-L.append("// next retained commit starts from an empty table.  Pulse it like a")
+L.append("// clearAll forgets every retained slot and stages a black")
+L.append("// fill -- it does NOT touch the wall itself.  The next")
+L.append("// drawAll runs the staged fill (64 rows, the physical")
+L.append("// floor for 4096 pixels), so a driver can clear memory")
+L.append("// and compose the next image before anything changes on")
+L.append("// screen.  Afterwards no replay can resurrect anything")
+L.append("// (both live flags die here), and the next retained")
+L.append("// commit starts from an empty table.  Pulse it like a")
 L.append("// push: only the rising edge matters.")
 L.append("on Change(clearAll) {")
 L.append("  if clearAll {")
@@ -255,10 +315,16 @@ L.append("    polyLive = false")
 L.append("    sOn = false")
 L.append("    sLive = false")
 L.append("    rcOn = false")
-L.append("    clearing = true")
-L.append("    forgetAll = true")
-L.append("    fromSlot = true")
-L.append("    arming = true")
+L.append("    slLive[0] = 0.0")
+L.append("    slLive[1] = 0.0")
+L.append("    slLive[2] = 0.0")
+L.append("    slLive[3] = 0.0")
+L.append("    slLive[4] = 0.0")
+L.append("    slLive[5] = 0.0")
+L.append("    slLive[6] = 0.0")
+L.append("    slLive[7] = 0.0")
+L.append("    blackPending = true")
+L.append("    justCleared = false")
 L.append("  }")
 L.append("}")
 L.append("")
@@ -272,7 +338,7 @@ L.append("  if !fbInit {")
 L.append("    fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))")
 L.append("    shPts.resize(32, 0.0)")
 L.append("    slPts.resize(256, 0.0)")
-L.append("    slCol.resize(8, Color(0.0, 0.0, 0.0, 1.0))")
+L.append("    slPC.resize(128, Color(1.0, 1.0, 1.0, 1.0))")
 L.append("    slMode.resize(8, 0.0)")
 L.append("    slLive.resize(8, 0.0)")
 L.append("    slCount.resize(8, 0.0)")
@@ -280,32 +346,42 @@ L.append("    fbInit = true")
 L.append("  }")
 
 # ---- retained commit: store the staged shape, start recomposite ------------
-# A retained push (id 1..8) lands here on redrawAll: the pushed points go
-# to the slot (an empty array clears it -- that is the delete), then the
-# wall is recomposited from every live slot in order, starting with a
-# black clear through the normal fill walk.  Immediate pushes (id 0)
-# never come here; they arm their walk directly.
+# A retained push (id 1..8) lands here on drawAll: the pushed points
+# and colours go to the slot (an empty array clears it -- that is
+# the delete), then the wall is recomposited from every live slot in
+# order, starting with a black clear through the normal fill walk --
+# unless a clearAll fill just ran (justCleared), in which case the
+# repaint arms directly.  Immediate pushes (id 0) never come here;
+# they arm their walk directly.
 L.append("  if commitR {")
 L.append("    commitR = false")
 L.append("    n = (shapePoints.length() / 2.0) | 0")
 L.append("    if n > 16.0 { n = 16.0 }")
 L.append("    let slot = (pId - 1.0) | 0")
 L.append("    let sbase = slot * 32.0")
+L.append("    let cbase = slot * 16.0")
 L.append("    if n < 1.0 {")
 L.append("      slLive[slot] = 0.0")
 L.append("    } else {")
 for i in range(32):
     L.append("      slPts[sbase + %d.0] = shapePoints[%d]" % (i, i))
-L.append("      slCol[slot] = pCol")
+for i in range(MAXP):
+    L.append("      slPC[cbase + %d.0] = if shapeColors.length()"
+             " > %d then shapeColors[%d] else"
+             " Color(1.0, 1.0, 1.0, 1.0)" % (i, i, i))
 L.append("      slMode[slot] = if pWire then 1.0 else 0.0")
 L.append("      slLive[slot] = 1.0")
 L.append("      slCount[slot] = n")
 L.append("    }")
 L.append("    rcOn = true")
 L.append("    rcSlot = 1.0")
-L.append("    clearing = true")
-L.append("    fromSlot = true")
-L.append("    arming = true")
+L.append("    if justCleared {")
+L.append("      justCleared = false")
+L.append("    } else {")
+L.append("      clearing = true")
+L.append("      fromSlot = true")
+L.append("      arming = true")
+L.append("    }")
 L.append("  }")
 
 # ---- recomposite iterator: next live slot -> shadow -> arm -----------------
@@ -327,7 +403,8 @@ for i in range(32):
     L.append("        shPts[%d] = slPts[li * 32 + %d.0]" % (i, i))
 L.append("        n = slCount[li]")
 L.append("        sSegs = n")
-L.append("        pCol = slCol[li]")
+for i in range(MAXP):
+    L.append("        pC%d = slPC[li * 16 + %d.0]" % (i, i))
 L.append("        pWire = slMode[li] > 0.5")
 L.append("        fromSlot = true")
 L.append("        if pWire {")
@@ -345,17 +422,22 @@ L.append("  }")
 # ---- shadow copy: pushed array -> shadow for immediate arms ----------------
 # One arm path reads the shadow; immediate pushes fill it here (literal
 # reads, fast), slot loads and the clear fill it themselves.  Skipped
-# when fromSlot is set, so a staged slot is never clobbered.
+# when fromSlot is set, so a staged slot is never clobbered.  The
+# per-point colours stage the same way.
 L.append("  if !fromSlot {")
 L.append("    if arming || armingS {")
 for i in range(32):
     L.append("      shPts[%d] = shapePoints[%d]" % (i, i))
+for i in range(MAXP):
+    L.append("      pC%d = if shapeColors.length() > %d"
+             " then shapeColors[%d] else"
+             " Color(1.0, 1.0, 1.0, 1.0)" % (i, i, i))
 L.append("    }")
 L.append("  }")
 
 # ---- the arm: points -> per-edge scalars ---------------------------------
 # Runs in the mod (array work needs an exec context), one tick after the
-# redrawAll pulse.  Each edge i runs point i -> point i+1, wrapping to
+# drawAll pulse.  Each edge i runs point i -> point i+1, wrapping to
 # point 0 on the last active edge; edges past n are given an empty y
 # range so they never straddle a row.  The wrap is a scalar select over
 # the point lets, never a computed array read.
@@ -370,17 +452,6 @@ L.append("    gxMax = -200.0")
 L.append("    if clearing {")
 L.append("      clearing = false")
 L.append("      fromSlot = false")
-L.append("      if forgetAll {")
-L.append("        forgetAll = false")
-L.append("        slLive[0] = 0.0")
-L.append("        slLive[1] = 0.0")
-L.append("        slLive[2] = 0.0")
-L.append("        slLive[3] = 0.0")
-L.append("        slLive[4] = 0.0")
-L.append("        slLive[5] = 0.0")
-L.append("        slLive[6] = 0.0")
-L.append("        slLive[7] = 0.0")
-L.append("      }")
 L.append("      shPts[0] = 0.0")
 L.append("      shPts[1] = 0.0")
 L.append("      shPts[2] = 64.0")
@@ -390,7 +461,14 @@ L.append("      shPts[5] = 64.0")
 L.append("      shPts[6] = 0.0")
 L.append("      shPts[7] = 64.0")
 L.append("      n = 4.0")
-L.append("      pCol = Color(0.0, 0.0, 0.0, 1.0)")
+L.append("      cLo = Color(0.0, 0.0, 0.0, 1.0)")
+L.append("      rowSlope = Color(0.0, 0.0, 0.0, 0.0)")
+# The black fill's own colours: every point black, so each crossing
+# lerps black to black and the span lerp keeps black.  Without this
+# the fill would repaint the LAST shape's staged colours across the
+# whole wall (the point colours outlive the shape that staged them).
+for i in range(MAXP):
+    L.append("      pC%d = Color(0.0, 0.0, 0.0, 1.0)" % i)
 L.append("    } else {")
 L.append("      if fromSlot {")
 L.append("        fromSlot = false")
@@ -438,6 +516,10 @@ for i in range(MAXP):
     L.append("        eS%d = s%d" % (i, i))
     L.append("        eLo%d = lo%d" % (i, i))
     L.append("        eHi%d = hi%d" % (i, i))
+    # a horizontal edge never straddles a row (its half-open y range is
+    # empty), so its inverse span only ever feeds a masked colour: divide
+    # straight through -- 1/0 is inf and is never selected.
+    L.append("        eInv%d = 1.0 / (qy%d - py%d)" % (i, i, i))
     L.append("        if py%d < gyMin { gyMin = py%d }" % (i, i))
     L.append("        if py%d > gyMax { gyMax = py%d }" % (i, i))
     L.append("        if px%d < gxMin { gxMin = px%d }" % (i, i))
@@ -474,6 +556,7 @@ L.append("    polyLive = false")
 for i in range(MAXP):
     L.append("    sPx%d = shPts[%d]" % (i, 2 * i))
     L.append("    sPy%d = shPts[%d]" % (i, 2 * i + 1))
+    L.append("    sPc%d = pC%d" % (i, i))
 L.append("    if fromSlot {")
 L.append("      fromSlot = false")
 L.append("    } else {")
@@ -490,10 +573,28 @@ L.append("        if sPx0 < 0.0 || sPx0 >= SWF || sPy0 < 0.0 || sPy0 >= SWF {")
 L.append("          sOn = false")
 L.append("          sLive = false")
 L.append("        } else {")
-L.append("          prow = sPy0 | 0")
+# The dot stages like the multi-point path: no span (pcol 200 /
+# pcurR 100) and prow one below its first row, so the row-advance
+# on the NEXT tick stages the first row -- the arm tick paints
+# nothing.  Staging the span inline instead puts the walk's first
+# row setup in the same tick as the arm's own writes, and the
+# sim's expression lets then read the pre-write values (the
+# colour chain fires early and the lane writes capture the stale
+# colour).  Costs the dot one idle tick; the burst is 2 rows.
+L.append("          prow = (sPy0 | 0) - 1.0")
 L.append("          sLast = if sPy0 >= 62.0 then 63.0 else (sPy0 | 0) + 1.0")
-L.append("          pcol = if sPx0 < 0.0 then 0.0 else (sPx0 | 0)")
-L.append("          pcurR = if sPx0 >= 63.0 then 63.0 else (sPx0 | 0) + 1.0")
+L.append("          pcol = 200.0")
+L.append("          pcurR = 100.0")
+# The dot's colours stage BEFORE its quad corners: the sim's
+# expression lets fire early within a tick and read whatever the
+# tick has written so far, so the colour chain must land before the
+# corner writes or it captures the previous shape's colours (the
+# same rule the fill's shadow copy follows, staging the point
+# colours before the edge records).
+L.append("          cA = pC0")
+L.append("          cB = pC0")
+L.append("          iAB = 0.0")
+L.append("          iCD = 0.0")
 L.append("          qAx = sPx0 | 0")
 L.append("          qAy = sPy0 | 0")
 L.append("          qBx = (sPx0 | 0) + 1.0")
@@ -512,6 +613,7 @@ L.append("        sSegs = sSegs - 1.0")
 for i in range(MAXP):
     L.append("        rX%d = sPx%d" % (i, i))
     L.append("        rY%d = sPy%d" % (i, i))
+    L.append("        rC%d = sPc%d" % (i, i))
 L.append("        sSeg = -1.0")
 L.append("        prow = 0.0")
 L.append("        sLast = -1.0")
@@ -536,40 +638,72 @@ L.append("        polyOn = false")
 L.append("      } else {")
 # The row's span: one crossing per straddling edge, off-screen crossings
 # masked to a sentinel, then min/max trees (depth 4, not a sort's deep
-# chain) and a clamp to the grid.
+# chain) and a clamp to the grid.  Each crossing also carries its edge's
+# colour at that row (the endpoint colours lerped by the row parameter),
+# and the trees carry the colours alongside the x's, so the row's two
+# winning crossings know their colours: the span is then lerped between
+# them -- true scanline interpolation.
 for i in range(MAXP):
+    # The edge's far endpoint: the next point, or the FIRST point when
+    # this is the last real one -- the same wrap the arm's edge records
+    # use, since a polygon's outline closes.  A dead edge's colour never
+    # reaches a tree: its x is the 200.0/-200.0 sentinel, which alone
+    # decides both reductions.
+    if i + 1 < MAXP:
+        end = "(if %d.0 < n then pC%d else pC0)" % (i + 1, i + 1)
+    else:
+        end = "pC0"
     L.append("        let cv%d = prow >= eLo%d && prow < eHi%d" % (i, i, i))
     L.append("        let cx%d = eX%d + eS%d * (prow - eY%d)" % (i, i, i, i))
+    L.append("        cc%d = pC%d + (prow - eY%d) * eInv%d"
+             " * (%s - pC%d)" % (i, i, i, i, end, i))
     # Two masks, one per reduction: the min needs its invalid edges large
     # and the max needs them small, or a 16-edge polygon's twelve dead
     # edges win the max and every row fills to the wall's right edge.
+    # The colours need no mask: the x sentinel alone decides the trees.
     L.append("        let cmn%d = if cv%d then cx%d else 200.0" % (i, i, i))
     L.append("        let cmx%d = if cv%d then cx%d else -200.0" % (i, i, i))
 mn = ["cmn%d" % i for i in range(MAXP)]
+mnc = ["cc%d" % i for i in range(MAXP)]
 layer = 0
 while len(mn) > 1:
     nxt = []
+    nxtc = []
     for a in range(0, len(mn) - 1, 2):
         nm = "n%d_%d" % (layer, a)
+        ncm = "nc%d_%d" % (layer, a)
         L.append("        let %s = if %s < %s then %s else %s"
                  % (nm, mn[a], mn[a + 1], mn[a], mn[a + 1]))
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (ncm, mn[a], mn[a + 1], mnc[a], mnc[a + 1]))
         nxt.append(nm)
+        nxtc.append(ncm)
     if len(mn) % 2:
         nxt.append(mn[-1])
+        nxtc.append(mnc[-1])
     mn = nxt
+    mnc = nxtc
     layer += 1
 mx = ["cmx%d" % i for i in range(MAXP)]
+mxc = ["cc%d" % i for i in range(MAXP)]
 layer = 0
 while len(mx) > 1:
     nxt = []
+    nxtc = []
     for a in range(0, len(mx) - 1, 2):
         nm = "x%d_%d" % (layer, a)
+        ncm = "xc%d_%d" % (layer, a)
         L.append("        let %s = if %s < %s then %s else %s"
                  % (nm, mx[a], mx[a + 1], mx[a + 1], mx[a]))
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (ncm, mx[a], mx[a + 1], mxc[a + 1], mxc[a]))
         nxt.append(nm)
+        nxtc.append(ncm)
     if len(mx) % 2:
         nxt.append(mx[-1])
+        nxtc.append(mxc[-1])
     mx = nxt
+    mxc = nxtc
     layer += 1
 L.append("        if %s >= 200.0 || %s < 0.0 || %s >= SWF {"
          % (mn[0], mx[0], mn[0]))
@@ -579,9 +713,35 @@ L.append("        } else {")
 L.append("          pcol = if %s < 0.0 then 0.0 else (%s | 0)" % (mn[0], mn[0]))
 L.append("          pcurR = if %s >= SWF then SWF - 1.0 else (%s | 0)"
          % (mx[0], mx[0]))
+L.append("          xL = %s" % mn[0])
+L.append("          cLo = %s" % mnc[0])
+L.append("          let span = %s - %s" % (mx[0], mn[0]))
+L.append("          let inv = if span > 0.0 then 1.0 / span else 0.0")
+L.append("          rowSlope = (%s - cLo) * inv" % mxc[0])
 L.append("        }")
 L.append("      }")
 L.append("    }")
+# The fill walk ends: a staged pending shape re-arms here (the
+# clearAll black fill runs first, the shape paints right after --
+# justCleared tells its commit to skip a second clear).
+L.append("      if prow > plast {")
+L.append("        polyOn = false")
+L.append("        if pending {")
+L.append("          pending = false")
+L.append("          justCleared = true")
+L.append("          if pId >= 1.0 {")
+L.append("            commitR = true")
+L.append("          } else {")
+L.append("            if pWire {")
+L.append("              armingS = true")
+L.append("            } else {")
+L.append("              arming = true")
+L.append("            }")
+L.append("          }")
+L.append("        } else {")
+L.append("          justCleared = false")
+L.append("        }")
+L.append("      }")
 L.append("  }")
 L.append("  // The stroke advance: rows of the current quad, then segments.")
 L.append("  // A segment's quad is rebuilt from the register head (a shift plus")
@@ -606,7 +766,14 @@ L.append("          if sSeg > 0.0 {")
 for i in range(MAXP - 1):
     L.append("            rX%d = rX%d" % (i, i + 1))
     L.append("            rY%d = rY%d" % (i, i + 1))
+    L.append("            rC%d = rC%d" % (i, i + 1))
 L.append("          }")
+# The segment's two colours stage right after the shift, before the
+# quad corners: the sim's lets fire early within a tick and read
+# whatever has landed, so the colour chain must precede the corner
+# writes (the dot branch stages its colours the same way).
+L.append("          cA = rC0")
+L.append("          cB = rC1")
 L.append("          let sdx = rX1 - rX0")
 L.append("          let sdy = rY1 - rY0")
 L.append("          if sdx * sdx + sdy * sdy <= 0.0 {")
@@ -630,6 +797,12 @@ L.append("            qCx = sbx - snx")
 L.append("            qCy = sby - sny")
 L.append("            qDx = sax - snx")
 L.append("            qDy = say - sny")
+L.append("            let dAB = qBy - qAy")
+L.append("            let dCD = qDy - qCy")
+L.append("            iAB = if dAB > 0.0 then 1.0 / dAB"
+             " else if dAB < 0.0 then 1.0 / dAB else 0.0")
+L.append("            iCD = if dCD > 0.0 then 1.0 / dCD"
+             " else if dCD < 0.0 then 1.0 / dCD else 0.0")
 L.append("            let qMinY = if qAy < qBy then (if qAy < qCy then (if qAy < qDy then qAy else qDy) else (if qCy < qDy then qCy else qDy)) else (if qBy < qCy then (if qBy < qDy then qBy else qDy) else (if qCy < qDy then qCy else qDy))")
 L.append("            let qMaxY = if qAy > qBy then (if qAy > qCy then (if qAy > qDy then qAy else qDy) else (if qCy > qDy then qCy else qDy)) else (if qBy > qCy then (if qBy > qDy then qBy else qDy) else (if qCy > qDy then qCy else qDy))")
 L.append("            prow = if qMinY < 0.0 then 0.0 else (qMinY | 0)")
@@ -644,6 +817,7 @@ L.append("          let u0hi = if qAy < qBy then qBy else qAy")
 L.append("          let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0")
 L.append("          let u0x = qAx + u0s * (prow - qAy)")
 L.append("          let u0v = prow >= u0lo && prow < u0hi")
+L.append("          uc0 = cA + (prow - qAy) * iAB * (cB - cA)")
 L.append("          let un0 = if u0v then u0x else 200.0")
 L.append("          let ux0 = if u0v then u0x else -200.0")
 L.append("          let u1lo = if qBy < qCy then qBy else qCy")
@@ -651,6 +825,7 @@ L.append("          let u1hi = if qBy < qCy then qCy else qBy")
 L.append("          let u1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0")
 L.append("          let u1x = qBx + u1s * (prow - qBy)")
 L.append("          let u1v = prow >= u1lo && prow < u1hi")
+L.append("          let uc1 = cB")
 L.append("          let un1 = if u1v then u1x else 200.0")
 L.append("          let ux1 = if u1v then u1x else -200.0")
 L.append("          let u2lo = if qCy < qDy then qCy else qDy")
@@ -658,6 +833,7 @@ L.append("          let u2hi = if qCy < qDy then qDy else qCy")
 L.append("          let u2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0")
 L.append("          let u2x = qCx + u2s * (prow - qCy)")
 L.append("          let u2v = prow >= u2lo && prow < u2hi")
+L.append("          uc2 = cB + (prow - qCy) * iCD * (cA - cB)")
 L.append("          let un2 = if u2v then u2x else 200.0")
 L.append("          let ux2 = if u2v then u2x else -200.0")
 L.append("          let u3lo = if qDy < qAy then qDy else qAy")
@@ -665,20 +841,32 @@ L.append("          let u3hi = if qDy < qAy then qAy else qDy")
 L.append("          let u3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0")
 L.append("          let u3x = qDx + u3s * (prow - qDy)")
 L.append("          let u3v = prow >= u3lo && prow < u3hi")
+L.append("          let uc3 = cA")
 L.append("          let un3 = if u3v then u3x else 200.0")
 L.append("          let ux3 = if u3v then u3x else -200.0")
 L.append("          let umn01 = if un0 < un1 then un0 else un1")
 L.append("          let umn23 = if un2 < un3 then un2 else un3")
 L.append("          let umn = if umn01 < umn23 then umn01 else umn23")
+L.append("          let umc01 = if un0 < un1 then uc0 else uc1")
+L.append("          let umc23 = if un2 < un3 then uc2 else uc3")
+L.append("          let umnc = if umn01 < umn23 then umc01 else umc23")
 L.append("          let umx01 = if ux0 < ux1 then ux1 else ux0")
 L.append("          let umx23 = if ux2 < ux3 then ux3 else ux2")
 L.append("          let umx = if umx01 < umx23 then umx23 else umx01")
+L.append("          let uxc01 = if ux0 < ux1 then uc1 else uc0")
+L.append("          let uxc23 = if ux2 < ux3 then uc3 else uc2")
+L.append("          let umxc = if umx01 < umx23 then uxc23 else uxc01")
 L.append("          if umn >= 200.0 || umx < 0.0 || umn >= SWF {")
 L.append("            pcol = 200.0")
 L.append("            pcurR = 100.0")
 L.append("          } else {")
 L.append("            pcol = if umn < 0.0 then 0.0 else (umn | 0)")
 L.append("            pcurR = if umx >= SWF then SWF - 1.0 else (umx | 0)")
+L.append("            xL = umn")
+L.append("            cLo = umnc")
+L.append("            let span = umx - umn")
+L.append("            let inv = if span > 0.0 then 1.0 / span else 0.0")
+L.append("            rowSlope = (umxc - cLo) * inv")
 L.append("          }")
 L.append("        } else {")
 L.append("          pcol = 200.0")
@@ -687,13 +875,23 @@ L.append("        }")
 L.append("      }")
 L.append("    }")
 L.append("  }")
-L.append("  // The shared lanes: whichever walk staged a span paints it.")
+L.append("  // The shared lanes: whichever walk staged a span paints it,")
+L.append("  // lerped across the span between the row's two crossing")
+L.append("  // colours (cLo at xL, rowSlope per pixel).  The lane math")
+L.append("  // reads the walk's vars directly: folding the per-row")
+L.append("  // bases into vars (pbase, cBase) reads stale on the arm")
+L.append("  // tick, when the walk's writes and the lanes share a tick")
+L.append("  // -- pure lets re-evaluate per use, so the fold captures")
+L.append("  // the pre-write values and the burst paints nothing or the")
+L.append("  // wrong row.  The direct form is the original chip's lane")
+L.append("  // shape, which never had that hazard.")
 L.append("  if polyOn || sOn {")
 for j in range(K):
     L.append("      let tj%d = pcol + %d.0" % (j, j))
     L.append("      if tj%d <= pcurR {" % j)
     L.append("        let ridx%d = ((prow * SWF + tj%d) | 0)" % (j, j))
-    L.append("        fb[ridx%d] = pCol" % j)
+    L.append("        let dt%d = tj%d - xL" % (j, j))
+    L.append("        fb[ridx%d] = cLo + rowSlope * dt%d" % (j, j))
     L.append("      }")
 L.append("      pcol = pcol + %d.0" % K)
 L.append("  }")

@@ -1,11 +1,17 @@
 """Three-chip chain test: Lua CPU -> connector -> screen.
 
 A small Lua driver exercises every translation the connector does --
-push/redraw thresholds, the terminator-truncated tight points pass,
-the MakeColor build from slots 1..4, wireMode, the string slot id and
-the clear flag -- and the wall is diffed against a Python model of the
-whole chain, so a dropped channel, a wrong color or a misread slot
-shows up as a pixel diff.
+push/draw thresholds, the terminator-truncated tight points pass,
+the per-point colour slice (points first, terminator, then four
+floats per point), wireMode, the string slot id and the clear flag
+-- and the wall is diffed against a Python model of the whole
+chain, so a dropped channel, a wrong colour or a misread slot shows
+up as a pixel diff.
+
+The sim's math gates are float-only, so colour arithmetic reads as
+0.0 there; colormath.install() patches them to the documented
+channel-wise LinearColor semantics (test-side only -- the repo's
+irrun/ simulator is untouched shared infrastructure).
 
   python -u extras/cpu-screen-connector/connectortest.py   (exit 0 = green)
 """
@@ -19,6 +25,9 @@ sys.path.insert(0, os.path.join(ROOT, "irrun"))
 sys.path.insert(0, os.path.join(HERE, "..", "screen"))
 
 from irsims import share_dump, sim_from_dump, _extract  # noqa: E402
+import colormath  # noqa: E402
+
+colormath.install()
 from painttest import poly_pixels, stroke_pixels, slide  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
@@ -42,22 +51,33 @@ local function fire()
   outNum(2, 0.0)
   tick()
 end
--- shape 1: immediate red fill square; colour first, then only the
--- points the shape needs plus the -1 terminator
-outNumArr(1, 1.0, 0.0, 0.0, 1.0)
-outNumArr(5, 4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0)
-outNumArr(13, -1.0)
+-- shape 1: immediate red fill square; points first, then a -5
+-- terminator (its magnitude is the colour count: 4), then the colours.
+-- outNumArr takes at most 8 values a call, so 16 colour floats are two
+-- calls.
+outNumArr(1, 4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0)
+outNumArr(9, -5.0)
+outNumArr(10, 1.0, 0.0, 0.0, 1.0,
+              1.0, 0.0, 0.0, 1.0)
+outNumArr(18, 1.0, 0.0, 0.0, 1.0,
+              1.0, 0.0, 0.0, 1.0)
 fire()
 -- shape 2: immediate blue stroke (outNum4 = wire)
 outNum(4, 1.0)
-outNumArr(1, 0.1, 0.4, 1.0, 1.0)
-outNumArr(5, 30.0, 30.0, 50.0, 30.0, 30.0, 50.0, -1.0)
+outNumArr(1, 30.0, 30.0, 50.0, 30.0, 30.0, 50.0)
+outNumArr(7, -4.0)
+outNumArr(8, 0.1, 0.4, 1.0, 1.0,
+             0.1, 0.4, 1.0, 1.0)
+outNumArr(16, 0.1, 0.4, 1.0, 1.0)
 fire()
 outNum(4, 0.0)
 -- shape 3: retained green triangle, slot 1 (outStr1 = id as text)
 outStr(1, "1")
-outNumArr(1, 0.0, 1.0, 0.0, 0.5)
-outNumArr(5, 8.0, 8.0, 20.0, 8.0, 8.0, 20.0, -1.0)
+outNumArr(1, 8.0, 8.0, 20.0, 8.0, 8.0, 20.0)
+outNumArr(7, -4.0)
+outNumArr(8, 0.0, 1.0, 0.0, 0.5,
+             0.0, 1.0, 0.0, 0.5)
+outNumArr(16, 0.0, 1.0, 0.0, 0.5)
 fire()
 outStr(1, "")
 -- let shape 3's recomposite (clear + repaint, ~85 ticks) finish before
@@ -70,6 +90,13 @@ outNum(3, 1.0)
 tick()
 tick()
 outNum(3, 0.0)
+tick()
+tick()
+-- clearAll only forgets the slots: the next drawAll is the pulse that
+-- actually blacks the wall
+outNum(2, 1.0)
+tick()
+outNum(2, 0.0)
 tick()
 tick()
 print('driver done')
@@ -174,9 +201,11 @@ def main():
         csim.reset()
         # output port value readers (resolved once the sim exists).
         # shapePoints is the connector's truncated tight array (backing
-        # var pts), shapeColor the built colour: both mirror vars, so
-        # both read through the same backing-store lookup.
+        # var pts) and shapeColors its per-point colour array (backing
+        # var cols): both mirror vars, so both read through the same
+        # backing-store lookup.
         pts_res = resolve_port(csim, out_port_id(csim, "shapePoints"))
+        cols_res = resolve_port(csim, out_port_id(csim, "shapeColors"))
 
         def conn_arr(res):
             kind, sid = res
@@ -191,16 +220,12 @@ def main():
                     return list(vv)
             return []
 
-        cout = {}
-        for name in ("shapeColor",):
-            pid = out_port_id(csim, name)
-            cout[name] = resolve_port(csim, pid)
         # the pure-combinational scalars never cache (nothing queues them
         # without a change), so they read back through pull evaluation --
         # in game they are plain wires, always live.  (clearAll is pure
         # too: it belongs here, not in cout.)
         cpull = {}
-        for name in ("pushShape", "redrawAll", "wireMode", "shapeId",
+        for name in ("pushShape", "drawAll", "wireMode", "shapeId",
                      "clearAll"):
             cpull[name] = out_port_id(csim, name)
         cstream = []
@@ -213,19 +238,45 @@ def main():
                     "outNum4": p4, "outStr1": st,
                     "outNumArr": list(a[:40]),
                 })
-            row = {k: port_val(s, v) for k, v in cout.items()}
+            row = {}
             for k, pid in cpull.items():
                 v = s._in_val(pid, "RER_Input", None)
                 row[k] = float(v) if isinstance(v, bool) \
                     else (float(v) if isinstance(v, (int, float)) else 0.0)
             row["shapePoints"] = conn_arr(pts_res)
+            row["shapeColors"] = conn_arr(cols_res)
             cstream.append(row)
 
         csim.run(TICKS, on_tick=hookc2)
 
-        # spot-check the translations on a tick where the driver holds a
-        # shape: points pass through, color is built, levels threshold
-        ok &= expect(True, "connector translates (wall check decides)", "")
+        # spot-check the translation on a tick where the driver holds a
+        # shape: the points pass through tight, the colours follow the
+        # terminator, and the levels threshold.  Shape 1's first burst
+        # sits well before shape 2 overwrites the array; skip the boot
+        # ticks, where the scan's no-terminator fallback stages all 16
+        # points (32 zeros).
+        held = None
+        for k in range(1, len(cstream)):
+            cc = cstream[k]["shapeColors"]
+            if cstream[k]["shapePoints"] == \
+                    [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0] \
+                    and len(cc) >= 4 \
+                    and all(tuple(v[:4]) == (1.0, 0.0, 0.0, 1.0)
+                            for v in cc[:4]):
+                held = k
+                break
+        ok &= expect(held is not None, "connector sees a tight array", "")
+        if held is not None:
+            ok &= expect(cstream[held]["shapePoints"] ==
+                         [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0],
+                         "points truncate at the terminator",
+                         "%r" % (cstream[held]["shapePoints"],))
+            cc = cstream[held]["shapeColors"]
+            ok &= expect(len(cc) >= 4
+                         and all(tuple(v[:4]) == (1.0, 0.0, 0.0, 1.0)
+                                 for v in cc[:4]),
+                         "colours slice behind the terminator",
+                         "%r" % (cc,))
 
         # ---- phase 3: screen paints --------------------------------------
         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
@@ -235,15 +286,19 @@ def main():
         ssim = sim_from_dump(scr_dump)
         ssim.reset()
         spts = None
+        scols = None
         for nid, nd in ssim.nodes.items():
-            if _extract(nd.props.get("PortLabel", ("raw", ""))) == \
-                    "shapePoints":
+            pl = _extract(nd.props.get("PortLabel", ("raw", "")))
+            if pl == "shapePoints":
                 spts = nid
+            elif pl == "shapeColors":
+                scols = nid
         assert spts is not None
+        assert scols is not None
         ssim.inputs = {"shapePoints": [0.0] * 32,
-                       "shapeColor": (0.0, 0.0, 0.0, 1.0),
+                       "shapeColors": [(1.0, 1.0, 1.0, 1.0)] * 4,
                        "pushShape": False, "wireMode": False,
-                       "shapeId": 0.0, "redrawAll": False,
+                       "shapeId": 0.0, "drawAll": False,
                        "clearAll": False}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
@@ -259,8 +314,8 @@ def main():
         # deliver unreliably in sim, while real drivers stage across
         # ticks anyway), so the screen's edge ticks lag cstream by 2.
         reds = [k for k in range(1, len(cstream))
-                if (cstream[k]["redrawAll"] or 0.0) > 0.5
-                and (cstream[k - 1]["redrawAll"] or 0.0) <= 0.5]
+                if (cstream[k]["drawAll"] or 0.0) > 0.5
+                and (cstream[k - 1]["drawAll"] or 0.0) <= 0.5]
         pushE = [k for k in range(1, len(cstream))
                  if (cstream[k]["pushShape"] or 0.0) > 0.5
                  and (cstream[k - 1]["pushShape"] or 0.0) <= 0.5]
@@ -268,14 +323,14 @@ def main():
                 if (cstream[k]["clearAll"] or 0.0) > 0.5
                 and (cstream[k - 1]["clearAll"] or 0.0) <= 0.5]
         print("   edges pushes=%s reds=%s clears=%s (run %d)"
-              % (pushE, reds, clrE, len(cstream)))
+               % (pushE, reds, clrE, len(cstream)))
         snap_tick = (reds[2] + 2 + 95) if len(reds) >= 3 else None
         snap_tick2 = (reds[2] + 2 + 115) if len(reds) >= 3 else None
         snap = None
 
         # (snapshots are taken in hook2 below via closure state)
         snap_holder = {}
-        last_slid = [None]
+        last_slid = [None, None]
 
         def hook2(s, tick):
             if tick >= len(cstream):
@@ -284,18 +339,21 @@ def main():
             # arrays/colour lead; the bool edge follows 2 ticks later
             b = cstream[tick - 2] if tick >= 2 else {}
             a = c["shapePoints"]
-            if isinstance(a, list) and a != last_slid[0]:
-                slide(s, spts, list(a))
-                last_slid[0] = list(a)
-            col = c["shapeColor"]
+            cc = c.get("shapeColors")
+            # the connector's colour slice can land a tick after its
+            # points, so re-slide when either half changes
+            if (isinstance(a, list) and a != last_slid[0]) \
+                    or (cc != last_slid[1]):
+                slide(s, spts, scols, list(a) if isinstance(a, list)
+                      else [], cc)
+                last_slid[0] = list(a) if isinstance(a, list) else None
+                last_slid[1] = cc
             s.inputs = dict(s.inputs, **{
                 "pushShape": (b.get("pushShape") or 0.0) > 0.5,
                 "wireMode": (b.get("wireMode") or 0.0) > 0.5,
                 "shapeId": float(b.get("shapeId") or 0.0),
-                "redrawAll": (b.get("redrawAll") or 0.0) > 0.5,
+                "drawAll": (b.get("drawAll") or 0.0) > 0.5,
                 "clearAll": (b.get("clearAll") or 0.0) > 0.5,
-                "shapeColor": tuple(col) if isinstance(col, (tuple, list))
-                and len(col) >= 4 else (0.0, 0.0, 0.0, 1.0),
             })
             if snap_tick is not None and tick == snap_tick:
                 snap_holder["wall"] = tuple(
@@ -358,3 +416,6 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(0 if main() else 1)
+
+
+

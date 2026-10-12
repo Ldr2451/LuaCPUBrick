@@ -1,15 +1,21 @@
 """End-to-end test for showcase.lua driving the wall screen.
 
-Phase 1 runs the program on the Lua chip, sampling push/redraw/clear/
+Phase 1 runs the program on the Lua chip, sampling push/draw/clear,
 wire, the id string and outNumArr every tick.  Phase 2 replays that
 stream into the screen chip the way the connector would deliver it
-(tight points, built colour, bool edges 2 ticks after their arrays --
-painttest's staging rule).  Phase 3 diffs the wall against a Python
-model with retained slots, so a lost edge, a torn latch, a wrong
-colour, a misread id or an abandoned burst shows up as pixels; coarse
-intent asserts (wire seen both ways, ids 1..3 plus immediate, an empty
-delete, a clear pulse) catch driver-side mode mistakes the pixel diff
-cannot see.
+(tight points, per-point colours, bool edges 2 ticks after their
+arrays -- painttest's staging rule).  Phase 3 diffs the wall against
+a Python model with retained slots and the deferred clearAll: the
+pulse forgets every slot, and the drawAll right after it is the one
+that blacks the wall -- so a lost edge, a torn latch, a wrong colour,
+a misread id or an abandoned burst shows up as pixels, while the
+coarse intent asserts (wire seen both ways, ids 1..3 plus immediate,
+an empty delete, a clear pulse) catch driver-side mode mistakes the
+pixel diff cannot see.
+
+showcase.lua sends no colours (the screen defaults every point to
+white), so this program stays the protocol/perf driver; the colour
+feature's own end-to-end coverage lives in showtest2.py.
 
   python -u extras/screen/showtest.py [ticks]   (exit 0 = green)
 """
@@ -24,9 +30,12 @@ sys.path.insert(0, os.path.join(ROOT, "irrun"))
 sys.path.insert(0, HERE)
 
 from irsims import share_dump, sim_from_dump  # noqa: E402
-from animtest import (out_port_id, resolve_port, port_val, tight,  # noqa: E402
-                      expect)
-from painttest import poly_pixels, stroke_pixels, slide  # noqa: E402
+import colormath  # noqa: E402
+
+colormath.install()
+from animtest import (out_port_id, resolve_port, port_val,  # noqa: E402
+                      tight, expect)
+from painttest import poly_colors, stroke_colors, slide  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
@@ -89,9 +98,8 @@ def main():
         for k, (p, r, c, w, a, st) in enumerate(samples):
             if p > 0.5 and prev[0] <= 0.5:
                 pushes.append(k)
-                pts = tight(a)
-                col = tuple(a[0:4]) if len(a) >= 4 else (0, 0, 0, 1)
-                latched.append((pts, col, w > 0.5, st))
+                pts, cols = tight(a)
+                latched.append((pts, cols, w > 0.5, st))
             if r > 0.5 and prev[1] <= 0.5:
                 reds.append(k)
             if c > 0.5 and prev[2] <= 0.5:
@@ -117,16 +125,18 @@ def main():
                          for p, _c, _w, s in latched),
                      "empty shape deletes slot 2")
         ok &= expect(len(clrs) >= 1, "clearAll pulse seen")
+
         # End replay and model at the last push edge: every burst before
         # it is complete (the driver's naps cover each burst by
         # construction, which the wall diff verifies), while a fixed
         # tick cutoff can land mid-burst of an infinite loop and fail
         # spuriously.  The never-redrawn last push stays pending in both.
         T_end = pushes[-1] if pushes else TICKS
-        # No "bursts settled" check here: the program loops forever, so any
-        # fixed run ends at an arbitrary point past some redraw.  The wall
-        # diff below subsumes it -- a burst cut off mid-flight necessarily
-        # differs from the model, while a completed one matches.
+        # No "bursts settled" check here: the program loops forever, so
+        # any fixed run ends at an arbitrary point past some redraw.
+        # The wall diff below subsumes it -- a burst cut off mid-flight
+        # necessarily differs from the model, while a completed one
+        # matches.
 
         # ---- phase 2: replay into the screen --------------------------
         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
@@ -136,15 +146,18 @@ def main():
         ssim = sim_from_dump(scr_dump)
         ssim.reset()
         from irsims import _extract as _ex
-        spts = None
+        spts = scols = None
         for nid, nd in ssim.nodes.items():
-            if _ex(nd.props.get("PortLabel", ("raw", ""))) == "shapePoints":
+            pl = _ex(nd.props.get("PortLabel", ("raw", "")))
+            if pl == "shapePoints":
                 spts = nid
-        assert spts is not None
+            elif pl == "shapeColors":
+                scols = nid
+        assert spts is not None and scols is not None
         ssim.inputs = {"shapePoints": [0.0] * 32,
-                       "shapeColor": BLACK,
+                       "shapeColors": [],
                        "pushShape": False, "wireMode": False,
-                       "shapeId": 0.0, "redrawAll": False,
+                       "shapeId": 0.0, "drawAll": False,
                        "clearAll": False}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
@@ -156,17 +169,16 @@ def main():
                 return
             _p, _r, _c, _w, a, st = samples[tick]
             b = samples[tick - 2] if tick >= 2 else (0, 0, 0, 0, [], "")
-            pts = tight(a)
+            pts, cols = tight(a)
             if pts != last_slid[0]:
-                slide(s, spts, list(pts))
-                last_slid[0] = list(pts)
+                slide(s, spts, scols, pts, cols)
+                last_slid[0] = pts
             s.inputs = dict(s.inputs, **{
                 "pushShape": (b[0] or 0.0) > 0.5,
                 "wireMode": (b[3] or 0.0) > 0.5,
                 "shapeId": parse_id(b[5]),
-                "redrawAll": (b[1] or 0.0) > 0.5,
+                "drawAll": (b[1] or 0.0) > 0.5,
                 "clearAll": (b[2] or 0.0) > 0.5,
-                "shapeColor": tuple(a[0:4]) if len(a) >= 4 else BLACK,
             })
 
         ssim.run(T_end, on_tick=hook2)
@@ -180,42 +192,49 @@ def main():
                for i in range(SW * SW)]
 
         # ---- phase 3: slot model --------------------------------------
+        # The deferred clear: the pulse forgets every slot and stages
+        # the black fill; the next drawAll runs it -- with a shape
+        # staged that means black first, then the shape over it.
         fb = {}
         slots = {}
         pending = None
-
-        def paint(pts, col, wire):
-            for px in (stroke_pixels(pts) if wire else poly_pixels(pts)):
-                fb[px] = col
-
+        black = False
         li = 0
+
+        def paint(pts, cols, wire):
+            model = stroke_colors(pts, cols) if wire \
+                else poly_colors(pts, cols)
+            fb.update(model)
+
         for k in range(T_end):
-            p, r, c, _w, _a, _st = samples[k][0], samples[k][1], \
-                samples[k][2], samples[k][3], samples[k][4], samples[k][5]
+            p, r, c = samples[k][0], samples[k][1], samples[k][2]
             if c > 0.5 and (samples[k - 1][2] if k else 0.0) <= 0.5:
-                fb = {}
                 slots = {}
                 pending = None
+                black = True
             if p > 0.5 and (samples[k - 1][0] if k else 0.0) <= 0.5:
-                pts, col, wire, st = latched[li]
+                pts, cols, wire, st = latched[li]
                 li += 1
-                pending = (pts, col, wire, st)
-            if r > 0.5 and (samples[k - 1][1] if k else 0.0) <= 0.5 \
-                    and pending is not None:
-                pts, col, wire, st = pending
-                sid = parse_id(st)
-                if sid < 0.5:
-                    paint(pts, col, wire)
-                else:
-                    key = int(sid)
-                    if not pts:
-                        slots.pop(key, None)
-                    else:
-                        slots[key] = (pts, col, wire)
+                pending = (pts, cols, wire, st)
+            if r > 0.5 and (samples[k - 1][1] if k else 0.0) <= 0.5:
+                if black:
                     fb = {}
-                    for kk in sorted(slots):
-                        paint(*slots[kk])
-                pending = None
+                    black = False
+                if pending is not None:
+                    pts, cols, wire, st = pending
+                    sid = parse_id(st)
+                    if sid < 0.5:
+                        paint(pts, cols, wire)
+                    else:
+                        key = int(sid)
+                        if not pts:
+                            slots.pop(key, None)
+                        else:
+                            slots[key] = (pts, cols, wire)
+                        fb = {}
+                        for kk in sorted(slots):
+                            paint(*slots[kk])
+                    pending = None
 
         bad = [i for i in range(SW * SW)
                if got[i] != fb.get(i, BLACK)]
@@ -238,8 +257,9 @@ def main():
             # which latched shapes overlap the model-only region?
             mo = set(model_only)
             scored = []
-            for li2, (pts, col, wire, st) in enumerate(latched):
-                px = (stroke_pixels(pts) if wire else poly_pixels(pts)) & mo
+            for li2, (pts, cols, wire, st) in enumerate(latched):
+                px = (set(stroke_colors(pts, cols)) if wire
+                      else set(poly_colors(pts, cols))) & mo
                 if px:
                     scored.append((len(px), li2, wire, st, len(pts) // 2))
             scored.sort(reverse=True)

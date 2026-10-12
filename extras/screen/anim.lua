@@ -1,9 +1,13 @@
 -- Rainbow spirograph, polygon edition -- driver for the 64x64 screen.
--- Wires: outNum1 -> pushFill, outNum2 -> redrawAll,
--- outNumArr -> colour (1..4: r,g,b,a) then only the points the shape
--- needs (5..) plus one -1 terminator; the connector truncates there.
--- One shape per frame, bursts hidden under the next frame's compute.
--- Terse: the lexer runs ~1 char/tick.
+-- Wires: outNum1 -> pushShape, outNum2 -> drawAll, outNum3 -> clearAll,
+-- outNumArr -> only the points the shape needs (1..) plus one -1
+-- terminator; the connector truncates there.  No colours are sent: the
+-- screen defaults every point to white, which keeps this driver's write
+-- budget the smallest it can be (the arrays below are 3 slots shorter
+-- per frame than the old colour-first layout) -- this program is the
+-- refresh-rate benchmark, and the colour feature is demonstrated by
+-- showcase.lua.  One shape per frame, bursts hidden under the next
+-- frame's compute.  Terse: the lexer runs ~1 char/tick.
 
 local sets = {
   {26.0, 12.0, 16.0, 37.7},
@@ -44,10 +48,10 @@ local function plot(ti)
   return (cx + x - 4.0) // 1.0, (cx + y - 4.0) // 1.0
 end
 
--- fire one shape: array is staged, pulse push then redraw with one tick
--- holds (push-L and redraw-H share a tick: different ports, both edges
+-- fire one shape: array is staged, pulse push then draw with one tick
+-- holds (push-L and draw-H share a tick: different ports, both edges
 -- land cleanly), no post wait -- the next frame's compute outlasts the
--- burst, so a redrawAll can never catch one mid-flight
+-- burst, so a drawAll can never catch one mid-flight
 local function fire(push)
   outNum(push, 1.0)
   local c = clock()
@@ -62,9 +66,8 @@ end
 -- an 8x8 filled square tracer at (bx,by), palette entry h
 local function tracer(bx, by, h)
   local ex, ey = bx + 8.0, by + 8.0
-  outNumArr(1, pal[h * 3 + 1], pal[h * 3 + 2], pal[h * 3 + 3], 1.0)
-  outNumArr(5, bx, by, ex, by, ex, ey, bx, ey)
-  outNumArr(13, -1.0)
+  outNumArr(1, bx, by, ex, by, ex, ey, bx, ey)
+  outNumArr(9, -1.0)
   fire(1)
 end
 
@@ -75,21 +78,24 @@ local function core(r, h)
   local y0, y1 = cx - r, cx + r
   local kx0, kx1 = cx - k, cx + k
   local ky0, ky1 = cx - k, cx + k
-  outNumArr(1, pal[h * 3 + 1], pal[h * 3 + 2], pal[h * 3 + 3], 0.5)
-  outNumArr(5, kx0, y0, kx1, y0, x1, ky0, x1, ky1)
-  outNumArr(13, kx1, y1, kx0, y1, x0, ky1, x0, ky0)
-  outNumArr(21, -1.0)
+  outNumArr(1, kx0, y0, kx1, y0, x1, ky0, x1, ky1)
+  outNumArr(9, kx1, y1, kx0, y1, x0, ky1, x0, ky0)
+  outNumArr(17, -1.0)
   fire(1)
 end
 
+-- clearAll only forgets the slots: the drawAll right after it is the
+-- pulse that actually blacks the wall (64 rows), so wait that burst
+-- out exactly -- the next frame's compute (~50 ticks) would abandon it
 local function clearAll()
-  outNumArr(1, 0.0, 0.0, 0.0, 1.0)
-  outNumArr(5, 0.0, 0.0, 64.0, 0.0, 64.0, 64.0, 0.0, 64.0)
-  outNumArr(13, -1.0)
-  fire(1)
-  -- the clear is 64 rows; the next frame's compute (~50 ticks) would
-  -- abandon its burst, so wait it out exactly (normal bursts stay
-  -- hidden under the compute and need no wait)
+  outNum(3, 1.0)
+  local c = clock()
+  while clock() == c do end
+  outNum(3, 0.0)
+  outNum(2, 1.0)
+  c = clock()
+  while clock() == c do end
+  outNum(2, 0.0)
   local target = clock() + 0.66
   while clock() < target do end
 end
