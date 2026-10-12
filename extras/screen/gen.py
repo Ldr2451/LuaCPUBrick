@@ -1,17 +1,16 @@
-"""Generate extras/screen/screen.ws: a polygon-fill pixel screen.
+"""Generate extras/screen/screen.ws: a polygon-fill, polyline-stroke screen.
 
 One color output per pixel (px0..pxN-1), each wired in the save to one
-brick's property changer.  The chip fills convex polygons from a point
-array, so one primitive covers rects, triangles, ovals, thick lines and
-curve segments: a rect is 4 points, an oval an inscribed 16-gon, a
-thick line 4 corner points, a curve a convex quad per segment.  A
-concave outline is decomposed into convex pieces by the driver, the way
-a renderer fans a polygon -- the chip fills each piece's per-row hull.
+brick's property changer.  Two primitives share one point array: fills
+take convex polygons (a rect is 4 points, an oval an inscribed 16-gon),
+strokes take open or closed polylines at a fixed 2px width (a wireframe
+is a closed path, an open curve is not).  A concave fill decomposes
+into convex pieces driver-side; a custom stroke width is a quad strip.
 
   python -u extras/screen/gen.py [lanes]     (default 64; writes screen.ws)
 
 Measured shape (audit.py): ~4 nodes per pixel (port + global + scanout
-copy), so 64x64 lands ~16.5k nodes before the painter.
+copy), so 64x64 lands ~16.5k nodes before the painters.
 
 Two sim facts shaped the inner loops, both measured on this repo's own
 runner: a computed-index array read costs about half a second (so the
@@ -20,7 +19,10 @@ and a deep chain of pure compare/select gates costs about a quarter of
 a second a gate -- a 63-comparator sort for concave even-odd spans came
 to ~12s a row-advance tick.  The min/max tree reductions below are the
 same information for a convex fill at depth 4, and a row-advance tick
-is back to the scanout's own cost.
+is back to the scanout's own cost.  The stroke walk holds the same
+discipline: its per-tick path has no selects (the shift register walks
+the points past the corner math) and its span is a 4-edge min/max at
+depth 2.
 """
 import os
 import sys
@@ -43,21 +45,35 @@ L.append("// rerouter pin per port (4096 pins in an 8k-unit line, wrecking the p
 L.append("// bounds), and nobody outside needs them -- the wall taps the inner output")
 L.append("// gates directly by remote wire.")
 L.append("//")
-L.append("// Protocol: pushShape latches (color, point count), redrawAll paints the")
-L.append("// CURRENT polygon: the latched one, else the last one again.  Two signals")
-L.append("// so the CPU can write the point array and the count across ticks and")
-L.append("// commit atomically -- no torn shapes.  Bounds are clipped; a fully")
-L.append("// off-screen polygon paints nothing.  Brick colors persist until")
-L.append("// rewritten, so there is no keepalive and no expiry: the chip emits one")
-L.append("// burst per redrawAll and is silent otherwise.")
+L.append("// Protocol: pushFill latches a fill, pushStroke latches a 2px stroke,")
+L.append("// and redrawAll paints the CURRENT shape: the latched one, else the last")
+L.append("// one again.  The point count is the array's length -- the driver sends")
+L.append("// exactly as many points as the shape has.  A fill closes its outline")
+L.append("// implicitly; a stroke runs consecutive pairs with no wrap, so the driver")
+L.append("// closes a wireframe by repeating the first point and leaves an open curve")
+L.append("// open (butt caps; joins overlap in the same colour, so need no mitres).")
+L.append("// A single point strokes as a 2x2 dot.  The array ride-along with the")
+L.append("// scalar inputs means a commit is atomic anyway: the points and colour")
+L.append("// land on the same tick as the push.  Bounds are clipped; a fully")
+L.append("// off-screen shape paints nothing.  Brick colors persist until rewritten,")
+L.append("// so there is no keepalive and no expiry: the chip emits one burst per")
+L.append("// redrawAll and is silent otherwise.")
 L.append("//")
 L.append("// The fill is a scanline walk.  At the arm the points are read from the")
-L.append("// pts array into per-edge scalars (base x/y, x-per-y slope, y range);")
+L.append("// array into per-edge scalars (base x/y, x-per-y slope, y range);")
 L.append("// each row's span is the min and max of the crossings of the edges that")
 L.append("// straddle it, which is the exact fill of a convex polygon -- a concave")
 L.append("// outline's rows fill their hull, so the driver decomposes one into")
 L.append("// convex pieces.  One span is painted per tick, so a burst costs one tick")
 L.append("// per row, not per 64 px.")
+L.append("//")
+L.append("// The stroke is a second walk over the same lanes.  At the arm the points")
+L.append("// land in a preserved store (replays restore from it, never from a dirty")
+L.append("// array) and in a shift register the walk consumes pair by pair; each")
+L.append("// pair's 2px quad -- offset by the unit normal, extended a pixel along the")
+L.append("// tangent so joints overlap -- fills through the same row-span machinery")
+L.append("// at 4 edges deep.  A burst costs one tick per row plus one per segment,")
+L.append("// and two per degenerate (padded) segment.")
 L.append("//")
 L.append("// Tuning (top of gen.py): LANES is the speed knob.  Placement is")
 L.append("// physical: the wall builder lays the 64x64 bricks, so there are no")
@@ -74,12 +90,18 @@ L.append("const SWF = %d.0" % SW)
 L.append("const MAXP = %d" % MAXP)
 L.append("")
 
-L.append("@left in pts: float[]")
-L.append("@left in shapeN: float")
-L.append("@left in rectColor: color")
-L.append("@left in pushShape: bool")
+L.append("@left in shapePoints: float[]")
+L.append("@left in shapeColor: color")
+L.append("@left in pushFill: bool")
+L.append("@left in pushStroke: bool")
 L.append("@left in redrawAll: bool")
 L.append("")
+
+L.append("const SW = %d" % SW)
+L.append("const SH = %d" % SH)
+L.append("const NP = %d" % NP)
+L.append("const SWF = %d.0" % SW)
+L.append("const MAXP = %d" % MAXP)
 
 L.append("var fb: color[]")
 L.append("var fbInit: bool = false")
@@ -98,6 +120,24 @@ L.append("var gyMin: float = 200.0")
 L.append("var gyMax: float = -200.0")
 L.append("var gxMin: float = 200.0")
 L.append("var gxMax: float = -200.0")
+# The stroke walk's preserved point store (replays restore from it) and its
+# shift register (consumed pair by pair, so the per-tick path has no
+# selects), the current quad's corners, and the walk state.
+for i in range(MAXP):
+    L.append("var sPx%d: float = 0.0" % i)
+    L.append("var sPy%d: float = 0.0" % i)
+for i in range(MAXP):
+    L.append("var rX%d: float = 0.0" % i)
+    L.append("var rY%d: float = 0.0" % i)
+for qn in ("qAx", "qAy", "qBx", "qBy", "qCx", "qCy", "qDx", "qDy"):
+    L.append("var %s: float = 0.0" % qn)
+L.append("var sOn: bool = false")
+L.append("var sLive: bool = false")
+L.append("var sSeg: float = 0.0")
+L.append("var sSegs: float = 0.0")
+L.append("var sLast: float = -1.0")
+L.append("var pendingS: bool = false")
+L.append("var armingS: bool = false")
 # The 16 edge records, as scalars.
 for i in range(MAXP):
     L.append("var eX%d: float = 0.0" % i)
@@ -115,27 +155,52 @@ L.append("// No prev-edge flags anywhere in this file, deliberately.  on Change 
 L.append("// only on a transition, so the event IS the edge.  A same-handler")
 L.append("// read-then-write of one var loses the race; cross-handler flags")
 L.append("// (pending, arming, polyOn) are fine, because no pass writes what it reads.")
-L.append("on Change(pushShape) {")
-L.append("  if pushShape {")
-L.append("    pCol = rectColor")
-L.append("    n = if shapeN < 3.0 then 3.0 else if shapeN > 16.0 then 16.0 else shapeN")
+L.append("// Each push clears the other shape's stage, so the last push before a")
+L.append("// redrawAll is the one that arms -- and a load-time edge on an unwired")
+L.append("// stage cannot fire later.")
+L.append("on Change(pushFill) {")
+L.append("  if pushFill {")
+L.append("    pCol = shapeColor")
 L.append("    pending = true")
+L.append("    pendingS = false")
+L.append("  }")
+L.append("}")
+L.append("on Change(pushStroke) {")
+L.append("  if pushStroke {")
+L.append("    pCol = shapeColor")
+L.append("    pendingS = true")
+L.append("    pending = false")
 L.append("  }")
 L.append("}")
 L.append("")
-L.append("// A bare redrawAll replays the last polygon: the edge records are still")
-L.append("// staged, so only the walk state resets (pcol=200 is past every right")
-L.append("// edge, so the first advance lands on the first row).")
+L.append("// A bare redrawAll replays the last shape: the edge records (fill) or the")
+L.append("// preserved points (stroke) are still staged, so only the walk state")
+L.append("// resets.  Each replay is guarded against the other walk and both arms,")
+L.append("// so a fill burst and a stroke replay can never collide.")
 L.append("on Change(redrawAll) {")
 L.append("  if redrawAll {")
 L.append("    if pending {")
 L.append("      arming = true")
 L.append("      pending = false")
 L.append("    }")
-L.append("    if polyLive && !polyOn && !arming {")
+L.append("    if pendingS {")
+L.append("      armingS = true")
+L.append("      pendingS = false")
+L.append("    }")
+L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS {")
 L.append("      prow = pfirst - 1.0")
 L.append("      pcol = 200.0")
 L.append("      polyOn = true")
+L.append("    }")
+L.append("    if sLive && !sOn && !armingS && !polyOn && !arming {")
+for i in range(MAXP):
+    L.append("      rX%d = sPx%d" % (i, i))
+    L.append("      rY%d = sPy%d" % (i, i))
+L.append("      sSeg = -1.0")
+L.append("      prow = 0.0")
+L.append("      sLast = -1.0")
+L.append("      pcol = 200.0")
+L.append("      sOn = true")
 L.append("    }")
 L.append("  }")
 L.append("}")
@@ -159,58 +224,141 @@ L.append("  }")
 # the point lets, never a computed array read.
 L.append("  if arming {")
 L.append("    arming = false")
+L.append("    sOn = false")
+L.append("    sLive = false")
 L.append("    gyMin = 200.0")
 L.append("    gyMax = -200.0")
 L.append("    gxMin = 200.0")
 L.append("    gxMax = -200.0")
+# The point count is the array's length: the driver sends exactly as many
+# points as the shape has and no count port exists.  A short list is an
+# empty shape (two points have no interior), a long one clamps to the 16
+# edges the chip holds.
+L.append("    n = (shapePoints.length() / 2.0) | 0")
+L.append("    if n > 16.0 { n = 16.0 }")
+L.append("    if n < 3.0 {")
+L.append("      polyOn = false")
+L.append("      polyLive = false")
+L.append("    }")
+L.append("    if n >= 3.0 {")
+# The point reads are unconditional: an array shorter than 32 slots reads
+# nil past its end, which is harmless because no arithmetic below touches
+# a point belonging to an edge the count ruled out (every such edge's
+# whole body is inside its `i < n` arm).
 for i in range(MAXP):
-    L.append("    let px%d = pts[%d]" % (i, 2 * i))
-    L.append("    let py%d = pts[%d]" % (i, 2 * i + 1))
+    L.append("      let px%d = shapePoints[%d]" % (i, 2 * i))
+    L.append("      let py%d = shapePoints[%d]" % (i, 2 * i + 1))
 for i in range(MAXP):
     if i + 1 < MAXP:
-        L.append("    let qx%d = if %d.0 < n then px%d else px0"
+        L.append("      let qx%d = if %d.0 < n then px%d else px0"
                  % (i, i + 1, i + 1))
-        L.append("    let qy%d = if %d.0 < n then py%d else py0"
+        L.append("      let qy%d = if %d.0 < n then py%d else py0"
                  % (i, i + 1, i + 1))
     else:
         # the 17th point can never exist (n <= 16), so the last edge
         # always wraps and needs no condition
-        L.append("    let qx%d = px0" % i)
-        L.append("    let qy%d = py0" % i)
-    L.append("    let dx%d = qx%d - px%d" % (i, i, i))
-    L.append("    let dy%d = qy%d - py%d" % (i, i, i))
-    L.append("    let s%d = if dy%d > 0.0 then dx%d / dy%d"
-             " else if dy%d < 0.0 then dx%d / dy%d else 0.0" % (i, i, i, i, i, i, i))
-    L.append("    let lo%d = if py%d < qy%d then py%d else qy%d" % (i, i, i, i, i))
-    L.append("    let hi%d = if py%d < qy%d then qy%d else py%d" % (i, i, i, i, i))
-    L.append("    eX%d = px%d" % (i, i))
-    L.append("    eY%d = py%d" % (i, i))
-    L.append("    eS%d = s%d" % (i, i))
-    L.append("    if %d.0 < n {" % i)
-    L.append("      eLo%d = lo%d" % (i, i))
-    L.append("      eHi%d = hi%d" % (i, i))
-    L.append("      if py%d < gyMin { gyMin = py%d }" % (i, i))
-    L.append("      if py%d > gyMax { gyMax = py%d }" % (i, i))
-    L.append("      if px%d < gxMin { gxMin = px%d }" % (i, i))
-    L.append("      if px%d > gxMax { gxMax = px%d }" % (i, i))
-    L.append("    } else {")
-    L.append("      eLo%d = 200.0" % i)
-    L.append("      eHi%d = -200.0" % i)
-    L.append("    }")
-L.append("    if gyMax < 0.0 || gyMin >= SWF || gxMax < 0.0 || gxMin >= SWF {")
-L.append("      polyOn = false")
-L.append("      polyLive = false")
-L.append("    } else {")
-L.append("      pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)")
-L.append("      plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)")
-L.append("      prow = pfirst - 1.0")
-L.append("      pcol = 200.0")
-L.append("      polyOn = true")
-L.append("      polyLive = true")
+        L.append("      let qx%d = px0" % i)
+        L.append("      let qy%d = py0" % i)
+    L.append("      if %d.0 < n {" % i)
+    L.append("        let dx%d = qx%d - px%d" % (i, i, i))
+    L.append("        let dy%d = qy%d - py%d" % (i, i, i))
+    L.append("        let s%d = if dy%d > 0.0 then dx%d / dy%d"
+             " else if dy%d < 0.0 then dx%d / dy%d else 0.0"
+             % (i, i, i, i, i, i, i))
+    L.append("        let lo%d = if py%d < qy%d then py%d else qy%d"
+             % (i, i, i, i, i))
+    L.append("        let hi%d = if py%d < qy%d then qy%d else py%d"
+             % (i, i, i, i, i))
+    L.append("        eX%d = px%d" % (i, i))
+    L.append("        eY%d = py%d" % (i, i))
+    L.append("        eS%d = s%d" % (i, i))
+    L.append("        eLo%d = lo%d" % (i, i))
+    L.append("        eHi%d = hi%d" % (i, i))
+    L.append("        if py%d < gyMin { gyMin = py%d }" % (i, i))
+    L.append("        if py%d > gyMax { gyMax = py%d }" % (i, i))
+    L.append("        if px%d < gxMin { gxMin = px%d }" % (i, i))
+    L.append("        if px%d > gxMax { gxMax = px%d }" % (i, i))
+    L.append("      } else {")
+    L.append("        eLo%d = 200.0" % i)
+    L.append("        eHi%d = -200.0" % i)
+    L.append("      }")
+L.append("      if gyMax < 0.0 || gyMin >= SWF || gxMax < 0.0"
+         " || gxMin >= SWF {")
+L.append("        polyOn = false")
+L.append("        polyLive = false")
+L.append("      } else {")
+L.append("        pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)")
+L.append("        plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)")
+L.append("        prow = pfirst - 1.0")
+L.append("        pcol = 200.0")
+L.append("        polyOn = true")
+L.append("        polyLive = true")
+L.append("      }")
 L.append("    }")
 L.append("  }")
 
-# ---- the walk -------------------------------------------------------------
+# ---- the stroke arm: points -> preserved store + shift register ------------
+# Runs in the mod when a stroke was pushed.  The count is the array's
+# length; under 2 points there is no segment (a single point is a 2x2
+# dot, an empty array is nothing).  Segments are consecutive pairs with
+# no wrap -- the driver closes a wireframe by repeating the first point
+# and leaves an open curve open -- so no closure test and no selects.
+L.append("  if armingS {")
+L.append("    armingS = false")
+L.append("    polyOn = false")
+L.append("    polyLive = false")
+for i in range(MAXP):
+    L.append("    sPx%d = shapePoints[%d]" % (i, 2 * i))
+    L.append("    sPy%d = shapePoints[%d]" % (i, 2 * i + 1))
+L.append("    sSegs = (shapePoints.length() / 2.0) | 0")
+L.append("    if sSegs > 16.0 { sSegs = 16.0 }")
+L.append("    if sSegs < 1.0 {")
+L.append("      sOn = false")
+L.append("      sLive = false")
+L.append("    } else {")
+L.append("      if sSegs < 2.0 {")
+L.append("        if sPx0 < 0.0 || sPx0 >= SWF || sPy0 < 0.0 || sPy0 >= SWF {")
+L.append("          sOn = false")
+L.append("          sLive = false")
+L.append("        } else {")
+L.append("          prow = sPy0 | 0")
+L.append("          sLast = if sPy0 >= 62.0 then 63.0 else (sPy0 | 0) + 1.0")
+L.append("          pcol = if sPx0 < 0.0 then 0.0 else (sPx0 | 0)")
+L.append("          pcurR = if sPx0 >= 63.0 then 63.0 else (sPx0 | 0) + 1.0")
+L.append("          qAx = sPx0 | 0")
+L.append("          qAy = sPy0 | 0")
+L.append("          qBx = (sPx0 | 0) + 1.0")
+L.append("          qBy = sPy0 | 0")
+L.append("          qCx = (sPx0 | 0) + 1.0")
+L.append("          qCy = (sPy0 | 0) + 2.0")
+L.append("          qDx = sPx0 | 0")
+L.append("          qDy = (sPy0 | 0) + 2.0")
+L.append("          sSeg = 0.0")
+L.append("          sSegs = 0.0")
+L.append("          sOn = true")
+L.append("          sLive = true")
+L.append("        }")
+L.append("      } else {")
+L.append("        sSegs = sSegs - 1.0")
+for i in range(MAXP):
+    L.append("        rX%d = sPx%d" % (i, i))
+    L.append("        rY%d = sPy%d" % (i, i))
+L.append("        sSeg = -1.0")
+L.append("        prow = 0.0")
+L.append("        sLast = -1.0")
+L.append("        pcol = 200.0")
+L.append("        sOn = true")
+L.append("        sLive = true")
+L.append("      }")
+L.append("    }")
+L.append("  }")
+
+# ---- the walks ------------------------------------------------------------
+# The fill advances rows of its staged edges; the stroke advances rows of
+# its current quad, then segments (shifting the register, rebuilding the
+# quad from the new head).  Both write their span into the shared paint
+# state (prow, pcol, pcurR) and the shared lanes below paint it, so a
+# stroke costs no lane duplication.
 L.append("  if polyOn {")
 L.append("    if pcol > pcurR {")
 L.append("      prow = prow + 1.0")
@@ -223,8 +371,12 @@ L.append("      } else {")
 for i in range(MAXP):
     L.append("        let cv%d = prow >= eLo%d && prow < eHi%d" % (i, i, i))
     L.append("        let cx%d = eX%d + eS%d * (prow - eY%d)" % (i, i, i, i))
-    L.append("        let c%d = if cv%d then cx%d else 200.0" % (i, i, i))
-mn = ["c%d" % i for i in range(MAXP)]
+    # Two masks, one per reduction: the min needs its invalid edges large
+    # and the max needs them small, or a 16-edge polygon's twelve dead
+    # edges win the max and every row fills to the wall's right edge.
+    L.append("        let cmn%d = if cv%d then cx%d else 200.0" % (i, i, i))
+    L.append("        let cmx%d = if cv%d then cx%d else -200.0" % (i, i, i))
+mn = ["cmn%d" % i for i in range(MAXP)]
 layer = 0
 while len(mn) > 1:
     nxt = []
@@ -237,7 +389,7 @@ while len(mn) > 1:
         nxt.append(mn[-1])
     mn = nxt
     layer += 1
-mx = ["c%d" % i for i in range(MAXP)]
+mx = ["cmx%d" % i for i in range(MAXP)]
 layer = 0
 while len(mx) > 1:
     nxt = []
@@ -261,7 +413,113 @@ L.append("          pcurR = if %s >= SWF then SWF - 1.0 else (%s | 0)"
 L.append("        }")
 L.append("      }")
 L.append("    }")
-L.append("    if polyOn {")
+L.append("  }")
+L.append("  // The stroke advance: rows of the current quad, then segments.")
+L.append("  // A segment's quad is rebuilt from the register head (a shift plus")
+L.append("  // corner math, all sequential, so the per-tick path stays select-free);")
+L.append("  // a zero-length segment marks its quad empty and the walk steps past")
+L.append("  // it next tick, two ticks per padded point.")
+L.append("  // Guarded by !polyOn: the tick-0 seeding fires every Change detector")
+L.append("  // once, so both walks arm from the seeded array together -- with the")
+L.append("  // guard only the fill advances and stages spans while both are live,")
+L.append("  // and the stroke resumes intact when the fill ends (same shape, same")
+L.append("  // colour, so the overlap is redundant, never torn: the shared paint")
+L.append("  // state is written by exactly one advance per tick).")
+L.append("  if sOn && !polyOn {")
+L.append("    if pcol > pcurR {")
+L.append("      prow = prow + 1.0")
+L.append("      if prow > sLast {")
+L.append("        sSeg = sSeg + 1.0")
+L.append("        if sSeg >= sSegs {")
+L.append("          sOn = false")
+L.append("        } else {")
+L.append("          if sSeg > 0.0 {")
+for i in range(MAXP - 1):
+    L.append("            rX%d = rX%d" % (i, i + 1))
+    L.append("            rY%d = rY%d" % (i, i + 1))
+L.append("          }")
+L.append("          let sdx = rX1 - rX0")
+L.append("          let sdy = rY1 - rY0")
+L.append("          if sdx * sdx + sdy * sdy <= 0.0 {")
+L.append("            prow = 0.0")
+L.append("            sLast = -1.0")
+L.append("          } else {")
+L.append("            let slen = sqrt(sdx * sdx + sdy * sdy)")
+L.append("            let stx = sdx / slen")
+L.append("            let sty = sdy / slen")
+L.append("            let snx = 0.0 - sty")
+L.append("            let sny = stx")
+L.append("            let sax = rX0 - stx")
+L.append("            let say = rY0 - sty")
+L.append("            let sbx = rX1 + stx")
+L.append("            let sby = rY1 + sty")
+L.append("            qAx = sax + snx")
+L.append("            qAy = say + sny")
+L.append("            qBx = sbx + snx")
+L.append("            qBy = sby + sny")
+L.append("            qCx = sbx - snx")
+L.append("            qCy = sby - sny")
+L.append("            qDx = sax - snx")
+L.append("            qDy = say - sny")
+L.append("            let qMinY = if qAy < qBy then (if qAy < qCy then (if qAy < qDy then qAy else qDy) else (if qCy < qDy then qCy else qDy)) else (if qBy < qCy then (if qBy < qDy then qBy else qDy) else (if qCy < qDy then qCy else qDy))")
+L.append("            let qMaxY = if qAy > qBy then (if qAy > qCy then (if qAy > qDy then qAy else qDy) else (if qCy > qDy then qCy else qDy)) else (if qBy > qCy then (if qBy > qDy then qBy else qDy) else (if qCy > qDy then qCy else qDy))")
+L.append("            prow = if qMinY < 0.0 then 0.0 else (qMinY | 0)")
+L.append("            sLast = if qMaxY >= SWF then SWF - 1.0 else (qMaxY | 0)")
+L.append("          }")
+L.append("        }")
+L.append("      }")
+L.append("      if sOn {")
+L.append("        if prow <= sLast {")
+L.append("          let u0lo = if qAy < qBy then qAy else qBy")
+L.append("          let u0hi = if qAy < qBy then qBy else qAy")
+L.append("          let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0")
+L.append("          let u0x = qAx + u0s * (prow - qAy)")
+L.append("          let u0v = prow >= u0lo && prow < u0hi")
+L.append("          let un0 = if u0v then u0x else 200.0")
+L.append("          let ux0 = if u0v then u0x else -200.0")
+L.append("          let u1lo = if qBy < qCy then qBy else qCy")
+L.append("          let u1hi = if qBy < qCy then qCy else qBy")
+L.append("          let u1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0")
+L.append("          let u1x = qBx + u1s * (prow - qBy)")
+L.append("          let u1v = prow >= u1lo && prow < u1hi")
+L.append("          let un1 = if u1v then u1x else 200.0")
+L.append("          let ux1 = if u1v then u1x else -200.0")
+L.append("          let u2lo = if qCy < qDy then qCy else qDy")
+L.append("          let u2hi = if qCy < qDy then qDy else qCy")
+L.append("          let u2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0")
+L.append("          let u2x = qCx + u2s * (prow - qCy)")
+L.append("          let u2v = prow >= u2lo && prow < u2hi")
+L.append("          let un2 = if u2v then u2x else 200.0")
+L.append("          let ux2 = if u2v then u2x else -200.0")
+L.append("          let u3lo = if qDy < qAy then qDy else qAy")
+L.append("          let u3hi = if qDy < qAy then qAy else qDy")
+L.append("          let u3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0")
+L.append("          let u3x = qDx + u3s * (prow - qDy)")
+L.append("          let u3v = prow >= u3lo && prow < u3hi")
+L.append("          let un3 = if u3v then u3x else 200.0")
+L.append("          let ux3 = if u3v then u3x else -200.0")
+L.append("          let umn01 = if un0 < un1 then un0 else un1")
+L.append("          let umn23 = if un2 < un3 then un2 else un3")
+L.append("          let umn = if umn01 < umn23 then umn01 else umn23")
+L.append("          let umx01 = if ux0 < ux1 then ux1 else ux0")
+L.append("          let umx23 = if ux2 < ux3 then ux3 else ux2")
+L.append("          let umx = if umx01 < umx23 then umx23 else umx01")
+L.append("          if umn >= 200.0 || umx < 0.0 || umn >= SWF {")
+L.append("            pcol = 200.0")
+L.append("            pcurR = 100.0")
+L.append("          } else {")
+L.append("            pcol = if umn < 0.0 then 0.0 else (umn | 0)")
+L.append("            pcurR = if umx >= SWF then SWF - 1.0 else (umx | 0)")
+L.append("          }")
+L.append("        } else {")
+L.append("          pcol = 200.0")
+L.append("          pcurR = 100.0")
+L.append("        }")
+L.append("      }")
+L.append("    }")
+L.append("  }")
+L.append("  // The shared lanes: whichever walk staged a span paints it.")
+L.append("  if polyOn || sOn {")
 for j in range(K):
     L.append("      let tj%d = pcol + %d.0" % (j, j))
     L.append("      if tj%d <= pcurR {" % j)
@@ -269,7 +527,6 @@ for j in range(K):
     L.append("        fb[ridx%d] = pCol" % j)
     L.append("      }")
 L.append("      pcol = pcol + %d.0" % K)
-L.append("    }")
 L.append("  }")
 # The scanout: every pixel global mirrors its fb slot, every tick.
 for i in range(NP):

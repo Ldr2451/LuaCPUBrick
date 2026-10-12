@@ -7,21 +7,35 @@
 // bounds), and nobody outside needs them -- the wall taps the inner output
 // gates directly by remote wire.
 //
-// Protocol: pushShape latches (color, point count), redrawAll paints the
-// CURRENT polygon: the latched one, else the last one again.  Two signals
-// so the CPU can write the point array and the count across ticks and
-// commit atomically -- no torn shapes.  Bounds are clipped; a fully
-// off-screen polygon paints nothing.  Brick colors persist until
-// rewritten, so there is no keepalive and no expiry: the chip emits one
-// burst per redrawAll and is silent otherwise.
+// Protocol: pushFill latches a fill, pushStroke latches a 2px stroke,
+// and redrawAll paints the CURRENT shape: the latched one, else the last
+// one again.  The point count is the array's length -- the driver sends
+// exactly as many points as the shape has.  A fill closes its outline
+// implicitly; a stroke runs consecutive pairs with no wrap, so the driver
+// closes a wireframe by repeating the first point and leaves an open curve
+// open (butt caps; joins overlap in the same colour, so need no mitres).
+// A single point strokes as a 2x2 dot.  The array ride-along with the
+// scalar inputs means a commit is atomic anyway: the points and colour
+// land on the same tick as the push.  Bounds are clipped; a fully
+// off-screen shape paints nothing.  Brick colors persist until rewritten,
+// so there is no keepalive and no expiry: the chip emits one burst per
+// redrawAll and is silent otherwise.
 //
 // The fill is a scanline walk.  At the arm the points are read from the
-// pts array into per-edge scalars (base x/y, x-per-y slope, y range);
+// array into per-edge scalars (base x/y, x-per-y slope, y range);
 // each row's span is the min and max of the crossings of the edges that
 // straddle it, which is the exact fill of a convex polygon -- a concave
 // outline's rows fill their hull, so the driver decomposes one into
 // convex pieces.  One span is painted per tick, so a burst costs one tick
 // per row, not per 64 px.
+//
+// The stroke is a second walk over the same lanes.  At the arm the points
+// land in a preserved store (replays restore from it, never from a dirty
+// array) and in a shift register the walk consumes pair by pair; each
+// pair's 2px quad -- offset by the unit normal, extended a pixel along the
+// tangent so joints overlap -- fills through the same row-span machinery
+// at 4 edges deep.  A burst costs one tick per row plus one per segment,
+// and two per degenerate (padded) segment.
 //
 // Tuning (top of gen.py): LANES is the speed knob.  Placement is
 // physical: the wall builder lays the 64x64 bricks, so there are no
@@ -35,12 +49,17 @@ const NP = 4096
 const SWF = 64.0
 const MAXP = 16
 
-@left in pts: float[]
-@left in shapeN: float
-@left in rectColor: color
-@left in pushShape: bool
+@left in shapePoints: float[]
+@left in shapeColor: color
+@left in pushFill: bool
+@left in pushStroke: bool
 @left in redrawAll: bool
 
+const SW = 64
+const SH = 64
+const NP = 4096
+const SWF = 64.0
+const MAXP = 16
 var fb: color[]
 var fbInit: bool = false
 var pCol: color = Color(0.0, 0.0, 0.0, 1.0)
@@ -58,6 +77,85 @@ var gyMin: float = 200.0
 var gyMax: float = -200.0
 var gxMin: float = 200.0
 var gxMax: float = -200.0
+var sPx0: float = 0.0
+var sPy0: float = 0.0
+var sPx1: float = 0.0
+var sPy1: float = 0.0
+var sPx2: float = 0.0
+var sPy2: float = 0.0
+var sPx3: float = 0.0
+var sPy3: float = 0.0
+var sPx4: float = 0.0
+var sPy4: float = 0.0
+var sPx5: float = 0.0
+var sPy5: float = 0.0
+var sPx6: float = 0.0
+var sPy6: float = 0.0
+var sPx7: float = 0.0
+var sPy7: float = 0.0
+var sPx8: float = 0.0
+var sPy8: float = 0.0
+var sPx9: float = 0.0
+var sPy9: float = 0.0
+var sPx10: float = 0.0
+var sPy10: float = 0.0
+var sPx11: float = 0.0
+var sPy11: float = 0.0
+var sPx12: float = 0.0
+var sPy12: float = 0.0
+var sPx13: float = 0.0
+var sPy13: float = 0.0
+var sPx14: float = 0.0
+var sPy14: float = 0.0
+var sPx15: float = 0.0
+var sPy15: float = 0.0
+var rX0: float = 0.0
+var rY0: float = 0.0
+var rX1: float = 0.0
+var rY1: float = 0.0
+var rX2: float = 0.0
+var rY2: float = 0.0
+var rX3: float = 0.0
+var rY3: float = 0.0
+var rX4: float = 0.0
+var rY4: float = 0.0
+var rX5: float = 0.0
+var rY5: float = 0.0
+var rX6: float = 0.0
+var rY6: float = 0.0
+var rX7: float = 0.0
+var rY7: float = 0.0
+var rX8: float = 0.0
+var rY8: float = 0.0
+var rX9: float = 0.0
+var rY9: float = 0.0
+var rX10: float = 0.0
+var rY10: float = 0.0
+var rX11: float = 0.0
+var rY11: float = 0.0
+var rX12: float = 0.0
+var rY12: float = 0.0
+var rX13: float = 0.0
+var rY13: float = 0.0
+var rX14: float = 0.0
+var rY14: float = 0.0
+var rX15: float = 0.0
+var rY15: float = 0.0
+var qAx: float = 0.0
+var qAy: float = 0.0
+var qBx: float = 0.0
+var qBy: float = 0.0
+var qCx: float = 0.0
+var qCy: float = 0.0
+var qDx: float = 0.0
+var qDy: float = 0.0
+var sOn: bool = false
+var sLive: bool = false
+var sSeg: float = 0.0
+var sSegs: float = 0.0
+var sLast: float = -1.0
+var pendingS: bool = false
+var armingS: bool = false
 var eX0: float = 0.0
 var eY0: float = 0.0
 var eS0: float = 0.0
@@ -8336,27 +8434,81 @@ out px4095: color = g4095
 // only on a transition, so the event IS the edge.  A same-handler
 // read-then-write of one var loses the race; cross-handler flags
 // (pending, arming, polyOn) are fine, because no pass writes what it reads.
-on Change(pushShape) {
-  if pushShape {
-    pCol = rectColor
-    n = if shapeN < 3.0 then 3.0 else if shapeN > 16.0 then 16.0 else shapeN
+// Each push clears the other shape's stage, so the last push before a
+// redrawAll is the one that arms -- and a load-time edge on an unwired
+// stage cannot fire later.
+on Change(pushFill) {
+  if pushFill {
+    pCol = shapeColor
     pending = true
+    pendingS = false
+  }
+}
+on Change(pushStroke) {
+  if pushStroke {
+    pCol = shapeColor
+    pendingS = true
+    pending = false
   }
 }
 
-// A bare redrawAll replays the last polygon: the edge records are still
-// staged, so only the walk state resets (pcol=200 is past every right
-// edge, so the first advance lands on the first row).
+// A bare redrawAll replays the last shape: the edge records (fill) or the
+// preserved points (stroke) are still staged, so only the walk state
+// resets.  Each replay is guarded against the other walk and both arms,
+// so a fill burst and a stroke replay can never collide.
 on Change(redrawAll) {
   if redrawAll {
     if pending {
       arming = true
       pending = false
     }
-    if polyLive && !polyOn && !arming {
+    if pendingS {
+      armingS = true
+      pendingS = false
+    }
+    if polyLive && !polyOn && !arming && !sOn && !armingS {
       prow = pfirst - 1.0
       pcol = 200.0
       polyOn = true
+    }
+    if sLive && !sOn && !armingS && !polyOn && !arming {
+      rX0 = sPx0
+      rY0 = sPy0
+      rX1 = sPx1
+      rY1 = sPy1
+      rX2 = sPx2
+      rY2 = sPy2
+      rX3 = sPx3
+      rY3 = sPy3
+      rX4 = sPx4
+      rY4 = sPy4
+      rX5 = sPx5
+      rY5 = sPy5
+      rX6 = sPx6
+      rY6 = sPy6
+      rX7 = sPx7
+      rY7 = sPy7
+      rX8 = sPx8
+      rY8 = sPy8
+      rX9 = sPx9
+      rY9 = sPy9
+      rX10 = sPx10
+      rY10 = sPy10
+      rX11 = sPx11
+      rY11 = sPy11
+      rX12 = sPx12
+      rY12 = sPy12
+      rX13 = sPx13
+      rY13 = sPy13
+      rX14 = sPx14
+      rY14 = sPy14
+      rX15 = sPx15
+      rY15 = sPy15
+      sSeg = -1.0
+      prow = 0.0
+      sLast = -1.0
+      pcol = 200.0
+      sOn = true
     }
   }
 }
@@ -8372,388 +8524,505 @@ mod paintTick() {
   }
   if arming {
     arming = false
+    sOn = false
+    sLive = false
     gyMin = 200.0
     gyMax = -200.0
     gxMin = 200.0
     gxMax = -200.0
-    let px0 = pts[0]
-    let py0 = pts[1]
-    let px1 = pts[2]
-    let py1 = pts[3]
-    let px2 = pts[4]
-    let py2 = pts[5]
-    let px3 = pts[6]
-    let py3 = pts[7]
-    let px4 = pts[8]
-    let py4 = pts[9]
-    let px5 = pts[10]
-    let py5 = pts[11]
-    let px6 = pts[12]
-    let py6 = pts[13]
-    let px7 = pts[14]
-    let py7 = pts[15]
-    let px8 = pts[16]
-    let py8 = pts[17]
-    let px9 = pts[18]
-    let py9 = pts[19]
-    let px10 = pts[20]
-    let py10 = pts[21]
-    let px11 = pts[22]
-    let py11 = pts[23]
-    let px12 = pts[24]
-    let py12 = pts[25]
-    let px13 = pts[26]
-    let py13 = pts[27]
-    let px14 = pts[28]
-    let py14 = pts[29]
-    let px15 = pts[30]
-    let py15 = pts[31]
-    let qx0 = if 1.0 < n then px1 else px0
-    let qy0 = if 1.0 < n then py1 else py0
-    let dx0 = qx0 - px0
-    let dy0 = qy0 - py0
-    let s0 = if dy0 > 0.0 then dx0 / dy0 else if dy0 < 0.0 then dx0 / dy0 else 0.0
-    let lo0 = if py0 < qy0 then py0 else qy0
-    let hi0 = if py0 < qy0 then qy0 else py0
-    eX0 = px0
-    eY0 = py0
-    eS0 = s0
-    if 0.0 < n {
-      eLo0 = lo0
-      eHi0 = hi0
-      if py0 < gyMin { gyMin = py0 }
-      if py0 > gyMax { gyMax = py0 }
-      if px0 < gxMin { gxMin = px0 }
-      if px0 > gxMax { gxMax = px0 }
-    } else {
-      eLo0 = 200.0
-      eHi0 = -200.0
-    }
-    let qx1 = if 2.0 < n then px2 else px0
-    let qy1 = if 2.0 < n then py2 else py0
-    let dx1 = qx1 - px1
-    let dy1 = qy1 - py1
-    let s1 = if dy1 > 0.0 then dx1 / dy1 else if dy1 < 0.0 then dx1 / dy1 else 0.0
-    let lo1 = if py1 < qy1 then py1 else qy1
-    let hi1 = if py1 < qy1 then qy1 else py1
-    eX1 = px1
-    eY1 = py1
-    eS1 = s1
-    if 1.0 < n {
-      eLo1 = lo1
-      eHi1 = hi1
-      if py1 < gyMin { gyMin = py1 }
-      if py1 > gyMax { gyMax = py1 }
-      if px1 < gxMin { gxMin = px1 }
-      if px1 > gxMax { gxMax = px1 }
-    } else {
-      eLo1 = 200.0
-      eHi1 = -200.0
-    }
-    let qx2 = if 3.0 < n then px3 else px0
-    let qy2 = if 3.0 < n then py3 else py0
-    let dx2 = qx2 - px2
-    let dy2 = qy2 - py2
-    let s2 = if dy2 > 0.0 then dx2 / dy2 else if dy2 < 0.0 then dx2 / dy2 else 0.0
-    let lo2 = if py2 < qy2 then py2 else qy2
-    let hi2 = if py2 < qy2 then qy2 else py2
-    eX2 = px2
-    eY2 = py2
-    eS2 = s2
-    if 2.0 < n {
-      eLo2 = lo2
-      eHi2 = hi2
-      if py2 < gyMin { gyMin = py2 }
-      if py2 > gyMax { gyMax = py2 }
-      if px2 < gxMin { gxMin = px2 }
-      if px2 > gxMax { gxMax = px2 }
-    } else {
-      eLo2 = 200.0
-      eHi2 = -200.0
-    }
-    let qx3 = if 4.0 < n then px4 else px0
-    let qy3 = if 4.0 < n then py4 else py0
-    let dx3 = qx3 - px3
-    let dy3 = qy3 - py3
-    let s3 = if dy3 > 0.0 then dx3 / dy3 else if dy3 < 0.0 then dx3 / dy3 else 0.0
-    let lo3 = if py3 < qy3 then py3 else qy3
-    let hi3 = if py3 < qy3 then qy3 else py3
-    eX3 = px3
-    eY3 = py3
-    eS3 = s3
-    if 3.0 < n {
-      eLo3 = lo3
-      eHi3 = hi3
-      if py3 < gyMin { gyMin = py3 }
-      if py3 > gyMax { gyMax = py3 }
-      if px3 < gxMin { gxMin = px3 }
-      if px3 > gxMax { gxMax = px3 }
-    } else {
-      eLo3 = 200.0
-      eHi3 = -200.0
-    }
-    let qx4 = if 5.0 < n then px5 else px0
-    let qy4 = if 5.0 < n then py5 else py0
-    let dx4 = qx4 - px4
-    let dy4 = qy4 - py4
-    let s4 = if dy4 > 0.0 then dx4 / dy4 else if dy4 < 0.0 then dx4 / dy4 else 0.0
-    let lo4 = if py4 < qy4 then py4 else qy4
-    let hi4 = if py4 < qy4 then qy4 else py4
-    eX4 = px4
-    eY4 = py4
-    eS4 = s4
-    if 4.0 < n {
-      eLo4 = lo4
-      eHi4 = hi4
-      if py4 < gyMin { gyMin = py4 }
-      if py4 > gyMax { gyMax = py4 }
-      if px4 < gxMin { gxMin = px4 }
-      if px4 > gxMax { gxMax = px4 }
-    } else {
-      eLo4 = 200.0
-      eHi4 = -200.0
-    }
-    let qx5 = if 6.0 < n then px6 else px0
-    let qy5 = if 6.0 < n then py6 else py0
-    let dx5 = qx5 - px5
-    let dy5 = qy5 - py5
-    let s5 = if dy5 > 0.0 then dx5 / dy5 else if dy5 < 0.0 then dx5 / dy5 else 0.0
-    let lo5 = if py5 < qy5 then py5 else qy5
-    let hi5 = if py5 < qy5 then qy5 else py5
-    eX5 = px5
-    eY5 = py5
-    eS5 = s5
-    if 5.0 < n {
-      eLo5 = lo5
-      eHi5 = hi5
-      if py5 < gyMin { gyMin = py5 }
-      if py5 > gyMax { gyMax = py5 }
-      if px5 < gxMin { gxMin = px5 }
-      if px5 > gxMax { gxMax = px5 }
-    } else {
-      eLo5 = 200.0
-      eHi5 = -200.0
-    }
-    let qx6 = if 7.0 < n then px7 else px0
-    let qy6 = if 7.0 < n then py7 else py0
-    let dx6 = qx6 - px6
-    let dy6 = qy6 - py6
-    let s6 = if dy6 > 0.0 then dx6 / dy6 else if dy6 < 0.0 then dx6 / dy6 else 0.0
-    let lo6 = if py6 < qy6 then py6 else qy6
-    let hi6 = if py6 < qy6 then qy6 else py6
-    eX6 = px6
-    eY6 = py6
-    eS6 = s6
-    if 6.0 < n {
-      eLo6 = lo6
-      eHi6 = hi6
-      if py6 < gyMin { gyMin = py6 }
-      if py6 > gyMax { gyMax = py6 }
-      if px6 < gxMin { gxMin = px6 }
-      if px6 > gxMax { gxMax = px6 }
-    } else {
-      eLo6 = 200.0
-      eHi6 = -200.0
-    }
-    let qx7 = if 8.0 < n then px8 else px0
-    let qy7 = if 8.0 < n then py8 else py0
-    let dx7 = qx7 - px7
-    let dy7 = qy7 - py7
-    let s7 = if dy7 > 0.0 then dx7 / dy7 else if dy7 < 0.0 then dx7 / dy7 else 0.0
-    let lo7 = if py7 < qy7 then py7 else qy7
-    let hi7 = if py7 < qy7 then qy7 else py7
-    eX7 = px7
-    eY7 = py7
-    eS7 = s7
-    if 7.0 < n {
-      eLo7 = lo7
-      eHi7 = hi7
-      if py7 < gyMin { gyMin = py7 }
-      if py7 > gyMax { gyMax = py7 }
-      if px7 < gxMin { gxMin = px7 }
-      if px7 > gxMax { gxMax = px7 }
-    } else {
-      eLo7 = 200.0
-      eHi7 = -200.0
-    }
-    let qx8 = if 9.0 < n then px9 else px0
-    let qy8 = if 9.0 < n then py9 else py0
-    let dx8 = qx8 - px8
-    let dy8 = qy8 - py8
-    let s8 = if dy8 > 0.0 then dx8 / dy8 else if dy8 < 0.0 then dx8 / dy8 else 0.0
-    let lo8 = if py8 < qy8 then py8 else qy8
-    let hi8 = if py8 < qy8 then qy8 else py8
-    eX8 = px8
-    eY8 = py8
-    eS8 = s8
-    if 8.0 < n {
-      eLo8 = lo8
-      eHi8 = hi8
-      if py8 < gyMin { gyMin = py8 }
-      if py8 > gyMax { gyMax = py8 }
-      if px8 < gxMin { gxMin = px8 }
-      if px8 > gxMax { gxMax = px8 }
-    } else {
-      eLo8 = 200.0
-      eHi8 = -200.0
-    }
-    let qx9 = if 10.0 < n then px10 else px0
-    let qy9 = if 10.0 < n then py10 else py0
-    let dx9 = qx9 - px9
-    let dy9 = qy9 - py9
-    let s9 = if dy9 > 0.0 then dx9 / dy9 else if dy9 < 0.0 then dx9 / dy9 else 0.0
-    let lo9 = if py9 < qy9 then py9 else qy9
-    let hi9 = if py9 < qy9 then qy9 else py9
-    eX9 = px9
-    eY9 = py9
-    eS9 = s9
-    if 9.0 < n {
-      eLo9 = lo9
-      eHi9 = hi9
-      if py9 < gyMin { gyMin = py9 }
-      if py9 > gyMax { gyMax = py9 }
-      if px9 < gxMin { gxMin = px9 }
-      if px9 > gxMax { gxMax = px9 }
-    } else {
-      eLo9 = 200.0
-      eHi9 = -200.0
-    }
-    let qx10 = if 11.0 < n then px11 else px0
-    let qy10 = if 11.0 < n then py11 else py0
-    let dx10 = qx10 - px10
-    let dy10 = qy10 - py10
-    let s10 = if dy10 > 0.0 then dx10 / dy10 else if dy10 < 0.0 then dx10 / dy10 else 0.0
-    let lo10 = if py10 < qy10 then py10 else qy10
-    let hi10 = if py10 < qy10 then qy10 else py10
-    eX10 = px10
-    eY10 = py10
-    eS10 = s10
-    if 10.0 < n {
-      eLo10 = lo10
-      eHi10 = hi10
-      if py10 < gyMin { gyMin = py10 }
-      if py10 > gyMax { gyMax = py10 }
-      if px10 < gxMin { gxMin = px10 }
-      if px10 > gxMax { gxMax = px10 }
-    } else {
-      eLo10 = 200.0
-      eHi10 = -200.0
-    }
-    let qx11 = if 12.0 < n then px12 else px0
-    let qy11 = if 12.0 < n then py12 else py0
-    let dx11 = qx11 - px11
-    let dy11 = qy11 - py11
-    let s11 = if dy11 > 0.0 then dx11 / dy11 else if dy11 < 0.0 then dx11 / dy11 else 0.0
-    let lo11 = if py11 < qy11 then py11 else qy11
-    let hi11 = if py11 < qy11 then qy11 else py11
-    eX11 = px11
-    eY11 = py11
-    eS11 = s11
-    if 11.0 < n {
-      eLo11 = lo11
-      eHi11 = hi11
-      if py11 < gyMin { gyMin = py11 }
-      if py11 > gyMax { gyMax = py11 }
-      if px11 < gxMin { gxMin = px11 }
-      if px11 > gxMax { gxMax = px11 }
-    } else {
-      eLo11 = 200.0
-      eHi11 = -200.0
-    }
-    let qx12 = if 13.0 < n then px13 else px0
-    let qy12 = if 13.0 < n then py13 else py0
-    let dx12 = qx12 - px12
-    let dy12 = qy12 - py12
-    let s12 = if dy12 > 0.0 then dx12 / dy12 else if dy12 < 0.0 then dx12 / dy12 else 0.0
-    let lo12 = if py12 < qy12 then py12 else qy12
-    let hi12 = if py12 < qy12 then qy12 else py12
-    eX12 = px12
-    eY12 = py12
-    eS12 = s12
-    if 12.0 < n {
-      eLo12 = lo12
-      eHi12 = hi12
-      if py12 < gyMin { gyMin = py12 }
-      if py12 > gyMax { gyMax = py12 }
-      if px12 < gxMin { gxMin = px12 }
-      if px12 > gxMax { gxMax = px12 }
-    } else {
-      eLo12 = 200.0
-      eHi12 = -200.0
-    }
-    let qx13 = if 14.0 < n then px14 else px0
-    let qy13 = if 14.0 < n then py14 else py0
-    let dx13 = qx13 - px13
-    let dy13 = qy13 - py13
-    let s13 = if dy13 > 0.0 then dx13 / dy13 else if dy13 < 0.0 then dx13 / dy13 else 0.0
-    let lo13 = if py13 < qy13 then py13 else qy13
-    let hi13 = if py13 < qy13 then qy13 else py13
-    eX13 = px13
-    eY13 = py13
-    eS13 = s13
-    if 13.0 < n {
-      eLo13 = lo13
-      eHi13 = hi13
-      if py13 < gyMin { gyMin = py13 }
-      if py13 > gyMax { gyMax = py13 }
-      if px13 < gxMin { gxMin = px13 }
-      if px13 > gxMax { gxMax = px13 }
-    } else {
-      eLo13 = 200.0
-      eHi13 = -200.0
-    }
-    let qx14 = if 15.0 < n then px15 else px0
-    let qy14 = if 15.0 < n then py15 else py0
-    let dx14 = qx14 - px14
-    let dy14 = qy14 - py14
-    let s14 = if dy14 > 0.0 then dx14 / dy14 else if dy14 < 0.0 then dx14 / dy14 else 0.0
-    let lo14 = if py14 < qy14 then py14 else qy14
-    let hi14 = if py14 < qy14 then qy14 else py14
-    eX14 = px14
-    eY14 = py14
-    eS14 = s14
-    if 14.0 < n {
-      eLo14 = lo14
-      eHi14 = hi14
-      if py14 < gyMin { gyMin = py14 }
-      if py14 > gyMax { gyMax = py14 }
-      if px14 < gxMin { gxMin = px14 }
-      if px14 > gxMax { gxMax = px14 }
-    } else {
-      eLo14 = 200.0
-      eHi14 = -200.0
-    }
-    let qx15 = px0
-    let qy15 = py0
-    let dx15 = qx15 - px15
-    let dy15 = qy15 - py15
-    let s15 = if dy15 > 0.0 then dx15 / dy15 else if dy15 < 0.0 then dx15 / dy15 else 0.0
-    let lo15 = if py15 < qy15 then py15 else qy15
-    let hi15 = if py15 < qy15 then qy15 else py15
-    eX15 = px15
-    eY15 = py15
-    eS15 = s15
-    if 15.0 < n {
-      eLo15 = lo15
-      eHi15 = hi15
-      if py15 < gyMin { gyMin = py15 }
-      if py15 > gyMax { gyMax = py15 }
-      if px15 < gxMin { gxMin = px15 }
-      if px15 > gxMax { gxMax = px15 }
-    } else {
-      eLo15 = 200.0
-      eHi15 = -200.0
-    }
-    if gyMax < 0.0 || gyMin >= SWF || gxMax < 0.0 || gxMin >= SWF {
+    n = (shapePoints.length() / 2.0) | 0
+    if n > 16.0 { n = 16.0 }
+    if n < 3.0 {
       polyOn = false
       polyLive = false
+    }
+    if n >= 3.0 {
+      let px0 = shapePoints[0]
+      let py0 = shapePoints[1]
+      let px1 = shapePoints[2]
+      let py1 = shapePoints[3]
+      let px2 = shapePoints[4]
+      let py2 = shapePoints[5]
+      let px3 = shapePoints[6]
+      let py3 = shapePoints[7]
+      let px4 = shapePoints[8]
+      let py4 = shapePoints[9]
+      let px5 = shapePoints[10]
+      let py5 = shapePoints[11]
+      let px6 = shapePoints[12]
+      let py6 = shapePoints[13]
+      let px7 = shapePoints[14]
+      let py7 = shapePoints[15]
+      let px8 = shapePoints[16]
+      let py8 = shapePoints[17]
+      let px9 = shapePoints[18]
+      let py9 = shapePoints[19]
+      let px10 = shapePoints[20]
+      let py10 = shapePoints[21]
+      let px11 = shapePoints[22]
+      let py11 = shapePoints[23]
+      let px12 = shapePoints[24]
+      let py12 = shapePoints[25]
+      let px13 = shapePoints[26]
+      let py13 = shapePoints[27]
+      let px14 = shapePoints[28]
+      let py14 = shapePoints[29]
+      let px15 = shapePoints[30]
+      let py15 = shapePoints[31]
+      let qx0 = if 1.0 < n then px1 else px0
+      let qy0 = if 1.0 < n then py1 else py0
+      if 0.0 < n {
+        let dx0 = qx0 - px0
+        let dy0 = qy0 - py0
+        let s0 = if dy0 > 0.0 then dx0 / dy0 else if dy0 < 0.0 then dx0 / dy0 else 0.0
+        let lo0 = if py0 < qy0 then py0 else qy0
+        let hi0 = if py0 < qy0 then qy0 else py0
+        eX0 = px0
+        eY0 = py0
+        eS0 = s0
+        eLo0 = lo0
+        eHi0 = hi0
+        if py0 < gyMin { gyMin = py0 }
+        if py0 > gyMax { gyMax = py0 }
+        if px0 < gxMin { gxMin = px0 }
+        if px0 > gxMax { gxMax = px0 }
+      } else {
+        eLo0 = 200.0
+        eHi0 = -200.0
+      }
+      let qx1 = if 2.0 < n then px2 else px0
+      let qy1 = if 2.0 < n then py2 else py0
+      if 1.0 < n {
+        let dx1 = qx1 - px1
+        let dy1 = qy1 - py1
+        let s1 = if dy1 > 0.0 then dx1 / dy1 else if dy1 < 0.0 then dx1 / dy1 else 0.0
+        let lo1 = if py1 < qy1 then py1 else qy1
+        let hi1 = if py1 < qy1 then qy1 else py1
+        eX1 = px1
+        eY1 = py1
+        eS1 = s1
+        eLo1 = lo1
+        eHi1 = hi1
+        if py1 < gyMin { gyMin = py1 }
+        if py1 > gyMax { gyMax = py1 }
+        if px1 < gxMin { gxMin = px1 }
+        if px1 > gxMax { gxMax = px1 }
+      } else {
+        eLo1 = 200.0
+        eHi1 = -200.0
+      }
+      let qx2 = if 3.0 < n then px3 else px0
+      let qy2 = if 3.0 < n then py3 else py0
+      if 2.0 < n {
+        let dx2 = qx2 - px2
+        let dy2 = qy2 - py2
+        let s2 = if dy2 > 0.0 then dx2 / dy2 else if dy2 < 0.0 then dx2 / dy2 else 0.0
+        let lo2 = if py2 < qy2 then py2 else qy2
+        let hi2 = if py2 < qy2 then qy2 else py2
+        eX2 = px2
+        eY2 = py2
+        eS2 = s2
+        eLo2 = lo2
+        eHi2 = hi2
+        if py2 < gyMin { gyMin = py2 }
+        if py2 > gyMax { gyMax = py2 }
+        if px2 < gxMin { gxMin = px2 }
+        if px2 > gxMax { gxMax = px2 }
+      } else {
+        eLo2 = 200.0
+        eHi2 = -200.0
+      }
+      let qx3 = if 4.0 < n then px4 else px0
+      let qy3 = if 4.0 < n then py4 else py0
+      if 3.0 < n {
+        let dx3 = qx3 - px3
+        let dy3 = qy3 - py3
+        let s3 = if dy3 > 0.0 then dx3 / dy3 else if dy3 < 0.0 then dx3 / dy3 else 0.0
+        let lo3 = if py3 < qy3 then py3 else qy3
+        let hi3 = if py3 < qy3 then qy3 else py3
+        eX3 = px3
+        eY3 = py3
+        eS3 = s3
+        eLo3 = lo3
+        eHi3 = hi3
+        if py3 < gyMin { gyMin = py3 }
+        if py3 > gyMax { gyMax = py3 }
+        if px3 < gxMin { gxMin = px3 }
+        if px3 > gxMax { gxMax = px3 }
+      } else {
+        eLo3 = 200.0
+        eHi3 = -200.0
+      }
+      let qx4 = if 5.0 < n then px5 else px0
+      let qy4 = if 5.0 < n then py5 else py0
+      if 4.0 < n {
+        let dx4 = qx4 - px4
+        let dy4 = qy4 - py4
+        let s4 = if dy4 > 0.0 then dx4 / dy4 else if dy4 < 0.0 then dx4 / dy4 else 0.0
+        let lo4 = if py4 < qy4 then py4 else qy4
+        let hi4 = if py4 < qy4 then qy4 else py4
+        eX4 = px4
+        eY4 = py4
+        eS4 = s4
+        eLo4 = lo4
+        eHi4 = hi4
+        if py4 < gyMin { gyMin = py4 }
+        if py4 > gyMax { gyMax = py4 }
+        if px4 < gxMin { gxMin = px4 }
+        if px4 > gxMax { gxMax = px4 }
+      } else {
+        eLo4 = 200.0
+        eHi4 = -200.0
+      }
+      let qx5 = if 6.0 < n then px6 else px0
+      let qy5 = if 6.0 < n then py6 else py0
+      if 5.0 < n {
+        let dx5 = qx5 - px5
+        let dy5 = qy5 - py5
+        let s5 = if dy5 > 0.0 then dx5 / dy5 else if dy5 < 0.0 then dx5 / dy5 else 0.0
+        let lo5 = if py5 < qy5 then py5 else qy5
+        let hi5 = if py5 < qy5 then qy5 else py5
+        eX5 = px5
+        eY5 = py5
+        eS5 = s5
+        eLo5 = lo5
+        eHi5 = hi5
+        if py5 < gyMin { gyMin = py5 }
+        if py5 > gyMax { gyMax = py5 }
+        if px5 < gxMin { gxMin = px5 }
+        if px5 > gxMax { gxMax = px5 }
+      } else {
+        eLo5 = 200.0
+        eHi5 = -200.0
+      }
+      let qx6 = if 7.0 < n then px7 else px0
+      let qy6 = if 7.0 < n then py7 else py0
+      if 6.0 < n {
+        let dx6 = qx6 - px6
+        let dy6 = qy6 - py6
+        let s6 = if dy6 > 0.0 then dx6 / dy6 else if dy6 < 0.0 then dx6 / dy6 else 0.0
+        let lo6 = if py6 < qy6 then py6 else qy6
+        let hi6 = if py6 < qy6 then qy6 else py6
+        eX6 = px6
+        eY6 = py6
+        eS6 = s6
+        eLo6 = lo6
+        eHi6 = hi6
+        if py6 < gyMin { gyMin = py6 }
+        if py6 > gyMax { gyMax = py6 }
+        if px6 < gxMin { gxMin = px6 }
+        if px6 > gxMax { gxMax = px6 }
+      } else {
+        eLo6 = 200.0
+        eHi6 = -200.0
+      }
+      let qx7 = if 8.0 < n then px8 else px0
+      let qy7 = if 8.0 < n then py8 else py0
+      if 7.0 < n {
+        let dx7 = qx7 - px7
+        let dy7 = qy7 - py7
+        let s7 = if dy7 > 0.0 then dx7 / dy7 else if dy7 < 0.0 then dx7 / dy7 else 0.0
+        let lo7 = if py7 < qy7 then py7 else qy7
+        let hi7 = if py7 < qy7 then qy7 else py7
+        eX7 = px7
+        eY7 = py7
+        eS7 = s7
+        eLo7 = lo7
+        eHi7 = hi7
+        if py7 < gyMin { gyMin = py7 }
+        if py7 > gyMax { gyMax = py7 }
+        if px7 < gxMin { gxMin = px7 }
+        if px7 > gxMax { gxMax = px7 }
+      } else {
+        eLo7 = 200.0
+        eHi7 = -200.0
+      }
+      let qx8 = if 9.0 < n then px9 else px0
+      let qy8 = if 9.0 < n then py9 else py0
+      if 8.0 < n {
+        let dx8 = qx8 - px8
+        let dy8 = qy8 - py8
+        let s8 = if dy8 > 0.0 then dx8 / dy8 else if dy8 < 0.0 then dx8 / dy8 else 0.0
+        let lo8 = if py8 < qy8 then py8 else qy8
+        let hi8 = if py8 < qy8 then qy8 else py8
+        eX8 = px8
+        eY8 = py8
+        eS8 = s8
+        eLo8 = lo8
+        eHi8 = hi8
+        if py8 < gyMin { gyMin = py8 }
+        if py8 > gyMax { gyMax = py8 }
+        if px8 < gxMin { gxMin = px8 }
+        if px8 > gxMax { gxMax = px8 }
+      } else {
+        eLo8 = 200.0
+        eHi8 = -200.0
+      }
+      let qx9 = if 10.0 < n then px10 else px0
+      let qy9 = if 10.0 < n then py10 else py0
+      if 9.0 < n {
+        let dx9 = qx9 - px9
+        let dy9 = qy9 - py9
+        let s9 = if dy9 > 0.0 then dx9 / dy9 else if dy9 < 0.0 then dx9 / dy9 else 0.0
+        let lo9 = if py9 < qy9 then py9 else qy9
+        let hi9 = if py9 < qy9 then qy9 else py9
+        eX9 = px9
+        eY9 = py9
+        eS9 = s9
+        eLo9 = lo9
+        eHi9 = hi9
+        if py9 < gyMin { gyMin = py9 }
+        if py9 > gyMax { gyMax = py9 }
+        if px9 < gxMin { gxMin = px9 }
+        if px9 > gxMax { gxMax = px9 }
+      } else {
+        eLo9 = 200.0
+        eHi9 = -200.0
+      }
+      let qx10 = if 11.0 < n then px11 else px0
+      let qy10 = if 11.0 < n then py11 else py0
+      if 10.0 < n {
+        let dx10 = qx10 - px10
+        let dy10 = qy10 - py10
+        let s10 = if dy10 > 0.0 then dx10 / dy10 else if dy10 < 0.0 then dx10 / dy10 else 0.0
+        let lo10 = if py10 < qy10 then py10 else qy10
+        let hi10 = if py10 < qy10 then qy10 else py10
+        eX10 = px10
+        eY10 = py10
+        eS10 = s10
+        eLo10 = lo10
+        eHi10 = hi10
+        if py10 < gyMin { gyMin = py10 }
+        if py10 > gyMax { gyMax = py10 }
+        if px10 < gxMin { gxMin = px10 }
+        if px10 > gxMax { gxMax = px10 }
+      } else {
+        eLo10 = 200.0
+        eHi10 = -200.0
+      }
+      let qx11 = if 12.0 < n then px12 else px0
+      let qy11 = if 12.0 < n then py12 else py0
+      if 11.0 < n {
+        let dx11 = qx11 - px11
+        let dy11 = qy11 - py11
+        let s11 = if dy11 > 0.0 then dx11 / dy11 else if dy11 < 0.0 then dx11 / dy11 else 0.0
+        let lo11 = if py11 < qy11 then py11 else qy11
+        let hi11 = if py11 < qy11 then qy11 else py11
+        eX11 = px11
+        eY11 = py11
+        eS11 = s11
+        eLo11 = lo11
+        eHi11 = hi11
+        if py11 < gyMin { gyMin = py11 }
+        if py11 > gyMax { gyMax = py11 }
+        if px11 < gxMin { gxMin = px11 }
+        if px11 > gxMax { gxMax = px11 }
+      } else {
+        eLo11 = 200.0
+        eHi11 = -200.0
+      }
+      let qx12 = if 13.0 < n then px13 else px0
+      let qy12 = if 13.0 < n then py13 else py0
+      if 12.0 < n {
+        let dx12 = qx12 - px12
+        let dy12 = qy12 - py12
+        let s12 = if dy12 > 0.0 then dx12 / dy12 else if dy12 < 0.0 then dx12 / dy12 else 0.0
+        let lo12 = if py12 < qy12 then py12 else qy12
+        let hi12 = if py12 < qy12 then qy12 else py12
+        eX12 = px12
+        eY12 = py12
+        eS12 = s12
+        eLo12 = lo12
+        eHi12 = hi12
+        if py12 < gyMin { gyMin = py12 }
+        if py12 > gyMax { gyMax = py12 }
+        if px12 < gxMin { gxMin = px12 }
+        if px12 > gxMax { gxMax = px12 }
+      } else {
+        eLo12 = 200.0
+        eHi12 = -200.0
+      }
+      let qx13 = if 14.0 < n then px14 else px0
+      let qy13 = if 14.0 < n then py14 else py0
+      if 13.0 < n {
+        let dx13 = qx13 - px13
+        let dy13 = qy13 - py13
+        let s13 = if dy13 > 0.0 then dx13 / dy13 else if dy13 < 0.0 then dx13 / dy13 else 0.0
+        let lo13 = if py13 < qy13 then py13 else qy13
+        let hi13 = if py13 < qy13 then qy13 else py13
+        eX13 = px13
+        eY13 = py13
+        eS13 = s13
+        eLo13 = lo13
+        eHi13 = hi13
+        if py13 < gyMin { gyMin = py13 }
+        if py13 > gyMax { gyMax = py13 }
+        if px13 < gxMin { gxMin = px13 }
+        if px13 > gxMax { gxMax = px13 }
+      } else {
+        eLo13 = 200.0
+        eHi13 = -200.0
+      }
+      let qx14 = if 15.0 < n then px15 else px0
+      let qy14 = if 15.0 < n then py15 else py0
+      if 14.0 < n {
+        let dx14 = qx14 - px14
+        let dy14 = qy14 - py14
+        let s14 = if dy14 > 0.0 then dx14 / dy14 else if dy14 < 0.0 then dx14 / dy14 else 0.0
+        let lo14 = if py14 < qy14 then py14 else qy14
+        let hi14 = if py14 < qy14 then qy14 else py14
+        eX14 = px14
+        eY14 = py14
+        eS14 = s14
+        eLo14 = lo14
+        eHi14 = hi14
+        if py14 < gyMin { gyMin = py14 }
+        if py14 > gyMax { gyMax = py14 }
+        if px14 < gxMin { gxMin = px14 }
+        if px14 > gxMax { gxMax = px14 }
+      } else {
+        eLo14 = 200.0
+        eHi14 = -200.0
+      }
+      let qx15 = px0
+      let qy15 = py0
+      if 15.0 < n {
+        let dx15 = qx15 - px15
+        let dy15 = qy15 - py15
+        let s15 = if dy15 > 0.0 then dx15 / dy15 else if dy15 < 0.0 then dx15 / dy15 else 0.0
+        let lo15 = if py15 < qy15 then py15 else qy15
+        let hi15 = if py15 < qy15 then qy15 else py15
+        eX15 = px15
+        eY15 = py15
+        eS15 = s15
+        eLo15 = lo15
+        eHi15 = hi15
+        if py15 < gyMin { gyMin = py15 }
+        if py15 > gyMax { gyMax = py15 }
+        if px15 < gxMin { gxMin = px15 }
+        if px15 > gxMax { gxMax = px15 }
+      } else {
+        eLo15 = 200.0
+        eHi15 = -200.0
+      }
+      if gyMax < 0.0 || gyMin >= SWF || gxMax < 0.0 || gxMin >= SWF {
+        polyOn = false
+        polyLive = false
+      } else {
+        pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)
+        plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)
+        prow = pfirst - 1.0
+        pcol = 200.0
+        polyOn = true
+        polyLive = true
+      }
+    }
+  }
+  if armingS {
+    armingS = false
+    polyOn = false
+    polyLive = false
+    sPx0 = shapePoints[0]
+    sPy0 = shapePoints[1]
+    sPx1 = shapePoints[2]
+    sPy1 = shapePoints[3]
+    sPx2 = shapePoints[4]
+    sPy2 = shapePoints[5]
+    sPx3 = shapePoints[6]
+    sPy3 = shapePoints[7]
+    sPx4 = shapePoints[8]
+    sPy4 = shapePoints[9]
+    sPx5 = shapePoints[10]
+    sPy5 = shapePoints[11]
+    sPx6 = shapePoints[12]
+    sPy6 = shapePoints[13]
+    sPx7 = shapePoints[14]
+    sPy7 = shapePoints[15]
+    sPx8 = shapePoints[16]
+    sPy8 = shapePoints[17]
+    sPx9 = shapePoints[18]
+    sPy9 = shapePoints[19]
+    sPx10 = shapePoints[20]
+    sPy10 = shapePoints[21]
+    sPx11 = shapePoints[22]
+    sPy11 = shapePoints[23]
+    sPx12 = shapePoints[24]
+    sPy12 = shapePoints[25]
+    sPx13 = shapePoints[26]
+    sPy13 = shapePoints[27]
+    sPx14 = shapePoints[28]
+    sPy14 = shapePoints[29]
+    sPx15 = shapePoints[30]
+    sPy15 = shapePoints[31]
+    sSegs = (shapePoints.length() / 2.0) | 0
+    if sSegs > 16.0 { sSegs = 16.0 }
+    if sSegs < 1.0 {
+      sOn = false
+      sLive = false
     } else {
-      pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)
-      plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)
-      prow = pfirst - 1.0
-      pcol = 200.0
-      polyOn = true
-      polyLive = true
+      if sSegs < 2.0 {
+        if sPx0 < 0.0 || sPx0 >= SWF || sPy0 < 0.0 || sPy0 >= SWF {
+          sOn = false
+          sLive = false
+        } else {
+          prow = sPy0 | 0
+          sLast = if sPy0 >= 62.0 then 63.0 else (sPy0 | 0) + 1.0
+          pcol = if sPx0 < 0.0 then 0.0 else (sPx0 | 0)
+          pcurR = if sPx0 >= 63.0 then 63.0 else (sPx0 | 0) + 1.0
+          qAx = sPx0 | 0
+          qAy = sPy0 | 0
+          qBx = (sPx0 | 0) + 1.0
+          qBy = sPy0 | 0
+          qCx = (sPx0 | 0) + 1.0
+          qCy = (sPy0 | 0) + 2.0
+          qDx = sPx0 | 0
+          qDy = (sPy0 | 0) + 2.0
+          sSeg = 0.0
+          sSegs = 0.0
+          sOn = true
+          sLive = true
+        }
+      } else {
+        sSegs = sSegs - 1.0
+        rX0 = sPx0
+        rY0 = sPy0
+        rX1 = sPx1
+        rY1 = sPy1
+        rX2 = sPx2
+        rY2 = sPy2
+        rX3 = sPx3
+        rY3 = sPy3
+        rX4 = sPx4
+        rY4 = sPy4
+        rX5 = sPx5
+        rY5 = sPy5
+        rX6 = sPx6
+        rY6 = sPy6
+        rX7 = sPx7
+        rY7 = sPy7
+        rX8 = sPx8
+        rY8 = sPy8
+        rX9 = sPx9
+        rY9 = sPy9
+        rX10 = sPx10
+        rY10 = sPy10
+        rX11 = sPx11
+        rY11 = sPy11
+        rX12 = sPx12
+        rY12 = sPy12
+        rX13 = sPx13
+        rY13 = sPy13
+        rX14 = sPx14
+        rY14 = sPy14
+        rX15 = sPx15
+        rY15 = sPy15
+        sSeg = -1.0
+        prow = 0.0
+        sLast = -1.0
+        pcol = 200.0
+        sOn = true
+        sLive = true
+      }
     }
   }
   if polyOn {
@@ -8764,60 +9033,76 @@ mod paintTick() {
       } else {
         let cv0 = prow >= eLo0 && prow < eHi0
         let cx0 = eX0 + eS0 * (prow - eY0)
-        let c0 = if cv0 then cx0 else 200.0
+        let cmn0 = if cv0 then cx0 else 200.0
+        let cmx0 = if cv0 then cx0 else -200.0
         let cv1 = prow >= eLo1 && prow < eHi1
         let cx1 = eX1 + eS1 * (prow - eY1)
-        let c1 = if cv1 then cx1 else 200.0
+        let cmn1 = if cv1 then cx1 else 200.0
+        let cmx1 = if cv1 then cx1 else -200.0
         let cv2 = prow >= eLo2 && prow < eHi2
         let cx2 = eX2 + eS2 * (prow - eY2)
-        let c2 = if cv2 then cx2 else 200.0
+        let cmn2 = if cv2 then cx2 else 200.0
+        let cmx2 = if cv2 then cx2 else -200.0
         let cv3 = prow >= eLo3 && prow < eHi3
         let cx3 = eX3 + eS3 * (prow - eY3)
-        let c3 = if cv3 then cx3 else 200.0
+        let cmn3 = if cv3 then cx3 else 200.0
+        let cmx3 = if cv3 then cx3 else -200.0
         let cv4 = prow >= eLo4 && prow < eHi4
         let cx4 = eX4 + eS4 * (prow - eY4)
-        let c4 = if cv4 then cx4 else 200.0
+        let cmn4 = if cv4 then cx4 else 200.0
+        let cmx4 = if cv4 then cx4 else -200.0
         let cv5 = prow >= eLo5 && prow < eHi5
         let cx5 = eX5 + eS5 * (prow - eY5)
-        let c5 = if cv5 then cx5 else 200.0
+        let cmn5 = if cv5 then cx5 else 200.0
+        let cmx5 = if cv5 then cx5 else -200.0
         let cv6 = prow >= eLo6 && prow < eHi6
         let cx6 = eX6 + eS6 * (prow - eY6)
-        let c6 = if cv6 then cx6 else 200.0
+        let cmn6 = if cv6 then cx6 else 200.0
+        let cmx6 = if cv6 then cx6 else -200.0
         let cv7 = prow >= eLo7 && prow < eHi7
         let cx7 = eX7 + eS7 * (prow - eY7)
-        let c7 = if cv7 then cx7 else 200.0
+        let cmn7 = if cv7 then cx7 else 200.0
+        let cmx7 = if cv7 then cx7 else -200.0
         let cv8 = prow >= eLo8 && prow < eHi8
         let cx8 = eX8 + eS8 * (prow - eY8)
-        let c8 = if cv8 then cx8 else 200.0
+        let cmn8 = if cv8 then cx8 else 200.0
+        let cmx8 = if cv8 then cx8 else -200.0
         let cv9 = prow >= eLo9 && prow < eHi9
         let cx9 = eX9 + eS9 * (prow - eY9)
-        let c9 = if cv9 then cx9 else 200.0
+        let cmn9 = if cv9 then cx9 else 200.0
+        let cmx9 = if cv9 then cx9 else -200.0
         let cv10 = prow >= eLo10 && prow < eHi10
         let cx10 = eX10 + eS10 * (prow - eY10)
-        let c10 = if cv10 then cx10 else 200.0
+        let cmn10 = if cv10 then cx10 else 200.0
+        let cmx10 = if cv10 then cx10 else -200.0
         let cv11 = prow >= eLo11 && prow < eHi11
         let cx11 = eX11 + eS11 * (prow - eY11)
-        let c11 = if cv11 then cx11 else 200.0
+        let cmn11 = if cv11 then cx11 else 200.0
+        let cmx11 = if cv11 then cx11 else -200.0
         let cv12 = prow >= eLo12 && prow < eHi12
         let cx12 = eX12 + eS12 * (prow - eY12)
-        let c12 = if cv12 then cx12 else 200.0
+        let cmn12 = if cv12 then cx12 else 200.0
+        let cmx12 = if cv12 then cx12 else -200.0
         let cv13 = prow >= eLo13 && prow < eHi13
         let cx13 = eX13 + eS13 * (prow - eY13)
-        let c13 = if cv13 then cx13 else 200.0
+        let cmn13 = if cv13 then cx13 else 200.0
+        let cmx13 = if cv13 then cx13 else -200.0
         let cv14 = prow >= eLo14 && prow < eHi14
         let cx14 = eX14 + eS14 * (prow - eY14)
-        let c14 = if cv14 then cx14 else 200.0
+        let cmn14 = if cv14 then cx14 else 200.0
+        let cmx14 = if cv14 then cx14 else -200.0
         let cv15 = prow >= eLo15 && prow < eHi15
         let cx15 = eX15 + eS15 * (prow - eY15)
-        let c15 = if cv15 then cx15 else 200.0
-        let n0_0 = if c0 < c1 then c0 else c1
-        let n0_2 = if c2 < c3 then c2 else c3
-        let n0_4 = if c4 < c5 then c4 else c5
-        let n0_6 = if c6 < c7 then c6 else c7
-        let n0_8 = if c8 < c9 then c8 else c9
-        let n0_10 = if c10 < c11 then c10 else c11
-        let n0_12 = if c12 < c13 then c12 else c13
-        let n0_14 = if c14 < c15 then c14 else c15
+        let cmn15 = if cv15 then cx15 else 200.0
+        let cmx15 = if cv15 then cx15 else -200.0
+        let n0_0 = if cmn0 < cmn1 then cmn0 else cmn1
+        let n0_2 = if cmn2 < cmn3 then cmn2 else cmn3
+        let n0_4 = if cmn4 < cmn5 then cmn4 else cmn5
+        let n0_6 = if cmn6 < cmn7 then cmn6 else cmn7
+        let n0_8 = if cmn8 < cmn9 then cmn8 else cmn9
+        let n0_10 = if cmn10 < cmn11 then cmn10 else cmn11
+        let n0_12 = if cmn12 < cmn13 then cmn12 else cmn13
+        let n0_14 = if cmn14 < cmn15 then cmn14 else cmn15
         let n1_0 = if n0_0 < n0_2 then n0_0 else n0_2
         let n1_2 = if n0_4 < n0_6 then n0_4 else n0_6
         let n1_4 = if n0_8 < n0_10 then n0_8 else n0_10
@@ -8825,14 +9110,14 @@ mod paintTick() {
         let n2_0 = if n1_0 < n1_2 then n1_0 else n1_2
         let n2_2 = if n1_4 < n1_6 then n1_4 else n1_6
         let n3_0 = if n2_0 < n2_2 then n2_0 else n2_2
-        let x0_0 = if c0 < c1 then c1 else c0
-        let x0_2 = if c2 < c3 then c3 else c2
-        let x0_4 = if c4 < c5 then c5 else c4
-        let x0_6 = if c6 < c7 then c7 else c6
-        let x0_8 = if c8 < c9 then c9 else c8
-        let x0_10 = if c10 < c11 then c11 else c10
-        let x0_12 = if c12 < c13 then c13 else c12
-        let x0_14 = if c14 < c15 then c15 else c14
+        let x0_0 = if cmx0 < cmx1 then cmx1 else cmx0
+        let x0_2 = if cmx2 < cmx3 then cmx3 else cmx2
+        let x0_4 = if cmx4 < cmx5 then cmx5 else cmx4
+        let x0_6 = if cmx6 < cmx7 then cmx7 else cmx6
+        let x0_8 = if cmx8 < cmx9 then cmx9 else cmx8
+        let x0_10 = if cmx10 < cmx11 then cmx11 else cmx10
+        let x0_12 = if cmx12 < cmx13 then cmx13 else cmx12
+        let x0_14 = if cmx14 < cmx15 then cmx15 else cmx14
         let x1_0 = if x0_0 < x0_2 then x0_2 else x0_0
         let x1_2 = if x0_4 < x0_6 then x0_6 else x0_4
         let x1_4 = if x0_8 < x0_10 then x0_10 else x0_8
@@ -8849,7 +9134,140 @@ mod paintTick() {
         }
       }
     }
-    if polyOn {
+  }
+  // The stroke advance: rows of the current quad, then segments.
+  // A segment's quad is rebuilt from the register head (a shift plus
+  // corner math, all sequential, so the per-tick path stays select-free);
+  // a zero-length segment marks its quad empty and the walk steps past
+  // it next tick, two ticks per padded point.
+  // Guarded by !polyOn: the tick-0 seeding fires every Change detector
+  // once, so both walks arm from the seeded array together -- with the
+  // guard only the fill advances and stages spans while both are live,
+  // and the stroke resumes intact when the fill ends (same shape, same
+  // colour, so the overlap is redundant, never torn: the shared paint
+  // state is written by exactly one advance per tick).
+  if sOn && !polyOn {
+    if pcol > pcurR {
+      prow = prow + 1.0
+      if prow > sLast {
+        sSeg = sSeg + 1.0
+        if sSeg >= sSegs {
+          sOn = false
+        } else {
+          if sSeg > 0.0 {
+            rX0 = rX1
+            rY0 = rY1
+            rX1 = rX2
+            rY1 = rY2
+            rX2 = rX3
+            rY2 = rY3
+            rX3 = rX4
+            rY3 = rY4
+            rX4 = rX5
+            rY4 = rY5
+            rX5 = rX6
+            rY5 = rY6
+            rX6 = rX7
+            rY6 = rY7
+            rX7 = rX8
+            rY7 = rY8
+            rX8 = rX9
+            rY8 = rY9
+            rX9 = rX10
+            rY9 = rY10
+            rX10 = rX11
+            rY10 = rY11
+            rX11 = rX12
+            rY11 = rY12
+            rX12 = rX13
+            rY12 = rY13
+            rX13 = rX14
+            rY13 = rY14
+            rX14 = rX15
+            rY14 = rY15
+          }
+          let sdx = rX1 - rX0
+          let sdy = rY1 - rY0
+          if sdx * sdx + sdy * sdy <= 0.0 {
+            prow = 0.0
+            sLast = -1.0
+          } else {
+            let slen = sqrt(sdx * sdx + sdy * sdy)
+            let stx = sdx / slen
+            let sty = sdy / slen
+            let snx = 0.0 - sty
+            let sny = stx
+            let sax = rX0 - stx
+            let say = rY0 - sty
+            let sbx = rX1 + stx
+            let sby = rY1 + sty
+            qAx = sax + snx
+            qAy = say + sny
+            qBx = sbx + snx
+            qBy = sby + sny
+            qCx = sbx - snx
+            qCy = sby - sny
+            qDx = sax - snx
+            qDy = say - sny
+            let qMinY = if qAy < qBy then (if qAy < qCy then (if qAy < qDy then qAy else qDy) else (if qCy < qDy then qCy else qDy)) else (if qBy < qCy then (if qBy < qDy then qBy else qDy) else (if qCy < qDy then qCy else qDy))
+            let qMaxY = if qAy > qBy then (if qAy > qCy then (if qAy > qDy then qAy else qDy) else (if qCy > qDy then qCy else qDy)) else (if qBy > qCy then (if qBy > qDy then qBy else qDy) else (if qCy > qDy then qCy else qDy))
+            prow = if qMinY < 0.0 then 0.0 else (qMinY | 0)
+            sLast = if qMaxY >= SWF then SWF - 1.0 else (qMaxY | 0)
+          }
+        }
+      }
+      if sOn {
+        if prow <= sLast {
+          let u0lo = if qAy < qBy then qAy else qBy
+          let u0hi = if qAy < qBy then qBy else qAy
+          let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
+          let u0x = qAx + u0s * (prow - qAy)
+          let u0v = prow >= u0lo && prow < u0hi
+          let un0 = if u0v then u0x else 200.0
+          let ux0 = if u0v then u0x else -200.0
+          let u1lo = if qBy < qCy then qBy else qCy
+          let u1hi = if qBy < qCy then qCy else qBy
+          let u1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0
+          let u1x = qBx + u1s * (prow - qBy)
+          let u1v = prow >= u1lo && prow < u1hi
+          let un1 = if u1v then u1x else 200.0
+          let ux1 = if u1v then u1x else -200.0
+          let u2lo = if qCy < qDy then qCy else qDy
+          let u2hi = if qCy < qDy then qDy else qCy
+          let u2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0
+          let u2x = qCx + u2s * (prow - qCy)
+          let u2v = prow >= u2lo && prow < u2hi
+          let un2 = if u2v then u2x else 200.0
+          let ux2 = if u2v then u2x else -200.0
+          let u3lo = if qDy < qAy then qDy else qAy
+          let u3hi = if qDy < qAy then qAy else qDy
+          let u3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0
+          let u3x = qDx + u3s * (prow - qDy)
+          let u3v = prow >= u3lo && prow < u3hi
+          let un3 = if u3v then u3x else 200.0
+          let ux3 = if u3v then u3x else -200.0
+          let umn01 = if un0 < un1 then un0 else un1
+          let umn23 = if un2 < un3 then un2 else un3
+          let umn = if umn01 < umn23 then umn01 else umn23
+          let umx01 = if ux0 < ux1 then ux1 else ux0
+          let umx23 = if ux2 < ux3 then ux3 else ux2
+          let umx = if umx01 < umx23 then umx23 else umx01
+          if umn >= 200.0 || umx < 0.0 || umn >= SWF {
+            pcol = 200.0
+            pcurR = 100.0
+          } else {
+            pcol = if umn < 0.0 then 0.0 else (umn | 0)
+            pcurR = if umx >= SWF then SWF - 1.0 else (umx | 0)
+          }
+        } else {
+          pcol = 200.0
+          pcurR = 100.0
+        }
+      }
+    }
+  }
+  // The shared lanes: whichever walk staged a span paints it.
+  if polyOn || sOn {
       let tj0 = pcol + 0.0
       if tj0 <= pcurR {
         let ridx0 = ((prow * SWF + tj0) | 0)
@@ -9171,7 +9589,6 @@ mod paintTick() {
         fb[ridx63] = pCol
       }
       pcol = pcol + 64.0
-    }
   }
   g0 = fb[0]
   g1 = fb[1]

@@ -38,7 +38,7 @@ WS = os.path.join(HERE, "screen.ws")
 SW = 64
 BLACK = (0.0, 0.0, 0.0, 1.0)
 RED = (1.0, 0.0, 0.0, 1.0)
-PAD = 32          # the arm reads pts[0..31] whatever the point count is
+PAD = 32          # the arm reads shapePoints[0..31] whatever the count is
 
 
 def fresh_sim(dump_path):
@@ -46,6 +46,7 @@ def fresh_sim(dump_path):
     sim.reset()
     gids = {}
     polyon = None
+    son = None
     pts_aid = None
     for nid, nd in sim.nodes.items():
         lb = _extract(nd.props.get("_label", ("raw", "")))
@@ -55,12 +56,15 @@ def fresh_sim(dump_path):
             gids[int(lb[1:])] = nid
         elif lb == "polyOn":
             polyon = nid
-        elif _extract(nd.props.get("PortLabel", ("raw", ""))) == "pts":
+        elif lb == "sOn":
+            son = nid
+        elif _extract(nd.props.get("PortLabel", ("raw", ""))) == "shapePoints":
             pts_aid = nid
     assert len(gids) == SW * SW, "globals found: %d" % len(gids)
     assert polyon is not None, "no polyOn var"
-    assert pts_aid is not None, "no pts port"
-    return sim, gids, polyon, pts_aid
+    assert son is not None, "no sOn var"
+    assert pts_aid is not None, "no shapePoints port"
+    return sim, gids, polyon, son, pts_aid
 
 
 def col(sim, gids, i):
@@ -79,16 +83,18 @@ def expect(cond, label, detail=""):
 def poly_pixels(pts):
     """The chip's polygon fill: the set of painted pixel indices.
 
-    A transcription of gen.py -- the same per-edge records (base x/y,
-    x-per-y slope, half-open y range), the same 200.0 off-screen
-    sentinel, the same min/max span and clamp -- so chip and test agree
-    by construction.  The span is a row's hull, which is exact for a
-    convex polygon; a concave outline fills its hull, so the driver
-    decomposes one into convex pieces.  Points are in pixel-corner
+    A transcription of gen.py -- the same count (the array's length), the
+    same per-edge records (base x/y, x-per-y slope, half-open y range),
+    the same 200.0 off-screen sentinel, the same min/max span and clamp
+    -- so chip and test agree by construction.  The span is a row's hull,
+    exact for a convex polygon; a concave outline fills its hull, so the
+    driver decomposes one into convex pieces.  Points are in pixel-corner
     coordinates: a rect covering pixels 0..3 has corners 0 and 4.
     """
-    pts = list(pts) + [0.0] * (32 - len(pts))
     n = len(pts) // 2
+    if n < 3:
+        return set()
+    pts = list(pts) + [0.0] * (32 - len(pts))
     edges = []
     gyMin, gyMax = 200.0, -200.0
     gxMin, gxMax = 200.0, -200.0
@@ -115,13 +121,16 @@ def poly_pixels(pts):
     out = set()
     row = first
     while row <= last:
-        cs = []
+        cmn, cmx = [], []
         for ex, ey, es, elo, ehi in edges:
             if elo <= row < ehi:
-                cs.append(ex + es * (row - ey))
+                x = ex + es * (row - ey)
+                cmn.append(x)
+                cmx.append(x)
             else:
-                cs.append(200.0)
-        lo, hi = min(cs), max(cs)
+                cmn.append(200.0)
+                cmx.append(-200.0)
+        lo, hi = min(cmn), max(cmx)
         if not (lo >= 200.0 or hi < 0.0 or lo >= 64.0):
             l = 0.0 if lo < 0.0 else float(int(lo))
             r = 63.0 if hi >= 64.0 else float(int(hi))
@@ -129,6 +138,72 @@ def poly_pixels(pts):
                 for c in range(int(l), int(r) + 1):
                     out.add(int(row) * SW + c)
         row += 1.0
+    return out
+
+
+def stroke_pixels(pts):
+    """The chip's 2px stroke: the set of painted pixel indices.
+
+    A transcription of gen.py's stroke arm and walk -- consecutive pairs
+    with no wrap, a 2px quad per segment offset by the unit normal and
+    extended a pixel along the tangent, degenerate pairs skipped, a
+    single point as a 2x2 dot -- so chip and test agree by construction.
+    """
+    import math
+    n = len(pts) // 2
+    if n < 1:
+        return set()
+    if n == 1:
+        x, y = pts[0], pts[1]
+        if x < 0.0 or x >= 64.0 or y < 0.0 or y >= 64.0:
+            return set()
+        out = set()
+        for dr in (0, 1):
+            for dc in (0, 1):
+                r, c = int(y) + dr, int(x) + dc
+                if r < 64 and c < 64:
+                    out.add(r * SW + c)
+        return out
+    out = set()
+    for i in range(n - 1):
+        ax, ay = pts[2 * i], pts[2 * i + 1]
+        bx, by = pts[2 * i + 2], pts[2 * i + 3]
+        dx, dy = bx - ax, by - ay
+        if dx * dx + dy * dy <= 0.0:
+            continue
+        l = math.sqrt(dx * dx + dy * dy)
+        tx, ty = dx / l, dy / l
+        nx, ny = -ty, tx
+        sax, say = ax - tx, ay - ty
+        sbx, sby = bx + tx, by + ty
+        quad = [(sax + nx, say + ny), (sbx + nx, sby + ny),
+                (sbx - nx, sby - ny), (sax - nx, say - ny)]
+        ys = [q[1] for q in quad]
+        first = 0.0 if min(ys) < 0.0 else float(int(min(ys)))
+        last = 63.0 if max(ys) >= 64.0 else float(int(max(ys)))
+        row = first
+        while row <= last:
+            cmn, cmx = [], []
+            for k in range(4):
+                x0, y0 = quad[k]
+                x1, y1 = quad[(k + 1) % 4]
+                lo, hi = (y0, y1) if y0 < y1 else (y1, y0)
+                if lo <= row < hi:
+                    s = (x1 - x0) / (y1 - y0) if y1 != y0 else 0.0
+                    x = x0 + s * (row - y0)
+                    cmn.append(x)
+                    cmx.append(x)
+                else:
+                    cmn.append(200.0)
+                    cmx.append(-200.0)
+            lo, hi = min(cmn), max(cmx)
+            if not (lo >= 200.0 or hi < 0.0 or lo >= 64.0):
+                l = 0.0 if lo < 0.0 else float(int(lo))
+                r = 63.0 if hi >= 64.0 else float(int(hi))
+                if l <= r:
+                    for c in range(int(l), int(r) + 1):
+                        out.add(int(row) * SW + c)
+            row += 1.0
     return out
 
 
@@ -145,12 +220,15 @@ def oval_pts(cx, cy, rx, ry, k=16):
 
 
 def slide(sim, pts_aid, values):
-    """Deliver a new point array on the port's wire, in place."""
-    arr = sim.arrays.get(pts_aid)
-    if arr is None:
-        sim.arrays[pts_aid] = list(values)
-        return
-    arr[0:len(values)] = values
+    """Deliver a new point array on the port's wire.
+
+    The array object is replaced, not patched: the count IS the length,
+    so a shorter shape must arrive as a shorter list.  Going through
+    sim.inputs re-materialises the port on every change, which costs
+    seconds a tick in the sim, while replacing the delivered value is
+    the same wire event at the normal rate.
+    """
+    sim.arrays[pts_aid] = list(values)
 
 
 def main():
@@ -175,53 +253,62 @@ def main():
         ]
         # schedule: each shape's slot is its own row span plus slack, so
         # a burst always finishes before the next redrawAll (a re-arm
-        # would abandon it) without paying for the widest shape's pace
+        # would abandon it) without paying for the widest shape's pace.
+        # Params stage a full two ticks before the push: the sim delivers
+        # a same-tick color+push merge unreliably (the detector fires but
+        # the body reads stale), while a real driver always stages across
+        # ticks and commits after -- which is what this now does.
         spans = []
         t = 10
         for pts, _color in shapes:
             rows = max((p // SW for p in poly_pixels(pts)), default=0) + 1
             spans.append((t, rows))
-            t += rows + 24
+            t += rows + 30
         total = t + 10
 
         # per-tick plan: stage the shape, then pulse push and redraw
         plan = {}
         for i, (pts, color) in enumerate(shapes):
             t0, _rows = spans[i]
-            plan[t0] = {"pts": pts + [0.0] * (PAD - len(pts)),
-                        "rectColor": color,
-                        "shapeN": float(min(16, max(3, len(pts) // 2))),
-                        "pushShape": True}
-            plan[t0 + 2] = {"pushShape": False}
-            plan[t0 + 4] = {"redrawAll": True}
-            plan[t0 + 6] = {"redrawAll": False}
+            plan[t0] = {"shapePoints": list(pts),
+                        "shapeColor": color}
+            plan[t0 + 2] = {"pushFill": True}
+            plan[t0 + 4] = {"pushFill": False}
+            plan[t0 + 6] = {"redrawAll": True}
+            plan[t0 + 8] = {"redrawAll": False}
         # a bare redrawAll at the end replays the last shape
         replay_at = total
         plan[replay_at] = {"redrawAll": True}
         plan[replay_at + 2] = {"redrawAll": False}
         total = replay_at + 80
 
-        sim, gids, polyon, pts_aid = fresh_sim(dump_path)
+        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
         # the array is seeded once, at reset (a reset-time seed is cheap;
         # a mid-run change through sim.inputs is not), then dropped from
         # the inputs so every later pulse merges only scalars and the
-        # shapes are staged by slide() alone
-        sim.inputs = {"pts": [0.0] * PAD, "shapeN": 3.0,
-                      "rectColor": RED, "pushShape": False,
+        # shapes are staged by slide() alone.  Each shape's array is
+        # exactly as long as its point list: the count IS the length.
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
+                      "pushFill": False, "pushStroke": False,
                       "redrawAll": False}
         sim.run(1)
-        sim.inputs = {k: v for k, v in sim.inputs.items() if k != "pts"}
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
         on = []
+        son_on = []
 
         def watch(sn, tick):
             if tick in plan:
                 step = plan[tick]
-                if "pts" in step:
-                    slide(sn, pts_aid, step["pts"])
-                    step = {k: v for k, v in step.items() if k != "pts"}
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, step["shapePoints"])
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints"}
                 sn.inputs = dict(sn.inputs, **step)
             if sn.vars.get(polyon):
                 on.append(tick)
+            if sn.vars.get(son):
+                son_on.append(tick)
 
         sim.run(total, on_tick=watch)
 
@@ -251,15 +338,140 @@ def main():
                      "silence after the replay",
                      "strays at %r" % (
                          [t for t in on if t > replay_at + 80][:8],))
+        # the tick-0 seeding fires every Change detector once, so the
+        # stroke arms from the seeded (all-zero, degenerate) array too:
+        # it walks ~30 empty advances painting nothing, then ends.  The
+        # model diff above already proves it painted nothing wrong.
+        ok &= expect(not any(t > 40 for t in son_on),
+                     "phantom stroke goes silent",
+                     "walk at %r" % ([t for t in son_on if t > 40][:8],))
+
+        # ---- strokes: a wireframe, an open curve, a dot ------------------
+        # One more composed run: the stroke walk paints 2px quads along
+        # consecutive pairs (no wrap), so a wireframe repeats its first
+        # point and an open curve simply ends.  The trailing replay fires
+        # after the array is overwritten with junk, which proves the
+        # replay restores the preserved points instead of re-reading.
+        strokes = [
+            ([5.0, 30.0, 20.0, 15.0, 35.0, 30.0], blue),   # open curve
+            ([40.0, 40.0], blue),                           # a dot
+            ([10.0, 10.0, 20.0, 10.0, 20.0, 20.0, 10.0, 20.0,
+              10.0, 10.0], blue),                           # wireframe square
+        ]
+        spans2 = []
+        t = 10
+        for pts, _color in strokes:
+            rows = max((p // SW for p in stroke_pixels(pts)), default=0) + 1
+            spans2.append((t, rows))
+            t += rows + 34
+        plan2 = {}
+        for i, (pts, color) in enumerate(strokes):
+            t0, _rows = spans2[i]
+            plan2[t0] = {"shapePoints": list(pts),
+                         "shapeColor": color}
+            plan2[t0 + 2] = {"pushStroke": True}
+            plan2[t0 + 4] = {"pushStroke": False}
+            plan2[t0 + 6] = {"redrawAll": True}
+            plan2[t0 + 8] = {"redrawAll": False}
+        # overwrite the array with junk, then replay: the wall must still
+        # show the staged square, not the junk
+        junk_at = t + 4
+        plan2[junk_at] = {"shapePoints": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]}
+        replay2_at = t + 14
+        plan2[replay2_at] = {"redrawAll": True}
+        plan2[replay2_at + 2] = {"redrawAll": False}
+        total2 = replay2_at + 60
+
+        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
+                      "pushFill": False, "pushStroke": False,
+                      "redrawAll": False}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+        on2 = []
+        on2p = []
+
+        def watch2(sn, tick):
+            if tick in plan2:
+                step = plan2[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, step["shapePoints"])
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints"}
+                sn.inputs = dict(sn.inputs, **step)
+            if sn.vars.get(son):
+                on2.append(tick)
+            if sn.vars.get(polyon):
+                on2p.append(tick)
+
+        sim.run(total2, on_tick=watch2)
+
+        model2 = {}
+        for pts, color in strokes:
+            for p in stroke_pixels(pts):
+                model2[p] = color
+        bad = [i for i in range(SW * SW)
+               if col(sim, gids, i) != model2.get(i, BLACK)]
+        ok &= expect(not bad, "wireframe, curve and dot compose",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bad), bad[0] if bad else 0))
+        ok &= expect(not on2p or not any(t > 40 for t in on2p),
+                     "phantom fill goes silent",
+                     "walk at %r" % ([t for t in on2p if t > 40][:8],))
+        ok &= expect(any(replay2_at <= t <= replay2_at + 50 for t in on2),
+                     "redrawAll replays the staged stroke",
+                     "bursts at %r" % ([t for t in on2 if t >= replay2_at],))
+        ok &= expect(not any(t > replay2_at + 55 for t in on2),
+                     "silence after the stroke replay",
+                     "strays at %r" % (
+                         [t for t in on2 if t > replay2_at + 55][:8],))
+
+        # ---- the load-time phantom paints correctly -----------------------
+        # Tick-0 seeding fires every Change detector once, so both walks
+        # arm from the seeded array with no pulse at all.  Seed a real
+        # closed square: whatever paints must be exactly that square's
+        # fill and/or outline in the seeded colour -- anything else is a
+        # torn span -- and both walks must end on their own.
+        sq = [10.0, 10.0, 20.0, 10.0, 20.0, 20.0, 10.0, 20.0, 10.0, 10.0]
+        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": list(sq), "shapeColor": blue,
+                      "pushFill": False, "pushStroke": False,
+                      "redrawAll": False}
+        on3 = []
+        on3s = []
+
+        def watch3(sn, tick):
+            if sn.vars.get(polyon):
+                on3.append(tick)
+            if sn.vars.get(son):
+                on3s.append(tick)
+
+        sim.run(140, on_tick=watch3)
+        allowed = poly_pixels(sq) | stroke_pixels(sq)
+        outline = stroke_pixels(sq)
+        painted = {i for i in range(SW * SW) if col(sim, gids, i) == blue}
+        ok &= expect(painted <= allowed, "phantom paints only the seed",
+                     "%d strays, first at %d"
+                     % (len(painted - allowed),
+                        min(painted - allowed) if painted - allowed else 0))
+        ok &= expect(outline <= painted, "phantom paints the outline",
+                     "missing %d of %d"
+                     % (len(outline - painted), len(outline)))
+        ok &= expect(not any(t > 120 for t in on3), "phantom fill ends",
+                     "walk at %r" % ([t for t in on3 if t > 120][:8],))
+        ok &= expect(not any(t > 120 for t in on3s), "phantom stroke ends",
+                     "walk at %r" % ([t for t in on3s if t > 120][:8],))
 
         # ---- a bare chip paints nothing ---------------------------------
-        sim, gids, polyon, pts_aid = fresh_sim(dump_path)
+        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
         sim.inputs = {}
         sim.run(60)
         ok &= expect(all(col(sim, gids, i) == BLACK
                          for i in (0, 100, 1000, 4095)),
                      "bare chip stays black", "")
         ok &= expect(not sim.vars.get(polyon), "painter never arms", "")
+        ok &= expect(not sim.vars.get(son), "stroke never arms", "")
     finally:
         os.unlink(dump_path)
     print("painttest: %s (%.0fs)"
