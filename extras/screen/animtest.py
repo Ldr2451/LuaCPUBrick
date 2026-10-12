@@ -1,19 +1,22 @@
 """End-to-end test for anim.lua driving the wall screen.
 
 The game wiring this program was written for is:
-  outNum1   -> pushRect
+  outNum1   -> pushFill
   outNum2   -> redrawAll
-  outNumArr -> x0, y0, x1, y1, r, g, b, a (elements 1..8)
+  outNumArr -> shapePoints (elements 1..32: sixteen points, short shapes
+               repeat the last point) and shapeColor (elements 33..36:
+               r, g, b, a, wired to shapeColor)
 
 So the test builds exactly that wiring in the sim.  Phase 1 runs the
 Lua chip and samples outNum1/outNum2/outNumArr every tick.  Phase 2
 replays that stream into the screen chip, pulsing the ports the same
-way the Lua chip does.  Phase 3 compares the wall against a Python
-model of the screen protocol (latch on push, paint on redraw, 64 px a
-tick), so a lost edge, a torn latch, a wrong color or a burst abandoned
-mid-flight all show up as a pixel diff.
+way the Lua chip does (the array is delivered by replacing the port's
+list, the same wire event the game delivers, not the sim's slow input
+path).  Phase 3 compares the wall against a Python model of the screen
+protocol, so a lost edge, a torn latch, a wrong color or a burst
+abandoned mid-flight all show up as a pixel diff.
 
-  python -u extras/screen/animtest.py   (exit 0 = green)
+  python -u extras/screen/animtest.py [ticks]   (exit 0 = green)
 """
 import os
 import sys
@@ -22,8 +25,10 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "irrun"))
+sys.path.insert(0, HERE)
 
 from irsims import share_dump, sim_from_dump, _extract  # noqa: E402
+from painttest import poly_pixels, slide  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
@@ -123,34 +128,44 @@ def main():
         for k, (p, r, a) in enumerate(samples):
             if p > 0.5 and prev_p <= 0.5:
                 pushes.append(k)
-                latched.append((a[0], a[1], a[2], a[3],
-                                tuple(a[4:8])))
+                pts = list(a[0:32]) + [0.0] * max(0, 32 - len(a))
+                col = tuple(a[32:36]) if len(a) >= 36 else (0, 0, 0, 1)
+                latched.append((pts, col))
             if r > 0.5 and prev_r <= 0.5:
                 reds.append(k)
             prev_p, prev_r = p, r
 
-        ok &= expect(len(pushes) >= 6,
-                     "animation draws (%d rects seen)" % len(latched))
+        ok &= expect(len(pushes) >= 4,
+                     "animation draws (%d shapes seen)" % len(latched))
         if pushes:
-            print("   boot: first rect at tick %d (%ds of 100Hz sim), "
+            print("   boot: first shape at tick %d (%ds of 100Hz sim), "
                   "%d ticks/frame"
                   % (pushes[0], pushes[0] // 100,
                      (pushes[-1] - pushes[0]) // max(1, len(pushes) - 1)))
-        # each rect is pushed then redrawn, and the redraw comes before the
-        # next push -- that is what keeps a burst from being abandoned
+        # each shape is pushed then redrawn, and the redraw comes before
+        # the next push -- that is what keeps a burst from being abandoned
         seq_ok = all(pushes[i] < reds[i] < pushes[i + 1]
                      for i in range(min(len(reds), len(pushes)) - 1))
         ok &= expect(seq_ok, "push-then-redraw ordering")
         # no redraw may fire while the previous burst could still be
-        # running: a 1-tick rect burst finishes 2 ticks after its redraw
-        gap_ok = all(reds[i + 1] - reds[i] >= 3 for i in range(len(reds) - 1))
+        # running: pair each redraw with its shape and require the gap to
+        # cover that shape's rows (a polygon burst is one tick per row)
+        def shape_rows(pts):
+            px = poly_pixels(pts)
+            return (max((p // SW for p in px), default=0) -
+                    min((p // SW for p in px), default=0) + 1) if px else 1
+
+        gap_ok = True
+        for i in range(len(reds) - 1):
+            shapes_before = [j for j, t in enumerate(pushes) if t < reds[i]]
+            if not shapes_before:
+                continue
+            rows = shape_rows(latched[shapes_before[-1]][0])
+            if reds[i + 1] - reds[i] < rows + 4:
+                gap_ok = False
         ok &= expect(gap_ok, "redraws spaced past burst time")
-        colors_ok = all(0.0 <= c <= 1.0 for x0, y0, x1, y1, c in latched
-                        for c in c)
+        colors_ok = all(0.0 <= c <= 1.0 for _pts, c in latched for c in c)
         ok &= expect(colors_ok, "colors in 0..1")
-        bounds_ok = all(x1 - x0 >= 1.0 and y1 - y0 >= 1.0
-                        for x0, y0, x1, y1, c in latched)
-        ok &= expect(bounds_ok, "rect bounds non-degenerate")
 
         # ---- phase 2: replay into the screen chip -----------------------
         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
@@ -159,23 +174,31 @@ def main():
         share_dump(SCREEN_WS, scr_dump)
         ssim = sim_from_dump(scr_dump)
         ssim.reset()
-        ssim.inputs = {"rectColor": (0.0, 0.0, 0.0, 1.0),
-                       "rectX0": 0.0, "rectY0": 0.0,
-                       "rectX1": 0.0, "rectY1": 0.0,
-                       "pushRect": False, "redrawAll": False}
+        spts = None
+        for nid, nd in ssim.nodes.items():
+            if _extract(nd.props.get("PortLabel", ("raw", ""))) == \
+                    "shapePoints":
+                spts = nid
+        assert spts is not None, "no shapePoints port"
+        ssim.inputs = {"shapePoints": [0.0] * 32,
+                       "shapeColor": (0.0, 0.0, 0.0, 1.0),
+                       "pushFill": False, "pushStroke": False,
+                       "redrawAll": False}
+        ssim.run(1)
+        ssim.inputs = {k: v for k, v in ssim.inputs.items()
+                       if k != "shapePoints"}
 
         def hook2(s, tick):
             if tick >= len(samples):
                 return
             p, r, a = samples[tick]
-            if len(a) < 8:
-                return
+            if len(a) >= 36:
+                slide(s, spts, list(a[0:40]))
             s.inputs = dict(s.inputs, **{
-                "pushRect": p > 0.5,
+                "pushFill": p > 0.5,
                 "redrawAll": r > 0.5,
-                "rectX0": a[0], "rectY0": a[1],
-                "rectX1": a[2], "rectY1": a[3],
-                "rectColor": tuple(a[4:8]),
+                "shapeColor": tuple(a[32:36]) if len(a) >= 36
+                else (0.0, 0.0, 0.0, 1.0),
             })
 
         ssim.run(TICKS, on_tick=hook2)
@@ -194,30 +217,19 @@ def main():
             got.append(tuple(float(x) for x in v[:4]))
 
         # ---- phase 3: model of the protocol ----------------------------
-        fb = [(0.0, 0.0, 0.0, 1.0)] * (SW * SW)
-        for x0, y0, x1, y1, c in latched:
-            ax0, ax1 = (x0, x1) if x0 <= x1 else (x1, x0)
-            ay0, ay1 = (y0, y1) if y0 <= y1 else (y1, y0)
-            c0 = 0.0 if ax0 < 0.0 else (63.0 if ax0 >= 64.0 else ax0)
-            c1 = 0.0 if ax1 < 0.0 else (63.0 if ax1 >= 64.0 else ax1)
-            r0 = 0.0 if ay0 < 0.0 else (63.0 if ay0 >= 64.0 else ay0)
-            r1 = 0.0 if ay1 < 0.0 else (63.0 if ay1 >= 64.0 else ay1)
-            rw = c1 - c0 + 1.0
-            area = rw * (r1 - r0 + 1.0)
-            tt = 0.0
-            while tt < area:
-                qd = float(int(tt / rw))
-                ridx = int((r0 + qd) * 64.0 + c0 + (tt - qd * rw))
-                if 0 <= ridx < SW * SW:
-                    fb[ridx] = c
-                tt += 1.0
-
-        diff = [i for i in range(SW * SW) if got[i] != fb[i]]
-        ok &= expect(not diff, "wall matches the protocol model",
-                     "%d pixels differ, first at %d" % (len(diff), diff[0])
-                     if diff else "")
-        painted = sum(1 for i in range(SW * SW) if got[i][:3] != (0.0, 0.0, 0.0))
-        ok &= expect(painted > 20, "screen has content (%d px painted)" % painted)
+        fb = {}
+        for pts, col in latched:
+            for p in poly_pixels(pts):
+                fb[p] = col
+        bad = [i for i in range(SW * SW)
+               if got[i] != fb.get(i, (0.0, 0.0, 0.0, 1.0))]
+        ok &= expect(not bad, "wall matches the protocol model",
+                     "%d pixels differ, first at %d" % (len(bad), bad[0])
+                     if bad else "")
+        painted = sum(1 for i in range(SW * SW)
+                      if got[i][:3] != (0.0, 0.0, 0.0))
+        ok &= expect(painted > 20, "screen has content (%d px painted)"
+                     % painted)
 
         # ---- what it looks like, in ASCII --------------------------------
         print("\nframe at tick %d (%ds of 100Hz sim):" % (TICKS, TICKS // 100))
