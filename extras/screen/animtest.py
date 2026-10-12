@@ -1,11 +1,11 @@
 """End-to-end test for anim.lua driving the wall screen.
 
-The game wiring this program was written for is:
+The game wiring this program was written for is (via the connector):
   outNum1   -> pushShape
   outNum2   -> redrawAll
-  outNumArr -> shapePoints (elements 1..32: sixteen points, short shapes
-               repeat the last point) and shapeColor (elements 33..36:
-               r, g, b, a, wired to shapeColor)
+  outNumArr -> colour (elements 1..4: r, g, b, a) then only the points
+               the shape needs (5..) plus one -1 terminator, which the
+               connector truncates to a tight point list
 (wireMode and shapeId stay at their defaults: immediate fills.)
 
 So the test builds exactly that wiring in the sim.  Phase 1 runs the
@@ -79,6 +79,19 @@ def port_val(sim, res):
     return float(v) if isinstance(v, (int, float)) else 0.0
 
 
+def tight(a):
+    """The connector's truncation, mirrored: colour in 1..4, points
+    from 5 on, first x < -0.5 ends the list (at most 16 points)."""
+    pts = []
+    for i in range(16):
+        x = a[4 + 2 * i] if len(a) > 4 + 2 * i else -1.0
+        if x < -0.5:
+            break
+        y = a[4 + 2 * i + 1] if len(a) > 4 + 2 * i + 1 else 0.0
+        pts += [x, y]
+    return pts
+
+
 def expect(cond, label, detail=""):
     print("%-38s %s %s" % (label, "OK  " if cond else "FAIL",
                            detail if not cond else ""))
@@ -129,8 +142,8 @@ def main():
         for k, (p, r, a) in enumerate(samples):
             if p > 0.5 and prev_p <= 0.5:
                 pushes.append(k)
-                pts = list(a[0:32]) + [0.0] * max(0, 32 - len(a))
-                col = tuple(a[32:36]) if len(a) >= 36 else (0, 0, 0, 1)
+                pts = tight(a)
+                col = tuple(a[0:4]) if len(a) >= 4 else (0, 0, 0, 1)
                 latched.append((pts, col))
             if r > 0.5 and prev_r <= 0.5:
                 reds.append(k)
@@ -194,12 +207,12 @@ def main():
             if tick >= len(samples):
                 return
             p, r, a = samples[tick]
-            if len(a) >= 36:
-                slide(s, spts, list(a[0:40]))
+            if len(a) >= 5:
+                slide(s, spts, tight(a))
             s.inputs = dict(s.inputs, **{
                 "pushShape": p > 0.5,
                 "redrawAll": r > 0.5,
-                "shapeColor": tuple(a[32:36]) if len(a) >= 36
+                "shapeColor": tuple(a[0:4]) if len(a) >= 4
                 else (0.0, 0.0, 0.0, 1.0),
             })
 

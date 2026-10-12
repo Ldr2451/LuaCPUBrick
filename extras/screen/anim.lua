@@ -1,8 +1,9 @@
 -- Rainbow spirograph, polygon edition -- driver for the 64x64 screen.
 -- Wires: outNum1 -> pushFill, outNum2 -> redrawAll,
--- outNumArr -> shapePoints (1..32, short shapes repeat the last point)
--- and shapeColor (33..36: r,g,b,a).  One shape per frame, bursts hidden
--- under the next frame's compute.  Terse: the lexer runs ~1 char/tick.
+-- outNumArr -> colour (1..4: r,g,b,a) then only the points the shape
+-- needs (5..) plus one -1 terminator; the connector truncates there.
+-- One shape per frame, bursts hidden under the next frame's compute.
+-- Terse: the lexer runs ~1 char/tick.
 
 local sets = {
   {26.0, 12.0, 16.0, 37.7},
@@ -61,11 +62,9 @@ end
 -- an 8x8 filled square tracer at (bx,by), palette entry h
 local function tracer(bx, by, h)
   local ex, ey = bx + 8.0, by + 8.0
-  outNumArr(1, bx, by, ex, by, ex, ey, bx, ey)
-  outNumArr(9, bx, ey, bx, ey, bx, ey, bx, ey)
-  outNumArr(17, bx, ey, bx, ey, bx, ey, bx, ey)
-  outNumArr(25, bx, ey, bx, ey, bx, ey, bx, ey)
-  outNumArr(33, pal[h * 3 + 1], pal[h * 3 + 2], pal[h * 3 + 3], 1.0)
+  outNumArr(1, pal[h * 3 + 1], pal[h * 3 + 2], pal[h * 3 + 3], 1.0)
+  outNumArr(5, bx, by, ex, by, ex, ey, bx, ey)
+  outNumArr(13, -1.0)
   fire(1)
 end
 
@@ -76,20 +75,17 @@ local function core(r, h)
   local y0, y1 = cx - r, cx + r
   local kx0, kx1 = cx - k, cx + k
   local ky0, ky1 = cx - k, cx + k
-  outNumArr(1, kx0, y0, kx1, y0, x1, ky0, x1, ky1)
-  outNumArr(9, kx1, y1, kx0, y1, x0, ky1, x0, ky0)
-  outNumArr(17, x0, ky0, x0, ky0, x0, ky0, x0, ky0)
-  outNumArr(25, x0, ky0, x0, ky0, x0, ky0, x0, ky0)
-  outNumArr(33, pal[h * 3 + 1], pal[h * 3 + 2], pal[h * 3 + 3], 0.5)
+  outNumArr(1, pal[h * 3 + 1], pal[h * 3 + 2], pal[h * 3 + 3], 0.5)
+  outNumArr(5, kx0, y0, kx1, y0, x1, ky0, x1, ky1)
+  outNumArr(13, kx1, y1, kx0, y1, x0, ky1, x0, ky0)
+  outNumArr(21, -1.0)
   fire(1)
 end
 
 local function clearAll()
-  outNumArr(1, 0.0, 0.0, 64.0, 0.0, 64.0, 64.0, 0.0, 64.0)
-  outNumArr(9, 0.0, 64.0, 0.0, 64.0, 0.0, 64.0, 0.0, 64.0)
-  outNumArr(17, 0.0, 64.0, 0.0, 64.0, 0.0, 64.0, 0.0, 64.0)
-  outNumArr(25, 0.0, 64.0, 0.0, 64.0, 0.0, 64.0, 0.0, 64.0)
-  outNumArr(33, 0.0, 0.0, 0.0, 1.0)
+  outNumArr(1, 0.0, 0.0, 0.0, 1.0)
+  outNumArr(5, 0.0, 0.0, 64.0, 0.0, 64.0, 64.0, 0.0, 64.0)
+  outNumArr(13, -1.0)
   fire(1)
   -- the clear is 64 rows; the next frame's compute (~50 ticks) would
   -- abandon its burst, so wait it out exactly (normal bursts stay

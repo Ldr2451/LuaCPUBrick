@@ -59,11 +59,12 @@ wall keeps the last color forever -- no keepalive, no expiry.  The last
 push before a `redrawAll` wins, so a stale stage cannot fire.  A bare
 `redrawAll` replays the last shape.
 
-`anim.lua` drives these inputs from the tinylua chip: `outNum1 ->
-pushShape`, `outNum2 -> redrawAll`, `outNumArr -> shapePoints`
-(elements 1..32, short shapes repeat the last point) with the colour
-at elements 33..36 wired to `shapeColor` (`wireMode` and `shapeId`
-stay unwired: immediate fills).
+`anim.lua` drives these inputs from the tinylua chip through the
+`cpu-screen-connector` bridge: `outNum1 -> pushShape`,
+`outNum2 -> redrawAll`, `outNumArr` carrying the colour at elements
+1..4 and only the points the shape needs from element 5 on, closed by
+one -1 terminator (the connector truncates there and builds the real
+`Color`; `wireMode` and `shapeId` stay at defaults: immediate fills).
 
 ## Running the tests
 
