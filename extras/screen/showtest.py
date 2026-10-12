@@ -117,6 +117,12 @@ def main():
                          for p, _c, _w, s in latched),
                      "empty shape deletes slot 2")
         ok &= expect(len(clrs) >= 1, "clearAll pulse seen")
+        # End replay and model at the last push edge: every burst before
+        # it is complete (the driver's naps cover each burst by
+        # construction, which the wall diff verifies), while a fixed
+        # tick cutoff can land mid-burst of an infinite loop and fail
+        # spuriously.  The never-redrawn last push stays pending in both.
+        T_end = pushes[-1] if pushes else TICKS
         # No "bursts settled" check here: the program loops forever, so any
         # fixed run ends at an arbitrary point past some redraw.  The wall
         # diff below subsumes it -- a burst cut off mid-flight necessarily
@@ -146,7 +152,7 @@ def main():
         last_slid = [None]
 
         def hook2(s, tick):
-            if tick >= len(samples):
+            if tick >= T_end:
                 return
             _p, _r, _c, _w, a, st = samples[tick]
             b = samples[tick - 2] if tick >= 2 else (0, 0, 0, 0, [], "")
@@ -163,7 +169,7 @@ def main():
                 "shapeColor": tuple(a[0:4]) if len(a) >= 4 else BLACK,
             })
 
-        ssim.run(TICKS, on_tick=hook2)
+        ssim.run(T_end, on_tick=hook2)
         gids = {}
         for nid, nd in ssim.nodes.items():
             lb = _ex(nd.props.get("_label", ("raw", "")))
@@ -183,7 +189,7 @@ def main():
                 fb[px] = col
 
         li = 0
-        for k in range(len(samples)):
+        for k in range(T_end):
             p, r, c, _w, _a, _st = samples[k][0], samples[k][1], \
                 samples[k][2], samples[k][3], samples[k][4], samples[k][5]
             if c > 0.5 and (samples[k - 1][2] if k else 0.0) <= 0.5:
