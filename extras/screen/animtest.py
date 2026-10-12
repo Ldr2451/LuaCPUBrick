@@ -1,11 +1,12 @@
 """End-to-end test for anim.lua driving the wall screen.
 
 The game wiring this program was written for is:
-  outNum1   -> pushFill
+  outNum1   -> pushShape
   outNum2   -> redrawAll
   outNumArr -> shapePoints (elements 1..32: sixteen points, short shapes
                repeat the last point) and shapeColor (elements 33..36:
                r, g, b, a, wired to shapeColor)
+(wireMode and shapeId stay at their defaults: immediate fills.)
 
 So the test builds exactly that wiring in the sim.  Phase 1 runs the
 Lua chip and samples outNum1/outNum2/outNumArr every tick.  Phase 2
@@ -182,8 +183,8 @@ def main():
         assert spts is not None, "no shapePoints port"
         ssim.inputs = {"shapePoints": [0.0] * 32,
                        "shapeColor": (0.0, 0.0, 0.0, 1.0),
-                       "pushFill": False, "pushStroke": False,
-                       "redrawAll": False}
+                       "pushShape": False, "wireMode": False,
+                       "shapeId": 0.0, "redrawAll": False}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
@@ -195,7 +196,7 @@ def main():
             if len(a) >= 36:
                 slide(s, spts, list(a[0:40]))
             s.inputs = dict(s.inputs, **{
-                "pushFill": p > 0.5,
+                "pushShape": p > 0.5,
                 "redrawAll": r > 0.5,
                 "shapeColor": tuple(a[32:36]) if len(a) >= 36
                 else (0.0, 0.0, 0.0, 1.0),
