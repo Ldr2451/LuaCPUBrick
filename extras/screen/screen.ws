@@ -55,6 +55,7 @@ const MAXP = 16
 @left in wireMode: bool
 @left in shapeId: float
 @left in redrawAll: bool
+@left in clearAll: bool
 
 const SW = 64
 const SH = 64
@@ -91,6 +92,7 @@ var rcSlot: float = 1.0
 var commitR: bool = false
 var fromSlot: bool = false
 var clearing: bool = false
+var forgetAll: bool = false
 var sPx0: float = 0.0
 var sPy0: float = 0.0
 var sPx1: float = 0.0
@@ -8461,6 +8463,7 @@ on Change(pushShape) {
     sOn = false
     rcOn = false
     clearing = false
+    forgetAll = false
     fromSlot = false
     arming = false
     armingS = false
@@ -8532,6 +8535,30 @@ on Change(redrawAll) {
       pcol = 200.0
       sOn = true
     }
+  }
+}
+
+// clearAll forgets every retained slot and blacks the wall: it kills
+// anything live or staged, then runs a black clear through the normal
+// fill walk (64 rows, the physical floor for 4096 pixels).  Afterwards
+// no replay can resurrect anything (both live flags die here), and the
+// next retained commit starts from an empty table.  Pulse it like a
+// push: only the rising edge matters.
+on Change(clearAll) {
+  if clearAll {
+    pending = false
+    commitR = false
+    arming = false
+    armingS = false
+    polyOn = false
+    polyLive = false
+    sOn = false
+    sLive = false
+    rcOn = false
+    clearing = true
+    forgetAll = true
+    fromSlot = true
+    arming = true
   }
 }
 
@@ -8703,6 +8730,17 @@ mod paintTick() {
     if clearing {
       clearing = false
       fromSlot = false
+      if forgetAll {
+        forgetAll = false
+        slLive[0] = 0.0
+        slLive[1] = 0.0
+        slLive[2] = 0.0
+        slLive[3] = 0.0
+        slLive[4] = 0.0
+        slLive[5] = 0.0
+        slLive[6] = 0.0
+        slLive[7] = 0.0
+      }
       shPts[0] = 0.0
       shPts[1] = 0.0
       shPts[2] = 64.0

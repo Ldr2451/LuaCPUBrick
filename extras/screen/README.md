@@ -29,36 +29,46 @@ without it.
 ```
              shapePoints --|           |-- px0 .. px4095: color
              shapeColor --|  screen   |
-               pushFill --|           |
-             pushStroke --|           |
+              pushShape --|           |
+              wireMode --|           |
+               shapeId --|           |
               redrawAll --|           |
+              clearAll --|           |
 ```
 
-`pushFill` latches a fill, `pushStroke` latches a 2px stroke, and
-`redrawAll` paints the latched shape: one row per tick, the ports
-mirror the framebuffer every tick.
+`pushShape` latches a shape -- colour, fill-vs-stroke, and slot -- and
+`redrawAll` paints it: one row per tick, the ports mirror the
+framebuffer every tick.
 Points arrive on `shapePoints` as pixel-corner coordinates (a rect covering
 pixels 0..3 has corners 0 and 4), up to 16 of them; the count is the
 array's length, so the driver sends exactly as many points as the shape
-has.  A fill closes its outline implicitly; a stroke runs consecutive
-pairs with no wrap, so the driver closes a wireframe by repeating the
-first point and leaves an open curve open (butt caps; joins overlap in
-the same colour).  A single point strokes as a 2x2 dot.  A fully
-off-screen shape paints nothing.  Colors persist until
+has.  `wireMode` low fills (the outline closes implicitly); high
+strokes a 2px polyline along consecutive pairs with no wrap, so the
+driver closes a wireframe by repeating the first point and leaves an
+open curve open (butt caps; joins overlap in the same colour).  A
+single point strokes as a 2x2 dot.  A fully off-screen shape paints
+nothing.
+`shapeId` 0 paints immediately and forgets; 1..8 retain the shape, and
+every retained commit clears the wall and repaints all live slots in
+order -- so pushing new points to an id edits it in place, and pushing
+zero points deletes it.  `clearAll` forgets every slot and blacks the
+wall in one 64-tick burst (pulse it like a push), so the CPU never has
+to track what is live.  Colors persist until
 rewritten, so a frame is a sequence of push-then-redraw pairs, and the
 wall keeps the last color forever -- no keepalive, no expiry.  The last
 push before a `redrawAll` wins, so a stale stage cannot fire.  A bare
 `redrawAll` replays the last shape.
 
 `anim.lua` drives these inputs from the tinylua chip: `outNum1 ->
-pushFill`, `outNum2 -> redrawAll`, `outNumArr -> shapePoints`
+pushShape`, `outNum2 -> redrawAll`, `outNumArr -> shapePoints`
 (elements 1..32, short shapes repeat the last point) with the colour
-at elements 33..36 wired to `shapeColor`.
+at elements 33..36 wired to `shapeColor` (`wireMode` and `shapeId`
+stay unwired: immediate fills).
 
 ## Running the tests
 
 ```
-python -u extras/screen/painttest.py           # fills + strokes, ~57s
+python -u extras/screen/painttest.py           # fills, strokes, retained, ~113s
 python -u extras/screen/animtest.py [ticks]    # anim.lua end to end
 ```
 

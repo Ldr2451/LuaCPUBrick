@@ -294,7 +294,8 @@ def main():
         # exactly as long as its point list: the count IS the length.
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False}
+                      "shapeId": 0.0, "redrawAll": False,
+                      "clearAll": False}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -390,7 +391,8 @@ def main():
         sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False}
+                      "shapeId": 0.0, "redrawAll": False,
+                      "clearAll": False}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -468,7 +470,8 @@ def main():
         sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False}
+                      "shapeId": 0.0, "redrawAll": False,
+                      "clearAll": False}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -509,6 +512,79 @@ def main():
         ok &= expect_wall(snaps[ends[3]], want4,
                           "delete removes (triangle gone)")
 
+        # ---- clearAll forgets everything and blacks the wall ---------------
+        # Pulse clearAll on top of the live green square: the wall must go
+        # fully black, and a later store into slot 2 must show ONLY the new
+        # triangle -- if the clear had merely blacked without forgetting,
+        # the square would resurrect on recomposite.
+        cplan = {}
+        # setup commit first (ticks 2..10 stage and fire, recomposite after)
+        cplan[2] = {"shapePoints": list(sq1b), "shapeColor": green,
+                    "wireMode": False, "shapeId": 1.0}
+        cplan[4] = {"pushShape": True}
+        cplan[6] = {"pushShape": False}
+        cplan[8] = {"redrawAll": True}
+        cplan[10] = {"redrawAll": False}
+        # clear pulse once the setup recomposite is done (~90 ticks), then
+        # store the triangle in slot 2 well after the blackout ends
+        ct = 110
+        cplan[ct] = {"clearAll": True}
+        cplan[ct + 2] = {"clearAll": False}
+        st = ct + 110
+        cplan[st] = {"shapePoints": list(tri2), "shapeColor": blue,
+                     "wireMode": False, "shapeId": 2.0}
+        cplan[st + 2] = {"pushShape": True}
+        cplan[st + 4] = {"pushShape": False}
+        cplan[st + 6] = {"redrawAll": True}
+        cplan[st + 8] = {"redrawAll": False}
+        cblack_at = ct + 90
+        cend = st + 200
+
+        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": green,
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 1.0, "redrawAll": False,
+                      "clearAll": False}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+        # first re-create the live square with a normal retained commit
+        cplan[2] = {"shapePoints": list(sq1b), "shapeColor": green,
+                    "wireMode": False, "shapeId": 1.0}
+        cplan[4] = {"pushShape": True}
+        cplan[6] = {"pushShape": False}
+        cplan[8] = {"redrawAll": True}
+        cplan[10] = {"redrawAll": False}
+        cblack = {}
+        cwall = {}
+
+        def watchc(sn, tick):
+            if tick in cplan:
+                step = cplan[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, step["shapePoints"])
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints"}
+                sn.inputs = dict(sn.inputs, **step)
+            if tick == cblack_at:
+                cblack.update({i: col(sn, gids, i)
+                               for i in range(SW * SW)})
+            if tick == cend:
+                cwall.update({i: col(sn, gids, i)
+                              for i in range(SW * SW)})
+
+        sim.run(cend + 1, on_tick=watchc)
+        ok &= expect(all(v == BLACK for v in cblack.values()),
+                     "clearAll blacks the wall",
+                     "%d non-black" % sum(
+                         1 for v in cblack.values() if v != BLACK))
+        wantc = {p: blue for p in poly_pixels(tri2)}
+        badc = [i for i in range(SW * SW)
+                if cwall.get(i, BLACK) != wantc.get(i, BLACK)]
+        ok &= expect(not badc, "slots stay forgotten after clear",
+                     "%d of 4096 differ, first at %d"
+                     % (len(badc), badc[0] if badc else 0))
+
         # ---- the load-time phantom paints correctly -----------------------
         # Tick-0 seeding fires every Change detector once, so a walk arms
         # from the seeded array with no pulse at all.  Seed a real closed
@@ -520,7 +596,8 @@ def main():
         sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": list(sq), "shapeColor": blue,
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False}
+                      "shapeId": 0.0, "redrawAll": False,
+                      "clearAll": False}
         on3 = []
         on3s = []
 
@@ -551,7 +628,8 @@ def main():
         sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
         sim.inputs = {"shapeColor": (0.0, 0.0, 0.0, 1.0),
                       "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "redrawAll": False}
+                      "shapeId": 0.0, "redrawAll": False,
+                      "clearAll": False}
         sim.run(60)
         sim.run(60)
         ok &= expect(all(col(sim, gids, i) == BLACK
