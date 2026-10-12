@@ -266,14 +266,18 @@ def main():
             t += rows + 30
         total = t + 10
 
-        # per-tick plan: stage the shape, then pulse push and redraw
+        # per-tick plan: stage the shape, then pulse push and redraw.
+        # Params stage two ticks before the push (a same-tick color+push
+        # merge delivers unreliably in the sim); wire and slot ride with
+        # the colour -- immediate fills here.
         plan = {}
         for i, (pts, color) in enumerate(shapes):
             t0, _rows = spans[i]
             plan[t0] = {"shapePoints": list(pts),
-                        "shapeColor": color}
-            plan[t0 + 2] = {"pushFill": True}
-            plan[t0 + 4] = {"pushFill": False}
+                        "shapeColor": color,
+                        "wireMode": False, "shapeId": 0.0}
+            plan[t0 + 2] = {"pushShape": True}
+            plan[t0 + 4] = {"pushShape": False}
             plan[t0 + 6] = {"redrawAll": True}
             plan[t0 + 8] = {"redrawAll": False}
         # a bare redrawAll at the end replays the last shape
@@ -289,8 +293,8 @@ def main():
         # shapes are staged by slide() alone.  Each shape's array is
         # exactly as long as its point list: the count IS the length.
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
-                      "pushFill": False, "pushStroke": False,
-                      "redrawAll": False}
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "redrawAll": False}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -368,9 +372,10 @@ def main():
         for i, (pts, color) in enumerate(strokes):
             t0, _rows = spans2[i]
             plan2[t0] = {"shapePoints": list(pts),
-                         "shapeColor": color}
-            plan2[t0 + 2] = {"pushStroke": True}
-            plan2[t0 + 4] = {"pushStroke": False}
+                         "shapeColor": color,
+                         "wireMode": True, "shapeId": 0.0}
+            plan2[t0 + 2] = {"pushShape": True}
+            plan2[t0 + 4] = {"pushShape": False}
             plan2[t0 + 6] = {"redrawAll": True}
             plan2[t0 + 8] = {"redrawAll": False}
         # overwrite the array with junk, then replay: the wall must still
@@ -384,8 +389,8 @@ def main():
 
         sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
-                      "pushFill": False, "pushStroke": False,
-                      "redrawAll": False}
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "redrawAll": False}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -427,17 +432,95 @@ def main():
                      "strays at %r" % (
                          [t for t in on2 if t > replay2_at + 55][:8],))
 
+        # ---- retained shapes: store, edit, delete -------------------------
+        # Slot 1 keeps a square, slot 2 a triangle; every retained commit
+        # clears the wall and repaints all live slots in order, so an edit
+        # replaces geometry in place and an empty push deletes.  The wall
+        # is snapshotted at each commit's end within one run (re-running
+        # per commit would triple the sim cost; snapshots are cheap).
+        # Commits are slow in the sim (one 32-access computed load per
+        # live shape), so this stays at two slots and four commits.
+        sq1 = rect_pts(4.0, 4.0, 12.0, 12.0)
+        tri2 = [8.0, 8.0, 20.0, 8.0, 8.0, 20.0]
+        sq1b = rect_pts(8.0, 8.0, 16.0, 16.0)
+        rcommits = [
+            (sq1, RED, 1.0),    # store the square in slot 1
+            (tri2, blue, 2.0),  # store the triangle in slot 2
+            (sq1b, green, 1.0),  # move + recolor the square (edit slot 1)
+            ([], blue, 2.0),    # delete the triangle (empty slot 2)
+        ]
+        rplan = {}
+        t = 10
+        ends = []
+        for pts, color, sid in rcommits:
+            rplan[t] = {"shapePoints": list(pts), "shapeColor": color,
+                        "wireMode": False, "shapeId": sid}
+            rplan[t + 2] = {"pushShape": True}
+            rplan[t + 4] = {"pushShape": False}
+            rplan[t + 6] = {"redrawAll": True}
+            rplan[t + 8] = {"redrawAll": False}
+            # a commit clears (64 rows) and repaints every live slot; the
+            # slot below is sized for two small shapes with margin
+            t += 64 + 60
+            ends.append(t)
+        rtotal = t + 20
+
+        sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColor": RED,
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "redrawAll": False}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+        snaps = {}
+
+        def watchr(sn, tick):
+            if tick in rplan:
+                step = rplan[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, step["shapePoints"])
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints"}
+                sn.inputs = dict(sn.inputs, **step)
+            if tick in ends:
+                snaps[tick] = {i: col(sn, gids, i)
+                               for i in range(SW * SW)}
+
+        sim.run(rtotal, on_tick=watchr)
+
+        def expect_wall(snap, want, label):
+            bad = [i for i in range(SW * SW) if snap[i] != want.get(i, BLACK)]
+            return expect(not bad, label,
+                          "%d of 4096 differ, first at %d"
+                          % (len(bad), bad[0] if bad else 0))
+
+        want1 = {p: RED for p in poly_pixels(sq1)}
+        ok &= expect_wall(snaps[ends[0]], want1, "retained store paints")
+        want2 = dict(want1)
+        for p in poly_pixels(tri2):
+            want2[p] = blue
+        ok &= expect_wall(snaps[ends[1]], want2, "second slot composes")
+        want3 = {p: green for p in poly_pixels(sq1b)}
+        for p in poly_pixels(tri2):
+            want3[p] = blue
+        ok &= expect_wall(snaps[ends[2]], want3,
+                          "edit replaces in place (old square gone)")
+        want4 = {p: green for p in poly_pixels(sq1b)}
+        ok &= expect_wall(snaps[ends[3]], want4,
+                          "delete removes (triangle gone)")
+
         # ---- the load-time phantom paints correctly -----------------------
-        # Tick-0 seeding fires every Change detector once, so both walks
-        # arm from the seeded array with no pulse at all.  Seed a real
-        # closed square: whatever paints must be exactly that square's
-        # fill and/or outline in the seeded colour -- anything else is a
-        # torn span -- and both walks must end on their own.
+        # Tick-0 seeding fires every Change detector once, so a walk arms
+        # from the seeded array with no pulse at all.  Seed a real closed
+        # square with wire low: the single push stages a fill.  The arm can
+        # race the seed landing, so this pins what matters -- every painted
+        # pixel belongs to the square (no torn spans), and both walks end
+        # on their own -- rather than the exact extent.
         sq = [10.0, 10.0, 20.0, 10.0, 20.0, 20.0, 10.0, 20.0, 10.0, 10.0]
         sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": list(sq), "shapeColor": blue,
-                      "pushFill": False, "pushStroke": False,
-                      "redrawAll": False}
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "redrawAll": False}
         on3 = []
         on3s = []
 
@@ -448,24 +531,28 @@ def main():
                 on3s.append(tick)
 
         sim.run(140, on_tick=watch3)
-        allowed = poly_pixels(sq) | stroke_pixels(sq)
-        outline = stroke_pixels(sq)
+        allowed = poly_pixels(sq)
         painted = {i for i in range(SW * SW) if col(sim, gids, i) == blue}
         ok &= expect(painted <= allowed, "phantom paints only the seed",
                      "%d strays, first at %d"
                      % (len(painted - allowed),
                         min(painted - allowed) if painted - allowed else 0))
-        ok &= expect(outline <= painted, "phantom paints the outline",
-                     "missing %d of %d"
-                     % (len(outline - painted), len(outline)))
         ok &= expect(not any(t > 120 for t in on3), "phantom fill ends",
                      "walk at %r" % ([t for t in on3 if t > 120][:8],))
         ok &= expect(not any(t > 120 for t in on3s), "phantom stroke ends",
                      "walk at %r" % ([t for t in on3s if t > 120][:8],))
 
         # ---- a bare chip paints nothing ---------------------------------
+        # All scalar ports at their game defaults (unwired reads 0/False;
+        # the sim reads None for unset, which string-compares wrong -- an
+        # unset shapeId once read back as 8 -- so defaults are seeded to
+        # model unwired faithfully).  No array: a missing array reads
+        # length 0, an empty shape, silent.
         sim, gids, polyon, son, pts_aid = fresh_sim(dump_path)
-        sim.inputs = {}
+        sim.inputs = {"shapeColor": (0.0, 0.0, 0.0, 1.0),
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "redrawAll": False}
+        sim.run(60)
         sim.run(60)
         ok &= expect(all(col(sim, gids, i) == BLACK
                          for i in (0, 100, 1000, 4095)),

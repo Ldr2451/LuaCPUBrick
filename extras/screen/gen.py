@@ -1,11 +1,13 @@
-"""Generate extras/screen/screen.ws: a polygon-fill, polyline-stroke screen.
+"""Generate extras/screen/screen.ws: a retained polygon screen.
 
 One color output per pixel (px0..pxN-1), each wired in the save to one
 brick's property changer.  Two primitives share one point array: fills
-take convex polygons (a rect is 4 points, an oval an inscribed 16-gon),
-strokes take open or closed polylines at a fixed 2px width (a wireframe
-is a closed path, an open curve is not).  A concave fill decomposes
-into convex pieces driver-side; a custom stroke width is a quad strip.
+take convex polygons, strokes take open or closed polylines at a fixed
+2px width.  Shapes carry an id: id 0 paints immediately and is
+forgotten (unbounded accumulation, the animation's medium), ids 1..8
+are retained -- stored, then the wall is recomposited from all live
+slots in order -- so a later push can edit a shape, and pushing zero
+points deletes it.
 
   python -u extras/screen/gen.py [lanes]     (default 64; writes screen.ws)
 
@@ -13,16 +15,11 @@ Measured shape (audit.py): ~4 nodes per pixel (port + global + scanout
 copy), so 64x64 lands ~16.5k nodes before the painters.
 
 Two sim facts shaped the inner loops, both measured on this repo's own
-runner: a computed-index array read costs about half a second (so the
-arm reads the 32 point slots once, by literal index, into point lets),
-and a deep chain of pure compare/select gates costs about a quarter of
-a second a gate -- a 63-comparator sort for concave even-odd spans came
-to ~12s a row-advance tick.  The min/max tree reductions below are the
-same information for a convex fill at depth 4, and a row-advance tick
-is back to the scanout's own cost.  The stroke walk holds the same
-discipline: its per-tick path has no selects (the shift register walks
-the points past the corner math) and its span is a 4-edge min/max at
-depth 2.
+runner: a computed-index array read costs about half a second (so arms
+read by literal index, and slot loads -- unavoidably computed -- are
+kept to one 32-read pass per shape), and a deep chain of pure
+compare/select gates costs about a quarter of a second a gate (so spans
+are min/max trees, and the stroke walk holds no selects).
 """
 import os
 import sys
@@ -92,8 +89,9 @@ L.append("")
 
 L.append("@left in shapePoints: float[]")
 L.append("@left in shapeColor: color")
-L.append("@left in pushFill: bool")
-L.append("@left in pushStroke: bool")
+L.append("@left in pushShape: bool")
+L.append("@left in wireMode: bool")
+L.append("@left in shapeId: float")
 L.append("@left in redrawAll: bool")
 L.append("")
 
@@ -120,6 +118,30 @@ L.append("var gyMin: float = 200.0")
 L.append("var gyMax: float = -200.0")
 L.append("var gxMin: float = 200.0")
 L.append("var gxMax: float = -200.0")
+# Staged push values: colour, fill-vs-stroke, and slot.  The points ride
+# the array alongside, so a commit is atomic.
+L.append("var pWire: bool = false")
+L.append("var pId: float = 0.0")
+# One shadow array feeds both arms, so there is exactly one arm path:
+# immediate pushes copy the port into it (literal reads, fast), slot
+# loads copy a slot into it (computed reads, one pass per shape).
+L.append("var shPts: float[]")
+# Eight retained slots: points, colour, mode, live flag, point count.
+# Arrays are sized memory, not gates, so eight slots cost no nodes --
+# only the single load/store paths do.  Slot k (1..8) lives at points
+# base (k-1)*32 and scalar index k-1.
+L.append("var slPts: float[]")
+L.append("var slCol: color[]")
+L.append("var slMode: float[]")
+L.append("var slLive: float[]")
+L.append("var slCount: float[]")
+# Recomposite state: a retained commit clears the wall with a black fill
+# and repaints every live slot in order through the same walks.
+L.append("var rcOn: bool = false")
+L.append("var rcSlot: float = 1.0")
+L.append("var commitR: bool = false")
+L.append("var fromSlot: bool = false")
+L.append("var clearing: bool = false")
 # The stroke walk's preserved point store (replays restore from it) and its
 # shift register (consumed pair by pair, so the per-tick path has no
 # selects), the current quad's corners, and the walk state.
@@ -136,7 +158,6 @@ L.append("var sLive: bool = false")
 L.append("var sSeg: float = 0.0")
 L.append("var sSegs: float = 0.0")
 L.append("var sLast: float = -1.0")
-L.append("var pendingS: bool = false")
 L.append("var armingS: bool = false")
 # The 16 edge records, as scalars.
 for i in range(MAXP):
@@ -155,44 +176,53 @@ L.append("// No prev-edge flags anywhere in this file, deliberately.  on Change 
 L.append("// only on a transition, so the event IS the edge.  A same-handler")
 L.append("// read-then-write of one var loses the race; cross-handler flags")
 L.append("// (pending, arming, polyOn) are fine, because no pass writes what it reads.")
-L.append("// Each push clears the other shape's stage, so the last push before a")
-L.append("// redrawAll is the one that arms -- and a load-time edge on an unwired")
-L.append("// stage cannot fire later.")
-L.append("on Change(pushFill) {")
-L.append("  if pushFill {")
+L.append("// A push stages colour, mode and slot, and aborts anything live -- a")
+L.append("// burst, a recomposite, a staged arm -- so the next redrawAll always")
+L.append("// starts fresh from the new stage.  (A load-time edge on an unwired")
+L.append("// port stages zeroes: an empty immediate shape, which paints nothing.)")
+L.append("on Change(pushShape) {")
+L.append("  if pushShape {")
 L.append("    pCol = shapeColor")
+L.append("    pWire = wireMode")
+L.append("    pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)")
 L.append("    pending = true")
-L.append("    pendingS = false")
-L.append("  }")
-L.append("}")
-L.append("on Change(pushStroke) {")
-L.append("  if pushStroke {")
-L.append("    pCol = shapeColor")
-L.append("    pendingS = true")
-L.append("    pending = false")
+L.append("    polyOn = false")
+L.append("    sOn = false")
+L.append("    rcOn = false")
+L.append("    clearing = false")
+L.append("    fromSlot = false")
+L.append("    arming = false")
+L.append("    armingS = false")
+L.append("    commitR = false")
 L.append("  }")
 L.append("}")
 L.append("")
 L.append("// A bare redrawAll replays the last shape: the edge records (fill) or the")
 L.append("// preserved points (stroke) are still staged, so only the walk state")
-L.append("// resets.  Each replay is guarded against the other walk and both arms,")
-L.append("// so a fill burst and a stroke replay can never collide.")
+L.append("// resets.  Each replay is guarded against the other walk and every arm,")
+L.append("// so a fill burst and a stroke replay can never collide.  A staged")
+L.append("// retained push commits instead: the slot is stored and the wall is")
+L.append("// recomposited from every live slot in order.")
 L.append("on Change(redrawAll) {")
 L.append("  if redrawAll {")
 L.append("    if pending {")
-L.append("      arming = true")
 L.append("      pending = false")
+L.append("      if pId >= 1.0 {")
+L.append("        commitR = true")
+L.append("      } else {")
+L.append("        if pWire {")
+L.append("          armingS = true")
+L.append("        } else {")
+L.append("          arming = true")
+L.append("        }")
+L.append("      }")
 L.append("    }")
-L.append("    if pendingS {")
-L.append("      armingS = true")
-L.append("      pendingS = false")
-L.append("    }")
-L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS {")
+L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR {")
 L.append("      prow = pfirst - 1.0")
 L.append("      pcol = 200.0")
 L.append("      polyOn = true")
 L.append("    }")
-L.append("    if sLive && !sOn && !armingS && !polyOn && !arming {")
+L.append("    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR {")
 for i in range(MAXP):
     L.append("      rX%d = sPx%d" % (i, i))
     L.append("      rY%d = sPy%d" % (i, i))
@@ -213,7 +243,87 @@ L.append("// non-negative, so truncation is floor).")
 L.append("mod paintTick() {")
 L.append("  if !fbInit {")
 L.append("    fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))")
+L.append("    shPts.resize(32, 0.0)")
+L.append("    slPts.resize(256, 0.0)")
+L.append("    slCol.resize(8, Color(0.0, 0.0, 0.0, 1.0))")
+L.append("    slMode.resize(8, 0.0)")
+L.append("    slLive.resize(8, 0.0)")
+L.append("    slCount.resize(8, 0.0)")
 L.append("    fbInit = true")
+L.append("  }")
+
+# ---- retained commit: store the staged shape, start recomposite ------------
+# A retained push (id 1..8) lands here on redrawAll: the pushed points go
+# to the slot (an empty array clears it -- that is the delete), then the
+# wall is recomposited from every live slot in order, starting with a
+# black clear through the normal fill walk.  Immediate pushes (id 0)
+# never come here; they arm their walk directly.
+L.append("  if commitR {")
+L.append("    commitR = false")
+L.append("    n = (shapePoints.length() / 2.0) | 0")
+L.append("    if n > 16.0 { n = 16.0 }")
+L.append("    let slot = (pId - 1.0) | 0")
+L.append("    let sbase = slot * 32.0")
+L.append("    if n < 1.0 {")
+L.append("      slLive[slot] = 0.0")
+L.append("    } else {")
+for i in range(32):
+    L.append("      slPts[sbase + %d.0] = shapePoints[%d]" % (i, i))
+L.append("      slCol[slot] = pCol")
+L.append("      slMode[slot] = if pWire then 1.0 else 0.0")
+L.append("      slLive[slot] = 1.0")
+L.append("      slCount[slot] = n")
+L.append("    }")
+L.append("    rcOn = true")
+L.append("    rcSlot = 1.0")
+L.append("    clearing = true")
+L.append("    fromSlot = true")
+L.append("    arming = true")
+L.append("  }")
+
+# ---- recomposite iterator: next live slot -> shadow -> arm -----------------
+# Runs when the walks are idle mid-recomposite.  The live slot at or after
+# rcSlot is loaded into the shadow with its stored count, colour and mode,
+# and its walk is armed; past slot 8 the wall is whole and the chip goes
+# silent.  Dead slots cost one quiet tick each.  rcSlot advances only after
+# every read that depends on it is done: pure lets re-evaluate per use in
+# this toolchain, so writing rcSlot before the loads would re-resolve the
+# base mid-tick (loaded garbage once -- right-shifted points -- from a
+# base of -1 through write-skipped slot -1).
+L.append("  if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR {")
+L.append("    if rcSlot > 8.0 {")
+L.append("      rcOn = false")
+L.append("    } else {")
+L.append("      let li = (rcSlot - 1.0) | 0")
+L.append("      if slLive[li] > 0.5 {")
+for i in range(32):
+    L.append("        shPts[%d] = slPts[li * 32 + %d.0]" % (i, i))
+L.append("        n = slCount[li]")
+L.append("        sSegs = n")
+L.append("        pCol = slCol[li]")
+L.append("        pWire = slMode[li] > 0.5")
+L.append("        fromSlot = true")
+L.append("        if pWire {")
+L.append("          armingS = true")
+L.append("        } else {")
+L.append("          arming = true")
+L.append("        }")
+L.append("        rcSlot = rcSlot + 1.0")
+L.append("      } else {")
+L.append("        rcSlot = rcSlot + 1.0")
+L.append("      }")
+L.append("    }")
+L.append("  }")
+
+# ---- shadow copy: pushed array -> shadow for immediate arms ----------------
+# One arm path reads the shadow; immediate pushes fill it here (literal
+# reads, fast), slot loads and the clear fill it themselves.  Skipped
+# when fromSlot is set, so a staged slot is never clobbered.
+L.append("  if !fromSlot {")
+L.append("    if arming || armingS {")
+for i in range(32):
+    L.append("      shPts[%d] = shapePoints[%d]" % (i, i))
+L.append("    }")
 L.append("  }")
 
 # ---- the arm: points -> per-edge scalars ---------------------------------
@@ -230,12 +340,28 @@ L.append("    gyMin = 200.0")
 L.append("    gyMax = -200.0")
 L.append("    gxMin = 200.0")
 L.append("    gxMax = -200.0")
-# The point count is the array's length: the driver sends exactly as many
-# points as the shape has and no count port exists.  A short list is an
-# empty shape (two points have no interior), a long one clamps to the 16
-# edges the chip holds.
-L.append("    n = (shapePoints.length() / 2.0) | 0")
-L.append("    if n > 16.0 { n = 16.0 }")
+L.append("    if clearing {")
+L.append("      clearing = false")
+L.append("      fromSlot = false")
+L.append("      shPts[0] = 0.0")
+L.append("      shPts[1] = 0.0")
+L.append("      shPts[2] = 64.0")
+L.append("      shPts[3] = 0.0")
+L.append("      shPts[4] = 64.0")
+L.append("      shPts[5] = 64.0")
+L.append("      shPts[6] = 0.0")
+L.append("      shPts[7] = 64.0")
+L.append("      n = 4.0")
+L.append("      pCol = Color(0.0, 0.0, 0.0, 1.0)")
+L.append("    } else {")
+L.append("      if fromSlot {")
+L.append("        fromSlot = false")
+L.append("      } else {")
+L.append("        rcOn = false")
+L.append("        n = (shapePoints.length() / 2.0) | 0")
+L.append("        if n > 16.0 { n = 16.0 }")
+L.append("      }")
+L.append("    }")
 L.append("    if n < 3.0 {")
 L.append("      polyOn = false")
 L.append("      polyLive = false")
@@ -246,8 +372,8 @@ L.append("    if n >= 3.0 {")
 # a point belonging to an edge the count ruled out (every such edge's
 # whole body is inside its `i < n` arm).
 for i in range(MAXP):
-    L.append("      let px%d = shapePoints[%d]" % (i, 2 * i))
-    L.append("      let py%d = shapePoints[%d]" % (i, 2 * i + 1))
+    L.append("      let px%d = shPts[%d]" % (i, 2 * i))
+    L.append("      let py%d = shPts[%d]" % (i, 2 * i + 1))
 for i in range(MAXP):
     if i + 1 < MAXP:
         L.append("      let qx%d = if %d.0 < n then px%d else px0"
@@ -308,10 +434,15 @@ L.append("    armingS = false")
 L.append("    polyOn = false")
 L.append("    polyLive = false")
 for i in range(MAXP):
-    L.append("    sPx%d = shapePoints[%d]" % (i, 2 * i))
-    L.append("    sPy%d = shapePoints[%d]" % (i, 2 * i + 1))
-L.append("    sSegs = (shapePoints.length() / 2.0) | 0")
-L.append("    if sSegs > 16.0 { sSegs = 16.0 }")
+    L.append("    sPx%d = shPts[%d]" % (i, 2 * i))
+    L.append("    sPy%d = shPts[%d]" % (i, 2 * i + 1))
+L.append("    if fromSlot {")
+L.append("      fromSlot = false")
+L.append("    } else {")
+L.append("      rcOn = false")
+L.append("      sSegs = (shapePoints.length() / 2.0) | 0")
+L.append("      if sSegs > 16.0 { sSegs = 16.0 }")
+L.append("    }")
 L.append("    if sSegs < 1.0 {")
 L.append("      sOn = false")
 L.append("      sLive = false")

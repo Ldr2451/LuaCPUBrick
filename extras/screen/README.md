@@ -62,14 +62,16 @@ python -u extras/screen/painttest.py           # fills + strokes, ~57s
 python -u extras/screen/animtest.py [ticks]    # anim.lua end to end
 ```
 
-`painttest` composes a whole frame from nine fills in one run -- rect,
+`painttest` composes whole frames from fills in one run -- rect,
 clipped rect, alpha, triangle, convex hull, oval, hairline, thick line,
-full wall -- then a wireframe, an open curve and a dot, and diffs the
-wall against models of both fills, so a dropped span, a bad hull, a
-torn stroke or an off-by-one row shows up as a pixel diff.  A load-time
-edge on an unwired stage paints nothing (a zero point array is a
-degenerate shape), a seeded array paints correctly through whichever
-walk arms first, and a bare `redrawAll` replays the last shape.
+full wall -- then a wireframe, an open curve and a dot, then four
+retained commits (store, compose, edit in place, delete), and diffs the
+wall against models of every fill, so a dropped span, a bad hull, a
+torn stroke, a stale slot or an off-by-one row shows up as a pixel
+diff.  A load-time edge on an unwired stage paints nothing (a zero
+point array is a degenerate shape), a seeded array paints a correct
+prefix through whichever walk arms first, and a bare `redrawAll`
+replays the last shape.
 
 ## Tools
 

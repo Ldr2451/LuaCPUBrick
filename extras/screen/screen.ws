@@ -51,8 +51,9 @@ const MAXP = 16
 
 @left in shapePoints: float[]
 @left in shapeColor: color
-@left in pushFill: bool
-@left in pushStroke: bool
+@left in pushShape: bool
+@left in wireMode: bool
+@left in shapeId: float
 @left in redrawAll: bool
 
 const SW = 64
@@ -77,6 +78,19 @@ var gyMin: float = 200.0
 var gyMax: float = -200.0
 var gxMin: float = 200.0
 var gxMax: float = -200.0
+var pWire: bool = false
+var pId: float = 0.0
+var shPts: float[]
+var slPts: float[]
+var slCol: color[]
+var slMode: float[]
+var slLive: float[]
+var slCount: float[]
+var rcOn: bool = false
+var rcSlot: float = 1.0
+var commitR: bool = false
+var fromSlot: bool = false
+var clearing: bool = false
 var sPx0: float = 0.0
 var sPy0: float = 0.0
 var sPx1: float = 0.0
@@ -154,7 +168,6 @@ var sLive: bool = false
 var sSeg: float = 0.0
 var sSegs: float = 0.0
 var sLast: float = -1.0
-var pendingS: bool = false
 var armingS: bool = false
 var eX0: float = 0.0
 var eY0: float = 0.0
@@ -8434,44 +8447,53 @@ out px4095: color = g4095
 // only on a transition, so the event IS the edge.  A same-handler
 // read-then-write of one var loses the race; cross-handler flags
 // (pending, arming, polyOn) are fine, because no pass writes what it reads.
-// Each push clears the other shape's stage, so the last push before a
-// redrawAll is the one that arms -- and a load-time edge on an unwired
-// stage cannot fire later.
-on Change(pushFill) {
-  if pushFill {
+// A push stages colour, mode and slot, and aborts anything live -- a
+// burst, a recomposite, a staged arm -- so the next redrawAll always
+// starts fresh from the new stage.  (A load-time edge on an unwired
+// port stages zeroes: an empty immediate shape, which paints nothing.)
+on Change(pushShape) {
+  if pushShape {
     pCol = shapeColor
+    pWire = wireMode
+    pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)
     pending = true
-    pendingS = false
-  }
-}
-on Change(pushStroke) {
-  if pushStroke {
-    pCol = shapeColor
-    pendingS = true
-    pending = false
+    polyOn = false
+    sOn = false
+    rcOn = false
+    clearing = false
+    fromSlot = false
+    arming = false
+    armingS = false
+    commitR = false
   }
 }
 
 // A bare redrawAll replays the last shape: the edge records (fill) or the
 // preserved points (stroke) are still staged, so only the walk state
-// resets.  Each replay is guarded against the other walk and both arms,
-// so a fill burst and a stroke replay can never collide.
+// resets.  Each replay is guarded against the other walk and every arm,
+// so a fill burst and a stroke replay can never collide.  A staged
+// retained push commits instead: the slot is stored and the wall is
+// recomposited from every live slot in order.
 on Change(redrawAll) {
   if redrawAll {
     if pending {
-      arming = true
       pending = false
+      if pId >= 1.0 {
+        commitR = true
+      } else {
+        if pWire {
+          armingS = true
+        } else {
+          arming = true
+        }
+      }
     }
-    if pendingS {
-      armingS = true
-      pendingS = false
-    }
-    if polyLive && !polyOn && !arming && !sOn && !armingS {
+    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR {
       prow = pfirst - 1.0
       pcol = 200.0
       polyOn = true
     }
-    if sLive && !sOn && !armingS && !polyOn && !arming {
+    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR {
       rX0 = sPx0
       rY0 = sPy0
       rX1 = sPx1
@@ -8520,7 +8542,155 @@ on Change(redrawAll) {
 mod paintTick() {
   if !fbInit {
     fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))
+    shPts.resize(32, 0.0)
+    slPts.resize(256, 0.0)
+    slCol.resize(8, Color(0.0, 0.0, 0.0, 1.0))
+    slMode.resize(8, 0.0)
+    slLive.resize(8, 0.0)
+    slCount.resize(8, 0.0)
     fbInit = true
+  }
+  if commitR {
+    commitR = false
+    n = (shapePoints.length() / 2.0) | 0
+    if n > 16.0 { n = 16.0 }
+    let slot = (pId - 1.0) | 0
+    let sbase = slot * 32.0
+    if n < 1.0 {
+      slLive[slot] = 0.0
+    } else {
+      slPts[sbase + 0.0] = shapePoints[0]
+      slPts[sbase + 1.0] = shapePoints[1]
+      slPts[sbase + 2.0] = shapePoints[2]
+      slPts[sbase + 3.0] = shapePoints[3]
+      slPts[sbase + 4.0] = shapePoints[4]
+      slPts[sbase + 5.0] = shapePoints[5]
+      slPts[sbase + 6.0] = shapePoints[6]
+      slPts[sbase + 7.0] = shapePoints[7]
+      slPts[sbase + 8.0] = shapePoints[8]
+      slPts[sbase + 9.0] = shapePoints[9]
+      slPts[sbase + 10.0] = shapePoints[10]
+      slPts[sbase + 11.0] = shapePoints[11]
+      slPts[sbase + 12.0] = shapePoints[12]
+      slPts[sbase + 13.0] = shapePoints[13]
+      slPts[sbase + 14.0] = shapePoints[14]
+      slPts[sbase + 15.0] = shapePoints[15]
+      slPts[sbase + 16.0] = shapePoints[16]
+      slPts[sbase + 17.0] = shapePoints[17]
+      slPts[sbase + 18.0] = shapePoints[18]
+      slPts[sbase + 19.0] = shapePoints[19]
+      slPts[sbase + 20.0] = shapePoints[20]
+      slPts[sbase + 21.0] = shapePoints[21]
+      slPts[sbase + 22.0] = shapePoints[22]
+      slPts[sbase + 23.0] = shapePoints[23]
+      slPts[sbase + 24.0] = shapePoints[24]
+      slPts[sbase + 25.0] = shapePoints[25]
+      slPts[sbase + 26.0] = shapePoints[26]
+      slPts[sbase + 27.0] = shapePoints[27]
+      slPts[sbase + 28.0] = shapePoints[28]
+      slPts[sbase + 29.0] = shapePoints[29]
+      slPts[sbase + 30.0] = shapePoints[30]
+      slPts[sbase + 31.0] = shapePoints[31]
+      slCol[slot] = pCol
+      slMode[slot] = if pWire then 1.0 else 0.0
+      slLive[slot] = 1.0
+      slCount[slot] = n
+    }
+    rcOn = true
+    rcSlot = 1.0
+    clearing = true
+    fromSlot = true
+    arming = true
+  }
+  if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR {
+    if rcSlot > 8.0 {
+      rcOn = false
+    } else {
+      let li = (rcSlot - 1.0) | 0
+      if slLive[li] > 0.5 {
+        shPts[0] = slPts[li * 32 + 0.0]
+        shPts[1] = slPts[li * 32 + 1.0]
+        shPts[2] = slPts[li * 32 + 2.0]
+        shPts[3] = slPts[li * 32 + 3.0]
+        shPts[4] = slPts[li * 32 + 4.0]
+        shPts[5] = slPts[li * 32 + 5.0]
+        shPts[6] = slPts[li * 32 + 6.0]
+        shPts[7] = slPts[li * 32 + 7.0]
+        shPts[8] = slPts[li * 32 + 8.0]
+        shPts[9] = slPts[li * 32 + 9.0]
+        shPts[10] = slPts[li * 32 + 10.0]
+        shPts[11] = slPts[li * 32 + 11.0]
+        shPts[12] = slPts[li * 32 + 12.0]
+        shPts[13] = slPts[li * 32 + 13.0]
+        shPts[14] = slPts[li * 32 + 14.0]
+        shPts[15] = slPts[li * 32 + 15.0]
+        shPts[16] = slPts[li * 32 + 16.0]
+        shPts[17] = slPts[li * 32 + 17.0]
+        shPts[18] = slPts[li * 32 + 18.0]
+        shPts[19] = slPts[li * 32 + 19.0]
+        shPts[20] = slPts[li * 32 + 20.0]
+        shPts[21] = slPts[li * 32 + 21.0]
+        shPts[22] = slPts[li * 32 + 22.0]
+        shPts[23] = slPts[li * 32 + 23.0]
+        shPts[24] = slPts[li * 32 + 24.0]
+        shPts[25] = slPts[li * 32 + 25.0]
+        shPts[26] = slPts[li * 32 + 26.0]
+        shPts[27] = slPts[li * 32 + 27.0]
+        shPts[28] = slPts[li * 32 + 28.0]
+        shPts[29] = slPts[li * 32 + 29.0]
+        shPts[30] = slPts[li * 32 + 30.0]
+        shPts[31] = slPts[li * 32 + 31.0]
+        n = slCount[li]
+        sSegs = n
+        pCol = slCol[li]
+        pWire = slMode[li] > 0.5
+        fromSlot = true
+        if pWire {
+          armingS = true
+        } else {
+          arming = true
+        }
+        rcSlot = rcSlot + 1.0
+      } else {
+        rcSlot = rcSlot + 1.0
+      }
+    }
+  }
+  if !fromSlot {
+    if arming || armingS {
+      shPts[0] = shapePoints[0]
+      shPts[1] = shapePoints[1]
+      shPts[2] = shapePoints[2]
+      shPts[3] = shapePoints[3]
+      shPts[4] = shapePoints[4]
+      shPts[5] = shapePoints[5]
+      shPts[6] = shapePoints[6]
+      shPts[7] = shapePoints[7]
+      shPts[8] = shapePoints[8]
+      shPts[9] = shapePoints[9]
+      shPts[10] = shapePoints[10]
+      shPts[11] = shapePoints[11]
+      shPts[12] = shapePoints[12]
+      shPts[13] = shapePoints[13]
+      shPts[14] = shapePoints[14]
+      shPts[15] = shapePoints[15]
+      shPts[16] = shapePoints[16]
+      shPts[17] = shapePoints[17]
+      shPts[18] = shapePoints[18]
+      shPts[19] = shapePoints[19]
+      shPts[20] = shapePoints[20]
+      shPts[21] = shapePoints[21]
+      shPts[22] = shapePoints[22]
+      shPts[23] = shapePoints[23]
+      shPts[24] = shapePoints[24]
+      shPts[25] = shapePoints[25]
+      shPts[26] = shapePoints[26]
+      shPts[27] = shapePoints[27]
+      shPts[28] = shapePoints[28]
+      shPts[29] = shapePoints[29]
+      shPts[30] = shapePoints[30]
+      shPts[31] = shapePoints[31]
+    }
   }
   if arming {
     arming = false
@@ -8530,45 +8700,65 @@ mod paintTick() {
     gyMax = -200.0
     gxMin = 200.0
     gxMax = -200.0
-    n = (shapePoints.length() / 2.0) | 0
-    if n > 16.0 { n = 16.0 }
+    if clearing {
+      clearing = false
+      fromSlot = false
+      shPts[0] = 0.0
+      shPts[1] = 0.0
+      shPts[2] = 64.0
+      shPts[3] = 0.0
+      shPts[4] = 64.0
+      shPts[5] = 64.0
+      shPts[6] = 0.0
+      shPts[7] = 64.0
+      n = 4.0
+      pCol = Color(0.0, 0.0, 0.0, 1.0)
+    } else {
+      if fromSlot {
+        fromSlot = false
+      } else {
+        rcOn = false
+        n = (shapePoints.length() / 2.0) | 0
+        if n > 16.0 { n = 16.0 }
+      }
+    }
     if n < 3.0 {
       polyOn = false
       polyLive = false
     }
     if n >= 3.0 {
-      let px0 = shapePoints[0]
-      let py0 = shapePoints[1]
-      let px1 = shapePoints[2]
-      let py1 = shapePoints[3]
-      let px2 = shapePoints[4]
-      let py2 = shapePoints[5]
-      let px3 = shapePoints[6]
-      let py3 = shapePoints[7]
-      let px4 = shapePoints[8]
-      let py4 = shapePoints[9]
-      let px5 = shapePoints[10]
-      let py5 = shapePoints[11]
-      let px6 = shapePoints[12]
-      let py6 = shapePoints[13]
-      let px7 = shapePoints[14]
-      let py7 = shapePoints[15]
-      let px8 = shapePoints[16]
-      let py8 = shapePoints[17]
-      let px9 = shapePoints[18]
-      let py9 = shapePoints[19]
-      let px10 = shapePoints[20]
-      let py10 = shapePoints[21]
-      let px11 = shapePoints[22]
-      let py11 = shapePoints[23]
-      let px12 = shapePoints[24]
-      let py12 = shapePoints[25]
-      let px13 = shapePoints[26]
-      let py13 = shapePoints[27]
-      let px14 = shapePoints[28]
-      let py14 = shapePoints[29]
-      let px15 = shapePoints[30]
-      let py15 = shapePoints[31]
+      let px0 = shPts[0]
+      let py0 = shPts[1]
+      let px1 = shPts[2]
+      let py1 = shPts[3]
+      let px2 = shPts[4]
+      let py2 = shPts[5]
+      let px3 = shPts[6]
+      let py3 = shPts[7]
+      let px4 = shPts[8]
+      let py4 = shPts[9]
+      let px5 = shPts[10]
+      let py5 = shPts[11]
+      let px6 = shPts[12]
+      let py6 = shPts[13]
+      let px7 = shPts[14]
+      let py7 = shPts[15]
+      let px8 = shPts[16]
+      let py8 = shPts[17]
+      let px9 = shPts[18]
+      let py9 = shPts[19]
+      let px10 = shPts[20]
+      let py10 = shPts[21]
+      let px11 = shPts[22]
+      let py11 = shPts[23]
+      let px12 = shPts[24]
+      let py12 = shPts[25]
+      let px13 = shPts[26]
+      let py13 = shPts[27]
+      let px14 = shPts[28]
+      let py14 = shPts[29]
+      let px15 = shPts[30]
+      let py15 = shPts[31]
       let qx0 = if 1.0 < n then px1 else px0
       let qy0 = if 1.0 < n then py1 else py0
       if 0.0 < n {
@@ -8922,40 +9112,45 @@ mod paintTick() {
     armingS = false
     polyOn = false
     polyLive = false
-    sPx0 = shapePoints[0]
-    sPy0 = shapePoints[1]
-    sPx1 = shapePoints[2]
-    sPy1 = shapePoints[3]
-    sPx2 = shapePoints[4]
-    sPy2 = shapePoints[5]
-    sPx3 = shapePoints[6]
-    sPy3 = shapePoints[7]
-    sPx4 = shapePoints[8]
-    sPy4 = shapePoints[9]
-    sPx5 = shapePoints[10]
-    sPy5 = shapePoints[11]
-    sPx6 = shapePoints[12]
-    sPy6 = shapePoints[13]
-    sPx7 = shapePoints[14]
-    sPy7 = shapePoints[15]
-    sPx8 = shapePoints[16]
-    sPy8 = shapePoints[17]
-    sPx9 = shapePoints[18]
-    sPy9 = shapePoints[19]
-    sPx10 = shapePoints[20]
-    sPy10 = shapePoints[21]
-    sPx11 = shapePoints[22]
-    sPy11 = shapePoints[23]
-    sPx12 = shapePoints[24]
-    sPy12 = shapePoints[25]
-    sPx13 = shapePoints[26]
-    sPy13 = shapePoints[27]
-    sPx14 = shapePoints[28]
-    sPy14 = shapePoints[29]
-    sPx15 = shapePoints[30]
-    sPy15 = shapePoints[31]
-    sSegs = (shapePoints.length() / 2.0) | 0
-    if sSegs > 16.0 { sSegs = 16.0 }
+    sPx0 = shPts[0]
+    sPy0 = shPts[1]
+    sPx1 = shPts[2]
+    sPy1 = shPts[3]
+    sPx2 = shPts[4]
+    sPy2 = shPts[5]
+    sPx3 = shPts[6]
+    sPy3 = shPts[7]
+    sPx4 = shPts[8]
+    sPy4 = shPts[9]
+    sPx5 = shPts[10]
+    sPy5 = shPts[11]
+    sPx6 = shPts[12]
+    sPy6 = shPts[13]
+    sPx7 = shPts[14]
+    sPy7 = shPts[15]
+    sPx8 = shPts[16]
+    sPy8 = shPts[17]
+    sPx9 = shPts[18]
+    sPy9 = shPts[19]
+    sPx10 = shPts[20]
+    sPy10 = shPts[21]
+    sPx11 = shPts[22]
+    sPy11 = shPts[23]
+    sPx12 = shPts[24]
+    sPy12 = shPts[25]
+    sPx13 = shPts[26]
+    sPy13 = shPts[27]
+    sPx14 = shPts[28]
+    sPy14 = shPts[29]
+    sPx15 = shPts[30]
+    sPy15 = shPts[31]
+    if fromSlot {
+      fromSlot = false
+    } else {
+      rcOn = false
+      sSegs = (shapePoints.length() / 2.0) | 0
+      if sSegs > 16.0 { sSegs = 16.0 }
+    }
     if sSegs < 1.0 {
       sOn = false
       sLive = false
