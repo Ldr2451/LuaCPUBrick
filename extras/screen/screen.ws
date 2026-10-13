@@ -49,16 +49,17 @@
 // each row's span is the min and max of the crossings of the edges that
 // straddle it, which is the exact fill of a convex polygon -- a concave
 // outline's rows fill their hull, so the driver decomposes one into
-// convex pieces.  One span is painted per tick, so a burst costs one tick
-// per row, not per 64 px.
+// convex pieces.  One span is painted per tick per row pipeline --
+// two rows per tick, so a burst costs one tick per two rows,
+// not per 64 px.
 //
 // The stroke is a second walk over the same lanes.  At the arm the points
 // land in a preserved store (replays restore from it, never from a dirty
 // array) and in a shift register the walk consumes pair by pair; each
 // pair's 2px quad -- offset by the unit normal, extended a pixel along the
 // tangent so joints overlap -- fills through the same row-span machinery
-// at 4 edges deep.  A burst costs one tick per row plus one per segment,
-// and two per degenerate (padded) segment.
+// at 4 edges deep.  A burst costs one tick per two rows; segment
+// transitions and padded points ride the same advances.
 //
 // Tuning (top of gen.py): LANES is the speed knob.  Placement is
 // physical: the wall builder lays the 64x64 bricks, so there are no
@@ -448,24 +449,48 @@ var iCD: float = 0.0
 var xL: float = 0.0
 var cLo: color = Color(1.0, 1.0, 1.0, 1.0)
 var rowSlope: color = Color(0.0, 0.0, 0.0, 0.0)
+var xL2: float = 0.0
+var cLo2: color = Color(1.0, 1.0, 1.0, 1.0)
+var rowSlope2: color = Color(0.0, 0.0, 0.0, 0.0)
+var pcol2: float = 200.0
+var pcurR2: float = 100.0
+var aRow: float = 0.0
 var cc0: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_0: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc1: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_1: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc2: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_2: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc3: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_3: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc4: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_4: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc5: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_5: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc6: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_6: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc7: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_7: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc8: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_8: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc9: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_9: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc10: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_10: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc11: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_11: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc12: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_12: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc13: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_13: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc14: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_14: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc15: color = Color(1.0, 1.0, 1.0, 1.0)
+var cc2_15: color = Color(1.0, 1.0, 1.0, 1.0)
 var uc0: color = Color(1.0, 1.0, 1.0, 1.0)
 var uc2: color = Color(1.0, 1.0, 1.0, 1.0)
+var uc0B: color = Color(1.0, 1.0, 1.0, 1.0)
+var uc2B: color = Color(1.0, 1.0, 1.0, 1.0)
 var blackPending: bool = false
 var justCleared: bool = false
 var eX0: float = 0.0
@@ -8803,7 +8828,7 @@ on Change(drawAll) {
       }
     }
     if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR {
-      prow = pfirst - 1.0
+      prow = pfirst - 2.0
       pcol = 200.0
       polyOn = true
     }
@@ -9186,7 +9211,7 @@ mod paintTick() {
         sSegs = bSEGS
       }
       if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending {
-        prow = pfirst - 1.0
+        prow = pfirst - 2.0
         pcol = 200.0
         polyOn = true
       }
@@ -9242,6 +9267,8 @@ mod paintTick() {
         sSeg = -1.0
         prow = 0.0
         sLast = -1.0
+        pcol2 = 200.0
+        pcurR2 = 100.0
         pcol = 200.0
         sOn = true
       }
@@ -10299,7 +10326,7 @@ mod paintTick() {
       } else {
         pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)
         plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)
-        prow = pfirst - 1.0
+        prow = pfirst - 2.0
         pcol = 200.0
         polyOn = true
         polyLive = true
@@ -10448,6 +10475,8 @@ mod paintTick() {
         sSeg = -1.0
         prow = 0.0
         sLast = -1.0
+        pcol2 = 200.0
+        pcurR2 = 100.0
         pcol = 200.0
         sOn = true
         sLive = true
@@ -10456,10 +10485,11 @@ mod paintTick() {
   }
   if polyOn {
     if pcol > pcurR {
-      prow = prow + 1.0
+      prow = prow + (if prow + 2.0 <= plast then 2.0 else 1.0)
       if prow > plast {
         polyOn = false
       } else {
+        aRow = prow
         let cv0 = prow >= eLo0 && prow < eHi0
         let cx0 = eX0 + eS0 * (prow - eY0)
         cc0 = pC0 + (prow - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
@@ -10615,6 +10645,167 @@ mod paintTick() {
           rowSlope = Color(rowSlope.r * bf, rowSlope.g * bf, rowSlope.b * bf, rowSlope.a)
         }
       }
+      if polyOn {
+        if pcol2 > pcurR2 {
+          let brow = prow + 1.0
+          if brow <= plast {
+        let cvB0 = brow >= eLo0 && brow < eHi0
+        let cxB0 = eX0 + eS0 * (brow - eY0)
+        cc2_0 = pC0 + (brow - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let cmnB0 = if cvB0 then cxB0 else 200.0
+        let cmxB0 = if cvB0 then cxB0 else -200.0
+        let cvB1 = brow >= eLo1 && brow < eHi1
+        let cxB1 = eX1 + eS1 * (brow - eY1)
+        cc2_1 = pC1 + (brow - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let cmnB1 = if cvB1 then cxB1 else 200.0
+        let cmxB1 = if cvB1 then cxB1 else -200.0
+        let cvB2 = brow >= eLo2 && brow < eHi2
+        let cxB2 = eX2 + eS2 * (brow - eY2)
+        cc2_2 = pC2 + (brow - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let cmnB2 = if cvB2 then cxB2 else 200.0
+        let cmxB2 = if cvB2 then cxB2 else -200.0
+        let cvB3 = brow >= eLo3 && brow < eHi3
+        let cxB3 = eX3 + eS3 * (brow - eY3)
+        cc2_3 = pC3 + (brow - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let cmnB3 = if cvB3 then cxB3 else 200.0
+        let cmxB3 = if cvB3 then cxB3 else -200.0
+        let cvB4 = brow >= eLo4 && brow < eHi4
+        let cxB4 = eX4 + eS4 * (brow - eY4)
+        cc2_4 = pC4 + (brow - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let cmnB4 = if cvB4 then cxB4 else 200.0
+        let cmxB4 = if cvB4 then cxB4 else -200.0
+        let cvB5 = brow >= eLo5 && brow < eHi5
+        let cxB5 = eX5 + eS5 * (brow - eY5)
+        cc2_5 = pC5 + (brow - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let cmnB5 = if cvB5 then cxB5 else 200.0
+        let cmxB5 = if cvB5 then cxB5 else -200.0
+        let cvB6 = brow >= eLo6 && brow < eHi6
+        let cxB6 = eX6 + eS6 * (brow - eY6)
+        cc2_6 = pC6 + (brow - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let cmnB6 = if cvB6 then cxB6 else 200.0
+        let cmxB6 = if cvB6 then cxB6 else -200.0
+        let cvB7 = brow >= eLo7 && brow < eHi7
+        let cxB7 = eX7 + eS7 * (brow - eY7)
+        cc2_7 = pC7 + (brow - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let cmnB7 = if cvB7 then cxB7 else 200.0
+        let cmxB7 = if cvB7 then cxB7 else -200.0
+        let cvB8 = brow >= eLo8 && brow < eHi8
+        let cxB8 = eX8 + eS8 * (brow - eY8)
+        cc2_8 = pC8 + (brow - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let cmnB8 = if cvB8 then cxB8 else 200.0
+        let cmxB8 = if cvB8 then cxB8 else -200.0
+        let cvB9 = brow >= eLo9 && brow < eHi9
+        let cxB9 = eX9 + eS9 * (brow - eY9)
+        cc2_9 = pC9 + (brow - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let cmnB9 = if cvB9 then cxB9 else 200.0
+        let cmxB9 = if cvB9 then cxB9 else -200.0
+        let cvB10 = brow >= eLo10 && brow < eHi10
+        let cxB10 = eX10 + eS10 * (brow - eY10)
+        cc2_10 = pC10 + (brow - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let cmnB10 = if cvB10 then cxB10 else 200.0
+        let cmxB10 = if cvB10 then cxB10 else -200.0
+        let cvB11 = brow >= eLo11 && brow < eHi11
+        let cxB11 = eX11 + eS11 * (brow - eY11)
+        cc2_11 = pC11 + (brow - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let cmnB11 = if cvB11 then cxB11 else 200.0
+        let cmxB11 = if cvB11 then cxB11 else -200.0
+        let cvB12 = brow >= eLo12 && brow < eHi12
+        let cxB12 = eX12 + eS12 * (brow - eY12)
+        cc2_12 = pC12 + (brow - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let cmnB12 = if cvB12 then cxB12 else 200.0
+        let cmxB12 = if cvB12 then cxB12 else -200.0
+        let cvB13 = brow >= eLo13 && brow < eHi13
+        let cxB13 = eX13 + eS13 * (brow - eY13)
+        cc2_13 = pC13 + (brow - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let cmnB13 = if cvB13 then cxB13 else 200.0
+        let cmxB13 = if cvB13 then cxB13 else -200.0
+        let cvB14 = brow >= eLo14 && brow < eHi14
+        let cxB14 = eX14 + eS14 * (brow - eY14)
+        cc2_14 = pC14 + (brow - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let cmnB14 = if cvB14 then cxB14 else 200.0
+        let cmxB14 = if cvB14 then cxB14 else -200.0
+        let cvB15 = brow >= eLo15 && brow < eHi15
+        let cxB15 = eX15 + eS15 * (brow - eY15)
+        cc2_15 = pC15 + (brow - eY15) * eInv15 * (pC0 - pC15)
+        let cmnB15 = if cvB15 then cxB15 else 200.0
+        let cmxB15 = if cvB15 then cxB15 else -200.0
+        let bn0_0 = if cmnB0 < cmnB1 then cmnB0 else cmnB1
+        let bnc0_0 = if cmnB0 < cmnB1 then cc2_0 else cc2_1
+        let bn0_2 = if cmnB2 < cmnB3 then cmnB2 else cmnB3
+        let bnc0_2 = if cmnB2 < cmnB3 then cc2_2 else cc2_3
+        let bn0_4 = if cmnB4 < cmnB5 then cmnB4 else cmnB5
+        let bnc0_4 = if cmnB4 < cmnB5 then cc2_4 else cc2_5
+        let bn0_6 = if cmnB6 < cmnB7 then cmnB6 else cmnB7
+        let bnc0_6 = if cmnB6 < cmnB7 then cc2_6 else cc2_7
+        let bn0_8 = if cmnB8 < cmnB9 then cmnB8 else cmnB9
+        let bnc0_8 = if cmnB8 < cmnB9 then cc2_8 else cc2_9
+        let bn0_10 = if cmnB10 < cmnB11 then cmnB10 else cmnB11
+        let bnc0_10 = if cmnB10 < cmnB11 then cc2_10 else cc2_11
+        let bn0_12 = if cmnB12 < cmnB13 then cmnB12 else cmnB13
+        let bnc0_12 = if cmnB12 < cmnB13 then cc2_12 else cc2_13
+        let bn0_14 = if cmnB14 < cmnB15 then cmnB14 else cmnB15
+        let bnc0_14 = if cmnB14 < cmnB15 then cc2_14 else cc2_15
+        let bn1_0 = if bn0_0 < bn0_2 then bn0_0 else bn0_2
+        let bnc1_0 = if bn0_0 < bn0_2 then bnc0_0 else bnc0_2
+        let bn1_2 = if bn0_4 < bn0_6 then bn0_4 else bn0_6
+        let bnc1_2 = if bn0_4 < bn0_6 then bnc0_4 else bnc0_6
+        let bn1_4 = if bn0_8 < bn0_10 then bn0_8 else bn0_10
+        let bnc1_4 = if bn0_8 < bn0_10 then bnc0_8 else bnc0_10
+        let bn1_6 = if bn0_12 < bn0_14 then bn0_12 else bn0_14
+        let bnc1_6 = if bn0_12 < bn0_14 then bnc0_12 else bnc0_14
+        let bn2_0 = if bn1_0 < bn1_2 then bn1_0 else bn1_2
+        let bnc2_0 = if bn1_0 < bn1_2 then bnc1_0 else bnc1_2
+        let bn2_2 = if bn1_4 < bn1_6 then bn1_4 else bn1_6
+        let bnc2_2 = if bn1_4 < bn1_6 then bnc1_4 else bnc1_6
+        let bn3_0 = if bn2_0 < bn2_2 then bn2_0 else bn2_2
+        let bnc3_0 = if bn2_0 < bn2_2 then bnc2_0 else bnc2_2
+        let bx0_0 = if cmxB0 < cmxB1 then cmxB1 else cmxB0
+        let bxc0_0 = if cmxB0 < cmxB1 then cc2_1 else cc2_0
+        let bx0_2 = if cmxB2 < cmxB3 then cmxB3 else cmxB2
+        let bxc0_2 = if cmxB2 < cmxB3 then cc2_3 else cc2_2
+        let bx0_4 = if cmxB4 < cmxB5 then cmxB5 else cmxB4
+        let bxc0_4 = if cmxB4 < cmxB5 then cc2_5 else cc2_4
+        let bx0_6 = if cmxB6 < cmxB7 then cmxB7 else cmxB6
+        let bxc0_6 = if cmxB6 < cmxB7 then cc2_7 else cc2_6
+        let bx0_8 = if cmxB8 < cmxB9 then cmxB9 else cmxB8
+        let bxc0_8 = if cmxB8 < cmxB9 then cc2_9 else cc2_8
+        let bx0_10 = if cmxB10 < cmxB11 then cmxB11 else cmxB10
+        let bxc0_10 = if cmxB10 < cmxB11 then cc2_11 else cc2_10
+        let bx0_12 = if cmxB12 < cmxB13 then cmxB13 else cmxB12
+        let bxc0_12 = if cmxB12 < cmxB13 then cc2_13 else cc2_12
+        let bx0_14 = if cmxB14 < cmxB15 then cmxB15 else cmxB14
+        let bxc0_14 = if cmxB14 < cmxB15 then cc2_15 else cc2_14
+        let bx1_0 = if bx0_0 < bx0_2 then bx0_2 else bx0_0
+        let bxc1_0 = if bx0_0 < bx0_2 then bxc0_2 else bxc0_0
+        let bx1_2 = if bx0_4 < bx0_6 then bx0_6 else bx0_4
+        let bxc1_2 = if bx0_4 < bx0_6 then bxc0_6 else bxc0_4
+        let bx1_4 = if bx0_8 < bx0_10 then bx0_10 else bx0_8
+        let bxc1_4 = if bx0_8 < bx0_10 then bxc0_10 else bxc0_8
+        let bx1_6 = if bx0_12 < bx0_14 then bx0_14 else bx0_12
+        let bxc1_6 = if bx0_12 < bx0_14 then bxc0_14 else bxc0_12
+        let bx2_0 = if bx1_0 < bx1_2 then bx1_2 else bx1_0
+        let bxc2_0 = if bx1_0 < bx1_2 then bxc1_2 else bxc1_0
+        let bx2_2 = if bx1_4 < bx1_6 then bx1_6 else bx1_4
+        let bxc2_2 = if bx1_4 < bx1_6 then bxc1_6 else bxc1_4
+        let bx3_0 = if bx2_0 < bx2_2 then bx2_2 else bx2_0
+        let bxc3_0 = if bx2_0 < bx2_2 then bxc2_2 else bxc2_0
+        if bn3_0 >= 200.0 || bx3_0 < 0.0 || bn3_0 >= SWF {
+          pcol2 = 200.0
+          pcurR2 = 100.0
+        } else {
+          pcol2 = if bn3_0 < 0.0 then 0.0 else (bn3_0 | 0)
+          pcurR2 = if bx3_0 >= SWF then SWF - 1.0 else (bx3_0 | 0)
+          xL2 = bn3_0
+          cLo2 = bnc3_0
+          let bspan = bx3_0 - bn3_0
+          let binv = if bspan > 0.0 then 1.0 / bspan else 0.0
+          rowSlope2 = (bxc3_0 - cLo2) * binv
+          cLo2 = Color(cLo2.r * bf, cLo2.g * bf, cLo2.b * bf, cLo2.a)
+          rowSlope2 = Color(rowSlope2.r * bf, rowSlope2.g * bf, rowSlope2.b * bf, rowSlope2.a)
+        }
+          }
+        }
+      }
     }
       if prow > plast {
         polyOn = false
@@ -10639,7 +10830,7 @@ mod paintTick() {
   // A segment's quad is rebuilt from the register head (a shift plus
   // corner math, all sequential, so the per-tick path stays select-free);
   // a zero-length segment marks its quad empty and the walk steps past
-  // it next tick, two ticks per padded point.
+  // it next tick, one tick per pair of padded points.
   // Guarded by !polyOn: the tick-0 seeding fires every Change detector
   // once, so both walks arm from the seeded array together -- with the
   // guard only the fill advances and stages spans while both are live,
@@ -10739,6 +10930,7 @@ mod paintTick() {
       }
       if sOn {
         if prow <= sLast {
+          aRow = prow
           let u0lo = if qAy < qBy then qAy else qBy
           let u0hi = if qAy < qBy then qBy else qAy
           let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
@@ -10817,389 +11009,774 @@ mod paintTick() {
   if polyOn || sOn {
       let tj0 = pcol + 0.0
       if tj0 <= pcurR {
-        let ridx0 = ((prow * SWF + tj0) | 0)
+        let ridx0 = ((aRow * SWF + tj0) | 0)
         let dt0 = tj0 - xL
         fb[ridx0] = cLo + rowSlope * dt0
       }
       let tj1 = pcol + 1.0
       if tj1 <= pcurR {
-        let ridx1 = ((prow * SWF + tj1) | 0)
+        let ridx1 = ((aRow * SWF + tj1) | 0)
         let dt1 = tj1 - xL
         fb[ridx1] = cLo + rowSlope * dt1
       }
       let tj2 = pcol + 2.0
       if tj2 <= pcurR {
-        let ridx2 = ((prow * SWF + tj2) | 0)
+        let ridx2 = ((aRow * SWF + tj2) | 0)
         let dt2 = tj2 - xL
         fb[ridx2] = cLo + rowSlope * dt2
       }
       let tj3 = pcol + 3.0
       if tj3 <= pcurR {
-        let ridx3 = ((prow * SWF + tj3) | 0)
+        let ridx3 = ((aRow * SWF + tj3) | 0)
         let dt3 = tj3 - xL
         fb[ridx3] = cLo + rowSlope * dt3
       }
       let tj4 = pcol + 4.0
       if tj4 <= pcurR {
-        let ridx4 = ((prow * SWF + tj4) | 0)
+        let ridx4 = ((aRow * SWF + tj4) | 0)
         let dt4 = tj4 - xL
         fb[ridx4] = cLo + rowSlope * dt4
       }
       let tj5 = pcol + 5.0
       if tj5 <= pcurR {
-        let ridx5 = ((prow * SWF + tj5) | 0)
+        let ridx5 = ((aRow * SWF + tj5) | 0)
         let dt5 = tj5 - xL
         fb[ridx5] = cLo + rowSlope * dt5
       }
       let tj6 = pcol + 6.0
       if tj6 <= pcurR {
-        let ridx6 = ((prow * SWF + tj6) | 0)
+        let ridx6 = ((aRow * SWF + tj6) | 0)
         let dt6 = tj6 - xL
         fb[ridx6] = cLo + rowSlope * dt6
       }
       let tj7 = pcol + 7.0
       if tj7 <= pcurR {
-        let ridx7 = ((prow * SWF + tj7) | 0)
+        let ridx7 = ((aRow * SWF + tj7) | 0)
         let dt7 = tj7 - xL
         fb[ridx7] = cLo + rowSlope * dt7
       }
       let tj8 = pcol + 8.0
       if tj8 <= pcurR {
-        let ridx8 = ((prow * SWF + tj8) | 0)
+        let ridx8 = ((aRow * SWF + tj8) | 0)
         let dt8 = tj8 - xL
         fb[ridx8] = cLo + rowSlope * dt8
       }
       let tj9 = pcol + 9.0
       if tj9 <= pcurR {
-        let ridx9 = ((prow * SWF + tj9) | 0)
+        let ridx9 = ((aRow * SWF + tj9) | 0)
         let dt9 = tj9 - xL
         fb[ridx9] = cLo + rowSlope * dt9
       }
       let tj10 = pcol + 10.0
       if tj10 <= pcurR {
-        let ridx10 = ((prow * SWF + tj10) | 0)
+        let ridx10 = ((aRow * SWF + tj10) | 0)
         let dt10 = tj10 - xL
         fb[ridx10] = cLo + rowSlope * dt10
       }
       let tj11 = pcol + 11.0
       if tj11 <= pcurR {
-        let ridx11 = ((prow * SWF + tj11) | 0)
+        let ridx11 = ((aRow * SWF + tj11) | 0)
         let dt11 = tj11 - xL
         fb[ridx11] = cLo + rowSlope * dt11
       }
       let tj12 = pcol + 12.0
       if tj12 <= pcurR {
-        let ridx12 = ((prow * SWF + tj12) | 0)
+        let ridx12 = ((aRow * SWF + tj12) | 0)
         let dt12 = tj12 - xL
         fb[ridx12] = cLo + rowSlope * dt12
       }
       let tj13 = pcol + 13.0
       if tj13 <= pcurR {
-        let ridx13 = ((prow * SWF + tj13) | 0)
+        let ridx13 = ((aRow * SWF + tj13) | 0)
         let dt13 = tj13 - xL
         fb[ridx13] = cLo + rowSlope * dt13
       }
       let tj14 = pcol + 14.0
       if tj14 <= pcurR {
-        let ridx14 = ((prow * SWF + tj14) | 0)
+        let ridx14 = ((aRow * SWF + tj14) | 0)
         let dt14 = tj14 - xL
         fb[ridx14] = cLo + rowSlope * dt14
       }
       let tj15 = pcol + 15.0
       if tj15 <= pcurR {
-        let ridx15 = ((prow * SWF + tj15) | 0)
+        let ridx15 = ((aRow * SWF + tj15) | 0)
         let dt15 = tj15 - xL
         fb[ridx15] = cLo + rowSlope * dt15
       }
       let tj16 = pcol + 16.0
       if tj16 <= pcurR {
-        let ridx16 = ((prow * SWF + tj16) | 0)
+        let ridx16 = ((aRow * SWF + tj16) | 0)
         let dt16 = tj16 - xL
         fb[ridx16] = cLo + rowSlope * dt16
       }
       let tj17 = pcol + 17.0
       if tj17 <= pcurR {
-        let ridx17 = ((prow * SWF + tj17) | 0)
+        let ridx17 = ((aRow * SWF + tj17) | 0)
         let dt17 = tj17 - xL
         fb[ridx17] = cLo + rowSlope * dt17
       }
       let tj18 = pcol + 18.0
       if tj18 <= pcurR {
-        let ridx18 = ((prow * SWF + tj18) | 0)
+        let ridx18 = ((aRow * SWF + tj18) | 0)
         let dt18 = tj18 - xL
         fb[ridx18] = cLo + rowSlope * dt18
       }
       let tj19 = pcol + 19.0
       if tj19 <= pcurR {
-        let ridx19 = ((prow * SWF + tj19) | 0)
+        let ridx19 = ((aRow * SWF + tj19) | 0)
         let dt19 = tj19 - xL
         fb[ridx19] = cLo + rowSlope * dt19
       }
       let tj20 = pcol + 20.0
       if tj20 <= pcurR {
-        let ridx20 = ((prow * SWF + tj20) | 0)
+        let ridx20 = ((aRow * SWF + tj20) | 0)
         let dt20 = tj20 - xL
         fb[ridx20] = cLo + rowSlope * dt20
       }
       let tj21 = pcol + 21.0
       if tj21 <= pcurR {
-        let ridx21 = ((prow * SWF + tj21) | 0)
+        let ridx21 = ((aRow * SWF + tj21) | 0)
         let dt21 = tj21 - xL
         fb[ridx21] = cLo + rowSlope * dt21
       }
       let tj22 = pcol + 22.0
       if tj22 <= pcurR {
-        let ridx22 = ((prow * SWF + tj22) | 0)
+        let ridx22 = ((aRow * SWF + tj22) | 0)
         let dt22 = tj22 - xL
         fb[ridx22] = cLo + rowSlope * dt22
       }
       let tj23 = pcol + 23.0
       if tj23 <= pcurR {
-        let ridx23 = ((prow * SWF + tj23) | 0)
+        let ridx23 = ((aRow * SWF + tj23) | 0)
         let dt23 = tj23 - xL
         fb[ridx23] = cLo + rowSlope * dt23
       }
       let tj24 = pcol + 24.0
       if tj24 <= pcurR {
-        let ridx24 = ((prow * SWF + tj24) | 0)
+        let ridx24 = ((aRow * SWF + tj24) | 0)
         let dt24 = tj24 - xL
         fb[ridx24] = cLo + rowSlope * dt24
       }
       let tj25 = pcol + 25.0
       if tj25 <= pcurR {
-        let ridx25 = ((prow * SWF + tj25) | 0)
+        let ridx25 = ((aRow * SWF + tj25) | 0)
         let dt25 = tj25 - xL
         fb[ridx25] = cLo + rowSlope * dt25
       }
       let tj26 = pcol + 26.0
       if tj26 <= pcurR {
-        let ridx26 = ((prow * SWF + tj26) | 0)
+        let ridx26 = ((aRow * SWF + tj26) | 0)
         let dt26 = tj26 - xL
         fb[ridx26] = cLo + rowSlope * dt26
       }
       let tj27 = pcol + 27.0
       if tj27 <= pcurR {
-        let ridx27 = ((prow * SWF + tj27) | 0)
+        let ridx27 = ((aRow * SWF + tj27) | 0)
         let dt27 = tj27 - xL
         fb[ridx27] = cLo + rowSlope * dt27
       }
       let tj28 = pcol + 28.0
       if tj28 <= pcurR {
-        let ridx28 = ((prow * SWF + tj28) | 0)
+        let ridx28 = ((aRow * SWF + tj28) | 0)
         let dt28 = tj28 - xL
         fb[ridx28] = cLo + rowSlope * dt28
       }
       let tj29 = pcol + 29.0
       if tj29 <= pcurR {
-        let ridx29 = ((prow * SWF + tj29) | 0)
+        let ridx29 = ((aRow * SWF + tj29) | 0)
         let dt29 = tj29 - xL
         fb[ridx29] = cLo + rowSlope * dt29
       }
       let tj30 = pcol + 30.0
       if tj30 <= pcurR {
-        let ridx30 = ((prow * SWF + tj30) | 0)
+        let ridx30 = ((aRow * SWF + tj30) | 0)
         let dt30 = tj30 - xL
         fb[ridx30] = cLo + rowSlope * dt30
       }
       let tj31 = pcol + 31.0
       if tj31 <= pcurR {
-        let ridx31 = ((prow * SWF + tj31) | 0)
+        let ridx31 = ((aRow * SWF + tj31) | 0)
         let dt31 = tj31 - xL
         fb[ridx31] = cLo + rowSlope * dt31
       }
       let tj32 = pcol + 32.0
       if tj32 <= pcurR {
-        let ridx32 = ((prow * SWF + tj32) | 0)
+        let ridx32 = ((aRow * SWF + tj32) | 0)
         let dt32 = tj32 - xL
         fb[ridx32] = cLo + rowSlope * dt32
       }
       let tj33 = pcol + 33.0
       if tj33 <= pcurR {
-        let ridx33 = ((prow * SWF + tj33) | 0)
+        let ridx33 = ((aRow * SWF + tj33) | 0)
         let dt33 = tj33 - xL
         fb[ridx33] = cLo + rowSlope * dt33
       }
       let tj34 = pcol + 34.0
       if tj34 <= pcurR {
-        let ridx34 = ((prow * SWF + tj34) | 0)
+        let ridx34 = ((aRow * SWF + tj34) | 0)
         let dt34 = tj34 - xL
         fb[ridx34] = cLo + rowSlope * dt34
       }
       let tj35 = pcol + 35.0
       if tj35 <= pcurR {
-        let ridx35 = ((prow * SWF + tj35) | 0)
+        let ridx35 = ((aRow * SWF + tj35) | 0)
         let dt35 = tj35 - xL
         fb[ridx35] = cLo + rowSlope * dt35
       }
       let tj36 = pcol + 36.0
       if tj36 <= pcurR {
-        let ridx36 = ((prow * SWF + tj36) | 0)
+        let ridx36 = ((aRow * SWF + tj36) | 0)
         let dt36 = tj36 - xL
         fb[ridx36] = cLo + rowSlope * dt36
       }
       let tj37 = pcol + 37.0
       if tj37 <= pcurR {
-        let ridx37 = ((prow * SWF + tj37) | 0)
+        let ridx37 = ((aRow * SWF + tj37) | 0)
         let dt37 = tj37 - xL
         fb[ridx37] = cLo + rowSlope * dt37
       }
       let tj38 = pcol + 38.0
       if tj38 <= pcurR {
-        let ridx38 = ((prow * SWF + tj38) | 0)
+        let ridx38 = ((aRow * SWF + tj38) | 0)
         let dt38 = tj38 - xL
         fb[ridx38] = cLo + rowSlope * dt38
       }
       let tj39 = pcol + 39.0
       if tj39 <= pcurR {
-        let ridx39 = ((prow * SWF + tj39) | 0)
+        let ridx39 = ((aRow * SWF + tj39) | 0)
         let dt39 = tj39 - xL
         fb[ridx39] = cLo + rowSlope * dt39
       }
       let tj40 = pcol + 40.0
       if tj40 <= pcurR {
-        let ridx40 = ((prow * SWF + tj40) | 0)
+        let ridx40 = ((aRow * SWF + tj40) | 0)
         let dt40 = tj40 - xL
         fb[ridx40] = cLo + rowSlope * dt40
       }
       let tj41 = pcol + 41.0
       if tj41 <= pcurR {
-        let ridx41 = ((prow * SWF + tj41) | 0)
+        let ridx41 = ((aRow * SWF + tj41) | 0)
         let dt41 = tj41 - xL
         fb[ridx41] = cLo + rowSlope * dt41
       }
       let tj42 = pcol + 42.0
       if tj42 <= pcurR {
-        let ridx42 = ((prow * SWF + tj42) | 0)
+        let ridx42 = ((aRow * SWF + tj42) | 0)
         let dt42 = tj42 - xL
         fb[ridx42] = cLo + rowSlope * dt42
       }
       let tj43 = pcol + 43.0
       if tj43 <= pcurR {
-        let ridx43 = ((prow * SWF + tj43) | 0)
+        let ridx43 = ((aRow * SWF + tj43) | 0)
         let dt43 = tj43 - xL
         fb[ridx43] = cLo + rowSlope * dt43
       }
       let tj44 = pcol + 44.0
       if tj44 <= pcurR {
-        let ridx44 = ((prow * SWF + tj44) | 0)
+        let ridx44 = ((aRow * SWF + tj44) | 0)
         let dt44 = tj44 - xL
         fb[ridx44] = cLo + rowSlope * dt44
       }
       let tj45 = pcol + 45.0
       if tj45 <= pcurR {
-        let ridx45 = ((prow * SWF + tj45) | 0)
+        let ridx45 = ((aRow * SWF + tj45) | 0)
         let dt45 = tj45 - xL
         fb[ridx45] = cLo + rowSlope * dt45
       }
       let tj46 = pcol + 46.0
       if tj46 <= pcurR {
-        let ridx46 = ((prow * SWF + tj46) | 0)
+        let ridx46 = ((aRow * SWF + tj46) | 0)
         let dt46 = tj46 - xL
         fb[ridx46] = cLo + rowSlope * dt46
       }
       let tj47 = pcol + 47.0
       if tj47 <= pcurR {
-        let ridx47 = ((prow * SWF + tj47) | 0)
+        let ridx47 = ((aRow * SWF + tj47) | 0)
         let dt47 = tj47 - xL
         fb[ridx47] = cLo + rowSlope * dt47
       }
       let tj48 = pcol + 48.0
       if tj48 <= pcurR {
-        let ridx48 = ((prow * SWF + tj48) | 0)
+        let ridx48 = ((aRow * SWF + tj48) | 0)
         let dt48 = tj48 - xL
         fb[ridx48] = cLo + rowSlope * dt48
       }
       let tj49 = pcol + 49.0
       if tj49 <= pcurR {
-        let ridx49 = ((prow * SWF + tj49) | 0)
+        let ridx49 = ((aRow * SWF + tj49) | 0)
         let dt49 = tj49 - xL
         fb[ridx49] = cLo + rowSlope * dt49
       }
       let tj50 = pcol + 50.0
       if tj50 <= pcurR {
-        let ridx50 = ((prow * SWF + tj50) | 0)
+        let ridx50 = ((aRow * SWF + tj50) | 0)
         let dt50 = tj50 - xL
         fb[ridx50] = cLo + rowSlope * dt50
       }
       let tj51 = pcol + 51.0
       if tj51 <= pcurR {
-        let ridx51 = ((prow * SWF + tj51) | 0)
+        let ridx51 = ((aRow * SWF + tj51) | 0)
         let dt51 = tj51 - xL
         fb[ridx51] = cLo + rowSlope * dt51
       }
       let tj52 = pcol + 52.0
       if tj52 <= pcurR {
-        let ridx52 = ((prow * SWF + tj52) | 0)
+        let ridx52 = ((aRow * SWF + tj52) | 0)
         let dt52 = tj52 - xL
         fb[ridx52] = cLo + rowSlope * dt52
       }
       let tj53 = pcol + 53.0
       if tj53 <= pcurR {
-        let ridx53 = ((prow * SWF + tj53) | 0)
+        let ridx53 = ((aRow * SWF + tj53) | 0)
         let dt53 = tj53 - xL
         fb[ridx53] = cLo + rowSlope * dt53
       }
       let tj54 = pcol + 54.0
       if tj54 <= pcurR {
-        let ridx54 = ((prow * SWF + tj54) | 0)
+        let ridx54 = ((aRow * SWF + tj54) | 0)
         let dt54 = tj54 - xL
         fb[ridx54] = cLo + rowSlope * dt54
       }
       let tj55 = pcol + 55.0
       if tj55 <= pcurR {
-        let ridx55 = ((prow * SWF + tj55) | 0)
+        let ridx55 = ((aRow * SWF + tj55) | 0)
         let dt55 = tj55 - xL
         fb[ridx55] = cLo + rowSlope * dt55
       }
       let tj56 = pcol + 56.0
       if tj56 <= pcurR {
-        let ridx56 = ((prow * SWF + tj56) | 0)
+        let ridx56 = ((aRow * SWF + tj56) | 0)
         let dt56 = tj56 - xL
         fb[ridx56] = cLo + rowSlope * dt56
       }
       let tj57 = pcol + 57.0
       if tj57 <= pcurR {
-        let ridx57 = ((prow * SWF + tj57) | 0)
+        let ridx57 = ((aRow * SWF + tj57) | 0)
         let dt57 = tj57 - xL
         fb[ridx57] = cLo + rowSlope * dt57
       }
       let tj58 = pcol + 58.0
       if tj58 <= pcurR {
-        let ridx58 = ((prow * SWF + tj58) | 0)
+        let ridx58 = ((aRow * SWF + tj58) | 0)
         let dt58 = tj58 - xL
         fb[ridx58] = cLo + rowSlope * dt58
       }
       let tj59 = pcol + 59.0
       if tj59 <= pcurR {
-        let ridx59 = ((prow * SWF + tj59) | 0)
+        let ridx59 = ((aRow * SWF + tj59) | 0)
         let dt59 = tj59 - xL
         fb[ridx59] = cLo + rowSlope * dt59
       }
       let tj60 = pcol + 60.0
       if tj60 <= pcurR {
-        let ridx60 = ((prow * SWF + tj60) | 0)
+        let ridx60 = ((aRow * SWF + tj60) | 0)
         let dt60 = tj60 - xL
         fb[ridx60] = cLo + rowSlope * dt60
       }
       let tj61 = pcol + 61.0
       if tj61 <= pcurR {
-        let ridx61 = ((prow * SWF + tj61) | 0)
+        let ridx61 = ((aRow * SWF + tj61) | 0)
         let dt61 = tj61 - xL
         fb[ridx61] = cLo + rowSlope * dt61
       }
       let tj62 = pcol + 62.0
       if tj62 <= pcurR {
-        let ridx62 = ((prow * SWF + tj62) | 0)
+        let ridx62 = ((aRow * SWF + tj62) | 0)
         let dt62 = tj62 - xL
         fb[ridx62] = cLo + rowSlope * dt62
       }
       let tj63 = pcol + 63.0
       if tj63 <= pcurR {
-        let ridx63 = ((prow * SWF + tj63) | 0)
+        let ridx63 = ((aRow * SWF + tj63) | 0)
         let dt63 = tj63 - xL
         fb[ridx63] = cLo + rowSlope * dt63
       }
       pcol = pcol + 64.0
+      let tjB0 = pcol2 + 0.0
+      if tjB0 <= pcurR2 {
+        let ridxB0 = (((prow + 1.0) * SWF + tjB0) | 0)
+        let dtB0 = tjB0 - xL2
+        fb[ridxB0] = cLo2 + rowSlope2 * dtB0
+      }
+      let tjB1 = pcol2 + 1.0
+      if tjB1 <= pcurR2 {
+        let ridxB1 = (((prow + 1.0) * SWF + tjB1) | 0)
+        let dtB1 = tjB1 - xL2
+        fb[ridxB1] = cLo2 + rowSlope2 * dtB1
+      }
+      let tjB2 = pcol2 + 2.0
+      if tjB2 <= pcurR2 {
+        let ridxB2 = (((prow + 1.0) * SWF + tjB2) | 0)
+        let dtB2 = tjB2 - xL2
+        fb[ridxB2] = cLo2 + rowSlope2 * dtB2
+      }
+      let tjB3 = pcol2 + 3.0
+      if tjB3 <= pcurR2 {
+        let ridxB3 = (((prow + 1.0) * SWF + tjB3) | 0)
+        let dtB3 = tjB3 - xL2
+        fb[ridxB3] = cLo2 + rowSlope2 * dtB3
+      }
+      let tjB4 = pcol2 + 4.0
+      if tjB4 <= pcurR2 {
+        let ridxB4 = (((prow + 1.0) * SWF + tjB4) | 0)
+        let dtB4 = tjB4 - xL2
+        fb[ridxB4] = cLo2 + rowSlope2 * dtB4
+      }
+      let tjB5 = pcol2 + 5.0
+      if tjB5 <= pcurR2 {
+        let ridxB5 = (((prow + 1.0) * SWF + tjB5) | 0)
+        let dtB5 = tjB5 - xL2
+        fb[ridxB5] = cLo2 + rowSlope2 * dtB5
+      }
+      let tjB6 = pcol2 + 6.0
+      if tjB6 <= pcurR2 {
+        let ridxB6 = (((prow + 1.0) * SWF + tjB6) | 0)
+        let dtB6 = tjB6 - xL2
+        fb[ridxB6] = cLo2 + rowSlope2 * dtB6
+      }
+      let tjB7 = pcol2 + 7.0
+      if tjB7 <= pcurR2 {
+        let ridxB7 = (((prow + 1.0) * SWF + tjB7) | 0)
+        let dtB7 = tjB7 - xL2
+        fb[ridxB7] = cLo2 + rowSlope2 * dtB7
+      }
+      let tjB8 = pcol2 + 8.0
+      if tjB8 <= pcurR2 {
+        let ridxB8 = (((prow + 1.0) * SWF + tjB8) | 0)
+        let dtB8 = tjB8 - xL2
+        fb[ridxB8] = cLo2 + rowSlope2 * dtB8
+      }
+      let tjB9 = pcol2 + 9.0
+      if tjB9 <= pcurR2 {
+        let ridxB9 = (((prow + 1.0) * SWF + tjB9) | 0)
+        let dtB9 = tjB9 - xL2
+        fb[ridxB9] = cLo2 + rowSlope2 * dtB9
+      }
+      let tjB10 = pcol2 + 10.0
+      if tjB10 <= pcurR2 {
+        let ridxB10 = (((prow + 1.0) * SWF + tjB10) | 0)
+        let dtB10 = tjB10 - xL2
+        fb[ridxB10] = cLo2 + rowSlope2 * dtB10
+      }
+      let tjB11 = pcol2 + 11.0
+      if tjB11 <= pcurR2 {
+        let ridxB11 = (((prow + 1.0) * SWF + tjB11) | 0)
+        let dtB11 = tjB11 - xL2
+        fb[ridxB11] = cLo2 + rowSlope2 * dtB11
+      }
+      let tjB12 = pcol2 + 12.0
+      if tjB12 <= pcurR2 {
+        let ridxB12 = (((prow + 1.0) * SWF + tjB12) | 0)
+        let dtB12 = tjB12 - xL2
+        fb[ridxB12] = cLo2 + rowSlope2 * dtB12
+      }
+      let tjB13 = pcol2 + 13.0
+      if tjB13 <= pcurR2 {
+        let ridxB13 = (((prow + 1.0) * SWF + tjB13) | 0)
+        let dtB13 = tjB13 - xL2
+        fb[ridxB13] = cLo2 + rowSlope2 * dtB13
+      }
+      let tjB14 = pcol2 + 14.0
+      if tjB14 <= pcurR2 {
+        let ridxB14 = (((prow + 1.0) * SWF + tjB14) | 0)
+        let dtB14 = tjB14 - xL2
+        fb[ridxB14] = cLo2 + rowSlope2 * dtB14
+      }
+      let tjB15 = pcol2 + 15.0
+      if tjB15 <= pcurR2 {
+        let ridxB15 = (((prow + 1.0) * SWF + tjB15) | 0)
+        let dtB15 = tjB15 - xL2
+        fb[ridxB15] = cLo2 + rowSlope2 * dtB15
+      }
+      let tjB16 = pcol2 + 16.0
+      if tjB16 <= pcurR2 {
+        let ridxB16 = (((prow + 1.0) * SWF + tjB16) | 0)
+        let dtB16 = tjB16 - xL2
+        fb[ridxB16] = cLo2 + rowSlope2 * dtB16
+      }
+      let tjB17 = pcol2 + 17.0
+      if tjB17 <= pcurR2 {
+        let ridxB17 = (((prow + 1.0) * SWF + tjB17) | 0)
+        let dtB17 = tjB17 - xL2
+        fb[ridxB17] = cLo2 + rowSlope2 * dtB17
+      }
+      let tjB18 = pcol2 + 18.0
+      if tjB18 <= pcurR2 {
+        let ridxB18 = (((prow + 1.0) * SWF + tjB18) | 0)
+        let dtB18 = tjB18 - xL2
+        fb[ridxB18] = cLo2 + rowSlope2 * dtB18
+      }
+      let tjB19 = pcol2 + 19.0
+      if tjB19 <= pcurR2 {
+        let ridxB19 = (((prow + 1.0) * SWF + tjB19) | 0)
+        let dtB19 = tjB19 - xL2
+        fb[ridxB19] = cLo2 + rowSlope2 * dtB19
+      }
+      let tjB20 = pcol2 + 20.0
+      if tjB20 <= pcurR2 {
+        let ridxB20 = (((prow + 1.0) * SWF + tjB20) | 0)
+        let dtB20 = tjB20 - xL2
+        fb[ridxB20] = cLo2 + rowSlope2 * dtB20
+      }
+      let tjB21 = pcol2 + 21.0
+      if tjB21 <= pcurR2 {
+        let ridxB21 = (((prow + 1.0) * SWF + tjB21) | 0)
+        let dtB21 = tjB21 - xL2
+        fb[ridxB21] = cLo2 + rowSlope2 * dtB21
+      }
+      let tjB22 = pcol2 + 22.0
+      if tjB22 <= pcurR2 {
+        let ridxB22 = (((prow + 1.0) * SWF + tjB22) | 0)
+        let dtB22 = tjB22 - xL2
+        fb[ridxB22] = cLo2 + rowSlope2 * dtB22
+      }
+      let tjB23 = pcol2 + 23.0
+      if tjB23 <= pcurR2 {
+        let ridxB23 = (((prow + 1.0) * SWF + tjB23) | 0)
+        let dtB23 = tjB23 - xL2
+        fb[ridxB23] = cLo2 + rowSlope2 * dtB23
+      }
+      let tjB24 = pcol2 + 24.0
+      if tjB24 <= pcurR2 {
+        let ridxB24 = (((prow + 1.0) * SWF + tjB24) | 0)
+        let dtB24 = tjB24 - xL2
+        fb[ridxB24] = cLo2 + rowSlope2 * dtB24
+      }
+      let tjB25 = pcol2 + 25.0
+      if tjB25 <= pcurR2 {
+        let ridxB25 = (((prow + 1.0) * SWF + tjB25) | 0)
+        let dtB25 = tjB25 - xL2
+        fb[ridxB25] = cLo2 + rowSlope2 * dtB25
+      }
+      let tjB26 = pcol2 + 26.0
+      if tjB26 <= pcurR2 {
+        let ridxB26 = (((prow + 1.0) * SWF + tjB26) | 0)
+        let dtB26 = tjB26 - xL2
+        fb[ridxB26] = cLo2 + rowSlope2 * dtB26
+      }
+      let tjB27 = pcol2 + 27.0
+      if tjB27 <= pcurR2 {
+        let ridxB27 = (((prow + 1.0) * SWF + tjB27) | 0)
+        let dtB27 = tjB27 - xL2
+        fb[ridxB27] = cLo2 + rowSlope2 * dtB27
+      }
+      let tjB28 = pcol2 + 28.0
+      if tjB28 <= pcurR2 {
+        let ridxB28 = (((prow + 1.0) * SWF + tjB28) | 0)
+        let dtB28 = tjB28 - xL2
+        fb[ridxB28] = cLo2 + rowSlope2 * dtB28
+      }
+      let tjB29 = pcol2 + 29.0
+      if tjB29 <= pcurR2 {
+        let ridxB29 = (((prow + 1.0) * SWF + tjB29) | 0)
+        let dtB29 = tjB29 - xL2
+        fb[ridxB29] = cLo2 + rowSlope2 * dtB29
+      }
+      let tjB30 = pcol2 + 30.0
+      if tjB30 <= pcurR2 {
+        let ridxB30 = (((prow + 1.0) * SWF + tjB30) | 0)
+        let dtB30 = tjB30 - xL2
+        fb[ridxB30] = cLo2 + rowSlope2 * dtB30
+      }
+      let tjB31 = pcol2 + 31.0
+      if tjB31 <= pcurR2 {
+        let ridxB31 = (((prow + 1.0) * SWF + tjB31) | 0)
+        let dtB31 = tjB31 - xL2
+        fb[ridxB31] = cLo2 + rowSlope2 * dtB31
+      }
+      let tjB32 = pcol2 + 32.0
+      if tjB32 <= pcurR2 {
+        let ridxB32 = (((prow + 1.0) * SWF + tjB32) | 0)
+        let dtB32 = tjB32 - xL2
+        fb[ridxB32] = cLo2 + rowSlope2 * dtB32
+      }
+      let tjB33 = pcol2 + 33.0
+      if tjB33 <= pcurR2 {
+        let ridxB33 = (((prow + 1.0) * SWF + tjB33) | 0)
+        let dtB33 = tjB33 - xL2
+        fb[ridxB33] = cLo2 + rowSlope2 * dtB33
+      }
+      let tjB34 = pcol2 + 34.0
+      if tjB34 <= pcurR2 {
+        let ridxB34 = (((prow + 1.0) * SWF + tjB34) | 0)
+        let dtB34 = tjB34 - xL2
+        fb[ridxB34] = cLo2 + rowSlope2 * dtB34
+      }
+      let tjB35 = pcol2 + 35.0
+      if tjB35 <= pcurR2 {
+        let ridxB35 = (((prow + 1.0) * SWF + tjB35) | 0)
+        let dtB35 = tjB35 - xL2
+        fb[ridxB35] = cLo2 + rowSlope2 * dtB35
+      }
+      let tjB36 = pcol2 + 36.0
+      if tjB36 <= pcurR2 {
+        let ridxB36 = (((prow + 1.0) * SWF + tjB36) | 0)
+        let dtB36 = tjB36 - xL2
+        fb[ridxB36] = cLo2 + rowSlope2 * dtB36
+      }
+      let tjB37 = pcol2 + 37.0
+      if tjB37 <= pcurR2 {
+        let ridxB37 = (((prow + 1.0) * SWF + tjB37) | 0)
+        let dtB37 = tjB37 - xL2
+        fb[ridxB37] = cLo2 + rowSlope2 * dtB37
+      }
+      let tjB38 = pcol2 + 38.0
+      if tjB38 <= pcurR2 {
+        let ridxB38 = (((prow + 1.0) * SWF + tjB38) | 0)
+        let dtB38 = tjB38 - xL2
+        fb[ridxB38] = cLo2 + rowSlope2 * dtB38
+      }
+      let tjB39 = pcol2 + 39.0
+      if tjB39 <= pcurR2 {
+        let ridxB39 = (((prow + 1.0) * SWF + tjB39) | 0)
+        let dtB39 = tjB39 - xL2
+        fb[ridxB39] = cLo2 + rowSlope2 * dtB39
+      }
+      let tjB40 = pcol2 + 40.0
+      if tjB40 <= pcurR2 {
+        let ridxB40 = (((prow + 1.0) * SWF + tjB40) | 0)
+        let dtB40 = tjB40 - xL2
+        fb[ridxB40] = cLo2 + rowSlope2 * dtB40
+      }
+      let tjB41 = pcol2 + 41.0
+      if tjB41 <= pcurR2 {
+        let ridxB41 = (((prow + 1.0) * SWF + tjB41) | 0)
+        let dtB41 = tjB41 - xL2
+        fb[ridxB41] = cLo2 + rowSlope2 * dtB41
+      }
+      let tjB42 = pcol2 + 42.0
+      if tjB42 <= pcurR2 {
+        let ridxB42 = (((prow + 1.0) * SWF + tjB42) | 0)
+        let dtB42 = tjB42 - xL2
+        fb[ridxB42] = cLo2 + rowSlope2 * dtB42
+      }
+      let tjB43 = pcol2 + 43.0
+      if tjB43 <= pcurR2 {
+        let ridxB43 = (((prow + 1.0) * SWF + tjB43) | 0)
+        let dtB43 = tjB43 - xL2
+        fb[ridxB43] = cLo2 + rowSlope2 * dtB43
+      }
+      let tjB44 = pcol2 + 44.0
+      if tjB44 <= pcurR2 {
+        let ridxB44 = (((prow + 1.0) * SWF + tjB44) | 0)
+        let dtB44 = tjB44 - xL2
+        fb[ridxB44] = cLo2 + rowSlope2 * dtB44
+      }
+      let tjB45 = pcol2 + 45.0
+      if tjB45 <= pcurR2 {
+        let ridxB45 = (((prow + 1.0) * SWF + tjB45) | 0)
+        let dtB45 = tjB45 - xL2
+        fb[ridxB45] = cLo2 + rowSlope2 * dtB45
+      }
+      let tjB46 = pcol2 + 46.0
+      if tjB46 <= pcurR2 {
+        let ridxB46 = (((prow + 1.0) * SWF + tjB46) | 0)
+        let dtB46 = tjB46 - xL2
+        fb[ridxB46] = cLo2 + rowSlope2 * dtB46
+      }
+      let tjB47 = pcol2 + 47.0
+      if tjB47 <= pcurR2 {
+        let ridxB47 = (((prow + 1.0) * SWF + tjB47) | 0)
+        let dtB47 = tjB47 - xL2
+        fb[ridxB47] = cLo2 + rowSlope2 * dtB47
+      }
+      let tjB48 = pcol2 + 48.0
+      if tjB48 <= pcurR2 {
+        let ridxB48 = (((prow + 1.0) * SWF + tjB48) | 0)
+        let dtB48 = tjB48 - xL2
+        fb[ridxB48] = cLo2 + rowSlope2 * dtB48
+      }
+      let tjB49 = pcol2 + 49.0
+      if tjB49 <= pcurR2 {
+        let ridxB49 = (((prow + 1.0) * SWF + tjB49) | 0)
+        let dtB49 = tjB49 - xL2
+        fb[ridxB49] = cLo2 + rowSlope2 * dtB49
+      }
+      let tjB50 = pcol2 + 50.0
+      if tjB50 <= pcurR2 {
+        let ridxB50 = (((prow + 1.0) * SWF + tjB50) | 0)
+        let dtB50 = tjB50 - xL2
+        fb[ridxB50] = cLo2 + rowSlope2 * dtB50
+      }
+      let tjB51 = pcol2 + 51.0
+      if tjB51 <= pcurR2 {
+        let ridxB51 = (((prow + 1.0) * SWF + tjB51) | 0)
+        let dtB51 = tjB51 - xL2
+        fb[ridxB51] = cLo2 + rowSlope2 * dtB51
+      }
+      let tjB52 = pcol2 + 52.0
+      if tjB52 <= pcurR2 {
+        let ridxB52 = (((prow + 1.0) * SWF + tjB52) | 0)
+        let dtB52 = tjB52 - xL2
+        fb[ridxB52] = cLo2 + rowSlope2 * dtB52
+      }
+      let tjB53 = pcol2 + 53.0
+      if tjB53 <= pcurR2 {
+        let ridxB53 = (((prow + 1.0) * SWF + tjB53) | 0)
+        let dtB53 = tjB53 - xL2
+        fb[ridxB53] = cLo2 + rowSlope2 * dtB53
+      }
+      let tjB54 = pcol2 + 54.0
+      if tjB54 <= pcurR2 {
+        let ridxB54 = (((prow + 1.0) * SWF + tjB54) | 0)
+        let dtB54 = tjB54 - xL2
+        fb[ridxB54] = cLo2 + rowSlope2 * dtB54
+      }
+      let tjB55 = pcol2 + 55.0
+      if tjB55 <= pcurR2 {
+        let ridxB55 = (((prow + 1.0) * SWF + tjB55) | 0)
+        let dtB55 = tjB55 - xL2
+        fb[ridxB55] = cLo2 + rowSlope2 * dtB55
+      }
+      let tjB56 = pcol2 + 56.0
+      if tjB56 <= pcurR2 {
+        let ridxB56 = (((prow + 1.0) * SWF + tjB56) | 0)
+        let dtB56 = tjB56 - xL2
+        fb[ridxB56] = cLo2 + rowSlope2 * dtB56
+      }
+      let tjB57 = pcol2 + 57.0
+      if tjB57 <= pcurR2 {
+        let ridxB57 = (((prow + 1.0) * SWF + tjB57) | 0)
+        let dtB57 = tjB57 - xL2
+        fb[ridxB57] = cLo2 + rowSlope2 * dtB57
+      }
+      let tjB58 = pcol2 + 58.0
+      if tjB58 <= pcurR2 {
+        let ridxB58 = (((prow + 1.0) * SWF + tjB58) | 0)
+        let dtB58 = tjB58 - xL2
+        fb[ridxB58] = cLo2 + rowSlope2 * dtB58
+      }
+      let tjB59 = pcol2 + 59.0
+      if tjB59 <= pcurR2 {
+        let ridxB59 = (((prow + 1.0) * SWF + tjB59) | 0)
+        let dtB59 = tjB59 - xL2
+        fb[ridxB59] = cLo2 + rowSlope2 * dtB59
+      }
+      let tjB60 = pcol2 + 60.0
+      if tjB60 <= pcurR2 {
+        let ridxB60 = (((prow + 1.0) * SWF + tjB60) | 0)
+        let dtB60 = tjB60 - xL2
+        fb[ridxB60] = cLo2 + rowSlope2 * dtB60
+      }
+      let tjB61 = pcol2 + 61.0
+      if tjB61 <= pcurR2 {
+        let ridxB61 = (((prow + 1.0) * SWF + tjB61) | 0)
+        let dtB61 = tjB61 - xL2
+        fb[ridxB61] = cLo2 + rowSlope2 * dtB61
+      }
+      let tjB62 = pcol2 + 62.0
+      if tjB62 <= pcurR2 {
+        let ridxB62 = (((prow + 1.0) * SWF + tjB62) | 0)
+        let dtB62 = tjB62 - xL2
+        fb[ridxB62] = cLo2 + rowSlope2 * dtB62
+      }
+      let tjB63 = pcol2 + 63.0
+      if tjB63 <= pcurR2 {
+        let ridxB63 = (((prow + 1.0) * SWF + tjB63) | 0)
+        let dtB63 = tjB63 - xL2
+        fb[ridxB63] = cLo2 + rowSlope2 * dtB63
+      }
+      pcol2 = pcol2 + 64.0
   }
   g0 = fb[0]
   g1 = fb[1]

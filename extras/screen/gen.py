@@ -84,16 +84,17 @@ L.append("// array into per-edge scalars (base x/y, x-per-y slope, y range);")
 L.append("// each row's span is the min and max of the crossings of the edges that")
 L.append("// straddle it, which is the exact fill of a convex polygon -- a concave")
 L.append("// outline's rows fill their hull, so the driver decomposes one into")
-L.append("// convex pieces.  One span is painted per tick, so a burst costs one tick")
-L.append("// per row, not per 64 px.")
+L.append("// convex pieces.  One span is painted per tick per row pipeline --")
+L.append("// two rows per tick, so a burst costs one tick per two rows,")
+L.append("// not per 64 px.")
 L.append("//")
 L.append("// The stroke is a second walk over the same lanes.  At the arm the points")
 L.append("// land in a preserved store (replays restore from it, never from a dirty")
 L.append("// array) and in a shift register the walk consumes pair by pair; each")
 L.append("// pair's 2px quad -- offset by the unit normal, extended a pixel along the")
 L.append("// tangent so joints overlap -- fills through the same row-span machinery")
-L.append("// at 4 edges deep.  A burst costs one tick per row plus one per segment,")
-L.append("// and two per degenerate (padded) segment.")
+L.append("// at 4 edges deep.  A burst costs one tick per two rows; segment")
+L.append("// transitions and padded points ride the same advances.")
 L.append("//")
 L.append("// Tuning (top of gen.py): LANES is the speed knob.  Placement is")
 L.append("// physical: the wall builder lays the 64x64 bricks, so there are no")
@@ -275,14 +276,25 @@ L.append("var iCD: float = 0.0")
 L.append("var xL: float = 0.0")
 L.append("var cLo: color = Color(1.0, 1.0, 1.0, 1.0)")
 L.append("var rowSlope: color = Color(0.0, 0.0, 0.0, 0.0)")
+# The second row's span state: every tick stages two rows (A at aRow,
+# B at prow), so the B row needs its own span, colours and bounds.
+L.append("var xL2: float = 0.0")
+L.append("var cLo2: color = Color(1.0, 1.0, 1.0, 1.0)")
+L.append("var rowSlope2: color = Color(0.0, 0.0, 0.0, 0.0)")
+L.append("var pcol2: float = 200.0")
+L.append("var pcurR2: float = 100.0")
+L.append("var aRow: float = 0.0")
 # The row's crossing colours and the lane math's folded base:
 # vars, not lets -- a pure let re-evaluates per use, which would
 # duplicate the whole interpolation expression in the graph once
 # per tree that reads it.
 for i in range(MAXP):
     L.append("var cc%d: color = Color(1.0, 1.0, 1.0, 1.0)" % i)
+    L.append("var cc2_%d: color = Color(1.0, 1.0, 1.0, 1.0)" % i)
 L.append("var uc0: color = Color(1.0, 1.0, 1.0, 1.0)")
 L.append("var uc2: color = Color(1.0, 1.0, 1.0, 1.0)")
+L.append("var uc0B: color = Color(1.0, 1.0, 1.0, 1.0)")
+L.append("var uc2B: color = Color(1.0, 1.0, 1.0, 1.0)")
 # clearAll defers the blacking: it forgets every slot now and
 # stages the 64-row black fill, which the NEXT drawAll runs
 # (justCleared tells a staged commit to skip its own clear).
@@ -362,7 +374,7 @@ L.append("        }")
 L.append("      }")
 L.append("    }")
 L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR {")
-L.append("      prow = pfirst - 1.0")
+L.append("      prow = pfirst - 2.0")
 L.append("      pcol = 200.0")
 L.append("      polyOn = true")
 L.append("    }")
@@ -544,7 +556,7 @@ L.append("        plast = bPL")
 L.append("        sSegs = bSEGS")
 L.append("      }")
 L.append("      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending {")
-L.append("        prow = pfirst - 1.0")
+L.append("        prow = pfirst - 2.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("      }")
@@ -556,6 +568,8 @@ for i in range(MAXP):
 L.append("        sSeg = -1.0")
 L.append("        prow = 0.0")
 L.append("        sLast = -1.0")
+L.append("        pcol2 = 200.0")
+L.append("        pcurR2 = 100.0")
 L.append("        pcol = 200.0")
 L.append("        sOn = true")
 L.append("      }")
@@ -800,7 +814,7 @@ L.append("        polyLive = false")
 L.append("      } else {")
 L.append("        pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)")
 L.append("        plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)")
-L.append("        prow = pfirst - 1.0")
+L.append("        prow = pfirst - 2.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("        polyLive = true")
@@ -882,6 +896,8 @@ for i in range(MAXP):
 L.append("        sSeg = -1.0")
 L.append("        prow = 0.0")
 L.append("        sLast = -1.0")
+L.append("        pcol2 = 200.0")
+L.append("        pcurR2 = 100.0")
 L.append("        pcol = 200.0")
 L.append("        sOn = true")
 L.append("        sLive = true")
@@ -892,15 +908,17 @@ L.append("  }")
 # ---- the walks ------------------------------------------------------------
 # The fill advances rows of its staged edges; the stroke advances rows of
 # its current quad, then segments (shifting the register, rebuilding the
-# quad from the new head).  Both write their span into the shared paint
-# state (prow, pcol, pcurR) and the shared lanes below paint it, so a
-# stroke costs no lane duplication.
+# quad from the new head).  Each walk stages two rows a tick (A at aRow,
+# B at prow) into the shared paint state, and the shared lanes below
+# paint both, so the second row costs one lane duplication, not a second
+# machinery.
 L.append("  if polyOn {")
 L.append("    if pcol > pcurR {")
-L.append("      prow = prow + 1.0")
+L.append("      prow = prow + (if prow + 2.0 <= plast then 2.0 else 1.0)")
 L.append("      if prow > plast {")
 L.append("        polyOn = false")
 L.append("      } else {")
+L.append("        aRow = prow")
 # The row's span: one crossing per straddling edge, off-screen crossings
 # masked to a sentinel, then min/max trees (depth 4, not a sort's deep
 # chain) and a clamp to the grid.  Each crossing also carries its edge's
@@ -989,6 +1007,92 @@ L.append("          rowSlope = Color(rowSlope.r * bf, rowSlope.g * bf,"
          " rowSlope.b * bf, rowSlope.a)")
 L.append("        }")
 L.append("      }")
+# ---- second row: fill ---------------------------------------------------
+# The same tick stages the next row too (B state into xL2/cLo2 and the
+# cc2/tree copies): two rows painted per tick.  Guarded so B never ends
+# the burst (the odd tail closes next tick in A, exactly like today)
+# and never leaves the wall (brow <= plast <= 63 here, so the lane
+# index cannot overflow).  brow = prow + 1 keeps prow as A's row for
+# the whole tick, which is what the walk's end-check reads.
+L.append("      if polyOn {")
+L.append("        if pcol2 > pcurR2 {")
+L.append("          let brow = prow + 1.0")
+L.append("          if brow <= plast {")
+for i in range(MAXP):
+    if i + 1 < MAXP:
+        end = "(if %d.0 < n then pC%d else pC0)" % (i + 1, i + 1)
+    else:
+        end = "pC0"
+    L.append("        let cvB%d = brow >= eLo%d && brow < eHi%d" % (i, i, i))
+    L.append("        let cxB%d = eX%d + eS%d * (brow - eY%d)" % (i, i, i, i))
+    L.append("        cc2_%d = pC%d + (brow - eY%d) * eInv%d"
+             " * (%s - pC%d)" % (i, i, i, i, end, i))
+    L.append("        let cmnB%d = if cvB%d then cxB%d else 200.0" % (i, i, i))
+    L.append("        let cmxB%d = if cvB%d then cxB%d else -200.0" % (i, i, i))
+bmn = ["cmnB%d" % i for i in range(MAXP)]
+bmnc = ["cc2_%d" % i for i in range(MAXP)]
+layer = 0
+while len(bmn) > 1:
+    nxt = []
+    nxtc = []
+    for a in range(0, len(bmn) - 1, 2):
+        nm = "bn%d_%d" % (layer, a)
+        ncm = "bnc%d_%d" % (layer, a)
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (nm, bmn[a], bmn[a + 1], bmn[a], bmn[a + 1]))
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (ncm, bmn[a], bmn[a + 1], bmnc[a], bmnc[a + 1]))
+        nxt.append(nm)
+        nxtc.append(ncm)
+    if len(bmn) % 2:
+        nxt.append(bmn[-1])
+        nxtc.append(bmnc[-1])
+    bmn = nxt
+    bmnc = nxtc
+    layer += 1
+bmx = ["cmxB%d" % i for i in range(MAXP)]
+bmxc = ["cc2_%d" % i for i in range(MAXP)]
+layer = 0
+while len(bmx) > 1:
+    nxt = []
+    nxtc = []
+    for a in range(0, len(bmx) - 1, 2):
+        nm = "bx%d_%d" % (layer, a)
+        ncm = "bxc%d_%d" % (layer, a)
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (nm, bmx[a], bmx[a + 1], bmx[a + 1], bmx[a]))
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (ncm, bmx[a], bmx[a + 1], bmxc[a + 1], bmxc[a]))
+        nxt.append(nm)
+        nxtc.append(ncm)
+    if len(bmx) % 2:
+        nxt.append(bmx[-1])
+        nxtc.append(bmxc[-1])
+    bmx = nxt
+    bmxc = nxtc
+    layer += 1
+L.append("        if %s >= 200.0 || %s < 0.0 || %s >= SWF {"
+         % (bmn[0], bmx[0], bmn[0]))
+L.append("          pcol2 = 200.0")
+L.append("          pcurR2 = 100.0")
+L.append("        } else {")
+L.append("          pcol2 = if %s < 0.0 then 0.0 else (%s | 0)"
+         % (bmn[0], bmn[0]))
+L.append("          pcurR2 = if %s >= SWF then SWF - 1.0 else (%s | 0)"
+         % (bmx[0], bmx[0]))
+L.append("          xL2 = %s" % bmn[0])
+L.append("          cLo2 = %s" % bmnc[0])
+L.append("          let bspan = %s - %s" % (bmx[0], bmn[0]))
+L.append("          let binv = if bspan > 0.0 then 1.0 / bspan else 0.0")
+L.append("          rowSlope2 = (%s - cLo2) * binv" % bmxc[0])
+L.append("          cLo2 = Color(cLo2.r * bf, cLo2.g * bf, cLo2.b * bf,"
+         " cLo2.a)")
+L.append("          rowSlope2 = Color(rowSlope2.r * bf,"
+         " rowSlope2.g * bf, rowSlope2.b * bf, rowSlope2.a)")
+L.append("        }")
+L.append("          }")
+L.append("        }")
+L.append("      }")
 L.append("    }")
 # The fill walk ends: a staged pending shape re-arms here (the
 # clearAll black fill runs first, the shape paints right after --
@@ -1016,7 +1120,7 @@ L.append("  // The stroke advance: rows of the current quad, then segments.")
 L.append("  // A segment's quad is rebuilt from the register head (a shift plus")
 L.append("  // corner math, all sequential, so the per-tick path stays select-free);")
 L.append("  // a zero-length segment marks its quad empty and the walk steps past")
-L.append("  // it next tick, two ticks per padded point.")
+L.append("  // it next tick, one tick per pair of padded points.")
 L.append("  // Guarded by !polyOn: the tick-0 seeding fires every Change detector")
 L.append("  // once, so both walks arm from the seeded array together -- with the")
 L.append("  // guard only the fill advances and stages spans while both are live,")
@@ -1081,6 +1185,7 @@ L.append("        }")
 L.append("      }")
 L.append("      if sOn {")
 L.append("        if prow <= sLast {")
+L.append("          aRow = prow")
 L.append("          let u0lo = if qAy < qBy then qAy else qBy")
 L.append("          let u0hi = if qAy < qBy then qBy else qAy")
 L.append("          let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0")
@@ -1162,11 +1267,22 @@ L.append("  if polyOn || sOn {")
 for j in range(K):
     L.append("      let tj%d = pcol + %d.0" % (j, j))
     L.append("      if tj%d <= pcurR {" % j)
-    L.append("        let ridx%d = ((prow * SWF + tj%d) | 0)" % (j, j))
+    L.append("        let ridx%d = ((aRow * SWF + tj%d) | 0)" % (j, j))
     L.append("        let dt%d = tj%d - xL" % (j, j))
     L.append("        fb[ridx%d] = cLo + rowSlope * dt%d" % (j, j))
     L.append("      }")
 L.append("      pcol = pcol + %d.0" % K)
+# The B row paints from its own span at prow (advanced past A): the same
+# shared shape, so a stroke costs one lane duplication after all -- the
+# fill's, which the stroke reuses.
+for j in range(K):
+    L.append("      let tjB%d = pcol2 + %d.0" % (j, j))
+    L.append("      if tjB%d <= pcurR2 {" % j)
+    L.append("        let ridxB%d = (((prow + 1.0) * SWF + tjB%d) | 0)" % (j, j))
+    L.append("        let dtB%d = tjB%d - xL2" % (j, j))
+    L.append("        fb[ridxB%d] = cLo2 + rowSlope2 * dtB%d" % (j, j))
+    L.append("      }")
+L.append("      pcol2 = pcol2 + %d.0" % K)
 L.append("  }")
 # The scanout: every pixel global mirrors its fb slot, every tick.
 for i in range(NP):
