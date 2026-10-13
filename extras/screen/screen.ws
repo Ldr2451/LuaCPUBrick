@@ -409,6 +409,10 @@ var sLive: bool = false
 var sSeg: float = 0.0
 var sSegs: float = 0.0
 var sLast: float = -1.0
+var pPrev: float = 0.0
+var sFresh: bool = false
+var sFreshLast: bool = false
+var sEnd: bool = false
 var armingS: bool = false
 var sPc0: color = Color(1.0, 1.0, 1.0, 1.0)
 var sPc1: color = Color(1.0, 1.0, 1.0, 1.0)
@@ -9264,6 +9268,9 @@ mod paintTick() {
         rX15 = sPx15
         rY15 = sPy15
         rC15 = sPc15
+        sFresh = false
+        sFreshLast = false
+        sEnd = false
         sSeg = -1.0
         prow = 0.0
         sLast = -1.0
@@ -10401,7 +10408,7 @@ mod paintTick() {
           sOn = false
           sLive = false
         } else {
-          prow = (sPy0 | 0) - 1.0
+          prow = (sPy0 | 0) - 2.0
           sLast = if sPy0 >= 62.0 then 63.0 else (sPy0 | 0) + 1.0
           pcol = 200.0
           pcurR = 100.0
@@ -10417,6 +10424,9 @@ mod paintTick() {
           qCy = (sPy0 | 0) + 2.0
           qDx = sPx0 | 0
           qDy = (sPy0 | 0) + 2.0
+          sFresh = false
+          sFreshLast = false
+          sEnd = false
           sSeg = 0.0
           sSegs = 0.0
           sOn = true
@@ -10472,6 +10482,9 @@ mod paintTick() {
         rX15 = sPx15
         rY15 = sPy15
         rC15 = sPc15
+        sFresh = false
+        sFreshLast = false
+        sEnd = false
         sSeg = -1.0
         prow = 0.0
         sLast = -1.0
@@ -10838,13 +10851,24 @@ mod paintTick() {
   // colour, so the overlap is redundant, never torn: the shared paint
   // state is written by exactly one advance per tick).
   if sOn && !polyOn {
+  if sFreshLast {
+    sFreshLast = false
+  }
+  sFreshLast = sFresh
+  sFresh = false
+  if sEnd {
+    sOn = false
+    sEnd = false
+  }
     if pcol > pcurR {
-      prow = prow + 1.0
+      pPrev = prow
+      prow = prow + (if sFreshLast then 1.0 else if prow + 2.0 <= sLast then 2.0 else 1.0)
       if prow > sLast {
         sSeg = sSeg + 1.0
         if sSeg >= sSegs {
-          sOn = false
+          sEnd = true
         } else {
+          sFresh = true
           if sSeg > 0.0 {
             rX0 = rX1
             rY0 = rY1
@@ -10931,6 +10955,69 @@ mod paintTick() {
       if sOn {
         if prow <= sLast {
           aRow = prow
+          if (prow == pPrev + 2.0 || prow == pPrev + 1.0) && prow + 1.0 <= sLast {
+            let bu0lo = if qAy < qBy then qAy else qBy
+            let bu0hi = if qAy < qBy then qBy else qAy
+            let bu0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
+            let bu0x = qAx + bu0s * (prow + 1.0 - qAy)
+            let bu0v = prow + 1.0 >= bu0lo && prow + 1.0 < bu0hi
+            uc0B = cA + (prow + 1.0 - qAy) * iAB * (cB - cA)
+            let bun0 = if bu0v then bu0x else 200.0
+            let bux0 = if bu0v then bu0x else -200.0
+            let bu1lo = if qBy < qCy then qBy else qCy
+            let bu1hi = if qBy < qCy then qCy else qBy
+            let bu1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0
+            let bu1x = qBx + bu1s * (prow + 1.0 - qBy)
+            let bu1v = prow + 1.0 >= bu1lo && prow + 1.0 < bu1hi
+            let buc1 = cB
+            let bun1 = if bu1v then bu1x else 200.0
+            let bux1 = if bu1v then bu1x else -200.0
+            let bu2lo = if qCy < qDy then qCy else qDy
+            let bu2hi = if qCy < qDy then qDy else qCy
+            let bu2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0
+            let bu2x = qCx + bu2s * (prow + 1.0 - qCy)
+            let bu2v = prow + 1.0 >= bu2lo && prow + 1.0 < bu2hi
+            uc2B = cB + (prow + 1.0 - qCy) * iCD * (cA - cB)
+            let bun2 = if bu2v then bu2x else 200.0
+            let bux2 = if bu2v then bu2x else -200.0
+            let bu3lo = if qDy < qAy then qDy else qAy
+            let bu3hi = if qDy < qAy then qAy else qDy
+            let bu3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0
+            let bu3x = qDx + bu3s * (prow + 1.0 - qDy)
+            let bu3v = prow + 1.0 >= bu3lo && prow + 1.0 < bu3hi
+            let buc3 = cA
+            let bun3 = if bu3v then bu3x else 200.0
+            let bux3 = if bu3v then bu3x else -200.0
+            let bumn01 = if bun0 < bun1 then bun0 else bun1
+            let bumn23 = if bun2 < bun3 then bun2 else bun3
+            let bumn = if bumn01 < bumn23 then bumn01 else bumn23
+            let bumc01 = if bun0 < bun1 then uc0B else buc1
+            let bumc23 = if bun2 < bun3 then uc2B else buc3
+            let bumnc = if bumn01 < bumn23 then bumc01 else bumc23
+            let bumx01 = if bux0 < bux1 then bux1 else bux0
+            let bumx23 = if bux2 < bux3 then bux3 else bux2
+            let bumx = if bumx01 < bumx23 then bumx23 else bumx01
+            let buxc01 = if bux0 < bux1 then buc1 else uc0B
+            let buxc23 = if bux2 < bux3 then buc3 else uc2B
+            let bumxc = if bumx01 < bumx23 then buxc23 else buxc01
+            if bumn >= 200.0 || bumx < 0.0 || bumn >= SWF {
+              pcol2 = 200.0
+              pcurR2 = 100.0
+            } else {
+              pcol2 = if bumn < 0.0 then 0.0 else (bumn | 0)
+              pcurR2 = if bumx >= SWF then SWF - 1.0 else (bumx | 0)
+              xL2 = bumn
+              cLo2 = bumnc
+              let bspan = bumx - bumn
+              let binv = if bspan > 0.0 then 1.0 / bspan else 0.0
+              rowSlope2 = (bumxc - cLo2) * binv
+              cLo2 = Color(cLo2.r * bf, cLo2.g * bf, cLo2.b * bf, cLo2.a)
+              rowSlope2 = Color(rowSlope2.r * bf, rowSlope2.g * bf, rowSlope2.b * bf, rowSlope2.a)
+            }
+          } else {
+            pcol2 = 200.0
+            pcurR2 = 100.0
+          }
           let u0lo = if qAy < qBy then qAy else qBy
           let u0hi = if qAy < qBy then qBy else qAy
           let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
