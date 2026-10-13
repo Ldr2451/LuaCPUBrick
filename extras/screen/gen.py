@@ -64,12 +64,6 @@ L.append("// painted colour immediately: its edge reruns the retained")
 L.append("// recomposite without the black clear and refreshes the last")
 L.append("// immediate shape, so the wall follows with no push and no")
 L.append("// drawAll.")
-L.append("// screenError reports the nesting verdict as a float: 0.0 clean,")
-L.append("// 1.0 the last staged shape's ancestor chain was still live after")
-L.append("// 8 steps (deeper than 8, or cyclic -- with 8 slots the longest")
-L.append("// acyclic chain is 8, so in practice a cycle).  Sticky, cleared")
-L.append("// on push and clearAll; the shape still paints with the 8-fold")
-L.append("// composition, so the wall never blanks -- the flag is the signal.")
 L.append("// true scanline interpolation -- each row's span takes the")
 L.append("// colours of its two crossing edges (lerped along the edges by")
 L.append("// row), then lerps across the span -- so a polygon with")
@@ -224,6 +218,10 @@ L.append("var bf: float = 1.0")
 L.append("var rcOn: bool = false")
 L.append("var rcSlot: float = 1.0")
 L.append("var brightRC: bool = false")
+# The recomposite's scan snapshot: eight sequential conditional
+# writes, descending, so the lowest live slot wins; ff then feeds the
+# ~55 load lines (a shared expression would re-evaluate per use).
+L.append("var ff: float = 0.0")
 for i in range(MAXP):
     L.append("var bEX%d: float = 0.0" % i)
     L.append("var bEY%d: float = 0.0" % i)
@@ -238,13 +236,6 @@ for i in range(MAXP):
 L.append("var bPF: float = 0.0")
 L.append("var bPL: float = 0.0")
 L.append("var bSEGS: float = 0.0")
-# The nesting verdict for the error port: sticky, cleared on push and
-# clearAll (fresh verdict per staged shape), set when an ancestor walk
-# still has a live parent after its 8 steps -- deeper than 8, or, with
-# 8 slots holding the longest acyclic chain at 8, cyclic in practice.
-# Read out as screenError (0.0 clean, 1.0 unresolved chain).  Set
-# combinationally inside existing walk steps: zero new ticks.
-L.append("var errFlag: float = 0.0")
 L.append("var commitR: bool = false")
 L.append("var fromSlot: bool = false")
 L.append("var clearing: bool = false")
@@ -308,10 +299,6 @@ L.append("")
 for i in range(NP):
     L.append("var g%d: color = Color(0.0, 0.0, 0.0, 1.0)" % i)
     L.append("out px%d: color = g%d" % (i, i))
-# The error port mirrors the nesting verdict like the wall mirrors the
-# framebuffer: no side annotation, referenceable by name in saves and
-# merges, no prefab cost (one scalar against the wall's 4096).
-L.append("out screenError: float = errFlag")
 L.append("")
 
 L.append("// No prev-edge flags anywhere in this file, deliberately.  on Change fires")
@@ -335,7 +322,6 @@ L.append("    polyOn = false")
 L.append("    sOn = false")
 L.append("    rcOn = false")
 L.append("    brightRC = false")
-L.append("    errFlag = 0.0")
 L.append("    clearing = false")
 L.append("    fromSlot = false")
 L.append("    arming = false")
@@ -405,7 +391,7 @@ L.append("// The wall follows within one recomposite, with no")
 L.append("// drawAll and no restaging; live bursts and recomposites serialize")
 L.append("// ahead of it (their remaining rows already read the new factor")
 L.append("// per row), and rapid twiddles collapse into one repaint that")
-L.append("// always reads the latest value.  An empty wall costs eight quiet")
+L.append("// always reads the latest value.  An empty wall costs two quiet")
 L.append("// ticks and no paint.")
 L.append("on Change(brightness) {")
 L.append("  if !rcOn {")
@@ -436,7 +422,6 @@ L.append("    sOn = false")
 L.append("    sLive = false")
 L.append("    rcOn = false")
 L.append("    brightRC = false")
-L.append("    errFlag = 0.0")
 L.append("    slLive[0] = 0.0")
 L.append("    slLive[1] = 0.0")
 L.append("    slLive[2] = 0.0")
@@ -529,7 +514,11 @@ L.append("  }")
 # Runs when the walks are idle mid-recomposite.  The live slot at or after
 # rcSlot is loaded into the shadow with its stored count, colour and mode,
 # and its walk is armed; past slot 8 the wall is whole and the chip goes
-# silent.  Dead slots cost one quiet tick each.  rcSlot advances only after
+# silent, refreshing the last immediate shape on the way out -- unless a
+# push is already staged, whose drawAll supersedes the refresh (starting
+# it now would only tear against the abort; retained commits never have
+# pending set here).  Dead slots cost one scan, never a tick: the priority scan
+# jumps to the next live slot (or past 8) on the same tick.  rcSlot advances only after
 # every read that depends on it is done: pure lets re-evaluate per use in
 # this toolchain, so writing rcSlot before the loads would re-resolve the
 # base mid-tick (loaded garbage once -- right-shifted points -- from a
@@ -554,12 +543,12 @@ L.append("        pfirst = bPF")
 L.append("        plast = bPL")
 L.append("        sSegs = bSEGS")
 L.append("      }")
-L.append("      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR {")
+L.append("      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending {")
 L.append("        prow = pfirst - 1.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("      }")
-L.append("      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR {")
+L.append("      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending {")
 for i in range(MAXP):
     L.append("        rX%d = sPx%d" % (i, i))
     L.append("        rY%d = sPy%d" % (i, i))
@@ -587,19 +576,29 @@ L.append("        bPF = pfirst")
 L.append("        bPL = plast")
 L.append("        bSEGS = sSegs")
 L.append("      }")
+L.append("      // first live slot at/after li, else 8 = pass done: dead")
+L.append("      // slots cost one scan, never a tick (sequential writes,")
+L.append("      // descending, so the lowest live slot wins).")
 L.append("      let li = (rcSlot - 1.0) | 0")
-L.append("      if slLive[li] > 0.5 {")
+L.append("      ff = 8.0")
+for j in range(7, -1, -1):
+    L.append("      if slLive[%d] > 0.5 && li <= %d.0 {" % (j, j))
+    L.append("        ff = %d.0" % j)
+    L.append("      }")
+L.append("      if ff > 7.0 {")
+L.append("        rcSlot = 9.0")
+L.append("      } else {")
 for i in range(32):
-    L.append("        shPts[%d] = slPts[li * 32 + %d.0]" % (i, i))
-L.append("        n = slCount[li]")
+    L.append("        shPts[%d] = slPts[ff * 32 + %d.0]" % (i, i))
+L.append("        n = slCount[ff]")
 L.append("        sSegs = n")
 for i in range(MAXP):
-    L.append("        pC%d = slPC[li * 16 + %d.0]" % (i, i))
-L.append("        pWire = slMode[li] > 0.5")
-L.append("        pPos = Vec(slXF[li * 6 + 0.0], slXF[li * 6 + 1.0], 0.0)")
-L.append("        pRot = Vec(0.0, 0.0, slXF[li * 6 + 2.0])")
-L.append("        pScl = Vec(slXF[li * 6 + 3.0], slXF[li * 6 + 4.0], 1.0)")
-L.append("        pParent = slXF[li * 6 + 5.0]")
+    L.append("        pC%d = slPC[ff * 16 + %d.0]" % (i, i))
+L.append("        pWire = slMode[ff] > 0.5")
+L.append("        pPos = Vec(slXF[ff * 6 + 0.0], slXF[ff * 6 + 1.0], 0.0)")
+L.append("        pRot = Vec(0.0, 0.0, slXF[ff * 6 + 2.0])")
+L.append("        pScl = Vec(slXF[ff * 6 + 3.0], slXF[ff * 6 + 4.0], 1.0)")
+L.append("        pParent = slXF[ff * 6 + 5.0]")
 L.append("        needXF = true")
 L.append("        fromSlot = true")
 L.append("        if pWire {")
@@ -607,9 +606,7 @@ L.append("          armingS = true")
 L.append("        } else {")
 L.append("          arming = true")
 L.append("        }")
-L.append("        rcSlot = rcSlot + 1.0")
-L.append("      } else {")
-L.append("        rcSlot = rcSlot + 1.0")
+L.append("        rcSlot = ff + 2.0")
 L.append("      }")
 L.append("    }")
 L.append("  }")
@@ -640,8 +637,9 @@ L.append("  }")
 # proceed unchanged -- fills, strokes, replays and the retained store
 # all see world-space points.  The ancestor walk is straight-line and
 # capped at 8 steps (the slot count, so the deepest acyclic chain):
-# a dead, missing or out-of-range parent -- and a cycle, which can only
-# revisit -- resolves to identity above it, and an unparented shape
+# a dead, missing or out-of-range parent resolves to identity above
+# it; a cycle revisits and paints its 8-fold composition.  An
+# unparented shape
 # skips the walk entirely (its guard never fires, so the 48 slow
 # computed reads cost nothing in the sim).  The black clearing fill
 # skips the whole block: its corners are screen-space by construction.
@@ -688,14 +686,8 @@ for _s in range(8):
     L.append("      } else {")
     L.append("        cur = 0.0")
     L.append("      }")
-# A chain still live after the 8th step is deeper than supported --
-# with 8 slots the longest acyclic chain is 8, so in practice cyclic:
-# flag it sticky for the error port (cleared at push/clearAll).  The
-# shape still paints with the 8-fold composition (defined, degraded),
-# so the wall never blanks on a bad parent -- the flag is the signal.
-L.append("      if cur >= 1.0 {")
-L.append("        errFlag = 1.0")
-L.append("      }")
+# A cycle revisits for all 8 steps and paints its 8-fold composition
+# (defined, degraded -- the wall never blanks on a bad parent).
 L.append("      let ct = cos(wr)")
 L.append("      let st = sin(wr)")
 for i in range(MAXP):

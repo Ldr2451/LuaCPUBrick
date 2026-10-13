@@ -29,12 +29,6 @@
 // recomposite without the black clear and refreshes the last
 // immediate shape, so the wall follows with no push and no
 // drawAll.
-// screenError reports the nesting verdict as a float: 0.0 clean,
-// 1.0 the last staged shape's ancestor chain was still live after
-// 8 steps (deeper than 8, or cyclic -- with 8 slots the longest
-// acyclic chain is 8, so in practice a cycle).  Sticky, cleared
-// on push and clearAll; the shape still paints with the 8-fold
-// composition, so the wall never blanks -- the flag is the signal.
 // true scanline interpolation -- each row's span takes the
 // colours of its two crossing edges (lerped along the edges by
 // row), then lerps across the span -- so a polygon with
@@ -170,6 +164,7 @@ var bf: float = 1.0
 var rcOn: bool = false
 var rcSlot: float = 1.0
 var brightRC: bool = false
+var ff: float = 0.0
 var bEX0: float = 0.0
 var bEY0: float = 0.0
 var bES0: float = 0.0
@@ -333,7 +328,6 @@ var bRC15: color = Color(1.0, 1.0, 1.0, 1.0)
 var bPF: float = 0.0
 var bPL: float = 0.0
 var bSEGS: float = 0.0
-var errFlag: float = 0.0
 var commitR: bool = false
 var fromSlot: bool = false
 var clearing: bool = false
@@ -8747,7 +8741,6 @@ var g4094: color = Color(0.0, 0.0, 0.0, 1.0)
 out px4094: color = g4094
 var g4095: color = Color(0.0, 0.0, 0.0, 1.0)
 out px4095: color = g4095
-out screenError: float = errFlag
 
 // No prev-edge flags anywhere in this file, deliberately.  on Change fires
 // only on a transition, so the event IS the edge.  A same-handler
@@ -8770,7 +8763,6 @@ on Change(pushShape) {
     sOn = false
     rcOn = false
     brightRC = false
-    errFlag = 0.0
     clearing = false
     fromSlot = false
     arming = false
@@ -8884,7 +8876,7 @@ on Change(drawAll) {
 // drawAll and no restaging; live bursts and recomposites serialize
 // ahead of it (their remaining rows already read the new factor
 // per row), and rapid twiddles collapse into one repaint that
-// always reads the latest value.  An empty wall costs eight quiet
+// always reads the latest value.  An empty wall costs two quiet
 // ticks and no paint.
 on Change(brightness) {
   if !rcOn {
@@ -8915,7 +8907,6 @@ on Change(clearAll) {
     sLive = false
     rcOn = false
     brightRC = false
-    errFlag = 0.0
     slLive[0] = 0.0
     slLive[1] = 0.0
     slLive[2] = 0.0
@@ -9194,12 +9185,12 @@ mod paintTick() {
         plast = bPL
         sSegs = bSEGS
       }
-      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR {
+      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending {
         prow = pfirst - 1.0
         pcol = 200.0
         polyOn = true
       }
-      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR {
+      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending {
         rX0 = sPx0
         rY0 = sPy0
         rC0 = sPc0
@@ -9420,63 +9411,93 @@ mod paintTick() {
         bPL = plast
         bSEGS = sSegs
       }
+      // first live slot at/after li, else 8 = pass done: dead
+      // slots cost one scan, never a tick (sequential writes,
+      // descending, so the lowest live slot wins).
       let li = (rcSlot - 1.0) | 0
-      if slLive[li] > 0.5 {
-        shPts[0] = slPts[li * 32 + 0.0]
-        shPts[1] = slPts[li * 32 + 1.0]
-        shPts[2] = slPts[li * 32 + 2.0]
-        shPts[3] = slPts[li * 32 + 3.0]
-        shPts[4] = slPts[li * 32 + 4.0]
-        shPts[5] = slPts[li * 32 + 5.0]
-        shPts[6] = slPts[li * 32 + 6.0]
-        shPts[7] = slPts[li * 32 + 7.0]
-        shPts[8] = slPts[li * 32 + 8.0]
-        shPts[9] = slPts[li * 32 + 9.0]
-        shPts[10] = slPts[li * 32 + 10.0]
-        shPts[11] = slPts[li * 32 + 11.0]
-        shPts[12] = slPts[li * 32 + 12.0]
-        shPts[13] = slPts[li * 32 + 13.0]
-        shPts[14] = slPts[li * 32 + 14.0]
-        shPts[15] = slPts[li * 32 + 15.0]
-        shPts[16] = slPts[li * 32 + 16.0]
-        shPts[17] = slPts[li * 32 + 17.0]
-        shPts[18] = slPts[li * 32 + 18.0]
-        shPts[19] = slPts[li * 32 + 19.0]
-        shPts[20] = slPts[li * 32 + 20.0]
-        shPts[21] = slPts[li * 32 + 21.0]
-        shPts[22] = slPts[li * 32 + 22.0]
-        shPts[23] = slPts[li * 32 + 23.0]
-        shPts[24] = slPts[li * 32 + 24.0]
-        shPts[25] = slPts[li * 32 + 25.0]
-        shPts[26] = slPts[li * 32 + 26.0]
-        shPts[27] = slPts[li * 32 + 27.0]
-        shPts[28] = slPts[li * 32 + 28.0]
-        shPts[29] = slPts[li * 32 + 29.0]
-        shPts[30] = slPts[li * 32 + 30.0]
-        shPts[31] = slPts[li * 32 + 31.0]
-        n = slCount[li]
+      ff = 8.0
+      if slLive[7] > 0.5 && li <= 7.0 {
+        ff = 7.0
+      }
+      if slLive[6] > 0.5 && li <= 6.0 {
+        ff = 6.0
+      }
+      if slLive[5] > 0.5 && li <= 5.0 {
+        ff = 5.0
+      }
+      if slLive[4] > 0.5 && li <= 4.0 {
+        ff = 4.0
+      }
+      if slLive[3] > 0.5 && li <= 3.0 {
+        ff = 3.0
+      }
+      if slLive[2] > 0.5 && li <= 2.0 {
+        ff = 2.0
+      }
+      if slLive[1] > 0.5 && li <= 1.0 {
+        ff = 1.0
+      }
+      if slLive[0] > 0.5 && li <= 0.0 {
+        ff = 0.0
+      }
+      if ff > 7.0 {
+        rcSlot = 9.0
+      } else {
+        shPts[0] = slPts[ff * 32 + 0.0]
+        shPts[1] = slPts[ff * 32 + 1.0]
+        shPts[2] = slPts[ff * 32 + 2.0]
+        shPts[3] = slPts[ff * 32 + 3.0]
+        shPts[4] = slPts[ff * 32 + 4.0]
+        shPts[5] = slPts[ff * 32 + 5.0]
+        shPts[6] = slPts[ff * 32 + 6.0]
+        shPts[7] = slPts[ff * 32 + 7.0]
+        shPts[8] = slPts[ff * 32 + 8.0]
+        shPts[9] = slPts[ff * 32 + 9.0]
+        shPts[10] = slPts[ff * 32 + 10.0]
+        shPts[11] = slPts[ff * 32 + 11.0]
+        shPts[12] = slPts[ff * 32 + 12.0]
+        shPts[13] = slPts[ff * 32 + 13.0]
+        shPts[14] = slPts[ff * 32 + 14.0]
+        shPts[15] = slPts[ff * 32 + 15.0]
+        shPts[16] = slPts[ff * 32 + 16.0]
+        shPts[17] = slPts[ff * 32 + 17.0]
+        shPts[18] = slPts[ff * 32 + 18.0]
+        shPts[19] = slPts[ff * 32 + 19.0]
+        shPts[20] = slPts[ff * 32 + 20.0]
+        shPts[21] = slPts[ff * 32 + 21.0]
+        shPts[22] = slPts[ff * 32 + 22.0]
+        shPts[23] = slPts[ff * 32 + 23.0]
+        shPts[24] = slPts[ff * 32 + 24.0]
+        shPts[25] = slPts[ff * 32 + 25.0]
+        shPts[26] = slPts[ff * 32 + 26.0]
+        shPts[27] = slPts[ff * 32 + 27.0]
+        shPts[28] = slPts[ff * 32 + 28.0]
+        shPts[29] = slPts[ff * 32 + 29.0]
+        shPts[30] = slPts[ff * 32 + 30.0]
+        shPts[31] = slPts[ff * 32 + 31.0]
+        n = slCount[ff]
         sSegs = n
-        pC0 = slPC[li * 16 + 0.0]
-        pC1 = slPC[li * 16 + 1.0]
-        pC2 = slPC[li * 16 + 2.0]
-        pC3 = slPC[li * 16 + 3.0]
-        pC4 = slPC[li * 16 + 4.0]
-        pC5 = slPC[li * 16 + 5.0]
-        pC6 = slPC[li * 16 + 6.0]
-        pC7 = slPC[li * 16 + 7.0]
-        pC8 = slPC[li * 16 + 8.0]
-        pC9 = slPC[li * 16 + 9.0]
-        pC10 = slPC[li * 16 + 10.0]
-        pC11 = slPC[li * 16 + 11.0]
-        pC12 = slPC[li * 16 + 12.0]
-        pC13 = slPC[li * 16 + 13.0]
-        pC14 = slPC[li * 16 + 14.0]
-        pC15 = slPC[li * 16 + 15.0]
-        pWire = slMode[li] > 0.5
-        pPos = Vec(slXF[li * 6 + 0.0], slXF[li * 6 + 1.0], 0.0)
-        pRot = Vec(0.0, 0.0, slXF[li * 6 + 2.0])
-        pScl = Vec(slXF[li * 6 + 3.0], slXF[li * 6 + 4.0], 1.0)
-        pParent = slXF[li * 6 + 5.0]
+        pC0 = slPC[ff * 16 + 0.0]
+        pC1 = slPC[ff * 16 + 1.0]
+        pC2 = slPC[ff * 16 + 2.0]
+        pC3 = slPC[ff * 16 + 3.0]
+        pC4 = slPC[ff * 16 + 4.0]
+        pC5 = slPC[ff * 16 + 5.0]
+        pC6 = slPC[ff * 16 + 6.0]
+        pC7 = slPC[ff * 16 + 7.0]
+        pC8 = slPC[ff * 16 + 8.0]
+        pC9 = slPC[ff * 16 + 9.0]
+        pC10 = slPC[ff * 16 + 10.0]
+        pC11 = slPC[ff * 16 + 11.0]
+        pC12 = slPC[ff * 16 + 12.0]
+        pC13 = slPC[ff * 16 + 13.0]
+        pC14 = slPC[ff * 16 + 14.0]
+        pC15 = slPC[ff * 16 + 15.0]
+        pWire = slMode[ff] > 0.5
+        pPos = Vec(slXF[ff * 6 + 0.0], slXF[ff * 6 + 1.0], 0.0)
+        pRot = Vec(0.0, 0.0, slXF[ff * 6 + 2.0])
+        pScl = Vec(slXF[ff * 6 + 3.0], slXF[ff * 6 + 4.0], 1.0)
+        pParent = slXF[ff * 6 + 5.0]
         needXF = true
         fromSlot = true
         if pWire {
@@ -9484,9 +9505,7 @@ mod paintTick() {
         } else {
           arming = true
         }
-        rcSlot = rcSlot + 1.0
-      } else {
-        rcSlot = rcSlot + 1.0
+        rcSlot = ff + 2.0
       }
     }
   }
@@ -9769,9 +9788,6 @@ mod paintTick() {
         }
       } else {
         cur = 0.0
-      }
-      if cur >= 1.0 {
-        errFlag = 1.0
       }
       let ct = cos(wr)
       let st = sin(wr)

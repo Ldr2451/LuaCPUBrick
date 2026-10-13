@@ -103,26 +103,16 @@ painted colour's RGB is scaled by it (alpha is untouched -- brightness
 is not opacity), and it acts at once: its edge reruns the retained
 recomposite without the black clear (nothing moved, so overwriting is
 exact) and refreshes the last immediate shape, so the whole wall
-follows with no push and no `drawAll`.  The wall bricks are emissive
+follows with no push and no `drawAll`.  A push staged when the pass
+ends supersedes the immediate refresh (its `drawAll` paints the new
+shape instead); racing a refresh mid-burst tears it like any raced
+burst -- pace twiddles like pushes.  The wall bricks are emissive
 (`BMC_Glow`), so colours read as emitted light and the slider is a
 dimmer for the whole wall.
 Colors persist until rewritten, so a frame is a sequence of
 push-then-draw pairs, and the wall keeps the last color forever -- no
 keepalive, no expiry.  The last push before a `drawAll` wins, so a
 stale stage cannot fire.  A bare `drawAll` replays the last shape.
-
-`screenError` is a float output for the one silent failure parenting
-can produce: 0.0 clean, 1.0 the last staged shape's ancestor chain
-was still live after its 8 steps.  With 8 slots the longest acyclic
-chain is 8, so in practice this means a cycle (a slot parenting to
-itself, or two slots parenting to each other).  It is sticky --
-cleared on every push and on `clearAll`, set by staged and retained
-walks alike -- and the shape still paints with the 8-fold composition,
-so the wall never blanks on a bad parent: the flag is the signal.
-Wire it to a lamp or a threshold; the shipped wall merge only taps
-the `px` ports.  Out-of-range slot and parent ids are clamped
-(0..8, parent 0 detaches) and unwired vectors read zeroes by design,
-so they are documented limits, not errors.
 
 `anim.lua` drives these inputs from the tinylua chip through the
 `cpu-screen-connector` bridge: `outNum1 -> pushShape`,
@@ -147,15 +137,12 @@ clipped rect, alpha, triangle, convex hull, oval, hairline, thick
 line, full wall -- then a per-point gradient rect (every pixel the
 exact bilinear blend), a wireframe, an open curve, a dot and a
 diagonal gradient stroke, then four retained commits (store, compose,
-edit in place, delete), the brightness slider (dimmed RGB at 50,
-full colours at the unwired 0.0 default, alpha untouched both ways,
-plus an auto-repaint with no `drawAll` when only the slider moves),
+edit in place, delete), the brightness slider (dimmed RGB at 50 with
+nothing staged after, full again when the slider returns to the
+unwired default, alpha untouched all ways),
 and five transform commits (a scaled+moved square, a rotated rect
 edit, a child attached to slot 1, the parent moved again with the
-child following, the child deleted), three nesting-error commits (a
-self-parented slot lights `screenError` while still painting exact,
-a shifted one paints the 8-fold composition, a clean push clears the
-flag) -- and diffs the wall against
+child following, the child deleted) -- and diffs the wall against
 models of every fill, colour and transform, so a dropped span, a bad
 hull, a torn stroke, a stale slot, a wrong gradient, a miscomposed
 parent or an off-by-one row shows up as a pixel diff.  A load-time
