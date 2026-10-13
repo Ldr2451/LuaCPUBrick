@@ -86,8 +86,42 @@ transform): everything stages per push, so every push must carry its
 full shape -- points, colours (or nothing, for white), and transform
 (or identity).  Anything not restaged keeps whatever the last push
 left behind: a background pushed after a mover frame without its own
-transform would otherwise inherit the mover's.  `showcase2.lua` has
-a tiny `xf()` helper that keeps this tidy.
+transform would otherwise inherit the mover's.  The helper below
+keeps this tidy -- one call stages a full shape, so a frame is
+`stage` then push-then-draw (`outStrArr` takes strings only, unlike
+`outStr`, hence `tostring`; at most 8 values a call, hence the
+chunking; functions take at most 8 parameters, hence the packed
+`xf` table):
+
+```lua
+-- stage a full shape: points, terminator, colours (or nil = white),
+-- transform as {px, py, ang, sx, sy}, parent slot ("0" = none).
+-- outNumArr's slot itself doesn't count toward the 8-value limit.
+local function putn(slot, t, first)
+  local i = first or 1
+  while i <= #t do
+    outNumArr(slot + i - 1,
+      table.unpack(t, i, math.min(i + 7, #t)))
+    i = i + 8
+  end
+  return slot + #t
+end
+local function stage(pts, term, cols, xf, parent)
+  local termAt = putn(1, pts)         -- points from slot 1
+  outNumArr(termAt, term)             -- -1, or -(1 + colour count)
+  if cols then                        -- four floats per point, or omit
+    putn(termAt + 1, cols)
+  end
+  outStrArr(1, tostring(xf[1]), tostring(xf[2]), "0", "0", "0",
+    tostring(xf[3]), tostring(xf[4]), tostring(xf[5]))
+  outStrArr(9, "1")
+  outStr(2, parent or "0")
+end
+-- stage({0,0, 8,0, 8,6, 0,6}, -5, {1,0,0,1, ...}, {5,6, 0.5, 2,2}, "3")
+```
+
+(`showcase2.lua` has the same shape as a tiny `xf()` plus inline
+points: the mover's points never change, so only its transform moves.)
 
 Everything is combinational except a one-tick array pass, and nothing
 is retained: every output is a pure function of the current inputs.

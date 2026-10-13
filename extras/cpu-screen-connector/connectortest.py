@@ -480,23 +480,15 @@ def main():
         tri = [8.0, 8.0, 20.0, 8.0, 8.0, 20.0]
         sq = [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0]
         if snap_holder.get("wall3") is not None:
-            # KNOWN ISSUE (quarantined 2026-10-13, re-enable by deleting
-            # this skip): in long replay runs the sim kills shape 2's
-            # stroke walk ~13 ticks after its arm with a push-like state
-            # reset (pending+pWire staged, sOn killed) and no fed edge,
-            # no detector transition -- deterministic (same tick, same
-            # pixels, every run), harness-specific (painttest's identical
-            # stroke on the identical graph is green, as is a clean-room
-            # mini of this exact shape; translations, retained store and
-            # clear below all pass on this same wall).  Chip exonerated;
-            # sim-harness root cause undetermined despite full
-            # instrumentation (fed log, detector-transition log,
-            # per-tick walk trace, both var readers agreeing, wiring
-            # verified exclusive, no timers/queues/chip-calls in the
-            # chip).  The wall diff below would catch a real regression
-            # in the composed shapes, so it stays as a skip, not a
-            # delete.
-            _skip_wall3 = True
+            # Root cause of the quarantined kill (fixed in irsims): the
+            # sim's exec drain ran exec-class nodes queued on DATA ports,
+            # so the driver's outNum(4, 0.0) after shape 2's fire re-ran
+            # the push handler's staging tail with pushShape steady --
+            # pending+pWire(False) staged, the stroke walk killed ~13
+            # ticks after its arm.  Deterministic every run, invisible in
+            # painttest (staging there always precedes its own push, and
+            # bursts finish before the next stage).  The chip was never
+            # at fault; the drain now gates exec bodies to exec pins.
             want3 = {p: (1.0, 0.0, 0.0, 1.0) for p in poly_pixels(sq)}
             for p in stroke_pixels([30.0, 30.0, 50.0, 30.0,
                                     30.0, 50.0]):
@@ -507,16 +499,9 @@ def main():
             bad3 = [i for i in range(SW * SW)
                     if snap_holder["wall3"][i] != want3.get(
                         i, (0.0, 0.0, 0.0, 1.0))]
-            if _skip_wall3:
-                ok &= expect(True, "moved square paints through chain "
-                             "(SKIPPED, see note above)", "")
-                if bad3:
-                    print("   (quarantined diff would be %d, first at %d)"
-                          % (len(bad3), bad3[0]))
-            else:
-                ok &= expect(not bad3, "moved square paints through chain",
-                             "%d of 4096 differ, first at %d"
-                             % (len(bad3), bad3[0] if bad3 else 0))
+            ok &= expect(not bad3, "moved square paints through chain",
+                         "%d of 4096 differ, first at %d"
+                         % (len(bad3), bad3[0] if bad3 else 0))
         else:
             ok &= expect(False, "moved square paints through chain",
                          "no snapshot (only %d redraws)" % len(reds))

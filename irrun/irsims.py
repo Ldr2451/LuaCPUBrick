@@ -512,11 +512,25 @@ class Sim:
                 if (nid, port) in self.tick_done:
                     continue
                 self.tick_done.add((nid, port))
-                self.fired_nodes.add(nid)
-                self.fired_ports.add((nid, port))
                 node = self.nodes.get(nid)
                 if node is None:
                     continue
+                # Data wakes never run exec bodies.  A value change on an
+                # input port re-queues every RER_Output reader, data ports
+                # included -- without this gate the drain below executes an
+                # exec node (var set/get, branch, union, ...) queued on a
+                # data port, running its writes and ExecOut chain with no
+                # exec pulse.  Hardware does nothing in that case, and the
+                # phantom run is observable: a wireMode transition re-ran
+                # the screen's push-staging tail (pending+pWire staged, live
+                # walks killed) with pushShape steady.  Change detectors are
+                # data-driven by design and are not gated.
+                if port not in ("Exec", "ExecA", "ExecB") \
+                        and "WireGraph_Exec_" in getattr(node, "cls", "") \
+                        and "ChangeDetector" not in getattr(node, "cls", ""):
+                    continue
+                self.fired_nodes.add(nid)
+                self.fired_ports.add((nid, port))
                 nq: set[tuple[int, str]] = set()
                 self._exec_node(nid, node, nq)
                 for item in sorted(nq, key=lambda x: x[0]):
