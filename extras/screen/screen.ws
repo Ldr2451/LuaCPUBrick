@@ -29,6 +29,12 @@
 // recomposite without the black clear and refreshes the last
 // immediate shape, so the wall follows with no push and no
 // drawAll.
+// screenError reports the nesting verdict as a float: 0.0 clean,
+// 1.0 the last staged shape's ancestor chain was still live after
+// 8 steps (deeper than 8, or cyclic -- with 8 slots the longest
+// acyclic chain is 8, so in practice a cycle).  Sticky, cleared
+// on push and clearAll; the shape still paints with the 8-fold
+// composition, so the wall never blanks -- the flag is the signal.
 // true scanline interpolation -- each row's span takes the
 // colours of its two crossing edges (lerped along the edges by
 // row), then lerps across the span -- so a polygon with
@@ -327,6 +333,7 @@ var bRC15: color = Color(1.0, 1.0, 1.0, 1.0)
 var bPF: float = 0.0
 var bPL: float = 0.0
 var bSEGS: float = 0.0
+var errFlag: float = 0.0
 var commitR: bool = false
 var fromSlot: bool = false
 var clearing: bool = false
@@ -8740,6 +8747,7 @@ var g4094: color = Color(0.0, 0.0, 0.0, 1.0)
 out px4094: color = g4094
 var g4095: color = Color(0.0, 0.0, 0.0, 1.0)
 out px4095: color = g4095
+out screenError: float = errFlag
 
 // No prev-edge flags anywhere in this file, deliberately.  on Change fires
 // only on a transition, so the event IS the edge.  A same-handler
@@ -8762,6 +8770,7 @@ on Change(pushShape) {
     sOn = false
     rcOn = false
     brightRC = false
+    errFlag = 0.0
     clearing = false
     fromSlot = false
     arming = false
@@ -8906,6 +8915,7 @@ on Change(clearAll) {
     sLive = false
     rcOn = false
     brightRC = false
+    errFlag = 0.0
     slLive[0] = 0.0
     slLive[1] = 0.0
     slLive[2] = 0.0
@@ -9759,6 +9769,9 @@ mod paintTick() {
         }
       } else {
         cur = 0.0
+      }
+      if cur >= 1.0 {
+        errFlag = 1.0
       }
       let ct = cos(wr)
       let st = sin(wr)

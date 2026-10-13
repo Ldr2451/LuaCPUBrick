@@ -1107,6 +1107,98 @@ def main():
                          "%d of 4096 differ, first at %d"
                          % (len(badx), badx[0] if badx else 0))
 
+        # ---- nesting errors light screenError, never blank the wall ----
+        # A self-parented slot is a cycle (with 8 slots the longest
+        # acyclic chain is 8, so anything live past 8 steps is one):
+        # the flag reads 1.0 while the shape still paints with the
+        # 8-fold composition, and a clean push clears it.  Three
+        # retained commits, snapshotted each time.
+        ecommits = [
+            (sq1, [RED] * 4, 1.0, (0.0, 0.0), 0.0, (1.0, 1.0), 1.0),
+            (sq1, [RED] * 4, 1.0, (4.0, 0.0), 0.0, (1.0, 1.0), 1.0),
+            (sq1, [RED] * 4, 1.0, (0.0, 0.0), 0.0, (0.0, 0.0), 0.0),
+        ]
+        eplan = {}
+        t = 10
+        eends = []
+        for pts, cols, sid, pos, ang, scl, par in ecommits:
+            eplan[t] = {"shapePoints": list(pts),
+                        "shapeColors": list(cols),
+                        "wireMode": False, "shapeId": sid,
+                        "position": (pos[0], pos[1], 0.0),
+                        "rotation": (0.0, 0.0, ang),
+                        "scale": (scl[0], scl[1], 1.0),
+                        "parentShapeId": par}
+            eplan[t + 2] = {"pushShape": True}
+            eplan[t + 4] = {"pushShape": False}
+            eplan[t + 6] = {"drawAll": True}
+            eplan[t + 8] = {"drawAll": False}
+            t += 64 + 110
+            eends.append(t)
+        etotal = t + 20
+
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        errid = None
+        for nid, nd in sim.nodes.items():
+            if _extract(nd.props.get("_label", ("raw", ""))) == "errFlag":
+                errid = nid
+        assert errid is not None, "no errFlag var"
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "drawAll": False,
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+        esnaps = {}
+        eerrs = {}
+
+        def watche(sn, tick):
+            if tick in eplan:
+                step = eplan[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints" and k != "shapeColors"}
+                sn.inputs = dict(sn.inputs, **step)
+            if tick in eends:
+                esnaps[tick] = {i: col(sn, gids, i)
+                                for i in range(SW * SW)}
+                eerrs[tick] = float(sn.vars.get(errid, -1.0))
+
+        sim.run(etotal, on_tick=watche)
+
+        want1 = {p: RED for p in poly_pixels(sq1)}
+        bade1 = [i for i in range(SW * SW)
+                 if esnaps[eends[0]].get(i, BLACK) != want1.get(i, BLACK)]
+        ok &= expect(not bade1, "cyclic parent still paints",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bade1), bade1[0] if bade1 else 0))
+        ok &= expect(eerrs[eends[0]] == 1.0, "cycle lights screenError",
+                     "%r" % eerrs[eends[0]])
+        # local (4,0) plus 8 identical ancestor folds = +36 x
+        eworld = ((4.0, 0.0), 0.0, (1.0, 1.0))
+        for _ in range(8):
+            eworld = xf_compose(((4.0, 0.0), 0.0, (1.0, 1.0)), eworld)
+        ewpos, ewang, ewscl = eworld
+        want2 = {p: RED
+                 for p in poly_pixels(xf_points(sq1, ewpos, ewang, ewscl))}
+        bade2 = [i for i in range(SW * SW)
+                 if esnaps[eends[1]].get(i, BLACK) != want2.get(i, BLACK)]
+        ok &= expect(not bade2, "8-fold composition paints exact",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bade2), bade2[0] if bade2 else 0))
+        ok &= expect(eerrs[eends[1]] == 1.0, "flag stays lit",
+                     "%r" % eerrs[eends[1]])
+        bade3 = [i for i in range(SW * SW)
+                 if esnaps[eends[2]].get(i, BLACK) != want1.get(i, BLACK)]
+        ok &= expect(not bade3, "clean push repaints",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bade3), bade3[0] if bade3 else 0))
+        ok &= expect(eerrs[eends[2]] == 0.0, "clean push clears flag",
+                     "%r" % eerrs[eends[2]])
+
         # ---- the load-time phantom paints correctly -----------------------
         # Tick-0 seeding fires every Change detector once, so a walk arms
         # from the seeded array with no pulse at all.  Seed a real closed

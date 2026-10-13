@@ -64,6 +64,12 @@ L.append("// painted colour immediately: its edge reruns the retained")
 L.append("// recomposite without the black clear and refreshes the last")
 L.append("// immediate shape, so the wall follows with no push and no")
 L.append("// drawAll.")
+L.append("// screenError reports the nesting verdict as a float: 0.0 clean,")
+L.append("// 1.0 the last staged shape's ancestor chain was still live after")
+L.append("// 8 steps (deeper than 8, or cyclic -- with 8 slots the longest")
+L.append("// acyclic chain is 8, so in practice a cycle).  Sticky, cleared")
+L.append("// on push and clearAll; the shape still paints with the 8-fold")
+L.append("// composition, so the wall never blanks -- the flag is the signal.")
 L.append("// true scanline interpolation -- each row's span takes the")
 L.append("// colours of its two crossing edges (lerped along the edges by")
 L.append("// row), then lerps across the span -- so a polygon with")
@@ -232,6 +238,13 @@ for i in range(MAXP):
 L.append("var bPF: float = 0.0")
 L.append("var bPL: float = 0.0")
 L.append("var bSEGS: float = 0.0")
+# The nesting verdict for the error port: sticky, cleared on push and
+# clearAll (fresh verdict per staged shape), set when an ancestor walk
+# still has a live parent after its 8 steps -- deeper than 8, or, with
+# 8 slots holding the longest acyclic chain at 8, cyclic in practice.
+# Read out as screenError (0.0 clean, 1.0 unresolved chain).  Set
+# combinationally inside existing walk steps: zero new ticks.
+L.append("var errFlag: float = 0.0")
 L.append("var commitR: bool = false")
 L.append("var fromSlot: bool = false")
 L.append("var clearing: bool = false")
@@ -295,6 +308,10 @@ L.append("")
 for i in range(NP):
     L.append("var g%d: color = Color(0.0, 0.0, 0.0, 1.0)" % i)
     L.append("out px%d: color = g%d" % (i, i))
+# The error port mirrors the nesting verdict like the wall mirrors the
+# framebuffer: no side annotation, referenceable by name in saves and
+# merges, no prefab cost (one scalar against the wall's 4096).
+L.append("out screenError: float = errFlag")
 L.append("")
 
 L.append("// No prev-edge flags anywhere in this file, deliberately.  on Change fires")
@@ -318,6 +335,7 @@ L.append("    polyOn = false")
 L.append("    sOn = false")
 L.append("    rcOn = false")
 L.append("    brightRC = false")
+L.append("    errFlag = 0.0")
 L.append("    clearing = false")
 L.append("    fromSlot = false")
 L.append("    arming = false")
@@ -418,6 +436,7 @@ L.append("    sOn = false")
 L.append("    sLive = false")
 L.append("    rcOn = false")
 L.append("    brightRC = false")
+L.append("    errFlag = 0.0")
 L.append("    slLive[0] = 0.0")
 L.append("    slLive[1] = 0.0")
 L.append("    slLive[2] = 0.0")
@@ -669,6 +688,14 @@ for _s in range(8):
     L.append("      } else {")
     L.append("        cur = 0.0")
     L.append("      }")
+# A chain still live after the 8th step is deeper than supported --
+# with 8 slots the longest acyclic chain is 8, so in practice cyclic:
+# flag it sticky for the error port (cleared at push/clearAll).  The
+# shape still paints with the 8-fold composition (defined, degraded),
+# so the wall never blanks on a bad parent -- the flag is the signal.
+L.append("      if cur >= 1.0 {")
+L.append("        errFlag = 1.0")
+L.append("      }")
 L.append("      let ct = cos(wr)")
 L.append("      let st = sin(wr)")
 for i in range(MAXP):
