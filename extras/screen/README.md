@@ -47,7 +47,7 @@ without it.
 ```
 
 `pushShape` latches a shape -- its per-point colours, fill-vs-stroke,
-and slot -- and `drawAll` paints it: one row per tick, the ports
+and slot -- and `drawAll` paints it: two rows per tick, the ports
 mirror the framebuffer every tick.  (The draw input is called
 `drawAll`, not `redrawAll`: without it nothing is painted at all.)
 Points arrive on `shapePoints` as pixel-corner coordinates (a rect
@@ -127,7 +127,7 @@ is demonstrated by `showcase2.lua`.
 
 ```
 python -u extras/screen/painttest.py           # fills, strokes, retained, colours, xf, ~230s
-python -u extras/screen/animtest.py [ticks]    # anim.lua end to end (45 ticks/frame)
+python -u extras/screen/animtest.py [ticks]    # anim.lua end to end (43 ticks/frame)
 python -u extras/screen/showtest.py [ticks]    # showcase.lua end to end
 python -u extras/screen/showtest2.py [ticks]   # showcase2.lua end to end
 ```

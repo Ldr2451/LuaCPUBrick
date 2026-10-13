@@ -192,7 +192,8 @@ def main():
         ok &= expect(seq_ok, "push-then-redraw ordering")
         # no redraw may fire while the previous burst could still be
         # running: pair each redraw with its shape and require the gap to
-        # cover that shape's rows (a polygon burst is one tick per row)
+        # cover that shape's rows (a polygon burst is two rows
+        # per tick, so this is conservative)
         def shape_rows(pts):
             px = poly_pixels(pts)
             return (max((p // SW for p in px), default=0) -
