@@ -39,6 +39,11 @@ without it.
                 shapeId --|           |
                 drawAll --|           |
                clearAll --|           |
+               position --|           |
+               rotation --|           |
+                  scale --|           |
+           parentShapeId --|           |
+              brightness --|           |
 ```
 
 `pushShape` latches a shape -- its per-point colours, fill-vs-stroke,
@@ -72,6 +77,32 @@ every slot: it does NOT touch the wall.  The next `drawAll` runs a
 64-tick black fill, so a driver can clear memory and compose the next
 image before anything changes on screen (pulse `clearAll` like a
 push; nothing replays afterwards, since both live flags die with it).
+
+`position`, `rotation`, `scale` and `parentShapeId` are all optional
+(a direct driver can leave them unwired; the connector drives the
+first three from the CPU's output string array and the fourth from
+its second string output).  A push stages them with the shape, and a
+retained slot stores them with it -- so the CPU sends base geometry
+once and then moves, rotates or scales it without recomputing a
+single point.  Before either arm runs, the staged points are
+transformed once: scale, rotate about the origin by `rotation.z`
+(radians), translate.  The staged transform is first composed
+through every ancestor -- pushing a shape with `parentShapeId` N
+attaches it to slot N, pushing it with 0 detaches it -- so one push
+to a parent's slot moves, rotates or scales the whole object: every
+child (and grandchild -- the walk is capped at 8 steps, the slot
+count, so the deepest acyclic chain resolves, and a dead, missing or
+out-of-range parent, or a cycle, resolves to identity above it)
+follows.  Unwired vectors read zeroes: position/rotation zero are the
+identity, and scale zeroes mean identity too.
+
+`brightness` is a live user slider the connector never drives -- it
+stays unwired in the shipped save.  It takes 1 to 100, capped both
+ends; an unwired port reads 0.0, which means the 100 default.  Every
+painted colour's RGB is scaled by it (alpha is untouched -- brightness
+is not opacity), and it applies on the next `drawAll` with no
+restaging.  The wall bricks are emissive (`BMC_Glow`), so colours
+read as emitted light and the slider is a dimmer for the whole wall.
 Colors persist until rewritten, so a frame is a sequence of
 push-then-draw pairs, and the wall keeps the last color forever -- no
 keepalive, no expiry.  The last push before a `drawAll` wins, so a
@@ -89,7 +120,7 @@ is demonstrated by `showcase2.lua`.
 ## Running the tests
 
 ```
-python -u extras/screen/painttest.py           # fills, strokes, retained, colours, ~165s
+python -u extras/screen/painttest.py           # fills, strokes, retained, colours, xf, ~230s
 python -u extras/screen/animtest.py [ticks]    # anim.lua end to end (45 ticks/frame)
 python -u extras/screen/showtest.py [ticks]    # showcase.lua end to end
 python -u extras/screen/showtest2.py [ticks]   # showcase2.lua end to end
@@ -100,13 +131,18 @@ clipped rect, alpha, triangle, convex hull, oval, hairline, thick
 line, full wall -- then a per-point gradient rect (every pixel the
 exact bilinear blend), a wireframe, an open curve, a dot and a
 diagonal gradient stroke, then four retained commits (store, compose,
-edit in place, delete), and diffs the wall against models of every
-fill and colour, so a dropped span, a bad hull, a torn stroke, a
-stale slot, a wrong gradient or an off-by-one row shows up as a pixel
-diff.  A load-time edge on an unwired stage paints nothing (a zero
-point array is a degenerate shape), a seeded array paints a correct
-prefix through whichever walk arms first, and a bare `drawAll`
-replays the last shape.
+edit in place, delete), the brightness slider (dimmed RGB at 50,
+full colours at the unwired 0.0 default, alpha untouched both ways),
+and five transform commits (a scaled+moved square, a rotated rect
+edit, a child attached to slot 1, the parent moved again with the
+child following, the child deleted) -- and diffs the wall against
+models of every fill, colour and transform, so a dropped span, a bad
+hull, a torn stroke, a stale slot, a wrong gradient, a miscomposed
+parent or an off-by-one row shows up as a pixel diff.  A load-time
+edge on an unwired stage paints nothing (a zero point array is a
+degenerate shape), a seeded array paints a correct prefix through
+whichever walk arms first, and a bare `drawAll` replays the last
+shape.
 
 The sim's `Expr_Math` gates are float-only and coerce colour tuples
 to 0.0, so `colormath.install()` (imported by every colour-checking

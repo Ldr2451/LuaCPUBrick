@@ -158,11 +158,11 @@ def main():
                        "shapeColors": [],
                        "pushShape": False, "wireMode": False,
                        "shapeId": 0.0, "drawAll": False,
-                       "clearAll": False}
+                       "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
-        last_slid = [None]
+        last_slid = [None, None]
 
         def hook2(s, tick):
             if tick >= T_end:
@@ -170,9 +170,10 @@ def main():
             _p, _r, _c, _w, a, st = samples[tick]
             b = samples[tick - 2] if tick >= 2 else (0, 0, 0, 0, [], "")
             pts, cols = tight(a)
-            if pts != last_slid[0]:
+            if pts != last_slid[0] or cols != last_slid[1]:
                 slide(s, spts, scols, pts, cols)
                 last_slid[0] = pts
+                last_slid[1] = cols
             s.inputs = dict(s.inputs, **{
                 "pushShape": (b[0] or 0.0) > 0.5,
                 "wireMode": (b[3] or 0.0) > 0.5,

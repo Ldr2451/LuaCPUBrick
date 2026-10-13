@@ -238,7 +238,7 @@ def main():
                        "shapeColors": [],
                        "pushShape": False, "wireMode": False,
                        "shapeId": 0.0, "drawAll": False,
-                       "clearAll": False}
+                       "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}

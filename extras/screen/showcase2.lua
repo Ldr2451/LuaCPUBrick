@@ -140,8 +140,8 @@ while true do
   -- 2. the morph: square -> circle, colours shifting as it goes
   outStr(1, "2")
   local f = 0
-  while f < 10 do
-    morph(f / 10.0, hue)
+  while f < 6 do
+    morph(f / 6.0, hue)
     hue = hue + 3
     f = f + 1
   end
@@ -152,7 +152,7 @@ while true do
   local mx, my = 8.0, 12.0
   local vx, vy = 3.0, 2.0
   f = 0
-  while f < 8 do
+  while f < 5 do
     mover(mx, my, hue)
     hue = hue + 3
     mx = mx + vx

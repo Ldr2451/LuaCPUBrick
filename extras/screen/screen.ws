@@ -8,12 +8,24 @@
 // gates directly by remote wire.
 //
 // Protocol: pushShape latches a shape -- its point colours,
-// fill-vs-stroke, and slot -- and drawAll paints the CURRENT
-// shape: the latched one, else the last one again.  The point
-// count is the array's length (the connector delivers a tight
-// list; a direct driver sends exactly as many points as the
-// shape has).  shapeColors is optional and per-point: one
-// colour per point, white where absent.  Pixels are coloured by
+// fill-vs-stroke, slot, transform and parent -- and drawAll
+// paints the CURRENT shape: the latched one, else the last
+// one again.  The point count is the array's length (the
+// connector delivers a tight list; a direct driver sends
+// exactly as many points as the shape has).  shapeColors is
+// optional and per-point: one colour per point, white where
+// absent.  position, rotation, scale and parentShapeId are
+// optional too: the staged points are transformed once per
+// staged shape -- scale, rotate about the origin by
+// rotation.z (radians), translate -- after composing the
+// staged transform through every ancestor, so a child follows
+// its parent (and grandparent) with one push to the parent's
+// slot; parent 0 (or a dead/missing parent) is the identity,
+// and unwired vectors read zeroes (position/rotation zero are
+// the identity, scale zeroes mean identity too).  brightness
+// is a live user slider the connector never drives (1..100,
+// capped; unwired reads 0.0, the 100 default): it scales every
+// painted colour and applies on the next drawAll.
 // true scanline interpolation -- each row's span takes the
 // colours of its two crossing edges (lerped along the edges by
 // row), then lerps across the span -- so a polygon with
@@ -64,6 +76,11 @@ const MAXP = 16
 @left in shapeId: float
 @left in drawAll: bool
 @left in clearAll: bool
+@left in position: vector
+@left in rotation: vector
+@left in scale: vector
+@left in parentShapeId: float
+@left in brightness: float
 
 const SW = 64
 const SH = 64
@@ -120,12 +137,27 @@ var gxMin: float = 200.0
 var gxMax: float = -200.0
 var pWire: bool = false
 var pId: float = 0.0
+var pPos: vector = Vec(0.0, 0.0, 0.0)
+var pRot: vector = Vec(0.0, 0.0, 0.0)
+var pScl: vector = Vec(1.0, 1.0, 1.0)
+var pParent: float = 0.0
 var shPts: float[]
 var slPts: float[]
 var slPC: color[]
 var slMode: float[]
 var slLive: float[]
 var slCount: float[]
+var slXF: float[]
+var needXF: bool = false
+var wpx: float = 0.0
+var wpy: float = 0.0
+var wr: float = 0.0
+var wsx: float = 1.0
+var wsy: float = 1.0
+var cur: float = 0.0
+var swx: float = 0.0
+var swy: float = 0.0
+var bf: float = 1.0
 var rcOn: bool = false
 var rcSlot: float = 1.0
 var commitR: bool = false
@@ -8554,6 +8586,10 @@ on Change(pushShape) {
   if pushShape {
     pWire = wireMode
     pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)
+    pPos = position
+    pRot = rotation
+    pScl = scale
+    pParent = if parentShapeId < 0.0 then 0.0 else if parentShapeId > 8.0 then 8.0 else (parentShapeId | 0)
     pending = true
     polyOn = false
     sOn = false
@@ -8703,11 +8739,13 @@ mod paintTick() {
     shPts.resize(32, 0.0)
     slPts.resize(256, 0.0)
     slPC.resize(128, Color(1.0, 1.0, 1.0, 1.0))
+    slXF.resize(48, 0.0)
     slMode.resize(8, 0.0)
     slLive.resize(8, 0.0)
     slCount.resize(8, 0.0)
     fbInit = true
   }
+  bf = if brightness <= 0.0 then 1.0 else if brightness < 1.0 then 0.01 else if brightness > 100.0 then 1.0 else brightness / 100.0
   if commitR {
     commitR = false
     n = (shapePoints.length() / 2.0) | 0
@@ -8769,6 +8807,13 @@ mod paintTick() {
       slMode[slot] = if pWire then 1.0 else 0.0
       slLive[slot] = 1.0
       slCount[slot] = n
+      let xbase = slot * 6.0
+      slXF[xbase + 0.0] = pPos.x
+      slXF[xbase + 1.0] = pPos.y
+      slXF[xbase + 2.0] = pRot.z
+      slXF[xbase + 3.0] = if pScl.x == 0.0 then 1.0 else pScl.x
+      slXF[xbase + 4.0] = if pScl.y == 0.0 then 1.0 else pScl.y
+      slXF[xbase + 5.0] = pParent
     }
     rcOn = true
     rcSlot = 1.0
@@ -8837,6 +8882,11 @@ mod paintTick() {
         pC14 = slPC[li * 16 + 14.0]
         pC15 = slPC[li * 16 + 15.0]
         pWire = slMode[li] > 0.5
+        pPos = Vec(slXF[li * 6 + 0.0], slXF[li * 6 + 1.0], 0.0)
+        pRot = Vec(0.0, 0.0, slXF[li * 6 + 2.0])
+        pScl = Vec(slXF[li * 6 + 3.0], slXF[li * 6 + 4.0], 1.0)
+        pParent = slXF[li * 6 + 5.0]
+        needXF = true
         fromSlot = true
         if pWire {
           armingS = true
@@ -8899,6 +8949,302 @@ mod paintTick() {
       pC13 = if shapeColors.length() > 13 then shapeColors[13] else Color(1.0, 1.0, 1.0, 1.0)
       pC14 = if shapeColors.length() > 14 then shapeColors[14] else Color(1.0, 1.0, 1.0, 1.0)
       pC15 = if shapeColors.length() > 15 then shapeColors[15] else Color(1.0, 1.0, 1.0, 1.0)
+      needXF = true
+    }
+  }
+  if needXF {
+    needXF = false
+    if !clearing {
+      let lsx = if pScl.x == 0.0 then 1.0 else pScl.x
+      let lsy = if pScl.y == 0.0 then 1.0 else pScl.y
+      wpx = pPos.x
+      wpy = pPos.y
+      wr = pRot.z
+      wsx = lsx
+      wsy = lsy
+      cur = pParent
+      if cur >= 1.0 {
+        let pli = (cur - 1.0) | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wsx = psx * wsx
+          wsy = psy * wsy
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = (cur - 1.0) | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wsx = psx * wsx
+          wsy = psy * wsy
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = (cur - 1.0) | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wsx = psx * wsx
+          wsy = psy * wsy
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = (cur - 1.0) | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wsx = psx * wsx
+          wsy = psy * wsy
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = (cur - 1.0) | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wsx = psx * wsx
+          wsy = psy * wsy
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = (cur - 1.0) | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wsx = psx * wsx
+          wsy = psy * wsy
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = (cur - 1.0) | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wsx = psx * wsx
+          wsy = psy * wsy
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = (cur - 1.0) | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wsx = psx * wsx
+          wsy = psy * wsy
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      let ct = cos(wr)
+      let st = sin(wr)
+      let ox0 = shPts[0] * wsx
+      let oy0 = shPts[1] * wsy
+      shPts[0] = wpx + ((ox0 * ct) - (oy0 * st))
+      shPts[1] = wpy + ((ox0 * st) + (oy0 * ct))
+      let ox1 = shPts[2] * wsx
+      let oy1 = shPts[3] * wsy
+      shPts[2] = wpx + ((ox1 * ct) - (oy1 * st))
+      shPts[3] = wpy + ((ox1 * st) + (oy1 * ct))
+      let ox2 = shPts[4] * wsx
+      let oy2 = shPts[5] * wsy
+      shPts[4] = wpx + ((ox2 * ct) - (oy2 * st))
+      shPts[5] = wpy + ((ox2 * st) + (oy2 * ct))
+      let ox3 = shPts[6] * wsx
+      let oy3 = shPts[7] * wsy
+      shPts[6] = wpx + ((ox3 * ct) - (oy3 * st))
+      shPts[7] = wpy + ((ox3 * st) + (oy3 * ct))
+      let ox4 = shPts[8] * wsx
+      let oy4 = shPts[9] * wsy
+      shPts[8] = wpx + ((ox4 * ct) - (oy4 * st))
+      shPts[9] = wpy + ((ox4 * st) + (oy4 * ct))
+      let ox5 = shPts[10] * wsx
+      let oy5 = shPts[11] * wsy
+      shPts[10] = wpx + ((ox5 * ct) - (oy5 * st))
+      shPts[11] = wpy + ((ox5 * st) + (oy5 * ct))
+      let ox6 = shPts[12] * wsx
+      let oy6 = shPts[13] * wsy
+      shPts[12] = wpx + ((ox6 * ct) - (oy6 * st))
+      shPts[13] = wpy + ((ox6 * st) + (oy6 * ct))
+      let ox7 = shPts[14] * wsx
+      let oy7 = shPts[15] * wsy
+      shPts[14] = wpx + ((ox7 * ct) - (oy7 * st))
+      shPts[15] = wpy + ((ox7 * st) + (oy7 * ct))
+      let ox8 = shPts[16] * wsx
+      let oy8 = shPts[17] * wsy
+      shPts[16] = wpx + ((ox8 * ct) - (oy8 * st))
+      shPts[17] = wpy + ((ox8 * st) + (oy8 * ct))
+      let ox9 = shPts[18] * wsx
+      let oy9 = shPts[19] * wsy
+      shPts[18] = wpx + ((ox9 * ct) - (oy9 * st))
+      shPts[19] = wpy + ((ox9 * st) + (oy9 * ct))
+      let ox10 = shPts[20] * wsx
+      let oy10 = shPts[21] * wsy
+      shPts[20] = wpx + ((ox10 * ct) - (oy10 * st))
+      shPts[21] = wpy + ((ox10 * st) + (oy10 * ct))
+      let ox11 = shPts[22] * wsx
+      let oy11 = shPts[23] * wsy
+      shPts[22] = wpx + ((ox11 * ct) - (oy11 * st))
+      shPts[23] = wpy + ((ox11 * st) + (oy11 * ct))
+      let ox12 = shPts[24] * wsx
+      let oy12 = shPts[25] * wsy
+      shPts[24] = wpx + ((ox12 * ct) - (oy12 * st))
+      shPts[25] = wpy + ((ox12 * st) + (oy12 * ct))
+      let ox13 = shPts[26] * wsx
+      let oy13 = shPts[27] * wsy
+      shPts[26] = wpx + ((ox13 * ct) - (oy13 * st))
+      shPts[27] = wpy + ((ox13 * st) + (oy13 * ct))
+      let ox14 = shPts[28] * wsx
+      let oy14 = shPts[29] * wsy
+      shPts[28] = wpx + ((ox14 * ct) - (oy14 * st))
+      shPts[29] = wpy + ((ox14 * st) + (oy14 * ct))
+      let ox15 = shPts[30] * wsx
+      let oy15 = shPts[31] * wsy
+      shPts[30] = wpx + ((ox15 * ct) - (oy15 * st))
+      shPts[31] = wpy + ((ox15 * st) + (oy15 * ct))
     }
   }
   if arming {
@@ -9655,6 +10001,8 @@ mod paintTick() {
           let span = x3_0 - n3_0
           let inv = if span > 0.0 then 1.0 / span else 0.0
           rowSlope = (xc3_0 - cLo) * inv
+          cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf, cLo.a)
+          rowSlope = Color(rowSlope.r * bf, rowSlope.g * bf, rowSlope.b * bf, rowSlope.a)
         }
       }
     }
@@ -9836,6 +10184,8 @@ mod paintTick() {
             let span = umx - umn
             let inv = if span > 0.0 then 1.0 / span else 0.0
             rowSlope = (umxc - cLo) * inv
+            cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf, cLo.a)
+            rowSlope = Color(rowSlope.r * bf, rowSlope.g * bf, rowSlope.b * bf, rowSlope.a)
           }
         } else {
           pcol = 200.0

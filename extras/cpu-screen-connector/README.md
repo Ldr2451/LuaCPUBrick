@@ -20,7 +20,11 @@ connectortest.py          three-chip chain: driver -> connector -> screen
              outNum4 --|           |-- wireMode
              outStr1 --|           |-- shapeId
            outNumArr --|           |-- shapeColors
-                       |           |-- shapePoints
+             outStr2 --|           |-- shapePoints
+           outStrArr --|           |-- position
+                       |           |-- rotation
+                       |           |-- scale
+                       |           |-- parentShapeId
 ```
 
 `outNum1`/`outNum2`/`outNum3` pulse push/draw/clear straight through
@@ -32,7 +36,6 @@ touch them -- like `anim.lua` -- behave exactly as before.
 
 `outNumArr` carries POINTS FIRST, then the colours, separated by one
 terminator (1-based Lua slots):
-
 ```
 1..2k   points x1, y1, x2, y2, ... (at most 16 points)
 2k+1    terminator: any value <= -1 in the x slot after the last
@@ -60,18 +63,36 @@ never leak in as `(0,0)` points; forgetting the terminator reads up to
 shape (paints nothing, deletes a retained slot).  The colour floats
 feed real `Color` outputs -- the one thing the Lua chip cannot emit
 itself -- and the points are truncated to a tight array the screen's
-length-based count reads directly.  Everything is combinational except
-a one-tick array pass, and nothing is retained: every output is a
-pure function of the current inputs.
+length-based count reads directly.
+
+`outStr2` carries the parent slot id as text (`"0"`..`"8"`, empty =
+no parent), parsed the same pure way as `outStr1`.  `outStrArr`
+carries the transform as nine numeric strings (1-based slots):
+
+```
+1..3   position x, y, z (only x and y are used)
+4..6   rotation x, y, z (only z, radians about the origin)
+7..9   scale x, y, z (only x and y; zeroes mean identity)
+```
+
+Missing or garbage slots parse to 0.0, which the screen defaults, so
+a driver that never touches `outStrArr` behaves exactly as before --
+and a driver that only moves shapes writes just slots 1..2.
+(`outStrArr` takes at most 8 values a call, like `outNumArr`, so all
+nine slots are two calls.)
+
+Everything is combinational except a one-tick array pass, and nothing
+is retained: every output is a pure function of the current inputs.
 
 ## Running the test
 
 ```
-python -u extras/cpu-screen-connector/connectortest.py   (~10 min)
+python -u extras/cpu-screen-connector/connectortest.py   (~14 min)
 ```
 
-A small Lua driver pushes a fill, a stroke (via `outNum4`), a retained
+A small Lua driver pushes a fill, a stroke (via `outNum4`), a moved
+square (transform via `outStrArr`, parent via `outStr2`), a retained
 store (via `outStr1`) and the clear pulse (via `outNum3`) through all
 three chips; the wall is diffed against the protocol model, and the
 connector's own translation is spot-checked (tight points, the colour
-slice behind the terminator).
+slice behind the terminator, the parsed vecs and parent id).

@@ -152,6 +152,10 @@ pub(super) fn emit_pixel_wall(
             position,
             // The brick's own save colour: black until the changer is driven.
             color: brdb::Color::monochrome(0),
+            // Pixels glow: the wall is a light source, not a painted
+            // surface, so colours read as emitted light at any distance.
+            // The chip's brightness input scales the emitted colour.
+            material: brdb::assets::materials::GLOW,
             // Pixels are look-only: no player/weapon/tool/physics collision.
             collision: no_collision(),
             ..Default::default()

@@ -15,7 +15,11 @@
 //   Lua outNum4 ----> outNum4 |           | wireMode -------> screen wireMode
 //   Lua outStr1 ----> outStr1 |           | shapeId --------> screen shapeId
 //   Lua outNumArr --> outNumArr|           | drawAll -------> screen drawAll
-//                                          | clearAll -------> screen clearAll
+//   Lua outStr2 ----> outStr2 |           | clearAll -------> screen clearAll
+//   Lua outStrArr --> outStrArr|           | position -------> screen position
+//                                          | rotation -------> screen rotation
+//                                          | scale ----------> screen scale
+//                                          | parentShapeId --> screen parentShapeId
 //
 // The Lua protocol, 1-based slots in outNumArr (see extras/screen/anim.lua):
 //   1..2k   points x1, y1, x2, y2, ... as many pairs as the shape needs
@@ -45,6 +49,19 @@
 // screen's id numeric keeps strings out of its hot exec path, and an
 // empty/garbage string parses to 0.0 = immediate, so old drivers that
 // never touch outStr1 keep working, as do untouched outNum3/4).
+// outStr2 carries the parent slot the same way ("0".."8", empty means
+// no parent): pushing a shape with a parent attaches it, pushing with
+// an empty outStr2 detaches it again.
+// The transform rides the CPU's output string array, 1-based slots:
+//   1..3   position x, y, z (only x and y are used)
+//   4..6   rotation x, y, z (only z, radians about the origin)
+//   7..9   scale x, y, z (only x and y; zeroes mean identity)
+// Missing or garbage slots parse to 0.0, and the screen defaults
+// those (scale zeroes mean identity there too), so a driver that
+// never touches outStrArr behaves exactly as before -- and a driver
+// that only moves shapes writes just slots 1..2.  (outStrArr takes at
+// most 8 values a call, like outNumArr, so all nine slots are two
+// calls.)
 // The screen receives two tight arrays -- points of length 2*k and one
 // colour per point -- so its length-based count just works with no
 // sentinel logic there, and a direct driver (no bridge) can wire the
@@ -55,16 +72,25 @@ in outNum3: float
 in outNum4: float
 in outStr1: string
 in outNumArr: float[]
+in outStr2: string
+in outStrArr: string[]
 var pts: float[]
 var cfl: float[]
 var cols: color[]
+var tpos: vector = Vec(0.0, 0.0, 0.0)
+var trot: vector = Vec(0.0, 0.0, 0.0)
+var tscl: vector = Vec(1.0, 1.0, 1.0)
 out pushShape: bool = outNum1 > 0.5
 out drawAll: bool = outNum2 > 0.5
 out clearAll: bool = outNum3 > 0.5
 out wireMode: bool = outNum4 > 0.5
 out shapeId: float = ParseNumber(outStr1)
+out parentShapeId: float = ParseNumber(outStr2)
 out shapePoints: float[] = pts
 out shapeColors: color[] = cols
+out position: vector = tpos
+out rotation: vector = trot
+out scale: vector = tscl
 mod passArrays() {
   // the point scan and the terminator's value travel together: the same
   // literal-index chain, the x slot that ends the points also says how
@@ -93,6 +119,12 @@ mod passArrays() {
   cols[13] = if nc > 55 then Color(cfl[52], cfl[53], cfl[54], cfl[55]) else Color(1.0, 1.0, 1.0, 1.0)
   cols[14] = if nc > 59 then Color(cfl[56], cfl[57], cfl[58], cfl[59]) else Color(1.0, 1.0, 1.0, 1.0)
   cols[15] = if nc > 63 then Color(cfl[60], cfl[61], cfl[62], cfl[63]) else Color(1.0, 1.0, 1.0, 1.0)
+  // The transform: nine fixed slots, no scan.  Unwritten slots read ""
+  // and parse to 0.0, which the screen defaults (scale zeroes mean
+  // identity), so these three builds are literal-index reads -- fast.
+  tpos = Vec(ParseNumber(outStrArr[0]), ParseNumber(outStrArr[1]), ParseNumber(outStrArr[2]))
+  trot = Vec(ParseNumber(outStrArr[3]), ParseNumber(outStrArr[4]), ParseNumber(outStrArr[5]))
+  tscl = Vec(ParseNumber(outStrArr[6]), ParseNumber(outStrArr[7]), ParseNumber(outStrArr[8]))
 }
 on Clock(interval = 0.01) {
   passArrays()

@@ -43,12 +43,24 @@ L.append("// bounds), and nobody outside needs them -- the wall taps the inner o
 L.append("// gates directly by remote wire.")
 L.append("//")
 L.append("// Protocol: pushShape latches a shape -- its point colours,")
-L.append("// fill-vs-stroke, and slot -- and drawAll paints the CURRENT")
-L.append("// shape: the latched one, else the last one again.  The point")
-L.append("// count is the array's length (the connector delivers a tight")
-L.append("// list; a direct driver sends exactly as many points as the")
-L.append("// shape has).  shapeColors is optional and per-point: one")
-L.append("// colour per point, white where absent.  Pixels are coloured by")
+L.append("// fill-vs-stroke, slot, transform and parent -- and drawAll")
+L.append("// paints the CURRENT shape: the latched one, else the last")
+L.append("// one again.  The point count is the array's length (the")
+L.append("// connector delivers a tight list; a direct driver sends")
+L.append("// exactly as many points as the shape has).  shapeColors is")
+L.append("// optional and per-point: one colour per point, white where")
+L.append("// absent.  position, rotation, scale and parentShapeId are")
+L.append("// optional too: the staged points are transformed once per")
+L.append("// staged shape -- scale, rotate about the origin by")
+L.append("// rotation.z (radians), translate -- after composing the")
+L.append("// staged transform through every ancestor, so a child follows")
+L.append("// its parent (and grandparent) with one push to the parent's")
+L.append("// slot; parent 0 (or a dead/missing parent) is the identity,")
+L.append("// and unwired vectors read zeroes (position/rotation zero are")
+L.append("// the identity, scale zeroes mean identity too).  brightness")
+L.append("// is a live user slider the connector never drives (1..100,")
+L.append("// capped; unwired reads 0.0, the 100 default): it scales every")
+L.append("// painted colour and applies on the next drawAll.")
 L.append("// true scanline interpolation -- each row's span takes the")
 L.append("// colours of its two crossing edges (lerped along the edges by")
 L.append("// row), then lerps across the span -- so a polygon with")
@@ -102,6 +114,11 @@ L.append("@left in wireMode: bool")
 L.append("@left in shapeId: float")
 L.append("@left in drawAll: bool")
 L.append("@left in clearAll: bool")
+L.append("@left in position: vector")
+L.append("@left in rotation: vector")
+L.append("@left in scale: vector")
+L.append("@left in parentShapeId: float")
+L.append("@left in brightness: float")
 L.append("")
 
 L.append("const SW = %d" % SW)
@@ -139,6 +156,14 @@ L.append("var gxMax: float = -200.0")
 # the array alongside, so a commit is atomic.
 L.append("var pWire: bool = false")
 L.append("var pId: float = 0.0")
+# Staged transform + parent, latched from the ports at the push edge the
+# same way (all optional: an unwired vector reads zeroes, an unwired id
+# reads 0.0 -- position/rotation zero are the identity, scale zeroes
+# mean identity too, parent 0 means no parent).
+L.append("var pPos: vector = Vec(0.0, 0.0, 0.0)")
+L.append("var pRot: vector = Vec(0.0, 0.0, 0.0)")
+L.append("var pScl: vector = Vec(1.0, 1.0, 1.0)")
+L.append("var pParent: float = 0.0")
 # One shadow array feeds both arms, so there is exactly one arm path:
 # immediate pushes copy the port into it (literal reads, fast), slot
 # loads copy a slot into it (computed reads, one pass per shape).
@@ -152,6 +177,28 @@ L.append("var slPC: color[]")
 L.append("var slMode: float[]")
 L.append("var slLive: float[]")
 L.append("var slCount: float[]")
+# Per-slot transform + parent: six floats (pos.x, pos.y, rot.z,
+# scl.x, scl.y, parent id) at base (k-1)*6.  Stored at commit from the
+# staged ports, loaded into the staging vars at recomposite.
+L.append("var slXF: float[]")
+# The point-transform working state: set by the shadow/slot load
+# (needXF), consumed once by the transform block before either arm.
+L.append("var needXF: bool = false")
+L.append("var wpx: float = 0.0")
+L.append("var wpy: float = 0.0")
+L.append("var wr: float = 0.0")
+L.append("var wsx: float = 1.0")
+L.append("var wsy: float = 1.0")
+L.append("var cur: float = 0.0")
+# Compose-step snapshots: nwx/nwy read the pre-step offset, but the
+# step writes wpx before nwy is assigned -- a pure let re-evaluates
+# per use, so without these the second write captures the first
+# (the same write-what-a-pending-let-reads trap the handlers avoid).
+L.append("var swx: float = 0.0")
+L.append("var swy: float = 0.0")
+# The live brightness factor (colour multiplier): recomputed every tick
+# from the brightness port, applied at each row setup.
+L.append("var bf: float = 1.0")
 # Recomposite state: a retained commit clears the wall with a black fill
 # and repaints every live slot in order through the same walks.
 L.append("var rcOn: bool = false")
@@ -233,6 +280,10 @@ L.append("on Change(pushShape) {")
 L.append("  if pushShape {")
 L.append("    pWire = wireMode")
 L.append("    pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)")
+L.append("    pPos = position")
+L.append("    pRot = rotation")
+L.append("    pScl = scale")
+L.append("    pParent = if parentShapeId < 0.0 then 0.0 else if parentShapeId > 8.0 then 8.0 else (parentShapeId | 0)")
 L.append("    pending = true")
 L.append("    polyOn = false")
 L.append("    sOn = false")
@@ -339,11 +390,20 @@ L.append("    fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))")
 L.append("    shPts.resize(32, 0.0)")
 L.append("    slPts.resize(256, 0.0)")
 L.append("    slPC.resize(128, Color(1.0, 1.0, 1.0, 1.0))")
+L.append("    slXF.resize(48, 0.0)")
 L.append("    slMode.resize(8, 0.0)")
 L.append("    slLive.resize(8, 0.0)")
 L.append("    slCount.resize(8, 0.0)")
 L.append("    fbInit = true")
 L.append("  }")
+# The live brightness factor: the brightness port is a user-set slider
+# the connector never drives (it stays unwired in the shipped save), 1
+# to 100, capped both ends; an unwired port reads 0.0, which means the
+# 100 default.  Applied per row-setup, so a twiddle takes effect on the
+# next drawAll with no restaging.
+L.append("  bf = if brightness <= 0.0 then 1.0 else if brightness < 1.0"
+         " then 0.01 else if brightness > 100.0 then 1.0"
+         " else brightness / 100.0")
 
 # ---- retained commit: store the staged shape, start recomposite ------------
 # A retained push (id 1..8) lands here on drawAll: the pushed points
@@ -372,6 +432,15 @@ for i in range(MAXP):
 L.append("      slMode[slot] = if pWire then 1.0 else 0.0")
 L.append("      slLive[slot] = 1.0")
 L.append("      slCount[slot] = n")
+L.append("      let xbase = slot * 6.0")
+L.append("      slXF[xbase + 0.0] = pPos.x")
+L.append("      slXF[xbase + 1.0] = pPos.y")
+L.append("      slXF[xbase + 2.0] = pRot.z")
+# Stored scales are defaulted (zeroes mean identity): the ancestor
+# walk can then compose without a per-step guard.
+L.append("      slXF[xbase + 3.0] = if pScl.x == 0.0 then 1.0 else pScl.x")
+L.append("      slXF[xbase + 4.0] = if pScl.y == 0.0 then 1.0 else pScl.y")
+L.append("      slXF[xbase + 5.0] = pParent")
 L.append("    }")
 L.append("    rcOn = true")
 L.append("    rcSlot = 1.0")
@@ -406,6 +475,11 @@ L.append("        sSegs = n")
 for i in range(MAXP):
     L.append("        pC%d = slPC[li * 16 + %d.0]" % (i, i))
 L.append("        pWire = slMode[li] > 0.5")
+L.append("        pPos = Vec(slXF[li * 6 + 0.0], slXF[li * 6 + 1.0], 0.0)")
+L.append("        pRot = Vec(0.0, 0.0, slXF[li * 6 + 2.0])")
+L.append("        pScl = Vec(slXF[li * 6 + 3.0], slXF[li * 6 + 4.0], 1.0)")
+L.append("        pParent = slXF[li * 6 + 5.0]")
+L.append("        needXF = true")
 L.append("        fromSlot = true")
 L.append("        if pWire {")
 L.append("          armingS = true")
@@ -432,6 +506,76 @@ for i in range(MAXP):
     L.append("      pC%d = if shapeColors.length() > %d"
              " then shapeColors[%d] else"
              " Color(1.0, 1.0, 1.0, 1.0)" % (i, i, i))
+L.append("      needXF = true")
+L.append("    }")
+L.append("  }")
+
+# ---- point transform: staged points -> world space ----------------------
+# Runs once per staged shape, after the shadow/slot load and before
+# either arm.  The world transform (own locals composed through every
+# ancestor) is resolved from the staging vars and the slot store, then
+# the 16 staged points are transformed in place: scale, rotate about
+# the origin by rotation.z (radians), translate.  Both arms then
+# proceed unchanged -- fills, strokes, replays and the retained store
+# all see world-space points.  The ancestor walk is straight-line and
+# capped at 8 steps (the slot count, so the deepest acyclic chain):
+# a dead, missing or out-of-range parent -- and a cycle, which can only
+# revisit -- resolves to identity above it, and an unparented shape
+# skips the walk entirely (its guard never fires, so the 48 slow
+# computed reads cost nothing in the sim).  The black clearing fill
+# skips the whole block: its corners are screen-space by construction.
+L.append("  if needXF {")
+L.append("    needXF = false")
+L.append("    if !clearing {")
+L.append("      let lsx = if pScl.x == 0.0 then 1.0 else pScl.x")
+L.append("      let lsy = if pScl.y == 0.0 then 1.0 else pScl.y")
+L.append("      wpx = pPos.x")
+L.append("      wpy = pPos.y")
+L.append("      wr = pRot.z")
+L.append("      wsx = lsx")
+L.append("      wsy = lsy")
+L.append("      cur = pParent")
+for _s in range(8):
+    # cur is always an integer in 0..8 (staging clamps it, the store
+    # keeps the clamped value), so >= 1.0 alone means "has a parent".
+    L.append("      if cur >= 1.0 {")
+    L.append("        let pli = (cur - 1.0) | 0")
+    L.append("        if slLive[pli] > 0.5 {")
+    L.append("          let ppx = slXF[pli * 6 + 0.0]")
+    L.append("          let ppy = slXF[pli * 6 + 1.0]")
+    L.append("          let pra = slXF[pli * 6 + 2.0]")
+    L.append("          let psx = slXF[pli * 6 + 3.0]")
+    L.append("          let psy = slXF[pli * 6 + 4.0]")
+    L.append("          let ppar = slXF[pli * 6 + 5.0]")
+    L.append("          let cosp = cos(pra)")
+    L.append("          let sinp = sin(pra)")
+    L.append("          wr = pra + wr")
+    L.append("          swx = wpx")
+    L.append("          swy = wpy")
+    L.append("          let nwx = ppx + ((psx * swx) * cosp)"
+              " - ((psy * swy) * sinp)")
+    L.append("          let nwy = ppy + ((psx * swx) * sinp)"
+              " + ((psy * swy) * cosp)")
+    L.append("          wpx = nwx")
+    L.append("          wpy = nwy")
+    L.append("          wsx = psx * wsx")
+    L.append("          wsy = psy * wsy")
+    L.append("          cur = ppar")
+    L.append("        } else {")
+    L.append("          cur = 0.0")
+    L.append("        }")
+    L.append("      } else {")
+    L.append("        cur = 0.0")
+    L.append("      }")
+L.append("      let ct = cos(wr)")
+L.append("      let st = sin(wr)")
+for i in range(MAXP):
+    L.append("      let ox%d = shPts[%d] * wsx" % (i, 2 * i))
+    L.append("      let oy%d = shPts[%d] * wsy" % (i, 2 * i + 1))
+    L.append("      shPts[%d] = wpx + ((ox%d * ct) - (oy%d * st))"
+             % (2 * i, i, i))
+    L.append("      shPts[%d] = wpy + ((ox%d * st) + (oy%d * ct))"
+             % (2 * i + 1, i, i))
 L.append("    }")
 L.append("  }")
 
@@ -718,6 +862,10 @@ L.append("          cLo = %s" % mnc[0])
 L.append("          let span = %s - %s" % (mx[0], mn[0]))
 L.append("          let inv = if span > 0.0 then 1.0 / span else 0.0")
 L.append("          rowSlope = (%s - cLo) * inv" % mxc[0])
+L.append("          cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf,"
+         " cLo.a)")
+L.append("          rowSlope = Color(rowSlope.r * bf, rowSlope.g * bf,"
+         " rowSlope.b * bf, rowSlope.a)")
 L.append("        }")
 L.append("      }")
 L.append("    }")
@@ -867,6 +1015,10 @@ L.append("            cLo = umnc")
 L.append("            let span = umx - umn")
 L.append("            let inv = if span > 0.0 then 1.0 / span else 0.0")
 L.append("            rowSlope = (umxc - cLo) * inv")
+L.append("            cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf,"
+         " cLo.a)")
+L.append("            rowSlope = Color(rowSlope.r * bf,"
+         " rowSlope.g * bf, rowSlope.b * bf, rowSlope.a)")
 L.append("          }")
 L.append("        } else {")
 L.append("          pcol = 200.0")

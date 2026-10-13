@@ -401,6 +401,35 @@ def rect_pts(x0, y0, x1, y1):
     return [x0, y0, x1, y0, x1, y1, x0, y1]
 
 
+def xf_points(pts, pos, ang, scl):
+    """The chip's point transform, transcribed: scale, rotate about the
+    origin by ang radians, translate -- mirrors applyXF exactly,
+    including the scale-zero-means-identity default."""
+    sx = scl[0] if scl[0] != 0.0 else 1.0
+    sy = scl[1] if scl[1] != 0.0 else 1.0
+    ct, st = math.cos(ang), math.sin(ang)
+    out = []
+    for i in range(0, len(pts), 2):
+        ox, oy = pts[i] * sx, pts[i + 1] * sy
+        out += [pos[0] + ox * ct - oy * st,
+                pos[1] + ox * st + oy * ct]
+    return out
+
+
+def xf_compose(parent, child):
+    """parent_world composed with child_local -> world, as (pos, ang,
+    scl) triples.  Mirrors one ancestor-walk step exactly."""
+    (ppx, ppy), pra, (psx, psy) = parent
+    (cpx, cpy), cra, (csx, csy) = child
+    ct, st = math.cos(pra), math.sin(pra)
+    ox, oy = psx * cpx, psy * cpy
+    return ((ppx + ox * ct - oy * st, ppy + ox * st + oy * ct),
+            pra + cra, (psx * csx, psy * csy))
+
+
+IDENT = ((0.0, 0.0), 0.0, (1.0, 1.0))
+
+
 def oval_pts(cx, cy, rx, ry, k=16):
     pts = []
     for i in range(k):
@@ -487,7 +516,7 @@ def main():
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "wireMode": False,
                       "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False}
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -569,7 +598,7 @@ def main():
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "wireMode": False,
                       "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False}
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -654,7 +683,7 @@ def main():
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "wireMode": False,
                       "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False}
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -735,7 +764,7 @@ def main():
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "wireMode": False,
                       "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False}
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -799,7 +828,7 @@ def main():
         # without forgetting, the square would resurrect on recomposite.
         ct = 110
         cplan[ct] = {"clearAll": True}
-        cplan[ct + 2] = {"clearAll": False}
+        cplan[ct + 2] = {"clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         cplan[ct + 4] = {"drawAll": True}
         cplan[ct + 6] = {"drawAll": False}
         st = ct + 110
@@ -817,7 +846,7 @@ def main():
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "wireMode": False,
                       "shapeId": 1.0, "drawAll": False,
-                      "clearAll": False}
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -860,6 +889,165 @@ def main():
                      "%d of 4096 differ, first at %d"
                      % (len(badc), badc[0] if badc else 0))
 
+        # ---- brightness: the live slider dims RGB, keeps alpha --------
+        # Two non-overlapping rects in one run: rectA paints while the
+        # slider reads 50 (RGB halved, alpha untouched), rectB after it
+        # returns to 0.0 -- the unwired default, full colours.  Both
+        # immediate fills; the slider rides the plan like any level.
+        bA = rect_pts(2.0, 2.0, 6.0, 6.0)
+        bB = rect_pts(10.0, 10.0, 14.0, 14.0)
+        bplan = {}
+        bplan[10] = {"shapePoints": list(bA), "shapeColors": [RED] * 4,
+                     "wireMode": False, "shapeId": 0.0,
+                     "brightness": 50.0}
+        bplan[12] = {"pushShape": True}
+        bplan[14] = {"pushShape": False}
+        bplan[16] = {"drawAll": True}
+        bplan[18] = {"drawAll": False}
+        bplan[40] = {"shapePoints": list(bB), "shapeColors": [blue] * 4,
+                     "wireMode": False, "shapeId": 0.0,
+                     "brightness": 0.0}
+        bplan[42] = {"pushShape": True}
+        bplan[44] = {"pushShape": False}
+        bplan[46] = {"drawAll": True}
+        bplan[48] = {"drawAll": False}
+        btotal = 130
+
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "drawAll": False,
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+
+        def watchb(sn, tick):
+            if tick in bplan:
+                step = bplan[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints" and k != "shapeColors"}
+                sn.inputs = dict(sn.inputs, **step)
+
+        sim.run(btotal, on_tick=watchb)
+
+        def dim(c):
+            return (c[0] * 0.5, c[1] * 0.5, c[2] * 0.5, c[3])
+
+        wantb = {}
+        for p in poly_pixels(bA):
+            wantb[p] = dim(RED)
+        for p in poly_pixels(bB):
+            wantb[p] = blue
+        badb = [i for i in range(SW * SW)
+                if not close(col(sim, gids, i), wantb.get(i, BLACK))]
+        ok &= expect(not badb, "brightness dims RGB, keeps alpha",
+                     "%d of 4096 differ, first at %d"
+                     % (len(badb), badb[0] if badb else 0))
+
+        # ---- transforms + parents: move, scale, rotate, follow -------
+        # Five retained commits in one run, snapshotted each time: a
+        # scaled+moved square, a rotated rect edit, a child attached to
+        # slot 1, the parent moved again (child follows), the child
+        # deleted.  The model composes each slot's world transform
+        # through its ancestors exactly like the chip's walk.
+        xcommits = [
+            (rect_pts(4.0, 4.0, 12.0, 12.0), [RED] * 4, 1.0,
+             (8.0, 0.0), 0.0, (2.0, 1.0), 0.0),
+            (rect_pts(20.0, 20.0, 28.0, 24.0), [blue] * 4, 1.0,
+             (4.0, 4.0), 0.5, (1.0, 1.0), 0.0),
+            ([20.0, 20.0, 26.0, 20.0, 20.0, 26.0],
+             [green] * 3, 2.0, (0.0, 0.0), 0.0, (1.0, 1.0), 1.0),
+            (rect_pts(20.0, 20.0, 28.0, 24.0), [blue] * 4, 1.0,
+             (12.0, 4.0), 0.5, (1.0, 1.0), 0.0),
+            ([], [], 2.0, (0.0, 0.0), 0.0, (1.0, 1.0), 0.0),
+        ]
+        xplan = {}
+        t = 10
+        xends = []
+        for pts, cols, sid, pos, ang, scl, par in xcommits:
+            xplan[t] = {"shapePoints": list(pts),
+                        "shapeColors": list(cols),
+                        "wireMode": False, "shapeId": sid,
+                        "position": (pos[0], pos[1], 0.0),
+                        "rotation": (0.0, 0.0, ang),
+                        "scale": (scl[0], scl[1], 1.0),
+                        "parentShapeId": par}
+            xplan[t + 2] = {"pushShape": True}
+            xplan[t + 4] = {"pushShape": False}
+            xplan[t + 6] = {"drawAll": True}
+            xplan[t + 8] = {"drawAll": False}
+            # a commit clears (64 rows) and repaints every live slot;
+            # parented slots pay one ancestor walk of slow computed
+            # reads each, so this allows extra margin over the plain
+            # retained section
+            t += 64 + 110
+            xends.append(t)
+        xtotal = t + 20
+
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "drawAll": False,
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+        xsnaps = {}
+
+        def watchx(sn, tick):
+            if tick in xplan:
+                step = xplan[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints" and k != "shapeColors"}
+                sn.inputs = dict(sn.inputs, **step)
+            if tick in xends:
+                xsnaps[tick] = {i: col(sn, gids, i)
+                                for i in range(SW * SW)}
+
+        sim.run(xtotal, on_tick=watchx)
+
+        def world_of(slots, key, depth=0):
+            _p, _c, _w, pos, ang, scl, par = slots[key]
+            local = (pos, ang, (scl[0] or 1.0, scl[1] or 1.0))
+            if depth > 8 or par < 0.5 or int(par) not in slots:
+                return local
+            return xf_compose(world_of(slots, int(par), depth + 1),
+                              local)
+
+        xslots = {}
+        xlabels = ["scaled+moved square paints",
+                   "rotated rect edit paints",
+                   "child attaches to slot 1",
+                   "parent move carries the child",
+                   "delete drops the child"]
+        for ci, end in enumerate(xends):
+            pts, cols, sid, pos, ang, scl, par = xcommits[ci]
+            if not pts:
+                xslots.pop(int(sid), None)
+            else:
+                xslots[int(sid)] = (pts, cols, False, pos, ang, scl,
+                                    par)
+            wantx = {}
+            for kk in sorted(xslots):
+                spts, scols = xslots[kk][0], xslots[kk][1]
+                wpos, wang, wscl = world_of(xslots, kk)
+                for q, c in poly_colors(
+                        xf_points(spts, wpos, wang, wscl),
+                        scols).items():
+                    wantx[q] = c
+            badx = [i for i in range(SW * SW)
+                    if not close(xsnaps[end][i], wantx.get(i, BLACK))]
+            ok &= expect(not badx, xlabels[ci],
+                         "%d of 4096 differ, first at %d"
+                         % (len(badx), badx[0] if badx else 0))
+
         # ---- the load-time phantom paints correctly -----------------------
         # Tick-0 seeding fires every Change detector once, so a walk arms
         # from the seeded array with no pulse at all.  Seed a real closed
@@ -872,7 +1060,7 @@ def main():
         sim.inputs = {"shapePoints": list(sq), "shapeColors": [blue] * 5,
                       "pushShape": False, "wireMode": False,
                       "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False}
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         on3 = []
         on3s = []
 
@@ -903,7 +1091,7 @@ def main():
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"pushShape": False, "wireMode": False,
                       "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False}
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(60)
         sim.run(60)
         ok &= expect(all(col(sim, gids, i) == BLACK
