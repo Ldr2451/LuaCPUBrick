@@ -28,13 +28,13 @@ import colormath  # noqa: E402
 colormath.install()
 from animtest import out_port_id, resolve_port, port_val, tight  # noqa: E402
 from painttest import (poly_colors, stroke_colors, slide,  # noqa: E402
-                       expect)
+                       expect, xf_points, xf_compose)
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
 SHOW = os.path.join(HERE, "showcase2.lua")
 SW = 64
-TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 15000
+TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 16000
 BLACK = (0.0, 0.0, 0.0, 1.0)
 
 
@@ -48,6 +48,30 @@ def parse_id(s):
 def close(a, b, tol=1e-9):
     return len(a) == len(b) and all(
         abs(float(x) - float(y)) <= tol for x, y in zip(a, b))
+
+
+def destr(v):
+    # one string-array element: strip the "quoted" wrapper the same
+    # way as the scalar string ports
+    if not isinstance(v, str):
+        return ""
+    m = re.search(r'"([^"]*)"', v)
+    return m.group(1) if m else v
+
+
+def stof(s):
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def stovec(sa, off):
+    # three numeric strings at an offset: the connector's fixed slots
+    # for one vec (missing/garbage parses to 0.0, which the screen
+    # defaults -- scale zeroes mean identity there too)
+    return tuple(stof(sa[off + i]) if len(sa) > off + i else 0.0
+                 for i in range(3))
 
 
 def main():
@@ -67,6 +91,8 @@ def main():
         r4 = resolve_port(lsim, out_port_id(lsim, "outNum4"))
         ra = resolve_port(lsim, out_port_id(lsim, "outNumArr"))
         rs = resolve_port(lsim, out_port_id(lsim, "outStr1"))
+        rs2 = resolve_port(lsim, out_port_id(lsim, "outStr2"))
+        rsa = resolve_port(lsim, out_port_id(lsim, "outStrArr"))
         samples = []
 
         def hook(s, tick):
@@ -76,9 +102,12 @@ def main():
             else:
                 m = re.search(r'"([^"]*)"', raw)
                 raw = m.group(1) if m else raw
+            raw2 = s.vars.get(rs2[1], "")
+            raw2 = destr(raw2)
             samples.append((port_val(s, r1), port_val(s, r2),
                             port_val(s, r3), port_val(s, r4),
-                            port_val(s, ra), raw))
+                            port_val(s, ra), raw, raw2,
+                            [destr(v) for v in port_val(s, rsa)]))
 
         lsim.reset()
         lsim.inputs = {"program": src, "run": True}
@@ -93,11 +122,15 @@ def main():
         # ---- latch the stream ----------------------------------------
         pushes, reds, clrs, latched = [], [], [], []
         prev = [0.0, 0.0, 0.0]
-        for k, (p, r, c, w, a, st) in enumerate(samples):
+        for k, (p, r, c, w, a, st, st2, sa) in enumerate(samples):
             if p > 0.5 and prev[0] <= 0.5:
                 pushes.append(k)
                 pts, cols = tight(a)
-                latched.append((pts, cols, w > 0.5, st))
+                pos = stovec(sa, 0)[:2]
+                ang = stovec(sa, 3)[2]
+                scl = stovec(sa, 6)[:2]
+                latched.append((pts, cols, w > 0.5, st, pos, ang, scl,
+                                parse_id(st2)))
             if r > 0.5 and prev[1] <= 0.5:
                 reds.append(k)
             if c > 0.5 and prev[2] <= 0.5:
@@ -114,17 +147,24 @@ def main():
             pushes[i] < reds[i]
             for i in range(min(len(reds), len(pushes)))),
             "push-then-draw pairing")
-        ids = set(s for _p, _c, _w, s in latched)
-        ok &= expect({"1", "2", "3"} <= ids,
-                     "retained slots 1..3 all used", str(ids))
-        deletes = [i for i, (p, _c, _w, s) in enumerate(latched)
+        ids = set(s for _p, _c, _w, s, _x, _y, _z, _t in latched)
+        ok &= expect({"1", "2", "3", "4"} <= ids,
+                     "retained slots 1..4 all used", str(ids))
+        deletes = [i for i, (p, _c, _w, s, _x, _y, _z, _t)
+                   in enumerate(latched)
                    if len(p) == 0 and s == "3"]
         ok &= expect(len(deletes) >= 2,
                      "empty shape deletes slot 3 (%d times)"
                      % len(deletes))
+        deletes4 = [i for i, (p, _c, _w, s, _x, _y, _z, _t)
+                    in enumerate(latched)
+                    if len(p) == 0 and s == "4"]
+        ok &= expect(len(deletes4) >= 1,
+                     "empty shape deletes slot 4 (%d times)"
+                     % len(deletes4))
         ok &= expect(len(clrs) >= 1, "clearAll pulse seen")
         # colours: at least half the shapes carry a real gradient
-        coloured = [pc for pts, cols, _w, _s in latched
+        coloured = [pc for pts, cols, _w, _s, _x, _y, _z, _t in latched
                     for pc in [cols] if len(pts) >= 6
                     and any(not close(c, (1.0, 1.0, 1.0, 1.0))
                             for c in cols)]
@@ -132,12 +172,26 @@ def main():
                      "per-point colours drive the wall (%d shapes)"
                      % len(coloured))
         alphas = set()
-        for _pts, cols, _w, _s in latched:
+        for _pts, cols, _w, _s, _x, _y, _z, _t in latched:
             for c in cols:
                 alphas.add(round(c[3], 3))
         ok &= expect(any(a < 0.9 for a in alphas),
                      "translucency present (alphas %s)"
                      % sorted(alphas))
+        # transforms: the mover frames carry nonzero position,
+        # rotation and breathing scale (its points never change), and
+        # slot 4 attaches to slot 3 (the satellite follows the mover)
+        moved = [l for l in latched
+                 if (l[4] != (0.0, 0.0) or l[5] != 0.0
+                     or l[6] != (1.0, 1.0))]
+        ok &= expect(len(moved) >= 5,
+                     "transforms drive shapes (%d pushes)"
+                     % len(moved))
+        kids = [l for l in latched if l[3] == "4" and l[7] == 3.0
+                and len(l[0]) > 0]
+        ok &= expect(len(kids) >= 1,
+                     "slot 4 parents to slot 3 (%d pushes)"
+                     % len(kids))
 
         # End replay and model at the last push edge (showtest's
         # boundary rule): every earlier burst is complete by the
@@ -172,8 +226,9 @@ def main():
         def hook2(s, tick):
             if tick >= T_end:
                 return
-            _p, _r, _c, _w, a, st = samples[tick]
-            b = samples[tick - 2] if tick >= 2 else (0, 0, 0, 0, [], "")
+            _p, _r, _c, _w, a, st, _st2, _sa = samples[tick]
+            b = samples[tick - 2] if tick >= 2 else \
+                (0, 0, 0, 0, [], "", "", [])
             pts, cols = tight(a)
             # the driver writes the points and the colours in separate
             # outNumArr calls, so they land on different ticks: re-slide
@@ -189,6 +244,12 @@ def main():
                 "shapeId": parse_id(b[5]),
                 "drawAll": (b[1] or 0.0) > 0.5,
                 "clearAll": (b[2] or 0.0) > 0.5,
+                # the transform + parent ride with the bools (they are
+                # staged at the push edge, settled long before it)
+                "parentShapeId": parse_id(b[6]),
+                "position": stovec(b[7], 0),
+                "rotation": stovec(b[7], 3),
+                "scale": stovec(b[7], 6),
             })
 
         ssim.run(T_end, on_tick=hook2)
@@ -205,6 +266,8 @@ def main():
         # The deferred clear: the pulse forgets every slot and stages
         # the black fill; the next drawAll runs it -- with a shape
         # staged that means black first, then the shape over it.
+        # Retained slots compose their world transform through every
+        # ancestor exactly like the chip's walk, then paint.
         fb = {}
         slots = {}
         pending = None
@@ -212,39 +275,55 @@ def main():
         li = 0
         snaps = []
 
-        def paint(pts, cols, wire):
-            model = stroke_colors(pts, cols) if wire \
-                else poly_colors(pts, cols)
+        def world_of(table, key, depth=0):
+            _p, _c, _w, _s, pos, ang, scl, par = table[key]
+            local = (pos, ang, (scl[0] or 1.0, scl[1] or 1.0))
+            if depth > 8 or par < 0.5 or int(par) not in table:
+                return local
+            return xf_compose(world_of(table, int(par), depth + 1),
+                              local)
+
+        def paint(pts, cols, wire, world):
+            wpos, wang, wscl = world
+            model = stroke_colors(
+                xf_points(pts, wpos, wang, wscl), cols) if wire \
+                else poly_colors(
+                    xf_points(pts, wpos, wang, wscl), cols)
             fb.update(model)
 
         for k in range(T_end):
-            p, r, c, _w, _a, _st = samples[k][:6]
+            p, r, c = samples[k][0], samples[k][1], samples[k][2]
             if c > 0.5 and (samples[k - 1][2] if k else 0.0) <= 0.5:
                 slots = {}
                 pending = None
                 black = True
             if p > 0.5 and (samples[k - 1][0] if k else 0.0) <= 0.5:
-                pts, cols, wire, st = latched[li]
+                pts, cols, wire, st, pos, ang, scl, par = latched[li]
                 li += 1
-                pending = (pts, cols, wire, st)
+                pending = (pts, cols, wire, st, pos, ang, scl, par)
             if r > 0.5 and (samples[k - 1][1] if k else 0.0) <= 0.5:
                 if black:
                     fb = {}
                     black = False
                 if pending is not None:
-                    pts, cols, wire, st = pending
+                    pts, cols, wire, st, pos, ang, scl, par = pending
                     sid = parse_id(st)
                     if sid < 0.5:
-                        paint(pts, cols, wire)
+                        paint(pts, cols, wire,
+                              (pos, ang, (scl[0] or 1.0,
+                                          scl[1] or 1.0)))
                     else:
                         key = int(sid)
                         if not pts:
                             slots.pop(key, None)
                         else:
-                            slots[key] = (pts, cols, wire)
+                            slots[key] = (pts, cols, wire, st, pos,
+                                          ang, scl, par)
                         fb = {}
                         for kk in sorted(slots):
-                            paint(*slots[kk])
+                            spts, scols, swire = slots[kk][:3]
+                            paint(spts, scols, swire,
+                                  world_of(slots, kk))
                     pending = None
                 snaps.append((k, dict(fb)))
 
@@ -279,4 +358,5 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(0 if main() else 1)
+
 

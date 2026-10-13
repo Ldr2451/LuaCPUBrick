@@ -14,9 +14,10 @@
 --      background (a mostly-black wall is not nice to look at),
 --   2. the morph: a square slowly becomes a circle over it, the
 --      per-point colours shifting as it goes,
---   3. the mover: a half-transparent quad EDITED in place slot by
---      slot, so what is behind it shows through, then DELETED with an
---      empty push,
+--   3. the mover: a half-transparent quad modelled once (all
+--      coordinates positive) and then only moved/rotated/scaled,
+--      with a satellite child that follows it for free,
+--      then both deleted with empty pushes,
 --   4. clearAll: which only forgets the screen's memory -- the wall
 --      keeps showing the scene -- and then compose a NEW scene, whose
 --      first drawAll is the pulse that actually blacks the wall, so the
@@ -57,6 +58,21 @@ local function pcol(slot, h, a)
   outNumArr(slot, pal[h * 3 + 1], pal[h * 3 + 2], pal[h * 3 + 3], a)
 end
 
+-- transform into the CPU's output string array (slots 1-9: position
+-- x, y, rotation z in radians, scale x, y -- the rest unused): two
+-- calls, 8 values at most each.  outStrArr takes strings only (unlike
+-- outStr), so everything goes through tostring.  The screen stages
+-- these with the push and composes them through the shape's
+-- ancestors, so the CPU sends base geometry once and then only moves
+-- it -- no trig per point per frame.  Rotation spins about the
+-- origin: model small shapes near it (like the mover below) and place
+-- them with position.
+local function xf(px, py, ang, sx, sy)
+  outStrArr(1, tostring(px), tostring(py), "0", "0", "0",
+    tostring(ang), tostring(sx), tostring(sy))
+  outStrArr(9, "1")
+end
+
 -- the two rings the morph blends between: a square and a circle of
 -- radius 10, 8 points each, whole pixels (the painter truncates)
 local sx, sy, cx, cy = {}, {}, {}, {}
@@ -74,7 +90,10 @@ end
 
 -- the full-screen gradient background: four corners, four colours,
 -- and the fill interpolates between them (64 rows).  The terminator's
--- magnitude is the colour count: -(1+4) here.
+-- magnitude is the colour count: -(1+4) here.  The transform stages
+-- per push like everything else, so this states identity outright --
+-- otherwise it would inherit whatever the last mover frame left in
+-- the string array.
 local function background(h)
   outNumArr(1, 0.0, 0.0, 64.0, 0.0, 64.0, 64.0, 0.0, 64.0)
   outNumArr(9, -5.0)
@@ -82,6 +101,7 @@ local function background(h)
   pcol(14, h + 8, 1.0)
   pcol(18, h + 16, 1.0)
   pcol(22, h + 24, 1.0)
+  xf(0.0, 0.0, 0.0, 1.0, 1.0)
   fire(1.6)
 end
 
@@ -115,20 +135,45 @@ local function morph(t, hue)
   pcol(38, hue + 20, 1.0)
   pcol(42, hue + 24, 1.0)
   pcol(46, hue + 28, 1.0)
+  xf(0.0, 0.0, 0.0, 1.0, 1.0)
   fire(1.75)
 end
 
 -- the mover: a small half-transparent quad (alpha 0.5, so the morph
--- and the background show through), edited in place (~6 rows)
-local function mover(bx, by, hue)
-  local ex, ey = bx + 8.0, by + 6.0
-  outNumArr(1, bx, by, ex, by, ex, ey, bx, ey)
+-- and the background show through), modelled once with all-positive
+-- coordinates (a negative x *is* the terminator, so a centered base
+-- would read as empty) and then only moved/rotated/scaled -- its
+-- points below never change from frame to frame, so the CPU does no
+-- trig at all.  Rotation pivots at the origin, here the quad's own
+-- corner, so it spins near where position puts it (~8 rows)
+local function mover(mx, my, ang, sc, hue)
+  outNumArr(1, 0.0, 0.0, 8.0, 0.0, 8.0, 6.0, 0.0, 6.0)
   outNumArr(9, -5.0)
   pcol(10, hue, 0.5)
   pcol(14, hue + 6, 0.5)
   pcol(18, hue + 12, 0.5)
   pcol(22, hue + 18, 0.5)
-  fire(1.75)
+  xf(mx, my, ang, sc, sc)
+  fire(1.9)
+end
+
+-- the satellite: a small triangle parented to the mover (slot 3), in
+-- the mover's own local space (all coordinates positive, like the
+-- mover's -- negatives would terminate the scan).  It is pushed once
+-- and never moves itself -- it follows whatever the mover does, so
+-- one push to slot 3 moves both (~6 rows)
+local function satellite(hue)
+  outStr(1, "4")
+  outStr(2, "3")
+  outNumArr(1, 10.0, 1.0, 16.0, 1.0, 13.0, 7.0)
+  outNumArr(7, -4.0)
+  pcol(8, hue, 1.0)
+  pcol(12, hue + 10, 1.0)
+  pcol(16, hue + 20, 1.0)
+  xf(0.0, 0.0, 0.0, 1.0, 1.0)
+  fire(1.9)
+  outStr(2, "")
+  outStr(1, "3")
 end
 
 local hue = 0
@@ -147,26 +192,37 @@ while true do
   end
   morph(1.0, hue)
   hue = hue + 3
-  -- 3. the mover over the scene, edited slot by slot
+  -- 3. the mover over the scene, driven by transform only (its
+  -- points never change), with a satellite child that follows it
+  -- for free -- one push to slot 3 moves both
   outStr(1, "3")
-  local mx, my = 8.0, 12.0
+  outStr(2, "")
+  satellite(hue)
+  hue = hue + 3
+  local mx, my = 14.0, 14.0
   local vx, vy = 3.0, 2.0
   f = 0
   while f < 5 do
-    mover(mx, my, hue)
+    local sc = 1.0 + 0.25 * math.sin(f * 0.8)
+    mover(mx, my, f * 0.35, sc, hue)
     hue = hue + 3
     mx = mx + vx
     my = my + vy
-    if mx < 4.0 then mx = 4.0 vx = 3.0 end
-    if mx > 50.0 then mx = 50.0 vx = -3.0 end
-    if my < 6.0 then my = 6.0 vy = 2.0 end
-    if my > 48.0 then my = 48.0 vy = -2.0 end
+    if mx < 10.0 then mx = 10.0 vx = 3.0 end
+    if mx > 46.0 then mx = 46.0 vx = -3.0 end
+    if my < 10.0 then my = 10.0 vy = 2.0 end
+    if my > 44.0 then my = 44.0 vy = -2.0 end
     f = f + 1
   end
-  -- 4. delete the mover: an empty push clears slot 3
+  -- 4. delete the satellite, then the mover: empty pushes clear
+  -- their slots (children follow their parent, never the reverse)
+  outStr(1, "4")
+  outStr(2, "")
+  outNumArr(1, -1.0)
+  fire(1.9)
   outStr(1, "3")
   outNumArr(1, -1.0)
-  fire(1.75)
+  fire(1.9)
   outStr(1, "")
   nap(2.0)
   -- 5. clearAll: the screen still shows the scene (the pulse only
@@ -185,10 +241,10 @@ while true do
   morph(0.5, hue)
   hue = hue + 5
   outStr(1, "3")
-  mover(22.0, 22.0, hue + 10)
+  mover(22.0, 22.0, 0.0, 1.0, hue + 10)
   outStr(1, "3")
   outNumArr(1, -1.0)
-  fire(1.75)
+  fire(1.9)
   outStr(1, "")
   nap(2.0)
 end

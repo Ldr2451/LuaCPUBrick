@@ -948,6 +948,65 @@ def main():
                      "%d of 4096 differ, first at %d"
                      % (len(badb), badb[0] if badb else 0))
 
+        # ---- brightness repaints by itself, no drawAll ----------------
+        # A retained square plus one immediate rect, both painted at
+        # full brightness; then ONLY the slider moves to 50.  The chip
+        # reruns the retained recomposite (no clear -- nothing moved,
+        # so overwriting is exact) and replays the immediate rect, and
+        # the whole wall dims with no push and no drawAll.
+        rA = rect_pts(4.0, 4.0, 12.0, 12.0)
+        rB = rect_pts(20.0, 20.0, 26.0, 24.0)
+        aplan = {}
+        aplan[10] = {"shapePoints": list(rA),
+                     "shapeColors": [RED] * 4,
+                     "wireMode": False, "shapeId": 1.0,
+                     "brightness": 100.0}
+        aplan[12] = {"pushShape": True}
+        aplan[14] = {"pushShape": False}
+        aplan[16] = {"drawAll": True}
+        aplan[18] = {"drawAll": False}
+        aplan[140] = {"shapePoints": list(rB),
+                      "shapeColors": [blue] * 4,
+                      "wireMode": False, "shapeId": 0.0}
+        aplan[142] = {"pushShape": True}
+        aplan[144] = {"pushShape": False}
+        aplan[146] = {"drawAll": True}
+        aplan[148] = {"drawAll": False}
+        aplan[170] = {"brightness": 50.0}
+        aend = 320
+
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "drawAll": False,
+                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+
+        def watcha(sn, tick):
+            if tick in aplan:
+                step = aplan[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints" and k != "shapeColors"}
+                sn.inputs = dict(sn.inputs, **step)
+
+        sim.run(aend, on_tick=watcha)
+
+        wanta = {}
+        for p in poly_pixels(rA):
+            wanta[p] = dim(RED)
+        for p in poly_pixels(rB):
+            wanta[p] = dim(blue)
+        bada = [i for i in range(SW * SW)
+                if not close(col(sim, gids, i), wanta.get(i, BLACK))]
+        ok &= expect(not bada, "brightness repaints with no drawAll",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bada), bada[0] if bada else 0))
+
         # ---- transforms + parents: move, scale, rotate, follow -------
         # Five retained commits in one run, snapshotted each time: a
         # scaled+moved square, a rotated rect edit, a child attached to

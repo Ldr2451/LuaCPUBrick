@@ -100,9 +100,12 @@ identity, and scale zeroes mean identity too.
 stays unwired in the shipped save.  It takes 1 to 100, capped both
 ends; an unwired port reads 0.0, which means the 100 default.  Every
 painted colour's RGB is scaled by it (alpha is untouched -- brightness
-is not opacity), and it applies on the next `drawAll` with no
-restaging.  The wall bricks are emissive (`BMC_Glow`), so colours
-read as emitted light and the slider is a dimmer for the whole wall.
+is not opacity), and it acts at once: its edge reruns the retained
+recomposite without the black clear (nothing moved, so overwriting is
+exact) and refreshes the last immediate shape, so the whole wall
+follows with no push and no `drawAll`.  The wall bricks are emissive
+(`BMC_Glow`), so colours read as emitted light and the slider is a
+dimmer for the whole wall.
 Colors persist until rewritten, so a frame is a sequence of
 push-then-draw pairs, and the wall keeps the last color forever -- no
 keepalive, no expiry.  The last push before a `drawAll` wins, so a
@@ -132,7 +135,8 @@ line, full wall -- then a per-point gradient rect (every pixel the
 exact bilinear blend), a wireframe, an open curve, a dot and a
 diagonal gradient stroke, then four retained commits (store, compose,
 edit in place, delete), the brightness slider (dimmed RGB at 50,
-full colours at the unwired 0.0 default, alpha untouched both ways),
+full colours at the unwired 0.0 default, alpha untouched both ways,
+plus an auto-repaint with no `drawAll` when only the slider moves),
 and five transform commits (a scaled+moved square, a rotated rect
 edit, a child attached to slot 1, the parent moved again with the
 child following, the child deleted) -- and diffs the wall against

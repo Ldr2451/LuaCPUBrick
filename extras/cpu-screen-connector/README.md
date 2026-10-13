@@ -81,6 +81,14 @@ and a driver that only moves shapes writes just slots 1..2.
 (`outStrArr` takes at most 8 values a call, like `outNumArr`, so all
 nine slots are two calls.)
 
+One driver rule covers all three channels (points, colours,
+transform): everything stages per push, so every push must carry its
+full shape -- points, colours (or nothing, for white), and transform
+(or identity).  Anything not restaged keeps whatever the last push
+left behind: a background pushed after a mover frame without its own
+transform would otherwise inherit the mover's.  `showcase2.lua` has
+a tiny `xf()` helper that keeps this tidy.
+
 Everything is combinational except a one-tick array pass, and nothing
 is retained: every output is a pure function of the current inputs.
 
