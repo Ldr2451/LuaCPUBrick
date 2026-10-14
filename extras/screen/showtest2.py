@@ -143,10 +143,12 @@ def main():
         # intent: every expressive channel actually used
         ok &= expect(len(pushes) >= 20,
                      "phases ran (%d pushes)" % len(pushes))
-        ok &= expect(len(reds) >= len(pushes) - 1 and all(
-            pushes[i] < reds[i]
-            for i in range(min(len(reds), len(pushes)))),
-            "push-then-draw pairing")
+        # a batch shares one draw across several pushes, so the old
+        # one-to-one pairing cannot hold; the invariant that matters is
+        # that every push is eventually drawn (no staged shape is ever
+        # abandoned).
+        ok &= expect(all(any(r > p for r in reds) for p in pushes),
+                     "every push is drawn")
         ids = set(s for _p, _c, _w, s, _x, _y, _z, _t in latched)
         ok &= expect({"1", "2", "3", "4"} <= ids,
                      "retained slots 1..4 all used", str(ids))
@@ -270,7 +272,7 @@ def main():
         # ancestor exactly like the chip's walk, then paint.
         fb = {}
         slots = {}
-        pending = None
+        pending = []
         black = False
         li = 0
         snaps = []
