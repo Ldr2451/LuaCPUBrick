@@ -11784,11 +11784,9 @@ mod paintTick() {
       shPts[1] = erY
       shPts[2] = x1
       shPts[3] = erY
-      shPts[4] = x1
+      shPts[4] = if erExt > 0.5 then x1 else x0
       shPts[5] = erY + 1.0
-      shPts[6] = x0
-      shPts[7] = erY + 1.0
-      n = 4.0
+      n = 3.0
       cLo = Color(0.0, 0.0, 0.0, 1.0)
       rowSlope = Color(0.0, 0.0, 0.0, 0.0)
       pC0 = Color(0.0, 0.0, 0.0, 1.0)

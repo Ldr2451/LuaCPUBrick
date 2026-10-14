@@ -2555,11 +2555,11 @@ L.append("      shPts[0] = x0")
 L.append("      shPts[1] = erY")
 L.append("      shPts[2] = x1")
 L.append("      shPts[3] = erY")
-L.append("      shPts[4] = x1")
+# a triangle, not a rect: the apex on the span's outward edge, so the
+# row below spills one pixel at the far edge instead of the whole span
+L.append("      shPts[4] = if erExt > 0.5 then x1 else x0")
 L.append("      shPts[5] = erY + 1.0")
-L.append("      shPts[6] = x0")
-L.append("      shPts[7] = erY + 1.0")
-L.append("      n = 4.0")
+L.append("      n = 3.0")
 L.append("      cLo = Color(0.0, 0.0, 0.0, 1.0)")
 L.append("      rowSlope = Color(0.0, 0.0, 0.0, 0.0)")
 for i in range(MAXP):
