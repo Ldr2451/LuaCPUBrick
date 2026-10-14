@@ -132,6 +132,14 @@ end
 (`showcase2.lua` has the same shape as a tiny `xf()` plus inline
 points: the mover's points never change, so only its transform moves.)
 
+**Under a tick count the whole stage is deltas**, including the
+transform: `xf = {2,0, 0, 0,0}` moves a shape +2 x per tick, while
+`{0,0, 0, 1,1}` would grow its scale by 1 every tick.  Leaving a slot
+unwritten parses as 0.0, which is the identity delta: a shape whose
+transform is never restaged simply holds still.  So an animated push
+must restate the slots it means to move — and the first push to a
+shape is instant (it is an establish, not a delta).
+
 Everything is combinational except a one-tick array pass, and nothing
 is retained: every output is a pure function of the current inputs.
 

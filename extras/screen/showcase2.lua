@@ -1,5 +1,6 @@
--- Showcase 2: per-point colours, retained editing, and the deferred
--- clearAllShapes -- driver for the 64x64 screen.
+-- Showcase 2: per-point colours, retained editing, the deferred
+-- clearAllShapes, the pending queue and per-tick animation -- driver
+-- for the 64x64 screen.
 -- Wiring (via the cpu-screen-connector): outNum1 push, outNum2 draw,
 -- outNum3 clear, outNum4 wire, outStr1 slot id, outNumArr points (1..),
 -- one -1 terminator, then four floats per point as that point's colour
@@ -8,6 +9,9 @@
 -- its write budget minimal).  With colours sent, the screen fills by
 -- true scanline interpolation: each pixel blends its row's two crossing
 -- colours, so a polygon with per-point colours fills as a gradient.
+-- Slot 100 is a second terminator: -1 means the push is instant (the
+-- long-standing behaviour), -(1+T) makes every other staged input a
+-- per-tick delta added for T ticks, so one push animates a shape.
 --
 -- Phases (one loop):
 --   1. paint the whole screen FIRST -- a retained full-wall gradient
@@ -18,10 +22,13 @@
 --      coordinates positive) and then only moved/rotated/scaled,
 --      with a satellite child that follows it for free,
 --      then both deleted with empty pushes,
---   4. clearAllShapes: which only forgets the screen's memory -- the wall
+--   5. clearAllShapes: which only forgets the screen's memory -- the wall
 --      keeps showing the scene -- and then compose a NEW scene, whose
 --      first drawAllShapes is the pulse that actually blacks the wall, so the
 --      old image never cuts to black before the new one is ready.
+-- Loop order: 1 background, 2 morph, 3 mover + satellite, 4 deletes,
+-- 5 the pending queue (stage several, one draw), 6 per-tick animation,
+-- 7 clearAllShapes.
 local function tick()
   local c = clock()
   while clock() == c do end
@@ -298,7 +305,42 @@ while true do
   stage("4", {}, nil, 0.0, 0.0, 0.0, 1.0, 1.0)
   draw()
   nap(1.0)
-  -- 6. clearAllShapes: the screen still shows the scene (the pulse only
+  -- 6. per-tick animation: addToShapeInTicks.  Slot 100 is a SECOND
+  --    terminator: -1 stops, -(1+T) animates the staged shape over T
+  --    ticks.  While it is set, every other staged input is a DELTA the
+  --    screen adds again every tick, so ONE push walks a shape across
+  --    the wall and the CPU does nothing until the ticks run out.
+  --    The commit itself paints nothing (the wall already shows those
+  --    values); a later bare draw shows where the shape got to.
+  --    Establish it first (absolute, instant), then move it with deltas.
+  outStr(1, "5")
+  outStr(2, "")
+  outNumArr(1, 8.0, 44.0, 16.0, 44.0, 12.0, 52.0)
+  outNumArr(7, -4.0)
+  pcol(8, hue, 1.0)
+  pcol(12, hue + 10, 1.0)
+  pcol(16, hue + 20, 1.0)
+  xf(0.0, 0.0, 0.0, 1.0, 1.0)
+  outNumArr(100, -1.0)
+  fire(0.0)
+  outStr(1, "")
+  nap(0.5)
+  -- +2 x per tick for 12 ticks: one push, one draw, 24 pixels of travel
+  outStr(1, "5")
+  outNumArr(1, 0.0, 0.0)
+  outNumArr(3, -1.0)
+  outNumArr(100, -13.0)
+  xf(2.0, 0.0, 0.0, 0.0, 0.0)
+  outNum(1, 1.0)
+  tick()
+  outNum(1, 0.0)
+  draw()
+  outStr(1, "")
+  outNumArr(100, -1.0)
+  nap(0.4)
+  draw()
+  nap(1.0)
+  -- 7. clearAllShapes: the screen still shows the scene (the pulse only
   -- forgets).  Compose the next one: the background's drawAllShapes is the
   -- pulse that blacks the wall, and the rest builds on top of it.
   outNum(3, 1.0)
