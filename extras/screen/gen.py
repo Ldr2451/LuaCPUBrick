@@ -30,6 +30,7 @@ SW, SH = 64, 64
 NP = SW * SH
 K = int(sys.argv[1]) if len(sys.argv) > 1 else 64
 MAXP = 16                                   # max vertices per polygon
+DEF_BRIGHT = 0.35                           # unwired brightness factor
 
 
 L = []
@@ -131,7 +132,11 @@ L.append("const SH = %d" % SH)
 L.append("const NP = %d" % NP)
 L.append("const SWF = %d.0" % SW)
 L.append("const MAXP = %d" % MAXP)
-
+# The unwired-brightness default, as a factor: an emissive wall at full
+# scale (1.0) washes every colour toward white: four per-point hues
+# against a bright background.  55 of 100 is the shipped default; the
+# slider still reaches 1.0.
+L.append("const DEF_BRIGHT = %f" % DEF_BRIGHT)
 L.append("var fb: color[]")
 L.append("var fbInit: bool = false")
 # Per-point colours, staged from the shapeColors array at the arm
@@ -555,10 +560,12 @@ L.append("  }")
 # The live brightness factor: the brightness port is a user-set slider
 # the connector never drives (it stays unwired in the shipped save), 1
 # to 100, capped both ends; an unwired port reads 0.0, which means the
-# 100 default.  Applied per row-setup -- and a twiddle's edge reruns
-# the retained recomposite and refreshes the last immediate shape, so
-# the whole wall follows with no push and no drawAllShapes.
-L.append("  bf = if brightness <= 0.0 then 1.0 else if brightness < 1.0"
+# DEFAULT_BRIGHT default (55, not full: an emissive wall at full scale
+# washes every colour toward white, so shapes stop reading against a
+# bright background).  Applied per row-setup -- and a twiddle's edge
+# reruns the retained recomposite and refreshes the last immediate
+# reaches 100.  Applied per row-setup -- and a twiddle edge reruns the
+L.append("  bf = if brightness <= 0.0 then DEF_BRIGHT else if brightness < 1.0"
          " then 0.01 else if brightness > 100.0 then 1.0"
          " else brightness / 100.0")
 

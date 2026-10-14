@@ -982,7 +982,12 @@ def main():
         aplan[170] = {"brightness": 50.0}
         adim_at = 260
         aplan[340] = {"brightness": 0.0}
-        afull_at = 460
+        # unwired (0.0) now means the DEF_BRIGHT default, so "brightens back"
+        # states 100 explicitly -- a real slider going back to the top
+        aplan[460] = {"brightness": 100.0}
+        # the slider's edge reruns a recomposite (~76 ticks), so the
+        # snapshot sits past its end, not on its first tick
+        afull_at = 560
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],

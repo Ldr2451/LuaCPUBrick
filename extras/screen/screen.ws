@@ -92,6 +92,7 @@ const SH = 64
 const NP = 4096
 const SWF = 64.0
 const MAXP = 16
+const DEF_BRIGHT = 0.350000
 var fb: color[]
 var fbInit: bool = false
 var pC0: color = Color(1.0, 1.0, 1.0, 1.0)
@@ -9023,7 +9024,7 @@ mod paintTick() {
     qId.resize(8, 0.0)
     fbInit = true
   }
-  bf = if brightness <= 0.0 then 1.0 else if brightness < 1.0 then 0.01 else if brightness > 100.0 then 1.0 else brightness / 100.0
+  bf = if brightness <= 0.0 then DEF_BRIGHT else if brightness < 1.0 then 0.01 else if brightness > 100.0 then 1.0 else brightness / 100.0
   if anTicks[0.0] > 0.5 && !rcOn {
     anTicks[0.0] = anTicks[0.0] - 1.0
     animDirty = true
