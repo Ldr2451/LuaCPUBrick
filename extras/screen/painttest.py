@@ -484,7 +484,7 @@ def main():
         for pts, _color in shapes:
             rows = max((p // SW for p in poly_pixels(pts)), default=0) + 1
             spans.append((t, rows))
-            t += rows + 30
+            t += rows + 22
         total = t + 10
 
         # per-tick plan: stage the shape, then pulse push and redraw.
@@ -505,7 +505,7 @@ def main():
         replay_at = total
         plan[replay_at] = {"drawAllShapes": True}
         plan[replay_at + 2] = {"drawAllShapes": False}
-        total = replay_at + 80
+        total = replay_at + 60
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         # the array is seeded once, at reset (a reset-time seed is cheap;
@@ -592,7 +592,7 @@ def main():
         gplan[t + 4] = {"pushShape": False}
         gplan[t + 6] = {"drawAllShapes": True}
         gplan[t + 8] = {"drawAllShapes": False}
-        gtotal = t + 80
+        gtotal = t + 60
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
@@ -659,7 +659,7 @@ def main():
         for pts, _color in strokes:
             rows = max((p // SW for p in stroke_pixels(pts)), default=0) + 1
             spans2.append((t, rows))
-            t += rows + 34
+            t += rows + 24
         plan2 = {}
         for i, (pts, cols) in enumerate(strokes):
             t0, _rows = spans2[i]
@@ -677,7 +677,7 @@ def main():
         replay2_at = t + 14
         plan2[replay2_at] = {"drawAllShapes": True}
         plan2[replay2_at + 2] = {"drawAllShapes": False}
-        total2 = replay2_at + 60
+        total2 = replay2_at + 45
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
@@ -756,7 +756,7 @@ def main():
             rplan[t + 8] = {"drawAllShapes": False}
             # a commit clears (64 rows) and repaints every live slot; the
             # slot below is sized for two small shapes with margin
-            t += 64 + 60
+            t += 64 + 45
             ends.append(t)
         rtotal = t + 20
 
@@ -839,8 +839,8 @@ def main():
         cplan[st + 4] = {"pushShape": False}
         cplan[st + 6] = {"drawAllShapes": True}
         cplan[st + 8] = {"drawAllShapes": False}
-        cblack_at = ct + 90
-        cend = st + 200
+        cblack_at = ct + 60
+        cend = st + 150
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
@@ -914,7 +914,7 @@ def main():
         bplan[44] = {"pushShape": False}
         bplan[46] = {"drawAllShapes": True}
         bplan[48] = {"drawAllShapes": False}
-        btotal = 130
+        btotal = 100
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
@@ -980,9 +980,9 @@ def main():
         aplan[146] = {"drawAllShapes": True}
         aplan[148] = {"drawAllShapes": False}
         aplan[170] = {"brightness": 50.0}
-        adim_at = 320
+        adim_at = 260
         aplan[340] = {"brightness": 0.0}
-        afull_at = 520
+        afull_at = 460
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
@@ -1200,7 +1200,7 @@ def main():
             if draw:
                 qplan[t] = {"drawAllShapes": True}
                 qplan[t + 2] = {"drawAllShapes": False}
-            t += 206
+            t += 150
             qends.append(t)
         qtotal = t + 20
 

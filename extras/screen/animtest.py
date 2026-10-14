@@ -91,6 +91,17 @@ def port_val(sim, res):
     return float(v) if isinstance(v, (int, float)) else 0.0
 
 
+def port_slice(sim, res, n=128):
+    """port_val, but array ports are truncated to n slots: drivers never
+    write past ~100 (16 points + terminator + 16 colours), and the full
+    16k copy every tick dominates phase-1 wall time."""
+    kind, sid = res
+    if kind == "arr":
+        v = sim.arrays.get(sid)
+        return list(v[:n]) if v is not None else []
+    return port_val(sim, res)
+
+
 def tight(a):
     """The connector's truncation and colour split, mirrored: points
     from slot 1 on, the first x <= -0.5 ends the list (at most 16
@@ -151,7 +162,7 @@ def main():
                 port_val(s, r_push),
                 port_val(s, r_red),
                 port_val(s, r_clr),
-                port_val(s, r_arr),
+                port_slice(s, r_arr),
             ))
 
         lsim.reset()
@@ -244,10 +255,17 @@ def main():
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
 
+        # Start the replay 100 ticks before the first push: everything
+        # before that is boot (no edges), so a fresh sim is already in
+        # the identical state -- and those idle screen ticks are the
+        # slowest part of the suite.
+        S = max(0, (pushes[0] if pushes else TICKS) - 100)
+
         def hook2(s, tick):
-            if tick >= len(samples):
+            k = tick + S
+            if k >= len(samples):
                 return
-            p, r, c, a = samples[tick]
+            p, r, c, a = samples[k]
             pts, cols = tight(a)
             if len(pts) >= 2:
                 slide(s, spts, scols, pts, cols)
@@ -257,7 +275,7 @@ def main():
                 "clearAllShapes": c > 0.5,
             })
 
-        ssim.run(TICKS, on_tick=hook2)
+        ssim.run(TICKS - S, on_tick=hook2)
 
         gids = {}
         for nid, nd in ssim.nodes.items():

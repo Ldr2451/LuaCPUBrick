@@ -34,14 +34,14 @@ import colormath  # noqa: E402
 
 colormath.install()
 from animtest import (out_port_id, resolve_port, port_val,  # noqa: E402
-                      tight, expect)
+                      tight, expect, port_slice)
 from painttest import poly_colors, stroke_colors, slide  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
 SHOW = os.path.join(HERE, "showcase.lua")
 SW = 64
-TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 22000
+TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 12500
 BLACK = (0.0, 0.0, 0.0, 1.0)
 
 
@@ -80,7 +80,7 @@ def main():
                 raw = m.group(1) if m else raw
             samples.append((port_val(s, r1), port_val(s, r2),
                             port_val(s, r3), port_val(s, r4),
-                            port_val(s, ra), raw))
+                            port_slice(s, ra), raw))
 
         lsim.reset()
         lsim.inputs = {"program": src, "run": True}
@@ -110,7 +110,7 @@ def main():
                pushes[0] if pushes else None))
 
         # intent: every expressive channel actually used
-        ok &= expect(len(pushes) >= 190, "full loop ran (%d pushes)"
+        ok &= expect(len(pushes) >= 95, "full loop ran (%d pushes)"
                      % len(pushes))
         ok &= expect(len(reds) >= len(pushes) and all(
             pushes[i] < reds[i] for i in range(len(pushes))),
@@ -132,6 +132,11 @@ def main():
         # tick cutoff can land mid-burst of an infinite loop and fail
         # spuriously.  The never-redrawn last push stays pending in both.
         T_end = pushes[-1] if pushes else TICKS
+        # Start the replay 100 ticks before the first push: everything
+        # before that is boot and staging (no edges), so a fresh sim is
+        # already in the identical state -- and those idle screen ticks
+        # are the slowest part of the suite.
+        T_start = max(0, (pushes[0] if pushes else T_end) - 100)
         # No "bursts settled" check here: the program loops forever, so
         # any fixed run ends at an arbitrary point past some redraw.
         # The wall diff below subsumes it -- a burst cut off mid-flight
@@ -165,10 +170,11 @@ def main():
         last_slid = [None, None]
 
         def hook2(s, tick):
-            if tick >= T_end:
+            k = tick + T_start
+            if k >= T_end:
                 return
-            _p, _r, _c, _w, a, st = samples[tick]
-            b = samples[tick - 2] if tick >= 2 else (0, 0, 0, 0, [], "")
+            _p, _r, _c, _w, a, st = samples[k]
+            b = samples[k - 2] if k >= 2 else (0, 0, 0, 0, [], "")
             pts, cols = tight(a)
             if pts != last_slid[0] or cols != last_slid[1]:
                 slide(s, spts, scols, pts, cols)
@@ -182,7 +188,7 @@ def main():
                 "clearAllShapes": (b[2] or 0.0) > 0.5,
             })
 
-        ssim.run(T_end, on_tick=hook2)
+        ssim.run(T_end - T_start, on_tick=hook2)
         gids = {}
         for nid, nd in ssim.nodes.items():
             lb = _ex(nd.props.get("_label", ("raw", "")))

@@ -8,7 +8,7 @@
 -- primitive and the retained slots at the physical floor.  The colour
 -- feature (per-point gradients, translucency, the deferred clearAllShapes)
 -- gets its own program: showcase2.lua.  Each fire naps just past its
--- burst (fill 1 tick/row, stroke +1/segment, retained ~64+rows), so
+-- burst (fill 2 rows/tick, stroke ~2 rows/tick, retained ~32+rows), so
 -- nothing is ever abandoned.
 local function tick()
   local c = clock()
@@ -103,7 +103,7 @@ local function octagon(cx, cy, r)
   outNumArr(1, cx - k, y0, cx + k, y0, x1, cy - k, x1, cy + k)
   outNumArr(9, cx + k, y1, cx - k, y1, x0, cy + k, x0, cy - k)
   outNumArr(17, -1.0)
-  fire(2.2)
+  fire(1.2)
 end
 
 -- 16-gon finale ring (36 rows)
@@ -138,7 +138,7 @@ local f = 0
 while true do
   -- 1. bouncing squares: fills overlapping into blends
   local n = 0
-  while n < 48 do
+  while n < 24 do
     square(bx, by)
     bx = bx + vx
     by = by + vy
@@ -150,7 +150,7 @@ while true do
   end
   -- 2. morphing triangle: apex sweeping over the trail
   n = 0
-  while n < 48 do
+  while n < 24 do
     local d = (f * 3) % 88
     if d > 44.0 then d = 88.0 - d end
     tri(10.0 + d)
@@ -160,14 +160,14 @@ while true do
   -- 3. rotating wire square: strokes, closed outline
   outNum(4, 1.0)
   n = 0
-  while n < 32 do
+  while n < 16 do
     wire(f % 16)
     f = f + 1
     n = n + 1
   end
   -- 4. scrolling sine wave: open stroke, 16 points (heaviest compute)
   n = 0
-  while n < 24 do
+  while n < 8 do
     wave(f)
     f = f + 1
     n = n + 1
@@ -178,7 +178,7 @@ while true do
   outStr(1, "1")
   outNumArr(1, 2.0, 2.0, 62.0, 2.0, 62.0, 62.0, 2.0, 62.0)
   outNumArr(9, 2.0, 2.0, -1.0)
-  fire(2.2)
+  fire(1.2)
   outNum(4, 0.0)
   outStr(1, "2")
   octagon(16.0, 44.0, 7.0)
@@ -187,13 +187,13 @@ while true do
   octagon(40.0, 30.0, 7.0)
   outStr(1, "2")
   outNumArr(1, -1.0)
-  fire(2.2)
+  fire(1.2)
   outStr(1, "")
   -- 6. trail ball over the retained scene: immediate accumulation
   bx, by = 8.0, 8.0
   vx, vy = 3.0, 2.0
   n = 0
-  while n < 36 do
+  while n < 18 do
     local ex, ey = bx + 6.0, by + 6.0
     outNumArr(1, bx, by, ex, by, ex, ey, bx, ey)
     outNumArr(9, -1.0)
@@ -212,7 +212,7 @@ while true do
   tick()
   tick()
   outNum(3, 0.0)
-  nap(0.85)
+  nap(0.6)
   ring()
-  nap(2.0)
+  nap(1.0)
 end

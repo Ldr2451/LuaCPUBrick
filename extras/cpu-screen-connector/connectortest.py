@@ -30,13 +30,19 @@ import colormath  # noqa: E402
 
 colormath.install()
 from painttest import poly_pixels, stroke_pixels, slide, xf_points  # noqa: E402
+from animtest import port_slice  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 CONN_WS = os.path.join(HERE, "connector.ws")
 SCREEN_WS = os.path.join(HERE, "..", "screen", "screen.ws")
 SW = 64
-TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 1600
+TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 2100
 BLACK = (0.0, 0.0, 0.0, 1.0)
+# The driver is quiet until ~1500 (boot and staging); both replays skip
+# that dead head (phases 2-3 run TICKS - SLICE ticks feeding samples and
+# rows at +SLICE).  The connector is combinational and the screen has no
+# edges before the first push, so the slice is exactly equivalent.
+SLICE = 1400
 
 DRIVER = """
 local function tick()
@@ -223,7 +229,7 @@ def main():
                 raw2 = m.group(1) if m else raw2
             samples.append((port_val(s, r1), port_val(s, r2),
                             port_val(s, r3), port_val(s, r4),
-                            port_val(s, ra), raw, raw2,
+                            port_slice(s, ra), raw, raw2,
                             [destr(v) for v in port_val(s, rsa)]))
 
         lsim.reset()
@@ -282,8 +288,9 @@ def main():
         cstream = []
 
         def hookc2(s, tick):
-            if tick < len(samples):
-                p1, p2, p3, p4, a, st, st2, sa = samples[tick]
+            k = tick + SLICE
+            if k < len(samples):
+                p1, p2, p3, p4, a, st, st2, sa = samples[k]
                 s.inputs = dict(s.inputs, **{
                     "outNum1": p1, "outNum2": p2, "outNum3": p3,
                     "outNum4": p4, "outStr1": st, "outStr2": st2,
@@ -302,7 +309,7 @@ def main():
             row["shapeScale"] = conn_arr(scl_res)
             cstream.append(row)
 
-        csim.run(TICKS, on_tick=hookc2)
+        csim.run(TICKS - SLICE, on_tick=hookc2)
 
         # spot-check the translation on a tick where the driver holds a
         # shape: the points pass through tight, the colours follow the

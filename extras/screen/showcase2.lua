@@ -102,7 +102,7 @@ local function background(h)
   pcol(18, h + 16, 1.0)
   pcol(22, h + 24, 1.0)
   xf(0.0, 0.0, 0.0, 1.0, 1.0)
-  fire(1.6)
+  fire(0.8)
 end
 
 -- the morph: the 8 ring points blended square -> circle by t, one hue
@@ -136,7 +136,7 @@ local function morph(t, hue)
   pcol(42, hue + 24, 1.0)
   pcol(46, hue + 28, 1.0)
   xf(0.0, 0.0, 0.0, 1.0, 1.0)
-  fire(1.75)
+  fire(0.9)
 end
 
 -- the mover: a small half-transparent quad (alpha 0.5, so the morph
@@ -154,7 +154,7 @@ local function mover(mx, my, ang, sc, hue)
   pcol(18, hue + 12, 0.5)
   pcol(22, hue + 18, 0.5)
   xf(mx, my, ang, sc, sc)
-  fire(1.9)
+  fire(1.0)
 end
 
 -- the satellite: a small triangle parented to the mover (slot 3), in
@@ -171,7 +171,7 @@ local function satellite(hue)
   pcol(12, hue + 10, 1.0)
   pcol(16, hue + 20, 1.0)
   xf(0.0, 0.0, 0.0, 1.0, 1.0)
-  fire(1.9)
+  fire(1.0)
   outStr(2, "")
   outStr(1, "3")
 end
@@ -235,8 +235,8 @@ while true do
   -- 2. the morph: square -> circle, colours shifting as it goes
   outStr(1, "2")
   local f = 0
-  while f < 6 do
-    morph(f / 6.0, hue)
+  while f < 3 do
+    morph(f / 3.0, hue)
     hue = hue + 3
     f = f + 1
   end
@@ -269,12 +269,12 @@ while true do
   outStr(1, "4")
   outStr(2, "")
   outNumArr(1, -1.0)
-  fire(1.9)
+  fire(1.0)
   outStr(1, "3")
   outNumArr(1, -1.0)
-  fire(1.9)
+  fire(1.0)
   outStr(1, "")
-  nap(2.0)
+  nap(1.0)
   -- 5. the queue: stage several shapes, then ONE draw paints them all.
   -- Each stage() only stages; draw() commits everything pending, so a
   -- frame is composed first and painted in one go.  Slot 2 gets a
@@ -290,14 +290,14 @@ while true do
     cols4(hue, 0.5), 0.0, 0.0, 0.0, 1.0, 1.0)
   hue = hue + 5
   draw()
-  nap(2.0)
+  nap(1.0)
   -- an edit and a delete are staged the same way and drawn the same way
   stage("2", {26.0, 10.0, 34.0, 18.0, 18.0, 18.0, 26.0, 10.0},
     cols4(hue, 1.0), 0.0, 0.0, 0.0, 1.0, 1.0)
   hue = hue + 5
   stage("4", {}, nil, 0.0, 0.0, 0.0, 1.0, 1.0)
   draw()
-  nap(2.0)
+  nap(1.0)
   -- 6. clearAllShapes: the screen still shows the scene (the pulse only
   -- forgets).  Compose the next one: the background's drawAllShapes is the
   -- pulse that blacks the wall, and the rest builds on top of it.
@@ -317,7 +317,7 @@ while true do
   mover(22.0, 22.0, 0.0, 1.0, hue + 10)
   outStr(1, "3")
   outNumArr(1, -1.0)
-  fire(1.9)
+  fire(1.0)
   outStr(1, "")
-  nap(2.0)
+  nap(1.0)
 end
