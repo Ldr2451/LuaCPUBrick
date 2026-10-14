@@ -354,6 +354,17 @@ L.append("var covLo: float = 200.0")
 L.append("var covHi: float = -200.0")
 L.append("var oldLo: float = 200.0")
 L.append("var oldHi: float = -200.0")
+# Coverage belongs to a FRAME, so it is cleared once per frame, not once
+# per shape: a recomposite arms separately for every live slot, and an
+# arm that reset would wipe the spans the earlier slots of the same
+# composite had already folded in (see the arm block below).
+L.append("var cDirty: bool = true")
+# Only a recomposite's paint may be erased: an immediate (id 0) push
+# paints OVER what is already there and accumulates, so blacking what it
+# no longer covers would wipe the shapes it was meant to compose with.
+# Every retained commit clears and repaints instead, so its pass is the
+# one that needs the erase.
+L.append("var eraseOK: bool = false")
 # Erase-pass state: running, the row cursor, which of a row's two
 # stale spans is next, and the rect being fed to the fill walk.
 L.append("var erasing: bool = false")
@@ -2203,10 +2214,15 @@ L.append("      justCleared = false")
 L.append("      rcOn = true")
 L.append("      rcSlot = 1.0")
 L.append("    } else if needRC {")
+# Do NOT arm here: the arm runs in this same tick, before the recomposite
+# iterator has loaded the first live slot into the shadow -- so it would
+# stage whatever shape the last fill left behind and paint that, and the
+# walk it starts then blocks the iterator (its guard needs !polyOn), so
+# the frame the user just committed is never painted at all.  The
+# iterator loads the slot and arms it in the same tick instead.
 L.append("      rcOn = true")
 L.append("      rcSlot = 1.0")
 L.append("      fromSlot = true")
-L.append("      arming = true")
 L.append("    }")
 L.append("  }")
 L.append("  if commitR {")
@@ -2314,10 +2330,15 @@ L.append("      justCleared = false")
 L.append("      rcOn = true")
 L.append("      rcSlot = 1.0")
 L.append("    } else if needRC {")
+# Do NOT arm here: the arm runs in this same tick, before the recomposite
+# iterator has loaded the first live slot into the shadow -- so it would
+# stage whatever shape the last fill left behind and paint that, and the
+# walk it starts then blocks the iterator (its guard needs !polyOn), so
+# the frame the user just committed is never painted at all.  The
+# iterator loads the slot and arms it in the same tick instead.
 L.append("      rcOn = true")
 L.append("      rcSlot = 1.0")
 L.append("      fromSlot = true")
-L.append("      arming = true")
 L.append("    }")
 L.append("  }")
 
@@ -2526,12 +2547,40 @@ reset_lines = []
 for _i in range(64):
     reset_lines.append("covMin[%d] = 200.0" % _i)
     reset_lines.append("covMax[%d] = -200.0" % _i)
+# The reset fires at the FIRST arm of a frame and then never again until
+# the frame's pass is done: it is armed either by a finished pass (cDirty,
+# set when the walk ends) or by cancelling an erase still walking
+# (erasing).  Every later arm in the same frame folds its spans in on top,
+# so the arrays end up describing the whole composite -- without that, a
+# two-slot frame only ever recorded its second slot, and the erase then
+# blacked the first one as stale.
 L.append("  if arming {")
 L.append("    if !erArm {")
+# A walk interrupted by a new paint has not visited every row, and the
+# rows it skipped still hold the extents of the frame before last -- so
+# the erase would treat them as never painted and leave the frame it is
+# replacing on screen forever.  Finish the roll the walk was doing: the
+# coverage it was comparing IS the frame on screen now, and every one of
+# its rows must become the previous frame's before it is cleared.  A
+# finished pass has already rolled the band (and cleared the bounds), so
+# this is a no-op there.
+roll_lines = []
+for _i in range(64):
+    roll_lines.append("oldMin[%d] = covMin[%d]" % (_i, _i))
+    roll_lines.append("oldMax[%d] = covMax[%d]" % (_i, _i))
+L.append("      if erasing {")
+for _l in roll_lines:
+    L.append("        " + _l)
+L.append("        oldLo = covLo")
+L.append("        oldHi = covHi")
+L.append("      }")
+L.append("      if erasing || cDirty {")
 for _l in reset_lines:
-    L.append("      " + _l)
-L.append("      covLo = 200.0")
-L.append("      covHi = -200.0")
+    L.append("        " + _l)
+L.append("        covLo = 200.0")
+L.append("        covHi = -200.0")
+L.append("        cDirty = false")
+L.append("      }")
 L.append("    }")
 L.append("    arming = false")
 L.append("    sOn = false")
@@ -2570,6 +2619,7 @@ L.append("    } else if clearing {")
 L.append("      erasing = false")
 L.append("      clearing = false")
 L.append("      fromSlot = false")
+L.append("      eraseOK = true")
 L.append("      shPts[0] = 0.0")
 L.append("      shPts[1] = 0.0")
 L.append("      shPts[2] = 64.0")
@@ -2591,8 +2641,13 @@ L.append("    } else {")
 L.append("      erasing = false")
 L.append("      if fromSlot {")
 L.append("        fromSlot = false")
+L.append("        eraseOK = true")
 L.append("      } else {")
 L.append("        rcOn = false")
+# an immediate push: it paints over the wall and accumulates with what
+# is already there, so the pass that follows must NOT black the shapes
+# it was composed with.
+L.append("        eraseOK = false")
 L.append("        n = (shapePoints.length() / 2.0) | 0")
 L.append("        if n > 16.0 { n = 16.0 }")
 L.append("      }")
@@ -3278,7 +3333,7 @@ L.append("  }")
 # as a one-row black rect -- the machinery the clearAllShapes fill
 # already uses, so this adds no lanes.
 L.append("  let painting = polyOn || sOn")
-L.append("  if wasPaint && !painting && !rcOn {")
+L.append("  if wasPaint && !painting && !rcOn && eraseOK {")
 L.append("    wasPaint = false")
 L.append("    erasing = true")
 L.append("    erRow = if oldLo < covLo then oldLo else covLo")
@@ -3295,6 +3350,10 @@ L.append("    var done: bool = false")
 L.append("    if erTwo {")
 L.append("      erL = erL2")
 L.append("      erR = erR2")
+# the second span is the right one, so its rect reaches one pixel past
+# its own outward edge -- without this it inherits the left span's side
+# and reaches right, into the column the new frame just painted.
+L.append("      erExt = 1.0")
 L.append("      erTwo = false")
 L.append("      staged = true")
 L.append("    }")
@@ -3318,7 +3377,12 @@ for _k in range(4):
         L.append("        if nm > om {")
         L.append("          erL = om")
         L.append("          erR = if oM < nm - 1.0 then oM else nm - 1.0")
-        L.append("          erExt = if om > 0.0 then 0.0 else 1.0")
+# erExt is the side, not a border test: the LEFT span always reaches one
+# pixel past its outward (left) edge, so it can never reach the new
+# frame's first painted column.  It used to read "the span touches col
+# 0", which made it reach RIGHT instead -- straight into the column the
+# new frame had just painted, blacking it.
+        L.append("          erExt = 0.0")
         L.append("          staged = true")
         L.append("        }")
         L.append("        if oM > nM {")
@@ -3347,6 +3411,10 @@ L.append("      oldLo = covLo")
 L.append("      oldHi = covHi")
 L.append("      covLo = 200.0")
 L.append("      covHi = -200.0")
+# the frame's extents have all rolled into the previous frame's, row by
+# row, during the walk -- so the arrays hold last frame's numbers too and
+# the next frame's first arm must clear them.
+L.append("      cDirty = true")
 L.append("    }")
 L.append("  }")
 for i in range(NP):
