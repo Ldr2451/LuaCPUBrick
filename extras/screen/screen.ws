@@ -480,6 +480,25 @@ var rowSlope2: color = Color(0.0, 0.0, 0.0, 0.0)
 var pcol2: float = 200.0
 var pcurR2: float = 100.0
 var aRow: float = 0.0
+var covMin: float[]
+var covMax: float[]
+var oldMin: float[]
+var oldMax: float[]
+var covLo: float = 200.0
+var covHi: float = -200.0
+var oldLo: float = 200.0
+var oldHi: float = -200.0
+var erasing: bool = false
+var erRow: float = 0.0
+var erL: float = 0.0
+var erR: float = 0.0
+var erY: float = 0.0
+var erExt: float = 1.0
+var erArm: bool = false
+var erL2: float = 0.0
+var erR2: float = 0.0
+var erTwo: bool = false
+var wasPaint: bool = false
 var cc0: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc2_0: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc1: color = Color(1.0, 1.0, 1.0, 1.0)
@@ -9007,6 +9026,10 @@ mod paintTick() {
     slPts.resize(288, 0.0)
     slPC.resize(144, Color(1.0, 1.0, 1.0, 1.0))
     slXF.resize(54, 0.0)
+    covMin.resize(64, 200.0)
+    covMax.resize(64, -200.0)
+    oldMin.resize(64, 200.0)
+    oldMax.resize(64, -200.0)
     anPts.resize(288, 0.0)
     anCol.resize(144, Color(0.0, 0.0, 0.0, 0.0))
     anXF.resize(54, 0.0)
@@ -10611,7 +10634,6 @@ mod paintTick() {
     } else if needRC {
       rcOn = true
       rcSlot = 1.0
-      clearing = true
       fromSlot = true
       arming = true
     }
@@ -10759,7 +10781,6 @@ mod paintTick() {
     } else if needRC {
       rcOn = true
       rcSlot = 1.0
-      clearing = true
       fromSlot = true
       arming = true
     }
@@ -11614,6 +11635,138 @@ mod paintTick() {
     }
   }
   if arming {
+    if !erArm {
+      covMin[0] = 200.0
+      covMax[0] = -200.0
+      covMin[1] = 200.0
+      covMax[1] = -200.0
+      covMin[2] = 200.0
+      covMax[2] = -200.0
+      covMin[3] = 200.0
+      covMax[3] = -200.0
+      covMin[4] = 200.0
+      covMax[4] = -200.0
+      covMin[5] = 200.0
+      covMax[5] = -200.0
+      covMin[6] = 200.0
+      covMax[6] = -200.0
+      covMin[7] = 200.0
+      covMax[7] = -200.0
+      covMin[8] = 200.0
+      covMax[8] = -200.0
+      covMin[9] = 200.0
+      covMax[9] = -200.0
+      covMin[10] = 200.0
+      covMax[10] = -200.0
+      covMin[11] = 200.0
+      covMax[11] = -200.0
+      covMin[12] = 200.0
+      covMax[12] = -200.0
+      covMin[13] = 200.0
+      covMax[13] = -200.0
+      covMin[14] = 200.0
+      covMax[14] = -200.0
+      covMin[15] = 200.0
+      covMax[15] = -200.0
+      covMin[16] = 200.0
+      covMax[16] = -200.0
+      covMin[17] = 200.0
+      covMax[17] = -200.0
+      covMin[18] = 200.0
+      covMax[18] = -200.0
+      covMin[19] = 200.0
+      covMax[19] = -200.0
+      covMin[20] = 200.0
+      covMax[20] = -200.0
+      covMin[21] = 200.0
+      covMax[21] = -200.0
+      covMin[22] = 200.0
+      covMax[22] = -200.0
+      covMin[23] = 200.0
+      covMax[23] = -200.0
+      covMin[24] = 200.0
+      covMax[24] = -200.0
+      covMin[25] = 200.0
+      covMax[25] = -200.0
+      covMin[26] = 200.0
+      covMax[26] = -200.0
+      covMin[27] = 200.0
+      covMax[27] = -200.0
+      covMin[28] = 200.0
+      covMax[28] = -200.0
+      covMin[29] = 200.0
+      covMax[29] = -200.0
+      covMin[30] = 200.0
+      covMax[30] = -200.0
+      covMin[31] = 200.0
+      covMax[31] = -200.0
+      covMin[32] = 200.0
+      covMax[32] = -200.0
+      covMin[33] = 200.0
+      covMax[33] = -200.0
+      covMin[34] = 200.0
+      covMax[34] = -200.0
+      covMin[35] = 200.0
+      covMax[35] = -200.0
+      covMin[36] = 200.0
+      covMax[36] = -200.0
+      covMin[37] = 200.0
+      covMax[37] = -200.0
+      covMin[38] = 200.0
+      covMax[38] = -200.0
+      covMin[39] = 200.0
+      covMax[39] = -200.0
+      covMin[40] = 200.0
+      covMax[40] = -200.0
+      covMin[41] = 200.0
+      covMax[41] = -200.0
+      covMin[42] = 200.0
+      covMax[42] = -200.0
+      covMin[43] = 200.0
+      covMax[43] = -200.0
+      covMin[44] = 200.0
+      covMax[44] = -200.0
+      covMin[45] = 200.0
+      covMax[45] = -200.0
+      covMin[46] = 200.0
+      covMax[46] = -200.0
+      covMin[47] = 200.0
+      covMax[47] = -200.0
+      covMin[48] = 200.0
+      covMax[48] = -200.0
+      covMin[49] = 200.0
+      covMax[49] = -200.0
+      covMin[50] = 200.0
+      covMax[50] = -200.0
+      covMin[51] = 200.0
+      covMax[51] = -200.0
+      covMin[52] = 200.0
+      covMax[52] = -200.0
+      covMin[53] = 200.0
+      covMax[53] = -200.0
+      covMin[54] = 200.0
+      covMax[54] = -200.0
+      covMin[55] = 200.0
+      covMax[55] = -200.0
+      covMin[56] = 200.0
+      covMax[56] = -200.0
+      covMin[57] = 200.0
+      covMax[57] = -200.0
+      covMin[58] = 200.0
+      covMax[58] = -200.0
+      covMin[59] = 200.0
+      covMax[59] = -200.0
+      covMin[60] = 200.0
+      covMax[60] = -200.0
+      covMin[61] = 200.0
+      covMax[61] = -200.0
+      covMin[62] = 200.0
+      covMax[62] = -200.0
+      covMin[63] = 200.0
+      covMax[63] = -200.0
+      covLo = 200.0
+      covHi = -200.0
+    }
     arming = false
     sOn = false
     sLive = false
@@ -11621,7 +11774,41 @@ mod paintTick() {
     gyMax = -200.0
     gxMin = 200.0
     gxMax = -200.0
-    if clearing {
+    if erArm {
+      erArm = false
+      fromSlot = false
+      polyLive = false
+      let x0 = if erExt > 0.5 then erL else erL - 1.0
+      let x1 = if erExt > 0.5 then erR + 1.0 else erR
+      shPts[0] = x0
+      shPts[1] = erY
+      shPts[2] = x1
+      shPts[3] = erY
+      shPts[4] = x1
+      shPts[5] = erY + 1.0
+      shPts[6] = x0
+      shPts[7] = erY + 1.0
+      n = 4.0
+      cLo = Color(0.0, 0.0, 0.0, 1.0)
+      rowSlope = Color(0.0, 0.0, 0.0, 0.0)
+      pC0 = Color(0.0, 0.0, 0.0, 1.0)
+      pC1 = Color(0.0, 0.0, 0.0, 1.0)
+      pC2 = Color(0.0, 0.0, 0.0, 1.0)
+      pC3 = Color(0.0, 0.0, 0.0, 1.0)
+      pC4 = Color(0.0, 0.0, 0.0, 1.0)
+      pC5 = Color(0.0, 0.0, 0.0, 1.0)
+      pC6 = Color(0.0, 0.0, 0.0, 1.0)
+      pC7 = Color(0.0, 0.0, 0.0, 1.0)
+      pC8 = Color(0.0, 0.0, 0.0, 1.0)
+      pC9 = Color(0.0, 0.0, 0.0, 1.0)
+      pC10 = Color(0.0, 0.0, 0.0, 1.0)
+      pC11 = Color(0.0, 0.0, 0.0, 1.0)
+      pC12 = Color(0.0, 0.0, 0.0, 1.0)
+      pC13 = Color(0.0, 0.0, 0.0, 1.0)
+      pC14 = Color(0.0, 0.0, 0.0, 1.0)
+      pC15 = Color(0.0, 0.0, 0.0, 1.0)
+    } else if clearing {
+      erasing = false
       clearing = false
       fromSlot = false
       shPts[0] = 0.0
@@ -11652,6 +11839,7 @@ mod paintTick() {
       pC14 = Color(0.0, 0.0, 0.0, 1.0)
       pC15 = Color(0.0, 0.0, 0.0, 1.0)
     } else {
+      erasing = false
       if fromSlot {
         fromSlot = false
       } else {
@@ -12372,6 +12560,20 @@ mod paintTick() {
           pcol = if n3_0 < 0.0 then 0.0 else (n3_0 | 0)
           pcurR = if x3_0 >= SWF then SWF - 1.0 else (x3_0 | 0)
           xL = n3_0
+          if !erasing {
+            let cra = (aRow | 0)
+            if pcurR >= pcol && pcol <= 63.0 {
+              if covMin[cra] > 199.0 {
+                covMin[cra] = pcol
+                covMax[cra] = pcurR
+              } else {
+                if pcol < covMin[cra] { covMin[cra] = pcol }
+                if pcurR > covMax[cra] { covMax[cra] = pcurR }
+              }
+              if cra < covLo { covLo = cra }
+              if cra > covHi { covHi = cra }
+            }
+          }
           cLo = nc3_0
           let span = x3_0 - n3_0
           let inv = if span > 0.0 then 1.0 / span else 0.0
@@ -12531,6 +12733,20 @@ mod paintTick() {
           pcol2 = if bn3_0 < 0.0 then 0.0 else (bn3_0 | 0)
           pcurR2 = if bx3_0 >= SWF then SWF - 1.0 else (bx3_0 | 0)
           xL2 = bn3_0
+          if !erasing {
+            let cra = (prow + 1.0 | 0)
+            if pcurR2 >= pcol2 && pcol2 <= 63.0 {
+              if covMin[cra] > 199.0 {
+                covMin[cra] = pcol2
+                covMax[cra] = pcurR2
+              } else {
+                if pcol2 < covMin[cra] { covMin[cra] = pcol2 }
+                if pcurR2 > covMax[cra] { covMax[cra] = pcurR2 }
+              }
+              if cra < covLo { covLo = cra }
+              if cra > covHi { covHi = cra }
+            }
+          }
           cLo2 = bnc3_0
           let bspan = bx3_0 - bn3_0
           let binv = if bspan > 0.0 then 1.0 / bspan else 0.0
@@ -12733,6 +12949,20 @@ mod paintTick() {
               pcol2 = if bumn < 0.0 then 0.0 else (bumn | 0)
               pcurR2 = if bumx >= SWF then SWF - 1.0 else (bumx | 0)
               xL2 = bumn
+              if !erasing {
+                let cra = (prow + 1.0 | 0)
+                if pcurR2 >= pcol2 && pcol2 <= 63.0 {
+                  if covMin[cra] > 199.0 {
+                    covMin[cra] = pcol2
+                    covMax[cra] = pcurR2
+                  } else {
+                    if pcol2 < covMin[cra] { covMin[cra] = pcol2 }
+                    if pcurR2 > covMax[cra] { covMax[cra] = pcurR2 }
+                  }
+                  if cra < covLo { covLo = cra }
+                  if cra > covHi { covHi = cra }
+                }
+              }
               cLo2 = bumnc
               let bspan = bumx - bumn
               let binv = if bspan > 0.0 then 1.0 / bspan else 0.0
@@ -12795,6 +13025,20 @@ mod paintTick() {
             pcol = if umn < 0.0 then 0.0 else (umn | 0)
             pcurR = if umx >= SWF then SWF - 1.0 else (umx | 0)
             xL = umn
+            if !erasing {
+              let cra = (aRow | 0)
+              if pcurR >= pcol && pcol <= 63.0 {
+                if covMin[cra] > 199.0 {
+                  covMin[cra] = pcol
+                  covMax[cra] = pcurR
+                } else {
+                  if pcol < covMin[cra] { covMin[cra] = pcol }
+                  if pcurR > covMax[cra] { covMax[cra] = pcurR }
+                }
+                if cra < covLo { covLo = cra }
+                if cra > covHi { covHi = cra }
+              }
+            }
             cLo = umnc
             let span = umx - umn
             let inv = if span > 0.0 then 1.0 / span else 0.0
@@ -13590,6 +13834,168 @@ mod paintTick() {
         fb[ridxB63] = cLo2 + rowSlope2 * dtB63
       }
       pcol2 = pcol2 + 64.0
+  }
+  let painting = polyOn || sOn
+  if wasPaint && !painting && !rcOn {
+    wasPaint = false
+    erasing = true
+    erRow = if oldLo < covLo then oldLo else covLo
+  } else if painting && !erasing {
+    wasPaint = true
+  }
+  if erasing && !painting && !rcOn && !arming {
+    let erHi = if oldHi > covHi then oldHi else covHi
+    let erLo = if oldLo < covLo then oldLo else covLo
+    var staged: bool = false
+    var done: bool = false
+    if erTwo {
+      erL = erL2
+      erR = erR2
+      erTwo = false
+      staged = true
+    }
+    if !staged && erRow <= erHi && erRow <= 63.0 {
+      let eri = (erRow | 0)
+      let om = oldMin[eri]
+      let oM = oldMax[eri]
+      let nm = covMin[eri]
+      let nM = covMax[eri]
+      oldMin[eri] = nm
+      oldMax[eri] = nM
+      oldMin[eri] = nm
+      oldMax[eri] = nM
+      erY = erRow
+      erRow = erRow + 1.0
+      if oM >= 0.0 {
+        if nm > om {
+          erL = om
+          erR = if oM < nm - 1.0 then oM else nm - 1.0
+          erExt = if om > 0.0 then 0.0 else 1.0
+          staged = true
+        }
+        if oM > nM {
+          if staged {
+            erL2 = if nM + 1.0 > om then nM + 1.0 else om
+            erR2 = oM
+            erTwo = true
+          } else {
+            erL = if nM + 1.0 > om then nM + 1.0 else om
+            erR = oM
+            erExt = 1.0
+            staged = true
+          }
+        }
+      }
+    }
+    if !staged && erRow <= erHi && erRow <= 63.0 {
+      let eri = (erRow | 0)
+      let om = oldMin[eri]
+      let oM = oldMax[eri]
+      let nm = covMin[eri]
+      let nM = covMax[eri]
+      oldMin[eri] = nm
+      oldMax[eri] = nM
+      oldMin[eri] = nm
+      oldMax[eri] = nM
+      erY = erRow
+      erRow = erRow + 1.0
+      if oM >= 0.0 {
+        if nm > om {
+          erL = om
+          erR = if oM < nm - 1.0 then oM else nm - 1.0
+          erExt = if om > 0.0 then 0.0 else 1.0
+          staged = true
+        }
+        if oM > nM {
+          if staged {
+            erL2 = if nM + 1.0 > om then nM + 1.0 else om
+            erR2 = oM
+            erTwo = true
+          } else {
+            erL = if nM + 1.0 > om then nM + 1.0 else om
+            erR = oM
+            erExt = 1.0
+            staged = true
+          }
+        }
+      }
+    }
+    if !staged && erRow <= erHi && erRow <= 63.0 {
+      let eri = (erRow | 0)
+      let om = oldMin[eri]
+      let oM = oldMax[eri]
+      let nm = covMin[eri]
+      let nM = covMax[eri]
+      oldMin[eri] = nm
+      oldMax[eri] = nM
+      oldMin[eri] = nm
+      oldMax[eri] = nM
+      erY = erRow
+      erRow = erRow + 1.0
+      if oM >= 0.0 {
+        if nm > om {
+          erL = om
+          erR = if oM < nm - 1.0 then oM else nm - 1.0
+          erExt = if om > 0.0 then 0.0 else 1.0
+          staged = true
+        }
+        if oM > nM {
+          if staged {
+            erL2 = if nM + 1.0 > om then nM + 1.0 else om
+            erR2 = oM
+            erTwo = true
+          } else {
+            erL = if nM + 1.0 > om then nM + 1.0 else om
+            erR = oM
+            erExt = 1.0
+            staged = true
+          }
+        }
+      }
+    }
+    if !staged && erRow <= erHi && erRow <= 63.0 {
+      let eri = (erRow | 0)
+      let om = oldMin[eri]
+      let oM = oldMax[eri]
+      let nm = covMin[eri]
+      let nM = covMax[eri]
+      oldMin[eri] = nm
+      oldMax[eri] = nM
+      oldMin[eri] = nm
+      oldMax[eri] = nM
+      erY = erRow
+      erRow = erRow + 1.0
+      if oM >= 0.0 {
+        if nm > om {
+          erL = om
+          erR = if oM < nm - 1.0 then oM else nm - 1.0
+          erExt = if om > 0.0 then 0.0 else 1.0
+          staged = true
+        }
+        if oM > nM {
+          if staged {
+            erL2 = if nM + 1.0 > om then nM + 1.0 else om
+            erR2 = oM
+            erTwo = true
+          } else {
+            erL = if nM + 1.0 > om then nM + 1.0 else om
+            erR = oM
+            erExt = 1.0
+            staged = true
+          }
+        }
+      }
+    }
+    if staged {
+      erArm = true
+      arming = true
+    } else if erRow > erHi {
+      erasing = false
+      oldLo = covLo
+      oldHi = covHi
+      covLo = 200.0
+      covHi = -200.0
+    }
   }
   g0 = fb[0]
   g1 = fb[1]
