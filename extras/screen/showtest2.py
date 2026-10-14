@@ -5,8 +5,8 @@ wire, the id string and outNumArr every tick.  Phase 2 replays that
 stream into the screen chip the way the connector would deliver it
 (tight points plus the per-point colours, bool edges 2 ticks after
 their arrays -- painttest's staging rule).  Phase 3 diffs the wall
-against a Python model with retained slots and the new clearAll
-semantics: the pulse only forgets the slots, and the drawAll right
+against a Python model with retained slots and the new clearAllShapes
+semantics: the pulse only forgets the slots, and the drawAllShapes right
 after it is what blacks the wall -- so a composed image never cuts
 to black before its first commit lands.
 
@@ -69,7 +69,7 @@ def stof(s):
 def stovec(sa, off):
     # three numeric strings at an offset: the connector's fixed slots
     # for one vec (missing/garbage parses to 0.0, which the screen
-    # defaults -- scale zeroes mean identity there too)
+    # defaults -- shapeScale zeroes mean identity there too)
     return tuple(stof(sa[off + i]) if len(sa) > off + i else 0.0
                  for i in range(3))
 
@@ -162,7 +162,7 @@ def main():
         ok &= expect(len(deletes4) >= 1,
                      "empty shape deletes slot 4 (%d times)"
                      % len(deletes4))
-        ok &= expect(len(clrs) >= 1, "clearAll pulse seen")
+        ok &= expect(len(clrs) >= 1, "clearAllShapes pulse seen")
         # colours: at least half the shapes carry a real gradient
         coloured = [pc for pts, cols, _w, _s, _x, _y, _z, _t in latched
                     for pc in [cols] if len(pts) >= 6
@@ -178,8 +178,8 @@ def main():
         ok &= expect(any(a < 0.9 for a in alphas),
                      "translucency present (alphas %s)"
                      % sorted(alphas))
-        # transforms: the mover frames carry nonzero position,
-        # rotation and breathing scale (its points never change), and
+        # transforms: the mover frames carry nonzero shapePosition,
+        # shapeRotation and breathing shapeScale (its points never change), and
         # slot 4 attaches to slot 3 (the satellite follows the mover)
         moved = [l for l in latched
                  if (l[4] != (0.0, 0.0) or l[5] != 0.0
@@ -215,9 +215,9 @@ def main():
         assert spts is not None and scols is not None
         ssim.inputs = {"shapePoints": [0.0] * 32,
                        "shapeColors": [],
-                       "pushShape": False, "wireMode": False,
-                       "shapeId": 0.0, "drawAll": False,
-                       "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                       "pushShape": False, "shapeWireMode": False,
+                       "shapeId": 0.0, "drawAllShapes": False,
+                       "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
@@ -240,16 +240,16 @@ def main():
                 last_slid[1] = cols
             s.inputs = dict(s.inputs, **{
                 "pushShape": (b[0] or 0.0) > 0.5,
-                "wireMode": (b[3] or 0.0) > 0.5,
+                "shapeWireMode": (b[3] or 0.0) > 0.5,
                 "shapeId": parse_id(b[5]),
-                "drawAll": (b[1] or 0.0) > 0.5,
-                "clearAll": (b[2] or 0.0) > 0.5,
+                "drawAllShapes": (b[1] or 0.0) > 0.5,
+                "clearAllShapes": (b[2] or 0.0) > 0.5,
                 # the transform + parent ride with the bools (they are
                 # staged at the push edge, settled long before it)
                 "parentShapeId": parse_id(b[6]),
-                "position": stovec(b[7], 0),
-                "rotation": stovec(b[7], 3),
-                "scale": stovec(b[7], 6),
+                "shapePosition": stovec(b[7], 0),
+                "shapeRotation": stovec(b[7], 3),
+                "shapeScale": stovec(b[7], 6),
             })
 
         ssim.run(T_end, on_tick=hook2)
@@ -264,7 +264,7 @@ def main():
 
         # ---- phase 3: slot model --------------------------------------
         # The deferred clear: the pulse forgets every slot and stages
-        # the black fill; the next drawAll runs it -- with a shape
+        # the black fill; the next drawAllShapes runs it -- with a shape
         # staged that means black first, then the shape over it.
         # Retained slots compose their world transform through every
         # ancestor exactly like the chip's walk, then paint.
@@ -295,18 +295,23 @@ def main():
             p, r, c = samples[k][0], samples[k][1], samples[k][2]
             if c > 0.5 and (samples[k - 1][2] if k else 0.0) <= 0.5:
                 slots = {}
-                pending = None
+                pending = []
                 black = True
             if p > 0.5 and (samples[k - 1][0] if k else 0.0) <= 0.5:
                 pts, cols, wire, st, pos, ang, scl, par = latched[li]
                 li += 1
-                pending = (pts, cols, wire, st, pos, ang, scl, par)
+                pending.append((pts, cols, wire, st, pos, ang, scl, par))
             if r > 0.5 and (samples[k - 1][1] if k else 0.0) <= 0.5:
                 if black:
                     fb = {}
                     black = False
-                if pending is not None:
-                    pts, cols, wire, st, pos, ang, scl, par = pending
+                # the queue: every push since the last draw commits here,
+                # in order.  A retained entry is stored in its slot; an
+                # id-0 entry paints immediately (the chip's scratch slot:
+                # painted with the scene, gone on the next commit).
+                retained = False
+                for entry in pending:
+                    pts, cols, wire, st, pos, ang, scl, par = entry
                     sid = parse_id(st)
                     if sid < 0.5:
                         paint(pts, cols, wire,
@@ -319,12 +324,14 @@ def main():
                         else:
                             slots[key] = (pts, cols, wire, st, pos,
                                           ang, scl, par)
-                        fb = {}
-                        for kk in sorted(slots):
-                            spts, scols, swire = slots[kk][:3]
-                            paint(spts, scols, swire,
-                                  world_of(slots, kk))
-                    pending = None
+                        retained = True
+                if retained:
+                    fb = {}
+                    for kk in sorted(slots):
+                        spts, scols, swire = slots[kk][:3]
+                        paint(spts, scols, swire,
+                              world_of(slots, kk))
+                pending = []
                 snaps.append((k, dict(fb)))
 
         bad = [i for i in range(SW * SW)
@@ -336,7 +343,7 @@ def main():
             print("   wall %r vs model %r at %d"
                   % (got[bad[0]], fb.get(bad[0]), bad[0]))
             # which burst does the wall actually reflect?  Compare against
-            # every snapshot the model took at a drawAll edge.
+            # every snapshot the model took at a drawAllShapes edge.
             scored = []
             for k, snap in snaps:
                 d = sum(1 for i in range(SW * SW)

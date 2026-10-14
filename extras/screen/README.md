@@ -35,25 +35,25 @@ without it.
               shapePoints --|           |-- px0 .. px4095: color
               shapeColors --|  screen   |
                pushShape --|           |
-               wireMode --|           |
+               shapeWireMode --|           |
                 shapeId --|           |
-                drawAll --|           |
-               clearAll --|           |
-               position --|           |
-               rotation --|           |
-                  scale --|           |
+                drawAllShapes --|           |
+               clearAllShapes --|           |
+               shapePosition --|           |
+               shapeRotation --|           |
+                  shapeScale --|           |
            parentShapeId --|           |
               brightness --|           |
 ```
 
 `pushShape` latches a shape -- its per-point colours, fill-vs-stroke,
-and slot -- and `drawAll` paints it: two rows per tick, the ports
+and slot -- and `drawAllShapes` paints it: two rows per tick, the ports
 mirror the framebuffer every tick.  (The draw input is called
-`drawAll`, not `redrawAll`: without it nothing is painted at all.)
+`drawAllShapes`, not `redrawAllShapes`: without it nothing is painted at all.)
 Points arrive on `shapePoints` as pixel-corner coordinates (a rect
 covering pixels 0..3 has corners 0 and 4), up to 16 of them; the count
 is the array's length, so the driver sends exactly as many points as
-the shape has.  `wireMode` (default false) low fills (the outline
+the shape has.  `shapeWireMode` (default false) low fills (the outline
 closes implicitly); high strokes a 2px polyline along consecutive
 pairs with no wrap, so the driver closes a wireframe by repeating the
 first point and leaves an open curve open (butt caps; joins overlap in
@@ -72,20 +72,20 @@ entirely (an empty array): every point defaults to white.
 `shapeId` 0 paints immediately and forgets; 1..8 retain the shape, and
 every retained commit clears the wall and repaints all live slots in
 order -- so pushing new points (and new colours) to an id edits it in
-place, and pushing zero points deletes it.  `clearAll` only forgets
-every slot: it does NOT touch the wall.  The next `drawAll` runs a
+place, and pushing zero points deletes it.  `clearAllShapes` only forgets
+every slot: it does NOT touch the wall.  The next `drawAllShapes` runs a
 64-tick black fill, so a driver can clear memory and compose the next
-image before anything changes on screen (pulse `clearAll` like a
+image before anything changes on screen (pulse `clearAllShapes` like a
 push; nothing replays afterwards, since both live flags die with it).
 
-`position`, `rotation`, `scale` and `parentShapeId` are all optional
+`shapePosition`, `shapeRotation`, `shapeScale` and `parentShapeId` are all optional
 (a direct driver can leave them unwired; the connector drives the
 first three from the CPU's output string array and the fourth from
 its second string output).  A push stages them with the shape, and a
 retained slot stores them with it -- so the CPU sends base geometry
 once and then moves, rotates or scales it without recomputing a
 single point.  Before either arm runs, the staged points are
-transformed once: scale, rotate about the origin by `rotation.z`
+transformed once: shapeScale, rotate about the origin by `shapeRotation.z`
 (radians), translate.  The staged transform is first composed
 through every ancestor -- pushing a shape with `parentShapeId` N
 attaches it to slot N, pushing it with 0 detaches it -- so one push
@@ -93,8 +93,8 @@ to a parent's slot moves, rotates or scales the whole object: every
 child (and grandchild -- the walk is capped at 8 steps, the slot
 count, so the deepest acyclic chain resolves, and a dead, missing or
 out-of-range parent, or a cycle, resolves to identity above it)
-follows.  Unwired vectors read zeroes: position/rotation zero are the
-identity, and scale zeroes mean identity too.
+follows.  Unwired vectors read zeroes: shapePosition/shapeRotation zero are the
+identity, and shapeScale zeroes mean identity too.
 
 `brightness` is a live user slider the connector never drives -- it
 stays unwired in the shipped save.  It takes 1 to 100, capped both
@@ -103,20 +103,20 @@ painted colour's RGB is scaled by it (alpha is untouched -- brightness
 is not opacity), and it acts at once: its edge reruns the retained
 recomposite without the black clear (nothing moved, so overwriting is
 exact) and refreshes the last immediate shape, so the whole wall
-follows with no push and no `drawAll`.  A push staged when the pass
-ends supersedes the immediate refresh (its `drawAll` paints the new
+follows with no push and no `drawAllShapes`.  A push staged when the pass
+ends supersedes the immediate refresh (its `drawAllShapes` paints the new
 shape instead); racing a refresh mid-burst tears it like any raced
 burst -- pace twiddles like pushes.  The wall bricks are emissive
 (`BMC_Glow`), so colours read as emitted light and the slider is a
 dimmer for the whole wall.
 Colors persist until rewritten, so a frame is a sequence of
 push-then-draw pairs, and the wall keeps the last color forever -- no
-keepalive, no expiry.  The last push before a `drawAll` wins, so a
-stale stage cannot fire.  A bare `drawAll` replays the last shape.
+keepalive, no expiry.  The last push before a `drawAllShapes` wins, so a
+stale stage cannot fire.  A bare `drawAllShapes` replays the last shape.
 
 `anim.lua` drives these inputs from the tinylua chip through the
 `cpu-screen-connector` bridge: `outNum1 -> pushShape`,
-`outNum2 -> drawAll`, `outNumArr` carrying only the points the shape
+`outNum2 -> drawAllShapes`, `outNumArr` carrying only the points the shape
 needs from element 1 on, closed by a terminator whose magnitude is
 the colour count (see the connector's README for the full layout).
 `anim.lua` sends no colours at all -- the default white keeps that
@@ -148,7 +148,7 @@ hull, a torn stroke, a stale slot, a wrong gradient, a miscomposed
 parent or an off-by-one row shows up as a pixel diff.  A load-time
 edge on an unwired stage paints nothing (a zero point array is a
 degenerate shape), a seeded array paints a correct prefix through
-whichever walk arms first, and a bare `drawAll` replays the last
+whichever walk arms first, and a bare `drawAllShapes` replays the last
 shape.
 
 The sim's `Expr_Math` gates are float-only and coerce colour tuples

@@ -8,27 +8,27 @@
 // gates directly by remote wire.
 //
 // Protocol: pushShape latches a shape -- its point colours,
-// fill-vs-stroke, slot, transform and parent -- and drawAll
+// fill-vs-stroke, slot, transform and parent -- and drawAllShapes
 // paints the CURRENT shape: the latched one, else the last
 // one again.  The point count is the array's length (the
 // connector delivers a tight list; a direct driver sends
 // exactly as many points as the shape has).  shapeColors is
 // optional and per-point: one colour per point, white where
-// absent.  position, rotation, scale and parentShapeId are
+// absent.  shapePosition, shapeRotation, shapeScale and parentShapeId are
 // optional too: the staged points are transformed once per
-// staged shape -- scale, rotate about the origin by
-// rotation.z (radians), translate -- after composing the
+// staged shape -- shapeScale, rotate about the origin by
+// shapeRotation.z (radians), translate -- after composing the
 // staged transform through every ancestor, so a child follows
 // its parent (and grandparent) with one push to the parent's
 // slot; parent 0 (or a dead/missing parent) is the identity,
-// and unwired vectors read zeroes (position/rotation zero are
-// the identity, scale zeroes mean identity too).  brightness
+// and unwired vectors read zeroes (shapePosition/shapeRotation zero are
+// the identity, shapeScale zeroes mean identity too).  brightness
 // is a live user slider the connector never drives (1..100,
 // capped; unwired reads 0.0, the 100 default): it scales every
 // painted colour immediately: its edge reruns the retained
 // recomposite without the black clear and refreshes the last
 // immediate shape, so the wall follows with no push and no
-// drawAll.
+// drawAllShapes.
 // true scanline interpolation -- each row's span takes the
 // colours of its two crossing edges (lerped along the edges by
 // row), then lerps across the span -- so a polygon with
@@ -42,7 +42,7 @@
 // strokes as a 2x2 dot.  Bounds are clipped; a fully off-screen
 // shape paints nothing.  Brick colors persist until rewritten,
 // so there is no keepalive and no expiry: the chip emits one
-// burst per drawAll and is silent otherwise.
+// burst per drawAllShapes and is silent otherwise.
 //
 // The fill is a scanline walk.  At the arm the points are read from the
 // array into per-edge scalars (base x/y, x-per-y slope, y range);
@@ -76,13 +76,13 @@ const MAXP = 16
 @left in shapePoints: float[]
 @left in shapeColors: color[]
 @left in pushShape: bool
-@left in wireMode: bool
+@left in shapeWireMode: bool
 @left in shapeId: float
-@left in drawAll: bool
-@left in clearAll: bool
-@left in position: vector
-@left in rotation: vector
-@left in scale: vector
+@left in drawAllShapes: bool
+@left in clearAllShapes: bool
+@left in shapePosition: vector
+@left in shapeRotation: vector
+@left in shapeScale: vector
 @left in parentShapeId: float
 @left in brightness: float
 
@@ -127,6 +127,15 @@ var eInv14: float = 0.0
 var eInv15: float = 0.0
 var n: float = 3.0
 var pending: bool = false
+var qCount: float = 0.0
+var qPush: bool = false
+var qN: float[]
+var qPts: float[]
+var qCol: color[]
+var qXF: float[]
+var qMode: float[]
+var qId: float[]
+var commitQ: bool = false
 var arming: bool = false
 var polyOn: bool = false
 var polyLive: bool = false
@@ -8776,18 +8785,19 @@ out px4095: color = g4095
 // read-then-write of one var loses the race; cross-handler flags
 // (pending, arming, polyOn) are fine, because no pass writes what it reads.
 // A push stages colour, mode and slot, and aborts anything live -- a
-// burst, a recomposite, a staged arm -- so the next drawAll always
+// burst, a recomposite, a staged arm -- so the next drawAllShapes always
 // starts fresh from the new stage.  (A load-time edge on an unwired
 // port stages zeroes: an empty immediate shape, which paints nothing.)
 on Change(pushShape) {
   if pushShape {
-    pWire = wireMode
+    pWire = shapeWireMode
     pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)
-    pPos = position
-    pRot = rotation
-    pScl = scale
+    pPos = shapePosition
+    pRot = shapeRotation
+    pScl = shapeScale
     pParent = if parentShapeId < 0.0 then 0.0 else if parentShapeId > 8.0 then 8.0 else (parentShapeId | 0)
     pending = true
+    qPush = true
     polyOn = false
     sOn = false
     rcOn = false
@@ -8797,20 +8807,21 @@ on Change(pushShape) {
     arming = false
     armingS = false
     commitR = false
+    commitQ = false
   }
 }
 
-// A bare drawAll replays the last shape: the edge records (fill) or the
+// A bare drawAllShapes replays the last shape: the edge records (fill) or the
 // preserved points (stroke) are still staged, so only the walk state
 // resets.  Each replay is guarded against the other walk and every arm,
 // so a fill burst and a stroke replay can never collide.  A staged
 // retained push commits instead: the slot is stored and the wall is
-// recomposited from every live slot in order.  A staged clearAll fill
+// recomposited from every live slot in order.  A staged clearAllShapes fill
 // (blackPending) runs here first: with a shape staged, the fill runs
 // and the shape re-arms when it ends (pending is left set on purpose);
 // with nothing staged, the wall simply goes black.
-on Change(drawAll) {
-  if drawAll {
+on Change(drawAllShapes) {
+  if drawAllShapes {
     if blackPending {
       blackPending = false
       clearing = true
@@ -8821,22 +8832,26 @@ on Change(drawAll) {
       }
     } else if pending {
       pending = false
-      if pId >= 1.0 {
+      if qCount > 1.5 {
+        commitQ = true
+      } else if pId >= 1.0 {
         commitR = true
+        qCount = 0.0
       } else {
         if pWire {
           armingS = true
         } else {
           arming = true
         }
+        qCount = 0.0
       }
     }
-    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR {
+    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ {
       prow = pfirst - 2.0
       pcol = 200.0
       polyOn = true
     }
-    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR {
+    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ {
       rX0 = sPx0
       rY0 = sPy0
       rC0 = sPc0
@@ -8902,7 +8917,7 @@ on Change(drawAll) {
 // same walks, so a brightness pass snapshots the armed immediate
 // parameters when it starts and restores them before the replay.
 // The wall follows within one recomposite, with no
-// drawAll and no restaging; live bursts and recomposites serialize
+// drawAllShapes and no restaging; live bursts and recomposites serialize
 // ahead of it (their remaining rows already read the new factor
 // per row), and rapid twiddles collapse into one repaint that
 // always reads the latest value.  An empty wall costs two quiet
@@ -8915,17 +8930,17 @@ on Change(brightness) {
   }
 }
 
-// clearAll forgets every retained slot and stages a black
+// clearAllShapes forgets every retained slot and stages a black
 // fill -- it does NOT touch the wall itself.  The next
-// drawAll runs the staged fill (64 rows, the physical
+// drawAllShapes runs the staged fill (64 rows, the physical
 // floor for 4096 pixels), so a driver can clear memory
 // and compose the next image before anything changes on
 // screen.  Afterwards no replay can resurrect anything
 // (both live flags die here), and the next retained
 // commit starts from an empty table.  Pulse it like a
 // push: only the rising edge matters.
-on Change(clearAll) {
-  if clearAll {
+on Change(clearAllShapes) {
+  if clearAllShapes {
     pending = false
     commitR = false
     arming = false
@@ -8944,6 +8959,8 @@ on Change(clearAll) {
     slLive[5] = 0.0
     slLive[6] = 0.0
     slLive[7] = 0.0
+    slLive[8] = 0.0
+    qCount = 0.0
     blackPending = true
     justCleared = false
   }
@@ -8963,11 +8980,671 @@ mod paintTick() {
     slMode.resize(8, 0.0)
     slLive.resize(8, 0.0)
     slCount.resize(8, 0.0)
+    slPts.resize(288, 0.0)
+    slPC.resize(144, Color(1.0, 1.0, 1.0, 1.0))
+    slXF.resize(54, 0.0)
+    slMode.resize(9, 0.0)
+    slLive.resize(9, 0.0)
+    slCount.resize(9, 0.0)
+    qN.resize(8, 0.0)
+    qPts.resize(256, 0.0)
+    qCol.resize(128, Color(1.0, 1.0, 1.0, 1.0))
+    qXF.resize(48, 0.0)
+    qMode.resize(8, 0.0)
+    qId.resize(8, 0.0)
     fbInit = true
   }
   bf = if brightness <= 0.0 then 1.0 else if brightness < 1.0 then 0.01 else if brightness > 100.0 then 1.0 else brightness / 100.0
+  if qPush {
+    qPush = false
+    let e = if qCount > 7.0 then 7.0 else qCount
+    let pb = e * 32.0
+    let cb = e * 16.0
+    let xb = e * 6.0
+    qPts[pb + 0.0] = shapePoints[0]
+    qPts[pb + 1.0] = shapePoints[1]
+    qPts[pb + 2.0] = shapePoints[2]
+    qPts[pb + 3.0] = shapePoints[3]
+    qPts[pb + 4.0] = shapePoints[4]
+    qPts[pb + 5.0] = shapePoints[5]
+    qPts[pb + 6.0] = shapePoints[6]
+    qPts[pb + 7.0] = shapePoints[7]
+    qPts[pb + 8.0] = shapePoints[8]
+    qPts[pb + 9.0] = shapePoints[9]
+    qPts[pb + 10.0] = shapePoints[10]
+    qPts[pb + 11.0] = shapePoints[11]
+    qPts[pb + 12.0] = shapePoints[12]
+    qPts[pb + 13.0] = shapePoints[13]
+    qPts[pb + 14.0] = shapePoints[14]
+    qPts[pb + 15.0] = shapePoints[15]
+    qPts[pb + 16.0] = shapePoints[16]
+    qPts[pb + 17.0] = shapePoints[17]
+    qPts[pb + 18.0] = shapePoints[18]
+    qPts[pb + 19.0] = shapePoints[19]
+    qPts[pb + 20.0] = shapePoints[20]
+    qPts[pb + 21.0] = shapePoints[21]
+    qPts[pb + 22.0] = shapePoints[22]
+    qPts[pb + 23.0] = shapePoints[23]
+    qPts[pb + 24.0] = shapePoints[24]
+    qPts[pb + 25.0] = shapePoints[25]
+    qPts[pb + 26.0] = shapePoints[26]
+    qPts[pb + 27.0] = shapePoints[27]
+    qPts[pb + 28.0] = shapePoints[28]
+    qPts[pb + 29.0] = shapePoints[29]
+    qPts[pb + 30.0] = shapePoints[30]
+    qPts[pb + 31.0] = shapePoints[31]
+    qCol[cb + 0.0] = if shapeColors.length() > 0 then shapeColors[0] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 1.0] = if shapeColors.length() > 1 then shapeColors[1] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 2.0] = if shapeColors.length() > 2 then shapeColors[2] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 3.0] = if shapeColors.length() > 3 then shapeColors[3] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 4.0] = if shapeColors.length() > 4 then shapeColors[4] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 5.0] = if shapeColors.length() > 5 then shapeColors[5] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 6.0] = if shapeColors.length() > 6 then shapeColors[6] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 7.0] = if shapeColors.length() > 7 then shapeColors[7] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 8.0] = if shapeColors.length() > 8 then shapeColors[8] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 9.0] = if shapeColors.length() > 9 then shapeColors[9] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 10.0] = if shapeColors.length() > 10 then shapeColors[10] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 11.0] = if shapeColors.length() > 11 then shapeColors[11] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 12.0] = if shapeColors.length() > 12 then shapeColors[12] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 13.0] = if shapeColors.length() > 13 then shapeColors[13] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 14.0] = if shapeColors.length() > 14 then shapeColors[14] else Color(1.0, 1.0, 1.0, 1.0)
+    qCol[cb + 15.0] = if shapeColors.length() > 15 then shapeColors[15] else Color(1.0, 1.0, 1.0, 1.0)
+    qN[e] = if (shapePoints.length() / 2.0) > 16.0 then 16.0 else (shapePoints.length() / 2.0) | 0
+    qMode[e] = if pWire then 1.0 else 0.0
+    qId[e] = pId
+    qXF[xb + 0.0] = pPos.x
+    qXF[xb + 1.0] = pPos.y
+    qXF[xb + 2.0] = pRot.z
+    qXF[xb + 3.0] = if pScl.x == 0.0 then 1.0 else pScl.x
+    qXF[xb + 4.0] = if pScl.y == 0.0 then 1.0 else pScl.y
+    qXF[xb + 5.0] = pParent
+    qCount = e + 1.0
+  }
+  if commitQ {
+    commitQ = false
+    slLive[8] = 0.0
+    if qCount > 0.0 {
+      let ne0 = qN[0]
+      let nslot0 = if qId[0] < 0.5 then 8.0 else qId[0] - 1.0
+      let nsb0 = nslot0 * 32.0
+      let ncb0 = nslot0 * 16.0
+      let nxb0 = nslot0 * 6.0
+      let epb0 = 0.0 * 32.0
+      let ecb0 = 0.0 * 16.0
+      let exb0 = 0.0 * 6.0
+      if ne0 < 1.0 {
+        slLive[nslot0] = 0.0
+      } else {
+        slPts[nsb0 + 0.0] = qPts[epb0 + 0.0]
+        slPts[nsb0 + 1.0] = qPts[epb0 + 1.0]
+        slPts[nsb0 + 2.0] = qPts[epb0 + 2.0]
+        slPts[nsb0 + 3.0] = qPts[epb0 + 3.0]
+        slPts[nsb0 + 4.0] = qPts[epb0 + 4.0]
+        slPts[nsb0 + 5.0] = qPts[epb0 + 5.0]
+        slPts[nsb0 + 6.0] = qPts[epb0 + 6.0]
+        slPts[nsb0 + 7.0] = qPts[epb0 + 7.0]
+        slPts[nsb0 + 8.0] = qPts[epb0 + 8.0]
+        slPts[nsb0 + 9.0] = qPts[epb0 + 9.0]
+        slPts[nsb0 + 10.0] = qPts[epb0 + 10.0]
+        slPts[nsb0 + 11.0] = qPts[epb0 + 11.0]
+        slPts[nsb0 + 12.0] = qPts[epb0 + 12.0]
+        slPts[nsb0 + 13.0] = qPts[epb0 + 13.0]
+        slPts[nsb0 + 14.0] = qPts[epb0 + 14.0]
+        slPts[nsb0 + 15.0] = qPts[epb0 + 15.0]
+        slPts[nsb0 + 16.0] = qPts[epb0 + 16.0]
+        slPts[nsb0 + 17.0] = qPts[epb0 + 17.0]
+        slPts[nsb0 + 18.0] = qPts[epb0 + 18.0]
+        slPts[nsb0 + 19.0] = qPts[epb0 + 19.0]
+        slPts[nsb0 + 20.0] = qPts[epb0 + 20.0]
+        slPts[nsb0 + 21.0] = qPts[epb0 + 21.0]
+        slPts[nsb0 + 22.0] = qPts[epb0 + 22.0]
+        slPts[nsb0 + 23.0] = qPts[epb0 + 23.0]
+        slPts[nsb0 + 24.0] = qPts[epb0 + 24.0]
+        slPts[nsb0 + 25.0] = qPts[epb0 + 25.0]
+        slPts[nsb0 + 26.0] = qPts[epb0 + 26.0]
+        slPts[nsb0 + 27.0] = qPts[epb0 + 27.0]
+        slPts[nsb0 + 28.0] = qPts[epb0 + 28.0]
+        slPts[nsb0 + 29.0] = qPts[epb0 + 29.0]
+        slPts[nsb0 + 30.0] = qPts[epb0 + 30.0]
+        slPts[nsb0 + 31.0] = qPts[epb0 + 31.0]
+        slPC[ncb0 + 0.0] = qCol[ecb0 + 0.0]
+        slPC[ncb0 + 1.0] = qCol[ecb0 + 1.0]
+        slPC[ncb0 + 2.0] = qCol[ecb0 + 2.0]
+        slPC[ncb0 + 3.0] = qCol[ecb0 + 3.0]
+        slPC[ncb0 + 4.0] = qCol[ecb0 + 4.0]
+        slPC[ncb0 + 5.0] = qCol[ecb0 + 5.0]
+        slPC[ncb0 + 6.0] = qCol[ecb0 + 6.0]
+        slPC[ncb0 + 7.0] = qCol[ecb0 + 7.0]
+        slPC[ncb0 + 8.0] = qCol[ecb0 + 8.0]
+        slPC[ncb0 + 9.0] = qCol[ecb0 + 9.0]
+        slPC[ncb0 + 10.0] = qCol[ecb0 + 10.0]
+        slPC[ncb0 + 11.0] = qCol[ecb0 + 11.0]
+        slPC[ncb0 + 12.0] = qCol[ecb0 + 12.0]
+        slPC[ncb0 + 13.0] = qCol[ecb0 + 13.0]
+        slPC[ncb0 + 14.0] = qCol[ecb0 + 14.0]
+        slPC[ncb0 + 15.0] = qCol[ecb0 + 15.0]
+        slMode[nslot0] = qMode[0] > 0.5
+        slLive[nslot0] = 1.0
+        slCount[nslot0] = ne0
+        slXF[nxb0 + 0.0] = qXF[exb0 + 0.0]
+        slXF[nxb0 + 1.0] = qXF[exb0 + 1.0]
+        slXF[nxb0 + 2.0] = qXF[exb0 + 2.0]
+        slXF[nxb0 + 3.0] = qXF[exb0 + 3.0]
+        slXF[nxb0 + 4.0] = qXF[exb0 + 4.0]
+        slXF[nxb0 + 5.0] = qXF[exb0 + 5.0]
+      }
+    }
+    if qCount > 1.0 {
+      let ne1 = qN[1]
+      let nslot1 = if qId[1] < 0.5 then 8.0 else qId[1] - 1.0
+      let nsb1 = nslot1 * 32.0
+      let ncb1 = nslot1 * 16.0
+      let nxb1 = nslot1 * 6.0
+      let epb1 = 1.0 * 32.0
+      let ecb1 = 1.0 * 16.0
+      let exb1 = 1.0 * 6.0
+      if ne1 < 1.0 {
+        slLive[nslot1] = 0.0
+      } else {
+        slPts[nsb1 + 0.0] = qPts[epb1 + 0.0]
+        slPts[nsb1 + 1.0] = qPts[epb1 + 1.0]
+        slPts[nsb1 + 2.0] = qPts[epb1 + 2.0]
+        slPts[nsb1 + 3.0] = qPts[epb1 + 3.0]
+        slPts[nsb1 + 4.0] = qPts[epb1 + 4.0]
+        slPts[nsb1 + 5.0] = qPts[epb1 + 5.0]
+        slPts[nsb1 + 6.0] = qPts[epb1 + 6.0]
+        slPts[nsb1 + 7.0] = qPts[epb1 + 7.0]
+        slPts[nsb1 + 8.0] = qPts[epb1 + 8.0]
+        slPts[nsb1 + 9.0] = qPts[epb1 + 9.0]
+        slPts[nsb1 + 10.0] = qPts[epb1 + 10.0]
+        slPts[nsb1 + 11.0] = qPts[epb1 + 11.0]
+        slPts[nsb1 + 12.0] = qPts[epb1 + 12.0]
+        slPts[nsb1 + 13.0] = qPts[epb1 + 13.0]
+        slPts[nsb1 + 14.0] = qPts[epb1 + 14.0]
+        slPts[nsb1 + 15.0] = qPts[epb1 + 15.0]
+        slPts[nsb1 + 16.0] = qPts[epb1 + 16.0]
+        slPts[nsb1 + 17.0] = qPts[epb1 + 17.0]
+        slPts[nsb1 + 18.0] = qPts[epb1 + 18.0]
+        slPts[nsb1 + 19.0] = qPts[epb1 + 19.0]
+        slPts[nsb1 + 20.0] = qPts[epb1 + 20.0]
+        slPts[nsb1 + 21.0] = qPts[epb1 + 21.0]
+        slPts[nsb1 + 22.0] = qPts[epb1 + 22.0]
+        slPts[nsb1 + 23.0] = qPts[epb1 + 23.0]
+        slPts[nsb1 + 24.0] = qPts[epb1 + 24.0]
+        slPts[nsb1 + 25.0] = qPts[epb1 + 25.0]
+        slPts[nsb1 + 26.0] = qPts[epb1 + 26.0]
+        slPts[nsb1 + 27.0] = qPts[epb1 + 27.0]
+        slPts[nsb1 + 28.0] = qPts[epb1 + 28.0]
+        slPts[nsb1 + 29.0] = qPts[epb1 + 29.0]
+        slPts[nsb1 + 30.0] = qPts[epb1 + 30.0]
+        slPts[nsb1 + 31.0] = qPts[epb1 + 31.0]
+        slPC[ncb1 + 0.0] = qCol[ecb1 + 0.0]
+        slPC[ncb1 + 1.0] = qCol[ecb1 + 1.0]
+        slPC[ncb1 + 2.0] = qCol[ecb1 + 2.0]
+        slPC[ncb1 + 3.0] = qCol[ecb1 + 3.0]
+        slPC[ncb1 + 4.0] = qCol[ecb1 + 4.0]
+        slPC[ncb1 + 5.0] = qCol[ecb1 + 5.0]
+        slPC[ncb1 + 6.0] = qCol[ecb1 + 6.0]
+        slPC[ncb1 + 7.0] = qCol[ecb1 + 7.0]
+        slPC[ncb1 + 8.0] = qCol[ecb1 + 8.0]
+        slPC[ncb1 + 9.0] = qCol[ecb1 + 9.0]
+        slPC[ncb1 + 10.0] = qCol[ecb1 + 10.0]
+        slPC[ncb1 + 11.0] = qCol[ecb1 + 11.0]
+        slPC[ncb1 + 12.0] = qCol[ecb1 + 12.0]
+        slPC[ncb1 + 13.0] = qCol[ecb1 + 13.0]
+        slPC[ncb1 + 14.0] = qCol[ecb1 + 14.0]
+        slPC[ncb1 + 15.0] = qCol[ecb1 + 15.0]
+        slMode[nslot1] = qMode[1] > 0.5
+        slLive[nslot1] = 1.0
+        slCount[nslot1] = ne1
+        slXF[nxb1 + 0.0] = qXF[exb1 + 0.0]
+        slXF[nxb1 + 1.0] = qXF[exb1 + 1.0]
+        slXF[nxb1 + 2.0] = qXF[exb1 + 2.0]
+        slXF[nxb1 + 3.0] = qXF[exb1 + 3.0]
+        slXF[nxb1 + 4.0] = qXF[exb1 + 4.0]
+        slXF[nxb1 + 5.0] = qXF[exb1 + 5.0]
+      }
+    }
+    if qCount > 2.0 {
+      let ne2 = qN[2]
+      let nslot2 = if qId[2] < 0.5 then 8.0 else qId[2] - 1.0
+      let nsb2 = nslot2 * 32.0
+      let ncb2 = nslot2 * 16.0
+      let nxb2 = nslot2 * 6.0
+      let epb2 = 2.0 * 32.0
+      let ecb2 = 2.0 * 16.0
+      let exb2 = 2.0 * 6.0
+      if ne2 < 1.0 {
+        slLive[nslot2] = 0.0
+      } else {
+        slPts[nsb2 + 0.0] = qPts[epb2 + 0.0]
+        slPts[nsb2 + 1.0] = qPts[epb2 + 1.0]
+        slPts[nsb2 + 2.0] = qPts[epb2 + 2.0]
+        slPts[nsb2 + 3.0] = qPts[epb2 + 3.0]
+        slPts[nsb2 + 4.0] = qPts[epb2 + 4.0]
+        slPts[nsb2 + 5.0] = qPts[epb2 + 5.0]
+        slPts[nsb2 + 6.0] = qPts[epb2 + 6.0]
+        slPts[nsb2 + 7.0] = qPts[epb2 + 7.0]
+        slPts[nsb2 + 8.0] = qPts[epb2 + 8.0]
+        slPts[nsb2 + 9.0] = qPts[epb2 + 9.0]
+        slPts[nsb2 + 10.0] = qPts[epb2 + 10.0]
+        slPts[nsb2 + 11.0] = qPts[epb2 + 11.0]
+        slPts[nsb2 + 12.0] = qPts[epb2 + 12.0]
+        slPts[nsb2 + 13.0] = qPts[epb2 + 13.0]
+        slPts[nsb2 + 14.0] = qPts[epb2 + 14.0]
+        slPts[nsb2 + 15.0] = qPts[epb2 + 15.0]
+        slPts[nsb2 + 16.0] = qPts[epb2 + 16.0]
+        slPts[nsb2 + 17.0] = qPts[epb2 + 17.0]
+        slPts[nsb2 + 18.0] = qPts[epb2 + 18.0]
+        slPts[nsb2 + 19.0] = qPts[epb2 + 19.0]
+        slPts[nsb2 + 20.0] = qPts[epb2 + 20.0]
+        slPts[nsb2 + 21.0] = qPts[epb2 + 21.0]
+        slPts[nsb2 + 22.0] = qPts[epb2 + 22.0]
+        slPts[nsb2 + 23.0] = qPts[epb2 + 23.0]
+        slPts[nsb2 + 24.0] = qPts[epb2 + 24.0]
+        slPts[nsb2 + 25.0] = qPts[epb2 + 25.0]
+        slPts[nsb2 + 26.0] = qPts[epb2 + 26.0]
+        slPts[nsb2 + 27.0] = qPts[epb2 + 27.0]
+        slPts[nsb2 + 28.0] = qPts[epb2 + 28.0]
+        slPts[nsb2 + 29.0] = qPts[epb2 + 29.0]
+        slPts[nsb2 + 30.0] = qPts[epb2 + 30.0]
+        slPts[nsb2 + 31.0] = qPts[epb2 + 31.0]
+        slPC[ncb2 + 0.0] = qCol[ecb2 + 0.0]
+        slPC[ncb2 + 1.0] = qCol[ecb2 + 1.0]
+        slPC[ncb2 + 2.0] = qCol[ecb2 + 2.0]
+        slPC[ncb2 + 3.0] = qCol[ecb2 + 3.0]
+        slPC[ncb2 + 4.0] = qCol[ecb2 + 4.0]
+        slPC[ncb2 + 5.0] = qCol[ecb2 + 5.0]
+        slPC[ncb2 + 6.0] = qCol[ecb2 + 6.0]
+        slPC[ncb2 + 7.0] = qCol[ecb2 + 7.0]
+        slPC[ncb2 + 8.0] = qCol[ecb2 + 8.0]
+        slPC[ncb2 + 9.0] = qCol[ecb2 + 9.0]
+        slPC[ncb2 + 10.0] = qCol[ecb2 + 10.0]
+        slPC[ncb2 + 11.0] = qCol[ecb2 + 11.0]
+        slPC[ncb2 + 12.0] = qCol[ecb2 + 12.0]
+        slPC[ncb2 + 13.0] = qCol[ecb2 + 13.0]
+        slPC[ncb2 + 14.0] = qCol[ecb2 + 14.0]
+        slPC[ncb2 + 15.0] = qCol[ecb2 + 15.0]
+        slMode[nslot2] = qMode[2] > 0.5
+        slLive[nslot2] = 1.0
+        slCount[nslot2] = ne2
+        slXF[nxb2 + 0.0] = qXF[exb2 + 0.0]
+        slXF[nxb2 + 1.0] = qXF[exb2 + 1.0]
+        slXF[nxb2 + 2.0] = qXF[exb2 + 2.0]
+        slXF[nxb2 + 3.0] = qXF[exb2 + 3.0]
+        slXF[nxb2 + 4.0] = qXF[exb2 + 4.0]
+        slXF[nxb2 + 5.0] = qXF[exb2 + 5.0]
+      }
+    }
+    if qCount > 3.0 {
+      let ne3 = qN[3]
+      let nslot3 = if qId[3] < 0.5 then 8.0 else qId[3] - 1.0
+      let nsb3 = nslot3 * 32.0
+      let ncb3 = nslot3 * 16.0
+      let nxb3 = nslot3 * 6.0
+      let epb3 = 3.0 * 32.0
+      let ecb3 = 3.0 * 16.0
+      let exb3 = 3.0 * 6.0
+      if ne3 < 1.0 {
+        slLive[nslot3] = 0.0
+      } else {
+        slPts[nsb3 + 0.0] = qPts[epb3 + 0.0]
+        slPts[nsb3 + 1.0] = qPts[epb3 + 1.0]
+        slPts[nsb3 + 2.0] = qPts[epb3 + 2.0]
+        slPts[nsb3 + 3.0] = qPts[epb3 + 3.0]
+        slPts[nsb3 + 4.0] = qPts[epb3 + 4.0]
+        slPts[nsb3 + 5.0] = qPts[epb3 + 5.0]
+        slPts[nsb3 + 6.0] = qPts[epb3 + 6.0]
+        slPts[nsb3 + 7.0] = qPts[epb3 + 7.0]
+        slPts[nsb3 + 8.0] = qPts[epb3 + 8.0]
+        slPts[nsb3 + 9.0] = qPts[epb3 + 9.0]
+        slPts[nsb3 + 10.0] = qPts[epb3 + 10.0]
+        slPts[nsb3 + 11.0] = qPts[epb3 + 11.0]
+        slPts[nsb3 + 12.0] = qPts[epb3 + 12.0]
+        slPts[nsb3 + 13.0] = qPts[epb3 + 13.0]
+        slPts[nsb3 + 14.0] = qPts[epb3 + 14.0]
+        slPts[nsb3 + 15.0] = qPts[epb3 + 15.0]
+        slPts[nsb3 + 16.0] = qPts[epb3 + 16.0]
+        slPts[nsb3 + 17.0] = qPts[epb3 + 17.0]
+        slPts[nsb3 + 18.0] = qPts[epb3 + 18.0]
+        slPts[nsb3 + 19.0] = qPts[epb3 + 19.0]
+        slPts[nsb3 + 20.0] = qPts[epb3 + 20.0]
+        slPts[nsb3 + 21.0] = qPts[epb3 + 21.0]
+        slPts[nsb3 + 22.0] = qPts[epb3 + 22.0]
+        slPts[nsb3 + 23.0] = qPts[epb3 + 23.0]
+        slPts[nsb3 + 24.0] = qPts[epb3 + 24.0]
+        slPts[nsb3 + 25.0] = qPts[epb3 + 25.0]
+        slPts[nsb3 + 26.0] = qPts[epb3 + 26.0]
+        slPts[nsb3 + 27.0] = qPts[epb3 + 27.0]
+        slPts[nsb3 + 28.0] = qPts[epb3 + 28.0]
+        slPts[nsb3 + 29.0] = qPts[epb3 + 29.0]
+        slPts[nsb3 + 30.0] = qPts[epb3 + 30.0]
+        slPts[nsb3 + 31.0] = qPts[epb3 + 31.0]
+        slPC[ncb3 + 0.0] = qCol[ecb3 + 0.0]
+        slPC[ncb3 + 1.0] = qCol[ecb3 + 1.0]
+        slPC[ncb3 + 2.0] = qCol[ecb3 + 2.0]
+        slPC[ncb3 + 3.0] = qCol[ecb3 + 3.0]
+        slPC[ncb3 + 4.0] = qCol[ecb3 + 4.0]
+        slPC[ncb3 + 5.0] = qCol[ecb3 + 5.0]
+        slPC[ncb3 + 6.0] = qCol[ecb3 + 6.0]
+        slPC[ncb3 + 7.0] = qCol[ecb3 + 7.0]
+        slPC[ncb3 + 8.0] = qCol[ecb3 + 8.0]
+        slPC[ncb3 + 9.0] = qCol[ecb3 + 9.0]
+        slPC[ncb3 + 10.0] = qCol[ecb3 + 10.0]
+        slPC[ncb3 + 11.0] = qCol[ecb3 + 11.0]
+        slPC[ncb3 + 12.0] = qCol[ecb3 + 12.0]
+        slPC[ncb3 + 13.0] = qCol[ecb3 + 13.0]
+        slPC[ncb3 + 14.0] = qCol[ecb3 + 14.0]
+        slPC[ncb3 + 15.0] = qCol[ecb3 + 15.0]
+        slMode[nslot3] = qMode[3] > 0.5
+        slLive[nslot3] = 1.0
+        slCount[nslot3] = ne3
+        slXF[nxb3 + 0.0] = qXF[exb3 + 0.0]
+        slXF[nxb3 + 1.0] = qXF[exb3 + 1.0]
+        slXF[nxb3 + 2.0] = qXF[exb3 + 2.0]
+        slXF[nxb3 + 3.0] = qXF[exb3 + 3.0]
+        slXF[nxb3 + 4.0] = qXF[exb3 + 4.0]
+        slXF[nxb3 + 5.0] = qXF[exb3 + 5.0]
+      }
+    }
+    if qCount > 4.0 {
+      let ne4 = qN[4]
+      let nslot4 = if qId[4] < 0.5 then 8.0 else qId[4] - 1.0
+      let nsb4 = nslot4 * 32.0
+      let ncb4 = nslot4 * 16.0
+      let nxb4 = nslot4 * 6.0
+      let epb4 = 4.0 * 32.0
+      let ecb4 = 4.0 * 16.0
+      let exb4 = 4.0 * 6.0
+      if ne4 < 1.0 {
+        slLive[nslot4] = 0.0
+      } else {
+        slPts[nsb4 + 0.0] = qPts[epb4 + 0.0]
+        slPts[nsb4 + 1.0] = qPts[epb4 + 1.0]
+        slPts[nsb4 + 2.0] = qPts[epb4 + 2.0]
+        slPts[nsb4 + 3.0] = qPts[epb4 + 3.0]
+        slPts[nsb4 + 4.0] = qPts[epb4 + 4.0]
+        slPts[nsb4 + 5.0] = qPts[epb4 + 5.0]
+        slPts[nsb4 + 6.0] = qPts[epb4 + 6.0]
+        slPts[nsb4 + 7.0] = qPts[epb4 + 7.0]
+        slPts[nsb4 + 8.0] = qPts[epb4 + 8.0]
+        slPts[nsb4 + 9.0] = qPts[epb4 + 9.0]
+        slPts[nsb4 + 10.0] = qPts[epb4 + 10.0]
+        slPts[nsb4 + 11.0] = qPts[epb4 + 11.0]
+        slPts[nsb4 + 12.0] = qPts[epb4 + 12.0]
+        slPts[nsb4 + 13.0] = qPts[epb4 + 13.0]
+        slPts[nsb4 + 14.0] = qPts[epb4 + 14.0]
+        slPts[nsb4 + 15.0] = qPts[epb4 + 15.0]
+        slPts[nsb4 + 16.0] = qPts[epb4 + 16.0]
+        slPts[nsb4 + 17.0] = qPts[epb4 + 17.0]
+        slPts[nsb4 + 18.0] = qPts[epb4 + 18.0]
+        slPts[nsb4 + 19.0] = qPts[epb4 + 19.0]
+        slPts[nsb4 + 20.0] = qPts[epb4 + 20.0]
+        slPts[nsb4 + 21.0] = qPts[epb4 + 21.0]
+        slPts[nsb4 + 22.0] = qPts[epb4 + 22.0]
+        slPts[nsb4 + 23.0] = qPts[epb4 + 23.0]
+        slPts[nsb4 + 24.0] = qPts[epb4 + 24.0]
+        slPts[nsb4 + 25.0] = qPts[epb4 + 25.0]
+        slPts[nsb4 + 26.0] = qPts[epb4 + 26.0]
+        slPts[nsb4 + 27.0] = qPts[epb4 + 27.0]
+        slPts[nsb4 + 28.0] = qPts[epb4 + 28.0]
+        slPts[nsb4 + 29.0] = qPts[epb4 + 29.0]
+        slPts[nsb4 + 30.0] = qPts[epb4 + 30.0]
+        slPts[nsb4 + 31.0] = qPts[epb4 + 31.0]
+        slPC[ncb4 + 0.0] = qCol[ecb4 + 0.0]
+        slPC[ncb4 + 1.0] = qCol[ecb4 + 1.0]
+        slPC[ncb4 + 2.0] = qCol[ecb4 + 2.0]
+        slPC[ncb4 + 3.0] = qCol[ecb4 + 3.0]
+        slPC[ncb4 + 4.0] = qCol[ecb4 + 4.0]
+        slPC[ncb4 + 5.0] = qCol[ecb4 + 5.0]
+        slPC[ncb4 + 6.0] = qCol[ecb4 + 6.0]
+        slPC[ncb4 + 7.0] = qCol[ecb4 + 7.0]
+        slPC[ncb4 + 8.0] = qCol[ecb4 + 8.0]
+        slPC[ncb4 + 9.0] = qCol[ecb4 + 9.0]
+        slPC[ncb4 + 10.0] = qCol[ecb4 + 10.0]
+        slPC[ncb4 + 11.0] = qCol[ecb4 + 11.0]
+        slPC[ncb4 + 12.0] = qCol[ecb4 + 12.0]
+        slPC[ncb4 + 13.0] = qCol[ecb4 + 13.0]
+        slPC[ncb4 + 14.0] = qCol[ecb4 + 14.0]
+        slPC[ncb4 + 15.0] = qCol[ecb4 + 15.0]
+        slMode[nslot4] = qMode[4] > 0.5
+        slLive[nslot4] = 1.0
+        slCount[nslot4] = ne4
+        slXF[nxb4 + 0.0] = qXF[exb4 + 0.0]
+        slXF[nxb4 + 1.0] = qXF[exb4 + 1.0]
+        slXF[nxb4 + 2.0] = qXF[exb4 + 2.0]
+        slXF[nxb4 + 3.0] = qXF[exb4 + 3.0]
+        slXF[nxb4 + 4.0] = qXF[exb4 + 4.0]
+        slXF[nxb4 + 5.0] = qXF[exb4 + 5.0]
+      }
+    }
+    if qCount > 5.0 {
+      let ne5 = qN[5]
+      let nslot5 = if qId[5] < 0.5 then 8.0 else qId[5] - 1.0
+      let nsb5 = nslot5 * 32.0
+      let ncb5 = nslot5 * 16.0
+      let nxb5 = nslot5 * 6.0
+      let epb5 = 5.0 * 32.0
+      let ecb5 = 5.0 * 16.0
+      let exb5 = 5.0 * 6.0
+      if ne5 < 1.0 {
+        slLive[nslot5] = 0.0
+      } else {
+        slPts[nsb5 + 0.0] = qPts[epb5 + 0.0]
+        slPts[nsb5 + 1.0] = qPts[epb5 + 1.0]
+        slPts[nsb5 + 2.0] = qPts[epb5 + 2.0]
+        slPts[nsb5 + 3.0] = qPts[epb5 + 3.0]
+        slPts[nsb5 + 4.0] = qPts[epb5 + 4.0]
+        slPts[nsb5 + 5.0] = qPts[epb5 + 5.0]
+        slPts[nsb5 + 6.0] = qPts[epb5 + 6.0]
+        slPts[nsb5 + 7.0] = qPts[epb5 + 7.0]
+        slPts[nsb5 + 8.0] = qPts[epb5 + 8.0]
+        slPts[nsb5 + 9.0] = qPts[epb5 + 9.0]
+        slPts[nsb5 + 10.0] = qPts[epb5 + 10.0]
+        slPts[nsb5 + 11.0] = qPts[epb5 + 11.0]
+        slPts[nsb5 + 12.0] = qPts[epb5 + 12.0]
+        slPts[nsb5 + 13.0] = qPts[epb5 + 13.0]
+        slPts[nsb5 + 14.0] = qPts[epb5 + 14.0]
+        slPts[nsb5 + 15.0] = qPts[epb5 + 15.0]
+        slPts[nsb5 + 16.0] = qPts[epb5 + 16.0]
+        slPts[nsb5 + 17.0] = qPts[epb5 + 17.0]
+        slPts[nsb5 + 18.0] = qPts[epb5 + 18.0]
+        slPts[nsb5 + 19.0] = qPts[epb5 + 19.0]
+        slPts[nsb5 + 20.0] = qPts[epb5 + 20.0]
+        slPts[nsb5 + 21.0] = qPts[epb5 + 21.0]
+        slPts[nsb5 + 22.0] = qPts[epb5 + 22.0]
+        slPts[nsb5 + 23.0] = qPts[epb5 + 23.0]
+        slPts[nsb5 + 24.0] = qPts[epb5 + 24.0]
+        slPts[nsb5 + 25.0] = qPts[epb5 + 25.0]
+        slPts[nsb5 + 26.0] = qPts[epb5 + 26.0]
+        slPts[nsb5 + 27.0] = qPts[epb5 + 27.0]
+        slPts[nsb5 + 28.0] = qPts[epb5 + 28.0]
+        slPts[nsb5 + 29.0] = qPts[epb5 + 29.0]
+        slPts[nsb5 + 30.0] = qPts[epb5 + 30.0]
+        slPts[nsb5 + 31.0] = qPts[epb5 + 31.0]
+        slPC[ncb5 + 0.0] = qCol[ecb5 + 0.0]
+        slPC[ncb5 + 1.0] = qCol[ecb5 + 1.0]
+        slPC[ncb5 + 2.0] = qCol[ecb5 + 2.0]
+        slPC[ncb5 + 3.0] = qCol[ecb5 + 3.0]
+        slPC[ncb5 + 4.0] = qCol[ecb5 + 4.0]
+        slPC[ncb5 + 5.0] = qCol[ecb5 + 5.0]
+        slPC[ncb5 + 6.0] = qCol[ecb5 + 6.0]
+        slPC[ncb5 + 7.0] = qCol[ecb5 + 7.0]
+        slPC[ncb5 + 8.0] = qCol[ecb5 + 8.0]
+        slPC[ncb5 + 9.0] = qCol[ecb5 + 9.0]
+        slPC[ncb5 + 10.0] = qCol[ecb5 + 10.0]
+        slPC[ncb5 + 11.0] = qCol[ecb5 + 11.0]
+        slPC[ncb5 + 12.0] = qCol[ecb5 + 12.0]
+        slPC[ncb5 + 13.0] = qCol[ecb5 + 13.0]
+        slPC[ncb5 + 14.0] = qCol[ecb5 + 14.0]
+        slPC[ncb5 + 15.0] = qCol[ecb5 + 15.0]
+        slMode[nslot5] = qMode[5] > 0.5
+        slLive[nslot5] = 1.0
+        slCount[nslot5] = ne5
+        slXF[nxb5 + 0.0] = qXF[exb5 + 0.0]
+        slXF[nxb5 + 1.0] = qXF[exb5 + 1.0]
+        slXF[nxb5 + 2.0] = qXF[exb5 + 2.0]
+        slXF[nxb5 + 3.0] = qXF[exb5 + 3.0]
+        slXF[nxb5 + 4.0] = qXF[exb5 + 4.0]
+        slXF[nxb5 + 5.0] = qXF[exb5 + 5.0]
+      }
+    }
+    if qCount > 6.0 {
+      let ne6 = qN[6]
+      let nslot6 = if qId[6] < 0.5 then 8.0 else qId[6] - 1.0
+      let nsb6 = nslot6 * 32.0
+      let ncb6 = nslot6 * 16.0
+      let nxb6 = nslot6 * 6.0
+      let epb6 = 6.0 * 32.0
+      let ecb6 = 6.0 * 16.0
+      let exb6 = 6.0 * 6.0
+      if ne6 < 1.0 {
+        slLive[nslot6] = 0.0
+      } else {
+        slPts[nsb6 + 0.0] = qPts[epb6 + 0.0]
+        slPts[nsb6 + 1.0] = qPts[epb6 + 1.0]
+        slPts[nsb6 + 2.0] = qPts[epb6 + 2.0]
+        slPts[nsb6 + 3.0] = qPts[epb6 + 3.0]
+        slPts[nsb6 + 4.0] = qPts[epb6 + 4.0]
+        slPts[nsb6 + 5.0] = qPts[epb6 + 5.0]
+        slPts[nsb6 + 6.0] = qPts[epb6 + 6.0]
+        slPts[nsb6 + 7.0] = qPts[epb6 + 7.0]
+        slPts[nsb6 + 8.0] = qPts[epb6 + 8.0]
+        slPts[nsb6 + 9.0] = qPts[epb6 + 9.0]
+        slPts[nsb6 + 10.0] = qPts[epb6 + 10.0]
+        slPts[nsb6 + 11.0] = qPts[epb6 + 11.0]
+        slPts[nsb6 + 12.0] = qPts[epb6 + 12.0]
+        slPts[nsb6 + 13.0] = qPts[epb6 + 13.0]
+        slPts[nsb6 + 14.0] = qPts[epb6 + 14.0]
+        slPts[nsb6 + 15.0] = qPts[epb6 + 15.0]
+        slPts[nsb6 + 16.0] = qPts[epb6 + 16.0]
+        slPts[nsb6 + 17.0] = qPts[epb6 + 17.0]
+        slPts[nsb6 + 18.0] = qPts[epb6 + 18.0]
+        slPts[nsb6 + 19.0] = qPts[epb6 + 19.0]
+        slPts[nsb6 + 20.0] = qPts[epb6 + 20.0]
+        slPts[nsb6 + 21.0] = qPts[epb6 + 21.0]
+        slPts[nsb6 + 22.0] = qPts[epb6 + 22.0]
+        slPts[nsb6 + 23.0] = qPts[epb6 + 23.0]
+        slPts[nsb6 + 24.0] = qPts[epb6 + 24.0]
+        slPts[nsb6 + 25.0] = qPts[epb6 + 25.0]
+        slPts[nsb6 + 26.0] = qPts[epb6 + 26.0]
+        slPts[nsb6 + 27.0] = qPts[epb6 + 27.0]
+        slPts[nsb6 + 28.0] = qPts[epb6 + 28.0]
+        slPts[nsb6 + 29.0] = qPts[epb6 + 29.0]
+        slPts[nsb6 + 30.0] = qPts[epb6 + 30.0]
+        slPts[nsb6 + 31.0] = qPts[epb6 + 31.0]
+        slPC[ncb6 + 0.0] = qCol[ecb6 + 0.0]
+        slPC[ncb6 + 1.0] = qCol[ecb6 + 1.0]
+        slPC[ncb6 + 2.0] = qCol[ecb6 + 2.0]
+        slPC[ncb6 + 3.0] = qCol[ecb6 + 3.0]
+        slPC[ncb6 + 4.0] = qCol[ecb6 + 4.0]
+        slPC[ncb6 + 5.0] = qCol[ecb6 + 5.0]
+        slPC[ncb6 + 6.0] = qCol[ecb6 + 6.0]
+        slPC[ncb6 + 7.0] = qCol[ecb6 + 7.0]
+        slPC[ncb6 + 8.0] = qCol[ecb6 + 8.0]
+        slPC[ncb6 + 9.0] = qCol[ecb6 + 9.0]
+        slPC[ncb6 + 10.0] = qCol[ecb6 + 10.0]
+        slPC[ncb6 + 11.0] = qCol[ecb6 + 11.0]
+        slPC[ncb6 + 12.0] = qCol[ecb6 + 12.0]
+        slPC[ncb6 + 13.0] = qCol[ecb6 + 13.0]
+        slPC[ncb6 + 14.0] = qCol[ecb6 + 14.0]
+        slPC[ncb6 + 15.0] = qCol[ecb6 + 15.0]
+        slMode[nslot6] = qMode[6] > 0.5
+        slLive[nslot6] = 1.0
+        slCount[nslot6] = ne6
+        slXF[nxb6 + 0.0] = qXF[exb6 + 0.0]
+        slXF[nxb6 + 1.0] = qXF[exb6 + 1.0]
+        slXF[nxb6 + 2.0] = qXF[exb6 + 2.0]
+        slXF[nxb6 + 3.0] = qXF[exb6 + 3.0]
+        slXF[nxb6 + 4.0] = qXF[exb6 + 4.0]
+        slXF[nxb6 + 5.0] = qXF[exb6 + 5.0]
+      }
+    }
+    if qCount > 7.0 {
+      let ne7 = qN[7]
+      let nslot7 = if qId[7] < 0.5 then 8.0 else qId[7] - 1.0
+      let nsb7 = nslot7 * 32.0
+      let ncb7 = nslot7 * 16.0
+      let nxb7 = nslot7 * 6.0
+      let epb7 = 7.0 * 32.0
+      let ecb7 = 7.0 * 16.0
+      let exb7 = 7.0 * 6.0
+      if ne7 < 1.0 {
+        slLive[nslot7] = 0.0
+      } else {
+        slPts[nsb7 + 0.0] = qPts[epb7 + 0.0]
+        slPts[nsb7 + 1.0] = qPts[epb7 + 1.0]
+        slPts[nsb7 + 2.0] = qPts[epb7 + 2.0]
+        slPts[nsb7 + 3.0] = qPts[epb7 + 3.0]
+        slPts[nsb7 + 4.0] = qPts[epb7 + 4.0]
+        slPts[nsb7 + 5.0] = qPts[epb7 + 5.0]
+        slPts[nsb7 + 6.0] = qPts[epb7 + 6.0]
+        slPts[nsb7 + 7.0] = qPts[epb7 + 7.0]
+        slPts[nsb7 + 8.0] = qPts[epb7 + 8.0]
+        slPts[nsb7 + 9.0] = qPts[epb7 + 9.0]
+        slPts[nsb7 + 10.0] = qPts[epb7 + 10.0]
+        slPts[nsb7 + 11.0] = qPts[epb7 + 11.0]
+        slPts[nsb7 + 12.0] = qPts[epb7 + 12.0]
+        slPts[nsb7 + 13.0] = qPts[epb7 + 13.0]
+        slPts[nsb7 + 14.0] = qPts[epb7 + 14.0]
+        slPts[nsb7 + 15.0] = qPts[epb7 + 15.0]
+        slPts[nsb7 + 16.0] = qPts[epb7 + 16.0]
+        slPts[nsb7 + 17.0] = qPts[epb7 + 17.0]
+        slPts[nsb7 + 18.0] = qPts[epb7 + 18.0]
+        slPts[nsb7 + 19.0] = qPts[epb7 + 19.0]
+        slPts[nsb7 + 20.0] = qPts[epb7 + 20.0]
+        slPts[nsb7 + 21.0] = qPts[epb7 + 21.0]
+        slPts[nsb7 + 22.0] = qPts[epb7 + 22.0]
+        slPts[nsb7 + 23.0] = qPts[epb7 + 23.0]
+        slPts[nsb7 + 24.0] = qPts[epb7 + 24.0]
+        slPts[nsb7 + 25.0] = qPts[epb7 + 25.0]
+        slPts[nsb7 + 26.0] = qPts[epb7 + 26.0]
+        slPts[nsb7 + 27.0] = qPts[epb7 + 27.0]
+        slPts[nsb7 + 28.0] = qPts[epb7 + 28.0]
+        slPts[nsb7 + 29.0] = qPts[epb7 + 29.0]
+        slPts[nsb7 + 30.0] = qPts[epb7 + 30.0]
+        slPts[nsb7 + 31.0] = qPts[epb7 + 31.0]
+        slPC[ncb7 + 0.0] = qCol[ecb7 + 0.0]
+        slPC[ncb7 + 1.0] = qCol[ecb7 + 1.0]
+        slPC[ncb7 + 2.0] = qCol[ecb7 + 2.0]
+        slPC[ncb7 + 3.0] = qCol[ecb7 + 3.0]
+        slPC[ncb7 + 4.0] = qCol[ecb7 + 4.0]
+        slPC[ncb7 + 5.0] = qCol[ecb7 + 5.0]
+        slPC[ncb7 + 6.0] = qCol[ecb7 + 6.0]
+        slPC[ncb7 + 7.0] = qCol[ecb7 + 7.0]
+        slPC[ncb7 + 8.0] = qCol[ecb7 + 8.0]
+        slPC[ncb7 + 9.0] = qCol[ecb7 + 9.0]
+        slPC[ncb7 + 10.0] = qCol[ecb7 + 10.0]
+        slPC[ncb7 + 11.0] = qCol[ecb7 + 11.0]
+        slPC[ncb7 + 12.0] = qCol[ecb7 + 12.0]
+        slPC[ncb7 + 13.0] = qCol[ecb7 + 13.0]
+        slPC[ncb7 + 14.0] = qCol[ecb7 + 14.0]
+        slPC[ncb7 + 15.0] = qCol[ecb7 + 15.0]
+        slMode[nslot7] = qMode[7] > 0.5
+        slLive[nslot7] = 1.0
+        slCount[nslot7] = ne7
+        slXF[nxb7 + 0.0] = qXF[exb7 + 0.0]
+        slXF[nxb7 + 1.0] = qXF[exb7 + 1.0]
+        slXF[nxb7 + 2.0] = qXF[exb7 + 2.0]
+        slXF[nxb7 + 3.0] = qXF[exb7 + 3.0]
+        slXF[nxb7 + 4.0] = qXF[exb7 + 4.0]
+        slXF[nxb7 + 5.0] = qXF[exb7 + 5.0]
+      }
+    }
+    qCount = 0.0
+    rcOn = true
+    rcSlot = 1.0
+    if justCleared {
+      justCleared = false
+    } else {
+      clearing = true
+      fromSlot = true
+      arming = true
+    }
+  }
   if commitR {
     commitR = false
+    slLive[8] = 0.0
     n = (shapePoints.length() / 2.0) | 0
     if n > 16.0 { n = 16.0 }
     let slot = (pId - 1.0) | 0
@@ -9046,7 +9723,7 @@ mod paintTick() {
     }
   }
   if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR {
-    if rcSlot > 8.0 {
+    if rcSlot > 9.0 {
       rcOn = false
       if brightRC {
         brightRC = false
@@ -9449,7 +10126,10 @@ mod paintTick() {
       // slots cost one scan, never a tick (sequential writes,
       // descending, so the lowest live slot wins).
       let li = (rcSlot - 1.0) | 0
-      ff = 8.0
+      ff = 9.0
+      if slLive[8] > 0.5 && li <= 8.0 {
+        ff = 8.0
+      }
       if slLive[7] > 0.5 && li <= 7.0 {
         ff = 7.0
       }
@@ -9474,8 +10154,8 @@ mod paintTick() {
       if slLive[0] > 0.5 && li <= 0.0 {
         ff = 0.0
       }
-      if ff > 7.0 {
-        rcSlot = 9.0
+      if ff > 8.0 {
+        rcSlot = 10.0
       } else {
         shPts[0] = slPts[ff * 32 + 0.0]
         shPts[1] = slPts[ff * 32 + 1.0]
@@ -10825,14 +11505,18 @@ mod paintTick() {
         if pending {
           pending = false
           justCleared = true
-          if pId >= 1.0 {
+          if qCount > 1.5 {
+            commitQ = true
+          } else if pId >= 1.0 {
             commitR = true
+            qCount = 0.0
           } else {
             if pWire {
               armingS = true
             } else {
               arming = true
             }
+            qCount = 0.0
           }
         } else {
           justCleared = false

@@ -15,15 +15,15 @@ connectortest.py          three-chip chain: driver -> connector -> screen
 
 ```
              outNum1 --|           |-- pushShape
-             outNum2 --| connector |-- drawAll
-             outNum3 --|           |-- clearAll
-             outNum4 --|           |-- wireMode
+             outNum2 --| connector |-- drawAllShapes
+             outNum3 --|           |-- clearAllShapes
+             outNum4 --|           |-- shapeWireMode
              outStr1 --|           |-- shapeId
            outNumArr --|           |-- shapeColors
              outStr2 --|           |-- shapePoints
-           outStrArr --|           |-- position
-                       |           |-- rotation
-                       |           |-- scale
+           outStrArr --|           |-- shapePosition
+                       |           |-- shapeRotation
+                       |           |-- shapeScale
                        |           |-- parentShapeId
 ```
 
@@ -70,9 +70,9 @@ no parent), parsed the same pure way as `outStr1`.  `outStrArr`
 carries the transform as nine numeric strings (1-based slots):
 
 ```
-1..3   position x, y, z (only x and y are used)
-4..6   rotation x, y, z (only z, radians about the origin)
-7..9   scale x, y, z (only x and y; zeroes mean identity)
+1..3   shapePosition x, y, z (only x and y are used)
+4..6   shapeRotation x, y, z (only z, radians about the origin)
+7..9   shapeScale x, y, z (only x and y; zeroes mean identity)
 ```
 
 Missing or garbage slots parse to 0.0, which the screen defaults, so

@@ -12,13 +12,13 @@
 //   Lua outNum1 ----> outNum1 |           | shapePoints ----> screen shapePoints
 //   Lua outNum2 ----> outNum2 | connector | shapeColors ---> screen shapeColors
 //   Lua outNum3 ----> outNum3 |           | pushShape ------> screen pushShape
-//   Lua outNum4 ----> outNum4 |           | wireMode -------> screen wireMode
+//   Lua outNum4 ----> outNum4 |           | shapeWireMode -------> screen shapeWireMode
 //   Lua outStr1 ----> outStr1 |           | shapeId --------> screen shapeId
-//   Lua outNumArr --> outNumArr|           | drawAll -------> screen drawAll
-//   Lua outStr2 ----> outStr2 |           | clearAll -------> screen clearAll
-//   Lua outStrArr --> outStrArr|           | position -------> screen position
-//                                          | rotation -------> screen rotation
-//                                          | scale ----------> screen scale
+//   Lua outNumArr --> outNumArr|           | drawAllShapes -------> screen drawAllShapes
+//   Lua outStr2 ----> outStr2 |           | clearAllShapes -------> screen clearAllShapes
+//   Lua outStrArr --> outStrArr|           | shapePosition -------> screen shapePosition
+//                                          | shapeRotation -------> screen shapeRotation
+//                                          | shapeScale ----------> screen shapeScale
 //                                          | parentShapeId --> screen parentShapeId
 //
 // The Lua protocol, 1-based slots in outNumArr (see extras/screen/anim.lua):
@@ -53,11 +53,11 @@
 // no parent): pushing a shape with a parent attaches it, pushing with
 // an empty outStr2 detaches it again.
 // The transform rides the CPU's output string array, 1-based slots:
-//   1..3   position x, y, z (only x and y are used)
-//   4..6   rotation x, y, z (only z, radians about the origin)
-//   7..9   scale x, y, z (only x and y; zeroes mean identity)
+//   1..3   shapePosition x, y, z (only x and y are used)
+//   4..6   shapeRotation x, y, z (only z, radians about the origin)
+//   7..9   shapeScale x, y, z (only x and y; zeroes mean identity)
 // Missing or garbage slots parse to 0.0, and the screen defaults
-// those (scale zeroes mean identity there too), so a driver that
+// those (shapeScale zeroes mean identity there too), so a driver that
 // never touches outStrArr behaves exactly as before -- and a driver
 // that only moves shapes writes just slots 1..2.  (outStrArr takes at
 // most 8 values a call, like outNumArr, so all nine slots are two
@@ -81,16 +81,16 @@ var tpos: vector = Vec(0.0, 0.0, 0.0)
 var trot: vector = Vec(0.0, 0.0, 0.0)
 var tscl: vector = Vec(1.0, 1.0, 1.0)
 out pushShape: bool = outNum1 > 0.5
-out drawAll: bool = outNum2 > 0.5
-out clearAll: bool = outNum3 > 0.5
-out wireMode: bool = outNum4 > 0.5
+out drawAllShapes: bool = outNum2 > 0.5
+out clearAllShapes: bool = outNum3 > 0.5
+out shapeWireMode: bool = outNum4 > 0.5
 out shapeId: float = ParseNumber(outStr1)
 out parentShapeId: float = ParseNumber(outStr2)
 out shapePoints: float[] = pts
 out shapeColors: color[] = cols
-out position: vector = tpos
-out rotation: vector = trot
-out scale: vector = tscl
+out shapePosition: vector = tpos
+out shapeRotation: vector = trot
+out shapeScale: vector = tscl
 mod passArrays() {
   // the point scan and the terminator's value travel together: the same
   // literal-index chain, the x slot that ends the points also says how
@@ -120,7 +120,7 @@ mod passArrays() {
   cols[14] = if nc > 59 then Color(cfl[56], cfl[57], cfl[58], cfl[59]) else Color(1.0, 1.0, 1.0, 1.0)
   cols[15] = if nc > 63 then Color(cfl[60], cfl[61], cfl[62], cfl[63]) else Color(1.0, 1.0, 1.0, 1.0)
   // The transform: nine fixed slots, no scan.  Unwritten slots read ""
-  // and parse to 0.0, which the screen defaults (scale zeroes mean
+  // and parse to 0.0, which the screen defaults (shapeScale zeroes mean
   // identity), so these three builds are literal-index reads -- fast.
   tpos = Vec(ParseNumber(outStrArr[0]), ParseNumber(outStrArr[1]), ParseNumber(outStrArr[2]))
   trot = Vec(ParseNumber(outStrArr[3]), ParseNumber(outStrArr[4]), ParseNumber(outStrArr[5]))

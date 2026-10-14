@@ -4,7 +4,7 @@ A small Lua driver exercises every translation the connector does --
 push/draw thresholds, the terminator-truncated tight points pass,
 the per-point colour slice (points first, terminator, then four
 floats per point), the parent id from outStr2, the transform vecs
-from outStrArr, wireMode, the string slot id and the clear flag --
+from outStrArr, shapeWireMode, the string slot id and the clear flag --
 and the wall is diffed against a Python model of the whole chain,
 so a dropped channel, a wrong colour or a misread slot shows up as
 a pixel diff.
@@ -121,7 +121,7 @@ tick()
 outNum(3, 0.0)
 tick()
 tick()
--- clearAll only forgets the slots: the next drawAll is the pulse that
+-- clearAllShapes only forgets the slots: the next drawAllShapes is the pulse that
 -- actually blacks the wall
 outNum(2, 1.0)
 tick()
@@ -254,9 +254,9 @@ def main():
         # backing-store lookup.
         pts_res = resolve_port(csim, out_port_id(csim, "shapePoints"))
         cols_res = resolve_port(csim, out_port_id(csim, "shapeColors"))
-        pos_res = resolve_port(csim, out_port_id(csim, "position"))
-        rot_res = resolve_port(csim, out_port_id(csim, "rotation"))
-        scl_res = resolve_port(csim, out_port_id(csim, "scale"))
+        pos_res = resolve_port(csim, out_port_id(csim, "shapePosition"))
+        rot_res = resolve_port(csim, out_port_id(csim, "shapeRotation"))
+        scl_res = resolve_port(csim, out_port_id(csim, "shapeScale"))
 
         def conn_arr(res):
             kind, sid = res
@@ -273,11 +273,11 @@ def main():
 
         # the pure-combinational scalars never cache (nothing queues them
         # without a change), so they read back through pull evaluation --
-        # in game they are plain wires, always live.  (clearAll is pure
+        # in game they are plain wires, always live.  (clearAllShapes is pure
         # too: it belongs here, not in cout.)
         cpull = {}
-        for name in ("pushShape", "drawAll", "wireMode", "shapeId",
-                     "clearAll", "parentShapeId"):
+        for name in ("pushShape", "drawAllShapes", "shapeWireMode", "shapeId",
+                     "clearAllShapes", "parentShapeId"):
             cpull[name] = out_port_id(csim, name)
         cstream = []
 
@@ -297,9 +297,9 @@ def main():
                     else (float(v) if isinstance(v, (int, float)) else 0.0)
             row["shapePoints"] = conn_arr(pts_res)
             row["shapeColors"] = conn_arr(cols_res)
-            row["position"] = conn_arr(pos_res)
-            row["rotation"] = conn_arr(rot_res)
-            row["scale"] = conn_arr(scl_res)
+            row["shapePosition"] = conn_arr(pos_res)
+            row["shapeRotation"] = conn_arr(rot_res)
+            row["shapeScale"] = conn_arr(scl_res)
             cstream.append(row)
 
         csim.run(TICKS, on_tick=hookc2)
@@ -346,15 +346,15 @@ def main():
                      "no tick with the square + parent 2")
         if th is not None:
             prow = cstream[th]
-            ok &= expect(tuple(prow["position"][:3]) == (8.0, 4.0, 0.0),
-                         "position parses from outStrArr",
-                         "%r" % (prow["position"],))
-            ok &= expect(tuple(prow["rotation"][:3]) == (0.0, 0.0, 0.0),
-                         "rotation parses from outStrArr",
-                         "%r" % (prow["rotation"],))
-            ok &= expect(tuple(prow["scale"][:3]) == (1.0, 1.0, 1.0),
-                         "scale parses from outStrArr",
-                         "%r" % (prow["scale"],))
+            ok &= expect(tuple(prow["shapePosition"][:3]) == (8.0, 4.0, 0.0),
+                         "shapePosition parses from outStrArr",
+                         "%r" % (prow["shapePosition"],))
+            ok &= expect(tuple(prow["shapeRotation"][:3]) == (0.0, 0.0, 0.0),
+                         "shapeRotation parses from outStrArr",
+                         "%r" % (prow["shapeRotation"],))
+            ok &= expect(tuple(prow["shapeScale"][:3]) == (1.0, 1.0, 1.0),
+                         "shapeScale parses from outStrArr",
+                         "%r" % (prow["shapeScale"],))
 
         # ---- phase 3: screen paints --------------------------------------
         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
@@ -375,9 +375,9 @@ def main():
         assert scols is not None
         ssim.inputs = {"shapePoints": [0.0] * 32,
                        "shapeColors": [(1.0, 1.0, 1.0, 1.0)] * 4,
-                       "pushShape": False, "wireMode": False,
-                       "shapeId": 0.0, "drawAll": False,
-                       "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                       "pushShape": False, "shapeWireMode": False,
+                       "shapeId": 0.0, "drawAllShapes": False,
+                       "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
@@ -394,14 +394,14 @@ def main():
         # deliver unreliably in sim, while real drivers stage across
         # ticks anyway), so the screen's edge ticks lag cstream by 2.
         reds = [k for k in range(1, len(cstream))
-                if (cstream[k]["drawAll"] or 0.0) > 0.5
-                and (cstream[k - 1]["drawAll"] or 0.0) <= 0.5]
+                if (cstream[k]["drawAllShapes"] or 0.0) > 0.5
+                and (cstream[k - 1]["drawAllShapes"] or 0.0) <= 0.5]
         pushE = [k for k in range(1, len(cstream))
                  if (cstream[k]["pushShape"] or 0.0) > 0.5
                  and (cstream[k - 1]["pushShape"] or 0.0) <= 0.5]
         clrE = [k for k in range(1, len(cstream))
-                if (cstream[k]["clearAll"] or 0.0) > 0.5
-                and (cstream[k - 1]["clearAll"] or 0.0) <= 0.5]
+                if (cstream[k]["clearAllShapes"] or 0.0) > 0.5
+                and (cstream[k - 1]["clearAllShapes"] or 0.0) <= 0.5]
         print("   edges pushes=%s reds=%s clears=%s (run %d)"
                % (pushE, reds, clrE, len(cstream)))
         snap_tick = (reds[3] + 2 + 95) if len(reds) >= 4 else None
@@ -436,18 +436,18 @@ def main():
                 last_slid[1] = cc
             s.inputs = dict(s.inputs, **{
                 "pushShape": (b.get("pushShape") or 0.0) > 0.5,
-                "wireMode": (b.get("wireMode") or 0.0) > 0.5,
+                "shapeWireMode": (b.get("shapeWireMode") or 0.0) > 0.5,
                 "shapeId": float(b.get("shapeId") or 0.0),
-                "drawAll": (b.get("drawAll") or 0.0) > 0.5,
-                "clearAll": (b.get("clearAll") or 0.0) > 0.5,
+                "drawAllShapes": (b.get("drawAllShapes") or 0.0) > 0.5,
+                "clearAllShapes": (b.get("clearAllShapes") or 0.0) > 0.5,
                 "parentShapeId":
                     float(b.get("parentShapeId") or 0.0),
-                "position":
-                    tuple(b.get("position") or (0.0, 0.0, 0.0))[:3],
-                "rotation":
-                    tuple(b.get("rotation") or (0.0, 0.0, 0.0))[:3],
-                "scale":
-                    tuple(b.get("scale") or (0.0, 0.0, 0.0))[:3],
+                "shapePosition":
+                    tuple(b.get("shapePosition") or (0.0, 0.0, 0.0))[:3],
+                "shapeRotation":
+                    tuple(b.get("shapeRotation") or (0.0, 0.0, 0.0))[:3],
+                "shapeScale":
+                    tuple(b.get("shapeScale") or (0.0, 0.0, 0.0))[:3],
             })
             if snap_tick is not None and tick == snap_tick:
                 snap_holder["wall"] = tuple(

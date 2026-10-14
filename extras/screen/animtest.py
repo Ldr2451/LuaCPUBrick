@@ -2,13 +2,13 @@
 
 The game wiring this program was written for is (via the connector):
   outNum1   -> pushShape
-  outNum2   -> drawAll
-  outNum3   -> clearAll
+  outNum2   -> drawAllShapes
+  outNum3   -> clearAllShapes
   outNumArr -> only the points the shape needs (1..) plus one -1
                terminator, then optional colours (four per point);
                the connector truncates there and defaults missing
                colours to white
-(wireMode and shapeId stay at their defaults: immediate fills.)
+(shapeWireMode and shapeId stay at their defaults: immediate fills.)
 
 So the test builds exactly that wiring in the sim.  Phase 1 runs the
 Lua chip and samples outNum1/outNum2/outNum3/outNumArr every tick.
@@ -18,8 +18,8 @@ the port's list, the same wire event the game delivers, not the
 sim's slow input path).  Phase 3 compares the wall against a Python
 model of the screen protocol, so a lost edge, a torn latch or a
 burst abandoned mid-flight all show up as a pixel diff.  The model
-mirrors the new clearAll semantics: the pulse only forgets, and the
-drawAll right after it is what blacks the wall.
+mirrors the new clearAllShapes semantics: the pulse only forgets, and the
+drawAllShapes right after it is what blacks the wall.
 
 The sim's math gates are float-only, so colour arithmetic reads as
 0.0 there; colormath.install() patches them to the documented
@@ -212,10 +212,10 @@ def main():
                         for _pts, cols in latched
                         for col in cols for v in col)
         ok &= expect(colors_ok, "colors in 0..1")
-        # every clearAll pulse is followed by a drawAll (the pulse that
+        # every clearAllShapes pulse is followed by a drawAllShapes (the pulse that
         # runs the deferred black fill)
         pair_ok = all(c < reds[-1] for c in clears) if clears else True
-        ok &= expect(pair_ok, "clearAll pulses land before a drawAll",
+        ok &= expect(pair_ok, "clearAllShapes pulses land before a drawAllShapes",
                      "clears=%s reds=%s" % (clears[:6], reds[:6]))
 
         # ---- phase 2: replay into the screen chip -----------------------
@@ -237,9 +237,9 @@ def main():
         assert scols is not None, "no shapeColors port"
         ssim.inputs = {"shapePoints": [0.0] * 32,
                        "shapeColors": [],
-                       "pushShape": False, "wireMode": False,
-                       "shapeId": 0.0, "drawAll": False,
-                       "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                       "pushShape": False, "shapeWireMode": False,
+                       "shapeId": 0.0, "drawAllShapes": False,
+                       "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
@@ -253,8 +253,8 @@ def main():
                 slide(s, spts, scols, pts, cols)
             s.inputs = dict(s.inputs, **{
                 "pushShape": p > 0.5,
-                "drawAll": r > 0.5,
-                "clearAll": c > 0.5,
+                "drawAllShapes": r > 0.5,
+                "clearAllShapes": c > 0.5,
             })
 
         ssim.run(TICKS, on_tick=hook2)
@@ -273,8 +273,8 @@ def main():
             got.append(tuple(float(x) for x in v[:4]))
 
         # ---- phase 3: model of the protocol ----------------------------
-        # Immediate mode: each drawAll paints the pushed shape.  A
-        # clearAll pulse only forgets -- the drawAll right after it is
+        # Immediate mode: each drawAllShapes paints the pushed shape.  A
+        # clearAllShapes pulse only forgets -- the drawAllShapes right after it is
         # what blacks the wall -- so the model clears there.
         fb = {}
         li = 0

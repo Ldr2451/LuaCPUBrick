@@ -402,9 +402,9 @@ def rect_pts(x0, y0, x1, y1):
 
 
 def xf_points(pts, pos, ang, scl):
-    """The chip's point transform, transcribed: scale, rotate about the
+    """The chip's point transform, transcribed: shapeScale, rotate about the
     origin by ang radians, translate -- mirrors applyXF exactly,
-    including the scale-zero-means-identity default."""
+    including the shapeScale-zero-means-identity default."""
     sx = scl[0] if scl[0] != 0.0 else 1.0
     sy = scl[1] if scl[1] != 0.0 else 1.0
     ct, st = math.cos(ang), math.sin(ang)
@@ -473,7 +473,7 @@ def main():
             (rect_pts(0.0, 0.0, 64.0, 64.0) + [0.0, 0.0] * 12, RED),  # N=16
         ]
         # schedule: each shape's slot is its own row span plus slack, so
-        # a burst always finishes before the next drawAll (a re-arm
+        # a burst always finishes before the next drawAllShapes (a re-arm
         # would abandon it) without paying for the widest shape's pace.
         # Params stage a full two ticks before the push: the sim delivers
         # a same-tick color+push merge unreliably (the detector fires but
@@ -496,15 +496,15 @@ def main():
             t0, _rows = spans[i]
             plan[t0] = {"shapePoints": list(pts),
                         "shapeColors": [color] * (len(pts) // 2),
-                        "wireMode": False, "shapeId": 0.0}
+                        "shapeWireMode": False, "shapeId": 0.0}
             plan[t0 + 2] = {"pushShape": True}
             plan[t0 + 4] = {"pushShape": False}
-            plan[t0 + 6] = {"drawAll": True}
-            plan[t0 + 8] = {"drawAll": False}
-        # a bare drawAll at the end replays the last shape
+            plan[t0 + 6] = {"drawAllShapes": True}
+            plan[t0 + 8] = {"drawAllShapes": False}
+        # a bare drawAllShapes at the end replays the last shape
         replay_at = total
-        plan[replay_at] = {"drawAll": True}
-        plan[replay_at + 2] = {"drawAll": False}
+        plan[replay_at] = {"drawAllShapes": True}
+        plan[replay_at + 2] = {"drawAllShapes": False}
         total = replay_at + 80
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
@@ -514,9 +514,9 @@ def main():
         # shapes are staged by slide() alone.  Each shape's array is
         # exactly as long as its point list: the count IS the length.
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -559,7 +559,7 @@ def main():
                      "strays at %r" % (
                          [t for t in on if last_end + 4 <= t < replay_at][:8],))
         ok &= expect(any(replay_at <= t <= replay_at + 75 for t in on),
-                     "drawAll replays the last shape",
+                     "drawAllShapes replays the last shape",
                      "bursts at %r" % ([t for t in on if t >= replay_at],))
         ok &= expect(not any(t > replay_at + 80 for t in on),
                      "silence after the replay",
@@ -587,18 +587,18 @@ def main():
         t = 10
         gplan[t] = {"shapePoints": list(grad_pts),
                     "shapeColors": list(grad_cols),
-                    "wireMode": False, "shapeId": 0.0}
+                    "shapeWireMode": False, "shapeId": 0.0}
         gplan[t + 2] = {"pushShape": True}
         gplan[t + 4] = {"pushShape": False}
-        gplan[t + 6] = {"drawAll": True}
-        gplan[t + 8] = {"drawAll": False}
+        gplan[t + 6] = {"drawAllShapes": True}
+        gplan[t + 8] = {"drawAllShapes": False}
         gtotal = t + 80
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -665,25 +665,25 @@ def main():
             t0, _rows = spans2[i]
             plan2[t0] = {"shapePoints": list(pts),
                          "shapeColors": list(cols),
-                         "wireMode": True, "shapeId": 0.0}
+                         "shapeWireMode": True, "shapeId": 0.0}
             plan2[t0 + 2] = {"pushShape": True}
             plan2[t0 + 4] = {"pushShape": False}
-            plan2[t0 + 6] = {"drawAll": True}
-            plan2[t0 + 8] = {"drawAll": False}
+            plan2[t0 + 6] = {"drawAllShapes": True}
+            plan2[t0 + 8] = {"drawAllShapes": False}
         # overwrite the array with junk, then replay: the wall must still
         # show the staged square, not the junk
         junk_at = t + 4
         plan2[junk_at] = {"shapePoints": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]}
         replay2_at = t + 14
-        plan2[replay2_at] = {"drawAll": True}
-        plan2[replay2_at + 2] = {"drawAll": False}
+        plan2[replay2_at] = {"drawAllShapes": True}
+        plan2[replay2_at + 2] = {"drawAllShapes": False}
         total2 = replay2_at + 60
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -719,7 +719,7 @@ def main():
                      "phantom fill goes silent",
                      "walk at %r" % ([t for t in on2p if t > 40][:8],))
         ok &= expect(any(replay2_at <= t <= replay2_at + 50 for t in on2),
-                     "drawAll replays the staged stroke",
+                     "drawAllShapes replays the staged stroke",
                      "bursts at %r" % ([t for t in on2 if t >= replay2_at],))
         ok &= expect(not any(t > replay2_at + 55 for t in on2),
                      "silence after the stroke replay",
@@ -749,11 +749,11 @@ def main():
         for pts, color, sid in rcommits:
             rplan[t] = {"shapePoints": list(pts),
                         "shapeColors": [color] * (len(pts) // 2),
-                        "wireMode": False, "shapeId": sid}
+                        "shapeWireMode": False, "shapeId": sid}
             rplan[t + 2] = {"pushShape": True}
             rplan[t + 4] = {"pushShape": False}
-            rplan[t + 6] = {"drawAll": True}
-            rplan[t + 8] = {"drawAll": False}
+            rplan[t + 6] = {"drawAllShapes": True}
+            rplan[t + 8] = {"drawAllShapes": False}
             # a commit clears (64 rows) and repaints every live slot; the
             # slot below is sized for two small shapes with margin
             t += 64 + 60
@@ -762,9 +762,9 @@ def main():
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -806,8 +806,8 @@ def main():
         ok &= expect_wall(snaps[ends[3]], want4,
                           "delete removes (triangle gone)")
 
-        # ---- clearAll forgets everything and blacks the wall ---------------
-        # Pulse clearAll on top of the live green square: the wall must go
+        # ---- clearAllShapes forgets everything and blacks the wall ---------------
+        # Pulse clearAllShapes on top of the live green square: the wall must go
         # fully black, and a later store into slot 2 must show ONLY the new
         # triangle -- if the clear had merely blacked without forgetting,
         # the square would resurrect on recomposite.
@@ -815,49 +815,49 @@ def main():
         # setup commit first (ticks 2..10 stage and fire, recomposite after)
         cplan[2] = {"shapePoints": list(sq1b),
                     "shapeColors": [green] * 4,
-                    "wireMode": False, "shapeId": 1.0}
+                    "shapeWireMode": False, "shapeId": 1.0}
         cplan[4] = {"pushShape": True}
         cplan[6] = {"pushShape": False}
-        cplan[8] = {"drawAll": True}
-        cplan[10] = {"drawAll": False}
+        cplan[8] = {"drawAllShapes": True}
+        cplan[10] = {"drawAllShapes": False}
         # clear pulse once the setup recomposite is done (~90 ticks):
-        # clearAll forgets the slots and stages the black fill, which
-        # the NEXT drawAll runs -- so pulse drawAll right after and the
+        # clearAllShapes forgets the slots and stages the black fill, which
+        # the NEXT drawAllShapes runs -- so pulse drawAllShapes right after and the
         # wall is black ~64 rows later.  A later store into slot 2 must
         # show ONLY the new triangle -- if the clear had merely blacked
         # without forgetting, the square would resurrect on recomposite.
         ct = 110
-        cplan[ct] = {"clearAll": True}
-        cplan[ct + 2] = {"clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
-        cplan[ct + 4] = {"drawAll": True}
-        cplan[ct + 6] = {"drawAll": False}
+        cplan[ct] = {"clearAllShapes": True}
+        cplan[ct + 2] = {"clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+        cplan[ct + 4] = {"drawAllShapes": True}
+        cplan[ct + 6] = {"drawAllShapes": False}
         st = ct + 110
         cplan[st] = {"shapePoints": list(tri2),
                      "shapeColors": [blue] * 3,
-                     "wireMode": False, "shapeId": 2.0}
+                     "shapeWireMode": False, "shapeId": 2.0}
         cplan[st + 2] = {"pushShape": True}
         cplan[st + 4] = {"pushShape": False}
-        cplan[st + 6] = {"drawAll": True}
-        cplan[st + 8] = {"drawAll": False}
+        cplan[st + 6] = {"drawAllShapes": True}
+        cplan[st + 8] = {"drawAllShapes": False}
         cblack_at = ct + 90
         cend = st + 200
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 1.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 1.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
         # first re-create the live square with a normal retained commit
         cplan[2] = {"shapePoints": list(sq1b),
                     "shapeColors": [green] * 4,
-                    "wireMode": False, "shapeId": 1.0}
+                    "shapeWireMode": False, "shapeId": 1.0}
         cplan[4] = {"pushShape": True}
         cplan[6] = {"pushShape": False}
-        cplan[8] = {"drawAll": True}
-        cplan[10] = {"drawAll": False}
+        cplan[8] = {"drawAllShapes": True}
+        cplan[10] = {"drawAllShapes": False}
         cblack = {}
         cwall = {}
 
@@ -879,7 +879,7 @@ def main():
 
         sim.run(cend + 1, on_tick=watchc)
         ok &= expect(all(v == BLACK for v in cblack.values()),
-                     "clearAll blacks the wall",
+                     "clearAllShapes blacks the wall",
                      "%d non-black" % sum(
                          1 for v in cblack.values() if v != BLACK))
         wantc = {p: blue for p in poly_pixels(tri2)}
@@ -901,26 +901,26 @@ def main():
         bB = rect_pts(10.0, 10.0, 14.0, 14.0)
         bplan = {}
         bplan[10] = {"shapePoints": list(bA), "shapeColors": [RED] * 4,
-                     "wireMode": False, "shapeId": 0.0,
+                     "shapeWireMode": False, "shapeId": 0.0,
                      "brightness": 50.0}
         bplan[12] = {"pushShape": True}
         bplan[14] = {"pushShape": False}
-        bplan[16] = {"drawAll": True}
-        bplan[18] = {"drawAll": False}
+        bplan[16] = {"drawAllShapes": True}
+        bplan[18] = {"drawAllShapes": False}
         bplan[40] = {"shapePoints": list(bB), "shapeColors": [blue] * 4,
-                     "wireMode": False, "shapeId": 0.0,
+                     "shapeWireMode": False, "shapeId": 0.0,
                      "brightness": 50.0}
         bplan[42] = {"pushShape": True}
         bplan[44] = {"pushShape": False}
-        bplan[46] = {"drawAll": True}
-        bplan[48] = {"drawAll": False}
+        bplan[46] = {"drawAllShapes": True}
+        bplan[48] = {"drawAllShapes": False}
         btotal = 130
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -951,12 +951,12 @@ def main():
                      "%d of 4096 differ, first at %d"
                      % (len(badb), badb[0] if badb else 0))
 
-        # ---- brightness repaints by itself, no drawAll ----------------
+        # ---- brightness repaints by itself, no drawAllShapes ----------------
         # A retained square plus one immediate rect, both painted at
         # full brightness; then ONLY the slider moves to 50.  The chip
         # reruns the retained recomposite (no clear -- nothing moved,
         # so overwriting is exact) and replays the immediate rect, and
-        # the whole wall dims with no push and no drawAll.  Then the
+        # the whole wall dims with no push and no drawAllShapes.  Then the
         # slider returns to the unwired default (full): the wall follows
         # back up the same way, locking retroactive behavior in both
         # directions.  Nothing is staged after either edge, so the
@@ -966,19 +966,19 @@ def main():
         aplan = {}
         aplan[10] = {"shapePoints": list(rA),
                      "shapeColors": [RED] * 4,
-                     "wireMode": False, "shapeId": 1.0,
+                     "shapeWireMode": False, "shapeId": 1.0,
                      "brightness": 100.0}
         aplan[12] = {"pushShape": True}
         aplan[14] = {"pushShape": False}
-        aplan[16] = {"drawAll": True}
-        aplan[18] = {"drawAll": False}
+        aplan[16] = {"drawAllShapes": True}
+        aplan[18] = {"drawAllShapes": False}
         aplan[140] = {"shapePoints": list(rB),
                       "shapeColors": [blue] * 4,
-                      "wireMode": False, "shapeId": 0.0}
+                      "shapeWireMode": False, "shapeId": 0.0}
         aplan[142] = {"pushShape": True}
         aplan[144] = {"pushShape": False}
-        aplan[146] = {"drawAll": True}
-        aplan[148] = {"drawAll": False}
+        aplan[146] = {"drawAllShapes": True}
+        aplan[148] = {"drawAllShapes": False}
         aplan[170] = {"brightness": 50.0}
         adim_at = 320
         aplan[340] = {"brightness": 0.0}
@@ -986,9 +986,9 @@ def main():
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -1017,7 +1017,7 @@ def main():
             wanta[p] = dim(blue)
         bada = [i for i in range(SW * SW)
                 if not close(asnap[adim_at][i], wanta.get(i, BLACK))]
-        ok &= expect(not bada, "brightness repaints with no drawAll",
+        ok &= expect(not bada, "brightness repaints with no drawAllShapes",
                      "%d of 4096 differ, first at %d"
                      % (len(bada), bada[0] if bada else 0))
         wantf = {}
@@ -1027,11 +1027,11 @@ def main():
             wantf[p] = blue
         badf = [i for i in range(SW * SW)
                 if not close(asnap[afull_at][i], wantf.get(i, BLACK))]
-        ok &= expect(not badf, "brightness brightens back with no drawAll",
+        ok &= expect(not badf, "brightness brightens back with no drawAllShapes",
                      "%d of 4096 differ, first at %d"
                      % (len(badf), badf[0] if badf else 0))
 
-        # ---- transforms + parents: move, scale, rotate, follow -------
+        # ---- transforms + parents: move, shapeScale, rotate, follow -------
         # Five retained commits in one run, snapshotted each time: a
         # scaled+moved square, a rotated rect edit, a child attached to
         # slot 1, the parent moved again (child follows), the child
@@ -1054,15 +1054,15 @@ def main():
         for pts, cols, sid, pos, ang, scl, par in xcommits:
             xplan[t] = {"shapePoints": list(pts),
                         "shapeColors": list(cols),
-                        "wireMode": False, "shapeId": sid,
-                        "position": (pos[0], pos[1], 0.0),
-                        "rotation": (0.0, 0.0, ang),
-                        "scale": (scl[0], scl[1], 1.0),
+                        "shapeWireMode": False, "shapeId": sid,
+                        "shapePosition": (pos[0], pos[1], 0.0),
+                        "shapeRotation": (0.0, 0.0, ang),
+                        "shapeScale": (scl[0], scl[1], 1.0),
                         "parentShapeId": par}
             xplan[t + 2] = {"pushShape": True}
             xplan[t + 4] = {"pushShape": False}
-            xplan[t + 6] = {"drawAll": True}
-            xplan[t + 8] = {"drawAll": False}
+            xplan[t + 6] = {"drawAllShapes": True}
+            xplan[t + 8] = {"drawAllShapes": False}
             # a commit clears (64 rows) and repaints every live slot;
             # parented slots pay one ancestor walk of slow computed
             # reads each, so this allows extra margin over the plain
@@ -1073,9 +1073,9 @@ def main():
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -1141,9 +1141,9 @@ def main():
         sq = [10.0, 10.0, 20.0, 10.0, 20.0, 20.0, 10.0, 20.0, 10.0, 10.0]
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": list(sq), "shapeColors": [blue] * 5,
-                      "pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         on3 = []
         on3s = []
 
@@ -1165,6 +1165,96 @@ def main():
         ok &= expect(not any(t > 120 for t in on3s), "phantom stroke ends",
                      "walk at %r" % ([t for t in on3s if t > 120][:8],))
 
+        # ---- the pending queue: push several shapes, draw once ----------
+        # A push APPENDS to the queue; drawAllShapes commits every entry
+        # (id 1..8 to its slot, id 0 to a scratch slot that dies on the
+        # next commit), then recomposites once.  So a driver stages a
+        # whole frame and paints it with ONE draw instead of one push-
+        # draw per shape -- and a push that is never drawn changes only
+        # the screen's memory.  Each case stages its shapes, fires
+        # exactly one draw, and snapshots the wall; the last stages a
+        # shape and deliberately does NOT draw, which must leave the
+        # wall byte-identical.
+        qA = rect_pts(4.0, 4.0, 12.0, 12.0)
+        qB = [8.0, 8.0, 20.0, 8.0, 8.0, 20.0]
+        qC = rect_pts(20.0, 20.0, 28.0, 28.0)
+        qT = [10.0, 40.0, 16.0, 40.0, 13.0, 46.0]
+        qcases = [
+            ([(qA, RED, 1.0), (qB, blue, 2.0)], True),
+            ([(qC, green, 1.0)], True),
+            ([([], [], 2.0)], True),
+            ([(qT, RED, 0.0), (qC, green, 1.0)], True),
+            ([(qA, blue, 3.0)], False),
+        ]
+        qplan = {}
+        t = 20
+        qends = []
+        for entries, draw in qcases:
+            for pts, cl, sid in entries:
+                qplan[t] = {"shapePoints": list(pts),
+                            "shapeColors": [cl] * (len(pts) // 2),
+                            "wireMode": False, "shapeId": sid}
+                qplan[t + 2] = {"pushShape": True}
+                qplan[t + 4] = {"pushShape": False}
+                t += 8
+            if draw:
+                qplan[t] = {"drawAllShapes": True}
+                qplan[t + 2] = {"drawAllShapes": False}
+            t += 206
+            qends.append(t)
+        qtotal = t + 20
+
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "wireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+        qsnaps = {}
+
+        def watchq(sn, tick):
+            if tick in qplan:
+                step = qplan[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors"))
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints" and k != "shapeColors"}
+                sn.inputs = dict(sn.inputs, **step)
+            if tick in qends:
+                qsnaps[tick] = {i: col(sn, gids, i)
+                                for i in range(SW * SW)}
+
+        sim.run(qtotal, on_tick=watchq)
+
+        def qwant(*shapes):
+            want = {}
+            for pts, c in shapes:
+                want.update(poly_colors(pts, [c] * (len(pts) // 2)))
+            return want
+
+        qwants = [
+            qwant((qA, RED), (qB, blue)),
+            qwant((qC, green), (qB, blue)),
+            qwant((qC, green)),
+            qwant((qC, green), (qT, RED)),
+            qwant((qC, green), (qT, RED)),
+        ]
+        qlabels = ["queued shapes paint with one draw",
+                   "queued edit replaces in place",
+                   "queued empty push deletes",
+                   "queued id-0 shape paints with the scene",
+                   "push without a draw changes nothing"]
+        for k, label in enumerate(qlabels):
+            bad = [i for i in range(SW * SW)
+                   if not close(qsnaps[qends[k]][i],
+                                qwants[k].get(i, BLACK))]
+            ok &= expect(not bad, label,
+                         "%d of 4096 differ, first at %d"
+                         % (len(bad), bad[0] if bad else 0))
+
         # ---- a bare chip paints nothing ---------------------------------
         # All scalar ports at their game defaults (unwired reads 0/False;
         # the sim reads None for unset, which string-compares wrong -- an
@@ -1172,9 +1262,9 @@ def main():
         # model unwired faithfully).  No array: a missing array reads
         # length 0, an empty shape, silent.
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
-        sim.inputs = {"pushShape": False, "wireMode": False,
-                      "shapeId": 0.0, "drawAll": False,
-                      "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+        sim.inputs = {"pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(60)
         sim.run(60)
         ok &= expect(all(col(sim, gids, i) == BLACK

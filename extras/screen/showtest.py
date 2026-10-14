@@ -5,8 +5,8 @@ wire, the id string and outNumArr every tick.  Phase 2 replays that
 stream into the screen chip the way the connector would deliver it
 (tight points, per-point colours, bool edges 2 ticks after their
 arrays -- painttest's staging rule).  Phase 3 diffs the wall against
-a Python model with retained slots and the deferred clearAll: the
-pulse forgets every slot, and the drawAll right after it is the one
+a Python model with retained slots and the deferred clearAllShapes: the
+pulse forgets every slot, and the drawAllShapes right after it is the one
 that blacks the wall -- so a lost edge, a torn latch, a wrong colour,
 a misread id or an abandoned burst shows up as pixels, while the
 coarse intent asserts (wire seen both ways, ids 1..3 plus immediate,
@@ -124,7 +124,7 @@ def main():
         ok &= expect(any(len(p) == 0 and s == "2"
                          for p, _c, _w, s in latched),
                      "empty shape deletes slot 2")
-        ok &= expect(len(clrs) >= 1, "clearAll pulse seen")
+        ok &= expect(len(clrs) >= 1, "clearAllShapes pulse seen")
 
         # End replay and model at the last push edge: every burst before
         # it is complete (the driver's naps cover each burst by
@@ -156,9 +156,9 @@ def main():
         assert spts is not None and scols is not None
         ssim.inputs = {"shapePoints": [0.0] * 32,
                        "shapeColors": [],
-                       "pushShape": False, "wireMode": False,
-                       "shapeId": 0.0, "drawAll": False,
-                       "clearAll": False, "position": (0.0, 0.0, 0.0), "rotation": (0.0, 0.0, 0.0), "scale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                       "pushShape": False, "shapeWireMode": False,
+                       "shapeId": 0.0, "drawAllShapes": False,
+                       "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
@@ -176,10 +176,10 @@ def main():
                 last_slid[1] = cols
             s.inputs = dict(s.inputs, **{
                 "pushShape": (b[0] or 0.0) > 0.5,
-                "wireMode": (b[3] or 0.0) > 0.5,
+                "shapeWireMode": (b[3] or 0.0) > 0.5,
                 "shapeId": parse_id(b[5]),
-                "drawAll": (b[1] or 0.0) > 0.5,
-                "clearAll": (b[2] or 0.0) > 0.5,
+                "drawAllShapes": (b[1] or 0.0) > 0.5,
+                "clearAllShapes": (b[2] or 0.0) > 0.5,
             })
 
         ssim.run(T_end, on_tick=hook2)
@@ -194,7 +194,7 @@ def main():
 
         # ---- phase 3: slot model --------------------------------------
         # The deferred clear: the pulse forgets every slot and stages
-        # the black fill; the next drawAll runs it -- with a shape
+        # the black fill; the next drawAllShapes runs it -- with a shape
         # staged that means black first, then the shape over it.
         fb = {}
         slots = {}

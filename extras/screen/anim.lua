@@ -1,5 +1,5 @@
 -- Rainbow spirograph, polygon edition -- driver for the 64x64 screen.
--- Wires: outNum1 -> pushShape, outNum2 -> drawAll, outNum3 -> clearAll,
+-- Wires: outNum1 -> pushShape, outNum2 -> drawAllShapes, outNum3 -> clearAllShapes,
 -- outNumArr -> only the points the shape needs (1..) plus one -1
 -- terminator; the connector truncates there.  No colours are sent: the
 -- screen defaults every point to white, which keeps this driver's write
@@ -51,7 +51,7 @@ end
 -- fire one shape: array is staged, pulse push then draw with one tick
 -- holds (push-L and draw-H share a tick: different ports, both edges
 -- land cleanly), no post wait -- the next frame's compute outlasts the
--- burst, so a drawAll can never catch one mid-flight
+-- burst, so a drawAllShapes can never catch one mid-flight
 local function fire(push)
   outNum(push, 1.0)
   local c = clock()
@@ -84,10 +84,10 @@ local function core(r, h)
   fire(1)
 end
 
--- clearAll only forgets the slots: the drawAll right after it is the
+-- clearAllShapes only forgets the slots: the drawAllShapes right after it is the
 -- pulse that actually blacks the wall (64 rows), so wait that burst
 -- out exactly -- the next frame's compute (~50 ticks) would abandon it
-local function clearAll()
+local function clearAllShapes()
   outNum(3, 1.0)
   local c = clock()
   while clock() == c do end
@@ -129,7 +129,7 @@ while true do
       mode = 2
     end
   else
-    clearAll()
+    clearAllShapes()
     idx = idx + 1
     if idx > 5 then idx = 1 end
     t = 0.0

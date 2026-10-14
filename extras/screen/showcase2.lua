@@ -1,5 +1,5 @@
 -- Showcase 2: per-point colours, retained editing, and the deferred
--- clearAll -- driver for the 64x64 screen.
+-- clearAllShapes -- driver for the 64x64 screen.
 -- Wiring (via the cpu-screen-connector): outNum1 push, outNum2 draw,
 -- outNum3 clear, outNum4 wire, outStr1 slot id, outNumArr points (1..),
 -- one -1 terminator, then four floats per point as that point's colour
@@ -18,9 +18,9 @@
 --      coordinates positive) and then only moved/rotated/scaled,
 --      with a satellite child that follows it for free,
 --      then both deleted with empty pushes,
---   4. clearAll: which only forgets the screen's memory -- the wall
+--   4. clearAllShapes: which only forgets the screen's memory -- the wall
 --      keeps showing the scene -- and then compose a NEW scene, whose
---      first drawAll is the pulse that actually blacks the wall, so the
+--      first drawAllShapes is the pulse that actually blacks the wall, so the
 --      old image never cuts to black before the new one is ready.
 local function tick()
   local c = clock()
@@ -58,15 +58,15 @@ local function pcol(slot, h, a)
   outNumArr(slot, pal[h * 3 + 1], pal[h * 3 + 2], pal[h * 3 + 3], a)
 end
 
--- transform into the CPU's output string array (slots 1-9: position
--- x, y, rotation z in radians, scale x, y -- the rest unused): two
+-- transform into the CPU's output string array (slots 1-9: shapePosition
+-- x, y, shapeRotation z in radians, shapeScale x, y -- the rest unused): two
 -- calls, 8 values at most each.  outStrArr takes strings only (unlike
 -- outStr), so everything goes through tostring.  The screen stages
 -- these with the push and composes them through the shape's
 -- ancestors, so the CPU sends base geometry once and then only moves
 -- it -- no trig per point per frame.  Rotation spins about the
 -- origin: model small shapes near it (like the mover below) and place
--- them with position.
+-- them with shapePosition.
 local function xf(px, py, ang, sx, sy)
   outStrArr(1, tostring(px), tostring(py), "0", "0", "0",
     tostring(ang), tostring(sx), tostring(sy))
@@ -145,7 +145,7 @@ end
 -- would read as empty) and then only moved/rotated/scaled -- its
 -- points below never change from frame to frame, so the CPU does no
 -- trig at all.  Rotation pivots at the origin, here the quad's own
--- corner, so it spins near where position puts it (~8 rows)
+-- corner, so it spins near where shapePosition puts it (~8 rows)
 local function mover(mx, my, ang, sc, hue)
   outNumArr(1, 0.0, 0.0, 8.0, 0.0, 8.0, 6.0, 0.0, 6.0)
   outNumArr(9, -5.0)
@@ -174,6 +174,56 @@ local function satellite(hue)
   fire(1.9)
   outStr(2, "")
   outStr(1, "3")
+end
+
+-- four palette colours (one per point) as a flat list of 16 floats
+local function cols4(h, a)
+  local c = {}
+  local i = 0
+  while i < 4 do
+    local hh = (h + i * 6) % 32
+    c[i * 4 + 1] = pal[hh * 3 + 1]
+    c[i * 4 + 2] = pal[hh * 3 + 2]
+    c[i * 4 + 3] = pal[hh * 3 + 3]
+    c[i * 4 + 4] = a
+    i = i + 1
+  end
+  return c
+end
+
+-- stage one shape WITHOUT drawing it: id (text), a point list-- {x1,y1,...}, an optional colour list (four floats per point --
+-- omit it for white) and the transform.  Several of these may be
+-- stacked; draw() below paints them ALL with one pulse.
+local function stage(id, pts, cols, px, py, ang, sx, sy)
+  outStr(1, id)
+  local n = #pts // 2
+  local i = 0
+  while i < n do
+    outNumArr(i * 2 + 1, pts[i * 2 + 1], pts[i * 2 + 2])
+    i = i + 1
+  end
+  if cols then
+    outNumArr(n * 2 + 1, -(1 + #cols // 4))
+    local j = 0
+    while j < #cols // 4 do
+      outNumArr(n * 2 + 2 + j * 4, cols[j * 4 + 1], cols[j * 4 + 2],
+        cols[j * 4 + 3], cols[j * 4 + 4])
+      j = j + 1
+    end
+  else
+    outNumArr(n * 2 + 1, -1.0)
+  end
+  xf(px, py, ang, sx, sy)
+  outNum(1, 1.0)
+  tick()
+  outNum(1, 0.0)
+end
+
+-- paint every shape staged since the last draw, with one pulse
+local function draw()
+  outNum(2, 1.0)
+  tick()
+  outNum(2, 0.0)
 end
 
 local hue = 0
@@ -225,8 +275,31 @@ while true do
   fire(1.9)
   outStr(1, "")
   nap(2.0)
-  -- 5. clearAll: the screen still shows the scene (the pulse only
-  -- forgets).  Compose the next one: the background's drawAll is the
+  -- 5. the queue: stage several shapes, then ONE draw paints them all.
+  -- Each stage() only stages; draw() commits everything pending, so a
+  -- frame is composed first and painted in one go.  Slot 2 gets a
+  -- diamond, slot 4 a small square, and an id-0 shape (not retained:
+  -- it dies on the next commit) rides along.
+  stage("2", {30.0, 8.0, 36.0, 14.0, 30.0, 20.0, 24.0, 14.0},
+    cols4(hue, 1.0), 0.0, 0.0, 0.0, 1.0, 1.0)
+  hue = hue + 5
+  stage("4", {40.0, 30.0, 46.0, 30.0, 46.0, 36.0, 40.0, 36.0},
+    cols4(hue, 1.0), 0.0, 0.0, 0.0, 1.0, 1.0)
+  hue = hue + 5
+  stage("0", {8.0, 30.0, 14.0, 30.0, 11.0, 36.0},
+    cols4(hue, 0.5), 0.0, 0.0, 0.0, 1.0, 1.0)
+  hue = hue + 5
+  draw()
+  nap(2.0)
+  -- an edit and a delete are staged the same way and drawn the same way
+  stage("2", {26.0, 10.0, 34.0, 18.0, 18.0, 18.0, 26.0, 10.0},
+    cols4(hue, 1.0), 0.0, 0.0, 0.0, 1.0, 1.0)
+  hue = hue + 5
+  stage("4", {}, nil, 0.0, 0.0, 0.0, 1.0, 1.0)
+  draw()
+  nap(2.0)
+  -- 6. clearAllShapes: the screen still shows the scene (the pulse only
+  -- forgets).  Compose the next one: the background's drawAllShapes is the
   -- pulse that blacks the wall, and the rest builds on top of it.
   outNum(3, 1.0)
   tick()

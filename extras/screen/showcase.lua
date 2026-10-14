@@ -6,7 +6,7 @@
 -- budget the smallest it can be -- the protocol's colours cost four
 -- array slots per point, and this program's job is to exercise every
 -- primitive and the retained slots at the physical floor.  The colour
--- feature (per-point gradients, translucency, the deferred clearAll)
+-- feature (per-point gradients, translucency, the deferred clearAllShapes)
 -- gets its own program: showcase2.lua.  Each fire naps just past its
 -- burst (fill 1 tick/row, stroke +1/segment, retained ~64+rows), so
 -- nothing is ever abandoned.
@@ -28,7 +28,7 @@ local function fire(after)
   if after > 0.0 then nap(after) end
 end
 
--- boot tables: wave sine and rotation cos/sin (whole pixels: the
+-- boot tables: wave sine and shapeRotation cos/sin (whole pixels: the
 -- painter truncates, so fractional bounds would bleed across rows)
 local sn = {}
 local cs = {}
@@ -206,7 +206,7 @@ while true do
     if by > 54.0 then by = 54.0 vy = -2.0 end
     n = n + 1
   end
-  -- 7. clearAll forgets everything; the ring's drawAll is the pulse
+  -- 7. clearAllShapes forgets everything; the ring's drawAllShapes is the pulse
   -- that blacks the wall (the deferred clear), then the finale holds
   outNum(3, 1.0)
   tick()
