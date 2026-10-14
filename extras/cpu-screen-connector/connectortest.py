@@ -36,13 +36,15 @@ LUA_WS = os.path.join(ROOT, "lua.ws")
 CONN_WS = os.path.join(HERE, "connector.ws")
 SCREEN_WS = os.path.join(HERE, "..", "screen", "screen.ws")
 SW = 64
-TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 2100
+TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
 BLACK = (0.0, 0.0, 0.0, 1.0)
-# The driver is quiet until ~1500 (boot and staging); both replays skip
-# that dead head (phases 2-3 run TICKS - SLICE ticks feeding samples and
-# rows at +SLICE).  The connector is combinational and the screen has no
+# The driver is quiet until ~1750 (boot parses ~2.5 chars/tick, so
+# every program line shifts the whole driver later -- keep the budget
+# generous when extending it); both replays skip that dead head
+# (phases 2-3 run TICKS - SLICE ticks feeding samples and rows at
+# +SLICE).  The connector is combinational and the screen has no
 # edges before the first push, so the slice is exactly equivalent.
-SLICE = 1400
+SLICE = 1750
 
 DRIVER = """
 local function tick()
@@ -115,7 +117,34 @@ outNumArr(8, 0.0, 1.0, 0.0, 0.5,
 outNumArr(16, 0.0, 1.0, 0.0, 0.5)
 fire()
 outStr(1, "")
--- let shape 4's recomposite (clear + repaint, ~85 ticks) finish before
+-- shape 5: animate slot 1's triangle (+2 x/tick over 4 ticks; slot
+-- 100 = -(1+4)).  The commit stages the animation and paints
+-- nothing; a bare draw after the ticks shows the motion.  (Slot 1
+-- is already live from shape 4, so no establish is needed -- and
+-- the nap below is shape 4's burst settling before the new push,
+-- which would otherwise abort it mid-flight.)
+local wa = clock()
+while clock() < wa + 1.2 do end
+outStr(1, "1")
+outStrArr(1, "2", "0", "0", "0", "0", "0", "0", "0")
+outStrArr(9, "0")
+outNumArr(1, 0.0, 0.0)
+outNumArr(3, -1.0)
+outNumArr(100, -5.0)
+fire()
+outStr(1, "")
+outNumArr(100, -1.0)
+-- the animated commit paints nothing and the 4 ticks run free; one
+-- bare draw afterwards shows the triangle moved +8 in x
+local wb = clock()
+while clock() < wb + 0.4 do end
+outNum(2, 1.0)
+tick()
+outNum(2, 0.0)
+tick()
+tick()
+-- let the bare draw's burst finish before clearing, or the pulse
+-- abandons it mid-flight and no moved triangle ever lands
 -- clearing, or the pulse abandons it mid-flight and no complete triangle
 -- ever lands for the snapshot below
 local wc = clock()
@@ -283,7 +312,7 @@ def main():
         # too: it belongs here, not in cout.)
         cpull = {}
         for name in ("pushShape", "drawAllShapes", "shapeWireMode", "shapeId",
-                     "clearAllShapes", "parentShapeId"):
+                     "clearAllShapes", "parentShapeId", "addToShapeInTicks"):
             cpull[name] = out_port_id(csim, name)
         cstream = []
 
@@ -294,7 +323,7 @@ def main():
                 s.inputs = dict(s.inputs, **{
                     "outNum1": p1, "outNum2": p2, "outNum3": p3,
                     "outNum4": p4, "outStr1": st, "outStr2": st2,
-                    "outNumArr": list(a[:40]),
+                    "outNumArr": list(a[:128]),
                     "outStrArr": list(sa[:12]),
                 })
             row = {}
@@ -363,6 +392,19 @@ def main():
                          "shapeScale parses from outStrArr",
                          "%r" % (prow["shapeScale"],))
 
+        # the tick count rides slot 100 as a second terminator (-1 =
+        # instant, -(1+T) = animate over T ticks).  Shapes 1-4 never
+        # stage it and shape 5 rewrites the explicit stop after its
+        # push, so every row but the animated push must read instant.
+        ticks_seen = set(float(r.get("addToShapeInTicks") or 0.0)
+                         for r in cstream)
+        ok &= expect(4.0 in ticks_seen,
+                     "tick count parses from slot 100",
+                     "%r" % (sorted(ticks_seen),))
+        ok &= expect(ticks_seen <= {0.0, 4.0},
+                     "unstaged ticks read instant",
+                     "%r" % (sorted(ticks_seen),))
+
         # ---- phase 3: screen paints --------------------------------------
         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
             scr_dump = f.name
@@ -384,7 +426,8 @@ def main():
                        "shapeColors": [(1.0, 1.0, 1.0, 1.0)] * 4,
                        "pushShape": False, "shapeWireMode": False,
                        "shapeId": 0.0, "drawAllShapes": False,
-                       "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
+                       "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0,
+                       "addToShapeInTicks": 0.0}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
@@ -393,8 +436,10 @@ def main():
         # shape 1 (red fill square) + shape 2 (blue stroke) accumulate,
         # shape 3 paints the moved blue square over them (immediate,
         # dead-slot parent = identity), shape 4 stores green in slot 1
-        # (its commit clears and repaints just the triangle), then the
-        # flag clears everything.
+        # (its commit clears and repaints just the triangle), shape 5
+        # animates that triangle (+2 x/tick over 4 ticks, no repaint)
+        # and the bare draw shows it moved, then the flag clears
+        # everything.
         # Snapshot after shape 4's commit lands, then the final black.
         # Bool edges are replayed 2 ticks after the arrays that belong to
         # them (painttest's staging rule: same-tick array+edge merges
@@ -418,7 +463,12 @@ def main():
         # moved square) to prove the transform end to end.  The burst
         # is ~12 rows from the redraw; the snapshot sits past its end
         # but strictly before the next push, which would abort it.
+        # Shape 5's animated commit paints nothing (snapA proves the
+        # wall still shows the triangle); the bare draw after the
+        # ticks shows it moved +8 in x (snapB).
         snap3_tick = (reds[2] + 2 + 18) if len(reds) >= 4 else None
+        snapA_tick = (reds[4] + 2 + 25) if len(reds) >= 6 else None
+        snapB_tick = (reds[5] + 2 + 95) if len(reds) >= 6 else None
         snap = None
 
         # (snapshots are taken in hook2 below via closure state)
@@ -455,6 +505,8 @@ def main():
                     tuple(b.get("shapeRotation") or (0.0, 0.0, 0.0))[:3],
                 "shapeScale":
                     tuple(b.get("shapeScale") or (0.0, 0.0, 0.0))[:3],
+                "addToShapeInTicks":
+                    float(b.get("addToShapeInTicks") or 0.0),
             })
             if snap_tick is not None and tick == snap_tick:
                 snap_holder["wall"] = tuple(
@@ -471,6 +523,16 @@ def main():
                     tuple(float(x) for x in s.vars.get(
                         gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
                     for i in range(SW * SW)) if gids else None
+            if snapA_tick is not None and tick == snapA_tick:
+                snap_holder["wallA"] = tuple(
+                    tuple(float(x) for x in s.vars.get(
+                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
+                    for i in range(SW * SW)) if gids else None
+            if snapB_tick is not None and tick == snapB_tick:
+                snap_holder["wallB"] = tuple(
+                    tuple(float(x) for x in s.vars.get(
+                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
+                    for i in range(SW * SW)) if gids else None
 
         # gids must exist before hook2 snapshots; collect them first
         gids = {}
@@ -478,7 +540,11 @@ def main():
             lb = _extract(nd.props.get("_label", ("raw", "")))
             if isinstance(lb, str) and lb.startswith("g") and lb[1:].isdigit():
                 gids[int(lb[1:])] = nid
-        ssim.run(TICKS, on_tick=hook2)
+        # The replay covers the sliced stream plus settle margin for
+        # the last burst (the clear's, ~85 ticks); the idle tail past
+        # that never painted anything and costs ~4 screen ticks a
+        # second to re-simulate, so it is not replayed.
+        ssim.run(len(cstream) + 150, on_tick=hook2)
         got = []
         for i in range(SW * SW):
             v = ssim.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))
@@ -529,6 +595,33 @@ def main():
                 print("   wall movement +95..+115: %d px" % moved)
         else:
             ok &= expect(False, "retained store through connector",
+                         "no snapshot (only %d redraws)" % len(reds))
+        asq = [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0]
+        # shape 5 animates slot 1's triangle in place: the commit
+        # paints nothing, so the wall still shows the triangle alone.
+        wantA = {p: (0.0, 1.0, 0.0, 0.5) for p in poly_pixels(tri)}
+        if snap_holder.get("wallA") is not None:
+            badA = [i for i in range(SW * SW)
+                    if snap_holder["wallA"][i] != wantA.get(
+                        i, (0.0, 0.0, 0.0, 1.0))]
+            ok &= expect(not badA, "animated commit repaints nothing",
+                         "%d of 4096 differ, first at %d"
+                         % (len(badA), badA[0] if badA else 0))
+        else:
+            ok &= expect(False, "animated commit repaints nothing",
+                         "no snapshot (only %d redraws)" % len(reds))
+        if snap_holder.get("wallB") is not None:
+            movedA = xf_points(tri, (8.0, 0.0), 0.0, (1.0, 1.0))
+            wantB = {p: (0.0, 1.0, 0.0, 0.5)
+                     for p in poly_pixels(movedA)}
+            badB = [i for i in range(SW * SW)
+                    if snap_holder["wallB"][i] != wantB.get(
+                        i, (0.0, 0.0, 0.0, 1.0))]
+            ok &= expect(not badB, "bare draw shows the motion",
+                         "%d of 4096 differ, first at %d"
+                         % (len(badB), badB[0] if badB else 0))
+        else:
+            ok &= expect(False, "bare draw shows the motion",
                          "no snapshot (only %d redraws)" % len(reds))
         painted = sum(1 for v in got if v[:3] != (0.0, 0.0, 0.0))
         left = [(i // 64, i % 64, got[i])

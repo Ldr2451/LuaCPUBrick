@@ -29,6 +29,16 @@
 //           follow.  So a colourless driver keeps writing the plain -1
 //           it always did, and never pays for the colour region.
 //   2k+2..  colours r1, g1, b1, a1, ... four per point
+//   100     second terminator (optional): a value <= -1 whose magnitude
+//           carries the animation length in ticks: -1 means INSTANT (no
+//           animation, the long-standing behavior), -(1+T) animates the
+//           staged shape over T ticks.  Fixed slot, so no scan: shapes
+//           never reach past slot 97 (16 points + terminator + 16 colours
+//           is 0-based 0..96), so shape data can never collide with it.
+//           Stale values CAN (a previous animated push on the same port):
+//           drivers that animate write this slot on every push, and write
+//           -1 to stop -- an unwritten slot reads 0.0, which is instant,
+//           so drivers that never animate behave exactly as before.
 // A white triangle is one call: outNumArr(1, x1,y1, x2,y2, x3,y3, -1).
 // A per-point coloured one adds the count to the terminator and the
 // colours: outNumArr(1, x1,y1, x2,y2, x3,y3, -4, r,g,b,a, r,g,b,a,
@@ -80,6 +90,7 @@ var cols: color[]
 var tpos: vector = Vec(0.0, 0.0, 0.0)
 var trot: vector = Vec(0.0, 0.0, 0.0)
 var tscl: vector = Vec(1.0, 1.0, 1.0)
+var ticks: float = 0.0
 out pushShape: bool = outNum1 > 0.5
 out drawAllShapes: bool = outNum2 > 0.5
 out clearAllShapes: bool = outNum3 > 0.5
@@ -91,6 +102,7 @@ out shapeColors: color[] = cols
 out shapePosition: vector = tpos
 out shapeRotation: vector = trot
 out shapeScale: vector = tscl
+out addToShapeInTicks: float = ticks
 mod passArrays() {
   // the point scan and the terminator's value travel together: the same
   // literal-index chain, the x slot that ends the points also says how
@@ -119,12 +131,18 @@ mod passArrays() {
   cols[13] = if nc > 55 then Color(cfl[52], cfl[53], cfl[54], cfl[55]) else Color(1.0, 1.0, 1.0, 1.0)
   cols[14] = if nc > 59 then Color(cfl[56], cfl[57], cfl[58], cfl[59]) else Color(1.0, 1.0, 1.0, 1.0)
   cols[15] = if nc > 63 then Color(cfl[60], cfl[61], cfl[62], cfl[63]) else Color(1.0, 1.0, 1.0, 1.0)
+  // Exact colour count out (never padded past it): the screen defaults
+  // missing colours to white when painting, and to the transparent
+  // no-op when staging per-tick animation deltas -- so omitted colours
+  // hold still instead of flashing white.  Capped at 16 like before.
+  cols.resize(if nc > 16.0 then 16.0 else nc, Color(1.0, 1.0, 1.0, 1.0))
   // The transform: nine fixed slots, no scan.  Unwritten slots read ""
   // and parse to 0.0, which the screen defaults (shapeScale zeroes mean
   // identity), so these three builds are literal-index reads -- fast.
   tpos = Vec(ParseNumber(outStrArr[0]), ParseNumber(outStrArr[1]), ParseNumber(outStrArr[2]))
   trot = Vec(ParseNumber(outStrArr[3]), ParseNumber(outStrArr[4]), ParseNumber(outStrArr[5]))
   tscl = Vec(ParseNumber(outStrArr[6]), ParseNumber(outStrArr[7]), ParseNumber(outStrArr[8]))
+  ticks = if outNumArr.length() > 99.0 then (if outNumArr[99] <= -1.0 then (0.0 - outNumArr[99]) - 1.0 else 0.0) else 0.0
 }
 on Clock(interval = 0.01) {
   passArrays()

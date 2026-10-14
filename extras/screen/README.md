@@ -109,6 +109,25 @@ shape instead); racing a refresh mid-burst tears it like any raced
 burst -- pace twiddles like pushes.  The wall bricks are emissive
 (`BMC_Glow`), so colours read as emitted light and the slider is a
 dimmer for the whole wall.
+
+`addToShapeInTicks` turns a push into a per-tick animation: when it
+reads N (truncated, minimum 1 -- 0 and unwired mean instant, the
+long-standing behavior), every other staged input is a *delta*,
+added to the stored shape again each tick for N ticks.  Points add to
+points (past the staged count the tail holds still), colours add
+channel by channel (missing colours add nothing), position, rotation
+and scale add to the stored transform; the parent link and the
+fill/stroke mode apply instantly, since links and modes are discrete.
+Only retained shapes animate (id 0 paints instantly as always); the
+first push to a dead slot establishes it instantly, since there is no
+base to add to.  A new push to the same slot always wins -- even mid-
+flight, starting from the current values -- an instant push kills the
+animation outright, and `clearAllShapes` forgets every animation with
+its slots.  Nothing repaints by itself: like everything else, motion
+becomes visible on `drawAllShapes` (a bare one recomposites while any
+animation is dirty, so the CPU sends one pulse per frame instead of
+full stages).  Time freezes while a pass paints, so fast deltas cannot
+smear across a slow repaint.
 Colors persist until rewritten, so a frame is a sequence of
 push-then-draw pairs, and the wall keeps the last color forever -- no
 keepalive, no expiry.  The last push before a `drawAllShapes` wins, so a

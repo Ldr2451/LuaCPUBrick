@@ -84,6 +84,7 @@ const MAXP = 16
 @left in shapeRotation: vector
 @left in shapeScale: vector
 @left in parentShapeId: float
+@left in addToShapeInTicks: float
 @left in brightness: float
 
 const SW = 64
@@ -154,6 +155,10 @@ var pPos: vector = Vec(0.0, 0.0, 0.0)
 var pRot: vector = Vec(0.0, 0.0, 0.0)
 var pScl: vector = Vec(1.0, 1.0, 1.0)
 var pParent: float = 0.0
+var pTicks: float = 0.0
+var needRC: bool = false
+var recompOnly: bool = false
+var animDirty: bool = false
 var shPts: float[]
 var slPts: float[]
 var slPC: color[]
@@ -161,6 +166,12 @@ var slMode: float[]
 var slLive: float[]
 var slCount: float[]
 var slXF: float[]
+var anPts: float[]
+var anCol: color[]
+var anXF: float[]
+var anTicks: float[]
+var qTicks: float[]
+var qCN: float[]
 var needXF: bool = false
 var wpx: float = 0.0
 var wpy: float = 0.0
@@ -8796,6 +8807,7 @@ on Change(pushShape) {
     pRot = shapeRotation
     pScl = shapeScale
     pParent = if parentShapeId < 0.0 then 0.0 else if parentShapeId > 8.0 then 8.0 else (parentShapeId | 0)
+    pTicks = if addToShapeInTicks < 1.0 then 0.0 else (addToShapeInTicks | 0)
     pending = true
     qPush = true
     polyOn = false
@@ -8845,6 +8857,9 @@ on Change(drawAllShapes) {
         }
         qCount = 0.0
       }
+    } else if animDirty {
+      commitR = true
+      recompOnly = true
     }
     if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ {
       prow = pfirst - 2.0
@@ -8960,6 +8975,14 @@ on Change(clearAllShapes) {
     slLive[6] = 0.0
     slLive[7] = 0.0
     slLive[8] = 0.0
+    anTicks[0] = 0.0
+    anTicks[1] = 0.0
+    anTicks[2] = 0.0
+    anTicks[3] = 0.0
+    anTicks[4] = 0.0
+    anTicks[5] = 0.0
+    anTicks[6] = 0.0
+    anTicks[7] = 0.0
     qCount = 0.0
     blackPending = true
     justCleared = false
@@ -8983,6 +9006,12 @@ mod paintTick() {
     slPts.resize(288, 0.0)
     slPC.resize(144, Color(1.0, 1.0, 1.0, 1.0))
     slXF.resize(54, 0.0)
+    anPts.resize(288, 0.0)
+    anCol.resize(144, Color(0.0, 0.0, 0.0, 0.0))
+    anXF.resize(54, 0.0)
+    anTicks.resize(9, 0.0)
+    qTicks.resize(8, 0.0)
+    qCN.resize(8, 0.0)
     slMode.resize(9, 0.0)
     slLive.resize(9, 0.0)
     slCount.resize(9, 0.0)
@@ -8995,6 +9024,463 @@ mod paintTick() {
     fbInit = true
   }
   bf = if brightness <= 0.0 then 1.0 else if brightness < 1.0 then 0.01 else if brightness > 100.0 then 1.0 else brightness / 100.0
+  if anTicks[0.0] > 0.5 && !rcOn {
+    anTicks[0.0] = anTicks[0.0] - 1.0
+    animDirty = true
+    slPts[0] = slPts[0] + anPts[0]
+    slPts[1] = slPts[1] + anPts[1]
+    slPts[2] = slPts[2] + anPts[2]
+    slPts[3] = slPts[3] + anPts[3]
+    slPts[4] = slPts[4] + anPts[4]
+    slPts[5] = slPts[5] + anPts[5]
+    slPts[6] = slPts[6] + anPts[6]
+    slPts[7] = slPts[7] + anPts[7]
+    slPts[8] = slPts[8] + anPts[8]
+    slPts[9] = slPts[9] + anPts[9]
+    slPts[10] = slPts[10] + anPts[10]
+    slPts[11] = slPts[11] + anPts[11]
+    slPts[12] = slPts[12] + anPts[12]
+    slPts[13] = slPts[13] + anPts[13]
+    slPts[14] = slPts[14] + anPts[14]
+    slPts[15] = slPts[15] + anPts[15]
+    slPts[16] = slPts[16] + anPts[16]
+    slPts[17] = slPts[17] + anPts[17]
+    slPts[18] = slPts[18] + anPts[18]
+    slPts[19] = slPts[19] + anPts[19]
+    slPts[20] = slPts[20] + anPts[20]
+    slPts[21] = slPts[21] + anPts[21]
+    slPts[22] = slPts[22] + anPts[22]
+    slPts[23] = slPts[23] + anPts[23]
+    slPts[24] = slPts[24] + anPts[24]
+    slPts[25] = slPts[25] + anPts[25]
+    slPts[26] = slPts[26] + anPts[26]
+    slPts[27] = slPts[27] + anPts[27]
+    slPts[28] = slPts[28] + anPts[28]
+    slPts[29] = slPts[29] + anPts[29]
+    slPts[30] = slPts[30] + anPts[30]
+    slPts[31] = slPts[31] + anPts[31]
+    slPC[0] = slPC[0] + anCol[0]
+    slPC[1] = slPC[1] + anCol[1]
+    slPC[2] = slPC[2] + anCol[2]
+    slPC[3] = slPC[3] + anCol[3]
+    slPC[4] = slPC[4] + anCol[4]
+    slPC[5] = slPC[5] + anCol[5]
+    slPC[6] = slPC[6] + anCol[6]
+    slPC[7] = slPC[7] + anCol[7]
+    slPC[8] = slPC[8] + anCol[8]
+    slPC[9] = slPC[9] + anCol[9]
+    slPC[10] = slPC[10] + anCol[10]
+    slPC[11] = slPC[11] + anCol[11]
+    slPC[12] = slPC[12] + anCol[12]
+    slPC[13] = slPC[13] + anCol[13]
+    slPC[14] = slPC[14] + anCol[14]
+    slPC[15] = slPC[15] + anCol[15]
+    slXF[0] = slXF[0] + anXF[0]
+    slXF[1] = slXF[1] + anXF[1]
+    slXF[2] = slXF[2] + anXF[2]
+    slXF[3] = slXF[3] + anXF[3]
+    slXF[4] = slXF[4] + anXF[4]
+  }
+  if anTicks[1.0] > 0.5 && !rcOn {
+    anTicks[1.0] = anTicks[1.0] - 1.0
+    animDirty = true
+    slPts[32] = slPts[32] + anPts[32]
+    slPts[33] = slPts[33] + anPts[33]
+    slPts[34] = slPts[34] + anPts[34]
+    slPts[35] = slPts[35] + anPts[35]
+    slPts[36] = slPts[36] + anPts[36]
+    slPts[37] = slPts[37] + anPts[37]
+    slPts[38] = slPts[38] + anPts[38]
+    slPts[39] = slPts[39] + anPts[39]
+    slPts[40] = slPts[40] + anPts[40]
+    slPts[41] = slPts[41] + anPts[41]
+    slPts[42] = slPts[42] + anPts[42]
+    slPts[43] = slPts[43] + anPts[43]
+    slPts[44] = slPts[44] + anPts[44]
+    slPts[45] = slPts[45] + anPts[45]
+    slPts[46] = slPts[46] + anPts[46]
+    slPts[47] = slPts[47] + anPts[47]
+    slPts[48] = slPts[48] + anPts[48]
+    slPts[49] = slPts[49] + anPts[49]
+    slPts[50] = slPts[50] + anPts[50]
+    slPts[51] = slPts[51] + anPts[51]
+    slPts[52] = slPts[52] + anPts[52]
+    slPts[53] = slPts[53] + anPts[53]
+    slPts[54] = slPts[54] + anPts[54]
+    slPts[55] = slPts[55] + anPts[55]
+    slPts[56] = slPts[56] + anPts[56]
+    slPts[57] = slPts[57] + anPts[57]
+    slPts[58] = slPts[58] + anPts[58]
+    slPts[59] = slPts[59] + anPts[59]
+    slPts[60] = slPts[60] + anPts[60]
+    slPts[61] = slPts[61] + anPts[61]
+    slPts[62] = slPts[62] + anPts[62]
+    slPts[63] = slPts[63] + anPts[63]
+    slPC[16] = slPC[16] + anCol[16]
+    slPC[17] = slPC[17] + anCol[17]
+    slPC[18] = slPC[18] + anCol[18]
+    slPC[19] = slPC[19] + anCol[19]
+    slPC[20] = slPC[20] + anCol[20]
+    slPC[21] = slPC[21] + anCol[21]
+    slPC[22] = slPC[22] + anCol[22]
+    slPC[23] = slPC[23] + anCol[23]
+    slPC[24] = slPC[24] + anCol[24]
+    slPC[25] = slPC[25] + anCol[25]
+    slPC[26] = slPC[26] + anCol[26]
+    slPC[27] = slPC[27] + anCol[27]
+    slPC[28] = slPC[28] + anCol[28]
+    slPC[29] = slPC[29] + anCol[29]
+    slPC[30] = slPC[30] + anCol[30]
+    slPC[31] = slPC[31] + anCol[31]
+    slXF[6] = slXF[6] + anXF[6]
+    slXF[7] = slXF[7] + anXF[7]
+    slXF[8] = slXF[8] + anXF[8]
+    slXF[9] = slXF[9] + anXF[9]
+    slXF[10] = slXF[10] + anXF[10]
+  }
+  if anTicks[2.0] > 0.5 && !rcOn {
+    anTicks[2.0] = anTicks[2.0] - 1.0
+    animDirty = true
+    slPts[64] = slPts[64] + anPts[64]
+    slPts[65] = slPts[65] + anPts[65]
+    slPts[66] = slPts[66] + anPts[66]
+    slPts[67] = slPts[67] + anPts[67]
+    slPts[68] = slPts[68] + anPts[68]
+    slPts[69] = slPts[69] + anPts[69]
+    slPts[70] = slPts[70] + anPts[70]
+    slPts[71] = slPts[71] + anPts[71]
+    slPts[72] = slPts[72] + anPts[72]
+    slPts[73] = slPts[73] + anPts[73]
+    slPts[74] = slPts[74] + anPts[74]
+    slPts[75] = slPts[75] + anPts[75]
+    slPts[76] = slPts[76] + anPts[76]
+    slPts[77] = slPts[77] + anPts[77]
+    slPts[78] = slPts[78] + anPts[78]
+    slPts[79] = slPts[79] + anPts[79]
+    slPts[80] = slPts[80] + anPts[80]
+    slPts[81] = slPts[81] + anPts[81]
+    slPts[82] = slPts[82] + anPts[82]
+    slPts[83] = slPts[83] + anPts[83]
+    slPts[84] = slPts[84] + anPts[84]
+    slPts[85] = slPts[85] + anPts[85]
+    slPts[86] = slPts[86] + anPts[86]
+    slPts[87] = slPts[87] + anPts[87]
+    slPts[88] = slPts[88] + anPts[88]
+    slPts[89] = slPts[89] + anPts[89]
+    slPts[90] = slPts[90] + anPts[90]
+    slPts[91] = slPts[91] + anPts[91]
+    slPts[92] = slPts[92] + anPts[92]
+    slPts[93] = slPts[93] + anPts[93]
+    slPts[94] = slPts[94] + anPts[94]
+    slPts[95] = slPts[95] + anPts[95]
+    slPC[32] = slPC[32] + anCol[32]
+    slPC[33] = slPC[33] + anCol[33]
+    slPC[34] = slPC[34] + anCol[34]
+    slPC[35] = slPC[35] + anCol[35]
+    slPC[36] = slPC[36] + anCol[36]
+    slPC[37] = slPC[37] + anCol[37]
+    slPC[38] = slPC[38] + anCol[38]
+    slPC[39] = slPC[39] + anCol[39]
+    slPC[40] = slPC[40] + anCol[40]
+    slPC[41] = slPC[41] + anCol[41]
+    slPC[42] = slPC[42] + anCol[42]
+    slPC[43] = slPC[43] + anCol[43]
+    slPC[44] = slPC[44] + anCol[44]
+    slPC[45] = slPC[45] + anCol[45]
+    slPC[46] = slPC[46] + anCol[46]
+    slPC[47] = slPC[47] + anCol[47]
+    slXF[12] = slXF[12] + anXF[12]
+    slXF[13] = slXF[13] + anXF[13]
+    slXF[14] = slXF[14] + anXF[14]
+    slXF[15] = slXF[15] + anXF[15]
+    slXF[16] = slXF[16] + anXF[16]
+  }
+  if anTicks[3.0] > 0.5 && !rcOn {
+    anTicks[3.0] = anTicks[3.0] - 1.0
+    animDirty = true
+    slPts[96] = slPts[96] + anPts[96]
+    slPts[97] = slPts[97] + anPts[97]
+    slPts[98] = slPts[98] + anPts[98]
+    slPts[99] = slPts[99] + anPts[99]
+    slPts[100] = slPts[100] + anPts[100]
+    slPts[101] = slPts[101] + anPts[101]
+    slPts[102] = slPts[102] + anPts[102]
+    slPts[103] = slPts[103] + anPts[103]
+    slPts[104] = slPts[104] + anPts[104]
+    slPts[105] = slPts[105] + anPts[105]
+    slPts[106] = slPts[106] + anPts[106]
+    slPts[107] = slPts[107] + anPts[107]
+    slPts[108] = slPts[108] + anPts[108]
+    slPts[109] = slPts[109] + anPts[109]
+    slPts[110] = slPts[110] + anPts[110]
+    slPts[111] = slPts[111] + anPts[111]
+    slPts[112] = slPts[112] + anPts[112]
+    slPts[113] = slPts[113] + anPts[113]
+    slPts[114] = slPts[114] + anPts[114]
+    slPts[115] = slPts[115] + anPts[115]
+    slPts[116] = slPts[116] + anPts[116]
+    slPts[117] = slPts[117] + anPts[117]
+    slPts[118] = slPts[118] + anPts[118]
+    slPts[119] = slPts[119] + anPts[119]
+    slPts[120] = slPts[120] + anPts[120]
+    slPts[121] = slPts[121] + anPts[121]
+    slPts[122] = slPts[122] + anPts[122]
+    slPts[123] = slPts[123] + anPts[123]
+    slPts[124] = slPts[124] + anPts[124]
+    slPts[125] = slPts[125] + anPts[125]
+    slPts[126] = slPts[126] + anPts[126]
+    slPts[127] = slPts[127] + anPts[127]
+    slPC[48] = slPC[48] + anCol[48]
+    slPC[49] = slPC[49] + anCol[49]
+    slPC[50] = slPC[50] + anCol[50]
+    slPC[51] = slPC[51] + anCol[51]
+    slPC[52] = slPC[52] + anCol[52]
+    slPC[53] = slPC[53] + anCol[53]
+    slPC[54] = slPC[54] + anCol[54]
+    slPC[55] = slPC[55] + anCol[55]
+    slPC[56] = slPC[56] + anCol[56]
+    slPC[57] = slPC[57] + anCol[57]
+    slPC[58] = slPC[58] + anCol[58]
+    slPC[59] = slPC[59] + anCol[59]
+    slPC[60] = slPC[60] + anCol[60]
+    slPC[61] = slPC[61] + anCol[61]
+    slPC[62] = slPC[62] + anCol[62]
+    slPC[63] = slPC[63] + anCol[63]
+    slXF[18] = slXF[18] + anXF[18]
+    slXF[19] = slXF[19] + anXF[19]
+    slXF[20] = slXF[20] + anXF[20]
+    slXF[21] = slXF[21] + anXF[21]
+    slXF[22] = slXF[22] + anXF[22]
+  }
+  if anTicks[4.0] > 0.5 && !rcOn {
+    anTicks[4.0] = anTicks[4.0] - 1.0
+    animDirty = true
+    slPts[128] = slPts[128] + anPts[128]
+    slPts[129] = slPts[129] + anPts[129]
+    slPts[130] = slPts[130] + anPts[130]
+    slPts[131] = slPts[131] + anPts[131]
+    slPts[132] = slPts[132] + anPts[132]
+    slPts[133] = slPts[133] + anPts[133]
+    slPts[134] = slPts[134] + anPts[134]
+    slPts[135] = slPts[135] + anPts[135]
+    slPts[136] = slPts[136] + anPts[136]
+    slPts[137] = slPts[137] + anPts[137]
+    slPts[138] = slPts[138] + anPts[138]
+    slPts[139] = slPts[139] + anPts[139]
+    slPts[140] = slPts[140] + anPts[140]
+    slPts[141] = slPts[141] + anPts[141]
+    slPts[142] = slPts[142] + anPts[142]
+    slPts[143] = slPts[143] + anPts[143]
+    slPts[144] = slPts[144] + anPts[144]
+    slPts[145] = slPts[145] + anPts[145]
+    slPts[146] = slPts[146] + anPts[146]
+    slPts[147] = slPts[147] + anPts[147]
+    slPts[148] = slPts[148] + anPts[148]
+    slPts[149] = slPts[149] + anPts[149]
+    slPts[150] = slPts[150] + anPts[150]
+    slPts[151] = slPts[151] + anPts[151]
+    slPts[152] = slPts[152] + anPts[152]
+    slPts[153] = slPts[153] + anPts[153]
+    slPts[154] = slPts[154] + anPts[154]
+    slPts[155] = slPts[155] + anPts[155]
+    slPts[156] = slPts[156] + anPts[156]
+    slPts[157] = slPts[157] + anPts[157]
+    slPts[158] = slPts[158] + anPts[158]
+    slPts[159] = slPts[159] + anPts[159]
+    slPC[64] = slPC[64] + anCol[64]
+    slPC[65] = slPC[65] + anCol[65]
+    slPC[66] = slPC[66] + anCol[66]
+    slPC[67] = slPC[67] + anCol[67]
+    slPC[68] = slPC[68] + anCol[68]
+    slPC[69] = slPC[69] + anCol[69]
+    slPC[70] = slPC[70] + anCol[70]
+    slPC[71] = slPC[71] + anCol[71]
+    slPC[72] = slPC[72] + anCol[72]
+    slPC[73] = slPC[73] + anCol[73]
+    slPC[74] = slPC[74] + anCol[74]
+    slPC[75] = slPC[75] + anCol[75]
+    slPC[76] = slPC[76] + anCol[76]
+    slPC[77] = slPC[77] + anCol[77]
+    slPC[78] = slPC[78] + anCol[78]
+    slPC[79] = slPC[79] + anCol[79]
+    slXF[24] = slXF[24] + anXF[24]
+    slXF[25] = slXF[25] + anXF[25]
+    slXF[26] = slXF[26] + anXF[26]
+    slXF[27] = slXF[27] + anXF[27]
+    slXF[28] = slXF[28] + anXF[28]
+  }
+  if anTicks[5.0] > 0.5 && !rcOn {
+    anTicks[5.0] = anTicks[5.0] - 1.0
+    animDirty = true
+    slPts[160] = slPts[160] + anPts[160]
+    slPts[161] = slPts[161] + anPts[161]
+    slPts[162] = slPts[162] + anPts[162]
+    slPts[163] = slPts[163] + anPts[163]
+    slPts[164] = slPts[164] + anPts[164]
+    slPts[165] = slPts[165] + anPts[165]
+    slPts[166] = slPts[166] + anPts[166]
+    slPts[167] = slPts[167] + anPts[167]
+    slPts[168] = slPts[168] + anPts[168]
+    slPts[169] = slPts[169] + anPts[169]
+    slPts[170] = slPts[170] + anPts[170]
+    slPts[171] = slPts[171] + anPts[171]
+    slPts[172] = slPts[172] + anPts[172]
+    slPts[173] = slPts[173] + anPts[173]
+    slPts[174] = slPts[174] + anPts[174]
+    slPts[175] = slPts[175] + anPts[175]
+    slPts[176] = slPts[176] + anPts[176]
+    slPts[177] = slPts[177] + anPts[177]
+    slPts[178] = slPts[178] + anPts[178]
+    slPts[179] = slPts[179] + anPts[179]
+    slPts[180] = slPts[180] + anPts[180]
+    slPts[181] = slPts[181] + anPts[181]
+    slPts[182] = slPts[182] + anPts[182]
+    slPts[183] = slPts[183] + anPts[183]
+    slPts[184] = slPts[184] + anPts[184]
+    slPts[185] = slPts[185] + anPts[185]
+    slPts[186] = slPts[186] + anPts[186]
+    slPts[187] = slPts[187] + anPts[187]
+    slPts[188] = slPts[188] + anPts[188]
+    slPts[189] = slPts[189] + anPts[189]
+    slPts[190] = slPts[190] + anPts[190]
+    slPts[191] = slPts[191] + anPts[191]
+    slPC[80] = slPC[80] + anCol[80]
+    slPC[81] = slPC[81] + anCol[81]
+    slPC[82] = slPC[82] + anCol[82]
+    slPC[83] = slPC[83] + anCol[83]
+    slPC[84] = slPC[84] + anCol[84]
+    slPC[85] = slPC[85] + anCol[85]
+    slPC[86] = slPC[86] + anCol[86]
+    slPC[87] = slPC[87] + anCol[87]
+    slPC[88] = slPC[88] + anCol[88]
+    slPC[89] = slPC[89] + anCol[89]
+    slPC[90] = slPC[90] + anCol[90]
+    slPC[91] = slPC[91] + anCol[91]
+    slPC[92] = slPC[92] + anCol[92]
+    slPC[93] = slPC[93] + anCol[93]
+    slPC[94] = slPC[94] + anCol[94]
+    slPC[95] = slPC[95] + anCol[95]
+    slXF[30] = slXF[30] + anXF[30]
+    slXF[31] = slXF[31] + anXF[31]
+    slXF[32] = slXF[32] + anXF[32]
+    slXF[33] = slXF[33] + anXF[33]
+    slXF[34] = slXF[34] + anXF[34]
+  }
+  if anTicks[6.0] > 0.5 && !rcOn {
+    anTicks[6.0] = anTicks[6.0] - 1.0
+    animDirty = true
+    slPts[192] = slPts[192] + anPts[192]
+    slPts[193] = slPts[193] + anPts[193]
+    slPts[194] = slPts[194] + anPts[194]
+    slPts[195] = slPts[195] + anPts[195]
+    slPts[196] = slPts[196] + anPts[196]
+    slPts[197] = slPts[197] + anPts[197]
+    slPts[198] = slPts[198] + anPts[198]
+    slPts[199] = slPts[199] + anPts[199]
+    slPts[200] = slPts[200] + anPts[200]
+    slPts[201] = slPts[201] + anPts[201]
+    slPts[202] = slPts[202] + anPts[202]
+    slPts[203] = slPts[203] + anPts[203]
+    slPts[204] = slPts[204] + anPts[204]
+    slPts[205] = slPts[205] + anPts[205]
+    slPts[206] = slPts[206] + anPts[206]
+    slPts[207] = slPts[207] + anPts[207]
+    slPts[208] = slPts[208] + anPts[208]
+    slPts[209] = slPts[209] + anPts[209]
+    slPts[210] = slPts[210] + anPts[210]
+    slPts[211] = slPts[211] + anPts[211]
+    slPts[212] = slPts[212] + anPts[212]
+    slPts[213] = slPts[213] + anPts[213]
+    slPts[214] = slPts[214] + anPts[214]
+    slPts[215] = slPts[215] + anPts[215]
+    slPts[216] = slPts[216] + anPts[216]
+    slPts[217] = slPts[217] + anPts[217]
+    slPts[218] = slPts[218] + anPts[218]
+    slPts[219] = slPts[219] + anPts[219]
+    slPts[220] = slPts[220] + anPts[220]
+    slPts[221] = slPts[221] + anPts[221]
+    slPts[222] = slPts[222] + anPts[222]
+    slPts[223] = slPts[223] + anPts[223]
+    slPC[96] = slPC[96] + anCol[96]
+    slPC[97] = slPC[97] + anCol[97]
+    slPC[98] = slPC[98] + anCol[98]
+    slPC[99] = slPC[99] + anCol[99]
+    slPC[100] = slPC[100] + anCol[100]
+    slPC[101] = slPC[101] + anCol[101]
+    slPC[102] = slPC[102] + anCol[102]
+    slPC[103] = slPC[103] + anCol[103]
+    slPC[104] = slPC[104] + anCol[104]
+    slPC[105] = slPC[105] + anCol[105]
+    slPC[106] = slPC[106] + anCol[106]
+    slPC[107] = slPC[107] + anCol[107]
+    slPC[108] = slPC[108] + anCol[108]
+    slPC[109] = slPC[109] + anCol[109]
+    slPC[110] = slPC[110] + anCol[110]
+    slPC[111] = slPC[111] + anCol[111]
+    slXF[36] = slXF[36] + anXF[36]
+    slXF[37] = slXF[37] + anXF[37]
+    slXF[38] = slXF[38] + anXF[38]
+    slXF[39] = slXF[39] + anXF[39]
+    slXF[40] = slXF[40] + anXF[40]
+  }
+  if anTicks[7.0] > 0.5 && !rcOn {
+    anTicks[7.0] = anTicks[7.0] - 1.0
+    animDirty = true
+    slPts[224] = slPts[224] + anPts[224]
+    slPts[225] = slPts[225] + anPts[225]
+    slPts[226] = slPts[226] + anPts[226]
+    slPts[227] = slPts[227] + anPts[227]
+    slPts[228] = slPts[228] + anPts[228]
+    slPts[229] = slPts[229] + anPts[229]
+    slPts[230] = slPts[230] + anPts[230]
+    slPts[231] = slPts[231] + anPts[231]
+    slPts[232] = slPts[232] + anPts[232]
+    slPts[233] = slPts[233] + anPts[233]
+    slPts[234] = slPts[234] + anPts[234]
+    slPts[235] = slPts[235] + anPts[235]
+    slPts[236] = slPts[236] + anPts[236]
+    slPts[237] = slPts[237] + anPts[237]
+    slPts[238] = slPts[238] + anPts[238]
+    slPts[239] = slPts[239] + anPts[239]
+    slPts[240] = slPts[240] + anPts[240]
+    slPts[241] = slPts[241] + anPts[241]
+    slPts[242] = slPts[242] + anPts[242]
+    slPts[243] = slPts[243] + anPts[243]
+    slPts[244] = slPts[244] + anPts[244]
+    slPts[245] = slPts[245] + anPts[245]
+    slPts[246] = slPts[246] + anPts[246]
+    slPts[247] = slPts[247] + anPts[247]
+    slPts[248] = slPts[248] + anPts[248]
+    slPts[249] = slPts[249] + anPts[249]
+    slPts[250] = slPts[250] + anPts[250]
+    slPts[251] = slPts[251] + anPts[251]
+    slPts[252] = slPts[252] + anPts[252]
+    slPts[253] = slPts[253] + anPts[253]
+    slPts[254] = slPts[254] + anPts[254]
+    slPts[255] = slPts[255] + anPts[255]
+    slPC[112] = slPC[112] + anCol[112]
+    slPC[113] = slPC[113] + anCol[113]
+    slPC[114] = slPC[114] + anCol[114]
+    slPC[115] = slPC[115] + anCol[115]
+    slPC[116] = slPC[116] + anCol[116]
+    slPC[117] = slPC[117] + anCol[117]
+    slPC[118] = slPC[118] + anCol[118]
+    slPC[119] = slPC[119] + anCol[119]
+    slPC[120] = slPC[120] + anCol[120]
+    slPC[121] = slPC[121] + anCol[121]
+    slPC[122] = slPC[122] + anCol[122]
+    slPC[123] = slPC[123] + anCol[123]
+    slPC[124] = slPC[124] + anCol[124]
+    slPC[125] = slPC[125] + anCol[125]
+    slPC[126] = slPC[126] + anCol[126]
+    slPC[127] = slPC[127] + anCol[127]
+    slXF[42] = slXF[42] + anXF[42]
+    slXF[43] = slXF[43] + anXF[43]
+    slXF[44] = slXF[44] + anXF[44]
+    slXF[45] = slXF[45] + anXF[45]
+    slXF[46] = slXF[46] + anXF[46]
+  }
+
   if qPush {
     qPush = false
     let e = if qCount > 7.0 then 7.0 else qCount
@@ -9052,6 +9538,8 @@ mod paintTick() {
     qN[e] = if (shapePoints.length() / 2.0) > 16.0 then 16.0 else (shapePoints.length() / 2.0) | 0
     qMode[e] = if pWire then 1.0 else 0.0
     qId[e] = pId
+    qTicks[e] = pTicks
+    qCN[e] = shapeColors.length() | 0
     qXF[xb + 0.0] = pPos.x
     qXF[xb + 1.0] = pPos.y
     qXF[xb + 2.0] = pRot.z
@@ -9063,6 +9551,8 @@ mod paintTick() {
   if commitQ {
     commitQ = false
     slLive[8] = 0.0
+    needRC = false
+    needRC = false
     if qCount > 0.0 {
       let ne0 = qN[0]
       let nslot0 = if qId[0] < 0.5 then 8.0 else qId[0] - 1.0
@@ -9074,6 +9564,64 @@ mod paintTick() {
       let exb0 = 0.0 * 6.0
       if ne0 < 1.0 {
         slLive[nslot0] = 0.0
+        anTicks[nslot0] = 0.0
+        needRC = true
+      } else if qTicks[0] > 0.5 && slLive[nslot0] > 0.5 {
+        anPts[nsb0 + 0.0] = if 0.0 < ne0 * 2.0 then qPts[epb0 + 0.0] else 0.0
+        anPts[nsb0 + 1.0] = if 1.0 < ne0 * 2.0 then qPts[epb0 + 1.0] else 0.0
+        anPts[nsb0 + 2.0] = if 2.0 < ne0 * 2.0 then qPts[epb0 + 2.0] else 0.0
+        anPts[nsb0 + 3.0] = if 3.0 < ne0 * 2.0 then qPts[epb0 + 3.0] else 0.0
+        anPts[nsb0 + 4.0] = if 4.0 < ne0 * 2.0 then qPts[epb0 + 4.0] else 0.0
+        anPts[nsb0 + 5.0] = if 5.0 < ne0 * 2.0 then qPts[epb0 + 5.0] else 0.0
+        anPts[nsb0 + 6.0] = if 6.0 < ne0 * 2.0 then qPts[epb0 + 6.0] else 0.0
+        anPts[nsb0 + 7.0] = if 7.0 < ne0 * 2.0 then qPts[epb0 + 7.0] else 0.0
+        anPts[nsb0 + 8.0] = if 8.0 < ne0 * 2.0 then qPts[epb0 + 8.0] else 0.0
+        anPts[nsb0 + 9.0] = if 9.0 < ne0 * 2.0 then qPts[epb0 + 9.0] else 0.0
+        anPts[nsb0 + 10.0] = if 10.0 < ne0 * 2.0 then qPts[epb0 + 10.0] else 0.0
+        anPts[nsb0 + 11.0] = if 11.0 < ne0 * 2.0 then qPts[epb0 + 11.0] else 0.0
+        anPts[nsb0 + 12.0] = if 12.0 < ne0 * 2.0 then qPts[epb0 + 12.0] else 0.0
+        anPts[nsb0 + 13.0] = if 13.0 < ne0 * 2.0 then qPts[epb0 + 13.0] else 0.0
+        anPts[nsb0 + 14.0] = if 14.0 < ne0 * 2.0 then qPts[epb0 + 14.0] else 0.0
+        anPts[nsb0 + 15.0] = if 15.0 < ne0 * 2.0 then qPts[epb0 + 15.0] else 0.0
+        anPts[nsb0 + 16.0] = if 16.0 < ne0 * 2.0 then qPts[epb0 + 16.0] else 0.0
+        anPts[nsb0 + 17.0] = if 17.0 < ne0 * 2.0 then qPts[epb0 + 17.0] else 0.0
+        anPts[nsb0 + 18.0] = if 18.0 < ne0 * 2.0 then qPts[epb0 + 18.0] else 0.0
+        anPts[nsb0 + 19.0] = if 19.0 < ne0 * 2.0 then qPts[epb0 + 19.0] else 0.0
+        anPts[nsb0 + 20.0] = if 20.0 < ne0 * 2.0 then qPts[epb0 + 20.0] else 0.0
+        anPts[nsb0 + 21.0] = if 21.0 < ne0 * 2.0 then qPts[epb0 + 21.0] else 0.0
+        anPts[nsb0 + 22.0] = if 22.0 < ne0 * 2.0 then qPts[epb0 + 22.0] else 0.0
+        anPts[nsb0 + 23.0] = if 23.0 < ne0 * 2.0 then qPts[epb0 + 23.0] else 0.0
+        anPts[nsb0 + 24.0] = if 24.0 < ne0 * 2.0 then qPts[epb0 + 24.0] else 0.0
+        anPts[nsb0 + 25.0] = if 25.0 < ne0 * 2.0 then qPts[epb0 + 25.0] else 0.0
+        anPts[nsb0 + 26.0] = if 26.0 < ne0 * 2.0 then qPts[epb0 + 26.0] else 0.0
+        anPts[nsb0 + 27.0] = if 27.0 < ne0 * 2.0 then qPts[epb0 + 27.0] else 0.0
+        anPts[nsb0 + 28.0] = if 28.0 < ne0 * 2.0 then qPts[epb0 + 28.0] else 0.0
+        anPts[nsb0 + 29.0] = if 29.0 < ne0 * 2.0 then qPts[epb0 + 29.0] else 0.0
+        anPts[nsb0 + 30.0] = if 30.0 < ne0 * 2.0 then qPts[epb0 + 30.0] else 0.0
+        anPts[nsb0 + 31.0] = if 31.0 < ne0 * 2.0 then qPts[epb0 + 31.0] else 0.0
+        anCol[ncb0 + 0.0] = if 0.0 < qCN[0] then qCol[ecb0 + 0.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 1.0] = if 1.0 < qCN[0] then qCol[ecb0 + 1.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 2.0] = if 2.0 < qCN[0] then qCol[ecb0 + 2.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 3.0] = if 3.0 < qCN[0] then qCol[ecb0 + 3.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 4.0] = if 4.0 < qCN[0] then qCol[ecb0 + 4.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 5.0] = if 5.0 < qCN[0] then qCol[ecb0 + 5.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 6.0] = if 6.0 < qCN[0] then qCol[ecb0 + 6.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 7.0] = if 7.0 < qCN[0] then qCol[ecb0 + 7.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 8.0] = if 8.0 < qCN[0] then qCol[ecb0 + 8.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 9.0] = if 9.0 < qCN[0] then qCol[ecb0 + 9.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 10.0] = if 10.0 < qCN[0] then qCol[ecb0 + 10.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 11.0] = if 11.0 < qCN[0] then qCol[ecb0 + 11.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 12.0] = if 12.0 < qCN[0] then qCol[ecb0 + 12.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 13.0] = if 13.0 < qCN[0] then qCol[ecb0 + 13.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 14.0] = if 14.0 < qCN[0] then qCol[ecb0 + 14.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb0 + 15.0] = if 15.0 < qCN[0] then qCol[ecb0 + 15.0] else Color(0.0, 0.0, 0.0, 0.0)
+        slMode[nslot0] = qMode[0] > 0.5
+        slXF[nxb0 + 5.0] = qXF[exb0 + 5.0]
+        anXF[nxb0 + 0.0] = qXF[exb0 + 0.0]
+        anXF[nxb0 + 1.0] = qXF[exb0 + 1.0]
+        anXF[nxb0 + 2.0] = qXF[exb0 + 2.0]
+        anXF[nxb0 + 3.0] = qXF[exb0 + 3.0]
+        anXF[nxb0 + 4.0] = qXF[exb0 + 4.0]
       } else {
         slPts[nsb0 + 0.0] = qPts[epb0 + 0.0]
         slPts[nsb0 + 1.0] = qPts[epb0 + 1.0]
@@ -9132,6 +9680,8 @@ mod paintTick() {
         slXF[nxb0 + 3.0] = qXF[exb0 + 3.0]
         slXF[nxb0 + 4.0] = qXF[exb0 + 4.0]
         slXF[nxb0 + 5.0] = qXF[exb0 + 5.0]
+        anTicks[nslot0] = 0.0
+        needRC = true
       }
     }
     if qCount > 1.0 {
@@ -9145,6 +9695,64 @@ mod paintTick() {
       let exb1 = 1.0 * 6.0
       if ne1 < 1.0 {
         slLive[nslot1] = 0.0
+        anTicks[nslot1] = 0.0
+        needRC = true
+      } else if qTicks[1] > 0.5 && slLive[nslot1] > 0.5 {
+        anPts[nsb1 + 0.0] = if 0.0 < ne1 * 2.0 then qPts[epb1 + 0.0] else 0.0
+        anPts[nsb1 + 1.0] = if 1.0 < ne1 * 2.0 then qPts[epb1 + 1.0] else 0.0
+        anPts[nsb1 + 2.0] = if 2.0 < ne1 * 2.0 then qPts[epb1 + 2.0] else 0.0
+        anPts[nsb1 + 3.0] = if 3.0 < ne1 * 2.0 then qPts[epb1 + 3.0] else 0.0
+        anPts[nsb1 + 4.0] = if 4.0 < ne1 * 2.0 then qPts[epb1 + 4.0] else 0.0
+        anPts[nsb1 + 5.0] = if 5.0 < ne1 * 2.0 then qPts[epb1 + 5.0] else 0.0
+        anPts[nsb1 + 6.0] = if 6.0 < ne1 * 2.0 then qPts[epb1 + 6.0] else 0.0
+        anPts[nsb1 + 7.0] = if 7.0 < ne1 * 2.0 then qPts[epb1 + 7.0] else 0.0
+        anPts[nsb1 + 8.0] = if 8.0 < ne1 * 2.0 then qPts[epb1 + 8.0] else 0.0
+        anPts[nsb1 + 9.0] = if 9.0 < ne1 * 2.0 then qPts[epb1 + 9.0] else 0.0
+        anPts[nsb1 + 10.0] = if 10.0 < ne1 * 2.0 then qPts[epb1 + 10.0] else 0.0
+        anPts[nsb1 + 11.0] = if 11.0 < ne1 * 2.0 then qPts[epb1 + 11.0] else 0.0
+        anPts[nsb1 + 12.0] = if 12.0 < ne1 * 2.0 then qPts[epb1 + 12.0] else 0.0
+        anPts[nsb1 + 13.0] = if 13.0 < ne1 * 2.0 then qPts[epb1 + 13.0] else 0.0
+        anPts[nsb1 + 14.0] = if 14.0 < ne1 * 2.0 then qPts[epb1 + 14.0] else 0.0
+        anPts[nsb1 + 15.0] = if 15.0 < ne1 * 2.0 then qPts[epb1 + 15.0] else 0.0
+        anPts[nsb1 + 16.0] = if 16.0 < ne1 * 2.0 then qPts[epb1 + 16.0] else 0.0
+        anPts[nsb1 + 17.0] = if 17.0 < ne1 * 2.0 then qPts[epb1 + 17.0] else 0.0
+        anPts[nsb1 + 18.0] = if 18.0 < ne1 * 2.0 then qPts[epb1 + 18.0] else 0.0
+        anPts[nsb1 + 19.0] = if 19.0 < ne1 * 2.0 then qPts[epb1 + 19.0] else 0.0
+        anPts[nsb1 + 20.0] = if 20.0 < ne1 * 2.0 then qPts[epb1 + 20.0] else 0.0
+        anPts[nsb1 + 21.0] = if 21.0 < ne1 * 2.0 then qPts[epb1 + 21.0] else 0.0
+        anPts[nsb1 + 22.0] = if 22.0 < ne1 * 2.0 then qPts[epb1 + 22.0] else 0.0
+        anPts[nsb1 + 23.0] = if 23.0 < ne1 * 2.0 then qPts[epb1 + 23.0] else 0.0
+        anPts[nsb1 + 24.0] = if 24.0 < ne1 * 2.0 then qPts[epb1 + 24.0] else 0.0
+        anPts[nsb1 + 25.0] = if 25.0 < ne1 * 2.0 then qPts[epb1 + 25.0] else 0.0
+        anPts[nsb1 + 26.0] = if 26.0 < ne1 * 2.0 then qPts[epb1 + 26.0] else 0.0
+        anPts[nsb1 + 27.0] = if 27.0 < ne1 * 2.0 then qPts[epb1 + 27.0] else 0.0
+        anPts[nsb1 + 28.0] = if 28.0 < ne1 * 2.0 then qPts[epb1 + 28.0] else 0.0
+        anPts[nsb1 + 29.0] = if 29.0 < ne1 * 2.0 then qPts[epb1 + 29.0] else 0.0
+        anPts[nsb1 + 30.0] = if 30.0 < ne1 * 2.0 then qPts[epb1 + 30.0] else 0.0
+        anPts[nsb1 + 31.0] = if 31.0 < ne1 * 2.0 then qPts[epb1 + 31.0] else 0.0
+        anCol[ncb1 + 0.0] = if 0.0 < qCN[1] then qCol[ecb1 + 0.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 1.0] = if 1.0 < qCN[1] then qCol[ecb1 + 1.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 2.0] = if 2.0 < qCN[1] then qCol[ecb1 + 2.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 3.0] = if 3.0 < qCN[1] then qCol[ecb1 + 3.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 4.0] = if 4.0 < qCN[1] then qCol[ecb1 + 4.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 5.0] = if 5.0 < qCN[1] then qCol[ecb1 + 5.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 6.0] = if 6.0 < qCN[1] then qCol[ecb1 + 6.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 7.0] = if 7.0 < qCN[1] then qCol[ecb1 + 7.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 8.0] = if 8.0 < qCN[1] then qCol[ecb1 + 8.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 9.0] = if 9.0 < qCN[1] then qCol[ecb1 + 9.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 10.0] = if 10.0 < qCN[1] then qCol[ecb1 + 10.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 11.0] = if 11.0 < qCN[1] then qCol[ecb1 + 11.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 12.0] = if 12.0 < qCN[1] then qCol[ecb1 + 12.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 13.0] = if 13.0 < qCN[1] then qCol[ecb1 + 13.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 14.0] = if 14.0 < qCN[1] then qCol[ecb1 + 14.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb1 + 15.0] = if 15.0 < qCN[1] then qCol[ecb1 + 15.0] else Color(0.0, 0.0, 0.0, 0.0)
+        slMode[nslot1] = qMode[1] > 0.5
+        slXF[nxb1 + 5.0] = qXF[exb1 + 5.0]
+        anXF[nxb1 + 0.0] = qXF[exb1 + 0.0]
+        anXF[nxb1 + 1.0] = qXF[exb1 + 1.0]
+        anXF[nxb1 + 2.0] = qXF[exb1 + 2.0]
+        anXF[nxb1 + 3.0] = qXF[exb1 + 3.0]
+        anXF[nxb1 + 4.0] = qXF[exb1 + 4.0]
       } else {
         slPts[nsb1 + 0.0] = qPts[epb1 + 0.0]
         slPts[nsb1 + 1.0] = qPts[epb1 + 1.0]
@@ -9203,6 +9811,8 @@ mod paintTick() {
         slXF[nxb1 + 3.0] = qXF[exb1 + 3.0]
         slXF[nxb1 + 4.0] = qXF[exb1 + 4.0]
         slXF[nxb1 + 5.0] = qXF[exb1 + 5.0]
+        anTicks[nslot1] = 0.0
+        needRC = true
       }
     }
     if qCount > 2.0 {
@@ -9216,6 +9826,64 @@ mod paintTick() {
       let exb2 = 2.0 * 6.0
       if ne2 < 1.0 {
         slLive[nslot2] = 0.0
+        anTicks[nslot2] = 0.0
+        needRC = true
+      } else if qTicks[2] > 0.5 && slLive[nslot2] > 0.5 {
+        anPts[nsb2 + 0.0] = if 0.0 < ne2 * 2.0 then qPts[epb2 + 0.0] else 0.0
+        anPts[nsb2 + 1.0] = if 1.0 < ne2 * 2.0 then qPts[epb2 + 1.0] else 0.0
+        anPts[nsb2 + 2.0] = if 2.0 < ne2 * 2.0 then qPts[epb2 + 2.0] else 0.0
+        anPts[nsb2 + 3.0] = if 3.0 < ne2 * 2.0 then qPts[epb2 + 3.0] else 0.0
+        anPts[nsb2 + 4.0] = if 4.0 < ne2 * 2.0 then qPts[epb2 + 4.0] else 0.0
+        anPts[nsb2 + 5.0] = if 5.0 < ne2 * 2.0 then qPts[epb2 + 5.0] else 0.0
+        anPts[nsb2 + 6.0] = if 6.0 < ne2 * 2.0 then qPts[epb2 + 6.0] else 0.0
+        anPts[nsb2 + 7.0] = if 7.0 < ne2 * 2.0 then qPts[epb2 + 7.0] else 0.0
+        anPts[nsb2 + 8.0] = if 8.0 < ne2 * 2.0 then qPts[epb2 + 8.0] else 0.0
+        anPts[nsb2 + 9.0] = if 9.0 < ne2 * 2.0 then qPts[epb2 + 9.0] else 0.0
+        anPts[nsb2 + 10.0] = if 10.0 < ne2 * 2.0 then qPts[epb2 + 10.0] else 0.0
+        anPts[nsb2 + 11.0] = if 11.0 < ne2 * 2.0 then qPts[epb2 + 11.0] else 0.0
+        anPts[nsb2 + 12.0] = if 12.0 < ne2 * 2.0 then qPts[epb2 + 12.0] else 0.0
+        anPts[nsb2 + 13.0] = if 13.0 < ne2 * 2.0 then qPts[epb2 + 13.0] else 0.0
+        anPts[nsb2 + 14.0] = if 14.0 < ne2 * 2.0 then qPts[epb2 + 14.0] else 0.0
+        anPts[nsb2 + 15.0] = if 15.0 < ne2 * 2.0 then qPts[epb2 + 15.0] else 0.0
+        anPts[nsb2 + 16.0] = if 16.0 < ne2 * 2.0 then qPts[epb2 + 16.0] else 0.0
+        anPts[nsb2 + 17.0] = if 17.0 < ne2 * 2.0 then qPts[epb2 + 17.0] else 0.0
+        anPts[nsb2 + 18.0] = if 18.0 < ne2 * 2.0 then qPts[epb2 + 18.0] else 0.0
+        anPts[nsb2 + 19.0] = if 19.0 < ne2 * 2.0 then qPts[epb2 + 19.0] else 0.0
+        anPts[nsb2 + 20.0] = if 20.0 < ne2 * 2.0 then qPts[epb2 + 20.0] else 0.0
+        anPts[nsb2 + 21.0] = if 21.0 < ne2 * 2.0 then qPts[epb2 + 21.0] else 0.0
+        anPts[nsb2 + 22.0] = if 22.0 < ne2 * 2.0 then qPts[epb2 + 22.0] else 0.0
+        anPts[nsb2 + 23.0] = if 23.0 < ne2 * 2.0 then qPts[epb2 + 23.0] else 0.0
+        anPts[nsb2 + 24.0] = if 24.0 < ne2 * 2.0 then qPts[epb2 + 24.0] else 0.0
+        anPts[nsb2 + 25.0] = if 25.0 < ne2 * 2.0 then qPts[epb2 + 25.0] else 0.0
+        anPts[nsb2 + 26.0] = if 26.0 < ne2 * 2.0 then qPts[epb2 + 26.0] else 0.0
+        anPts[nsb2 + 27.0] = if 27.0 < ne2 * 2.0 then qPts[epb2 + 27.0] else 0.0
+        anPts[nsb2 + 28.0] = if 28.0 < ne2 * 2.0 then qPts[epb2 + 28.0] else 0.0
+        anPts[nsb2 + 29.0] = if 29.0 < ne2 * 2.0 then qPts[epb2 + 29.0] else 0.0
+        anPts[nsb2 + 30.0] = if 30.0 < ne2 * 2.0 then qPts[epb2 + 30.0] else 0.0
+        anPts[nsb2 + 31.0] = if 31.0 < ne2 * 2.0 then qPts[epb2 + 31.0] else 0.0
+        anCol[ncb2 + 0.0] = if 0.0 < qCN[2] then qCol[ecb2 + 0.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 1.0] = if 1.0 < qCN[2] then qCol[ecb2 + 1.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 2.0] = if 2.0 < qCN[2] then qCol[ecb2 + 2.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 3.0] = if 3.0 < qCN[2] then qCol[ecb2 + 3.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 4.0] = if 4.0 < qCN[2] then qCol[ecb2 + 4.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 5.0] = if 5.0 < qCN[2] then qCol[ecb2 + 5.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 6.0] = if 6.0 < qCN[2] then qCol[ecb2 + 6.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 7.0] = if 7.0 < qCN[2] then qCol[ecb2 + 7.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 8.0] = if 8.0 < qCN[2] then qCol[ecb2 + 8.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 9.0] = if 9.0 < qCN[2] then qCol[ecb2 + 9.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 10.0] = if 10.0 < qCN[2] then qCol[ecb2 + 10.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 11.0] = if 11.0 < qCN[2] then qCol[ecb2 + 11.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 12.0] = if 12.0 < qCN[2] then qCol[ecb2 + 12.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 13.0] = if 13.0 < qCN[2] then qCol[ecb2 + 13.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 14.0] = if 14.0 < qCN[2] then qCol[ecb2 + 14.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb2 + 15.0] = if 15.0 < qCN[2] then qCol[ecb2 + 15.0] else Color(0.0, 0.0, 0.0, 0.0)
+        slMode[nslot2] = qMode[2] > 0.5
+        slXF[nxb2 + 5.0] = qXF[exb2 + 5.0]
+        anXF[nxb2 + 0.0] = qXF[exb2 + 0.0]
+        anXF[nxb2 + 1.0] = qXF[exb2 + 1.0]
+        anXF[nxb2 + 2.0] = qXF[exb2 + 2.0]
+        anXF[nxb2 + 3.0] = qXF[exb2 + 3.0]
+        anXF[nxb2 + 4.0] = qXF[exb2 + 4.0]
       } else {
         slPts[nsb2 + 0.0] = qPts[epb2 + 0.0]
         slPts[nsb2 + 1.0] = qPts[epb2 + 1.0]
@@ -9274,6 +9942,8 @@ mod paintTick() {
         slXF[nxb2 + 3.0] = qXF[exb2 + 3.0]
         slXF[nxb2 + 4.0] = qXF[exb2 + 4.0]
         slXF[nxb2 + 5.0] = qXF[exb2 + 5.0]
+        anTicks[nslot2] = 0.0
+        needRC = true
       }
     }
     if qCount > 3.0 {
@@ -9287,6 +9957,64 @@ mod paintTick() {
       let exb3 = 3.0 * 6.0
       if ne3 < 1.0 {
         slLive[nslot3] = 0.0
+        anTicks[nslot3] = 0.0
+        needRC = true
+      } else if qTicks[3] > 0.5 && slLive[nslot3] > 0.5 {
+        anPts[nsb3 + 0.0] = if 0.0 < ne3 * 2.0 then qPts[epb3 + 0.0] else 0.0
+        anPts[nsb3 + 1.0] = if 1.0 < ne3 * 2.0 then qPts[epb3 + 1.0] else 0.0
+        anPts[nsb3 + 2.0] = if 2.0 < ne3 * 2.0 then qPts[epb3 + 2.0] else 0.0
+        anPts[nsb3 + 3.0] = if 3.0 < ne3 * 2.0 then qPts[epb3 + 3.0] else 0.0
+        anPts[nsb3 + 4.0] = if 4.0 < ne3 * 2.0 then qPts[epb3 + 4.0] else 0.0
+        anPts[nsb3 + 5.0] = if 5.0 < ne3 * 2.0 then qPts[epb3 + 5.0] else 0.0
+        anPts[nsb3 + 6.0] = if 6.0 < ne3 * 2.0 then qPts[epb3 + 6.0] else 0.0
+        anPts[nsb3 + 7.0] = if 7.0 < ne3 * 2.0 then qPts[epb3 + 7.0] else 0.0
+        anPts[nsb3 + 8.0] = if 8.0 < ne3 * 2.0 then qPts[epb3 + 8.0] else 0.0
+        anPts[nsb3 + 9.0] = if 9.0 < ne3 * 2.0 then qPts[epb3 + 9.0] else 0.0
+        anPts[nsb3 + 10.0] = if 10.0 < ne3 * 2.0 then qPts[epb3 + 10.0] else 0.0
+        anPts[nsb3 + 11.0] = if 11.0 < ne3 * 2.0 then qPts[epb3 + 11.0] else 0.0
+        anPts[nsb3 + 12.0] = if 12.0 < ne3 * 2.0 then qPts[epb3 + 12.0] else 0.0
+        anPts[nsb3 + 13.0] = if 13.0 < ne3 * 2.0 then qPts[epb3 + 13.0] else 0.0
+        anPts[nsb3 + 14.0] = if 14.0 < ne3 * 2.0 then qPts[epb3 + 14.0] else 0.0
+        anPts[nsb3 + 15.0] = if 15.0 < ne3 * 2.0 then qPts[epb3 + 15.0] else 0.0
+        anPts[nsb3 + 16.0] = if 16.0 < ne3 * 2.0 then qPts[epb3 + 16.0] else 0.0
+        anPts[nsb3 + 17.0] = if 17.0 < ne3 * 2.0 then qPts[epb3 + 17.0] else 0.0
+        anPts[nsb3 + 18.0] = if 18.0 < ne3 * 2.0 then qPts[epb3 + 18.0] else 0.0
+        anPts[nsb3 + 19.0] = if 19.0 < ne3 * 2.0 then qPts[epb3 + 19.0] else 0.0
+        anPts[nsb3 + 20.0] = if 20.0 < ne3 * 2.0 then qPts[epb3 + 20.0] else 0.0
+        anPts[nsb3 + 21.0] = if 21.0 < ne3 * 2.0 then qPts[epb3 + 21.0] else 0.0
+        anPts[nsb3 + 22.0] = if 22.0 < ne3 * 2.0 then qPts[epb3 + 22.0] else 0.0
+        anPts[nsb3 + 23.0] = if 23.0 < ne3 * 2.0 then qPts[epb3 + 23.0] else 0.0
+        anPts[nsb3 + 24.0] = if 24.0 < ne3 * 2.0 then qPts[epb3 + 24.0] else 0.0
+        anPts[nsb3 + 25.0] = if 25.0 < ne3 * 2.0 then qPts[epb3 + 25.0] else 0.0
+        anPts[nsb3 + 26.0] = if 26.0 < ne3 * 2.0 then qPts[epb3 + 26.0] else 0.0
+        anPts[nsb3 + 27.0] = if 27.0 < ne3 * 2.0 then qPts[epb3 + 27.0] else 0.0
+        anPts[nsb3 + 28.0] = if 28.0 < ne3 * 2.0 then qPts[epb3 + 28.0] else 0.0
+        anPts[nsb3 + 29.0] = if 29.0 < ne3 * 2.0 then qPts[epb3 + 29.0] else 0.0
+        anPts[nsb3 + 30.0] = if 30.0 < ne3 * 2.0 then qPts[epb3 + 30.0] else 0.0
+        anPts[nsb3 + 31.0] = if 31.0 < ne3 * 2.0 then qPts[epb3 + 31.0] else 0.0
+        anCol[ncb3 + 0.0] = if 0.0 < qCN[3] then qCol[ecb3 + 0.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 1.0] = if 1.0 < qCN[3] then qCol[ecb3 + 1.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 2.0] = if 2.0 < qCN[3] then qCol[ecb3 + 2.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 3.0] = if 3.0 < qCN[3] then qCol[ecb3 + 3.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 4.0] = if 4.0 < qCN[3] then qCol[ecb3 + 4.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 5.0] = if 5.0 < qCN[3] then qCol[ecb3 + 5.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 6.0] = if 6.0 < qCN[3] then qCol[ecb3 + 6.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 7.0] = if 7.0 < qCN[3] then qCol[ecb3 + 7.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 8.0] = if 8.0 < qCN[3] then qCol[ecb3 + 8.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 9.0] = if 9.0 < qCN[3] then qCol[ecb3 + 9.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 10.0] = if 10.0 < qCN[3] then qCol[ecb3 + 10.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 11.0] = if 11.0 < qCN[3] then qCol[ecb3 + 11.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 12.0] = if 12.0 < qCN[3] then qCol[ecb3 + 12.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 13.0] = if 13.0 < qCN[3] then qCol[ecb3 + 13.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 14.0] = if 14.0 < qCN[3] then qCol[ecb3 + 14.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb3 + 15.0] = if 15.0 < qCN[3] then qCol[ecb3 + 15.0] else Color(0.0, 0.0, 0.0, 0.0)
+        slMode[nslot3] = qMode[3] > 0.5
+        slXF[nxb3 + 5.0] = qXF[exb3 + 5.0]
+        anXF[nxb3 + 0.0] = qXF[exb3 + 0.0]
+        anXF[nxb3 + 1.0] = qXF[exb3 + 1.0]
+        anXF[nxb3 + 2.0] = qXF[exb3 + 2.0]
+        anXF[nxb3 + 3.0] = qXF[exb3 + 3.0]
+        anXF[nxb3 + 4.0] = qXF[exb3 + 4.0]
       } else {
         slPts[nsb3 + 0.0] = qPts[epb3 + 0.0]
         slPts[nsb3 + 1.0] = qPts[epb3 + 1.0]
@@ -9345,6 +10073,8 @@ mod paintTick() {
         slXF[nxb3 + 3.0] = qXF[exb3 + 3.0]
         slXF[nxb3 + 4.0] = qXF[exb3 + 4.0]
         slXF[nxb3 + 5.0] = qXF[exb3 + 5.0]
+        anTicks[nslot3] = 0.0
+        needRC = true
       }
     }
     if qCount > 4.0 {
@@ -9358,6 +10088,64 @@ mod paintTick() {
       let exb4 = 4.0 * 6.0
       if ne4 < 1.0 {
         slLive[nslot4] = 0.0
+        anTicks[nslot4] = 0.0
+        needRC = true
+      } else if qTicks[4] > 0.5 && slLive[nslot4] > 0.5 {
+        anPts[nsb4 + 0.0] = if 0.0 < ne4 * 2.0 then qPts[epb4 + 0.0] else 0.0
+        anPts[nsb4 + 1.0] = if 1.0 < ne4 * 2.0 then qPts[epb4 + 1.0] else 0.0
+        anPts[nsb4 + 2.0] = if 2.0 < ne4 * 2.0 then qPts[epb4 + 2.0] else 0.0
+        anPts[nsb4 + 3.0] = if 3.0 < ne4 * 2.0 then qPts[epb4 + 3.0] else 0.0
+        anPts[nsb4 + 4.0] = if 4.0 < ne4 * 2.0 then qPts[epb4 + 4.0] else 0.0
+        anPts[nsb4 + 5.0] = if 5.0 < ne4 * 2.0 then qPts[epb4 + 5.0] else 0.0
+        anPts[nsb4 + 6.0] = if 6.0 < ne4 * 2.0 then qPts[epb4 + 6.0] else 0.0
+        anPts[nsb4 + 7.0] = if 7.0 < ne4 * 2.0 then qPts[epb4 + 7.0] else 0.0
+        anPts[nsb4 + 8.0] = if 8.0 < ne4 * 2.0 then qPts[epb4 + 8.0] else 0.0
+        anPts[nsb4 + 9.0] = if 9.0 < ne4 * 2.0 then qPts[epb4 + 9.0] else 0.0
+        anPts[nsb4 + 10.0] = if 10.0 < ne4 * 2.0 then qPts[epb4 + 10.0] else 0.0
+        anPts[nsb4 + 11.0] = if 11.0 < ne4 * 2.0 then qPts[epb4 + 11.0] else 0.0
+        anPts[nsb4 + 12.0] = if 12.0 < ne4 * 2.0 then qPts[epb4 + 12.0] else 0.0
+        anPts[nsb4 + 13.0] = if 13.0 < ne4 * 2.0 then qPts[epb4 + 13.0] else 0.0
+        anPts[nsb4 + 14.0] = if 14.0 < ne4 * 2.0 then qPts[epb4 + 14.0] else 0.0
+        anPts[nsb4 + 15.0] = if 15.0 < ne4 * 2.0 then qPts[epb4 + 15.0] else 0.0
+        anPts[nsb4 + 16.0] = if 16.0 < ne4 * 2.0 then qPts[epb4 + 16.0] else 0.0
+        anPts[nsb4 + 17.0] = if 17.0 < ne4 * 2.0 then qPts[epb4 + 17.0] else 0.0
+        anPts[nsb4 + 18.0] = if 18.0 < ne4 * 2.0 then qPts[epb4 + 18.0] else 0.0
+        anPts[nsb4 + 19.0] = if 19.0 < ne4 * 2.0 then qPts[epb4 + 19.0] else 0.0
+        anPts[nsb4 + 20.0] = if 20.0 < ne4 * 2.0 then qPts[epb4 + 20.0] else 0.0
+        anPts[nsb4 + 21.0] = if 21.0 < ne4 * 2.0 then qPts[epb4 + 21.0] else 0.0
+        anPts[nsb4 + 22.0] = if 22.0 < ne4 * 2.0 then qPts[epb4 + 22.0] else 0.0
+        anPts[nsb4 + 23.0] = if 23.0 < ne4 * 2.0 then qPts[epb4 + 23.0] else 0.0
+        anPts[nsb4 + 24.0] = if 24.0 < ne4 * 2.0 then qPts[epb4 + 24.0] else 0.0
+        anPts[nsb4 + 25.0] = if 25.0 < ne4 * 2.0 then qPts[epb4 + 25.0] else 0.0
+        anPts[nsb4 + 26.0] = if 26.0 < ne4 * 2.0 then qPts[epb4 + 26.0] else 0.0
+        anPts[nsb4 + 27.0] = if 27.0 < ne4 * 2.0 then qPts[epb4 + 27.0] else 0.0
+        anPts[nsb4 + 28.0] = if 28.0 < ne4 * 2.0 then qPts[epb4 + 28.0] else 0.0
+        anPts[nsb4 + 29.0] = if 29.0 < ne4 * 2.0 then qPts[epb4 + 29.0] else 0.0
+        anPts[nsb4 + 30.0] = if 30.0 < ne4 * 2.0 then qPts[epb4 + 30.0] else 0.0
+        anPts[nsb4 + 31.0] = if 31.0 < ne4 * 2.0 then qPts[epb4 + 31.0] else 0.0
+        anCol[ncb4 + 0.0] = if 0.0 < qCN[4] then qCol[ecb4 + 0.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 1.0] = if 1.0 < qCN[4] then qCol[ecb4 + 1.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 2.0] = if 2.0 < qCN[4] then qCol[ecb4 + 2.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 3.0] = if 3.0 < qCN[4] then qCol[ecb4 + 3.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 4.0] = if 4.0 < qCN[4] then qCol[ecb4 + 4.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 5.0] = if 5.0 < qCN[4] then qCol[ecb4 + 5.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 6.0] = if 6.0 < qCN[4] then qCol[ecb4 + 6.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 7.0] = if 7.0 < qCN[4] then qCol[ecb4 + 7.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 8.0] = if 8.0 < qCN[4] then qCol[ecb4 + 8.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 9.0] = if 9.0 < qCN[4] then qCol[ecb4 + 9.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 10.0] = if 10.0 < qCN[4] then qCol[ecb4 + 10.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 11.0] = if 11.0 < qCN[4] then qCol[ecb4 + 11.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 12.0] = if 12.0 < qCN[4] then qCol[ecb4 + 12.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 13.0] = if 13.0 < qCN[4] then qCol[ecb4 + 13.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 14.0] = if 14.0 < qCN[4] then qCol[ecb4 + 14.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb4 + 15.0] = if 15.0 < qCN[4] then qCol[ecb4 + 15.0] else Color(0.0, 0.0, 0.0, 0.0)
+        slMode[nslot4] = qMode[4] > 0.5
+        slXF[nxb4 + 5.0] = qXF[exb4 + 5.0]
+        anXF[nxb4 + 0.0] = qXF[exb4 + 0.0]
+        anXF[nxb4 + 1.0] = qXF[exb4 + 1.0]
+        anXF[nxb4 + 2.0] = qXF[exb4 + 2.0]
+        anXF[nxb4 + 3.0] = qXF[exb4 + 3.0]
+        anXF[nxb4 + 4.0] = qXF[exb4 + 4.0]
       } else {
         slPts[nsb4 + 0.0] = qPts[epb4 + 0.0]
         slPts[nsb4 + 1.0] = qPts[epb4 + 1.0]
@@ -9416,6 +10204,8 @@ mod paintTick() {
         slXF[nxb4 + 3.0] = qXF[exb4 + 3.0]
         slXF[nxb4 + 4.0] = qXF[exb4 + 4.0]
         slXF[nxb4 + 5.0] = qXF[exb4 + 5.0]
+        anTicks[nslot4] = 0.0
+        needRC = true
       }
     }
     if qCount > 5.0 {
@@ -9429,6 +10219,64 @@ mod paintTick() {
       let exb5 = 5.0 * 6.0
       if ne5 < 1.0 {
         slLive[nslot5] = 0.0
+        anTicks[nslot5] = 0.0
+        needRC = true
+      } else if qTicks[5] > 0.5 && slLive[nslot5] > 0.5 {
+        anPts[nsb5 + 0.0] = if 0.0 < ne5 * 2.0 then qPts[epb5 + 0.0] else 0.0
+        anPts[nsb5 + 1.0] = if 1.0 < ne5 * 2.0 then qPts[epb5 + 1.0] else 0.0
+        anPts[nsb5 + 2.0] = if 2.0 < ne5 * 2.0 then qPts[epb5 + 2.0] else 0.0
+        anPts[nsb5 + 3.0] = if 3.0 < ne5 * 2.0 then qPts[epb5 + 3.0] else 0.0
+        anPts[nsb5 + 4.0] = if 4.0 < ne5 * 2.0 then qPts[epb5 + 4.0] else 0.0
+        anPts[nsb5 + 5.0] = if 5.0 < ne5 * 2.0 then qPts[epb5 + 5.0] else 0.0
+        anPts[nsb5 + 6.0] = if 6.0 < ne5 * 2.0 then qPts[epb5 + 6.0] else 0.0
+        anPts[nsb5 + 7.0] = if 7.0 < ne5 * 2.0 then qPts[epb5 + 7.0] else 0.0
+        anPts[nsb5 + 8.0] = if 8.0 < ne5 * 2.0 then qPts[epb5 + 8.0] else 0.0
+        anPts[nsb5 + 9.0] = if 9.0 < ne5 * 2.0 then qPts[epb5 + 9.0] else 0.0
+        anPts[nsb5 + 10.0] = if 10.0 < ne5 * 2.0 then qPts[epb5 + 10.0] else 0.0
+        anPts[nsb5 + 11.0] = if 11.0 < ne5 * 2.0 then qPts[epb5 + 11.0] else 0.0
+        anPts[nsb5 + 12.0] = if 12.0 < ne5 * 2.0 then qPts[epb5 + 12.0] else 0.0
+        anPts[nsb5 + 13.0] = if 13.0 < ne5 * 2.0 then qPts[epb5 + 13.0] else 0.0
+        anPts[nsb5 + 14.0] = if 14.0 < ne5 * 2.0 then qPts[epb5 + 14.0] else 0.0
+        anPts[nsb5 + 15.0] = if 15.0 < ne5 * 2.0 then qPts[epb5 + 15.0] else 0.0
+        anPts[nsb5 + 16.0] = if 16.0 < ne5 * 2.0 then qPts[epb5 + 16.0] else 0.0
+        anPts[nsb5 + 17.0] = if 17.0 < ne5 * 2.0 then qPts[epb5 + 17.0] else 0.0
+        anPts[nsb5 + 18.0] = if 18.0 < ne5 * 2.0 then qPts[epb5 + 18.0] else 0.0
+        anPts[nsb5 + 19.0] = if 19.0 < ne5 * 2.0 then qPts[epb5 + 19.0] else 0.0
+        anPts[nsb5 + 20.0] = if 20.0 < ne5 * 2.0 then qPts[epb5 + 20.0] else 0.0
+        anPts[nsb5 + 21.0] = if 21.0 < ne5 * 2.0 then qPts[epb5 + 21.0] else 0.0
+        anPts[nsb5 + 22.0] = if 22.0 < ne5 * 2.0 then qPts[epb5 + 22.0] else 0.0
+        anPts[nsb5 + 23.0] = if 23.0 < ne5 * 2.0 then qPts[epb5 + 23.0] else 0.0
+        anPts[nsb5 + 24.0] = if 24.0 < ne5 * 2.0 then qPts[epb5 + 24.0] else 0.0
+        anPts[nsb5 + 25.0] = if 25.0 < ne5 * 2.0 then qPts[epb5 + 25.0] else 0.0
+        anPts[nsb5 + 26.0] = if 26.0 < ne5 * 2.0 then qPts[epb5 + 26.0] else 0.0
+        anPts[nsb5 + 27.0] = if 27.0 < ne5 * 2.0 then qPts[epb5 + 27.0] else 0.0
+        anPts[nsb5 + 28.0] = if 28.0 < ne5 * 2.0 then qPts[epb5 + 28.0] else 0.0
+        anPts[nsb5 + 29.0] = if 29.0 < ne5 * 2.0 then qPts[epb5 + 29.0] else 0.0
+        anPts[nsb5 + 30.0] = if 30.0 < ne5 * 2.0 then qPts[epb5 + 30.0] else 0.0
+        anPts[nsb5 + 31.0] = if 31.0 < ne5 * 2.0 then qPts[epb5 + 31.0] else 0.0
+        anCol[ncb5 + 0.0] = if 0.0 < qCN[5] then qCol[ecb5 + 0.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 1.0] = if 1.0 < qCN[5] then qCol[ecb5 + 1.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 2.0] = if 2.0 < qCN[5] then qCol[ecb5 + 2.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 3.0] = if 3.0 < qCN[5] then qCol[ecb5 + 3.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 4.0] = if 4.0 < qCN[5] then qCol[ecb5 + 4.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 5.0] = if 5.0 < qCN[5] then qCol[ecb5 + 5.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 6.0] = if 6.0 < qCN[5] then qCol[ecb5 + 6.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 7.0] = if 7.0 < qCN[5] then qCol[ecb5 + 7.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 8.0] = if 8.0 < qCN[5] then qCol[ecb5 + 8.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 9.0] = if 9.0 < qCN[5] then qCol[ecb5 + 9.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 10.0] = if 10.0 < qCN[5] then qCol[ecb5 + 10.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 11.0] = if 11.0 < qCN[5] then qCol[ecb5 + 11.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 12.0] = if 12.0 < qCN[5] then qCol[ecb5 + 12.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 13.0] = if 13.0 < qCN[5] then qCol[ecb5 + 13.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 14.0] = if 14.0 < qCN[5] then qCol[ecb5 + 14.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb5 + 15.0] = if 15.0 < qCN[5] then qCol[ecb5 + 15.0] else Color(0.0, 0.0, 0.0, 0.0)
+        slMode[nslot5] = qMode[5] > 0.5
+        slXF[nxb5 + 5.0] = qXF[exb5 + 5.0]
+        anXF[nxb5 + 0.0] = qXF[exb5 + 0.0]
+        anXF[nxb5 + 1.0] = qXF[exb5 + 1.0]
+        anXF[nxb5 + 2.0] = qXF[exb5 + 2.0]
+        anXF[nxb5 + 3.0] = qXF[exb5 + 3.0]
+        anXF[nxb5 + 4.0] = qXF[exb5 + 4.0]
       } else {
         slPts[nsb5 + 0.0] = qPts[epb5 + 0.0]
         slPts[nsb5 + 1.0] = qPts[epb5 + 1.0]
@@ -9487,6 +10335,8 @@ mod paintTick() {
         slXF[nxb5 + 3.0] = qXF[exb5 + 3.0]
         slXF[nxb5 + 4.0] = qXF[exb5 + 4.0]
         slXF[nxb5 + 5.0] = qXF[exb5 + 5.0]
+        anTicks[nslot5] = 0.0
+        needRC = true
       }
     }
     if qCount > 6.0 {
@@ -9500,6 +10350,64 @@ mod paintTick() {
       let exb6 = 6.0 * 6.0
       if ne6 < 1.0 {
         slLive[nslot6] = 0.0
+        anTicks[nslot6] = 0.0
+        needRC = true
+      } else if qTicks[6] > 0.5 && slLive[nslot6] > 0.5 {
+        anPts[nsb6 + 0.0] = if 0.0 < ne6 * 2.0 then qPts[epb6 + 0.0] else 0.0
+        anPts[nsb6 + 1.0] = if 1.0 < ne6 * 2.0 then qPts[epb6 + 1.0] else 0.0
+        anPts[nsb6 + 2.0] = if 2.0 < ne6 * 2.0 then qPts[epb6 + 2.0] else 0.0
+        anPts[nsb6 + 3.0] = if 3.0 < ne6 * 2.0 then qPts[epb6 + 3.0] else 0.0
+        anPts[nsb6 + 4.0] = if 4.0 < ne6 * 2.0 then qPts[epb6 + 4.0] else 0.0
+        anPts[nsb6 + 5.0] = if 5.0 < ne6 * 2.0 then qPts[epb6 + 5.0] else 0.0
+        anPts[nsb6 + 6.0] = if 6.0 < ne6 * 2.0 then qPts[epb6 + 6.0] else 0.0
+        anPts[nsb6 + 7.0] = if 7.0 < ne6 * 2.0 then qPts[epb6 + 7.0] else 0.0
+        anPts[nsb6 + 8.0] = if 8.0 < ne6 * 2.0 then qPts[epb6 + 8.0] else 0.0
+        anPts[nsb6 + 9.0] = if 9.0 < ne6 * 2.0 then qPts[epb6 + 9.0] else 0.0
+        anPts[nsb6 + 10.0] = if 10.0 < ne6 * 2.0 then qPts[epb6 + 10.0] else 0.0
+        anPts[nsb6 + 11.0] = if 11.0 < ne6 * 2.0 then qPts[epb6 + 11.0] else 0.0
+        anPts[nsb6 + 12.0] = if 12.0 < ne6 * 2.0 then qPts[epb6 + 12.0] else 0.0
+        anPts[nsb6 + 13.0] = if 13.0 < ne6 * 2.0 then qPts[epb6 + 13.0] else 0.0
+        anPts[nsb6 + 14.0] = if 14.0 < ne6 * 2.0 then qPts[epb6 + 14.0] else 0.0
+        anPts[nsb6 + 15.0] = if 15.0 < ne6 * 2.0 then qPts[epb6 + 15.0] else 0.0
+        anPts[nsb6 + 16.0] = if 16.0 < ne6 * 2.0 then qPts[epb6 + 16.0] else 0.0
+        anPts[nsb6 + 17.0] = if 17.0 < ne6 * 2.0 then qPts[epb6 + 17.0] else 0.0
+        anPts[nsb6 + 18.0] = if 18.0 < ne6 * 2.0 then qPts[epb6 + 18.0] else 0.0
+        anPts[nsb6 + 19.0] = if 19.0 < ne6 * 2.0 then qPts[epb6 + 19.0] else 0.0
+        anPts[nsb6 + 20.0] = if 20.0 < ne6 * 2.0 then qPts[epb6 + 20.0] else 0.0
+        anPts[nsb6 + 21.0] = if 21.0 < ne6 * 2.0 then qPts[epb6 + 21.0] else 0.0
+        anPts[nsb6 + 22.0] = if 22.0 < ne6 * 2.0 then qPts[epb6 + 22.0] else 0.0
+        anPts[nsb6 + 23.0] = if 23.0 < ne6 * 2.0 then qPts[epb6 + 23.0] else 0.0
+        anPts[nsb6 + 24.0] = if 24.0 < ne6 * 2.0 then qPts[epb6 + 24.0] else 0.0
+        anPts[nsb6 + 25.0] = if 25.0 < ne6 * 2.0 then qPts[epb6 + 25.0] else 0.0
+        anPts[nsb6 + 26.0] = if 26.0 < ne6 * 2.0 then qPts[epb6 + 26.0] else 0.0
+        anPts[nsb6 + 27.0] = if 27.0 < ne6 * 2.0 then qPts[epb6 + 27.0] else 0.0
+        anPts[nsb6 + 28.0] = if 28.0 < ne6 * 2.0 then qPts[epb6 + 28.0] else 0.0
+        anPts[nsb6 + 29.0] = if 29.0 < ne6 * 2.0 then qPts[epb6 + 29.0] else 0.0
+        anPts[nsb6 + 30.0] = if 30.0 < ne6 * 2.0 then qPts[epb6 + 30.0] else 0.0
+        anPts[nsb6 + 31.0] = if 31.0 < ne6 * 2.0 then qPts[epb6 + 31.0] else 0.0
+        anCol[ncb6 + 0.0] = if 0.0 < qCN[6] then qCol[ecb6 + 0.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 1.0] = if 1.0 < qCN[6] then qCol[ecb6 + 1.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 2.0] = if 2.0 < qCN[6] then qCol[ecb6 + 2.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 3.0] = if 3.0 < qCN[6] then qCol[ecb6 + 3.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 4.0] = if 4.0 < qCN[6] then qCol[ecb6 + 4.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 5.0] = if 5.0 < qCN[6] then qCol[ecb6 + 5.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 6.0] = if 6.0 < qCN[6] then qCol[ecb6 + 6.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 7.0] = if 7.0 < qCN[6] then qCol[ecb6 + 7.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 8.0] = if 8.0 < qCN[6] then qCol[ecb6 + 8.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 9.0] = if 9.0 < qCN[6] then qCol[ecb6 + 9.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 10.0] = if 10.0 < qCN[6] then qCol[ecb6 + 10.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 11.0] = if 11.0 < qCN[6] then qCol[ecb6 + 11.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 12.0] = if 12.0 < qCN[6] then qCol[ecb6 + 12.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 13.0] = if 13.0 < qCN[6] then qCol[ecb6 + 13.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 14.0] = if 14.0 < qCN[6] then qCol[ecb6 + 14.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb6 + 15.0] = if 15.0 < qCN[6] then qCol[ecb6 + 15.0] else Color(0.0, 0.0, 0.0, 0.0)
+        slMode[nslot6] = qMode[6] > 0.5
+        slXF[nxb6 + 5.0] = qXF[exb6 + 5.0]
+        anXF[nxb6 + 0.0] = qXF[exb6 + 0.0]
+        anXF[nxb6 + 1.0] = qXF[exb6 + 1.0]
+        anXF[nxb6 + 2.0] = qXF[exb6 + 2.0]
+        anXF[nxb6 + 3.0] = qXF[exb6 + 3.0]
+        anXF[nxb6 + 4.0] = qXF[exb6 + 4.0]
       } else {
         slPts[nsb6 + 0.0] = qPts[epb6 + 0.0]
         slPts[nsb6 + 1.0] = qPts[epb6 + 1.0]
@@ -9558,6 +10466,8 @@ mod paintTick() {
         slXF[nxb6 + 3.0] = qXF[exb6 + 3.0]
         slXF[nxb6 + 4.0] = qXF[exb6 + 4.0]
         slXF[nxb6 + 5.0] = qXF[exb6 + 5.0]
+        anTicks[nslot6] = 0.0
+        needRC = true
       }
     }
     if qCount > 7.0 {
@@ -9571,6 +10481,64 @@ mod paintTick() {
       let exb7 = 7.0 * 6.0
       if ne7 < 1.0 {
         slLive[nslot7] = 0.0
+        anTicks[nslot7] = 0.0
+        needRC = true
+      } else if qTicks[7] > 0.5 && slLive[nslot7] > 0.5 {
+        anPts[nsb7 + 0.0] = if 0.0 < ne7 * 2.0 then qPts[epb7 + 0.0] else 0.0
+        anPts[nsb7 + 1.0] = if 1.0 < ne7 * 2.0 then qPts[epb7 + 1.0] else 0.0
+        anPts[nsb7 + 2.0] = if 2.0 < ne7 * 2.0 then qPts[epb7 + 2.0] else 0.0
+        anPts[nsb7 + 3.0] = if 3.0 < ne7 * 2.0 then qPts[epb7 + 3.0] else 0.0
+        anPts[nsb7 + 4.0] = if 4.0 < ne7 * 2.0 then qPts[epb7 + 4.0] else 0.0
+        anPts[nsb7 + 5.0] = if 5.0 < ne7 * 2.0 then qPts[epb7 + 5.0] else 0.0
+        anPts[nsb7 + 6.0] = if 6.0 < ne7 * 2.0 then qPts[epb7 + 6.0] else 0.0
+        anPts[nsb7 + 7.0] = if 7.0 < ne7 * 2.0 then qPts[epb7 + 7.0] else 0.0
+        anPts[nsb7 + 8.0] = if 8.0 < ne7 * 2.0 then qPts[epb7 + 8.0] else 0.0
+        anPts[nsb7 + 9.0] = if 9.0 < ne7 * 2.0 then qPts[epb7 + 9.0] else 0.0
+        anPts[nsb7 + 10.0] = if 10.0 < ne7 * 2.0 then qPts[epb7 + 10.0] else 0.0
+        anPts[nsb7 + 11.0] = if 11.0 < ne7 * 2.0 then qPts[epb7 + 11.0] else 0.0
+        anPts[nsb7 + 12.0] = if 12.0 < ne7 * 2.0 then qPts[epb7 + 12.0] else 0.0
+        anPts[nsb7 + 13.0] = if 13.0 < ne7 * 2.0 then qPts[epb7 + 13.0] else 0.0
+        anPts[nsb7 + 14.0] = if 14.0 < ne7 * 2.0 then qPts[epb7 + 14.0] else 0.0
+        anPts[nsb7 + 15.0] = if 15.0 < ne7 * 2.0 then qPts[epb7 + 15.0] else 0.0
+        anPts[nsb7 + 16.0] = if 16.0 < ne7 * 2.0 then qPts[epb7 + 16.0] else 0.0
+        anPts[nsb7 + 17.0] = if 17.0 < ne7 * 2.0 then qPts[epb7 + 17.0] else 0.0
+        anPts[nsb7 + 18.0] = if 18.0 < ne7 * 2.0 then qPts[epb7 + 18.0] else 0.0
+        anPts[nsb7 + 19.0] = if 19.0 < ne7 * 2.0 then qPts[epb7 + 19.0] else 0.0
+        anPts[nsb7 + 20.0] = if 20.0 < ne7 * 2.0 then qPts[epb7 + 20.0] else 0.0
+        anPts[nsb7 + 21.0] = if 21.0 < ne7 * 2.0 then qPts[epb7 + 21.0] else 0.0
+        anPts[nsb7 + 22.0] = if 22.0 < ne7 * 2.0 then qPts[epb7 + 22.0] else 0.0
+        anPts[nsb7 + 23.0] = if 23.0 < ne7 * 2.0 then qPts[epb7 + 23.0] else 0.0
+        anPts[nsb7 + 24.0] = if 24.0 < ne7 * 2.0 then qPts[epb7 + 24.0] else 0.0
+        anPts[nsb7 + 25.0] = if 25.0 < ne7 * 2.0 then qPts[epb7 + 25.0] else 0.0
+        anPts[nsb7 + 26.0] = if 26.0 < ne7 * 2.0 then qPts[epb7 + 26.0] else 0.0
+        anPts[nsb7 + 27.0] = if 27.0 < ne7 * 2.0 then qPts[epb7 + 27.0] else 0.0
+        anPts[nsb7 + 28.0] = if 28.0 < ne7 * 2.0 then qPts[epb7 + 28.0] else 0.0
+        anPts[nsb7 + 29.0] = if 29.0 < ne7 * 2.0 then qPts[epb7 + 29.0] else 0.0
+        anPts[nsb7 + 30.0] = if 30.0 < ne7 * 2.0 then qPts[epb7 + 30.0] else 0.0
+        anPts[nsb7 + 31.0] = if 31.0 < ne7 * 2.0 then qPts[epb7 + 31.0] else 0.0
+        anCol[ncb7 + 0.0] = if 0.0 < qCN[7] then qCol[ecb7 + 0.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 1.0] = if 1.0 < qCN[7] then qCol[ecb7 + 1.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 2.0] = if 2.0 < qCN[7] then qCol[ecb7 + 2.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 3.0] = if 3.0 < qCN[7] then qCol[ecb7 + 3.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 4.0] = if 4.0 < qCN[7] then qCol[ecb7 + 4.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 5.0] = if 5.0 < qCN[7] then qCol[ecb7 + 5.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 6.0] = if 6.0 < qCN[7] then qCol[ecb7 + 6.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 7.0] = if 7.0 < qCN[7] then qCol[ecb7 + 7.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 8.0] = if 8.0 < qCN[7] then qCol[ecb7 + 8.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 9.0] = if 9.0 < qCN[7] then qCol[ecb7 + 9.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 10.0] = if 10.0 < qCN[7] then qCol[ecb7 + 10.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 11.0] = if 11.0 < qCN[7] then qCol[ecb7 + 11.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 12.0] = if 12.0 < qCN[7] then qCol[ecb7 + 12.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 13.0] = if 13.0 < qCN[7] then qCol[ecb7 + 13.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 14.0] = if 14.0 < qCN[7] then qCol[ecb7 + 14.0] else Color(0.0, 0.0, 0.0, 0.0)
+        anCol[ncb7 + 15.0] = if 15.0 < qCN[7] then qCol[ecb7 + 15.0] else Color(0.0, 0.0, 0.0, 0.0)
+        slMode[nslot7] = qMode[7] > 0.5
+        slXF[nxb7 + 5.0] = qXF[exb7 + 5.0]
+        anXF[nxb7 + 0.0] = qXF[exb7 + 0.0]
+        anXF[nxb7 + 1.0] = qXF[exb7 + 1.0]
+        anXF[nxb7 + 2.0] = qXF[exb7 + 2.0]
+        anXF[nxb7 + 3.0] = qXF[exb7 + 3.0]
+        anXF[nxb7 + 4.0] = qXF[exb7 + 4.0]
       } else {
         slPts[nsb7 + 0.0] = qPts[epb7 + 0.0]
         slPts[nsb7 + 1.0] = qPts[epb7 + 1.0]
@@ -9629,14 +10597,19 @@ mod paintTick() {
         slXF[nxb7 + 3.0] = qXF[exb7 + 3.0]
         slXF[nxb7 + 4.0] = qXF[exb7 + 4.0]
         slXF[nxb7 + 5.0] = qXF[exb7 + 5.0]
+        anTicks[nslot7] = 0.0
+        needRC = true
       }
     }
     qCount = 0.0
-    rcOn = true
-    rcSlot = 1.0
+    animDirty = false
     if justCleared {
       justCleared = false
-    } else {
+      rcOn = true
+      rcSlot = 1.0
+    } else if needRC {
+      rcOn = true
+      rcSlot = 1.0
       clearing = true
       fromSlot = true
       arming = true
@@ -9650,8 +10623,72 @@ mod paintTick() {
     let slot = (pId - 1.0) | 0
     let sbase = slot * 32.0
     let cbase = slot * 16.0
-    if n < 1.0 {
+    let xbase = slot * 6.0
+    needRC = false
+    if recompOnly {
+      recompOnly = false
+      needRC = true
+    } else if n < 1.0 {
       slLive[slot] = 0.0
+      anTicks[slot] = 0.0
+      needRC = true
+    } else if pTicks > 0.5 && slLive[slot] > 0.5 {
+      anTicks[slot] = pTicks
+      anPts[sbase + 0.0] = if 0.0 < n * 2.0 then shapePoints[0] else 0.0
+      anPts[sbase + 1.0] = if 1.0 < n * 2.0 then shapePoints[1] else 0.0
+      anPts[sbase + 2.0] = if 2.0 < n * 2.0 then shapePoints[2] else 0.0
+      anPts[sbase + 3.0] = if 3.0 < n * 2.0 then shapePoints[3] else 0.0
+      anPts[sbase + 4.0] = if 4.0 < n * 2.0 then shapePoints[4] else 0.0
+      anPts[sbase + 5.0] = if 5.0 < n * 2.0 then shapePoints[5] else 0.0
+      anPts[sbase + 6.0] = if 6.0 < n * 2.0 then shapePoints[6] else 0.0
+      anPts[sbase + 7.0] = if 7.0 < n * 2.0 then shapePoints[7] else 0.0
+      anPts[sbase + 8.0] = if 8.0 < n * 2.0 then shapePoints[8] else 0.0
+      anPts[sbase + 9.0] = if 9.0 < n * 2.0 then shapePoints[9] else 0.0
+      anPts[sbase + 10.0] = if 10.0 < n * 2.0 then shapePoints[10] else 0.0
+      anPts[sbase + 11.0] = if 11.0 < n * 2.0 then shapePoints[11] else 0.0
+      anPts[sbase + 12.0] = if 12.0 < n * 2.0 then shapePoints[12] else 0.0
+      anPts[sbase + 13.0] = if 13.0 < n * 2.0 then shapePoints[13] else 0.0
+      anPts[sbase + 14.0] = if 14.0 < n * 2.0 then shapePoints[14] else 0.0
+      anPts[sbase + 15.0] = if 15.0 < n * 2.0 then shapePoints[15] else 0.0
+      anPts[sbase + 16.0] = if 16.0 < n * 2.0 then shapePoints[16] else 0.0
+      anPts[sbase + 17.0] = if 17.0 < n * 2.0 then shapePoints[17] else 0.0
+      anPts[sbase + 18.0] = if 18.0 < n * 2.0 then shapePoints[18] else 0.0
+      anPts[sbase + 19.0] = if 19.0 < n * 2.0 then shapePoints[19] else 0.0
+      anPts[sbase + 20.0] = if 20.0 < n * 2.0 then shapePoints[20] else 0.0
+      anPts[sbase + 21.0] = if 21.0 < n * 2.0 then shapePoints[21] else 0.0
+      anPts[sbase + 22.0] = if 22.0 < n * 2.0 then shapePoints[22] else 0.0
+      anPts[sbase + 23.0] = if 23.0 < n * 2.0 then shapePoints[23] else 0.0
+      anPts[sbase + 24.0] = if 24.0 < n * 2.0 then shapePoints[24] else 0.0
+      anPts[sbase + 25.0] = if 25.0 < n * 2.0 then shapePoints[25] else 0.0
+      anPts[sbase + 26.0] = if 26.0 < n * 2.0 then shapePoints[26] else 0.0
+      anPts[sbase + 27.0] = if 27.0 < n * 2.0 then shapePoints[27] else 0.0
+      anPts[sbase + 28.0] = if 28.0 < n * 2.0 then shapePoints[28] else 0.0
+      anPts[sbase + 29.0] = if 29.0 < n * 2.0 then shapePoints[29] else 0.0
+      anPts[sbase + 30.0] = if 30.0 < n * 2.0 then shapePoints[30] else 0.0
+      anPts[sbase + 31.0] = if 31.0 < n * 2.0 then shapePoints[31] else 0.0
+      anCol[cbase + 0.0] = if shapeColors.length() > 0 then shapeColors[0] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 1.0] = if shapeColors.length() > 1 then shapeColors[1] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 2.0] = if shapeColors.length() > 2 then shapeColors[2] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 3.0] = if shapeColors.length() > 3 then shapeColors[3] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 4.0] = if shapeColors.length() > 4 then shapeColors[4] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 5.0] = if shapeColors.length() > 5 then shapeColors[5] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 6.0] = if shapeColors.length() > 6 then shapeColors[6] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 7.0] = if shapeColors.length() > 7 then shapeColors[7] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 8.0] = if shapeColors.length() > 8 then shapeColors[8] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 9.0] = if shapeColors.length() > 9 then shapeColors[9] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 10.0] = if shapeColors.length() > 10 then shapeColors[10] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 11.0] = if shapeColors.length() > 11 then shapeColors[11] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 12.0] = if shapeColors.length() > 12 then shapeColors[12] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 13.0] = if shapeColors.length() > 13 then shapeColors[13] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 14.0] = if shapeColors.length() > 14 then shapeColors[14] else Color(0.0, 0.0, 0.0, 0.0)
+      anCol[cbase + 15.0] = if shapeColors.length() > 15 then shapeColors[15] else Color(0.0, 0.0, 0.0, 0.0)
+      slMode[slot] = if pWire then 1.0 else 0.0
+      slXF[xbase + 5.0] = pParent
+      anXF[xbase + 0.0] = pPos.x
+      anXF[xbase + 1.0] = pPos.y
+      anXF[xbase + 2.0] = pRot.z
+      anXF[xbase + 3.0] = pScl.x
+      anXF[xbase + 4.0] = pScl.y
     } else {
       slPts[sbase + 0.0] = shapePoints[0]
       slPts[sbase + 1.0] = shapePoints[1]
@@ -9704,19 +10741,23 @@ mod paintTick() {
       slMode[slot] = if pWire then 1.0 else 0.0
       slLive[slot] = 1.0
       slCount[slot] = n
-      let xbase = slot * 6.0
       slXF[xbase + 0.0] = pPos.x
       slXF[xbase + 1.0] = pPos.y
       slXF[xbase + 2.0] = pRot.z
       slXF[xbase + 3.0] = if pScl.x == 0.0 then 1.0 else pScl.x
       slXF[xbase + 4.0] = if pScl.y == 0.0 then 1.0 else pScl.y
       slXF[xbase + 5.0] = pParent
+      anTicks[slot] = 0.0
+      needRC = true
     }
-    rcOn = true
-    rcSlot = 1.0
+    animDirty = false
     if justCleared {
       justCleared = false
-    } else {
+      rcOn = true
+      rcSlot = 1.0
+    } else if needRC {
+      rcOn = true
+      rcSlot = 1.0
       clearing = true
       fromSlot = true
       arming = true

@@ -95,8 +95,11 @@ chunking; functions take at most 8 parameters, hence the packed
 
 ```lua
 -- stage a full shape: points, terminator, colours (or nil = white),
--- transform as {px, py, ang, sx, sy}, parent slot ("0" = none).
--- outNumArr's slot itself doesn't count toward the 8-value limit.
+-- transform as {px, py, ang, sx, sy}, parent slot ("0" = none),
+-- animation ticks (nil/0 = instant).  The tick count rides slot 100 as
+-- a second terminator: -1 instant, -(1+T) animate over T ticks.  It is
+-- always written (even -1): an unwritten slot keeps the previous
+-- push's value, which would ghost-animate later shapes.
 local function putn(slot, t, first)
   local i = first or 1
   while i <= #t do
@@ -106,7 +109,7 @@ local function putn(slot, t, first)
   end
   return slot + #t
 end
-local function stage(pts, term, cols, xf, parent)
+local function stage(pts, term, cols, xf, parent, ticks)
   local termAt = putn(1, pts)         -- points from slot 1
   outNumArr(termAt, term)             -- -1, or -(1 + colour count)
   if cols then                        -- four floats per point, or omit
@@ -116,8 +119,14 @@ local function stage(pts, term, cols, xf, parent)
     tostring(xf[3]), tostring(xf[4]), tostring(xf[5]))
   outStrArr(9, "1")
   outStr(2, parent or "0")
+  if ticks and ticks >= 1.0 then
+    outNumArr(100, -(1.0 + ticks))
+  else
+    outNumArr(100, -1.0)
+  end
 end
 -- stage({0,0, 8,0, 8,6, 0,6}, -5, {1,0,0,1, ...}, {5,6, 0.5, 2,2}, "3")
+-- stage({0,0, 8,0}, -1, nil, {2,0, 0, 1,1}, "0", 30) -- +2 x/tick, 30 ticks
 ```
 
 (`showcase2.lua` has the same shape as a tiny `xf()` plus inline

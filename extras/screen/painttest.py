@@ -1255,6 +1255,112 @@ def main():
                          "%d of 4096 differ, first at %d"
                          % (len(bad), bad[0] if bad else 0))
 
+        # ---- per-tick animation: deltas, skip, motion, supersede --------
+        # With addToShapeInTicks = N the staged inputs are per-tick
+        # deltas, added to the stored slot every tick for N ticks.  The
+        # animated commit paints nothing (the wall already shows those
+        # values); motion becomes visible on a later bare drawAllShapes;
+        # a new push to the same slot always wins, even mid-flight (an
+        # instant one kills the animation outright).
+        aA = rect_pts(4.0, 4.0, 12.0, 12.0)
+        aT = [30.0, 30.0, 38.0, 30.0, 34.0, 38.0]
+        ablue = (0.1, 0.4, 1.0, 1.0)
+        aplan = {}
+        aplan[20] = {"pts": list(aA), "cols": [RED] * 4, "sid": 1.0,
+                     "pos": (0.0, 0.0, 0.0), "ticks": 0.0}
+        aplan[22] = {"push": True}
+        aplan[24] = {"push": False}
+        aplan[26] = {"draw": True}
+        aplan[28] = {"draw": False}
+        aend0 = 108
+        # zero point-deltas, no colours (transparent hold), +2 x/tick.
+        aplan[120] = {"pts": [0.0, 0.0], "cols": [], "sid": 1.0,
+                      "pos": (2.0, 0.0, 0.0), "ticks": 4.0}
+        aplan[122] = {"push": True}
+        aplan[124] = {"push": False}
+        aplan[126] = {"draw": True}
+        aplan[128] = {"draw": False}
+        aend1 = 158
+        aplan[190] = {"draw": True}
+        aplan[192] = {"draw": False}
+        aend2 = 272
+        # mid-flight supersede: +5 x/tick over 20 ticks, then an
+        # instant triangle to the same slot kills it outright.
+        aplan[284] = {"pts": [0.0, 0.0], "cols": [], "sid": 1.0,
+                      "pos": (5.0, 0.0, 0.0), "ticks": 20.0}
+        aplan[286] = {"push": True}
+        aplan[288] = {"push": False}
+        aplan[290] = {"draw": True}
+        aplan[292] = {"draw": False}
+        aplan[298] = {"pts": list(aT), "cols": [ablue] * 3, "sid": 1.0,
+                      "pos": (0.0, 0.0, 0.0), "ticks": 0.0}
+        aplan[300] = {"push": True}
+        aplan[302] = {"push": False}
+        aplan[304] = {"draw": True}
+        aplan[306] = {"draw": False}
+        aend3 = 386
+        atotal = aend3 + 20
+
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False,
+                      "shapePosition": (0.0, 0.0, 0.0),
+                      "shapeRotation": (0.0, 0.0, 0.0),
+                      "shapeScale": (0.0, 0.0, 0.0),
+                      "parentShapeId": 0.0, "brightness": 100.0,
+                      "addToShapeInTicks": 0.0}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+        asnaps = {}
+
+        def watcha(sn, tick):
+            if tick in aplan:
+                step = dict(aplan[tick])
+                if "pts" in step:
+                    slide(sn, pts_aid, cols_aid, step.pop("pts"),
+                          step.pop("cols", None))
+                    sn.inputs = dict(sn.inputs, **{
+                        "shapeId": step.pop("sid", 0.0),
+                        "shapePosition": step.pop("pos", (0.0, 0.0, 0.0)),
+                        "addToShapeInTicks": step.pop("ticks", 0.0)})
+                    step = {}
+                renamed = {"push": "pushShape", "draw": "drawAllShapes"}
+                sn.inputs = dict(sn.inputs, **{
+                    renamed.get(k, k): v for k, v in step.items()})
+            if tick in (aend0, aend1, aend2, aend3):
+                asnaps[tick] = {i: col(sn, gids, i)
+                                for i in range(SW * SW)}
+
+        sim.run(atotal, on_tick=watcha)
+
+        awant0 = dict(poly_colors(aA, [RED] * 4))
+        bad = [i for i in range(SW * SW)
+               if not close(asnaps[aend0].get(i, BLACK),
+                            awant0.get(i, BLACK))]
+        ok &= expect(not bad, "animated slot establishes",
+                     "%d of 4096 differ" % len(bad))
+        bad = [i for i in range(SW * SW)
+               if not close(asnaps[aend1].get(i, BLACK),
+                            awant0.get(i, BLACK))]
+        ok &= expect(not bad, "animated commit repaints nothing",
+                     "%d of 4096 differ" % len(bad))
+        amoved = dict(poly_colors(
+            xf_points(aA, (8.0, 0.0), 0.0, (1.0, 1.0)), [RED] * 4))
+        bad = [i for i in range(SW * SW)
+               if not close(asnaps[aend2].get(i, BLACK),
+                            amoved.get(i, BLACK))]
+        ok &= expect(not bad, "bare draw shows the motion",
+                     "%d of 4096 differ" % len(bad))
+        atri = dict(poly_colors(aT, [ablue] * 3))
+        bad = [i for i in range(SW * SW)
+               if not close(asnaps[aend3].get(i, BLACK),
+                            atri.get(i, BLACK))]
+        ok &= expect(not bad, "new push wins mid-flight",
+                     "%d of 4096 differ" % len(bad))
+
         # ---- a bare chip paints nothing ---------------------------------
         # All scalar ports at their game defaults (unwired reads 0/False;
         # the sim reads None for unset, which string-compares wrong -- an
