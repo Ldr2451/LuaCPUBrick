@@ -1735,12 +1735,19 @@ def main():
                      "staged-but-undrawn shape never paints",
                      "green first seen at tick %d"
                      % green_seen[0] if green_seen else "")
-        # the motion check is deliberately absent: this probe showed the
-        # square painting at every tick without moving, which is either
-        # the arm not firing or the probe's own staging.  Left as an open
-        # question rather than asserted either way.
-        ok &= expect(len(red_seen) >= 100,
-                     "the drawn shape stays painted while another is staged",
+        # The animation ran with no drawAllShapes anywhere: the square's
+        # left edge advanced by exactly the tick count times the delta
+        # (8 ticks at +2x/tick = +16px, 4 -> 20).
+        early = [x for t, x in red_seen if t < 130]
+        ok &= expect(len(early) >= 20 and early[-1] > early[0] + 4,
+                     "addToShapeInTicks repaints with no draw",
+                     "left edge %s..%s over %d ticks"
+                     % (early[0] if early else None,
+                        early[-1] if early else None, len(early)))
+        # And it never vanishes while it moves, and nothing else appears:
+        # every sampled tick still has the drawn shape painted.
+        ok &= expect(len(red_seen) == 240 - 66 + 1,
+                     "the drawn shape stays painted through the motion",
                      "painted on %d of 175 ticks" % len(red_seen))
 
         # ---- a bare chip paints nothing ---------------------------------

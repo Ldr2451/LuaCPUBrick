@@ -745,7 +745,37 @@ L.append("  if pending && pTicks > 0.5 && !clearing {")
 L.append("    let anN = (shapePoints.length() / 2.0) | 0")
 L.append("    if anN < (if pWire then 2.0 else 3.0) {")
 L.append("      pending = false")
-L.append("      commitR = true")
+# A pure delta: the slot's geometry and colours are untouched and only
+# the animation registers for it -- tick count, zeroed point deltas (the
+# staged points are too few to paint, so there is nothing to move) and
+# the nine transform channels.  Raising animDirty here is what the
+# self-refresh arm at the end of this block turns into a repaint, so
+# the wall updates without any drawAllShapes.
+#
+# Unrolled per slot because array index writes need literal bases in
+# this toolchain (the WS007 rule); slot is 0..7 because staging clamps
+# pId to 1..8, so the cascade below is a plain ladder.
+L.append("      let slot = (pId - 1.0) | 0")
+for _s in range(8):
+    _b = _s * 32
+    _x = _s * 6
+    _x2 = _s * 4
+    _pre = "      " if _s == 0 else "      } else "
+    L.append(_pre + "if slot < %.1f {" % (_s + 1.5))
+    L.append("        anTicks[%d] = pTicks" % _s)
+    for _i in range(32):
+        L.append("        anPts[%d] = 0.0" % (_b + _i))
+    L.append("        anXF[%d] = pPos.x" % (_x + 0))
+    L.append("        anXF[%d] = pPos.y" % (_x + 1))
+    L.append("        anXF[%d] = pRot.z" % (_x + 2))
+    L.append("        anXF[%d] = pScl.x" % (_x + 3))
+    L.append("        anXF[%d] = pScl.y" % (_x + 4))
+    L.append("        anXF2[%d] = pPos.z" % (_x2 + 0))
+    L.append("        anXF2[%d] = pRot.x" % (_x2 + 1))
+    L.append("        anXF2[%d] = pRot.y" % (_x2 + 2))
+    L.append("        anXF2[%d] = pScl.z" % (_x2 + 3))
+    L.append("        animDirty = true")
+L.append("      }")
 L.append("    }")
 L.append("  }")
 L.append("")
