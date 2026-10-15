@@ -10633,10 +10633,536 @@ mod paintTick() {
       justCleared = false
       rcOn = true
       rcSlot = 1.0
+      if oldLo > 63.0 {
+        oldMin[0] = covMin[0]
+        oldMax[0] = covMax[0]
+        oldMin[1] = covMin[1]
+        oldMax[1] = covMax[1]
+        oldMin[2] = covMin[2]
+        oldMax[2] = covMax[2]
+        oldMin[3] = covMin[3]
+        oldMax[3] = covMax[3]
+        oldMin[4] = covMin[4]
+        oldMax[4] = covMax[4]
+        oldMin[5] = covMin[5]
+        oldMax[5] = covMax[5]
+        oldMin[6] = covMin[6]
+        oldMax[6] = covMax[6]
+        oldMin[7] = covMin[7]
+        oldMax[7] = covMax[7]
+        oldMin[8] = covMin[8]
+        oldMax[8] = covMax[8]
+        oldMin[9] = covMin[9]
+        oldMax[9] = covMax[9]
+        oldMin[10] = covMin[10]
+        oldMax[10] = covMax[10]
+        oldMin[11] = covMin[11]
+        oldMax[11] = covMax[11]
+        oldMin[12] = covMin[12]
+        oldMax[12] = covMax[12]
+        oldMin[13] = covMin[13]
+        oldMax[13] = covMax[13]
+        oldMin[14] = covMin[14]
+        oldMax[14] = covMax[14]
+        oldMin[15] = covMin[15]
+        oldMax[15] = covMax[15]
+        oldMin[16] = covMin[16]
+        oldMax[16] = covMax[16]
+        oldMin[17] = covMin[17]
+        oldMax[17] = covMax[17]
+        oldMin[18] = covMin[18]
+        oldMax[18] = covMax[18]
+        oldMin[19] = covMin[19]
+        oldMax[19] = covMax[19]
+        oldMin[20] = covMin[20]
+        oldMax[20] = covMax[20]
+        oldMin[21] = covMin[21]
+        oldMax[21] = covMax[21]
+        oldMin[22] = covMin[22]
+        oldMax[22] = covMax[22]
+        oldMin[23] = covMin[23]
+        oldMax[23] = covMax[23]
+        oldMin[24] = covMin[24]
+        oldMax[24] = covMax[24]
+        oldMin[25] = covMin[25]
+        oldMax[25] = covMax[25]
+        oldMin[26] = covMin[26]
+        oldMax[26] = covMax[26]
+        oldMin[27] = covMin[27]
+        oldMax[27] = covMax[27]
+        oldMin[28] = covMin[28]
+        oldMax[28] = covMax[28]
+        oldMin[29] = covMin[29]
+        oldMax[29] = covMax[29]
+        oldMin[30] = covMin[30]
+        oldMax[30] = covMax[30]
+        oldMin[31] = covMin[31]
+        oldMax[31] = covMax[31]
+        oldMin[32] = covMin[32]
+        oldMax[32] = covMax[32]
+        oldMin[33] = covMin[33]
+        oldMax[33] = covMax[33]
+        oldMin[34] = covMin[34]
+        oldMax[34] = covMax[34]
+        oldMin[35] = covMin[35]
+        oldMax[35] = covMax[35]
+        oldMin[36] = covMin[36]
+        oldMax[36] = covMax[36]
+        oldMin[37] = covMin[37]
+        oldMax[37] = covMax[37]
+        oldMin[38] = covMin[38]
+        oldMax[38] = covMax[38]
+        oldMin[39] = covMin[39]
+        oldMax[39] = covMax[39]
+        oldMin[40] = covMin[40]
+        oldMax[40] = covMax[40]
+        oldMin[41] = covMin[41]
+        oldMax[41] = covMax[41]
+        oldMin[42] = covMin[42]
+        oldMax[42] = covMax[42]
+        oldMin[43] = covMin[43]
+        oldMax[43] = covMax[43]
+        oldMin[44] = covMin[44]
+        oldMax[44] = covMax[44]
+        oldMin[45] = covMin[45]
+        oldMax[45] = covMax[45]
+        oldMin[46] = covMin[46]
+        oldMax[46] = covMax[46]
+        oldMin[47] = covMin[47]
+        oldMax[47] = covMax[47]
+        oldMin[48] = covMin[48]
+        oldMax[48] = covMax[48]
+        oldMin[49] = covMin[49]
+        oldMax[49] = covMax[49]
+        oldMin[50] = covMin[50]
+        oldMax[50] = covMax[50]
+        oldMin[51] = covMin[51]
+        oldMax[51] = covMax[51]
+        oldMin[52] = covMin[52]
+        oldMax[52] = covMax[52]
+        oldMin[53] = covMin[53]
+        oldMax[53] = covMax[53]
+        oldMin[54] = covMin[54]
+        oldMax[54] = covMax[54]
+        oldMin[55] = covMin[55]
+        oldMax[55] = covMax[55]
+        oldMin[56] = covMin[56]
+        oldMax[56] = covMax[56]
+        oldMin[57] = covMin[57]
+        oldMax[57] = covMax[57]
+        oldMin[58] = covMin[58]
+        oldMax[58] = covMax[58]
+        oldMin[59] = covMin[59]
+        oldMax[59] = covMax[59]
+        oldMin[60] = covMin[60]
+        oldMax[60] = covMax[60]
+        oldMin[61] = covMin[61]
+        oldMax[61] = covMax[61]
+        oldMin[62] = covMin[62]
+        oldMax[62] = covMax[62]
+        oldMin[63] = covMin[63]
+        oldMax[63] = covMax[63]
+        oldLo = covLo
+        oldHi = covHi
+      }
+      covMin[0] = 200.0
+      covMax[0] = -200.0
+      covMin[1] = 200.0
+      covMax[1] = -200.0
+      covMin[2] = 200.0
+      covMax[2] = -200.0
+      covMin[3] = 200.0
+      covMax[3] = -200.0
+      covMin[4] = 200.0
+      covMax[4] = -200.0
+      covMin[5] = 200.0
+      covMax[5] = -200.0
+      covMin[6] = 200.0
+      covMax[6] = -200.0
+      covMin[7] = 200.0
+      covMax[7] = -200.0
+      covMin[8] = 200.0
+      covMax[8] = -200.0
+      covMin[9] = 200.0
+      covMax[9] = -200.0
+      covMin[10] = 200.0
+      covMax[10] = -200.0
+      covMin[11] = 200.0
+      covMax[11] = -200.0
+      covMin[12] = 200.0
+      covMax[12] = -200.0
+      covMin[13] = 200.0
+      covMax[13] = -200.0
+      covMin[14] = 200.0
+      covMax[14] = -200.0
+      covMin[15] = 200.0
+      covMax[15] = -200.0
+      covMin[16] = 200.0
+      covMax[16] = -200.0
+      covMin[17] = 200.0
+      covMax[17] = -200.0
+      covMin[18] = 200.0
+      covMax[18] = -200.0
+      covMin[19] = 200.0
+      covMax[19] = -200.0
+      covMin[20] = 200.0
+      covMax[20] = -200.0
+      covMin[21] = 200.0
+      covMax[21] = -200.0
+      covMin[22] = 200.0
+      covMax[22] = -200.0
+      covMin[23] = 200.0
+      covMax[23] = -200.0
+      covMin[24] = 200.0
+      covMax[24] = -200.0
+      covMin[25] = 200.0
+      covMax[25] = -200.0
+      covMin[26] = 200.0
+      covMax[26] = -200.0
+      covMin[27] = 200.0
+      covMax[27] = -200.0
+      covMin[28] = 200.0
+      covMax[28] = -200.0
+      covMin[29] = 200.0
+      covMax[29] = -200.0
+      covMin[30] = 200.0
+      covMax[30] = -200.0
+      covMin[31] = 200.0
+      covMax[31] = -200.0
+      covMin[32] = 200.0
+      covMax[32] = -200.0
+      covMin[33] = 200.0
+      covMax[33] = -200.0
+      covMin[34] = 200.0
+      covMax[34] = -200.0
+      covMin[35] = 200.0
+      covMax[35] = -200.0
+      covMin[36] = 200.0
+      covMax[36] = -200.0
+      covMin[37] = 200.0
+      covMax[37] = -200.0
+      covMin[38] = 200.0
+      covMax[38] = -200.0
+      covMin[39] = 200.0
+      covMax[39] = -200.0
+      covMin[40] = 200.0
+      covMax[40] = -200.0
+      covMin[41] = 200.0
+      covMax[41] = -200.0
+      covMin[42] = 200.0
+      covMax[42] = -200.0
+      covMin[43] = 200.0
+      covMax[43] = -200.0
+      covMin[44] = 200.0
+      covMax[44] = -200.0
+      covMin[45] = 200.0
+      covMax[45] = -200.0
+      covMin[46] = 200.0
+      covMax[46] = -200.0
+      covMin[47] = 200.0
+      covMax[47] = -200.0
+      covMin[48] = 200.0
+      covMax[48] = -200.0
+      covMin[49] = 200.0
+      covMax[49] = -200.0
+      covMin[50] = 200.0
+      covMax[50] = -200.0
+      covMin[51] = 200.0
+      covMax[51] = -200.0
+      covMin[52] = 200.0
+      covMax[52] = -200.0
+      covMin[53] = 200.0
+      covMax[53] = -200.0
+      covMin[54] = 200.0
+      covMax[54] = -200.0
+      covMin[55] = 200.0
+      covMax[55] = -200.0
+      covMin[56] = 200.0
+      covMax[56] = -200.0
+      covMin[57] = 200.0
+      covMax[57] = -200.0
+      covMin[58] = 200.0
+      covMax[58] = -200.0
+      covMin[59] = 200.0
+      covMax[59] = -200.0
+      covMin[60] = 200.0
+      covMax[60] = -200.0
+      covMin[61] = 200.0
+      covMax[61] = -200.0
+      covMin[62] = 200.0
+      covMax[62] = -200.0
+      covMin[63] = 200.0
+      covMax[63] = -200.0
+      covLo = 200.0
+      covHi = -200.0
+      cDirty = false
     } else if needRC {
       rcOn = true
       rcSlot = 1.0
       fromSlot = true
+      if oldLo > 63.0 {
+        oldMin[0] = covMin[0]
+        oldMax[0] = covMax[0]
+        oldMin[1] = covMin[1]
+        oldMax[1] = covMax[1]
+        oldMin[2] = covMin[2]
+        oldMax[2] = covMax[2]
+        oldMin[3] = covMin[3]
+        oldMax[3] = covMax[3]
+        oldMin[4] = covMin[4]
+        oldMax[4] = covMax[4]
+        oldMin[5] = covMin[5]
+        oldMax[5] = covMax[5]
+        oldMin[6] = covMin[6]
+        oldMax[6] = covMax[6]
+        oldMin[7] = covMin[7]
+        oldMax[7] = covMax[7]
+        oldMin[8] = covMin[8]
+        oldMax[8] = covMax[8]
+        oldMin[9] = covMin[9]
+        oldMax[9] = covMax[9]
+        oldMin[10] = covMin[10]
+        oldMax[10] = covMax[10]
+        oldMin[11] = covMin[11]
+        oldMax[11] = covMax[11]
+        oldMin[12] = covMin[12]
+        oldMax[12] = covMax[12]
+        oldMin[13] = covMin[13]
+        oldMax[13] = covMax[13]
+        oldMin[14] = covMin[14]
+        oldMax[14] = covMax[14]
+        oldMin[15] = covMin[15]
+        oldMax[15] = covMax[15]
+        oldMin[16] = covMin[16]
+        oldMax[16] = covMax[16]
+        oldMin[17] = covMin[17]
+        oldMax[17] = covMax[17]
+        oldMin[18] = covMin[18]
+        oldMax[18] = covMax[18]
+        oldMin[19] = covMin[19]
+        oldMax[19] = covMax[19]
+        oldMin[20] = covMin[20]
+        oldMax[20] = covMax[20]
+        oldMin[21] = covMin[21]
+        oldMax[21] = covMax[21]
+        oldMin[22] = covMin[22]
+        oldMax[22] = covMax[22]
+        oldMin[23] = covMin[23]
+        oldMax[23] = covMax[23]
+        oldMin[24] = covMin[24]
+        oldMax[24] = covMax[24]
+        oldMin[25] = covMin[25]
+        oldMax[25] = covMax[25]
+        oldMin[26] = covMin[26]
+        oldMax[26] = covMax[26]
+        oldMin[27] = covMin[27]
+        oldMax[27] = covMax[27]
+        oldMin[28] = covMin[28]
+        oldMax[28] = covMax[28]
+        oldMin[29] = covMin[29]
+        oldMax[29] = covMax[29]
+        oldMin[30] = covMin[30]
+        oldMax[30] = covMax[30]
+        oldMin[31] = covMin[31]
+        oldMax[31] = covMax[31]
+        oldMin[32] = covMin[32]
+        oldMax[32] = covMax[32]
+        oldMin[33] = covMin[33]
+        oldMax[33] = covMax[33]
+        oldMin[34] = covMin[34]
+        oldMax[34] = covMax[34]
+        oldMin[35] = covMin[35]
+        oldMax[35] = covMax[35]
+        oldMin[36] = covMin[36]
+        oldMax[36] = covMax[36]
+        oldMin[37] = covMin[37]
+        oldMax[37] = covMax[37]
+        oldMin[38] = covMin[38]
+        oldMax[38] = covMax[38]
+        oldMin[39] = covMin[39]
+        oldMax[39] = covMax[39]
+        oldMin[40] = covMin[40]
+        oldMax[40] = covMax[40]
+        oldMin[41] = covMin[41]
+        oldMax[41] = covMax[41]
+        oldMin[42] = covMin[42]
+        oldMax[42] = covMax[42]
+        oldMin[43] = covMin[43]
+        oldMax[43] = covMax[43]
+        oldMin[44] = covMin[44]
+        oldMax[44] = covMax[44]
+        oldMin[45] = covMin[45]
+        oldMax[45] = covMax[45]
+        oldMin[46] = covMin[46]
+        oldMax[46] = covMax[46]
+        oldMin[47] = covMin[47]
+        oldMax[47] = covMax[47]
+        oldMin[48] = covMin[48]
+        oldMax[48] = covMax[48]
+        oldMin[49] = covMin[49]
+        oldMax[49] = covMax[49]
+        oldMin[50] = covMin[50]
+        oldMax[50] = covMax[50]
+        oldMin[51] = covMin[51]
+        oldMax[51] = covMax[51]
+        oldMin[52] = covMin[52]
+        oldMax[52] = covMax[52]
+        oldMin[53] = covMin[53]
+        oldMax[53] = covMax[53]
+        oldMin[54] = covMin[54]
+        oldMax[54] = covMax[54]
+        oldMin[55] = covMin[55]
+        oldMax[55] = covMax[55]
+        oldMin[56] = covMin[56]
+        oldMax[56] = covMax[56]
+        oldMin[57] = covMin[57]
+        oldMax[57] = covMax[57]
+        oldMin[58] = covMin[58]
+        oldMax[58] = covMax[58]
+        oldMin[59] = covMin[59]
+        oldMax[59] = covMax[59]
+        oldMin[60] = covMin[60]
+        oldMax[60] = covMax[60]
+        oldMin[61] = covMin[61]
+        oldMax[61] = covMax[61]
+        oldMin[62] = covMin[62]
+        oldMax[62] = covMax[62]
+        oldMin[63] = covMin[63]
+        oldMax[63] = covMax[63]
+        oldLo = covLo
+        oldHi = covHi
+      }
+      covMin[0] = 200.0
+      covMax[0] = -200.0
+      covMin[1] = 200.0
+      covMax[1] = -200.0
+      covMin[2] = 200.0
+      covMax[2] = -200.0
+      covMin[3] = 200.0
+      covMax[3] = -200.0
+      covMin[4] = 200.0
+      covMax[4] = -200.0
+      covMin[5] = 200.0
+      covMax[5] = -200.0
+      covMin[6] = 200.0
+      covMax[6] = -200.0
+      covMin[7] = 200.0
+      covMax[7] = -200.0
+      covMin[8] = 200.0
+      covMax[8] = -200.0
+      covMin[9] = 200.0
+      covMax[9] = -200.0
+      covMin[10] = 200.0
+      covMax[10] = -200.0
+      covMin[11] = 200.0
+      covMax[11] = -200.0
+      covMin[12] = 200.0
+      covMax[12] = -200.0
+      covMin[13] = 200.0
+      covMax[13] = -200.0
+      covMin[14] = 200.0
+      covMax[14] = -200.0
+      covMin[15] = 200.0
+      covMax[15] = -200.0
+      covMin[16] = 200.0
+      covMax[16] = -200.0
+      covMin[17] = 200.0
+      covMax[17] = -200.0
+      covMin[18] = 200.0
+      covMax[18] = -200.0
+      covMin[19] = 200.0
+      covMax[19] = -200.0
+      covMin[20] = 200.0
+      covMax[20] = -200.0
+      covMin[21] = 200.0
+      covMax[21] = -200.0
+      covMin[22] = 200.0
+      covMax[22] = -200.0
+      covMin[23] = 200.0
+      covMax[23] = -200.0
+      covMin[24] = 200.0
+      covMax[24] = -200.0
+      covMin[25] = 200.0
+      covMax[25] = -200.0
+      covMin[26] = 200.0
+      covMax[26] = -200.0
+      covMin[27] = 200.0
+      covMax[27] = -200.0
+      covMin[28] = 200.0
+      covMax[28] = -200.0
+      covMin[29] = 200.0
+      covMax[29] = -200.0
+      covMin[30] = 200.0
+      covMax[30] = -200.0
+      covMin[31] = 200.0
+      covMax[31] = -200.0
+      covMin[32] = 200.0
+      covMax[32] = -200.0
+      covMin[33] = 200.0
+      covMax[33] = -200.0
+      covMin[34] = 200.0
+      covMax[34] = -200.0
+      covMin[35] = 200.0
+      covMax[35] = -200.0
+      covMin[36] = 200.0
+      covMax[36] = -200.0
+      covMin[37] = 200.0
+      covMax[37] = -200.0
+      covMin[38] = 200.0
+      covMax[38] = -200.0
+      covMin[39] = 200.0
+      covMax[39] = -200.0
+      covMin[40] = 200.0
+      covMax[40] = -200.0
+      covMin[41] = 200.0
+      covMax[41] = -200.0
+      covMin[42] = 200.0
+      covMax[42] = -200.0
+      covMin[43] = 200.0
+      covMax[43] = -200.0
+      covMin[44] = 200.0
+      covMax[44] = -200.0
+      covMin[45] = 200.0
+      covMax[45] = -200.0
+      covMin[46] = 200.0
+      covMax[46] = -200.0
+      covMin[47] = 200.0
+      covMax[47] = -200.0
+      covMin[48] = 200.0
+      covMax[48] = -200.0
+      covMin[49] = 200.0
+      covMax[49] = -200.0
+      covMin[50] = 200.0
+      covMax[50] = -200.0
+      covMin[51] = 200.0
+      covMax[51] = -200.0
+      covMin[52] = 200.0
+      covMax[52] = -200.0
+      covMin[53] = 200.0
+      covMax[53] = -200.0
+      covMin[54] = 200.0
+      covMax[54] = -200.0
+      covMin[55] = 200.0
+      covMax[55] = -200.0
+      covMin[56] = 200.0
+      covMax[56] = -200.0
+      covMin[57] = 200.0
+      covMax[57] = -200.0
+      covMin[58] = 200.0
+      covMax[58] = -200.0
+      covMin[59] = 200.0
+      covMax[59] = -200.0
+      covMin[60] = 200.0
+      covMax[60] = -200.0
+      covMin[61] = 200.0
+      covMax[61] = -200.0
+      covMin[62] = 200.0
+      covMax[62] = -200.0
+      covMin[63] = 200.0
+      covMax[63] = -200.0
+      covLo = 200.0
+      covHi = -200.0
+      cDirty = false
     }
   }
   if commitR {
@@ -10779,10 +11305,536 @@ mod paintTick() {
       justCleared = false
       rcOn = true
       rcSlot = 1.0
+      if oldLo > 63.0 {
+        oldMin[0] = covMin[0]
+        oldMax[0] = covMax[0]
+        oldMin[1] = covMin[1]
+        oldMax[1] = covMax[1]
+        oldMin[2] = covMin[2]
+        oldMax[2] = covMax[2]
+        oldMin[3] = covMin[3]
+        oldMax[3] = covMax[3]
+        oldMin[4] = covMin[4]
+        oldMax[4] = covMax[4]
+        oldMin[5] = covMin[5]
+        oldMax[5] = covMax[5]
+        oldMin[6] = covMin[6]
+        oldMax[6] = covMax[6]
+        oldMin[7] = covMin[7]
+        oldMax[7] = covMax[7]
+        oldMin[8] = covMin[8]
+        oldMax[8] = covMax[8]
+        oldMin[9] = covMin[9]
+        oldMax[9] = covMax[9]
+        oldMin[10] = covMin[10]
+        oldMax[10] = covMax[10]
+        oldMin[11] = covMin[11]
+        oldMax[11] = covMax[11]
+        oldMin[12] = covMin[12]
+        oldMax[12] = covMax[12]
+        oldMin[13] = covMin[13]
+        oldMax[13] = covMax[13]
+        oldMin[14] = covMin[14]
+        oldMax[14] = covMax[14]
+        oldMin[15] = covMin[15]
+        oldMax[15] = covMax[15]
+        oldMin[16] = covMin[16]
+        oldMax[16] = covMax[16]
+        oldMin[17] = covMin[17]
+        oldMax[17] = covMax[17]
+        oldMin[18] = covMin[18]
+        oldMax[18] = covMax[18]
+        oldMin[19] = covMin[19]
+        oldMax[19] = covMax[19]
+        oldMin[20] = covMin[20]
+        oldMax[20] = covMax[20]
+        oldMin[21] = covMin[21]
+        oldMax[21] = covMax[21]
+        oldMin[22] = covMin[22]
+        oldMax[22] = covMax[22]
+        oldMin[23] = covMin[23]
+        oldMax[23] = covMax[23]
+        oldMin[24] = covMin[24]
+        oldMax[24] = covMax[24]
+        oldMin[25] = covMin[25]
+        oldMax[25] = covMax[25]
+        oldMin[26] = covMin[26]
+        oldMax[26] = covMax[26]
+        oldMin[27] = covMin[27]
+        oldMax[27] = covMax[27]
+        oldMin[28] = covMin[28]
+        oldMax[28] = covMax[28]
+        oldMin[29] = covMin[29]
+        oldMax[29] = covMax[29]
+        oldMin[30] = covMin[30]
+        oldMax[30] = covMax[30]
+        oldMin[31] = covMin[31]
+        oldMax[31] = covMax[31]
+        oldMin[32] = covMin[32]
+        oldMax[32] = covMax[32]
+        oldMin[33] = covMin[33]
+        oldMax[33] = covMax[33]
+        oldMin[34] = covMin[34]
+        oldMax[34] = covMax[34]
+        oldMin[35] = covMin[35]
+        oldMax[35] = covMax[35]
+        oldMin[36] = covMin[36]
+        oldMax[36] = covMax[36]
+        oldMin[37] = covMin[37]
+        oldMax[37] = covMax[37]
+        oldMin[38] = covMin[38]
+        oldMax[38] = covMax[38]
+        oldMin[39] = covMin[39]
+        oldMax[39] = covMax[39]
+        oldMin[40] = covMin[40]
+        oldMax[40] = covMax[40]
+        oldMin[41] = covMin[41]
+        oldMax[41] = covMax[41]
+        oldMin[42] = covMin[42]
+        oldMax[42] = covMax[42]
+        oldMin[43] = covMin[43]
+        oldMax[43] = covMax[43]
+        oldMin[44] = covMin[44]
+        oldMax[44] = covMax[44]
+        oldMin[45] = covMin[45]
+        oldMax[45] = covMax[45]
+        oldMin[46] = covMin[46]
+        oldMax[46] = covMax[46]
+        oldMin[47] = covMin[47]
+        oldMax[47] = covMax[47]
+        oldMin[48] = covMin[48]
+        oldMax[48] = covMax[48]
+        oldMin[49] = covMin[49]
+        oldMax[49] = covMax[49]
+        oldMin[50] = covMin[50]
+        oldMax[50] = covMax[50]
+        oldMin[51] = covMin[51]
+        oldMax[51] = covMax[51]
+        oldMin[52] = covMin[52]
+        oldMax[52] = covMax[52]
+        oldMin[53] = covMin[53]
+        oldMax[53] = covMax[53]
+        oldMin[54] = covMin[54]
+        oldMax[54] = covMax[54]
+        oldMin[55] = covMin[55]
+        oldMax[55] = covMax[55]
+        oldMin[56] = covMin[56]
+        oldMax[56] = covMax[56]
+        oldMin[57] = covMin[57]
+        oldMax[57] = covMax[57]
+        oldMin[58] = covMin[58]
+        oldMax[58] = covMax[58]
+        oldMin[59] = covMin[59]
+        oldMax[59] = covMax[59]
+        oldMin[60] = covMin[60]
+        oldMax[60] = covMax[60]
+        oldMin[61] = covMin[61]
+        oldMax[61] = covMax[61]
+        oldMin[62] = covMin[62]
+        oldMax[62] = covMax[62]
+        oldMin[63] = covMin[63]
+        oldMax[63] = covMax[63]
+        oldLo = covLo
+        oldHi = covHi
+      }
+      covMin[0] = 200.0
+      covMax[0] = -200.0
+      covMin[1] = 200.0
+      covMax[1] = -200.0
+      covMin[2] = 200.0
+      covMax[2] = -200.0
+      covMin[3] = 200.0
+      covMax[3] = -200.0
+      covMin[4] = 200.0
+      covMax[4] = -200.0
+      covMin[5] = 200.0
+      covMax[5] = -200.0
+      covMin[6] = 200.0
+      covMax[6] = -200.0
+      covMin[7] = 200.0
+      covMax[7] = -200.0
+      covMin[8] = 200.0
+      covMax[8] = -200.0
+      covMin[9] = 200.0
+      covMax[9] = -200.0
+      covMin[10] = 200.0
+      covMax[10] = -200.0
+      covMin[11] = 200.0
+      covMax[11] = -200.0
+      covMin[12] = 200.0
+      covMax[12] = -200.0
+      covMin[13] = 200.0
+      covMax[13] = -200.0
+      covMin[14] = 200.0
+      covMax[14] = -200.0
+      covMin[15] = 200.0
+      covMax[15] = -200.0
+      covMin[16] = 200.0
+      covMax[16] = -200.0
+      covMin[17] = 200.0
+      covMax[17] = -200.0
+      covMin[18] = 200.0
+      covMax[18] = -200.0
+      covMin[19] = 200.0
+      covMax[19] = -200.0
+      covMin[20] = 200.0
+      covMax[20] = -200.0
+      covMin[21] = 200.0
+      covMax[21] = -200.0
+      covMin[22] = 200.0
+      covMax[22] = -200.0
+      covMin[23] = 200.0
+      covMax[23] = -200.0
+      covMin[24] = 200.0
+      covMax[24] = -200.0
+      covMin[25] = 200.0
+      covMax[25] = -200.0
+      covMin[26] = 200.0
+      covMax[26] = -200.0
+      covMin[27] = 200.0
+      covMax[27] = -200.0
+      covMin[28] = 200.0
+      covMax[28] = -200.0
+      covMin[29] = 200.0
+      covMax[29] = -200.0
+      covMin[30] = 200.0
+      covMax[30] = -200.0
+      covMin[31] = 200.0
+      covMax[31] = -200.0
+      covMin[32] = 200.0
+      covMax[32] = -200.0
+      covMin[33] = 200.0
+      covMax[33] = -200.0
+      covMin[34] = 200.0
+      covMax[34] = -200.0
+      covMin[35] = 200.0
+      covMax[35] = -200.0
+      covMin[36] = 200.0
+      covMax[36] = -200.0
+      covMin[37] = 200.0
+      covMax[37] = -200.0
+      covMin[38] = 200.0
+      covMax[38] = -200.0
+      covMin[39] = 200.0
+      covMax[39] = -200.0
+      covMin[40] = 200.0
+      covMax[40] = -200.0
+      covMin[41] = 200.0
+      covMax[41] = -200.0
+      covMin[42] = 200.0
+      covMax[42] = -200.0
+      covMin[43] = 200.0
+      covMax[43] = -200.0
+      covMin[44] = 200.0
+      covMax[44] = -200.0
+      covMin[45] = 200.0
+      covMax[45] = -200.0
+      covMin[46] = 200.0
+      covMax[46] = -200.0
+      covMin[47] = 200.0
+      covMax[47] = -200.0
+      covMin[48] = 200.0
+      covMax[48] = -200.0
+      covMin[49] = 200.0
+      covMax[49] = -200.0
+      covMin[50] = 200.0
+      covMax[50] = -200.0
+      covMin[51] = 200.0
+      covMax[51] = -200.0
+      covMin[52] = 200.0
+      covMax[52] = -200.0
+      covMin[53] = 200.0
+      covMax[53] = -200.0
+      covMin[54] = 200.0
+      covMax[54] = -200.0
+      covMin[55] = 200.0
+      covMax[55] = -200.0
+      covMin[56] = 200.0
+      covMax[56] = -200.0
+      covMin[57] = 200.0
+      covMax[57] = -200.0
+      covMin[58] = 200.0
+      covMax[58] = -200.0
+      covMin[59] = 200.0
+      covMax[59] = -200.0
+      covMin[60] = 200.0
+      covMax[60] = -200.0
+      covMin[61] = 200.0
+      covMax[61] = -200.0
+      covMin[62] = 200.0
+      covMax[62] = -200.0
+      covMin[63] = 200.0
+      covMax[63] = -200.0
+      covLo = 200.0
+      covHi = -200.0
+      cDirty = false
     } else if needRC {
       rcOn = true
       rcSlot = 1.0
       fromSlot = true
+      if oldLo > 63.0 {
+        oldMin[0] = covMin[0]
+        oldMax[0] = covMax[0]
+        oldMin[1] = covMin[1]
+        oldMax[1] = covMax[1]
+        oldMin[2] = covMin[2]
+        oldMax[2] = covMax[2]
+        oldMin[3] = covMin[3]
+        oldMax[3] = covMax[3]
+        oldMin[4] = covMin[4]
+        oldMax[4] = covMax[4]
+        oldMin[5] = covMin[5]
+        oldMax[5] = covMax[5]
+        oldMin[6] = covMin[6]
+        oldMax[6] = covMax[6]
+        oldMin[7] = covMin[7]
+        oldMax[7] = covMax[7]
+        oldMin[8] = covMin[8]
+        oldMax[8] = covMax[8]
+        oldMin[9] = covMin[9]
+        oldMax[9] = covMax[9]
+        oldMin[10] = covMin[10]
+        oldMax[10] = covMax[10]
+        oldMin[11] = covMin[11]
+        oldMax[11] = covMax[11]
+        oldMin[12] = covMin[12]
+        oldMax[12] = covMax[12]
+        oldMin[13] = covMin[13]
+        oldMax[13] = covMax[13]
+        oldMin[14] = covMin[14]
+        oldMax[14] = covMax[14]
+        oldMin[15] = covMin[15]
+        oldMax[15] = covMax[15]
+        oldMin[16] = covMin[16]
+        oldMax[16] = covMax[16]
+        oldMin[17] = covMin[17]
+        oldMax[17] = covMax[17]
+        oldMin[18] = covMin[18]
+        oldMax[18] = covMax[18]
+        oldMin[19] = covMin[19]
+        oldMax[19] = covMax[19]
+        oldMin[20] = covMin[20]
+        oldMax[20] = covMax[20]
+        oldMin[21] = covMin[21]
+        oldMax[21] = covMax[21]
+        oldMin[22] = covMin[22]
+        oldMax[22] = covMax[22]
+        oldMin[23] = covMin[23]
+        oldMax[23] = covMax[23]
+        oldMin[24] = covMin[24]
+        oldMax[24] = covMax[24]
+        oldMin[25] = covMin[25]
+        oldMax[25] = covMax[25]
+        oldMin[26] = covMin[26]
+        oldMax[26] = covMax[26]
+        oldMin[27] = covMin[27]
+        oldMax[27] = covMax[27]
+        oldMin[28] = covMin[28]
+        oldMax[28] = covMax[28]
+        oldMin[29] = covMin[29]
+        oldMax[29] = covMax[29]
+        oldMin[30] = covMin[30]
+        oldMax[30] = covMax[30]
+        oldMin[31] = covMin[31]
+        oldMax[31] = covMax[31]
+        oldMin[32] = covMin[32]
+        oldMax[32] = covMax[32]
+        oldMin[33] = covMin[33]
+        oldMax[33] = covMax[33]
+        oldMin[34] = covMin[34]
+        oldMax[34] = covMax[34]
+        oldMin[35] = covMin[35]
+        oldMax[35] = covMax[35]
+        oldMin[36] = covMin[36]
+        oldMax[36] = covMax[36]
+        oldMin[37] = covMin[37]
+        oldMax[37] = covMax[37]
+        oldMin[38] = covMin[38]
+        oldMax[38] = covMax[38]
+        oldMin[39] = covMin[39]
+        oldMax[39] = covMax[39]
+        oldMin[40] = covMin[40]
+        oldMax[40] = covMax[40]
+        oldMin[41] = covMin[41]
+        oldMax[41] = covMax[41]
+        oldMin[42] = covMin[42]
+        oldMax[42] = covMax[42]
+        oldMin[43] = covMin[43]
+        oldMax[43] = covMax[43]
+        oldMin[44] = covMin[44]
+        oldMax[44] = covMax[44]
+        oldMin[45] = covMin[45]
+        oldMax[45] = covMax[45]
+        oldMin[46] = covMin[46]
+        oldMax[46] = covMax[46]
+        oldMin[47] = covMin[47]
+        oldMax[47] = covMax[47]
+        oldMin[48] = covMin[48]
+        oldMax[48] = covMax[48]
+        oldMin[49] = covMin[49]
+        oldMax[49] = covMax[49]
+        oldMin[50] = covMin[50]
+        oldMax[50] = covMax[50]
+        oldMin[51] = covMin[51]
+        oldMax[51] = covMax[51]
+        oldMin[52] = covMin[52]
+        oldMax[52] = covMax[52]
+        oldMin[53] = covMin[53]
+        oldMax[53] = covMax[53]
+        oldMin[54] = covMin[54]
+        oldMax[54] = covMax[54]
+        oldMin[55] = covMin[55]
+        oldMax[55] = covMax[55]
+        oldMin[56] = covMin[56]
+        oldMax[56] = covMax[56]
+        oldMin[57] = covMin[57]
+        oldMax[57] = covMax[57]
+        oldMin[58] = covMin[58]
+        oldMax[58] = covMax[58]
+        oldMin[59] = covMin[59]
+        oldMax[59] = covMax[59]
+        oldMin[60] = covMin[60]
+        oldMax[60] = covMax[60]
+        oldMin[61] = covMin[61]
+        oldMax[61] = covMax[61]
+        oldMin[62] = covMin[62]
+        oldMax[62] = covMax[62]
+        oldMin[63] = covMin[63]
+        oldMax[63] = covMax[63]
+        oldLo = covLo
+        oldHi = covHi
+      }
+      covMin[0] = 200.0
+      covMax[0] = -200.0
+      covMin[1] = 200.0
+      covMax[1] = -200.0
+      covMin[2] = 200.0
+      covMax[2] = -200.0
+      covMin[3] = 200.0
+      covMax[3] = -200.0
+      covMin[4] = 200.0
+      covMax[4] = -200.0
+      covMin[5] = 200.0
+      covMax[5] = -200.0
+      covMin[6] = 200.0
+      covMax[6] = -200.0
+      covMin[7] = 200.0
+      covMax[7] = -200.0
+      covMin[8] = 200.0
+      covMax[8] = -200.0
+      covMin[9] = 200.0
+      covMax[9] = -200.0
+      covMin[10] = 200.0
+      covMax[10] = -200.0
+      covMin[11] = 200.0
+      covMax[11] = -200.0
+      covMin[12] = 200.0
+      covMax[12] = -200.0
+      covMin[13] = 200.0
+      covMax[13] = -200.0
+      covMin[14] = 200.0
+      covMax[14] = -200.0
+      covMin[15] = 200.0
+      covMax[15] = -200.0
+      covMin[16] = 200.0
+      covMax[16] = -200.0
+      covMin[17] = 200.0
+      covMax[17] = -200.0
+      covMin[18] = 200.0
+      covMax[18] = -200.0
+      covMin[19] = 200.0
+      covMax[19] = -200.0
+      covMin[20] = 200.0
+      covMax[20] = -200.0
+      covMin[21] = 200.0
+      covMax[21] = -200.0
+      covMin[22] = 200.0
+      covMax[22] = -200.0
+      covMin[23] = 200.0
+      covMax[23] = -200.0
+      covMin[24] = 200.0
+      covMax[24] = -200.0
+      covMin[25] = 200.0
+      covMax[25] = -200.0
+      covMin[26] = 200.0
+      covMax[26] = -200.0
+      covMin[27] = 200.0
+      covMax[27] = -200.0
+      covMin[28] = 200.0
+      covMax[28] = -200.0
+      covMin[29] = 200.0
+      covMax[29] = -200.0
+      covMin[30] = 200.0
+      covMax[30] = -200.0
+      covMin[31] = 200.0
+      covMax[31] = -200.0
+      covMin[32] = 200.0
+      covMax[32] = -200.0
+      covMin[33] = 200.0
+      covMax[33] = -200.0
+      covMin[34] = 200.0
+      covMax[34] = -200.0
+      covMin[35] = 200.0
+      covMax[35] = -200.0
+      covMin[36] = 200.0
+      covMax[36] = -200.0
+      covMin[37] = 200.0
+      covMax[37] = -200.0
+      covMin[38] = 200.0
+      covMax[38] = -200.0
+      covMin[39] = 200.0
+      covMax[39] = -200.0
+      covMin[40] = 200.0
+      covMax[40] = -200.0
+      covMin[41] = 200.0
+      covMax[41] = -200.0
+      covMin[42] = 200.0
+      covMax[42] = -200.0
+      covMin[43] = 200.0
+      covMax[43] = -200.0
+      covMin[44] = 200.0
+      covMax[44] = -200.0
+      covMin[45] = 200.0
+      covMax[45] = -200.0
+      covMin[46] = 200.0
+      covMax[46] = -200.0
+      covMin[47] = 200.0
+      covMax[47] = -200.0
+      covMin[48] = 200.0
+      covMax[48] = -200.0
+      covMin[49] = 200.0
+      covMax[49] = -200.0
+      covMin[50] = 200.0
+      covMax[50] = -200.0
+      covMin[51] = 200.0
+      covMax[51] = -200.0
+      covMin[52] = 200.0
+      covMax[52] = -200.0
+      covMin[53] = 200.0
+      covMax[53] = -200.0
+      covMin[54] = 200.0
+      covMax[54] = -200.0
+      covMin[55] = 200.0
+      covMax[55] = -200.0
+      covMin[56] = 200.0
+      covMax[56] = -200.0
+      covMin[57] = 200.0
+      covMax[57] = -200.0
+      covMin[58] = 200.0
+      covMax[58] = -200.0
+      covMin[59] = 200.0
+      covMax[59] = -200.0
+      covMin[60] = 200.0
+      covMax[60] = -200.0
+      covMin[61] = 200.0
+      covMax[61] = -200.0
+      covMin[62] = 200.0
+      covMax[62] = -200.0
+      covMin[63] = 200.0
+      covMax[63] = -200.0
+      covLo = 200.0
+      covHi = -200.0
+      cDirty = false
     }
   }
   if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR {
@@ -11909,38 +12961,7 @@ mod paintTick() {
     gyMax = -200.0
     gxMin = 200.0
     gxMax = -200.0
-    if erArm {
-      erArm = false
-      fromSlot = false
-      polyLive = false
-      let x0 = if erExt > 0.5 then erL else erL - 1.0
-      let x1 = if erExt > 0.5 then erR + 1.0 else erR
-      shPts[0] = x0
-      shPts[1] = erY
-      shPts[2] = x1
-      shPts[3] = erY
-      shPts[4] = if erExt > 0.5 then x1 else x0
-      shPts[5] = erY + 1.0
-      n = 3.0
-      cLo = Color(0.0, 0.0, 0.0, 1.0)
-      rowSlope = Color(0.0, 0.0, 0.0, 0.0)
-      pC0 = Color(0.0, 0.0, 0.0, 1.0)
-      pC1 = Color(0.0, 0.0, 0.0, 1.0)
-      pC2 = Color(0.0, 0.0, 0.0, 1.0)
-      pC3 = Color(0.0, 0.0, 0.0, 1.0)
-      pC4 = Color(0.0, 0.0, 0.0, 1.0)
-      pC5 = Color(0.0, 0.0, 0.0, 1.0)
-      pC6 = Color(0.0, 0.0, 0.0, 1.0)
-      pC7 = Color(0.0, 0.0, 0.0, 1.0)
-      pC8 = Color(0.0, 0.0, 0.0, 1.0)
-      pC9 = Color(0.0, 0.0, 0.0, 1.0)
-      pC10 = Color(0.0, 0.0, 0.0, 1.0)
-      pC11 = Color(0.0, 0.0, 0.0, 1.0)
-      pC12 = Color(0.0, 0.0, 0.0, 1.0)
-      pC13 = Color(0.0, 0.0, 0.0, 1.0)
-      pC14 = Color(0.0, 0.0, 0.0, 1.0)
-      pC15 = Color(0.0, 0.0, 0.0, 1.0)
-    } else if clearing {
+    if clearing {
       erasing = false
       clearing = false
       fromSlot = false
@@ -13982,151 +15003,971 @@ mod paintTick() {
   if erasing && !painting && !rcOn && !arming {
     let erHi = if oldHi > covHi then oldHi else covHi
     let erLo = if oldLo < covLo then oldLo else covLo
-    var staged: bool = false
-    var done: bool = false
-    if erTwo {
-      erL = erL2
-      erR = erR2
-      erExt = 1.0
-      erTwo = false
-      staged = true
-    }
-    if !staged && erRow <= erHi && erRow <= 63.0 {
+    if erRow <= erHi && erRow <= 63.0 {
       let eri = (erRow | 0)
+      let erfl = erRow
       let om = oldMin[eri]
       let oM = oldMax[eri]
       let nm = covMin[eri]
       let nM = covMax[eri]
-      oldMin[eri] = nm
-      oldMax[eri] = nM
-      oldMin[eri] = nm
-      oldMax[eri] = nM
-      erY = erRow
-      erRow = erRow + 1.0
       if oM >= 0.0 {
-        if nm > om {
-          erL = om
-          erR = if oM < nm - 1.0 then oM else nm - 1.0
-          erExt = 0.0
-          staged = true
+        let eL1 = om
+        let eR1 = if oM < nm - 1.0 then oM else nm - 1.0
+        let eOn1 = if nm > om then 1.0 else 0.0
+        let eL2 = if nM + 1.0 > om then nM + 1.0 else om
+        let eR2 = oM
+        let eOn2 = if oM > nM then 1.0 else 0.0
+        if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
+          fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
         }
-        if oM > nM {
-          if staged {
-            erL2 = if nM + 1.0 > om then nM + 1.0 else om
-            erR2 = oM
-            erTwo = true
-          } else {
-            erL = if nM + 1.0 > om then nM + 1.0 else om
-            erR = oM
-            erExt = 1.0
-            staged = true
-          }
+        if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
+          fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
+          fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
+          fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
+          fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
+          fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
+          fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
+          fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
+          fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
+          fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
+          fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
+          fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
+          fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
+          fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
+          fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
+          fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
+          fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
+          fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
+          fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
+          fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
+          fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
+          fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
+          fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
+          fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
+          fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
+          fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
+          fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
+          fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
+          fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
+          fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
+          fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
+          fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
+          fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
+          fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
+          fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
+          fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
+          fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
+          fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
+          fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
+          fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
+          fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
+          fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
+          fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
+          fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
+          fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
+          fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
+          fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
+          fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
+          fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
+          fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
+          fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
+          fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
+          fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
+          fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
+          fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
+          fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
+          fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
+          fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
+          fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
+          fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
+          fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
+          fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
+          fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
+          fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
         }
       }
+      erRow = erRow + 1.0
     }
-    if !staged && erRow <= erHi && erRow <= 63.0 {
+    if erRow <= erHi && erRow <= 63.0 {
       let eri = (erRow | 0)
+      let erfl = erRow
       let om = oldMin[eri]
       let oM = oldMax[eri]
       let nm = covMin[eri]
       let nM = covMax[eri]
-      oldMin[eri] = nm
-      oldMax[eri] = nM
-      oldMin[eri] = nm
-      oldMax[eri] = nM
-      erY = erRow
-      erRow = erRow + 1.0
       if oM >= 0.0 {
-        if nm > om {
-          erL = om
-          erR = if oM < nm - 1.0 then oM else nm - 1.0
-          erExt = 0.0
-          staged = true
+        let eL1 = om
+        let eR1 = if oM < nm - 1.0 then oM else nm - 1.0
+        let eOn1 = if nm > om then 1.0 else 0.0
+        let eL2 = if nM + 1.0 > om then nM + 1.0 else om
+        let eR2 = oM
+        let eOn2 = if oM > nM then 1.0 else 0.0
+        if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
+          fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
         }
-        if oM > nM {
-          if staged {
-            erL2 = if nM + 1.0 > om then nM + 1.0 else om
-            erR2 = oM
-            erTwo = true
-          } else {
-            erL = if nM + 1.0 > om then nM + 1.0 else om
-            erR = oM
-            erExt = 1.0
-            staged = true
-          }
+        if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
+          fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
+          fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
+          fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
+          fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
+          fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
+          fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
+          fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
+          fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
+          fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
+          fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
+          fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
+          fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
+          fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
+          fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
+          fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
+          fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
+          fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
+          fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
+          fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
+          fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
+          fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
+          fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
+          fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
+          fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
+          fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
+          fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
+          fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
+          fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
+          fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
+          fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
+          fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
+          fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
+          fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
+          fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
+          fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
+          fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
+          fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
+          fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
+          fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
+          fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
+          fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
+          fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
+          fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
+          fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
+          fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
+          fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
+          fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
+          fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
+          fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
+          fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
+          fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
+          fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
+          fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
+          fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
+          fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
+          fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
+          fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
+          fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
+          fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
+          fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
+          fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
+          fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
+          fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
         }
       }
+      erRow = erRow + 1.0
     }
-    if !staged && erRow <= erHi && erRow <= 63.0 {
+    if erRow <= erHi && erRow <= 63.0 {
       let eri = (erRow | 0)
+      let erfl = erRow
       let om = oldMin[eri]
       let oM = oldMax[eri]
       let nm = covMin[eri]
       let nM = covMax[eri]
-      oldMin[eri] = nm
-      oldMax[eri] = nM
-      oldMin[eri] = nm
-      oldMax[eri] = nM
-      erY = erRow
-      erRow = erRow + 1.0
       if oM >= 0.0 {
-        if nm > om {
-          erL = om
-          erR = if oM < nm - 1.0 then oM else nm - 1.0
-          erExt = 0.0
-          staged = true
+        let eL1 = om
+        let eR1 = if oM < nm - 1.0 then oM else nm - 1.0
+        let eOn1 = if nm > om then 1.0 else 0.0
+        let eL2 = if nM + 1.0 > om then nM + 1.0 else om
+        let eR2 = oM
+        let eOn2 = if oM > nM then 1.0 else 0.0
+        if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
+          fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
         }
-        if oM > nM {
-          if staged {
-            erL2 = if nM + 1.0 > om then nM + 1.0 else om
-            erR2 = oM
-            erTwo = true
-          } else {
-            erL = if nM + 1.0 > om then nM + 1.0 else om
-            erR = oM
-            erExt = 1.0
-            staged = true
-          }
+        if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
+          fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
+          fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
+          fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
+          fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
+          fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
+          fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
+          fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
+          fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
+          fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
+          fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
+          fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
+          fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
+          fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
+          fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
+          fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
+          fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
+          fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
+          fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
+          fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
+          fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
+          fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
+          fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
+          fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
+          fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
+          fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
+          fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
+          fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
+          fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
+          fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
+          fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
+          fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
+          fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
+          fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
+          fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
+          fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
+          fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
+          fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
+          fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
+          fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
+          fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
+          fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
+          fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
+          fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
+          fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
+          fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
+          fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
+          fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
+          fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
+          fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
+          fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
+          fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
+          fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
+          fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
+          fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
+          fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
+          fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
+          fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
+          fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
+          fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
+          fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
+          fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
+          fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
+          fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
         }
       }
+      erRow = erRow + 1.0
     }
-    if !staged && erRow <= erHi && erRow <= 63.0 {
+    if erRow <= erHi && erRow <= 63.0 {
       let eri = (erRow | 0)
+      let erfl = erRow
       let om = oldMin[eri]
       let oM = oldMax[eri]
       let nm = covMin[eri]
       let nM = covMax[eri]
-      oldMin[eri] = nm
-      oldMax[eri] = nM
-      oldMin[eri] = nm
-      oldMax[eri] = nM
-      erY = erRow
-      erRow = erRow + 1.0
       if oM >= 0.0 {
-        if nm > om {
-          erL = om
-          erR = if oM < nm - 1.0 then oM else nm - 1.0
-          erExt = 0.0
-          staged = true
+        let eL1 = om
+        let eR1 = if oM < nm - 1.0 then oM else nm - 1.0
+        let eOn1 = if nm > om then 1.0 else 0.0
+        let eL2 = if nM + 1.0 > om then nM + 1.0 else om
+        let eR2 = oM
+        let eOn2 = if oM > nM then 1.0 else 0.0
+        if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
+          fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
         }
-        if oM > nM {
-          if staged {
-            erL2 = if nM + 1.0 > om then nM + 1.0 else om
-            erR2 = oM
-            erTwo = true
-          } else {
-            erL = if nM + 1.0 > om then nM + 1.0 else om
-            erR = oM
-            erExt = 1.0
-            staged = true
-          }
+        if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
+          fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
+          fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
+          fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
+          fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
+          fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
+          fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
+          fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
+          fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
+          fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
+          fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
+          fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
+          fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
+          fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
+          fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
+          fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
+          fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
+          fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
+          fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
+          fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
+          fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
+          fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
+          fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
+          fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
+          fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
+          fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
+          fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
+          fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
+          fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
+          fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
+          fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
+          fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
+          fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
+          fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
+          fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
+          fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
+          fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
+          fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
+          fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
+          fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
+          fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
+          fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
+          fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
+          fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
+          fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
+          fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
+          fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
+          fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
+          fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
+          fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
+          fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
+          fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
+          fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
+          fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
+          fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
+          fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
+          fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
+          fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
+          fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
+          fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
+          fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
+          fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
+          fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+        }
+        if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
+          fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
         }
       }
+      erRow = erRow + 1.0
     }
-    if staged {
-      erArm = true
-      arming = true
-    } else if erRow > erHi {
+    if erRow > erHi {
+      oldMin[0] = covMin[0]
+      oldMax[0] = covMax[0]
+      oldMin[1] = covMin[1]
+      oldMax[1] = covMax[1]
+      oldMin[2] = covMin[2]
+      oldMax[2] = covMax[2]
+      oldMin[3] = covMin[3]
+      oldMax[3] = covMax[3]
+      oldMin[4] = covMin[4]
+      oldMax[4] = covMax[4]
+      oldMin[5] = covMin[5]
+      oldMax[5] = covMax[5]
+      oldMin[6] = covMin[6]
+      oldMax[6] = covMax[6]
+      oldMin[7] = covMin[7]
+      oldMax[7] = covMax[7]
+      oldMin[8] = covMin[8]
+      oldMax[8] = covMax[8]
+      oldMin[9] = covMin[9]
+      oldMax[9] = covMax[9]
+      oldMin[10] = covMin[10]
+      oldMax[10] = covMax[10]
+      oldMin[11] = covMin[11]
+      oldMax[11] = covMax[11]
+      oldMin[12] = covMin[12]
+      oldMax[12] = covMax[12]
+      oldMin[13] = covMin[13]
+      oldMax[13] = covMax[13]
+      oldMin[14] = covMin[14]
+      oldMax[14] = covMax[14]
+      oldMin[15] = covMin[15]
+      oldMax[15] = covMax[15]
+      oldMin[16] = covMin[16]
+      oldMax[16] = covMax[16]
+      oldMin[17] = covMin[17]
+      oldMax[17] = covMax[17]
+      oldMin[18] = covMin[18]
+      oldMax[18] = covMax[18]
+      oldMin[19] = covMin[19]
+      oldMax[19] = covMax[19]
+      oldMin[20] = covMin[20]
+      oldMax[20] = covMax[20]
+      oldMin[21] = covMin[21]
+      oldMax[21] = covMax[21]
+      oldMin[22] = covMin[22]
+      oldMax[22] = covMax[22]
+      oldMin[23] = covMin[23]
+      oldMax[23] = covMax[23]
+      oldMin[24] = covMin[24]
+      oldMax[24] = covMax[24]
+      oldMin[25] = covMin[25]
+      oldMax[25] = covMax[25]
+      oldMin[26] = covMin[26]
+      oldMax[26] = covMax[26]
+      oldMin[27] = covMin[27]
+      oldMax[27] = covMax[27]
+      oldMin[28] = covMin[28]
+      oldMax[28] = covMax[28]
+      oldMin[29] = covMin[29]
+      oldMax[29] = covMax[29]
+      oldMin[30] = covMin[30]
+      oldMax[30] = covMax[30]
+      oldMin[31] = covMin[31]
+      oldMax[31] = covMax[31]
+      oldMin[32] = covMin[32]
+      oldMax[32] = covMax[32]
+      oldMin[33] = covMin[33]
+      oldMax[33] = covMax[33]
+      oldMin[34] = covMin[34]
+      oldMax[34] = covMax[34]
+      oldMin[35] = covMin[35]
+      oldMax[35] = covMax[35]
+      oldMin[36] = covMin[36]
+      oldMax[36] = covMax[36]
+      oldMin[37] = covMin[37]
+      oldMax[37] = covMax[37]
+      oldMin[38] = covMin[38]
+      oldMax[38] = covMax[38]
+      oldMin[39] = covMin[39]
+      oldMax[39] = covMax[39]
+      oldMin[40] = covMin[40]
+      oldMax[40] = covMax[40]
+      oldMin[41] = covMin[41]
+      oldMax[41] = covMax[41]
+      oldMin[42] = covMin[42]
+      oldMax[42] = covMax[42]
+      oldMin[43] = covMin[43]
+      oldMax[43] = covMax[43]
+      oldMin[44] = covMin[44]
+      oldMax[44] = covMax[44]
+      oldMin[45] = covMin[45]
+      oldMax[45] = covMax[45]
+      oldMin[46] = covMin[46]
+      oldMax[46] = covMax[46]
+      oldMin[47] = covMin[47]
+      oldMax[47] = covMax[47]
+      oldMin[48] = covMin[48]
+      oldMax[48] = covMax[48]
+      oldMin[49] = covMin[49]
+      oldMax[49] = covMax[49]
+      oldMin[50] = covMin[50]
+      oldMax[50] = covMax[50]
+      oldMin[51] = covMin[51]
+      oldMax[51] = covMax[51]
+      oldMin[52] = covMin[52]
+      oldMax[52] = covMax[52]
+      oldMin[53] = covMin[53]
+      oldMax[53] = covMax[53]
+      oldMin[54] = covMin[54]
+      oldMax[54] = covMax[54]
+      oldMin[55] = covMin[55]
+      oldMax[55] = covMax[55]
+      oldMin[56] = covMin[56]
+      oldMax[56] = covMax[56]
+      oldMin[57] = covMin[57]
+      oldMax[57] = covMax[57]
+      oldMin[58] = covMin[58]
+      oldMax[58] = covMax[58]
+      oldMin[59] = covMin[59]
+      oldMax[59] = covMax[59]
+      oldMin[60] = covMin[60]
+      oldMax[60] = covMax[60]
+      oldMin[61] = covMin[61]
+      oldMax[61] = covMax[61]
+      oldMin[62] = covMin[62]
+      oldMax[62] = covMax[62]
+      oldMin[63] = covMin[63]
+      oldMax[63] = covMax[63]
       erasing = false
       oldLo = covLo
       oldHi = covHi

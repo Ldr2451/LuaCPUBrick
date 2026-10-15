@@ -365,6 +365,35 @@ L.append("var cDirty: bool = true")
 # Every retained commit clears and repaints instead, so its pass is the
 # one that needs the erase.
 L.append("var eraseOK: bool = false")
+# A retained commit starts a new frame: whatever is on screen now --
+# immediate paints included, which never run an erase pass -- becomes
+# the previous frame, and coverage starts empty.  Roll AND reset happen
+# HERE, together, at commit time, when cov is definitely the on-screen
+# frame: splitting them (roll here, reset at the first arm) loses --
+# an arm can reset first, and the roll then copies the emptied arrays
+# into old, wiping it to sentinel and silencing the erase (the wall
+# keeps the replaced frame: 36 px of old square in the retained
+# section, 208 px of ghosts through the connector).
+frameRC_lines = []
+# The roll only runs when the previous frame was never recorded (oldLo
+# still sentinel: no pass ever finished, so old claims the wall is
+# empty while immediate paints may have covered it -- the connector's
+# retained commit after immediate shapes).  When a pass did finish, old
+# already IS the on-screen frame and copying cov over it can only
+# destroy it (cov may already have been reset by the time this runs).
+frameRC_lines.append("if oldLo > 63.0 {")
+for _i in range(64):
+    frameRC_lines.append("  oldMin[%d] = covMin[%d]" % (_i, _i))
+    frameRC_lines.append("  oldMax[%d] = covMax[%d]" % (_i, _i))
+frameRC_lines.append("  oldLo = covLo")
+frameRC_lines.append("  oldHi = covHi")
+frameRC_lines.append("}")
+for _i in range(64):
+    frameRC_lines.append("covMin[%d] = 200.0" % _i)
+    frameRC_lines.append("covMax[%d] = -200.0" % _i)
+frameRC_lines.append("covLo = 200.0")
+frameRC_lines.append("covHi = -200.0")
+frameRC_lines.append("cDirty = false")
 # Erase-pass state: running, the row cursor, which of a row's two
 # stale spans is next, and the rect being fed to the fill walk.
 L.append("var erasing: bool = false")
@@ -2213,6 +2242,8 @@ L.append("    if justCleared {")
 L.append("      justCleared = false")
 L.append("      rcOn = true")
 L.append("      rcSlot = 1.0")
+for _l in frameRC_lines:
+    L.append("      " + _l)
 L.append("    } else if needRC {")
 # Do NOT arm here: the arm runs in this same tick, before the recomposite
 # iterator has loaded the first live slot into the shadow -- so it would
@@ -2223,6 +2254,8 @@ L.append("    } else if needRC {")
 L.append("      rcOn = true")
 L.append("      rcSlot = 1.0")
 L.append("      fromSlot = true")
+for _l in frameRC_lines:
+    L.append("      " + _l)
 L.append("    }")
 L.append("  }")
 L.append("  if commitR {")
@@ -2329,6 +2362,8 @@ L.append("    if justCleared {")
 L.append("      justCleared = false")
 L.append("      rcOn = true")
 L.append("      rcSlot = 1.0")
+for _l in frameRC_lines:
+    L.append("      " + _l)
 L.append("    } else if needRC {")
 # Do NOT arm here: the arm runs in this same tick, before the recomposite
 # iterator has loaded the first live slot into the shadow -- so it would
@@ -2339,6 +2374,8 @@ L.append("    } else if needRC {")
 L.append("      rcOn = true")
 L.append("      rcSlot = 1.0")
 L.append("      fromSlot = true")
+for _l in frameRC_lines:
+    L.append("      " + _l)
 L.append("    }")
 L.append("  }")
 
@@ -2589,31 +2626,7 @@ L.append("    gyMin = 200.0")
 L.append("    gyMax = -200.0")
 L.append("    gxMin = 200.0")
 L.append("    gxMax = -200.0")
-L.append("    if erArm {")
-L.append("      erArm = false")
-L.append("      fromSlot = false")
-# no replay: a fill that ends re-arms the last shape on purpose, and
-# the erase has overwritten the points it would replay from.
-L.append("      polyLive = false")
-# width: a span one pixel wide would be a degenerate polygon, so the
-# rect reaches one pixel past its outward edge -- a pixel that is
-# black in both frames, so erasing it changes nothing.
-L.append("      let x0 = if erExt > 0.5 then erL else erL - 1.0")
-L.append("      let x1 = if erExt > 0.5 then erR + 1.0 else erR")
-L.append("      shPts[0] = x0")
-L.append("      shPts[1] = erY")
-L.append("      shPts[2] = x1")
-L.append("      shPts[3] = erY")
-# a triangle, not a rect: the apex on the span's outward edge, so the
-# row below spills one pixel at the far edge instead of the whole span
-L.append("      shPts[4] = if erExt > 0.5 then x1 else x0")
-L.append("      shPts[5] = erY + 1.0")
-L.append("      n = 3.0")
-L.append("      cLo = Color(0.0, 0.0, 0.0, 1.0)")
-L.append("      rowSlope = Color(0.0, 0.0, 0.0, 0.0)")
-for i in range(MAXP):
-        L.append("      pC%d = Color(0.0, 0.0, 0.0, 1.0)" % i)
-L.append("    } else if clearing {")
+L.append("    if clearing {")
 # a user paint cancels any erase still walking: its comparison is
 # against the frame before, which this push is replacing.
 L.append("      erasing = false")
@@ -3328,84 +3341,64 @@ L.append("  }")
 # The scanout: every pixel global mirrors its fb slot, every tick.
 # ---- the erase pass: black what the new frame no longer covers -----
 # Staged the tick a paint burst ends, it walks the band either frame
-# touched (8 rows a tick: the per-row work is compares, and only a
-# stale span costs an arm) and feeds each stale span to the fill walk
-# as a one-row black rect -- the machinery the clearAllShapes fill
-# already uses, so this adds no lanes.
+# touched, 4 rows a tick, and blacks each stale span with direct fb
+# writes -- no trip through the fill walk (which cost ~6 ticks per
+# span), no spill into the row below (there is no polygon, so a
+# one-pixel span is not degenerate), no brightness factor (black
+# times anything is black).  A row is examined exactly once: its
+# extents roll into the previous frame's whether stale or not.
 L.append("  let painting = polyOn || sOn")
 L.append("  if wasPaint && !painting && !rcOn && eraseOK {")
 L.append("    wasPaint = false")
 L.append("    erasing = true")
 L.append("    erRow = if oldLo < covLo then oldLo else covLo")
 L.append("  } else if painting && !erasing {")
-# not while erasing: an erase rect IS a fill burst, so counting its
-# paint would re-stage the erase the moment it ends, forever.
+# not while erasing: direct fb writes are not a fill burst, so they
+# never set polyOn/sOn and can never re-stage the erase anyway; this
+# just keeps the burst detector from seeing the walk as paint.
 L.append("    wasPaint = true")
 L.append("  }")
 L.append("  if erasing && !painting && !rcOn && !arming {")
 L.append("    let erHi = if oldHi > covHi then oldHi else covHi")
 L.append("    let erLo = if oldLo < covLo then oldLo else covLo")
-L.append("    var staged: bool = false")
-L.append("    var done: bool = false")
-L.append("    if erTwo {")
-L.append("      erL = erL2")
-L.append("      erR = erR2")
-# the second span is the right one, so its rect reaches one pixel past
-# its own outward edge -- without this it inherits the left span's side
-# and reaches right, into the column the new frame just painted.
-L.append("      erExt = 1.0")
-L.append("      erTwo = false")
-L.append("      staged = true")
-L.append("    }")
 for _k in range(4):
-        L.append("    if !staged && erRow <= erHi && erRow <= 63.0 {")
-        L.append("      let eri = (erRow | 0)")
-        L.append("      let om = oldMin[eri]")
-        L.append("      let oM = oldMax[eri]")
-        L.append("      let nm = covMin[eri]")
-        L.append("      let nM = covMax[eri]")
-        L.append("      oldMin[eri] = nm")
-        L.append("      oldMax[eri] = nM")
-# This frame's extents become the previous frame's, and this frame's
-# slots go back to empty, as each row is examined -- a row is examined
-# exactly once, so both of its spans are taken in one visit.
-        L.append("      oldMin[eri] = nm")
-        L.append("      oldMax[eri] = nM")
-        L.append("      erY = erRow")
-        L.append("      erRow = erRow + 1.0")
-        L.append("      if oM >= 0.0 {")
-        L.append("        if nm > om {")
-        L.append("          erL = om")
-        L.append("          erR = if oM < nm - 1.0 then oM else nm - 1.0")
-# erExt is the side, not a border test: the LEFT span always reaches one
-# pixel past its outward (left) edge, so it can never reach the new
-# frame's first painted column.  It used to read "the span touches col
-# 0", which made it reach RIGHT instead -- straight into the column the
-# new frame had just painted, blacking it.
-        L.append("          erExt = 0.0")
-        L.append("          staged = true")
+# The visit only READS coverage: the roll into the previous frame
+# happens once at walk end, and erRow advances after the writes.
+# ( lets re-resolve per use in this toolchain, so writing old or
+# erRow before the spans are staged would corrupt them -- an early
+# version blackened rows 5-7 while silently skipping row 4.)
+    L.append("    if erRow <= erHi && erRow <= 63.0 {")
+    L.append("      let eri = (erRow | 0)")
+    L.append("      let erfl = erRow")
+    L.append("      let om = oldMin[eri]")
+    L.append("      let oM = oldMax[eri]")
+    L.append("      let nm = covMin[eri]")
+    L.append("      let nM = covMax[eri]")
+    L.append("      if oM >= 0.0 {")
+    L.append("        let eL1 = om")
+    L.append("        let eR1 = if oM < nm - 1.0 then oM else nm - 1.0")
+    L.append("        let eOn1 = if nm > om then 1.0 else 0.0")
+    L.append("        let eL2 = if nM + 1.0 > om then nM + 1.0 else om")
+    L.append("        let eR2 = oM")
+    L.append("        let eOn2 = if oM > nM then 1.0 else 0.0")
+    for _tj in range(64):
+        L.append("        if (eOn1 > 0.5 && %d.0 >= eL1 && %d.0 <= eR1)"
+                 " || (eOn2 > 0.5 && %d.0 >= eL2 && %d.0 <= eR2) {"
+                 % (_tj, _tj, _tj, _tj))
+        L.append("          fb[((erfl * 64.0 + %d.0) | 0)]"
+                 " = Color(0.0, 0.0, 0.0, 1.0)" % _tj)
         L.append("        }")
-        L.append("        if oM > nM {")
-        L.append("          if staged {")
-        L.append("            erL2 = if nM + 1.0 > om then nM + 1.0 else om")
-        L.append("            erR2 = oM")
-        L.append("            erTwo = true")
-        L.append("          } else {")
-        L.append("            erL = if nM + 1.0 > om then nM + 1.0 else om")
-        L.append("            erR = oM")
-        L.append("            erExt = 1.0")
-        L.append("            staged = true")
-        L.append("          }")
-        L.append("        }")
-        L.append("      }")
-        L.append("    }")
-L.append("    if staged {")
-L.append("      erArm = true")
-L.append("      arming = true")
-L.append("    } else if erRow > erHi {")
-# the band is walked: every row's extents have rolled into the previous
-# frame's, stale or not.  Stopping early left the tail at its sentinel,
-# and the next frame then erased nothing.
+    L.append("      }")
+    L.append("      erRow = erRow + 1.0")
+    L.append("    }")
+L.append("    if erRow > erHi {")
+# the band is walked.  Roll the whole frame into the previous frame's
+# here, in one place, after every read: per-row rolling re-read
+# corrupted spans mid-visit.  A walk cancelled early never reaches
+# this, and the arm's cancel-roll covers that case instead.
+for _i in range(64):
+    L.append("      oldMin[%d] = covMin[%d]" % (_i, _i))
+    L.append("      oldMax[%d] = covMax[%d]" % (_i, _i))
 L.append("      erasing = false")
 L.append("      oldLo = covLo")
 L.append("      oldHi = covHi")
