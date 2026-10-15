@@ -92,8 +92,11 @@ const SH = 64
 const NP = 4096
 const SWF = 64.0
 const MAXP = 16
-const DEF_BRIGHT = 0.350000
+const DEF_BRIGHT = 0.025000
 var fb: color[]
+const ZBACK = -1000000000000000.0
+var fbZ: float[]
+var noDepth: bool = false
 var fbInit: bool = false
 var pC0: color = Color(1.0, 1.0, 1.0, 1.0)
 var pC1: color = Color(1.0, 1.0, 1.0, 1.0)
@@ -135,6 +138,7 @@ var qN: float[]
 var qPts: float[]
 var qCol: color[]
 var qXF: float[]
+var qXF2: float[]
 var qMode: float[]
 var qId: float[]
 var commitQ: bool = false
@@ -161,15 +165,18 @@ var needRC: bool = false
 var recompOnly: bool = false
 var animDirty: bool = false
 var shPts: float[]
+var shPz: float[]
 var slPts: float[]
 var slPC: color[]
 var slMode: float[]
 var slLive: float[]
 var slCount: float[]
 var slXF: float[]
+var slXF2: float[]
 var anPts: float[]
 var anCol: color[]
 var anXF: float[]
+var anXF2: float[]
 var anTicks: float[]
 var qTicks: float[]
 var qCN: float[]
@@ -179,6 +186,22 @@ var wpy: float = 0.0
 var wr: float = 0.0
 var wsx: float = 1.0
 var wsy: float = 1.0
+var wpz: float = 0.0
+var wrx: float = 0.0
+var wry: float = 0.0
+var tilt3d: float = 0.0
+var m00: float = 0.0
+var m01: float = 0.0
+var m02: float = 0.0
+var m03: float = 0.0
+var m10: float = 0.0
+var m11: float = 0.0
+var m12: float = 0.0
+var m13: float = 0.0
+var m20: float = 0.0
+var m21: float = 0.0
+var m22: float = 0.0
+var m23: float = 0.0
 var cur: float = 0.0
 var swx: float = 0.0
 var swy: float = 0.0
@@ -355,68 +378,100 @@ var fromSlot: bool = false
 var clearing: bool = false
 var sPx0: float = 0.0
 var sPy0: float = 0.0
+var sPz0: float = 0.0
 var sPx1: float = 0.0
 var sPy1: float = 0.0
+var sPz1: float = 0.0
 var sPx2: float = 0.0
 var sPy2: float = 0.0
+var sPz2: float = 0.0
 var sPx3: float = 0.0
 var sPy3: float = 0.0
+var sPz3: float = 0.0
 var sPx4: float = 0.0
 var sPy4: float = 0.0
+var sPz4: float = 0.0
 var sPx5: float = 0.0
 var sPy5: float = 0.0
+var sPz5: float = 0.0
 var sPx6: float = 0.0
 var sPy6: float = 0.0
+var sPz6: float = 0.0
 var sPx7: float = 0.0
 var sPy7: float = 0.0
+var sPz7: float = 0.0
 var sPx8: float = 0.0
 var sPy8: float = 0.0
+var sPz8: float = 0.0
 var sPx9: float = 0.0
 var sPy9: float = 0.0
+var sPz9: float = 0.0
 var sPx10: float = 0.0
 var sPy10: float = 0.0
+var sPz10: float = 0.0
 var sPx11: float = 0.0
 var sPy11: float = 0.0
+var sPz11: float = 0.0
 var sPx12: float = 0.0
 var sPy12: float = 0.0
+var sPz12: float = 0.0
 var sPx13: float = 0.0
 var sPy13: float = 0.0
+var sPz13: float = 0.0
 var sPx14: float = 0.0
 var sPy14: float = 0.0
+var sPz14: float = 0.0
 var sPx15: float = 0.0
 var sPy15: float = 0.0
+var sPz15: float = 0.0
 var rX0: float = 0.0
 var rY0: float = 0.0
+var rZ0: float = 0.0
 var rX1: float = 0.0
 var rY1: float = 0.0
+var rZ1: float = 0.0
 var rX2: float = 0.0
 var rY2: float = 0.0
+var rZ2: float = 0.0
 var rX3: float = 0.0
 var rY3: float = 0.0
+var rZ3: float = 0.0
 var rX4: float = 0.0
 var rY4: float = 0.0
+var rZ4: float = 0.0
 var rX5: float = 0.0
 var rY5: float = 0.0
+var rZ5: float = 0.0
 var rX6: float = 0.0
 var rY6: float = 0.0
+var rZ6: float = 0.0
 var rX7: float = 0.0
 var rY7: float = 0.0
+var rZ7: float = 0.0
 var rX8: float = 0.0
 var rY8: float = 0.0
+var rZ8: float = 0.0
 var rX9: float = 0.0
 var rY9: float = 0.0
+var rZ9: float = 0.0
 var rX10: float = 0.0
 var rY10: float = 0.0
+var rZ10: float = 0.0
 var rX11: float = 0.0
 var rY11: float = 0.0
+var rZ11: float = 0.0
 var rX12: float = 0.0
 var rY12: float = 0.0
+var rZ12: float = 0.0
 var rX13: float = 0.0
 var rY13: float = 0.0
+var rZ13: float = 0.0
 var rX14: float = 0.0
 var rY14: float = 0.0
+var rZ14: float = 0.0
 var rX15: float = 0.0
 var rY15: float = 0.0
+var rZ15: float = 0.0
 var qAx: float = 0.0
 var qAy: float = 0.0
 var qBx: float = 0.0
@@ -425,6 +480,10 @@ var qCx: float = 0.0
 var qCy: float = 0.0
 var qDx: float = 0.0
 var qDy: float = 0.0
+var qAz: float = 0.0
+var qBz: float = 0.0
+var qCz: float = 0.0
+var qDz: float = 0.0
 var sOn: bool = false
 var sLive: bool = false
 var sSeg: float = 0.0
@@ -480,6 +539,52 @@ var rowSlope2: color = Color(0.0, 0.0, 0.0, 0.0)
 var pcol2: float = 200.0
 var pcurR2: float = 100.0
 var aRow: float = 0.0
+var xL3: float = 0.0
+var cLo3: color = Color(1.0, 1.0, 1.0, 1.0)
+var rowSlope3: color = Color(0.0, 0.0, 0.0, 0.0)
+var pcol3: float = 200.0
+var pcurR3: float = 100.0
+var zLo3: float = 0.0
+var zSlope3: float = 0.0
+var xL4: float = 0.0
+var cLo4: color = Color(1.0, 1.0, 1.0, 1.0)
+var rowSlope4: color = Color(0.0, 0.0, 0.0, 0.0)
+var pcol4: float = 200.0
+var pcurR4: float = 100.0
+var zLo4: float = 0.0
+var zSlope4: float = 0.0
+var xL5: float = 0.0
+var cLo5: color = Color(1.0, 1.0, 1.0, 1.0)
+var rowSlope5: color = Color(0.0, 0.0, 0.0, 0.0)
+var pcol5: float = 200.0
+var pcurR5: float = 100.0
+var zLo5: float = 0.0
+var zSlope5: float = 0.0
+var xL6: float = 0.0
+var cLo6: color = Color(1.0, 1.0, 1.0, 1.0)
+var rowSlope6: color = Color(0.0, 0.0, 0.0, 0.0)
+var pcol6: float = 200.0
+var pcurR6: float = 100.0
+var zLo6: float = 0.0
+var zSlope6: float = 0.0
+var xL7: float = 0.0
+var cLo7: color = Color(1.0, 1.0, 1.0, 1.0)
+var rowSlope7: color = Color(0.0, 0.0, 0.0, 0.0)
+var pcol7: float = 200.0
+var pcurR7: float = 100.0
+var zLo7: float = 0.0
+var zSlope7: float = 0.0
+var xL8: float = 0.0
+var cLo8: color = Color(1.0, 1.0, 1.0, 1.0)
+var rowSlope8: color = Color(0.0, 0.0, 0.0, 0.0)
+var pcol8: float = 200.0
+var pcurR8: float = 100.0
+var zLo8: float = 0.0
+var zSlope8: float = 0.0
+var zLo: float = 0.0
+var zSlope: float = 0.0
+var zLo2: float = 0.0
+var zSlope2: float = 0.0
 var covMin: float[]
 var covMax: float[]
 var oldMin: float[]
@@ -502,36 +607,52 @@ var erR2: float = 0.0
 var erTwo: bool = false
 var wasPaint: bool = false
 var cc0: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_0: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc1: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_1: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc2: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_2: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc3: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_3: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc4: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_4: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc5: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_5: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc6: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_6: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc7: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_7: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc8: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_8: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc9: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_9: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc10: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_10: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc11: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_11: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc12: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_12: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc13: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_13: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc14: color = Color(1.0, 1.0, 1.0, 1.0)
-var cc2_14: color = Color(1.0, 1.0, 1.0, 1.0)
 var cc15: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV0: float = 0.0
+var cc2_0: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV1: float = 0.0
+var cc2_1: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV2: float = 0.0
+var cc2_2: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV3: float = 0.0
+var cc2_3: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV4: float = 0.0
+var cc2_4: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV5: float = 0.0
+var cc2_5: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV6: float = 0.0
+var cc2_6: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV7: float = 0.0
+var cc2_7: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV8: float = 0.0
+var cc2_8: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV9: float = 0.0
+var cc2_9: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV10: float = 0.0
+var cc2_10: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV11: float = 0.0
+var cc2_11: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV12: float = 0.0
+var cc2_12: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV13: float = 0.0
+var cc2_13: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV14: float = 0.0
+var cc2_14: color = Color(1.0, 1.0, 1.0, 1.0)
+var pzV15: float = 0.0
 var cc2_15: color = Color(1.0, 1.0, 1.0, 1.0)
 var uc0: color = Color(1.0, 1.0, 1.0, 1.0)
 var uc2: color = Color(1.0, 1.0, 1.0, 1.0)
@@ -8884,58 +9005,74 @@ on Change(drawAllShapes) {
       recompOnly = true
     }
     if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ {
-      prow = pfirst - 2.0
+      prow = pfirst - 8.0
       pcol = 200.0
       polyOn = true
     }
     if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ {
       rX0 = sPx0
       rY0 = sPy0
+      rZ0 = sPz0
       rC0 = sPc0
       rX1 = sPx1
       rY1 = sPy1
+      rZ1 = sPz1
       rC1 = sPc1
       rX2 = sPx2
       rY2 = sPy2
+      rZ2 = sPz2
       rC2 = sPc2
       rX3 = sPx3
       rY3 = sPy3
+      rZ3 = sPz3
       rC3 = sPc3
       rX4 = sPx4
       rY4 = sPy4
+      rZ4 = sPz4
       rC4 = sPc4
       rX5 = sPx5
       rY5 = sPy5
+      rZ5 = sPz5
       rC5 = sPc5
       rX6 = sPx6
       rY6 = sPy6
+      rZ6 = sPz6
       rC6 = sPc6
       rX7 = sPx7
       rY7 = sPy7
+      rZ7 = sPz7
       rC7 = sPc7
       rX8 = sPx8
       rY8 = sPy8
+      rZ8 = sPz8
       rC8 = sPc8
       rX9 = sPx9
       rY9 = sPy9
+      rZ9 = sPz9
       rC9 = sPc9
       rX10 = sPx10
       rY10 = sPy10
+      rZ10 = sPz10
       rC10 = sPc10
       rX11 = sPx11
       rY11 = sPy11
+      rZ11 = sPz11
       rC11 = sPc11
       rX12 = sPx12
       rY12 = sPy12
+      rZ12 = sPz12
       rC12 = sPc12
       rX13 = sPx13
       rY13 = sPy13
+      rZ13 = sPz13
       rC13 = sPc13
       rX14 = sPx14
       rY14 = sPy14
+      rZ14 = sPz14
       rC14 = sPc14
       rX15 = sPx15
       rY15 = sPy15
+      rZ15 = sPz15
       rC15 = sPc15
       sSeg = -1.0
       prow = 0.0
@@ -9018,7 +9155,9 @@ on Change(clearAllShapes) {
 mod paintTick() {
   if !fbInit {
     fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))
+    fbZ.resize(NP, ZBACK)
     shPts.resize(32, 0.0)
+    shPz.resize(16, 0.0)
     slPts.resize(256, 0.0)
     slPC.resize(128, Color(1.0, 1.0, 1.0, 1.0))
     slXF.resize(48, 0.0)
@@ -9028,6 +9167,7 @@ mod paintTick() {
     slPts.resize(288, 0.0)
     slPC.resize(144, Color(1.0, 1.0, 1.0, 1.0))
     slXF.resize(54, 0.0)
+    slXF2.resize(36, 0.0)
     covMin.resize(64, 200.0)
     covMax.resize(64, -200.0)
     oldMin.resize(64, 200.0)
@@ -9035,6 +9175,7 @@ mod paintTick() {
     anPts.resize(288, 0.0)
     anCol.resize(144, Color(0.0, 0.0, 0.0, 0.0))
     anXF.resize(54, 0.0)
+    anXF2.resize(36, 0.0)
     anTicks.resize(9, 0.0)
     qTicks.resize(8, 0.0)
     qCN.resize(8, 0.0)
@@ -9045,6 +9186,7 @@ mod paintTick() {
     qPts.resize(256, 0.0)
     qCol.resize(128, Color(1.0, 1.0, 1.0, 1.0))
     qXF.resize(48, 0.0)
+    qXF2.resize(32, 0.0)
     qMode.resize(8, 0.0)
     qId.resize(8, 0.0)
     fbInit = true
@@ -9106,6 +9248,10 @@ mod paintTick() {
     slXF[2] = slXF[2] + anXF[2]
     slXF[3] = slXF[3] + anXF[3]
     slXF[4] = slXF[4] + anXF[4]
+    slXF2[0] = slXF2[0] + anXF2[0]
+    slXF2[1] = slXF2[1] + anXF2[1]
+    slXF2[2] = slXF2[2] + anXF2[2]
+    slXF2[3] = slXF2[3] + anXF2[3]
   }
   if anTicks[1.0] > 0.5 && !rcOn {
     anTicks[1.0] = anTicks[1.0] - 1.0
@@ -9163,6 +9309,10 @@ mod paintTick() {
     slXF[8] = slXF[8] + anXF[8]
     slXF[9] = slXF[9] + anXF[9]
     slXF[10] = slXF[10] + anXF[10]
+    slXF2[4] = slXF2[4] + anXF2[4]
+    slXF2[5] = slXF2[5] + anXF2[5]
+    slXF2[6] = slXF2[6] + anXF2[6]
+    slXF2[7] = slXF2[7] + anXF2[7]
   }
   if anTicks[2.0] > 0.5 && !rcOn {
     anTicks[2.0] = anTicks[2.0] - 1.0
@@ -9220,6 +9370,10 @@ mod paintTick() {
     slXF[14] = slXF[14] + anXF[14]
     slXF[15] = slXF[15] + anXF[15]
     slXF[16] = slXF[16] + anXF[16]
+    slXF2[8] = slXF2[8] + anXF2[8]
+    slXF2[9] = slXF2[9] + anXF2[9]
+    slXF2[10] = slXF2[10] + anXF2[10]
+    slXF2[11] = slXF2[11] + anXF2[11]
   }
   if anTicks[3.0] > 0.5 && !rcOn {
     anTicks[3.0] = anTicks[3.0] - 1.0
@@ -9277,6 +9431,10 @@ mod paintTick() {
     slXF[20] = slXF[20] + anXF[20]
     slXF[21] = slXF[21] + anXF[21]
     slXF[22] = slXF[22] + anXF[22]
+    slXF2[12] = slXF2[12] + anXF2[12]
+    slXF2[13] = slXF2[13] + anXF2[13]
+    slXF2[14] = slXF2[14] + anXF2[14]
+    slXF2[15] = slXF2[15] + anXF2[15]
   }
   if anTicks[4.0] > 0.5 && !rcOn {
     anTicks[4.0] = anTicks[4.0] - 1.0
@@ -9334,6 +9492,10 @@ mod paintTick() {
     slXF[26] = slXF[26] + anXF[26]
     slXF[27] = slXF[27] + anXF[27]
     slXF[28] = slXF[28] + anXF[28]
+    slXF2[16] = slXF2[16] + anXF2[16]
+    slXF2[17] = slXF2[17] + anXF2[17]
+    slXF2[18] = slXF2[18] + anXF2[18]
+    slXF2[19] = slXF2[19] + anXF2[19]
   }
   if anTicks[5.0] > 0.5 && !rcOn {
     anTicks[5.0] = anTicks[5.0] - 1.0
@@ -9391,6 +9553,10 @@ mod paintTick() {
     slXF[32] = slXF[32] + anXF[32]
     slXF[33] = slXF[33] + anXF[33]
     slXF[34] = slXF[34] + anXF[34]
+    slXF2[20] = slXF2[20] + anXF2[20]
+    slXF2[21] = slXF2[21] + anXF2[21]
+    slXF2[22] = slXF2[22] + anXF2[22]
+    slXF2[23] = slXF2[23] + anXF2[23]
   }
   if anTicks[6.0] > 0.5 && !rcOn {
     anTicks[6.0] = anTicks[6.0] - 1.0
@@ -9448,6 +9614,10 @@ mod paintTick() {
     slXF[38] = slXF[38] + anXF[38]
     slXF[39] = slXF[39] + anXF[39]
     slXF[40] = slXF[40] + anXF[40]
+    slXF2[24] = slXF2[24] + anXF2[24]
+    slXF2[25] = slXF2[25] + anXF2[25]
+    slXF2[26] = slXF2[26] + anXF2[26]
+    slXF2[27] = slXF2[27] + anXF2[27]
   }
   if anTicks[7.0] > 0.5 && !rcOn {
     anTicks[7.0] = anTicks[7.0] - 1.0
@@ -9505,6 +9675,286 @@ mod paintTick() {
     slXF[44] = slXF[44] + anXF[44]
     slXF[45] = slXF[45] + anXF[45]
     slXF[46] = slXF[46] + anXF[46]
+    slXF2[28] = slXF2[28] + anXF2[28]
+    slXF2[29] = slXF2[29] + anXF2[29]
+    slXF2[30] = slXF2[30] + anXF2[30]
+    slXF2[31] = slXF2[31] + anXF2[31]
+  }
+
+  if animDirty {
+    if !rcOn && !polyOn && !sOn && !arming && !armingS {
+    if !erasing && !wasPaint && !pending && !commitR {
+    if !commitQ && !brightRC {
+    animDirty = false
+    rcOn = true
+    rcSlot = 1.0
+    fromSlot = true
+    if oldLo > 63.0 {
+      oldMin[0] = covMin[0]
+      oldMax[0] = covMax[0]
+      oldMin[1] = covMin[1]
+      oldMax[1] = covMax[1]
+      oldMin[2] = covMin[2]
+      oldMax[2] = covMax[2]
+      oldMin[3] = covMin[3]
+      oldMax[3] = covMax[3]
+      oldMin[4] = covMin[4]
+      oldMax[4] = covMax[4]
+      oldMin[5] = covMin[5]
+      oldMax[5] = covMax[5]
+      oldMin[6] = covMin[6]
+      oldMax[6] = covMax[6]
+      oldMin[7] = covMin[7]
+      oldMax[7] = covMax[7]
+      oldMin[8] = covMin[8]
+      oldMax[8] = covMax[8]
+      oldMin[9] = covMin[9]
+      oldMax[9] = covMax[9]
+      oldMin[10] = covMin[10]
+      oldMax[10] = covMax[10]
+      oldMin[11] = covMin[11]
+      oldMax[11] = covMax[11]
+      oldMin[12] = covMin[12]
+      oldMax[12] = covMax[12]
+      oldMin[13] = covMin[13]
+      oldMax[13] = covMax[13]
+      oldMin[14] = covMin[14]
+      oldMax[14] = covMax[14]
+      oldMin[15] = covMin[15]
+      oldMax[15] = covMax[15]
+      oldMin[16] = covMin[16]
+      oldMax[16] = covMax[16]
+      oldMin[17] = covMin[17]
+      oldMax[17] = covMax[17]
+      oldMin[18] = covMin[18]
+      oldMax[18] = covMax[18]
+      oldMin[19] = covMin[19]
+      oldMax[19] = covMax[19]
+      oldMin[20] = covMin[20]
+      oldMax[20] = covMax[20]
+      oldMin[21] = covMin[21]
+      oldMax[21] = covMax[21]
+      oldMin[22] = covMin[22]
+      oldMax[22] = covMax[22]
+      oldMin[23] = covMin[23]
+      oldMax[23] = covMax[23]
+      oldMin[24] = covMin[24]
+      oldMax[24] = covMax[24]
+      oldMin[25] = covMin[25]
+      oldMax[25] = covMax[25]
+      oldMin[26] = covMin[26]
+      oldMax[26] = covMax[26]
+      oldMin[27] = covMin[27]
+      oldMax[27] = covMax[27]
+      oldMin[28] = covMin[28]
+      oldMax[28] = covMax[28]
+      oldMin[29] = covMin[29]
+      oldMax[29] = covMax[29]
+      oldMin[30] = covMin[30]
+      oldMax[30] = covMax[30]
+      oldMin[31] = covMin[31]
+      oldMax[31] = covMax[31]
+      oldMin[32] = covMin[32]
+      oldMax[32] = covMax[32]
+      oldMin[33] = covMin[33]
+      oldMax[33] = covMax[33]
+      oldMin[34] = covMin[34]
+      oldMax[34] = covMax[34]
+      oldMin[35] = covMin[35]
+      oldMax[35] = covMax[35]
+      oldMin[36] = covMin[36]
+      oldMax[36] = covMax[36]
+      oldMin[37] = covMin[37]
+      oldMax[37] = covMax[37]
+      oldMin[38] = covMin[38]
+      oldMax[38] = covMax[38]
+      oldMin[39] = covMin[39]
+      oldMax[39] = covMax[39]
+      oldMin[40] = covMin[40]
+      oldMax[40] = covMax[40]
+      oldMin[41] = covMin[41]
+      oldMax[41] = covMax[41]
+      oldMin[42] = covMin[42]
+      oldMax[42] = covMax[42]
+      oldMin[43] = covMin[43]
+      oldMax[43] = covMax[43]
+      oldMin[44] = covMin[44]
+      oldMax[44] = covMax[44]
+      oldMin[45] = covMin[45]
+      oldMax[45] = covMax[45]
+      oldMin[46] = covMin[46]
+      oldMax[46] = covMax[46]
+      oldMin[47] = covMin[47]
+      oldMax[47] = covMax[47]
+      oldMin[48] = covMin[48]
+      oldMax[48] = covMax[48]
+      oldMin[49] = covMin[49]
+      oldMax[49] = covMax[49]
+      oldMin[50] = covMin[50]
+      oldMax[50] = covMax[50]
+      oldMin[51] = covMin[51]
+      oldMax[51] = covMax[51]
+      oldMin[52] = covMin[52]
+      oldMax[52] = covMax[52]
+      oldMin[53] = covMin[53]
+      oldMax[53] = covMax[53]
+      oldMin[54] = covMin[54]
+      oldMax[54] = covMax[54]
+      oldMin[55] = covMin[55]
+      oldMax[55] = covMax[55]
+      oldMin[56] = covMin[56]
+      oldMax[56] = covMax[56]
+      oldMin[57] = covMin[57]
+      oldMax[57] = covMax[57]
+      oldMin[58] = covMin[58]
+      oldMax[58] = covMax[58]
+      oldMin[59] = covMin[59]
+      oldMax[59] = covMax[59]
+      oldMin[60] = covMin[60]
+      oldMax[60] = covMax[60]
+      oldMin[61] = covMin[61]
+      oldMax[61] = covMax[61]
+      oldMin[62] = covMin[62]
+      oldMax[62] = covMax[62]
+      oldMin[63] = covMin[63]
+      oldMax[63] = covMax[63]
+      oldLo = covLo
+      oldHi = covHi
+    }
+    covMin[0] = 200.0
+    covMax[0] = -200.0
+    covMin[1] = 200.0
+    covMax[1] = -200.0
+    covMin[2] = 200.0
+    covMax[2] = -200.0
+    covMin[3] = 200.0
+    covMax[3] = -200.0
+    covMin[4] = 200.0
+    covMax[4] = -200.0
+    covMin[5] = 200.0
+    covMax[5] = -200.0
+    covMin[6] = 200.0
+    covMax[6] = -200.0
+    covMin[7] = 200.0
+    covMax[7] = -200.0
+    covMin[8] = 200.0
+    covMax[8] = -200.0
+    covMin[9] = 200.0
+    covMax[9] = -200.0
+    covMin[10] = 200.0
+    covMax[10] = -200.0
+    covMin[11] = 200.0
+    covMax[11] = -200.0
+    covMin[12] = 200.0
+    covMax[12] = -200.0
+    covMin[13] = 200.0
+    covMax[13] = -200.0
+    covMin[14] = 200.0
+    covMax[14] = -200.0
+    covMin[15] = 200.0
+    covMax[15] = -200.0
+    covMin[16] = 200.0
+    covMax[16] = -200.0
+    covMin[17] = 200.0
+    covMax[17] = -200.0
+    covMin[18] = 200.0
+    covMax[18] = -200.0
+    covMin[19] = 200.0
+    covMax[19] = -200.0
+    covMin[20] = 200.0
+    covMax[20] = -200.0
+    covMin[21] = 200.0
+    covMax[21] = -200.0
+    covMin[22] = 200.0
+    covMax[22] = -200.0
+    covMin[23] = 200.0
+    covMax[23] = -200.0
+    covMin[24] = 200.0
+    covMax[24] = -200.0
+    covMin[25] = 200.0
+    covMax[25] = -200.0
+    covMin[26] = 200.0
+    covMax[26] = -200.0
+    covMin[27] = 200.0
+    covMax[27] = -200.0
+    covMin[28] = 200.0
+    covMax[28] = -200.0
+    covMin[29] = 200.0
+    covMax[29] = -200.0
+    covMin[30] = 200.0
+    covMax[30] = -200.0
+    covMin[31] = 200.0
+    covMax[31] = -200.0
+    covMin[32] = 200.0
+    covMax[32] = -200.0
+    covMin[33] = 200.0
+    covMax[33] = -200.0
+    covMin[34] = 200.0
+    covMax[34] = -200.0
+    covMin[35] = 200.0
+    covMax[35] = -200.0
+    covMin[36] = 200.0
+    covMax[36] = -200.0
+    covMin[37] = 200.0
+    covMax[37] = -200.0
+    covMin[38] = 200.0
+    covMax[38] = -200.0
+    covMin[39] = 200.0
+    covMax[39] = -200.0
+    covMin[40] = 200.0
+    covMax[40] = -200.0
+    covMin[41] = 200.0
+    covMax[41] = -200.0
+    covMin[42] = 200.0
+    covMax[42] = -200.0
+    covMin[43] = 200.0
+    covMax[43] = -200.0
+    covMin[44] = 200.0
+    covMax[44] = -200.0
+    covMin[45] = 200.0
+    covMax[45] = -200.0
+    covMin[46] = 200.0
+    covMax[46] = -200.0
+    covMin[47] = 200.0
+    covMax[47] = -200.0
+    covMin[48] = 200.0
+    covMax[48] = -200.0
+    covMin[49] = 200.0
+    covMax[49] = -200.0
+    covMin[50] = 200.0
+    covMax[50] = -200.0
+    covMin[51] = 200.0
+    covMax[51] = -200.0
+    covMin[52] = 200.0
+    covMax[52] = -200.0
+    covMin[53] = 200.0
+    covMax[53] = -200.0
+    covMin[54] = 200.0
+    covMax[54] = -200.0
+    covMin[55] = 200.0
+    covMax[55] = -200.0
+    covMin[56] = 200.0
+    covMax[56] = -200.0
+    covMin[57] = 200.0
+    covMax[57] = -200.0
+    covMin[58] = 200.0
+    covMax[58] = -200.0
+    covMin[59] = 200.0
+    covMax[59] = -200.0
+    covMin[60] = 200.0
+    covMax[60] = -200.0
+    covMin[61] = 200.0
+    covMax[61] = -200.0
+    covMin[62] = 200.0
+    covMax[62] = -200.0
+    covMin[63] = 200.0
+    covMax[63] = -200.0
+    covLo = 200.0
+    covHi = -200.0
+    cDirty = false
+    }
+    }
+    }
   }
 
   if qPush {
@@ -9513,6 +9963,7 @@ mod paintTick() {
     let pb = e * 32.0
     let cb = e * 16.0
     let xb = e * 6.0
+    let xb2 = e * 4.0
     qPts[pb + 0.0] = shapePoints[0]
     qPts[pb + 1.0] = shapePoints[1]
     qPts[pb + 2.0] = shapePoints[2]
@@ -9572,6 +10023,10 @@ mod paintTick() {
     qXF[xb + 3.0] = if pScl.x == 0.0 then 1.0 else pScl.x
     qXF[xb + 4.0] = if pScl.y == 0.0 then 1.0 else pScl.y
     qXF[xb + 5.0] = pParent
+    qXF2[xb2 + 0.0] = pPos.z
+    qXF2[xb2 + 1.0] = pRot.x
+    qXF2[xb2 + 2.0] = pRot.y
+    qXF2[xb2 + 3.0] = if pScl.z == 0.0 then 1.0 else pScl.z
     qCount = e + 1.0
   }
   if commitQ {
@@ -9585,9 +10040,11 @@ mod paintTick() {
       let nsb0 = nslot0 * 32.0
       let ncb0 = nslot0 * 16.0
       let nxb0 = nslot0 * 6.0
+      let mxb0 = nslot0 * 4.0
       let epb0 = 0.0 * 32.0
       let ecb0 = 0.0 * 16.0
       let exb0 = 0.0 * 6.0
+      let mxe0 = 0.0 * 4.0
       if ne0 < 1.0 {
         slLive[nslot0] = 0.0
         anTicks[nslot0] = 0.0
@@ -9648,6 +10105,10 @@ mod paintTick() {
         anXF[nxb0 + 2.0] = qXF[exb0 + 2.0]
         anXF[nxb0 + 3.0] = qXF[exb0 + 3.0]
         anXF[nxb0 + 4.0] = qXF[exb0 + 4.0]
+        anXF2[mxb0 + 0.0] = qXF2[mxe0 + 0.0]
+        anXF2[mxb0 + 1.0] = qXF2[mxe0 + 1.0]
+        anXF2[mxb0 + 2.0] = qXF2[mxe0 + 2.0]
+        anXF2[mxb0 + 3.0] = qXF2[mxe0 + 3.0]
       } else {
         slPts[nsb0 + 0.0] = qPts[epb0 + 0.0]
         slPts[nsb0 + 1.0] = qPts[epb0 + 1.0]
@@ -9706,6 +10167,10 @@ mod paintTick() {
         slXF[nxb0 + 3.0] = qXF[exb0 + 3.0]
         slXF[nxb0 + 4.0] = qXF[exb0 + 4.0]
         slXF[nxb0 + 5.0] = qXF[exb0 + 5.0]
+        slXF2[mxb0 + 0.0] = qXF2[mxe0 + 0.0]
+        slXF2[mxb0 + 1.0] = qXF2[mxe0 + 1.0]
+        slXF2[mxb0 + 2.0] = qXF2[mxe0 + 2.0]
+        slXF2[mxb0 + 3.0] = qXF2[mxe0 + 3.0]
         anTicks[nslot0] = 0.0
         needRC = true
       }
@@ -9716,9 +10181,11 @@ mod paintTick() {
       let nsb1 = nslot1 * 32.0
       let ncb1 = nslot1 * 16.0
       let nxb1 = nslot1 * 6.0
+      let mxb1 = nslot1 * 4.0
       let epb1 = 1.0 * 32.0
       let ecb1 = 1.0 * 16.0
       let exb1 = 1.0 * 6.0
+      let mxe1 = 1.0 * 4.0
       if ne1 < 1.0 {
         slLive[nslot1] = 0.0
         anTicks[nslot1] = 0.0
@@ -9779,6 +10246,10 @@ mod paintTick() {
         anXF[nxb1 + 2.0] = qXF[exb1 + 2.0]
         anXF[nxb1 + 3.0] = qXF[exb1 + 3.0]
         anXF[nxb1 + 4.0] = qXF[exb1 + 4.0]
+        anXF2[mxb1 + 0.0] = qXF2[mxe1 + 0.0]
+        anXF2[mxb1 + 1.0] = qXF2[mxe1 + 1.0]
+        anXF2[mxb1 + 2.0] = qXF2[mxe1 + 2.0]
+        anXF2[mxb1 + 3.0] = qXF2[mxe1 + 3.0]
       } else {
         slPts[nsb1 + 0.0] = qPts[epb1 + 0.0]
         slPts[nsb1 + 1.0] = qPts[epb1 + 1.0]
@@ -9837,6 +10308,10 @@ mod paintTick() {
         slXF[nxb1 + 3.0] = qXF[exb1 + 3.0]
         slXF[nxb1 + 4.0] = qXF[exb1 + 4.0]
         slXF[nxb1 + 5.0] = qXF[exb1 + 5.0]
+        slXF2[mxb1 + 0.0] = qXF2[mxe1 + 0.0]
+        slXF2[mxb1 + 1.0] = qXF2[mxe1 + 1.0]
+        slXF2[mxb1 + 2.0] = qXF2[mxe1 + 2.0]
+        slXF2[mxb1 + 3.0] = qXF2[mxe1 + 3.0]
         anTicks[nslot1] = 0.0
         needRC = true
       }
@@ -9847,9 +10322,11 @@ mod paintTick() {
       let nsb2 = nslot2 * 32.0
       let ncb2 = nslot2 * 16.0
       let nxb2 = nslot2 * 6.0
+      let mxb2 = nslot2 * 4.0
       let epb2 = 2.0 * 32.0
       let ecb2 = 2.0 * 16.0
       let exb2 = 2.0 * 6.0
+      let mxe2 = 2.0 * 4.0
       if ne2 < 1.0 {
         slLive[nslot2] = 0.0
         anTicks[nslot2] = 0.0
@@ -9910,6 +10387,10 @@ mod paintTick() {
         anXF[nxb2 + 2.0] = qXF[exb2 + 2.0]
         anXF[nxb2 + 3.0] = qXF[exb2 + 3.0]
         anXF[nxb2 + 4.0] = qXF[exb2 + 4.0]
+        anXF2[mxb2 + 0.0] = qXF2[mxe2 + 0.0]
+        anXF2[mxb2 + 1.0] = qXF2[mxe2 + 1.0]
+        anXF2[mxb2 + 2.0] = qXF2[mxe2 + 2.0]
+        anXF2[mxb2 + 3.0] = qXF2[mxe2 + 3.0]
       } else {
         slPts[nsb2 + 0.0] = qPts[epb2 + 0.0]
         slPts[nsb2 + 1.0] = qPts[epb2 + 1.0]
@@ -9968,6 +10449,10 @@ mod paintTick() {
         slXF[nxb2 + 3.0] = qXF[exb2 + 3.0]
         slXF[nxb2 + 4.0] = qXF[exb2 + 4.0]
         slXF[nxb2 + 5.0] = qXF[exb2 + 5.0]
+        slXF2[mxb2 + 0.0] = qXF2[mxe2 + 0.0]
+        slXF2[mxb2 + 1.0] = qXF2[mxe2 + 1.0]
+        slXF2[mxb2 + 2.0] = qXF2[mxe2 + 2.0]
+        slXF2[mxb2 + 3.0] = qXF2[mxe2 + 3.0]
         anTicks[nslot2] = 0.0
         needRC = true
       }
@@ -9978,9 +10463,11 @@ mod paintTick() {
       let nsb3 = nslot3 * 32.0
       let ncb3 = nslot3 * 16.0
       let nxb3 = nslot3 * 6.0
+      let mxb3 = nslot3 * 4.0
       let epb3 = 3.0 * 32.0
       let ecb3 = 3.0 * 16.0
       let exb3 = 3.0 * 6.0
+      let mxe3 = 3.0 * 4.0
       if ne3 < 1.0 {
         slLive[nslot3] = 0.0
         anTicks[nslot3] = 0.0
@@ -10041,6 +10528,10 @@ mod paintTick() {
         anXF[nxb3 + 2.0] = qXF[exb3 + 2.0]
         anXF[nxb3 + 3.0] = qXF[exb3 + 3.0]
         anXF[nxb3 + 4.0] = qXF[exb3 + 4.0]
+        anXF2[mxb3 + 0.0] = qXF2[mxe3 + 0.0]
+        anXF2[mxb3 + 1.0] = qXF2[mxe3 + 1.0]
+        anXF2[mxb3 + 2.0] = qXF2[mxe3 + 2.0]
+        anXF2[mxb3 + 3.0] = qXF2[mxe3 + 3.0]
       } else {
         slPts[nsb3 + 0.0] = qPts[epb3 + 0.0]
         slPts[nsb3 + 1.0] = qPts[epb3 + 1.0]
@@ -10099,6 +10590,10 @@ mod paintTick() {
         slXF[nxb3 + 3.0] = qXF[exb3 + 3.0]
         slXF[nxb3 + 4.0] = qXF[exb3 + 4.0]
         slXF[nxb3 + 5.0] = qXF[exb3 + 5.0]
+        slXF2[mxb3 + 0.0] = qXF2[mxe3 + 0.0]
+        slXF2[mxb3 + 1.0] = qXF2[mxe3 + 1.0]
+        slXF2[mxb3 + 2.0] = qXF2[mxe3 + 2.0]
+        slXF2[mxb3 + 3.0] = qXF2[mxe3 + 3.0]
         anTicks[nslot3] = 0.0
         needRC = true
       }
@@ -10109,9 +10604,11 @@ mod paintTick() {
       let nsb4 = nslot4 * 32.0
       let ncb4 = nslot4 * 16.0
       let nxb4 = nslot4 * 6.0
+      let mxb4 = nslot4 * 4.0
       let epb4 = 4.0 * 32.0
       let ecb4 = 4.0 * 16.0
       let exb4 = 4.0 * 6.0
+      let mxe4 = 4.0 * 4.0
       if ne4 < 1.0 {
         slLive[nslot4] = 0.0
         anTicks[nslot4] = 0.0
@@ -10172,6 +10669,10 @@ mod paintTick() {
         anXF[nxb4 + 2.0] = qXF[exb4 + 2.0]
         anXF[nxb4 + 3.0] = qXF[exb4 + 3.0]
         anXF[nxb4 + 4.0] = qXF[exb4 + 4.0]
+        anXF2[mxb4 + 0.0] = qXF2[mxe4 + 0.0]
+        anXF2[mxb4 + 1.0] = qXF2[mxe4 + 1.0]
+        anXF2[mxb4 + 2.0] = qXF2[mxe4 + 2.0]
+        anXF2[mxb4 + 3.0] = qXF2[mxe4 + 3.0]
       } else {
         slPts[nsb4 + 0.0] = qPts[epb4 + 0.0]
         slPts[nsb4 + 1.0] = qPts[epb4 + 1.0]
@@ -10230,6 +10731,10 @@ mod paintTick() {
         slXF[nxb4 + 3.0] = qXF[exb4 + 3.0]
         slXF[nxb4 + 4.0] = qXF[exb4 + 4.0]
         slXF[nxb4 + 5.0] = qXF[exb4 + 5.0]
+        slXF2[mxb4 + 0.0] = qXF2[mxe4 + 0.0]
+        slXF2[mxb4 + 1.0] = qXF2[mxe4 + 1.0]
+        slXF2[mxb4 + 2.0] = qXF2[mxe4 + 2.0]
+        slXF2[mxb4 + 3.0] = qXF2[mxe4 + 3.0]
         anTicks[nslot4] = 0.0
         needRC = true
       }
@@ -10240,9 +10745,11 @@ mod paintTick() {
       let nsb5 = nslot5 * 32.0
       let ncb5 = nslot5 * 16.0
       let nxb5 = nslot5 * 6.0
+      let mxb5 = nslot5 * 4.0
       let epb5 = 5.0 * 32.0
       let ecb5 = 5.0 * 16.0
       let exb5 = 5.0 * 6.0
+      let mxe5 = 5.0 * 4.0
       if ne5 < 1.0 {
         slLive[nslot5] = 0.0
         anTicks[nslot5] = 0.0
@@ -10303,6 +10810,10 @@ mod paintTick() {
         anXF[nxb5 + 2.0] = qXF[exb5 + 2.0]
         anXF[nxb5 + 3.0] = qXF[exb5 + 3.0]
         anXF[nxb5 + 4.0] = qXF[exb5 + 4.0]
+        anXF2[mxb5 + 0.0] = qXF2[mxe5 + 0.0]
+        anXF2[mxb5 + 1.0] = qXF2[mxe5 + 1.0]
+        anXF2[mxb5 + 2.0] = qXF2[mxe5 + 2.0]
+        anXF2[mxb5 + 3.0] = qXF2[mxe5 + 3.0]
       } else {
         slPts[nsb5 + 0.0] = qPts[epb5 + 0.0]
         slPts[nsb5 + 1.0] = qPts[epb5 + 1.0]
@@ -10361,6 +10872,10 @@ mod paintTick() {
         slXF[nxb5 + 3.0] = qXF[exb5 + 3.0]
         slXF[nxb5 + 4.0] = qXF[exb5 + 4.0]
         slXF[nxb5 + 5.0] = qXF[exb5 + 5.0]
+        slXF2[mxb5 + 0.0] = qXF2[mxe5 + 0.0]
+        slXF2[mxb5 + 1.0] = qXF2[mxe5 + 1.0]
+        slXF2[mxb5 + 2.0] = qXF2[mxe5 + 2.0]
+        slXF2[mxb5 + 3.0] = qXF2[mxe5 + 3.0]
         anTicks[nslot5] = 0.0
         needRC = true
       }
@@ -10371,9 +10886,11 @@ mod paintTick() {
       let nsb6 = nslot6 * 32.0
       let ncb6 = nslot6 * 16.0
       let nxb6 = nslot6 * 6.0
+      let mxb6 = nslot6 * 4.0
       let epb6 = 6.0 * 32.0
       let ecb6 = 6.0 * 16.0
       let exb6 = 6.0 * 6.0
+      let mxe6 = 6.0 * 4.0
       if ne6 < 1.0 {
         slLive[nslot6] = 0.0
         anTicks[nslot6] = 0.0
@@ -10434,6 +10951,10 @@ mod paintTick() {
         anXF[nxb6 + 2.0] = qXF[exb6 + 2.0]
         anXF[nxb6 + 3.0] = qXF[exb6 + 3.0]
         anXF[nxb6 + 4.0] = qXF[exb6 + 4.0]
+        anXF2[mxb6 + 0.0] = qXF2[mxe6 + 0.0]
+        anXF2[mxb6 + 1.0] = qXF2[mxe6 + 1.0]
+        anXF2[mxb6 + 2.0] = qXF2[mxe6 + 2.0]
+        anXF2[mxb6 + 3.0] = qXF2[mxe6 + 3.0]
       } else {
         slPts[nsb6 + 0.0] = qPts[epb6 + 0.0]
         slPts[nsb6 + 1.0] = qPts[epb6 + 1.0]
@@ -10492,6 +11013,10 @@ mod paintTick() {
         slXF[nxb6 + 3.0] = qXF[exb6 + 3.0]
         slXF[nxb6 + 4.0] = qXF[exb6 + 4.0]
         slXF[nxb6 + 5.0] = qXF[exb6 + 5.0]
+        slXF2[mxb6 + 0.0] = qXF2[mxe6 + 0.0]
+        slXF2[mxb6 + 1.0] = qXF2[mxe6 + 1.0]
+        slXF2[mxb6 + 2.0] = qXF2[mxe6 + 2.0]
+        slXF2[mxb6 + 3.0] = qXF2[mxe6 + 3.0]
         anTicks[nslot6] = 0.0
         needRC = true
       }
@@ -10502,9 +11027,11 @@ mod paintTick() {
       let nsb7 = nslot7 * 32.0
       let ncb7 = nslot7 * 16.0
       let nxb7 = nslot7 * 6.0
+      let mxb7 = nslot7 * 4.0
       let epb7 = 7.0 * 32.0
       let ecb7 = 7.0 * 16.0
       let exb7 = 7.0 * 6.0
+      let mxe7 = 7.0 * 4.0
       if ne7 < 1.0 {
         slLive[nslot7] = 0.0
         anTicks[nslot7] = 0.0
@@ -10565,6 +11092,10 @@ mod paintTick() {
         anXF[nxb7 + 2.0] = qXF[exb7 + 2.0]
         anXF[nxb7 + 3.0] = qXF[exb7 + 3.0]
         anXF[nxb7 + 4.0] = qXF[exb7 + 4.0]
+        anXF2[mxb7 + 0.0] = qXF2[mxe7 + 0.0]
+        anXF2[mxb7 + 1.0] = qXF2[mxe7 + 1.0]
+        anXF2[mxb7 + 2.0] = qXF2[mxe7 + 2.0]
+        anXF2[mxb7 + 3.0] = qXF2[mxe7 + 3.0]
       } else {
         slPts[nsb7 + 0.0] = qPts[epb7 + 0.0]
         slPts[nsb7 + 1.0] = qPts[epb7 + 1.0]
@@ -10623,6 +11154,10 @@ mod paintTick() {
         slXF[nxb7 + 3.0] = qXF[exb7 + 3.0]
         slXF[nxb7 + 4.0] = qXF[exb7 + 4.0]
         slXF[nxb7 + 5.0] = qXF[exb7 + 5.0]
+        slXF2[mxb7 + 0.0] = qXF2[mxe7 + 0.0]
+        slXF2[mxb7 + 1.0] = qXF2[mxe7 + 1.0]
+        slXF2[mxb7 + 2.0] = qXF2[mxe7 + 2.0]
+        slXF2[mxb7 + 3.0] = qXF2[mxe7 + 3.0]
         anTicks[nslot7] = 0.0
         needRC = true
       }
@@ -11174,6 +11709,7 @@ mod paintTick() {
     let sbase = slot * 32.0
     let cbase = slot * 16.0
     let xbase = slot * 6.0
+    let xbase2 = slot * 4.0
     needRC = false
     if recompOnly {
       recompOnly = false
@@ -11239,6 +11775,14 @@ mod paintTick() {
       anXF[xbase + 2.0] = pRot.z
       anXF[xbase + 3.0] = pScl.x
       anXF[xbase + 4.0] = pScl.y
+      anXF2[xbase2 + 0.0] = pPos.z
+      anXF2[xbase2 + 1.0] = pRot.x
+      anXF2[xbase2 + 2.0] = pRot.y
+      anXF2[xbase2 + 3.0] = pScl.z
+      anXF2[xbase2 + 0.0] = pPos.z
+      anXF2[xbase2 + 1.0] = pRot.x
+      anXF2[xbase2 + 2.0] = pRot.y
+      anXF2[xbase2 + 3.0] = pScl.z
     } else {
       slPts[sbase + 0.0] = shapePoints[0]
       slPts[sbase + 1.0] = shapePoints[1]
@@ -11294,9 +11838,13 @@ mod paintTick() {
       slXF[xbase + 0.0] = pPos.x
       slXF[xbase + 1.0] = pPos.y
       slXF[xbase + 2.0] = pRot.z
+      slXF2[xbase2 + 0.0] = pPos.z
+      slXF2[xbase2 + 1.0] = pRot.x
+      slXF2[xbase2 + 2.0] = pRot.y
       slXF[xbase + 3.0] = if pScl.x == 0.0 then 1.0 else pScl.x
       slXF[xbase + 4.0] = if pScl.y == 0.0 then 1.0 else pScl.y
       slXF[xbase + 5.0] = pParent
+      slXF2[xbase2 + 3.0] = if pScl.z == 0.0 then 1.0 else pScl.z
       anTicks[slot] = 0.0
       needRC = true
     }
@@ -12007,58 +12555,74 @@ mod paintTick() {
         sSegs = bSEGS
       }
       if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending {
-        prow = pfirst - 2.0
+        prow = pfirst - 8.0
         pcol = 200.0
         polyOn = true
       }
       if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending {
         rX0 = sPx0
         rY0 = sPy0
+        rZ0 = sPz0
         rC0 = sPc0
         rX1 = sPx1
         rY1 = sPy1
+        rZ1 = sPz1
         rC1 = sPc1
         rX2 = sPx2
         rY2 = sPy2
+        rZ2 = sPz2
         rC2 = sPc2
         rX3 = sPx3
         rY3 = sPy3
+        rZ3 = sPz3
         rC3 = sPc3
         rX4 = sPx4
         rY4 = sPy4
+        rZ4 = sPz4
         rC4 = sPc4
         rX5 = sPx5
         rY5 = sPy5
+        rZ5 = sPz5
         rC5 = sPc5
         rX6 = sPx6
         rY6 = sPy6
+        rZ6 = sPz6
         rC6 = sPc6
         rX7 = sPx7
         rY7 = sPy7
+        rZ7 = sPz7
         rC7 = sPc7
         rX8 = sPx8
         rY8 = sPy8
+        rZ8 = sPz8
         rC8 = sPc8
         rX9 = sPx9
         rY9 = sPy9
+        rZ9 = sPz9
         rC9 = sPc9
         rX10 = sPx10
         rY10 = sPy10
+        rZ10 = sPz10
         rC10 = sPc10
         rX11 = sPx11
         rY11 = sPy11
+        rZ11 = sPz11
         rC11 = sPc11
         rX12 = sPx12
         rY12 = sPy12
+        rZ12 = sPz12
         rC12 = sPc12
         rX13 = sPx13
         rY13 = sPy13
+        rZ13 = sPz13
         rC13 = sPc13
         rX14 = sPx14
         rY14 = sPy14
+        rZ14 = sPz14
         rC14 = sPc14
         rX15 = sPx15
         rY15 = sPy15
+        rZ15 = sPz15
         rC15 = sPc15
         sFresh = false
         sFreshLast = false
@@ -12323,9 +12887,9 @@ mod paintTick() {
         pC14 = slPC[ff * 16 + 14.0]
         pC15 = slPC[ff * 16 + 15.0]
         pWire = slMode[ff] > 0.5
-        pPos = Vec(slXF[ff * 6 + 0.0], slXF[ff * 6 + 1.0], 0.0)
-        pRot = Vec(0.0, 0.0, slXF[ff * 6 + 2.0])
-        pScl = Vec(slXF[ff * 6 + 3.0], slXF[ff * 6 + 4.0], 1.0)
+        pPos = Vec(slXF[ff * 6 + 0.0], slXF[ff * 6 + 1.0], slXF2[ff * 4 + 0.0])
+        pRot = Vec(slXF2[ff * 4 + 1.0], slXF2[ff * 4 + 2.0], slXF[ff * 6 + 2.0])
+        pScl = Vec(slXF[ff * 6 + 3.0], slXF[ff * 6 + 4.0], slXF2[ff * 4 + 3.0])
         pParent = slXF[ff * 6 + 5.0]
         needXF = true
         fromSlot = true
@@ -12396,11 +12960,16 @@ mod paintTick() {
     if !clearing {
       let lsx = if pScl.x == 0.0 then 1.0 else pScl.x
       let lsy = if pScl.y == 0.0 then 1.0 else pScl.y
+      let lsz = if pScl.z == 0.0 then 1.0 else pScl.z
       wpx = pPos.x
       wpy = pPos.y
+      wpz = pPos.z
+      wrx = pRot.x
+      wry = pRot.y
       wr = pRot.z
       wsx = lsx
       wsy = lsy
+      tilt3d = if pRot.x == 0.0 && pRot.y == 0.0 then 0.0 else 1.0
       cur = pParent
       if cur >= 1.0 {
         let pli = (cur - 1.0) | 0
@@ -12411,6 +12980,10 @@ mod paintTick() {
           let psx = slXF[pli * 6 + 3.0]
           let psy = slXF[pli * 6 + 4.0]
           let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
           let cosp = cos(pra)
           let sinp = sin(pra)
           wr = pra + wr
@@ -12420,8 +12993,10 @@ mod paintTick() {
           let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
           wpx = nwx
           wpy = nwy
+          wpz = psz * wpz + ppz
           wsx = psx * wsx
           wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
           cur = ppar
         } else {
           cur = 0.0
@@ -12438,6 +13013,10 @@ mod paintTick() {
           let psx = slXF[pli * 6 + 3.0]
           let psy = slXF[pli * 6 + 4.0]
           let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
           let cosp = cos(pra)
           let sinp = sin(pra)
           wr = pra + wr
@@ -12447,8 +13026,10 @@ mod paintTick() {
           let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
           wpx = nwx
           wpy = nwy
+          wpz = psz * wpz + ppz
           wsx = psx * wsx
           wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
           cur = ppar
         } else {
           cur = 0.0
@@ -12465,6 +13046,10 @@ mod paintTick() {
           let psx = slXF[pli * 6 + 3.0]
           let psy = slXF[pli * 6 + 4.0]
           let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
           let cosp = cos(pra)
           let sinp = sin(pra)
           wr = pra + wr
@@ -12474,8 +13059,10 @@ mod paintTick() {
           let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
           wpx = nwx
           wpy = nwy
+          wpz = psz * wpz + ppz
           wsx = psx * wsx
           wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
           cur = ppar
         } else {
           cur = 0.0
@@ -12492,6 +13079,10 @@ mod paintTick() {
           let psx = slXF[pli * 6 + 3.0]
           let psy = slXF[pli * 6 + 4.0]
           let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
           let cosp = cos(pra)
           let sinp = sin(pra)
           wr = pra + wr
@@ -12501,8 +13092,10 @@ mod paintTick() {
           let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
           wpx = nwx
           wpy = nwy
+          wpz = psz * wpz + ppz
           wsx = psx * wsx
           wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
           cur = ppar
         } else {
           cur = 0.0
@@ -12519,6 +13112,10 @@ mod paintTick() {
           let psx = slXF[pli * 6 + 3.0]
           let psy = slXF[pli * 6 + 4.0]
           let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
           let cosp = cos(pra)
           let sinp = sin(pra)
           wr = pra + wr
@@ -12528,8 +13125,10 @@ mod paintTick() {
           let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
           wpx = nwx
           wpy = nwy
+          wpz = psz * wpz + ppz
           wsx = psx * wsx
           wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
           cur = ppar
         } else {
           cur = 0.0
@@ -12546,6 +13145,10 @@ mod paintTick() {
           let psx = slXF[pli * 6 + 3.0]
           let psy = slXF[pli * 6 + 4.0]
           let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
           let cosp = cos(pra)
           let sinp = sin(pra)
           wr = pra + wr
@@ -12555,8 +13158,10 @@ mod paintTick() {
           let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
           wpx = nwx
           wpy = nwy
+          wpz = psz * wpz + ppz
           wsx = psx * wsx
           wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
           cur = ppar
         } else {
           cur = 0.0
@@ -12573,6 +13178,10 @@ mod paintTick() {
           let psx = slXF[pli * 6 + 3.0]
           let psy = slXF[pli * 6 + 4.0]
           let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
           let cosp = cos(pra)
           let sinp = sin(pra)
           wr = pra + wr
@@ -12582,8 +13191,10 @@ mod paintTick() {
           let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
           wpx = nwx
           wpy = nwy
+          wpz = psz * wpz + ppz
           wsx = psx * wsx
           wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
           cur = ppar
         } else {
           cur = 0.0
@@ -12600,6 +13211,10 @@ mod paintTick() {
           let psx = slXF[pli * 6 + 3.0]
           let psy = slXF[pli * 6 + 4.0]
           let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
           let cosp = cos(pra)
           let sinp = sin(pra)
           wr = pra + wr
@@ -12609,8 +13224,10 @@ mod paintTick() {
           let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
           wpx = nwx
           wpy = nwy
+          wpz = psz * wpz + ppz
           wsx = psx * wsx
           wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
           cur = ppar
         } else {
           cur = 0.0
@@ -12618,72 +13235,744 @@ mod paintTick() {
       } else {
         cur = 0.0
       }
-      let ct = cos(wr)
-      let st = sin(wr)
-      let ox0 = shPts[0] * wsx
-      let oy0 = shPts[1] * wsy
-      shPts[0] = wpx + ((ox0 * ct) - (oy0 * st))
-      shPts[1] = wpy + ((ox0 * st) + (oy0 * ct))
-      let ox1 = shPts[2] * wsx
-      let oy1 = shPts[3] * wsy
-      shPts[2] = wpx + ((ox1 * ct) - (oy1 * st))
-      shPts[3] = wpy + ((ox1 * st) + (oy1 * ct))
-      let ox2 = shPts[4] * wsx
-      let oy2 = shPts[5] * wsy
-      shPts[4] = wpx + ((ox2 * ct) - (oy2 * st))
-      shPts[5] = wpy + ((ox2 * st) + (oy2 * ct))
-      let ox3 = shPts[6] * wsx
-      let oy3 = shPts[7] * wsy
-      shPts[6] = wpx + ((ox3 * ct) - (oy3 * st))
-      shPts[7] = wpy + ((ox3 * st) + (oy3 * ct))
-      let ox4 = shPts[8] * wsx
-      let oy4 = shPts[9] * wsy
-      shPts[8] = wpx + ((ox4 * ct) - (oy4 * st))
-      shPts[9] = wpy + ((ox4 * st) + (oy4 * ct))
-      let ox5 = shPts[10] * wsx
-      let oy5 = shPts[11] * wsy
-      shPts[10] = wpx + ((ox5 * ct) - (oy5 * st))
-      shPts[11] = wpy + ((ox5 * st) + (oy5 * ct))
-      let ox6 = shPts[12] * wsx
-      let oy6 = shPts[13] * wsy
-      shPts[12] = wpx + ((ox6 * ct) - (oy6 * st))
-      shPts[13] = wpy + ((ox6 * st) + (oy6 * ct))
-      let ox7 = shPts[14] * wsx
-      let oy7 = shPts[15] * wsy
-      shPts[14] = wpx + ((ox7 * ct) - (oy7 * st))
-      shPts[15] = wpy + ((ox7 * st) + (oy7 * ct))
-      let ox8 = shPts[16] * wsx
-      let oy8 = shPts[17] * wsy
-      shPts[16] = wpx + ((ox8 * ct) - (oy8 * st))
-      shPts[17] = wpy + ((ox8 * st) + (oy8 * ct))
-      let ox9 = shPts[18] * wsx
-      let oy9 = shPts[19] * wsy
-      shPts[18] = wpx + ((ox9 * ct) - (oy9 * st))
-      shPts[19] = wpy + ((ox9 * st) + (oy9 * ct))
-      let ox10 = shPts[20] * wsx
-      let oy10 = shPts[21] * wsy
-      shPts[20] = wpx + ((ox10 * ct) - (oy10 * st))
-      shPts[21] = wpy + ((ox10 * st) + (oy10 * ct))
-      let ox11 = shPts[22] * wsx
-      let oy11 = shPts[23] * wsy
-      shPts[22] = wpx + ((ox11 * ct) - (oy11 * st))
-      shPts[23] = wpy + ((ox11 * st) + (oy11 * ct))
-      let ox12 = shPts[24] * wsx
-      let oy12 = shPts[25] * wsy
-      shPts[24] = wpx + ((ox12 * ct) - (oy12 * st))
-      shPts[25] = wpy + ((ox12 * st) + (oy12 * ct))
-      let ox13 = shPts[26] * wsx
-      let oy13 = shPts[27] * wsy
-      shPts[26] = wpx + ((ox13 * ct) - (oy13 * st))
-      shPts[27] = wpy + ((ox13 * st) + (oy13 * ct))
-      let ox14 = shPts[28] * wsx
-      let oy14 = shPts[29] * wsy
-      shPts[28] = wpx + ((ox14 * ct) - (oy14 * st))
-      shPts[29] = wpy + ((ox14 * st) + (oy14 * ct))
-      let ox15 = shPts[30] * wsx
-      let oy15 = shPts[31] * wsy
-      shPts[30] = wpx + ((ox15 * ct) - (oy15 * st))
-      shPts[31] = wpy + ((ox15 * st) + (oy15 * ct))
+      if tilt3d < 0.5 {
+        let ct = cos(wr)
+        let st = sin(wr)
+        let ox0 = shPts[0] * wsx
+        let oy0 = shPts[1] * wsy
+        shPts[0] = wpx + ((ox0 * ct) - (oy0 * st))
+        shPts[1] = wpy + ((ox0 * st) + (oy0 * ct))
+        shPz[0] = wpz
+        let ox1 = shPts[2] * wsx
+        let oy1 = shPts[3] * wsy
+        shPts[2] = wpx + ((ox1 * ct) - (oy1 * st))
+        shPts[3] = wpy + ((ox1 * st) + (oy1 * ct))
+        shPz[1] = wpz
+        let ox2 = shPts[4] * wsx
+        let oy2 = shPts[5] * wsy
+        shPts[4] = wpx + ((ox2 * ct) - (oy2 * st))
+        shPts[5] = wpy + ((ox2 * st) + (oy2 * ct))
+        shPz[2] = wpz
+        let ox3 = shPts[6] * wsx
+        let oy3 = shPts[7] * wsy
+        shPts[6] = wpx + ((ox3 * ct) - (oy3 * st))
+        shPts[7] = wpy + ((ox3 * st) + (oy3 * ct))
+        shPz[3] = wpz
+        let ox4 = shPts[8] * wsx
+        let oy4 = shPts[9] * wsy
+        shPts[8] = wpx + ((ox4 * ct) - (oy4 * st))
+        shPts[9] = wpy + ((ox4 * st) + (oy4 * ct))
+        shPz[4] = wpz
+        let ox5 = shPts[10] * wsx
+        let oy5 = shPts[11] * wsy
+        shPts[10] = wpx + ((ox5 * ct) - (oy5 * st))
+        shPts[11] = wpy + ((ox5 * st) + (oy5 * ct))
+        shPz[5] = wpz
+        let ox6 = shPts[12] * wsx
+        let oy6 = shPts[13] * wsy
+        shPts[12] = wpx + ((ox6 * ct) - (oy6 * st))
+        shPts[13] = wpy + ((ox6 * st) + (oy6 * ct))
+        shPz[6] = wpz
+        let ox7 = shPts[14] * wsx
+        let oy7 = shPts[15] * wsy
+        shPts[14] = wpx + ((ox7 * ct) - (oy7 * st))
+        shPts[15] = wpy + ((ox7 * st) + (oy7 * ct))
+        shPz[7] = wpz
+        let ox8 = shPts[16] * wsx
+        let oy8 = shPts[17] * wsy
+        shPts[16] = wpx + ((ox8 * ct) - (oy8 * st))
+        shPts[17] = wpy + ((ox8 * st) + (oy8 * ct))
+        shPz[8] = wpz
+        let ox9 = shPts[18] * wsx
+        let oy9 = shPts[19] * wsy
+        shPts[18] = wpx + ((ox9 * ct) - (oy9 * st))
+        shPts[19] = wpy + ((ox9 * st) + (oy9 * ct))
+        shPz[9] = wpz
+        let ox10 = shPts[20] * wsx
+        let oy10 = shPts[21] * wsy
+        shPts[20] = wpx + ((ox10 * ct) - (oy10 * st))
+        shPts[21] = wpy + ((ox10 * st) + (oy10 * ct))
+        shPz[10] = wpz
+        let ox11 = shPts[22] * wsx
+        let oy11 = shPts[23] * wsy
+        shPts[22] = wpx + ((ox11 * ct) - (oy11 * st))
+        shPts[23] = wpy + ((ox11 * st) + (oy11 * ct))
+        shPz[11] = wpz
+        let ox12 = shPts[24] * wsx
+        let oy12 = shPts[25] * wsy
+        shPts[24] = wpx + ((ox12 * ct) - (oy12 * st))
+        shPts[25] = wpy + ((ox12 * st) + (oy12 * ct))
+        shPz[12] = wpz
+        let ox13 = shPts[26] * wsx
+        let oy13 = shPts[27] * wsy
+        shPts[26] = wpx + ((ox13 * ct) - (oy13 * st))
+        shPts[27] = wpy + ((ox13 * st) + (oy13 * ct))
+        shPz[13] = wpz
+        let ox14 = shPts[28] * wsx
+        let oy14 = shPts[29] * wsy
+        shPts[28] = wpx + ((ox14 * ct) - (oy14 * st))
+        shPts[29] = wpy + ((ox14 * st) + (oy14 * ct))
+        shPz[14] = wpz
+        let ox15 = shPts[30] * wsx
+        let oy15 = shPts[31] * wsy
+        shPts[30] = wpx + ((ox15 * ct) - (oy15 * st))
+        shPts[31] = wpy + ((ox15 * st) + (oy15 * ct))
+        shPz[15] = wpz
+      } else {
+        let mcx = cos(pRot.x)
+        let msx = sin(pRot.x)
+        let mcy = cos(pRot.y)
+        let msy = sin(pRot.y)
+        let mcz = cos(pRot.z)
+        let msz = sin(pRot.z)
+        let mr00 = mcz * mcy
+        let mr01 = mcz * msy * msx - msz * mcx
+        let mr02 = mcz * msy * mcx + msz * msx
+        let mr10 = msz * mcy
+        let mr11 = msz * msy * msx + mcz * mcx
+        let mr12 = msz * msy * mcx - mcz * msx
+        let mr20 = 0.0 - msy
+        let mr21 = mcy * msx
+        let mr22 = mcy * mcx
+        let mm00 = mr00 * lsx
+        let mm01 = mr01 * lsy
+        let mm02 = mr02 * lsz
+        let mm10 = mr10 * lsx
+        let mm11 = mr11 * lsy
+        let mm12 = mr12 * lsz
+        let mm20 = mr20 * lsx
+        let mm21 = mr21 * lsy
+        let mm22 = mr22 * lsz
+        m00 = mm00
+        m01 = mm01
+        m02 = mm02
+        m03 = pPos.x
+        m10 = mm10
+        m11 = mm11
+        m12 = mm12
+        m13 = pPos.y
+        m20 = mm20
+        m21 = mm21
+        m22 = mm22
+        m23 = pPos.z
+        cur = pParent
+        if cur >= 1.0 {
+          let qli = (cur - 1.0) | 0
+          if slLive[qli] > 0.5 {
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * m00 + qp01 * m10 + qp02 * m20
+            let n01 = qp00 * m01 + qp01 * m11 + qp02 * m21
+            let n02 = qp00 * m02 + qp01 * m12 + qp02 * m22
+            let n03 = qp00 * m03 + qp01 * m13 + qp02 * m23 + qpx
+            let n10 = qp10 * m00 + qp11 * m10 + qp12 * m20
+            let n11 = qp10 * m01 + qp11 * m11 + qp12 * m21
+            let n12 = qp10 * m02 + qp11 * m12 + qp12 * m22
+            let n13 = qp10 * m03 + qp11 * m13 + qp12 * m23 + qpy
+            let n20 = qp20 * m00 + qp21 * m10 + qp22 * m20
+            let n21 = qp20 * m01 + qp21 * m11 + qp22 * m21
+            let n22 = qp20 * m02 + qp21 * m12 + qp22 * m22
+            let n23 = qp20 * m03 + qp21 * m13 + qp22 * m23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = (cur - 1.0) | 0
+          if slLive[qli] > 0.5 {
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * m00 + qp01 * m10 + qp02 * m20
+            let n01 = qp00 * m01 + qp01 * m11 + qp02 * m21
+            let n02 = qp00 * m02 + qp01 * m12 + qp02 * m22
+            let n03 = qp00 * m03 + qp01 * m13 + qp02 * m23 + qpx
+            let n10 = qp10 * m00 + qp11 * m10 + qp12 * m20
+            let n11 = qp10 * m01 + qp11 * m11 + qp12 * m21
+            let n12 = qp10 * m02 + qp11 * m12 + qp12 * m22
+            let n13 = qp10 * m03 + qp11 * m13 + qp12 * m23 + qpy
+            let n20 = qp20 * m00 + qp21 * m10 + qp22 * m20
+            let n21 = qp20 * m01 + qp21 * m11 + qp22 * m21
+            let n22 = qp20 * m02 + qp21 * m12 + qp22 * m22
+            let n23 = qp20 * m03 + qp21 * m13 + qp22 * m23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = (cur - 1.0) | 0
+          if slLive[qli] > 0.5 {
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * m00 + qp01 * m10 + qp02 * m20
+            let n01 = qp00 * m01 + qp01 * m11 + qp02 * m21
+            let n02 = qp00 * m02 + qp01 * m12 + qp02 * m22
+            let n03 = qp00 * m03 + qp01 * m13 + qp02 * m23 + qpx
+            let n10 = qp10 * m00 + qp11 * m10 + qp12 * m20
+            let n11 = qp10 * m01 + qp11 * m11 + qp12 * m21
+            let n12 = qp10 * m02 + qp11 * m12 + qp12 * m22
+            let n13 = qp10 * m03 + qp11 * m13 + qp12 * m23 + qpy
+            let n20 = qp20 * m00 + qp21 * m10 + qp22 * m20
+            let n21 = qp20 * m01 + qp21 * m11 + qp22 * m21
+            let n22 = qp20 * m02 + qp21 * m12 + qp22 * m22
+            let n23 = qp20 * m03 + qp21 * m13 + qp22 * m23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = (cur - 1.0) | 0
+          if slLive[qli] > 0.5 {
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * m00 + qp01 * m10 + qp02 * m20
+            let n01 = qp00 * m01 + qp01 * m11 + qp02 * m21
+            let n02 = qp00 * m02 + qp01 * m12 + qp02 * m22
+            let n03 = qp00 * m03 + qp01 * m13 + qp02 * m23 + qpx
+            let n10 = qp10 * m00 + qp11 * m10 + qp12 * m20
+            let n11 = qp10 * m01 + qp11 * m11 + qp12 * m21
+            let n12 = qp10 * m02 + qp11 * m12 + qp12 * m22
+            let n13 = qp10 * m03 + qp11 * m13 + qp12 * m23 + qpy
+            let n20 = qp20 * m00 + qp21 * m10 + qp22 * m20
+            let n21 = qp20 * m01 + qp21 * m11 + qp22 * m21
+            let n22 = qp20 * m02 + qp21 * m12 + qp22 * m22
+            let n23 = qp20 * m03 + qp21 * m13 + qp22 * m23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = (cur - 1.0) | 0
+          if slLive[qli] > 0.5 {
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * m00 + qp01 * m10 + qp02 * m20
+            let n01 = qp00 * m01 + qp01 * m11 + qp02 * m21
+            let n02 = qp00 * m02 + qp01 * m12 + qp02 * m22
+            let n03 = qp00 * m03 + qp01 * m13 + qp02 * m23 + qpx
+            let n10 = qp10 * m00 + qp11 * m10 + qp12 * m20
+            let n11 = qp10 * m01 + qp11 * m11 + qp12 * m21
+            let n12 = qp10 * m02 + qp11 * m12 + qp12 * m22
+            let n13 = qp10 * m03 + qp11 * m13 + qp12 * m23 + qpy
+            let n20 = qp20 * m00 + qp21 * m10 + qp22 * m20
+            let n21 = qp20 * m01 + qp21 * m11 + qp22 * m21
+            let n22 = qp20 * m02 + qp21 * m12 + qp22 * m22
+            let n23 = qp20 * m03 + qp21 * m13 + qp22 * m23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = (cur - 1.0) | 0
+          if slLive[qli] > 0.5 {
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * m00 + qp01 * m10 + qp02 * m20
+            let n01 = qp00 * m01 + qp01 * m11 + qp02 * m21
+            let n02 = qp00 * m02 + qp01 * m12 + qp02 * m22
+            let n03 = qp00 * m03 + qp01 * m13 + qp02 * m23 + qpx
+            let n10 = qp10 * m00 + qp11 * m10 + qp12 * m20
+            let n11 = qp10 * m01 + qp11 * m11 + qp12 * m21
+            let n12 = qp10 * m02 + qp11 * m12 + qp12 * m22
+            let n13 = qp10 * m03 + qp11 * m13 + qp12 * m23 + qpy
+            let n20 = qp20 * m00 + qp21 * m10 + qp22 * m20
+            let n21 = qp20 * m01 + qp21 * m11 + qp22 * m21
+            let n22 = qp20 * m02 + qp21 * m12 + qp22 * m22
+            let n23 = qp20 * m03 + qp21 * m13 + qp22 * m23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = (cur - 1.0) | 0
+          if slLive[qli] > 0.5 {
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * m00 + qp01 * m10 + qp02 * m20
+            let n01 = qp00 * m01 + qp01 * m11 + qp02 * m21
+            let n02 = qp00 * m02 + qp01 * m12 + qp02 * m22
+            let n03 = qp00 * m03 + qp01 * m13 + qp02 * m23 + qpx
+            let n10 = qp10 * m00 + qp11 * m10 + qp12 * m20
+            let n11 = qp10 * m01 + qp11 * m11 + qp12 * m21
+            let n12 = qp10 * m02 + qp11 * m12 + qp12 * m22
+            let n13 = qp10 * m03 + qp11 * m13 + qp12 * m23 + qpy
+            let n20 = qp20 * m00 + qp21 * m10 + qp22 * m20
+            let n21 = qp20 * m01 + qp21 * m11 + qp22 * m21
+            let n22 = qp20 * m02 + qp21 * m12 + qp22 * m22
+            let n23 = qp20 * m03 + qp21 * m13 + qp22 * m23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = (cur - 1.0) | 0
+          if slLive[qli] > 0.5 {
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * m00 + qp01 * m10 + qp02 * m20
+            let n01 = qp00 * m01 + qp01 * m11 + qp02 * m21
+            let n02 = qp00 * m02 + qp01 * m12 + qp02 * m22
+            let n03 = qp00 * m03 + qp01 * m13 + qp02 * m23 + qpx
+            let n10 = qp10 * m00 + qp11 * m10 + qp12 * m20
+            let n11 = qp10 * m01 + qp11 * m11 + qp12 * m21
+            let n12 = qp10 * m02 + qp11 * m12 + qp12 * m22
+            let n13 = qp10 * m03 + qp11 * m13 + qp12 * m23 + qpy
+            let n20 = qp20 * m00 + qp21 * m10 + qp22 * m20
+            let n21 = qp20 * m01 + qp21 * m11 + qp22 * m21
+            let n22 = qp20 * m02 + qp21 * m12 + qp22 * m22
+            let n23 = qp20 * m03 + qp21 * m13 + qp22 * m23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          cur = 0.0
+        }
+        let qx0 = shPts[0]
+        let qy0 = shPts[1]
+        shPts[0] = m00 * qx0 + m01 * qy0 + m03
+        shPts[1] = m10 * qx0 + m11 * qy0 + m13
+        shPz[0] = m20 * qx0 + m21 * qy0 + m23
+        let qx1 = shPts[2]
+        let qy1 = shPts[3]
+        shPts[2] = m00 * qx1 + m01 * qy1 + m03
+        shPts[3] = m10 * qx1 + m11 * qy1 + m13
+        shPz[1] = m20 * qx1 + m21 * qy1 + m23
+        let qx2 = shPts[4]
+        let qy2 = shPts[5]
+        shPts[4] = m00 * qx2 + m01 * qy2 + m03
+        shPts[5] = m10 * qx2 + m11 * qy2 + m13
+        shPz[2] = m20 * qx2 + m21 * qy2 + m23
+        let qx3 = shPts[6]
+        let qy3 = shPts[7]
+        shPts[6] = m00 * qx3 + m01 * qy3 + m03
+        shPts[7] = m10 * qx3 + m11 * qy3 + m13
+        shPz[3] = m20 * qx3 + m21 * qy3 + m23
+        let qx4 = shPts[8]
+        let qy4 = shPts[9]
+        shPts[8] = m00 * qx4 + m01 * qy4 + m03
+        shPts[9] = m10 * qx4 + m11 * qy4 + m13
+        shPz[4] = m20 * qx4 + m21 * qy4 + m23
+        let qx5 = shPts[10]
+        let qy5 = shPts[11]
+        shPts[10] = m00 * qx5 + m01 * qy5 + m03
+        shPts[11] = m10 * qx5 + m11 * qy5 + m13
+        shPz[5] = m20 * qx5 + m21 * qy5 + m23
+        let qx6 = shPts[12]
+        let qy6 = shPts[13]
+        shPts[12] = m00 * qx6 + m01 * qy6 + m03
+        shPts[13] = m10 * qx6 + m11 * qy6 + m13
+        shPz[6] = m20 * qx6 + m21 * qy6 + m23
+        let qx7 = shPts[14]
+        let qy7 = shPts[15]
+        shPts[14] = m00 * qx7 + m01 * qy7 + m03
+        shPts[15] = m10 * qx7 + m11 * qy7 + m13
+        shPz[7] = m20 * qx7 + m21 * qy7 + m23
+        let qx8 = shPts[16]
+        let qy8 = shPts[17]
+        shPts[16] = m00 * qx8 + m01 * qy8 + m03
+        shPts[17] = m10 * qx8 + m11 * qy8 + m13
+        shPz[8] = m20 * qx8 + m21 * qy8 + m23
+        let qx9 = shPts[18]
+        let qy9 = shPts[19]
+        shPts[18] = m00 * qx9 + m01 * qy9 + m03
+        shPts[19] = m10 * qx9 + m11 * qy9 + m13
+        shPz[9] = m20 * qx9 + m21 * qy9 + m23
+        let qx10 = shPts[20]
+        let qy10 = shPts[21]
+        shPts[20] = m00 * qx10 + m01 * qy10 + m03
+        shPts[21] = m10 * qx10 + m11 * qy10 + m13
+        shPz[10] = m20 * qx10 + m21 * qy10 + m23
+        let qx11 = shPts[22]
+        let qy11 = shPts[23]
+        shPts[22] = m00 * qx11 + m01 * qy11 + m03
+        shPts[23] = m10 * qx11 + m11 * qy11 + m13
+        shPz[11] = m20 * qx11 + m21 * qy11 + m23
+        let qx12 = shPts[24]
+        let qy12 = shPts[25]
+        shPts[24] = m00 * qx12 + m01 * qy12 + m03
+        shPts[25] = m10 * qx12 + m11 * qy12 + m13
+        shPz[12] = m20 * qx12 + m21 * qy12 + m23
+        let qx13 = shPts[26]
+        let qy13 = shPts[27]
+        shPts[26] = m00 * qx13 + m01 * qy13 + m03
+        shPts[27] = m10 * qx13 + m11 * qy13 + m13
+        shPz[13] = m20 * qx13 + m21 * qy13 + m23
+        let qx14 = shPts[28]
+        let qy14 = shPts[29]
+        shPts[28] = m00 * qx14 + m01 * qy14 + m03
+        shPts[29] = m10 * qx14 + m11 * qy14 + m13
+        shPz[14] = m20 * qx14 + m21 * qy14 + m23
+        let qx15 = shPts[30]
+        let qy15 = shPts[31]
+        shPts[30] = m00 * qx15 + m01 * qy15 + m03
+        shPts[31] = m10 * qx15 + m11 * qy15 + m13
+        shPz[15] = m20 * qx15 + m21 * qy15 + m23
+      }
     }
   }
   if arming {
@@ -12966,6 +14255,7 @@ mod paintTick() {
       clearing = false
       fromSlot = false
       eraseOK = true
+      noDepth = true
       shPts[0] = 0.0
       shPts[1] = 0.0
       shPts[2] = 64.0
@@ -12995,6 +14285,7 @@ mod paintTick() {
       pC15 = Color(0.0, 0.0, 0.0, 1.0)
     } else {
       erasing = false
+      noDepth = false
       if fromSlot {
         fromSlot = false
         eraseOK = true
@@ -13042,6 +14333,22 @@ mod paintTick() {
       let py14 = shPts[29]
       let px15 = shPts[30]
       let py15 = shPts[31]
+      pzV0 = shPz[0]
+      pzV1 = shPz[1]
+      pzV2 = shPz[2]
+      pzV3 = shPz[3]
+      pzV4 = shPz[4]
+      pzV5 = shPz[5]
+      pzV6 = shPz[6]
+      pzV7 = shPz[7]
+      pzV8 = shPz[8]
+      pzV9 = shPz[9]
+      pzV10 = shPz[10]
+      pzV11 = shPz[11]
+      pzV12 = shPz[12]
+      pzV13 = shPz[13]
+      pzV14 = shPz[14]
+      pzV15 = shPz[15]
       let qx0 = if 1.0 < n then px1 else px0
       let qy0 = if 1.0 < n then py1 else py0
       if 0.0 < n {
@@ -13400,7 +14707,7 @@ mod paintTick() {
       } else {
         pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)
         plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)
-        prow = pfirst - 2.0
+        prow = pfirst - 8.0
         pcol = 200.0
         polyOn = true
         polyLive = true
@@ -13413,51 +14720,67 @@ mod paintTick() {
     polyLive = false
     sPx0 = shPts[0]
     sPy0 = shPts[1]
+    sPz0 = shPz[0]
     sPc0 = pC0
     sPx1 = shPts[2]
     sPy1 = shPts[3]
+    sPz1 = shPz[1]
     sPc1 = pC1
     sPx2 = shPts[4]
     sPy2 = shPts[5]
+    sPz2 = shPz[2]
     sPc2 = pC2
     sPx3 = shPts[6]
     sPy3 = shPts[7]
+    sPz3 = shPz[3]
     sPc3 = pC3
     sPx4 = shPts[8]
     sPy4 = shPts[9]
+    sPz4 = shPz[4]
     sPc4 = pC4
     sPx5 = shPts[10]
     sPy5 = shPts[11]
+    sPz5 = shPz[5]
     sPc5 = pC5
     sPx6 = shPts[12]
     sPy6 = shPts[13]
+    sPz6 = shPz[6]
     sPc6 = pC6
     sPx7 = shPts[14]
     sPy7 = shPts[15]
+    sPz7 = shPz[7]
     sPc7 = pC7
     sPx8 = shPts[16]
     sPy8 = shPts[17]
+    sPz8 = shPz[8]
     sPc8 = pC8
     sPx9 = shPts[18]
     sPy9 = shPts[19]
+    sPz9 = shPz[9]
     sPc9 = pC9
     sPx10 = shPts[20]
     sPy10 = shPts[21]
+    sPz10 = shPz[10]
     sPc10 = pC10
     sPx11 = shPts[22]
     sPy11 = shPts[23]
+    sPz11 = shPz[11]
     sPc11 = pC11
     sPx12 = shPts[24]
     sPy12 = shPts[25]
+    sPz12 = shPz[12]
     sPc12 = pC12
     sPx13 = shPts[26]
     sPy13 = shPts[27]
+    sPz13 = shPz[13]
     sPc13 = pC13
     sPx14 = shPts[28]
     sPy14 = shPts[29]
+    sPz14 = shPz[14]
     sPc14 = pC14
     sPx15 = shPts[30]
     sPy15 = shPts[31]
+    sPz15 = shPz[15]
     sPc15 = pC15
     if fromSlot {
       fromSlot = false
@@ -13485,12 +14808,16 @@ mod paintTick() {
           iCD = 0.0
           qAx = sPx0 | 0
           qAy = sPy0 | 0
+          qAz = sPz0
           qBx = (sPx0 | 0) + 1.0
           qBy = sPy0 | 0
+          qBz = sPz0
           qCx = (sPx0 | 0) + 1.0
           qCy = (sPy0 | 0) + 2.0
+          qCz = sPz0
           qDx = sPx0 | 0
           qDy = (sPy0 | 0) + 2.0
+          qDz = sPz0
           sFresh = false
           sFreshLast = false
           sEnd = false
@@ -13503,51 +14830,67 @@ mod paintTick() {
         sSegs = sSegs - 1.0
         rX0 = sPx0
         rY0 = sPy0
+        rZ0 = sPz0
         rC0 = sPc0
         rX1 = sPx1
         rY1 = sPy1
+        rZ1 = sPz1
         rC1 = sPc1
         rX2 = sPx2
         rY2 = sPy2
+        rZ2 = sPz2
         rC2 = sPc2
         rX3 = sPx3
         rY3 = sPy3
+        rZ3 = sPz3
         rC3 = sPc3
         rX4 = sPx4
         rY4 = sPy4
+        rZ4 = sPz4
         rC4 = sPc4
         rX5 = sPx5
         rY5 = sPy5
+        rZ5 = sPz5
         rC5 = sPc5
         rX6 = sPx6
         rY6 = sPy6
+        rZ6 = sPz6
         rC6 = sPc6
         rX7 = sPx7
         rY7 = sPy7
+        rZ7 = sPz7
         rC7 = sPc7
         rX8 = sPx8
         rY8 = sPy8
+        rZ8 = sPz8
         rC8 = sPc8
         rX9 = sPx9
         rY9 = sPy9
+        rZ9 = sPz9
         rC9 = sPc9
         rX10 = sPx10
         rY10 = sPy10
+        rZ10 = sPz10
         rC10 = sPc10
         rX11 = sPx11
         rY11 = sPy11
+        rZ11 = sPz11
         rC11 = sPc11
         rX12 = sPx12
         rY12 = sPy12
+        rZ12 = sPz12
         rC12 = sPc12
         rX13 = sPx13
         rY13 = sPy13
+        rZ13 = sPz13
         rC13 = sPc13
         rX14 = sPx14
         rY14 = sPy14
+        rZ14 = sPz14
         rC14 = sPc14
         rX15 = sPx15
         rY15 = sPy15
+        rZ15 = sPz15
         rC15 = sPc15
         sFresh = false
         sFreshLast = false
@@ -13565,7 +14908,7 @@ mod paintTick() {
   }
   if polyOn {
     if pcol > pcurR {
-      prow = prow + (if prow + 2.0 <= plast then 2.0 else 1.0)
+      prow = prow + 8.0
       if prow > plast {
         polyOn = false
       } else {
@@ -13573,143 +14916,189 @@ mod paintTick() {
         let cv0 = prow >= eLo0 && prow < eHi0
         let cx0 = eX0 + eS0 * (prow - eY0)
         cc0 = pC0 + (prow - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let cz0 = pzV0 + (prow - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmn0 = if cv0 then cx0 else 200.0
         let cmx0 = if cv0 then cx0 else -200.0
         let cv1 = prow >= eLo1 && prow < eHi1
         let cx1 = eX1 + eS1 * (prow - eY1)
         cc1 = pC1 + (prow - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let cz1 = pzV1 + (prow - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmn1 = if cv1 then cx1 else 200.0
         let cmx1 = if cv1 then cx1 else -200.0
         let cv2 = prow >= eLo2 && prow < eHi2
         let cx2 = eX2 + eS2 * (prow - eY2)
         cc2 = pC2 + (prow - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let cz2 = pzV2 + (prow - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmn2 = if cv2 then cx2 else 200.0
         let cmx2 = if cv2 then cx2 else -200.0
         let cv3 = prow >= eLo3 && prow < eHi3
         let cx3 = eX3 + eS3 * (prow - eY3)
         cc3 = pC3 + (prow - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let cz3 = pzV3 + (prow - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmn3 = if cv3 then cx3 else 200.0
         let cmx3 = if cv3 then cx3 else -200.0
         let cv4 = prow >= eLo4 && prow < eHi4
         let cx4 = eX4 + eS4 * (prow - eY4)
         cc4 = pC4 + (prow - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let cz4 = pzV4 + (prow - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmn4 = if cv4 then cx4 else 200.0
         let cmx4 = if cv4 then cx4 else -200.0
         let cv5 = prow >= eLo5 && prow < eHi5
         let cx5 = eX5 + eS5 * (prow - eY5)
         cc5 = pC5 + (prow - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let cz5 = pzV5 + (prow - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmn5 = if cv5 then cx5 else 200.0
         let cmx5 = if cv5 then cx5 else -200.0
         let cv6 = prow >= eLo6 && prow < eHi6
         let cx6 = eX6 + eS6 * (prow - eY6)
         cc6 = pC6 + (prow - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let cz6 = pzV6 + (prow - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmn6 = if cv6 then cx6 else 200.0
         let cmx6 = if cv6 then cx6 else -200.0
         let cv7 = prow >= eLo7 && prow < eHi7
         let cx7 = eX7 + eS7 * (prow - eY7)
         cc7 = pC7 + (prow - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let cz7 = pzV7 + (prow - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmn7 = if cv7 then cx7 else 200.0
         let cmx7 = if cv7 then cx7 else -200.0
         let cv8 = prow >= eLo8 && prow < eHi8
         let cx8 = eX8 + eS8 * (prow - eY8)
         cc8 = pC8 + (prow - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let cz8 = pzV8 + (prow - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmn8 = if cv8 then cx8 else 200.0
         let cmx8 = if cv8 then cx8 else -200.0
         let cv9 = prow >= eLo9 && prow < eHi9
         let cx9 = eX9 + eS9 * (prow - eY9)
         cc9 = pC9 + (prow - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let cz9 = pzV9 + (prow - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmn9 = if cv9 then cx9 else 200.0
         let cmx9 = if cv9 then cx9 else -200.0
         let cv10 = prow >= eLo10 && prow < eHi10
         let cx10 = eX10 + eS10 * (prow - eY10)
         cc10 = pC10 + (prow - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let cz10 = pzV10 + (prow - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmn10 = if cv10 then cx10 else 200.0
         let cmx10 = if cv10 then cx10 else -200.0
         let cv11 = prow >= eLo11 && prow < eHi11
         let cx11 = eX11 + eS11 * (prow - eY11)
         cc11 = pC11 + (prow - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let cz11 = pzV11 + (prow - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmn11 = if cv11 then cx11 else 200.0
         let cmx11 = if cv11 then cx11 else -200.0
         let cv12 = prow >= eLo12 && prow < eHi12
         let cx12 = eX12 + eS12 * (prow - eY12)
         cc12 = pC12 + (prow - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let cz12 = pzV12 + (prow - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmn12 = if cv12 then cx12 else 200.0
         let cmx12 = if cv12 then cx12 else -200.0
         let cv13 = prow >= eLo13 && prow < eHi13
         let cx13 = eX13 + eS13 * (prow - eY13)
         cc13 = pC13 + (prow - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let cz13 = pzV13 + (prow - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmn13 = if cv13 then cx13 else 200.0
         let cmx13 = if cv13 then cx13 else -200.0
         let cv14 = prow >= eLo14 && prow < eHi14
         let cx14 = eX14 + eS14 * (prow - eY14)
         cc14 = pC14 + (prow - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let cz14 = pzV14 + (prow - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmn14 = if cv14 then cx14 else 200.0
         let cmx14 = if cv14 then cx14 else -200.0
         let cv15 = prow >= eLo15 && prow < eHi15
         let cx15 = eX15 + eS15 * (prow - eY15)
         cc15 = pC15 + (prow - eY15) * eInv15 * (pC0 - pC15)
+        let cz15 = pzV15 + (prow - eY15) * eInv15 * (pzV0 - pzV15)
         let cmn15 = if cv15 then cx15 else 200.0
         let cmx15 = if cv15 then cx15 else -200.0
         let n0_0 = if cmn0 < cmn1 then cmn0 else cmn1
         let nc0_0 = if cmn0 < cmn1 then cc0 else cc1
+        let nz0_0 = if cmn0 < cmn1 then cz0 else cz1
         let n0_2 = if cmn2 < cmn3 then cmn2 else cmn3
         let nc0_2 = if cmn2 < cmn3 then cc2 else cc3
+        let nz0_2 = if cmn2 < cmn3 then cz2 else cz3
         let n0_4 = if cmn4 < cmn5 then cmn4 else cmn5
         let nc0_4 = if cmn4 < cmn5 then cc4 else cc5
+        let nz0_4 = if cmn4 < cmn5 then cz4 else cz5
         let n0_6 = if cmn6 < cmn7 then cmn6 else cmn7
         let nc0_6 = if cmn6 < cmn7 then cc6 else cc7
+        let nz0_6 = if cmn6 < cmn7 then cz6 else cz7
         let n0_8 = if cmn8 < cmn9 then cmn8 else cmn9
         let nc0_8 = if cmn8 < cmn9 then cc8 else cc9
+        let nz0_8 = if cmn8 < cmn9 then cz8 else cz9
         let n0_10 = if cmn10 < cmn11 then cmn10 else cmn11
         let nc0_10 = if cmn10 < cmn11 then cc10 else cc11
+        let nz0_10 = if cmn10 < cmn11 then cz10 else cz11
         let n0_12 = if cmn12 < cmn13 then cmn12 else cmn13
         let nc0_12 = if cmn12 < cmn13 then cc12 else cc13
+        let nz0_12 = if cmn12 < cmn13 then cz12 else cz13
         let n0_14 = if cmn14 < cmn15 then cmn14 else cmn15
         let nc0_14 = if cmn14 < cmn15 then cc14 else cc15
+        let nz0_14 = if cmn14 < cmn15 then cz14 else cz15
         let n1_0 = if n0_0 < n0_2 then n0_0 else n0_2
         let nc1_0 = if n0_0 < n0_2 then nc0_0 else nc0_2
+        let nz1_0 = if n0_0 < n0_2 then nz0_0 else nz0_2
         let n1_2 = if n0_4 < n0_6 then n0_4 else n0_6
         let nc1_2 = if n0_4 < n0_6 then nc0_4 else nc0_6
+        let nz1_2 = if n0_4 < n0_6 then nz0_4 else nz0_6
         let n1_4 = if n0_8 < n0_10 then n0_8 else n0_10
         let nc1_4 = if n0_8 < n0_10 then nc0_8 else nc0_10
+        let nz1_4 = if n0_8 < n0_10 then nz0_8 else nz0_10
         let n1_6 = if n0_12 < n0_14 then n0_12 else n0_14
         let nc1_6 = if n0_12 < n0_14 then nc0_12 else nc0_14
+        let nz1_6 = if n0_12 < n0_14 then nz0_12 else nz0_14
         let n2_0 = if n1_0 < n1_2 then n1_0 else n1_2
         let nc2_0 = if n1_0 < n1_2 then nc1_0 else nc1_2
+        let nz2_0 = if n1_0 < n1_2 then nz1_0 else nz1_2
         let n2_2 = if n1_4 < n1_6 then n1_4 else n1_6
         let nc2_2 = if n1_4 < n1_6 then nc1_4 else nc1_6
+        let nz2_2 = if n1_4 < n1_6 then nz1_4 else nz1_6
         let n3_0 = if n2_0 < n2_2 then n2_0 else n2_2
         let nc3_0 = if n2_0 < n2_2 then nc2_0 else nc2_2
+        let nz3_0 = if n2_0 < n2_2 then nz2_0 else nz2_2
         let x0_0 = if cmx0 < cmx1 then cmx1 else cmx0
         let xc0_0 = if cmx0 < cmx1 then cc1 else cc0
+        let xz0_0 = if cmx0 < cmx1 then cz1 else cz0
         let x0_2 = if cmx2 < cmx3 then cmx3 else cmx2
         let xc0_2 = if cmx2 < cmx3 then cc3 else cc2
+        let xz0_2 = if cmx2 < cmx3 then cz3 else cz2
         let x0_4 = if cmx4 < cmx5 then cmx5 else cmx4
         let xc0_4 = if cmx4 < cmx5 then cc5 else cc4
+        let xz0_4 = if cmx4 < cmx5 then cz5 else cz4
         let x0_6 = if cmx6 < cmx7 then cmx7 else cmx6
         let xc0_6 = if cmx6 < cmx7 then cc7 else cc6
+        let xz0_6 = if cmx6 < cmx7 then cz7 else cz6
         let x0_8 = if cmx8 < cmx9 then cmx9 else cmx8
         let xc0_8 = if cmx8 < cmx9 then cc9 else cc8
+        let xz0_8 = if cmx8 < cmx9 then cz9 else cz8
         let x0_10 = if cmx10 < cmx11 then cmx11 else cmx10
         let xc0_10 = if cmx10 < cmx11 then cc11 else cc10
+        let xz0_10 = if cmx10 < cmx11 then cz11 else cz10
         let x0_12 = if cmx12 < cmx13 then cmx13 else cmx12
         let xc0_12 = if cmx12 < cmx13 then cc13 else cc12
+        let xz0_12 = if cmx12 < cmx13 then cz13 else cz12
         let x0_14 = if cmx14 < cmx15 then cmx15 else cmx14
         let xc0_14 = if cmx14 < cmx15 then cc15 else cc14
+        let xz0_14 = if cmx14 < cmx15 then cz15 else cz14
         let x1_0 = if x0_0 < x0_2 then x0_2 else x0_0
         let xc1_0 = if x0_0 < x0_2 then xc0_2 else xc0_0
+        let xz1_0 = if x0_0 < x0_2 then xz0_2 else xz0_0
         let x1_2 = if x0_4 < x0_6 then x0_6 else x0_4
         let xc1_2 = if x0_4 < x0_6 then xc0_6 else xc0_4
+        let xz1_2 = if x0_4 < x0_6 then xz0_6 else xz0_4
         let x1_4 = if x0_8 < x0_10 then x0_10 else x0_8
         let xc1_4 = if x0_8 < x0_10 then xc0_10 else xc0_8
+        let xz1_4 = if x0_8 < x0_10 then xz0_10 else xz0_8
         let x1_6 = if x0_12 < x0_14 then x0_14 else x0_12
         let xc1_6 = if x0_12 < x0_14 then xc0_14 else xc0_12
+        let xz1_6 = if x0_12 < x0_14 then xz0_14 else xz0_12
         let x2_0 = if x1_0 < x1_2 then x1_2 else x1_0
         let xc2_0 = if x1_0 < x1_2 then xc1_2 else xc1_0
+        let xz2_0 = if x1_0 < x1_2 then xz1_2 else xz1_0
         let x2_2 = if x1_4 < x1_6 then x1_6 else x1_4
         let xc2_2 = if x1_4 < x1_6 then xc1_6 else xc1_4
+        let xz2_2 = if x1_4 < x1_6 then xz1_6 else xz1_4
         let x3_0 = if x2_0 < x2_2 then x2_2 else x2_0
         let xc3_0 = if x2_0 < x2_2 then xc2_2 else xc2_0
+        let xz3_0 = if x2_0 < x2_2 then xz2_2 else xz2_0
         if n3_0 >= 200.0 || x3_0 < 0.0 || n3_0 >= SWF {
           pcol = 200.0
           pcurR = 100.0
@@ -13735,6 +15124,8 @@ mod paintTick() {
           let span = x3_0 - n3_0
           let inv = if span > 0.0 then 1.0 / span else 0.0
           rowSlope = (xc3_0 - cLo) * inv
+          zLo = nz3_0
+          zSlope = (xz3_0 - zLo) * inv
           cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf, cLo.a)
           rowSlope = Color(rowSlope.r * bf, rowSlope.g * bf, rowSlope.b * bf, rowSlope.a)
         }
@@ -13746,143 +15137,189 @@ mod paintTick() {
         let cvB0 = brow >= eLo0 && brow < eHi0
         let cxB0 = eX0 + eS0 * (brow - eY0)
         cc2_0 = pC0 + (brow - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let cz2_0 = pzV0 + (brow - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnB0 = if cvB0 then cxB0 else 200.0
         let cmxB0 = if cvB0 then cxB0 else -200.0
         let cvB1 = brow >= eLo1 && brow < eHi1
         let cxB1 = eX1 + eS1 * (brow - eY1)
         cc2_1 = pC1 + (brow - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let cz2_1 = pzV1 + (brow - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnB1 = if cvB1 then cxB1 else 200.0
         let cmxB1 = if cvB1 then cxB1 else -200.0
         let cvB2 = brow >= eLo2 && brow < eHi2
         let cxB2 = eX2 + eS2 * (brow - eY2)
         cc2_2 = pC2 + (brow - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let cz2_2 = pzV2 + (brow - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnB2 = if cvB2 then cxB2 else 200.0
         let cmxB2 = if cvB2 then cxB2 else -200.0
         let cvB3 = brow >= eLo3 && brow < eHi3
         let cxB3 = eX3 + eS3 * (brow - eY3)
         cc2_3 = pC3 + (brow - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let cz2_3 = pzV3 + (brow - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnB3 = if cvB3 then cxB3 else 200.0
         let cmxB3 = if cvB3 then cxB3 else -200.0
         let cvB4 = brow >= eLo4 && brow < eHi4
         let cxB4 = eX4 + eS4 * (brow - eY4)
         cc2_4 = pC4 + (brow - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let cz2_4 = pzV4 + (brow - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnB4 = if cvB4 then cxB4 else 200.0
         let cmxB4 = if cvB4 then cxB4 else -200.0
         let cvB5 = brow >= eLo5 && brow < eHi5
         let cxB5 = eX5 + eS5 * (brow - eY5)
         cc2_5 = pC5 + (brow - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let cz2_5 = pzV5 + (brow - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnB5 = if cvB5 then cxB5 else 200.0
         let cmxB5 = if cvB5 then cxB5 else -200.0
         let cvB6 = brow >= eLo6 && brow < eHi6
         let cxB6 = eX6 + eS6 * (brow - eY6)
         cc2_6 = pC6 + (brow - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let cz2_6 = pzV6 + (brow - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnB6 = if cvB6 then cxB6 else 200.0
         let cmxB6 = if cvB6 then cxB6 else -200.0
         let cvB7 = brow >= eLo7 && brow < eHi7
         let cxB7 = eX7 + eS7 * (brow - eY7)
         cc2_7 = pC7 + (brow - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let cz2_7 = pzV7 + (brow - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnB7 = if cvB7 then cxB7 else 200.0
         let cmxB7 = if cvB7 then cxB7 else -200.0
         let cvB8 = brow >= eLo8 && brow < eHi8
         let cxB8 = eX8 + eS8 * (brow - eY8)
         cc2_8 = pC8 + (brow - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let cz2_8 = pzV8 + (brow - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnB8 = if cvB8 then cxB8 else 200.0
         let cmxB8 = if cvB8 then cxB8 else -200.0
         let cvB9 = brow >= eLo9 && brow < eHi9
         let cxB9 = eX9 + eS9 * (brow - eY9)
         cc2_9 = pC9 + (brow - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let cz2_9 = pzV9 + (brow - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnB9 = if cvB9 then cxB9 else 200.0
         let cmxB9 = if cvB9 then cxB9 else -200.0
         let cvB10 = brow >= eLo10 && brow < eHi10
         let cxB10 = eX10 + eS10 * (brow - eY10)
         cc2_10 = pC10 + (brow - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let cz2_10 = pzV10 + (brow - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnB10 = if cvB10 then cxB10 else 200.0
         let cmxB10 = if cvB10 then cxB10 else -200.0
         let cvB11 = brow >= eLo11 && brow < eHi11
         let cxB11 = eX11 + eS11 * (brow - eY11)
         cc2_11 = pC11 + (brow - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let cz2_11 = pzV11 + (brow - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnB11 = if cvB11 then cxB11 else 200.0
         let cmxB11 = if cvB11 then cxB11 else -200.0
         let cvB12 = brow >= eLo12 && brow < eHi12
         let cxB12 = eX12 + eS12 * (brow - eY12)
         cc2_12 = pC12 + (brow - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let cz2_12 = pzV12 + (brow - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnB12 = if cvB12 then cxB12 else 200.0
         let cmxB12 = if cvB12 then cxB12 else -200.0
         let cvB13 = brow >= eLo13 && brow < eHi13
         let cxB13 = eX13 + eS13 * (brow - eY13)
         cc2_13 = pC13 + (brow - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let cz2_13 = pzV13 + (brow - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnB13 = if cvB13 then cxB13 else 200.0
         let cmxB13 = if cvB13 then cxB13 else -200.0
         let cvB14 = brow >= eLo14 && brow < eHi14
         let cxB14 = eX14 + eS14 * (brow - eY14)
         cc2_14 = pC14 + (brow - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let cz2_14 = pzV14 + (brow - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnB14 = if cvB14 then cxB14 else 200.0
         let cmxB14 = if cvB14 then cxB14 else -200.0
         let cvB15 = brow >= eLo15 && brow < eHi15
         let cxB15 = eX15 + eS15 * (brow - eY15)
         cc2_15 = pC15 + (brow - eY15) * eInv15 * (pC0 - pC15)
+        let cz2_15 = pzV15 + (brow - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnB15 = if cvB15 then cxB15 else 200.0
         let cmxB15 = if cvB15 then cxB15 else -200.0
         let bn0_0 = if cmnB0 < cmnB1 then cmnB0 else cmnB1
         let bnc0_0 = if cmnB0 < cmnB1 then cc2_0 else cc2_1
+        let bnz0_0 = if cmnB0 < cmnB1 then cz2_0 else cz2_1
         let bn0_2 = if cmnB2 < cmnB3 then cmnB2 else cmnB3
         let bnc0_2 = if cmnB2 < cmnB3 then cc2_2 else cc2_3
+        let bnz0_2 = if cmnB2 < cmnB3 then cz2_2 else cz2_3
         let bn0_4 = if cmnB4 < cmnB5 then cmnB4 else cmnB5
         let bnc0_4 = if cmnB4 < cmnB5 then cc2_4 else cc2_5
+        let bnz0_4 = if cmnB4 < cmnB5 then cz2_4 else cz2_5
         let bn0_6 = if cmnB6 < cmnB7 then cmnB6 else cmnB7
         let bnc0_6 = if cmnB6 < cmnB7 then cc2_6 else cc2_7
+        let bnz0_6 = if cmnB6 < cmnB7 then cz2_6 else cz2_7
         let bn0_8 = if cmnB8 < cmnB9 then cmnB8 else cmnB9
         let bnc0_8 = if cmnB8 < cmnB9 then cc2_8 else cc2_9
+        let bnz0_8 = if cmnB8 < cmnB9 then cz2_8 else cz2_9
         let bn0_10 = if cmnB10 < cmnB11 then cmnB10 else cmnB11
         let bnc0_10 = if cmnB10 < cmnB11 then cc2_10 else cc2_11
+        let bnz0_10 = if cmnB10 < cmnB11 then cz2_10 else cz2_11
         let bn0_12 = if cmnB12 < cmnB13 then cmnB12 else cmnB13
         let bnc0_12 = if cmnB12 < cmnB13 then cc2_12 else cc2_13
+        let bnz0_12 = if cmnB12 < cmnB13 then cz2_12 else cz2_13
         let bn0_14 = if cmnB14 < cmnB15 then cmnB14 else cmnB15
         let bnc0_14 = if cmnB14 < cmnB15 then cc2_14 else cc2_15
+        let bnz0_14 = if cmnB14 < cmnB15 then cz2_14 else cz2_15
         let bn1_0 = if bn0_0 < bn0_2 then bn0_0 else bn0_2
         let bnc1_0 = if bn0_0 < bn0_2 then bnc0_0 else bnc0_2
+        let bnz1_0 = if bn0_0 < bn0_2 then bnz0_0 else bnz0_2
         let bn1_2 = if bn0_4 < bn0_6 then bn0_4 else bn0_6
         let bnc1_2 = if bn0_4 < bn0_6 then bnc0_4 else bnc0_6
+        let bnz1_2 = if bn0_4 < bn0_6 then bnz0_4 else bnz0_6
         let bn1_4 = if bn0_8 < bn0_10 then bn0_8 else bn0_10
         let bnc1_4 = if bn0_8 < bn0_10 then bnc0_8 else bnc0_10
+        let bnz1_4 = if bn0_8 < bn0_10 then bnz0_8 else bnz0_10
         let bn1_6 = if bn0_12 < bn0_14 then bn0_12 else bn0_14
         let bnc1_6 = if bn0_12 < bn0_14 then bnc0_12 else bnc0_14
+        let bnz1_6 = if bn0_12 < bn0_14 then bnz0_12 else bnz0_14
         let bn2_0 = if bn1_0 < bn1_2 then bn1_0 else bn1_2
         let bnc2_0 = if bn1_0 < bn1_2 then bnc1_0 else bnc1_2
+        let bnz2_0 = if bn1_0 < bn1_2 then bnz1_0 else bnz1_2
         let bn2_2 = if bn1_4 < bn1_6 then bn1_4 else bn1_6
         let bnc2_2 = if bn1_4 < bn1_6 then bnc1_4 else bnc1_6
+        let bnz2_2 = if bn1_4 < bn1_6 then bnz1_4 else bnz1_6
         let bn3_0 = if bn2_0 < bn2_2 then bn2_0 else bn2_2
         let bnc3_0 = if bn2_0 < bn2_2 then bnc2_0 else bnc2_2
+        let bnz3_0 = if bn2_0 < bn2_2 then bnz2_0 else bnz2_2
         let bx0_0 = if cmxB0 < cmxB1 then cmxB1 else cmxB0
         let bxc0_0 = if cmxB0 < cmxB1 then cc2_1 else cc2_0
+        let bxz0_0 = if cmxB0 < cmxB1 then cz2_1 else cz2_0
         let bx0_2 = if cmxB2 < cmxB3 then cmxB3 else cmxB2
         let bxc0_2 = if cmxB2 < cmxB3 then cc2_3 else cc2_2
+        let bxz0_2 = if cmxB2 < cmxB3 then cz2_3 else cz2_2
         let bx0_4 = if cmxB4 < cmxB5 then cmxB5 else cmxB4
         let bxc0_4 = if cmxB4 < cmxB5 then cc2_5 else cc2_4
+        let bxz0_4 = if cmxB4 < cmxB5 then cz2_5 else cz2_4
         let bx0_6 = if cmxB6 < cmxB7 then cmxB7 else cmxB6
         let bxc0_6 = if cmxB6 < cmxB7 then cc2_7 else cc2_6
+        let bxz0_6 = if cmxB6 < cmxB7 then cz2_7 else cz2_6
         let bx0_8 = if cmxB8 < cmxB9 then cmxB9 else cmxB8
         let bxc0_8 = if cmxB8 < cmxB9 then cc2_9 else cc2_8
+        let bxz0_8 = if cmxB8 < cmxB9 then cz2_9 else cz2_8
         let bx0_10 = if cmxB10 < cmxB11 then cmxB11 else cmxB10
         let bxc0_10 = if cmxB10 < cmxB11 then cc2_11 else cc2_10
+        let bxz0_10 = if cmxB10 < cmxB11 then cz2_11 else cz2_10
         let bx0_12 = if cmxB12 < cmxB13 then cmxB13 else cmxB12
         let bxc0_12 = if cmxB12 < cmxB13 then cc2_13 else cc2_12
+        let bxz0_12 = if cmxB12 < cmxB13 then cz2_13 else cz2_12
         let bx0_14 = if cmxB14 < cmxB15 then cmxB15 else cmxB14
         let bxc0_14 = if cmxB14 < cmxB15 then cc2_15 else cc2_14
+        let bxz0_14 = if cmxB14 < cmxB15 then cz2_15 else cz2_14
         let bx1_0 = if bx0_0 < bx0_2 then bx0_2 else bx0_0
         let bxc1_0 = if bx0_0 < bx0_2 then bxc0_2 else bxc0_0
+        let bxz1_0 = if bx0_0 < bx0_2 then bxz0_2 else bxz0_0
         let bx1_2 = if bx0_4 < bx0_6 then bx0_6 else bx0_4
         let bxc1_2 = if bx0_4 < bx0_6 then bxc0_6 else bxc0_4
+        let bxz1_2 = if bx0_4 < bx0_6 then bxz0_6 else bxz0_4
         let bx1_4 = if bx0_8 < bx0_10 then bx0_10 else bx0_8
         let bxc1_4 = if bx0_8 < bx0_10 then bxc0_10 else bxc0_8
+        let bxz1_4 = if bx0_8 < bx0_10 then bxz0_10 else bxz0_8
         let bx1_6 = if bx0_12 < bx0_14 then bx0_14 else bx0_12
         let bxc1_6 = if bx0_12 < bx0_14 then bxc0_14 else bxc0_12
+        let bxz1_6 = if bx0_12 < bx0_14 then bxz0_14 else bxz0_12
         let bx2_0 = if bx1_0 < bx1_2 then bx1_2 else bx1_0
         let bxc2_0 = if bx1_0 < bx1_2 then bxc1_2 else bxc1_0
+        let bxz2_0 = if bx1_0 < bx1_2 then bxz1_2 else bxz1_0
         let bx2_2 = if bx1_4 < bx1_6 then bx1_6 else bx1_4
         let bxc2_2 = if bx1_4 < bx1_6 then bxc1_6 else bxc1_4
+        let bxz2_2 = if bx1_4 < bx1_6 then bxz1_6 else bxz1_4
         let bx3_0 = if bx2_0 < bx2_2 then bx2_2 else bx2_0
         let bxc3_0 = if bx2_0 < bx2_2 then bxc2_2 else bxc2_0
+        let bxz3_0 = if bx2_0 < bx2_2 then bxz2_2 else bxz2_0
         if bn3_0 >= 200.0 || bx3_0 < 0.0 || bn3_0 >= SWF {
           pcol2 = 200.0
           pcurR2 = 100.0
@@ -13908,6 +15345,8 @@ mod paintTick() {
           let bspan = bx3_0 - bn3_0
           let binv = if bspan > 0.0 then 1.0 / bspan else 0.0
           rowSlope2 = (bxc3_0 - cLo2) * binv
+          zLo2 = bnz3_0
+          zSlope2 = (bxz3_0 - zLo2) * binv
           cLo2 = Color(cLo2.r * bf, cLo2.g * bf, cLo2.b * bf, cLo2.a)
           rowSlope2 = Color(rowSlope2.r * bf, rowSlope2.g * bf, rowSlope2.b * bf, rowSlope2.a)
         }
@@ -13915,8 +15354,1347 @@ mod paintTick() {
         }
       }
     }
+      if polyOn {
+        if pcol3 > pcurR3 {
+          let rrowC = prow + 2.0
+          if rrowC <= plast {
+        let cvC0 = rrowC >= eLo0 && rrowC < eHi0
+        let cxC0 = eX0 + eS0 * (rrowC - eY0)
+        let ccC0 = pC0 + (rrowC - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let czC0 = pzV0 + (rrowC - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cmnC0 = if cvC0 then cxC0 else 200.0
+        let cmxC0 = if cvC0 then cxC0 else -200.0
+        let cvC1 = rrowC >= eLo1 && rrowC < eHi1
+        let cxC1 = eX1 + eS1 * (rrowC - eY1)
+        let ccC1 = pC1 + (rrowC - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let czC1 = pzV1 + (rrowC - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cmnC1 = if cvC1 then cxC1 else 200.0
+        let cmxC1 = if cvC1 then cxC1 else -200.0
+        let cvC2 = rrowC >= eLo2 && rrowC < eHi2
+        let cxC2 = eX2 + eS2 * (rrowC - eY2)
+        let ccC2 = pC2 + (rrowC - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let czC2 = pzV2 + (rrowC - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cmnC2 = if cvC2 then cxC2 else 200.0
+        let cmxC2 = if cvC2 then cxC2 else -200.0
+        let cvC3 = rrowC >= eLo3 && rrowC < eHi3
+        let cxC3 = eX3 + eS3 * (rrowC - eY3)
+        let ccC3 = pC3 + (rrowC - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let czC3 = pzV3 + (rrowC - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cmnC3 = if cvC3 then cxC3 else 200.0
+        let cmxC3 = if cvC3 then cxC3 else -200.0
+        let cvC4 = rrowC >= eLo4 && rrowC < eHi4
+        let cxC4 = eX4 + eS4 * (rrowC - eY4)
+        let ccC4 = pC4 + (rrowC - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let czC4 = pzV4 + (rrowC - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cmnC4 = if cvC4 then cxC4 else 200.0
+        let cmxC4 = if cvC4 then cxC4 else -200.0
+        let cvC5 = rrowC >= eLo5 && rrowC < eHi5
+        let cxC5 = eX5 + eS5 * (rrowC - eY5)
+        let ccC5 = pC5 + (rrowC - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let czC5 = pzV5 + (rrowC - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cmnC5 = if cvC5 then cxC5 else 200.0
+        let cmxC5 = if cvC5 then cxC5 else -200.0
+        let cvC6 = rrowC >= eLo6 && rrowC < eHi6
+        let cxC6 = eX6 + eS6 * (rrowC - eY6)
+        let ccC6 = pC6 + (rrowC - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let czC6 = pzV6 + (rrowC - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cmnC6 = if cvC6 then cxC6 else 200.0
+        let cmxC6 = if cvC6 then cxC6 else -200.0
+        let cvC7 = rrowC >= eLo7 && rrowC < eHi7
+        let cxC7 = eX7 + eS7 * (rrowC - eY7)
+        let ccC7 = pC7 + (rrowC - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let czC7 = pzV7 + (rrowC - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cmnC7 = if cvC7 then cxC7 else 200.0
+        let cmxC7 = if cvC7 then cxC7 else -200.0
+        let cvC8 = rrowC >= eLo8 && rrowC < eHi8
+        let cxC8 = eX8 + eS8 * (rrowC - eY8)
+        let ccC8 = pC8 + (rrowC - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let czC8 = pzV8 + (rrowC - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cmnC8 = if cvC8 then cxC8 else 200.0
+        let cmxC8 = if cvC8 then cxC8 else -200.0
+        let cvC9 = rrowC >= eLo9 && rrowC < eHi9
+        let cxC9 = eX9 + eS9 * (rrowC - eY9)
+        let ccC9 = pC9 + (rrowC - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let czC9 = pzV9 + (rrowC - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cmnC9 = if cvC9 then cxC9 else 200.0
+        let cmxC9 = if cvC9 then cxC9 else -200.0
+        let cvC10 = rrowC >= eLo10 && rrowC < eHi10
+        let cxC10 = eX10 + eS10 * (rrowC - eY10)
+        let ccC10 = pC10 + (rrowC - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let czC10 = pzV10 + (rrowC - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cmnC10 = if cvC10 then cxC10 else 200.0
+        let cmxC10 = if cvC10 then cxC10 else -200.0
+        let cvC11 = rrowC >= eLo11 && rrowC < eHi11
+        let cxC11 = eX11 + eS11 * (rrowC - eY11)
+        let ccC11 = pC11 + (rrowC - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let czC11 = pzV11 + (rrowC - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cmnC11 = if cvC11 then cxC11 else 200.0
+        let cmxC11 = if cvC11 then cxC11 else -200.0
+        let cvC12 = rrowC >= eLo12 && rrowC < eHi12
+        let cxC12 = eX12 + eS12 * (rrowC - eY12)
+        let ccC12 = pC12 + (rrowC - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let czC12 = pzV12 + (rrowC - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cmnC12 = if cvC12 then cxC12 else 200.0
+        let cmxC12 = if cvC12 then cxC12 else -200.0
+        let cvC13 = rrowC >= eLo13 && rrowC < eHi13
+        let cxC13 = eX13 + eS13 * (rrowC - eY13)
+        let ccC13 = pC13 + (rrowC - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let czC13 = pzV13 + (rrowC - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cmnC13 = if cvC13 then cxC13 else 200.0
+        let cmxC13 = if cvC13 then cxC13 else -200.0
+        let cvC14 = rrowC >= eLo14 && rrowC < eHi14
+        let cxC14 = eX14 + eS14 * (rrowC - eY14)
+        let ccC14 = pC14 + (rrowC - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let czC14 = pzV14 + (rrowC - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cmnC14 = if cvC14 then cxC14 else 200.0
+        let cmxC14 = if cvC14 then cxC14 else -200.0
+        let cvC15 = rrowC >= eLo15 && rrowC < eHi15
+        let cxC15 = eX15 + eS15 * (rrowC - eY15)
+        let ccC15 = pC15 + (rrowC - eY15) * eInv15 * (pC0 - pC15)
+        let czC15 = pzV15 + (rrowC - eY15) * eInv15 * (pzV0 - pzV15)
+        let cmnC15 = if cvC15 then cxC15 else 200.0
+        let cmxC15 = if cvC15 then cxC15 else -200.0
+        let mC0_0 = if cmnC0 < cmnC1 then cmnC0 else cmnC1
+        let mcC0_0 = if cmnC0 < cmnC1 then ccC0 else ccC1
+        let mzC0_0 = if cmnC0 < cmnC1 then czC0 else czC1
+        let mC0_2 = if cmnC2 < cmnC3 then cmnC2 else cmnC3
+        let mcC0_2 = if cmnC2 < cmnC3 then ccC2 else ccC3
+        let mzC0_2 = if cmnC2 < cmnC3 then czC2 else czC3
+        let mC0_4 = if cmnC4 < cmnC5 then cmnC4 else cmnC5
+        let mcC0_4 = if cmnC4 < cmnC5 then ccC4 else ccC5
+        let mzC0_4 = if cmnC4 < cmnC5 then czC4 else czC5
+        let mC0_6 = if cmnC6 < cmnC7 then cmnC6 else cmnC7
+        let mcC0_6 = if cmnC6 < cmnC7 then ccC6 else ccC7
+        let mzC0_6 = if cmnC6 < cmnC7 then czC6 else czC7
+        let mC0_8 = if cmnC8 < cmnC9 then cmnC8 else cmnC9
+        let mcC0_8 = if cmnC8 < cmnC9 then ccC8 else ccC9
+        let mzC0_8 = if cmnC8 < cmnC9 then czC8 else czC9
+        let mC0_10 = if cmnC10 < cmnC11 then cmnC10 else cmnC11
+        let mcC0_10 = if cmnC10 < cmnC11 then ccC10 else ccC11
+        let mzC0_10 = if cmnC10 < cmnC11 then czC10 else czC11
+        let mC0_12 = if cmnC12 < cmnC13 then cmnC12 else cmnC13
+        let mcC0_12 = if cmnC12 < cmnC13 then ccC12 else ccC13
+        let mzC0_12 = if cmnC12 < cmnC13 then czC12 else czC13
+        let mC0_14 = if cmnC14 < cmnC15 then cmnC14 else cmnC15
+        let mcC0_14 = if cmnC14 < cmnC15 then ccC14 else ccC15
+        let mzC0_14 = if cmnC14 < cmnC15 then czC14 else czC15
+        let mC1_0 = if mC0_0 < mC0_2 then mC0_0 else mC0_2
+        let mcC1_0 = if mC0_0 < mC0_2 then mcC0_0 else mcC0_2
+        let mzC1_0 = if mC0_0 < mC0_2 then mzC0_0 else mzC0_2
+        let mC1_2 = if mC0_4 < mC0_6 then mC0_4 else mC0_6
+        let mcC1_2 = if mC0_4 < mC0_6 then mcC0_4 else mcC0_6
+        let mzC1_2 = if mC0_4 < mC0_6 then mzC0_4 else mzC0_6
+        let mC1_4 = if mC0_8 < mC0_10 then mC0_8 else mC0_10
+        let mcC1_4 = if mC0_8 < mC0_10 then mcC0_8 else mcC0_10
+        let mzC1_4 = if mC0_8 < mC0_10 then mzC0_8 else mzC0_10
+        let mC1_6 = if mC0_12 < mC0_14 then mC0_12 else mC0_14
+        let mcC1_6 = if mC0_12 < mC0_14 then mcC0_12 else mcC0_14
+        let mzC1_6 = if mC0_12 < mC0_14 then mzC0_12 else mzC0_14
+        let mC2_0 = if mC1_0 < mC1_2 then mC1_0 else mC1_2
+        let mcC2_0 = if mC1_0 < mC1_2 then mcC1_0 else mcC1_2
+        let mzC2_0 = if mC1_0 < mC1_2 then mzC1_0 else mzC1_2
+        let mC2_2 = if mC1_4 < mC1_6 then mC1_4 else mC1_6
+        let mcC2_2 = if mC1_4 < mC1_6 then mcC1_4 else mcC1_6
+        let mzC2_2 = if mC1_4 < mC1_6 then mzC1_4 else mzC1_6
+        let mC3_0 = if mC2_0 < mC2_2 then mC2_0 else mC2_2
+        let mcC3_0 = if mC2_0 < mC2_2 then mcC2_0 else mcC2_2
+        let mzC3_0 = if mC2_0 < mC2_2 then mzC2_0 else mzC2_2
+        let xC0_0 = if cmxC0 < cmxC1 then cmxC1 else cmxC0
+        let xcC0_0 = if cmxC0 < cmxC1 then ccC1 else ccC0
+        let xzC0_0 = if cmxC0 < cmxC1 then czC1 else czC0
+        let xC0_2 = if cmxC2 < cmxC3 then cmxC3 else cmxC2
+        let xcC0_2 = if cmxC2 < cmxC3 then ccC3 else ccC2
+        let xzC0_2 = if cmxC2 < cmxC3 then czC3 else czC2
+        let xC0_4 = if cmxC4 < cmxC5 then cmxC5 else cmxC4
+        let xcC0_4 = if cmxC4 < cmxC5 then ccC5 else ccC4
+        let xzC0_4 = if cmxC4 < cmxC5 then czC5 else czC4
+        let xC0_6 = if cmxC6 < cmxC7 then cmxC7 else cmxC6
+        let xcC0_6 = if cmxC6 < cmxC7 then ccC7 else ccC6
+        let xzC0_6 = if cmxC6 < cmxC7 then czC7 else czC6
+        let xC0_8 = if cmxC8 < cmxC9 then cmxC9 else cmxC8
+        let xcC0_8 = if cmxC8 < cmxC9 then ccC9 else ccC8
+        let xzC0_8 = if cmxC8 < cmxC9 then czC9 else czC8
+        let xC0_10 = if cmxC10 < cmxC11 then cmxC11 else cmxC10
+        let xcC0_10 = if cmxC10 < cmxC11 then ccC11 else ccC10
+        let xzC0_10 = if cmxC10 < cmxC11 then czC11 else czC10
+        let xC0_12 = if cmxC12 < cmxC13 then cmxC13 else cmxC12
+        let xcC0_12 = if cmxC12 < cmxC13 then ccC13 else ccC12
+        let xzC0_12 = if cmxC12 < cmxC13 then czC13 else czC12
+        let xC0_14 = if cmxC14 < cmxC15 then cmxC15 else cmxC14
+        let xcC0_14 = if cmxC14 < cmxC15 then ccC15 else ccC14
+        let xzC0_14 = if cmxC14 < cmxC15 then czC15 else czC14
+        let xC1_0 = if xC0_0 < xC0_2 then xC0_2 else xC0_0
+        let xcC1_0 = if xC0_0 < xC0_2 then xcC0_2 else xcC0_0
+        let xzC1_0 = if xC0_0 < xC0_2 then xzC0_2 else xzC0_0
+        let xC1_2 = if xC0_4 < xC0_6 then xC0_6 else xC0_4
+        let xcC1_2 = if xC0_4 < xC0_6 then xcC0_6 else xcC0_4
+        let xzC1_2 = if xC0_4 < xC0_6 then xzC0_6 else xzC0_4
+        let xC1_4 = if xC0_8 < xC0_10 then xC0_10 else xC0_8
+        let xcC1_4 = if xC0_8 < xC0_10 then xcC0_10 else xcC0_8
+        let xzC1_4 = if xC0_8 < xC0_10 then xzC0_10 else xzC0_8
+        let xC1_6 = if xC0_12 < xC0_14 then xC0_14 else xC0_12
+        let xcC1_6 = if xC0_12 < xC0_14 then xcC0_14 else xcC0_12
+        let xzC1_6 = if xC0_12 < xC0_14 then xzC0_14 else xzC0_12
+        let xC2_0 = if xC1_0 < xC1_2 then xC1_2 else xC1_0
+        let xcC2_0 = if xC1_0 < xC1_2 then xcC1_2 else xcC1_0
+        let xzC2_0 = if xC1_0 < xC1_2 then xzC1_2 else xzC1_0
+        let xC2_2 = if xC1_4 < xC1_6 then xC1_6 else xC1_4
+        let xcC2_2 = if xC1_4 < xC1_6 then xcC1_6 else xcC1_4
+        let xzC2_2 = if xC1_4 < xC1_6 then xzC1_6 else xzC1_4
+        let xC3_0 = if xC2_0 < xC2_2 then xC2_2 else xC2_0
+        let xcC3_0 = if xC2_0 < xC2_2 then xcC2_2 else xcC2_0
+        let xzC3_0 = if xC2_0 < xC2_2 then xzC2_2 else xzC2_0
+        if mC3_0 >= 200.0 || xC3_0 < 0.0 || mC3_0 >= SWF {
+          pcol3 = 200.0
+          pcurR3 = 100.0
+        } else {
+          pcol3 = if mC3_0 < 0.0 then 0.0 else (mC3_0 | 0)
+          pcurR3 = if xC3_0 >= SWF then SWF - 1.0 else (xC3_0 | 0)
+          xL3 = mC3_0
+          if !erasing {
+            let cra = (rrowC | 0)
+            if pcurR3 >= pcol3 && pcol3 <= 63.0 {
+              if covMin[cra] > 199.0 {
+                covMin[cra] = pcol3
+                covMax[cra] = pcurR3
+              } else {
+                if pcol3 < covMin[cra] { covMin[cra] = pcol3 }
+                if pcurR3 > covMax[cra] { covMax[cra] = pcurR3 }
+              }
+              if cra < covLo { covLo = cra }
+              if cra > covHi { covHi = cra }
+            }
+          }
+          cLo3 = mcC3_0
+          let span3 = xC3_0 - mC3_0
+          let inv3 = if span3 > 0.0 then 1.0 / span3 else 0.0
+          rowSlope3 = (xcC3_0 - cLo3) * inv3
+          zLo3 = mzC3_0
+          zSlope3 = (xzC3_0 - zLo3) * inv3
+          cLo3 = Color(cLo3.r * bf, cLo3.g * bf, cLo3.b * bf, cLo3.a)
+          rowSlope3 = Color(rowSlope3.r * bf, rowSlope3.g * bf, rowSlope3.b * bf, rowSlope3.a)
+        }
+          }
+        }
+      }
+      if polyOn {
+        if pcol4 > pcurR4 {
+          let rrowD = prow + 3.0
+          if rrowD <= plast {
+        let cvD0 = rrowD >= eLo0 && rrowD < eHi0
+        let cxD0 = eX0 + eS0 * (rrowD - eY0)
+        let ccD0 = pC0 + (rrowD - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let czD0 = pzV0 + (rrowD - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cmnD0 = if cvD0 then cxD0 else 200.0
+        let cmxD0 = if cvD0 then cxD0 else -200.0
+        let cvD1 = rrowD >= eLo1 && rrowD < eHi1
+        let cxD1 = eX1 + eS1 * (rrowD - eY1)
+        let ccD1 = pC1 + (rrowD - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let czD1 = pzV1 + (rrowD - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cmnD1 = if cvD1 then cxD1 else 200.0
+        let cmxD1 = if cvD1 then cxD1 else -200.0
+        let cvD2 = rrowD >= eLo2 && rrowD < eHi2
+        let cxD2 = eX2 + eS2 * (rrowD - eY2)
+        let ccD2 = pC2 + (rrowD - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let czD2 = pzV2 + (rrowD - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cmnD2 = if cvD2 then cxD2 else 200.0
+        let cmxD2 = if cvD2 then cxD2 else -200.0
+        let cvD3 = rrowD >= eLo3 && rrowD < eHi3
+        let cxD3 = eX3 + eS3 * (rrowD - eY3)
+        let ccD3 = pC3 + (rrowD - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let czD3 = pzV3 + (rrowD - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cmnD3 = if cvD3 then cxD3 else 200.0
+        let cmxD3 = if cvD3 then cxD3 else -200.0
+        let cvD4 = rrowD >= eLo4 && rrowD < eHi4
+        let cxD4 = eX4 + eS4 * (rrowD - eY4)
+        let ccD4 = pC4 + (rrowD - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let czD4 = pzV4 + (rrowD - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cmnD4 = if cvD4 then cxD4 else 200.0
+        let cmxD4 = if cvD4 then cxD4 else -200.0
+        let cvD5 = rrowD >= eLo5 && rrowD < eHi5
+        let cxD5 = eX5 + eS5 * (rrowD - eY5)
+        let ccD5 = pC5 + (rrowD - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let czD5 = pzV5 + (rrowD - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cmnD5 = if cvD5 then cxD5 else 200.0
+        let cmxD5 = if cvD5 then cxD5 else -200.0
+        let cvD6 = rrowD >= eLo6 && rrowD < eHi6
+        let cxD6 = eX6 + eS6 * (rrowD - eY6)
+        let ccD6 = pC6 + (rrowD - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let czD6 = pzV6 + (rrowD - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cmnD6 = if cvD6 then cxD6 else 200.0
+        let cmxD6 = if cvD6 then cxD6 else -200.0
+        let cvD7 = rrowD >= eLo7 && rrowD < eHi7
+        let cxD7 = eX7 + eS7 * (rrowD - eY7)
+        let ccD7 = pC7 + (rrowD - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let czD7 = pzV7 + (rrowD - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cmnD7 = if cvD7 then cxD7 else 200.0
+        let cmxD7 = if cvD7 then cxD7 else -200.0
+        let cvD8 = rrowD >= eLo8 && rrowD < eHi8
+        let cxD8 = eX8 + eS8 * (rrowD - eY8)
+        let ccD8 = pC8 + (rrowD - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let czD8 = pzV8 + (rrowD - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cmnD8 = if cvD8 then cxD8 else 200.0
+        let cmxD8 = if cvD8 then cxD8 else -200.0
+        let cvD9 = rrowD >= eLo9 && rrowD < eHi9
+        let cxD9 = eX9 + eS9 * (rrowD - eY9)
+        let ccD9 = pC9 + (rrowD - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let czD9 = pzV9 + (rrowD - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cmnD9 = if cvD9 then cxD9 else 200.0
+        let cmxD9 = if cvD9 then cxD9 else -200.0
+        let cvD10 = rrowD >= eLo10 && rrowD < eHi10
+        let cxD10 = eX10 + eS10 * (rrowD - eY10)
+        let ccD10 = pC10 + (rrowD - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let czD10 = pzV10 + (rrowD - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cmnD10 = if cvD10 then cxD10 else 200.0
+        let cmxD10 = if cvD10 then cxD10 else -200.0
+        let cvD11 = rrowD >= eLo11 && rrowD < eHi11
+        let cxD11 = eX11 + eS11 * (rrowD - eY11)
+        let ccD11 = pC11 + (rrowD - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let czD11 = pzV11 + (rrowD - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cmnD11 = if cvD11 then cxD11 else 200.0
+        let cmxD11 = if cvD11 then cxD11 else -200.0
+        let cvD12 = rrowD >= eLo12 && rrowD < eHi12
+        let cxD12 = eX12 + eS12 * (rrowD - eY12)
+        let ccD12 = pC12 + (rrowD - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let czD12 = pzV12 + (rrowD - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cmnD12 = if cvD12 then cxD12 else 200.0
+        let cmxD12 = if cvD12 then cxD12 else -200.0
+        let cvD13 = rrowD >= eLo13 && rrowD < eHi13
+        let cxD13 = eX13 + eS13 * (rrowD - eY13)
+        let ccD13 = pC13 + (rrowD - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let czD13 = pzV13 + (rrowD - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cmnD13 = if cvD13 then cxD13 else 200.0
+        let cmxD13 = if cvD13 then cxD13 else -200.0
+        let cvD14 = rrowD >= eLo14 && rrowD < eHi14
+        let cxD14 = eX14 + eS14 * (rrowD - eY14)
+        let ccD14 = pC14 + (rrowD - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let czD14 = pzV14 + (rrowD - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cmnD14 = if cvD14 then cxD14 else 200.0
+        let cmxD14 = if cvD14 then cxD14 else -200.0
+        let cvD15 = rrowD >= eLo15 && rrowD < eHi15
+        let cxD15 = eX15 + eS15 * (rrowD - eY15)
+        let ccD15 = pC15 + (rrowD - eY15) * eInv15 * (pC0 - pC15)
+        let czD15 = pzV15 + (rrowD - eY15) * eInv15 * (pzV0 - pzV15)
+        let cmnD15 = if cvD15 then cxD15 else 200.0
+        let cmxD15 = if cvD15 then cxD15 else -200.0
+        let mD0_0 = if cmnD0 < cmnD1 then cmnD0 else cmnD1
+        let mcD0_0 = if cmnD0 < cmnD1 then ccD0 else ccD1
+        let mzD0_0 = if cmnD0 < cmnD1 then czD0 else czD1
+        let mD0_2 = if cmnD2 < cmnD3 then cmnD2 else cmnD3
+        let mcD0_2 = if cmnD2 < cmnD3 then ccD2 else ccD3
+        let mzD0_2 = if cmnD2 < cmnD3 then czD2 else czD3
+        let mD0_4 = if cmnD4 < cmnD5 then cmnD4 else cmnD5
+        let mcD0_4 = if cmnD4 < cmnD5 then ccD4 else ccD5
+        let mzD0_4 = if cmnD4 < cmnD5 then czD4 else czD5
+        let mD0_6 = if cmnD6 < cmnD7 then cmnD6 else cmnD7
+        let mcD0_6 = if cmnD6 < cmnD7 then ccD6 else ccD7
+        let mzD0_6 = if cmnD6 < cmnD7 then czD6 else czD7
+        let mD0_8 = if cmnD8 < cmnD9 then cmnD8 else cmnD9
+        let mcD0_8 = if cmnD8 < cmnD9 then ccD8 else ccD9
+        let mzD0_8 = if cmnD8 < cmnD9 then czD8 else czD9
+        let mD0_10 = if cmnD10 < cmnD11 then cmnD10 else cmnD11
+        let mcD0_10 = if cmnD10 < cmnD11 then ccD10 else ccD11
+        let mzD0_10 = if cmnD10 < cmnD11 then czD10 else czD11
+        let mD0_12 = if cmnD12 < cmnD13 then cmnD12 else cmnD13
+        let mcD0_12 = if cmnD12 < cmnD13 then ccD12 else ccD13
+        let mzD0_12 = if cmnD12 < cmnD13 then czD12 else czD13
+        let mD0_14 = if cmnD14 < cmnD15 then cmnD14 else cmnD15
+        let mcD0_14 = if cmnD14 < cmnD15 then ccD14 else ccD15
+        let mzD0_14 = if cmnD14 < cmnD15 then czD14 else czD15
+        let mD1_0 = if mD0_0 < mD0_2 then mD0_0 else mD0_2
+        let mcD1_0 = if mD0_0 < mD0_2 then mcD0_0 else mcD0_2
+        let mzD1_0 = if mD0_0 < mD0_2 then mzD0_0 else mzD0_2
+        let mD1_2 = if mD0_4 < mD0_6 then mD0_4 else mD0_6
+        let mcD1_2 = if mD0_4 < mD0_6 then mcD0_4 else mcD0_6
+        let mzD1_2 = if mD0_4 < mD0_6 then mzD0_4 else mzD0_6
+        let mD1_4 = if mD0_8 < mD0_10 then mD0_8 else mD0_10
+        let mcD1_4 = if mD0_8 < mD0_10 then mcD0_8 else mcD0_10
+        let mzD1_4 = if mD0_8 < mD0_10 then mzD0_8 else mzD0_10
+        let mD1_6 = if mD0_12 < mD0_14 then mD0_12 else mD0_14
+        let mcD1_6 = if mD0_12 < mD0_14 then mcD0_12 else mcD0_14
+        let mzD1_6 = if mD0_12 < mD0_14 then mzD0_12 else mzD0_14
+        let mD2_0 = if mD1_0 < mD1_2 then mD1_0 else mD1_2
+        let mcD2_0 = if mD1_0 < mD1_2 then mcD1_0 else mcD1_2
+        let mzD2_0 = if mD1_0 < mD1_2 then mzD1_0 else mzD1_2
+        let mD2_2 = if mD1_4 < mD1_6 then mD1_4 else mD1_6
+        let mcD2_2 = if mD1_4 < mD1_6 then mcD1_4 else mcD1_6
+        let mzD2_2 = if mD1_4 < mD1_6 then mzD1_4 else mzD1_6
+        let mD3_0 = if mD2_0 < mD2_2 then mD2_0 else mD2_2
+        let mcD3_0 = if mD2_0 < mD2_2 then mcD2_0 else mcD2_2
+        let mzD3_0 = if mD2_0 < mD2_2 then mzD2_0 else mzD2_2
+        let xD0_0 = if cmxD0 < cmxD1 then cmxD1 else cmxD0
+        let xcD0_0 = if cmxD0 < cmxD1 then ccD1 else ccD0
+        let xzD0_0 = if cmxD0 < cmxD1 then czD1 else czD0
+        let xD0_2 = if cmxD2 < cmxD3 then cmxD3 else cmxD2
+        let xcD0_2 = if cmxD2 < cmxD3 then ccD3 else ccD2
+        let xzD0_2 = if cmxD2 < cmxD3 then czD3 else czD2
+        let xD0_4 = if cmxD4 < cmxD5 then cmxD5 else cmxD4
+        let xcD0_4 = if cmxD4 < cmxD5 then ccD5 else ccD4
+        let xzD0_4 = if cmxD4 < cmxD5 then czD5 else czD4
+        let xD0_6 = if cmxD6 < cmxD7 then cmxD7 else cmxD6
+        let xcD0_6 = if cmxD6 < cmxD7 then ccD7 else ccD6
+        let xzD0_6 = if cmxD6 < cmxD7 then czD7 else czD6
+        let xD0_8 = if cmxD8 < cmxD9 then cmxD9 else cmxD8
+        let xcD0_8 = if cmxD8 < cmxD9 then ccD9 else ccD8
+        let xzD0_8 = if cmxD8 < cmxD9 then czD9 else czD8
+        let xD0_10 = if cmxD10 < cmxD11 then cmxD11 else cmxD10
+        let xcD0_10 = if cmxD10 < cmxD11 then ccD11 else ccD10
+        let xzD0_10 = if cmxD10 < cmxD11 then czD11 else czD10
+        let xD0_12 = if cmxD12 < cmxD13 then cmxD13 else cmxD12
+        let xcD0_12 = if cmxD12 < cmxD13 then ccD13 else ccD12
+        let xzD0_12 = if cmxD12 < cmxD13 then czD13 else czD12
+        let xD0_14 = if cmxD14 < cmxD15 then cmxD15 else cmxD14
+        let xcD0_14 = if cmxD14 < cmxD15 then ccD15 else ccD14
+        let xzD0_14 = if cmxD14 < cmxD15 then czD15 else czD14
+        let xD1_0 = if xD0_0 < xD0_2 then xD0_2 else xD0_0
+        let xcD1_0 = if xD0_0 < xD0_2 then xcD0_2 else xcD0_0
+        let xzD1_0 = if xD0_0 < xD0_2 then xzD0_2 else xzD0_0
+        let xD1_2 = if xD0_4 < xD0_6 then xD0_6 else xD0_4
+        let xcD1_2 = if xD0_4 < xD0_6 then xcD0_6 else xcD0_4
+        let xzD1_2 = if xD0_4 < xD0_6 then xzD0_6 else xzD0_4
+        let xD1_4 = if xD0_8 < xD0_10 then xD0_10 else xD0_8
+        let xcD1_4 = if xD0_8 < xD0_10 then xcD0_10 else xcD0_8
+        let xzD1_4 = if xD0_8 < xD0_10 then xzD0_10 else xzD0_8
+        let xD1_6 = if xD0_12 < xD0_14 then xD0_14 else xD0_12
+        let xcD1_6 = if xD0_12 < xD0_14 then xcD0_14 else xcD0_12
+        let xzD1_6 = if xD0_12 < xD0_14 then xzD0_14 else xzD0_12
+        let xD2_0 = if xD1_0 < xD1_2 then xD1_2 else xD1_0
+        let xcD2_0 = if xD1_0 < xD1_2 then xcD1_2 else xcD1_0
+        let xzD2_0 = if xD1_0 < xD1_2 then xzD1_2 else xzD1_0
+        let xD2_2 = if xD1_4 < xD1_6 then xD1_6 else xD1_4
+        let xcD2_2 = if xD1_4 < xD1_6 then xcD1_6 else xcD1_4
+        let xzD2_2 = if xD1_4 < xD1_6 then xzD1_6 else xzD1_4
+        let xD3_0 = if xD2_0 < xD2_2 then xD2_2 else xD2_0
+        let xcD3_0 = if xD2_0 < xD2_2 then xcD2_2 else xcD2_0
+        let xzD3_0 = if xD2_0 < xD2_2 then xzD2_2 else xzD2_0
+        if mD3_0 >= 200.0 || xD3_0 < 0.0 || mD3_0 >= SWF {
+          pcol4 = 200.0
+          pcurR4 = 100.0
+        } else {
+          pcol4 = if mD3_0 < 0.0 then 0.0 else (mD3_0 | 0)
+          pcurR4 = if xD3_0 >= SWF then SWF - 1.0 else (xD3_0 | 0)
+          xL4 = mD3_0
+          if !erasing {
+            let cra = (rrowD | 0)
+            if pcurR4 >= pcol4 && pcol4 <= 63.0 {
+              if covMin[cra] > 199.0 {
+                covMin[cra] = pcol4
+                covMax[cra] = pcurR4
+              } else {
+                if pcol4 < covMin[cra] { covMin[cra] = pcol4 }
+                if pcurR4 > covMax[cra] { covMax[cra] = pcurR4 }
+              }
+              if cra < covLo { covLo = cra }
+              if cra > covHi { covHi = cra }
+            }
+          }
+          cLo4 = mcD3_0
+          let span4 = xD3_0 - mD3_0
+          let inv4 = if span4 > 0.0 then 1.0 / span4 else 0.0
+          rowSlope4 = (xcD3_0 - cLo4) * inv4
+          zLo4 = mzD3_0
+          zSlope4 = (xzD3_0 - zLo4) * inv4
+          cLo4 = Color(cLo4.r * bf, cLo4.g * bf, cLo4.b * bf, cLo4.a)
+          rowSlope4 = Color(rowSlope4.r * bf, rowSlope4.g * bf, rowSlope4.b * bf, rowSlope4.a)
+        }
+          }
+        }
+      }
+      if polyOn {
+        if pcol5 > pcurR5 {
+          let rrowE = prow + 4.0
+          if rrowE <= plast {
+        let cvE0 = rrowE >= eLo0 && rrowE < eHi0
+        let cxE0 = eX0 + eS0 * (rrowE - eY0)
+        let ccE0 = pC0 + (rrowE - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let czE0 = pzV0 + (rrowE - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cmnE0 = if cvE0 then cxE0 else 200.0
+        let cmxE0 = if cvE0 then cxE0 else -200.0
+        let cvE1 = rrowE >= eLo1 && rrowE < eHi1
+        let cxE1 = eX1 + eS1 * (rrowE - eY1)
+        let ccE1 = pC1 + (rrowE - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let czE1 = pzV1 + (rrowE - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cmnE1 = if cvE1 then cxE1 else 200.0
+        let cmxE1 = if cvE1 then cxE1 else -200.0
+        let cvE2 = rrowE >= eLo2 && rrowE < eHi2
+        let cxE2 = eX2 + eS2 * (rrowE - eY2)
+        let ccE2 = pC2 + (rrowE - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let czE2 = pzV2 + (rrowE - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cmnE2 = if cvE2 then cxE2 else 200.0
+        let cmxE2 = if cvE2 then cxE2 else -200.0
+        let cvE3 = rrowE >= eLo3 && rrowE < eHi3
+        let cxE3 = eX3 + eS3 * (rrowE - eY3)
+        let ccE3 = pC3 + (rrowE - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let czE3 = pzV3 + (rrowE - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cmnE3 = if cvE3 then cxE3 else 200.0
+        let cmxE3 = if cvE3 then cxE3 else -200.0
+        let cvE4 = rrowE >= eLo4 && rrowE < eHi4
+        let cxE4 = eX4 + eS4 * (rrowE - eY4)
+        let ccE4 = pC4 + (rrowE - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let czE4 = pzV4 + (rrowE - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cmnE4 = if cvE4 then cxE4 else 200.0
+        let cmxE4 = if cvE4 then cxE4 else -200.0
+        let cvE5 = rrowE >= eLo5 && rrowE < eHi5
+        let cxE5 = eX5 + eS5 * (rrowE - eY5)
+        let ccE5 = pC5 + (rrowE - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let czE5 = pzV5 + (rrowE - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cmnE5 = if cvE5 then cxE5 else 200.0
+        let cmxE5 = if cvE5 then cxE5 else -200.0
+        let cvE6 = rrowE >= eLo6 && rrowE < eHi6
+        let cxE6 = eX6 + eS6 * (rrowE - eY6)
+        let ccE6 = pC6 + (rrowE - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let czE6 = pzV6 + (rrowE - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cmnE6 = if cvE6 then cxE6 else 200.0
+        let cmxE6 = if cvE6 then cxE6 else -200.0
+        let cvE7 = rrowE >= eLo7 && rrowE < eHi7
+        let cxE7 = eX7 + eS7 * (rrowE - eY7)
+        let ccE7 = pC7 + (rrowE - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let czE7 = pzV7 + (rrowE - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cmnE7 = if cvE7 then cxE7 else 200.0
+        let cmxE7 = if cvE7 then cxE7 else -200.0
+        let cvE8 = rrowE >= eLo8 && rrowE < eHi8
+        let cxE8 = eX8 + eS8 * (rrowE - eY8)
+        let ccE8 = pC8 + (rrowE - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let czE8 = pzV8 + (rrowE - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cmnE8 = if cvE8 then cxE8 else 200.0
+        let cmxE8 = if cvE8 then cxE8 else -200.0
+        let cvE9 = rrowE >= eLo9 && rrowE < eHi9
+        let cxE9 = eX9 + eS9 * (rrowE - eY9)
+        let ccE9 = pC9 + (rrowE - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let czE9 = pzV9 + (rrowE - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cmnE9 = if cvE9 then cxE9 else 200.0
+        let cmxE9 = if cvE9 then cxE9 else -200.0
+        let cvE10 = rrowE >= eLo10 && rrowE < eHi10
+        let cxE10 = eX10 + eS10 * (rrowE - eY10)
+        let ccE10 = pC10 + (rrowE - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let czE10 = pzV10 + (rrowE - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cmnE10 = if cvE10 then cxE10 else 200.0
+        let cmxE10 = if cvE10 then cxE10 else -200.0
+        let cvE11 = rrowE >= eLo11 && rrowE < eHi11
+        let cxE11 = eX11 + eS11 * (rrowE - eY11)
+        let ccE11 = pC11 + (rrowE - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let czE11 = pzV11 + (rrowE - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cmnE11 = if cvE11 then cxE11 else 200.0
+        let cmxE11 = if cvE11 then cxE11 else -200.0
+        let cvE12 = rrowE >= eLo12 && rrowE < eHi12
+        let cxE12 = eX12 + eS12 * (rrowE - eY12)
+        let ccE12 = pC12 + (rrowE - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let czE12 = pzV12 + (rrowE - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cmnE12 = if cvE12 then cxE12 else 200.0
+        let cmxE12 = if cvE12 then cxE12 else -200.0
+        let cvE13 = rrowE >= eLo13 && rrowE < eHi13
+        let cxE13 = eX13 + eS13 * (rrowE - eY13)
+        let ccE13 = pC13 + (rrowE - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let czE13 = pzV13 + (rrowE - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cmnE13 = if cvE13 then cxE13 else 200.0
+        let cmxE13 = if cvE13 then cxE13 else -200.0
+        let cvE14 = rrowE >= eLo14 && rrowE < eHi14
+        let cxE14 = eX14 + eS14 * (rrowE - eY14)
+        let ccE14 = pC14 + (rrowE - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let czE14 = pzV14 + (rrowE - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cmnE14 = if cvE14 then cxE14 else 200.0
+        let cmxE14 = if cvE14 then cxE14 else -200.0
+        let cvE15 = rrowE >= eLo15 && rrowE < eHi15
+        let cxE15 = eX15 + eS15 * (rrowE - eY15)
+        let ccE15 = pC15 + (rrowE - eY15) * eInv15 * (pC0 - pC15)
+        let czE15 = pzV15 + (rrowE - eY15) * eInv15 * (pzV0 - pzV15)
+        let cmnE15 = if cvE15 then cxE15 else 200.0
+        let cmxE15 = if cvE15 then cxE15 else -200.0
+        let mE0_0 = if cmnE0 < cmnE1 then cmnE0 else cmnE1
+        let mcE0_0 = if cmnE0 < cmnE1 then ccE0 else ccE1
+        let mzE0_0 = if cmnE0 < cmnE1 then czE0 else czE1
+        let mE0_2 = if cmnE2 < cmnE3 then cmnE2 else cmnE3
+        let mcE0_2 = if cmnE2 < cmnE3 then ccE2 else ccE3
+        let mzE0_2 = if cmnE2 < cmnE3 then czE2 else czE3
+        let mE0_4 = if cmnE4 < cmnE5 then cmnE4 else cmnE5
+        let mcE0_4 = if cmnE4 < cmnE5 then ccE4 else ccE5
+        let mzE0_4 = if cmnE4 < cmnE5 then czE4 else czE5
+        let mE0_6 = if cmnE6 < cmnE7 then cmnE6 else cmnE7
+        let mcE0_6 = if cmnE6 < cmnE7 then ccE6 else ccE7
+        let mzE0_6 = if cmnE6 < cmnE7 then czE6 else czE7
+        let mE0_8 = if cmnE8 < cmnE9 then cmnE8 else cmnE9
+        let mcE0_8 = if cmnE8 < cmnE9 then ccE8 else ccE9
+        let mzE0_8 = if cmnE8 < cmnE9 then czE8 else czE9
+        let mE0_10 = if cmnE10 < cmnE11 then cmnE10 else cmnE11
+        let mcE0_10 = if cmnE10 < cmnE11 then ccE10 else ccE11
+        let mzE0_10 = if cmnE10 < cmnE11 then czE10 else czE11
+        let mE0_12 = if cmnE12 < cmnE13 then cmnE12 else cmnE13
+        let mcE0_12 = if cmnE12 < cmnE13 then ccE12 else ccE13
+        let mzE0_12 = if cmnE12 < cmnE13 then czE12 else czE13
+        let mE0_14 = if cmnE14 < cmnE15 then cmnE14 else cmnE15
+        let mcE0_14 = if cmnE14 < cmnE15 then ccE14 else ccE15
+        let mzE0_14 = if cmnE14 < cmnE15 then czE14 else czE15
+        let mE1_0 = if mE0_0 < mE0_2 then mE0_0 else mE0_2
+        let mcE1_0 = if mE0_0 < mE0_2 then mcE0_0 else mcE0_2
+        let mzE1_0 = if mE0_0 < mE0_2 then mzE0_0 else mzE0_2
+        let mE1_2 = if mE0_4 < mE0_6 then mE0_4 else mE0_6
+        let mcE1_2 = if mE0_4 < mE0_6 then mcE0_4 else mcE0_6
+        let mzE1_2 = if mE0_4 < mE0_6 then mzE0_4 else mzE0_6
+        let mE1_4 = if mE0_8 < mE0_10 then mE0_8 else mE0_10
+        let mcE1_4 = if mE0_8 < mE0_10 then mcE0_8 else mcE0_10
+        let mzE1_4 = if mE0_8 < mE0_10 then mzE0_8 else mzE0_10
+        let mE1_6 = if mE0_12 < mE0_14 then mE0_12 else mE0_14
+        let mcE1_6 = if mE0_12 < mE0_14 then mcE0_12 else mcE0_14
+        let mzE1_6 = if mE0_12 < mE0_14 then mzE0_12 else mzE0_14
+        let mE2_0 = if mE1_0 < mE1_2 then mE1_0 else mE1_2
+        let mcE2_0 = if mE1_0 < mE1_2 then mcE1_0 else mcE1_2
+        let mzE2_0 = if mE1_0 < mE1_2 then mzE1_0 else mzE1_2
+        let mE2_2 = if mE1_4 < mE1_6 then mE1_4 else mE1_6
+        let mcE2_2 = if mE1_4 < mE1_6 then mcE1_4 else mcE1_6
+        let mzE2_2 = if mE1_4 < mE1_6 then mzE1_4 else mzE1_6
+        let mE3_0 = if mE2_0 < mE2_2 then mE2_0 else mE2_2
+        let mcE3_0 = if mE2_0 < mE2_2 then mcE2_0 else mcE2_2
+        let mzE3_0 = if mE2_0 < mE2_2 then mzE2_0 else mzE2_2
+        let xE0_0 = if cmxE0 < cmxE1 then cmxE1 else cmxE0
+        let xcE0_0 = if cmxE0 < cmxE1 then ccE1 else ccE0
+        let xzE0_0 = if cmxE0 < cmxE1 then czE1 else czE0
+        let xE0_2 = if cmxE2 < cmxE3 then cmxE3 else cmxE2
+        let xcE0_2 = if cmxE2 < cmxE3 then ccE3 else ccE2
+        let xzE0_2 = if cmxE2 < cmxE3 then czE3 else czE2
+        let xE0_4 = if cmxE4 < cmxE5 then cmxE5 else cmxE4
+        let xcE0_4 = if cmxE4 < cmxE5 then ccE5 else ccE4
+        let xzE0_4 = if cmxE4 < cmxE5 then czE5 else czE4
+        let xE0_6 = if cmxE6 < cmxE7 then cmxE7 else cmxE6
+        let xcE0_6 = if cmxE6 < cmxE7 then ccE7 else ccE6
+        let xzE0_6 = if cmxE6 < cmxE7 then czE7 else czE6
+        let xE0_8 = if cmxE8 < cmxE9 then cmxE9 else cmxE8
+        let xcE0_8 = if cmxE8 < cmxE9 then ccE9 else ccE8
+        let xzE0_8 = if cmxE8 < cmxE9 then czE9 else czE8
+        let xE0_10 = if cmxE10 < cmxE11 then cmxE11 else cmxE10
+        let xcE0_10 = if cmxE10 < cmxE11 then ccE11 else ccE10
+        let xzE0_10 = if cmxE10 < cmxE11 then czE11 else czE10
+        let xE0_12 = if cmxE12 < cmxE13 then cmxE13 else cmxE12
+        let xcE0_12 = if cmxE12 < cmxE13 then ccE13 else ccE12
+        let xzE0_12 = if cmxE12 < cmxE13 then czE13 else czE12
+        let xE0_14 = if cmxE14 < cmxE15 then cmxE15 else cmxE14
+        let xcE0_14 = if cmxE14 < cmxE15 then ccE15 else ccE14
+        let xzE0_14 = if cmxE14 < cmxE15 then czE15 else czE14
+        let xE1_0 = if xE0_0 < xE0_2 then xE0_2 else xE0_0
+        let xcE1_0 = if xE0_0 < xE0_2 then xcE0_2 else xcE0_0
+        let xzE1_0 = if xE0_0 < xE0_2 then xzE0_2 else xzE0_0
+        let xE1_2 = if xE0_4 < xE0_6 then xE0_6 else xE0_4
+        let xcE1_2 = if xE0_4 < xE0_6 then xcE0_6 else xcE0_4
+        let xzE1_2 = if xE0_4 < xE0_6 then xzE0_6 else xzE0_4
+        let xE1_4 = if xE0_8 < xE0_10 then xE0_10 else xE0_8
+        let xcE1_4 = if xE0_8 < xE0_10 then xcE0_10 else xcE0_8
+        let xzE1_4 = if xE0_8 < xE0_10 then xzE0_10 else xzE0_8
+        let xE1_6 = if xE0_12 < xE0_14 then xE0_14 else xE0_12
+        let xcE1_6 = if xE0_12 < xE0_14 then xcE0_14 else xcE0_12
+        let xzE1_6 = if xE0_12 < xE0_14 then xzE0_14 else xzE0_12
+        let xE2_0 = if xE1_0 < xE1_2 then xE1_2 else xE1_0
+        let xcE2_0 = if xE1_0 < xE1_2 then xcE1_2 else xcE1_0
+        let xzE2_0 = if xE1_0 < xE1_2 then xzE1_2 else xzE1_0
+        let xE2_2 = if xE1_4 < xE1_6 then xE1_6 else xE1_4
+        let xcE2_2 = if xE1_4 < xE1_6 then xcE1_6 else xcE1_4
+        let xzE2_2 = if xE1_4 < xE1_6 then xzE1_6 else xzE1_4
+        let xE3_0 = if xE2_0 < xE2_2 then xE2_2 else xE2_0
+        let xcE3_0 = if xE2_0 < xE2_2 then xcE2_2 else xcE2_0
+        let xzE3_0 = if xE2_0 < xE2_2 then xzE2_2 else xzE2_0
+        if mE3_0 >= 200.0 || xE3_0 < 0.0 || mE3_0 >= SWF {
+          pcol5 = 200.0
+          pcurR5 = 100.0
+        } else {
+          pcol5 = if mE3_0 < 0.0 then 0.0 else (mE3_0 | 0)
+          pcurR5 = if xE3_0 >= SWF then SWF - 1.0 else (xE3_0 | 0)
+          xL5 = mE3_0
+          if !erasing {
+            let cra = (rrowE | 0)
+            if pcurR5 >= pcol5 && pcol5 <= 63.0 {
+              if covMin[cra] > 199.0 {
+                covMin[cra] = pcol5
+                covMax[cra] = pcurR5
+              } else {
+                if pcol5 < covMin[cra] { covMin[cra] = pcol5 }
+                if pcurR5 > covMax[cra] { covMax[cra] = pcurR5 }
+              }
+              if cra < covLo { covLo = cra }
+              if cra > covHi { covHi = cra }
+            }
+          }
+          cLo5 = mcE3_0
+          let span5 = xE3_0 - mE3_0
+          let inv5 = if span5 > 0.0 then 1.0 / span5 else 0.0
+          rowSlope5 = (xcE3_0 - cLo5) * inv5
+          zLo5 = mzE3_0
+          zSlope5 = (xzE3_0 - zLo5) * inv5
+          cLo5 = Color(cLo5.r * bf, cLo5.g * bf, cLo5.b * bf, cLo5.a)
+          rowSlope5 = Color(rowSlope5.r * bf, rowSlope5.g * bf, rowSlope5.b * bf, rowSlope5.a)
+        }
+          }
+        }
+      }
+      if polyOn {
+        if pcol6 > pcurR6 {
+          let rrowF = prow + 5.0
+          if rrowF <= plast {
+        let cvF0 = rrowF >= eLo0 && rrowF < eHi0
+        let cxF0 = eX0 + eS0 * (rrowF - eY0)
+        let ccF0 = pC0 + (rrowF - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let czF0 = pzV0 + (rrowF - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cmnF0 = if cvF0 then cxF0 else 200.0
+        let cmxF0 = if cvF0 then cxF0 else -200.0
+        let cvF1 = rrowF >= eLo1 && rrowF < eHi1
+        let cxF1 = eX1 + eS1 * (rrowF - eY1)
+        let ccF1 = pC1 + (rrowF - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let czF1 = pzV1 + (rrowF - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cmnF1 = if cvF1 then cxF1 else 200.0
+        let cmxF1 = if cvF1 then cxF1 else -200.0
+        let cvF2 = rrowF >= eLo2 && rrowF < eHi2
+        let cxF2 = eX2 + eS2 * (rrowF - eY2)
+        let ccF2 = pC2 + (rrowF - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let czF2 = pzV2 + (rrowF - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cmnF2 = if cvF2 then cxF2 else 200.0
+        let cmxF2 = if cvF2 then cxF2 else -200.0
+        let cvF3 = rrowF >= eLo3 && rrowF < eHi3
+        let cxF3 = eX3 + eS3 * (rrowF - eY3)
+        let ccF3 = pC3 + (rrowF - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let czF3 = pzV3 + (rrowF - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cmnF3 = if cvF3 then cxF3 else 200.0
+        let cmxF3 = if cvF3 then cxF3 else -200.0
+        let cvF4 = rrowF >= eLo4 && rrowF < eHi4
+        let cxF4 = eX4 + eS4 * (rrowF - eY4)
+        let ccF4 = pC4 + (rrowF - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let czF4 = pzV4 + (rrowF - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cmnF4 = if cvF4 then cxF4 else 200.0
+        let cmxF4 = if cvF4 then cxF4 else -200.0
+        let cvF5 = rrowF >= eLo5 && rrowF < eHi5
+        let cxF5 = eX5 + eS5 * (rrowF - eY5)
+        let ccF5 = pC5 + (rrowF - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let czF5 = pzV5 + (rrowF - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cmnF5 = if cvF5 then cxF5 else 200.0
+        let cmxF5 = if cvF5 then cxF5 else -200.0
+        let cvF6 = rrowF >= eLo6 && rrowF < eHi6
+        let cxF6 = eX6 + eS6 * (rrowF - eY6)
+        let ccF6 = pC6 + (rrowF - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let czF6 = pzV6 + (rrowF - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cmnF6 = if cvF6 then cxF6 else 200.0
+        let cmxF6 = if cvF6 then cxF6 else -200.0
+        let cvF7 = rrowF >= eLo7 && rrowF < eHi7
+        let cxF7 = eX7 + eS7 * (rrowF - eY7)
+        let ccF7 = pC7 + (rrowF - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let czF7 = pzV7 + (rrowF - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cmnF7 = if cvF7 then cxF7 else 200.0
+        let cmxF7 = if cvF7 then cxF7 else -200.0
+        let cvF8 = rrowF >= eLo8 && rrowF < eHi8
+        let cxF8 = eX8 + eS8 * (rrowF - eY8)
+        let ccF8 = pC8 + (rrowF - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let czF8 = pzV8 + (rrowF - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cmnF8 = if cvF8 then cxF8 else 200.0
+        let cmxF8 = if cvF8 then cxF8 else -200.0
+        let cvF9 = rrowF >= eLo9 && rrowF < eHi9
+        let cxF9 = eX9 + eS9 * (rrowF - eY9)
+        let ccF9 = pC9 + (rrowF - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let czF9 = pzV9 + (rrowF - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cmnF9 = if cvF9 then cxF9 else 200.0
+        let cmxF9 = if cvF9 then cxF9 else -200.0
+        let cvF10 = rrowF >= eLo10 && rrowF < eHi10
+        let cxF10 = eX10 + eS10 * (rrowF - eY10)
+        let ccF10 = pC10 + (rrowF - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let czF10 = pzV10 + (rrowF - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cmnF10 = if cvF10 then cxF10 else 200.0
+        let cmxF10 = if cvF10 then cxF10 else -200.0
+        let cvF11 = rrowF >= eLo11 && rrowF < eHi11
+        let cxF11 = eX11 + eS11 * (rrowF - eY11)
+        let ccF11 = pC11 + (rrowF - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let czF11 = pzV11 + (rrowF - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cmnF11 = if cvF11 then cxF11 else 200.0
+        let cmxF11 = if cvF11 then cxF11 else -200.0
+        let cvF12 = rrowF >= eLo12 && rrowF < eHi12
+        let cxF12 = eX12 + eS12 * (rrowF - eY12)
+        let ccF12 = pC12 + (rrowF - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let czF12 = pzV12 + (rrowF - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cmnF12 = if cvF12 then cxF12 else 200.0
+        let cmxF12 = if cvF12 then cxF12 else -200.0
+        let cvF13 = rrowF >= eLo13 && rrowF < eHi13
+        let cxF13 = eX13 + eS13 * (rrowF - eY13)
+        let ccF13 = pC13 + (rrowF - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let czF13 = pzV13 + (rrowF - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cmnF13 = if cvF13 then cxF13 else 200.0
+        let cmxF13 = if cvF13 then cxF13 else -200.0
+        let cvF14 = rrowF >= eLo14 && rrowF < eHi14
+        let cxF14 = eX14 + eS14 * (rrowF - eY14)
+        let ccF14 = pC14 + (rrowF - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let czF14 = pzV14 + (rrowF - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cmnF14 = if cvF14 then cxF14 else 200.0
+        let cmxF14 = if cvF14 then cxF14 else -200.0
+        let cvF15 = rrowF >= eLo15 && rrowF < eHi15
+        let cxF15 = eX15 + eS15 * (rrowF - eY15)
+        let ccF15 = pC15 + (rrowF - eY15) * eInv15 * (pC0 - pC15)
+        let czF15 = pzV15 + (rrowF - eY15) * eInv15 * (pzV0 - pzV15)
+        let cmnF15 = if cvF15 then cxF15 else 200.0
+        let cmxF15 = if cvF15 then cxF15 else -200.0
+        let mF0_0 = if cmnF0 < cmnF1 then cmnF0 else cmnF1
+        let mcF0_0 = if cmnF0 < cmnF1 then ccF0 else ccF1
+        let mzF0_0 = if cmnF0 < cmnF1 then czF0 else czF1
+        let mF0_2 = if cmnF2 < cmnF3 then cmnF2 else cmnF3
+        let mcF0_2 = if cmnF2 < cmnF3 then ccF2 else ccF3
+        let mzF0_2 = if cmnF2 < cmnF3 then czF2 else czF3
+        let mF0_4 = if cmnF4 < cmnF5 then cmnF4 else cmnF5
+        let mcF0_4 = if cmnF4 < cmnF5 then ccF4 else ccF5
+        let mzF0_4 = if cmnF4 < cmnF5 then czF4 else czF5
+        let mF0_6 = if cmnF6 < cmnF7 then cmnF6 else cmnF7
+        let mcF0_6 = if cmnF6 < cmnF7 then ccF6 else ccF7
+        let mzF0_6 = if cmnF6 < cmnF7 then czF6 else czF7
+        let mF0_8 = if cmnF8 < cmnF9 then cmnF8 else cmnF9
+        let mcF0_8 = if cmnF8 < cmnF9 then ccF8 else ccF9
+        let mzF0_8 = if cmnF8 < cmnF9 then czF8 else czF9
+        let mF0_10 = if cmnF10 < cmnF11 then cmnF10 else cmnF11
+        let mcF0_10 = if cmnF10 < cmnF11 then ccF10 else ccF11
+        let mzF0_10 = if cmnF10 < cmnF11 then czF10 else czF11
+        let mF0_12 = if cmnF12 < cmnF13 then cmnF12 else cmnF13
+        let mcF0_12 = if cmnF12 < cmnF13 then ccF12 else ccF13
+        let mzF0_12 = if cmnF12 < cmnF13 then czF12 else czF13
+        let mF0_14 = if cmnF14 < cmnF15 then cmnF14 else cmnF15
+        let mcF0_14 = if cmnF14 < cmnF15 then ccF14 else ccF15
+        let mzF0_14 = if cmnF14 < cmnF15 then czF14 else czF15
+        let mF1_0 = if mF0_0 < mF0_2 then mF0_0 else mF0_2
+        let mcF1_0 = if mF0_0 < mF0_2 then mcF0_0 else mcF0_2
+        let mzF1_0 = if mF0_0 < mF0_2 then mzF0_0 else mzF0_2
+        let mF1_2 = if mF0_4 < mF0_6 then mF0_4 else mF0_6
+        let mcF1_2 = if mF0_4 < mF0_6 then mcF0_4 else mcF0_6
+        let mzF1_2 = if mF0_4 < mF0_6 then mzF0_4 else mzF0_6
+        let mF1_4 = if mF0_8 < mF0_10 then mF0_8 else mF0_10
+        let mcF1_4 = if mF0_8 < mF0_10 then mcF0_8 else mcF0_10
+        let mzF1_4 = if mF0_8 < mF0_10 then mzF0_8 else mzF0_10
+        let mF1_6 = if mF0_12 < mF0_14 then mF0_12 else mF0_14
+        let mcF1_6 = if mF0_12 < mF0_14 then mcF0_12 else mcF0_14
+        let mzF1_6 = if mF0_12 < mF0_14 then mzF0_12 else mzF0_14
+        let mF2_0 = if mF1_0 < mF1_2 then mF1_0 else mF1_2
+        let mcF2_0 = if mF1_0 < mF1_2 then mcF1_0 else mcF1_2
+        let mzF2_0 = if mF1_0 < mF1_2 then mzF1_0 else mzF1_2
+        let mF2_2 = if mF1_4 < mF1_6 then mF1_4 else mF1_6
+        let mcF2_2 = if mF1_4 < mF1_6 then mcF1_4 else mcF1_6
+        let mzF2_2 = if mF1_4 < mF1_6 then mzF1_4 else mzF1_6
+        let mF3_0 = if mF2_0 < mF2_2 then mF2_0 else mF2_2
+        let mcF3_0 = if mF2_0 < mF2_2 then mcF2_0 else mcF2_2
+        let mzF3_0 = if mF2_0 < mF2_2 then mzF2_0 else mzF2_2
+        let xF0_0 = if cmxF0 < cmxF1 then cmxF1 else cmxF0
+        let xcF0_0 = if cmxF0 < cmxF1 then ccF1 else ccF0
+        let xzF0_0 = if cmxF0 < cmxF1 then czF1 else czF0
+        let xF0_2 = if cmxF2 < cmxF3 then cmxF3 else cmxF2
+        let xcF0_2 = if cmxF2 < cmxF3 then ccF3 else ccF2
+        let xzF0_2 = if cmxF2 < cmxF3 then czF3 else czF2
+        let xF0_4 = if cmxF4 < cmxF5 then cmxF5 else cmxF4
+        let xcF0_4 = if cmxF4 < cmxF5 then ccF5 else ccF4
+        let xzF0_4 = if cmxF4 < cmxF5 then czF5 else czF4
+        let xF0_6 = if cmxF6 < cmxF7 then cmxF7 else cmxF6
+        let xcF0_6 = if cmxF6 < cmxF7 then ccF7 else ccF6
+        let xzF0_6 = if cmxF6 < cmxF7 then czF7 else czF6
+        let xF0_8 = if cmxF8 < cmxF9 then cmxF9 else cmxF8
+        let xcF0_8 = if cmxF8 < cmxF9 then ccF9 else ccF8
+        let xzF0_8 = if cmxF8 < cmxF9 then czF9 else czF8
+        let xF0_10 = if cmxF10 < cmxF11 then cmxF11 else cmxF10
+        let xcF0_10 = if cmxF10 < cmxF11 then ccF11 else ccF10
+        let xzF0_10 = if cmxF10 < cmxF11 then czF11 else czF10
+        let xF0_12 = if cmxF12 < cmxF13 then cmxF13 else cmxF12
+        let xcF0_12 = if cmxF12 < cmxF13 then ccF13 else ccF12
+        let xzF0_12 = if cmxF12 < cmxF13 then czF13 else czF12
+        let xF0_14 = if cmxF14 < cmxF15 then cmxF15 else cmxF14
+        let xcF0_14 = if cmxF14 < cmxF15 then ccF15 else ccF14
+        let xzF0_14 = if cmxF14 < cmxF15 then czF15 else czF14
+        let xF1_0 = if xF0_0 < xF0_2 then xF0_2 else xF0_0
+        let xcF1_0 = if xF0_0 < xF0_2 then xcF0_2 else xcF0_0
+        let xzF1_0 = if xF0_0 < xF0_2 then xzF0_2 else xzF0_0
+        let xF1_2 = if xF0_4 < xF0_6 then xF0_6 else xF0_4
+        let xcF1_2 = if xF0_4 < xF0_6 then xcF0_6 else xcF0_4
+        let xzF1_2 = if xF0_4 < xF0_6 then xzF0_6 else xzF0_4
+        let xF1_4 = if xF0_8 < xF0_10 then xF0_10 else xF0_8
+        let xcF1_4 = if xF0_8 < xF0_10 then xcF0_10 else xcF0_8
+        let xzF1_4 = if xF0_8 < xF0_10 then xzF0_10 else xzF0_8
+        let xF1_6 = if xF0_12 < xF0_14 then xF0_14 else xF0_12
+        let xcF1_6 = if xF0_12 < xF0_14 then xcF0_14 else xcF0_12
+        let xzF1_6 = if xF0_12 < xF0_14 then xzF0_14 else xzF0_12
+        let xF2_0 = if xF1_0 < xF1_2 then xF1_2 else xF1_0
+        let xcF2_0 = if xF1_0 < xF1_2 then xcF1_2 else xcF1_0
+        let xzF2_0 = if xF1_0 < xF1_2 then xzF1_2 else xzF1_0
+        let xF2_2 = if xF1_4 < xF1_6 then xF1_6 else xF1_4
+        let xcF2_2 = if xF1_4 < xF1_6 then xcF1_6 else xcF1_4
+        let xzF2_2 = if xF1_4 < xF1_6 then xzF1_6 else xzF1_4
+        let xF3_0 = if xF2_0 < xF2_2 then xF2_2 else xF2_0
+        let xcF3_0 = if xF2_0 < xF2_2 then xcF2_2 else xcF2_0
+        let xzF3_0 = if xF2_0 < xF2_2 then xzF2_2 else xzF2_0
+        if mF3_0 >= 200.0 || xF3_0 < 0.0 || mF3_0 >= SWF {
+          pcol6 = 200.0
+          pcurR6 = 100.0
+        } else {
+          pcol6 = if mF3_0 < 0.0 then 0.0 else (mF3_0 | 0)
+          pcurR6 = if xF3_0 >= SWF then SWF - 1.0 else (xF3_0 | 0)
+          xL6 = mF3_0
+          if !erasing {
+            let cra = (rrowF | 0)
+            if pcurR6 >= pcol6 && pcol6 <= 63.0 {
+              if covMin[cra] > 199.0 {
+                covMin[cra] = pcol6
+                covMax[cra] = pcurR6
+              } else {
+                if pcol6 < covMin[cra] { covMin[cra] = pcol6 }
+                if pcurR6 > covMax[cra] { covMax[cra] = pcurR6 }
+              }
+              if cra < covLo { covLo = cra }
+              if cra > covHi { covHi = cra }
+            }
+          }
+          cLo6 = mcF3_0
+          let span6 = xF3_0 - mF3_0
+          let inv6 = if span6 > 0.0 then 1.0 / span6 else 0.0
+          rowSlope6 = (xcF3_0 - cLo6) * inv6
+          zLo6 = mzF3_0
+          zSlope6 = (xzF3_0 - zLo6) * inv6
+          cLo6 = Color(cLo6.r * bf, cLo6.g * bf, cLo6.b * bf, cLo6.a)
+          rowSlope6 = Color(rowSlope6.r * bf, rowSlope6.g * bf, rowSlope6.b * bf, rowSlope6.a)
+        }
+          }
+        }
+      }
+      if polyOn {
+        if pcol7 > pcurR7 {
+          let rrowG = prow + 6.0
+          if rrowG <= plast {
+        let cvG0 = rrowG >= eLo0 && rrowG < eHi0
+        let cxG0 = eX0 + eS0 * (rrowG - eY0)
+        let ccG0 = pC0 + (rrowG - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let czG0 = pzV0 + (rrowG - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cmnG0 = if cvG0 then cxG0 else 200.0
+        let cmxG0 = if cvG0 then cxG0 else -200.0
+        let cvG1 = rrowG >= eLo1 && rrowG < eHi1
+        let cxG1 = eX1 + eS1 * (rrowG - eY1)
+        let ccG1 = pC1 + (rrowG - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let czG1 = pzV1 + (rrowG - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cmnG1 = if cvG1 then cxG1 else 200.0
+        let cmxG1 = if cvG1 then cxG1 else -200.0
+        let cvG2 = rrowG >= eLo2 && rrowG < eHi2
+        let cxG2 = eX2 + eS2 * (rrowG - eY2)
+        let ccG2 = pC2 + (rrowG - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let czG2 = pzV2 + (rrowG - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cmnG2 = if cvG2 then cxG2 else 200.0
+        let cmxG2 = if cvG2 then cxG2 else -200.0
+        let cvG3 = rrowG >= eLo3 && rrowG < eHi3
+        let cxG3 = eX3 + eS3 * (rrowG - eY3)
+        let ccG3 = pC3 + (rrowG - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let czG3 = pzV3 + (rrowG - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cmnG3 = if cvG3 then cxG3 else 200.0
+        let cmxG3 = if cvG3 then cxG3 else -200.0
+        let cvG4 = rrowG >= eLo4 && rrowG < eHi4
+        let cxG4 = eX4 + eS4 * (rrowG - eY4)
+        let ccG4 = pC4 + (rrowG - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let czG4 = pzV4 + (rrowG - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cmnG4 = if cvG4 then cxG4 else 200.0
+        let cmxG4 = if cvG4 then cxG4 else -200.0
+        let cvG5 = rrowG >= eLo5 && rrowG < eHi5
+        let cxG5 = eX5 + eS5 * (rrowG - eY5)
+        let ccG5 = pC5 + (rrowG - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let czG5 = pzV5 + (rrowG - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cmnG5 = if cvG5 then cxG5 else 200.0
+        let cmxG5 = if cvG5 then cxG5 else -200.0
+        let cvG6 = rrowG >= eLo6 && rrowG < eHi6
+        let cxG6 = eX6 + eS6 * (rrowG - eY6)
+        let ccG6 = pC6 + (rrowG - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let czG6 = pzV6 + (rrowG - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cmnG6 = if cvG6 then cxG6 else 200.0
+        let cmxG6 = if cvG6 then cxG6 else -200.0
+        let cvG7 = rrowG >= eLo7 && rrowG < eHi7
+        let cxG7 = eX7 + eS7 * (rrowG - eY7)
+        let ccG7 = pC7 + (rrowG - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let czG7 = pzV7 + (rrowG - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cmnG7 = if cvG7 then cxG7 else 200.0
+        let cmxG7 = if cvG7 then cxG7 else -200.0
+        let cvG8 = rrowG >= eLo8 && rrowG < eHi8
+        let cxG8 = eX8 + eS8 * (rrowG - eY8)
+        let ccG8 = pC8 + (rrowG - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let czG8 = pzV8 + (rrowG - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cmnG8 = if cvG8 then cxG8 else 200.0
+        let cmxG8 = if cvG8 then cxG8 else -200.0
+        let cvG9 = rrowG >= eLo9 && rrowG < eHi9
+        let cxG9 = eX9 + eS9 * (rrowG - eY9)
+        let ccG9 = pC9 + (rrowG - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let czG9 = pzV9 + (rrowG - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cmnG9 = if cvG9 then cxG9 else 200.0
+        let cmxG9 = if cvG9 then cxG9 else -200.0
+        let cvG10 = rrowG >= eLo10 && rrowG < eHi10
+        let cxG10 = eX10 + eS10 * (rrowG - eY10)
+        let ccG10 = pC10 + (rrowG - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let czG10 = pzV10 + (rrowG - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cmnG10 = if cvG10 then cxG10 else 200.0
+        let cmxG10 = if cvG10 then cxG10 else -200.0
+        let cvG11 = rrowG >= eLo11 && rrowG < eHi11
+        let cxG11 = eX11 + eS11 * (rrowG - eY11)
+        let ccG11 = pC11 + (rrowG - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let czG11 = pzV11 + (rrowG - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cmnG11 = if cvG11 then cxG11 else 200.0
+        let cmxG11 = if cvG11 then cxG11 else -200.0
+        let cvG12 = rrowG >= eLo12 && rrowG < eHi12
+        let cxG12 = eX12 + eS12 * (rrowG - eY12)
+        let ccG12 = pC12 + (rrowG - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let czG12 = pzV12 + (rrowG - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cmnG12 = if cvG12 then cxG12 else 200.0
+        let cmxG12 = if cvG12 then cxG12 else -200.0
+        let cvG13 = rrowG >= eLo13 && rrowG < eHi13
+        let cxG13 = eX13 + eS13 * (rrowG - eY13)
+        let ccG13 = pC13 + (rrowG - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let czG13 = pzV13 + (rrowG - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cmnG13 = if cvG13 then cxG13 else 200.0
+        let cmxG13 = if cvG13 then cxG13 else -200.0
+        let cvG14 = rrowG >= eLo14 && rrowG < eHi14
+        let cxG14 = eX14 + eS14 * (rrowG - eY14)
+        let ccG14 = pC14 + (rrowG - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let czG14 = pzV14 + (rrowG - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cmnG14 = if cvG14 then cxG14 else 200.0
+        let cmxG14 = if cvG14 then cxG14 else -200.0
+        let cvG15 = rrowG >= eLo15 && rrowG < eHi15
+        let cxG15 = eX15 + eS15 * (rrowG - eY15)
+        let ccG15 = pC15 + (rrowG - eY15) * eInv15 * (pC0 - pC15)
+        let czG15 = pzV15 + (rrowG - eY15) * eInv15 * (pzV0 - pzV15)
+        let cmnG15 = if cvG15 then cxG15 else 200.0
+        let cmxG15 = if cvG15 then cxG15 else -200.0
+        let mG0_0 = if cmnG0 < cmnG1 then cmnG0 else cmnG1
+        let mcG0_0 = if cmnG0 < cmnG1 then ccG0 else ccG1
+        let mzG0_0 = if cmnG0 < cmnG1 then czG0 else czG1
+        let mG0_2 = if cmnG2 < cmnG3 then cmnG2 else cmnG3
+        let mcG0_2 = if cmnG2 < cmnG3 then ccG2 else ccG3
+        let mzG0_2 = if cmnG2 < cmnG3 then czG2 else czG3
+        let mG0_4 = if cmnG4 < cmnG5 then cmnG4 else cmnG5
+        let mcG0_4 = if cmnG4 < cmnG5 then ccG4 else ccG5
+        let mzG0_4 = if cmnG4 < cmnG5 then czG4 else czG5
+        let mG0_6 = if cmnG6 < cmnG7 then cmnG6 else cmnG7
+        let mcG0_6 = if cmnG6 < cmnG7 then ccG6 else ccG7
+        let mzG0_6 = if cmnG6 < cmnG7 then czG6 else czG7
+        let mG0_8 = if cmnG8 < cmnG9 then cmnG8 else cmnG9
+        let mcG0_8 = if cmnG8 < cmnG9 then ccG8 else ccG9
+        let mzG0_8 = if cmnG8 < cmnG9 then czG8 else czG9
+        let mG0_10 = if cmnG10 < cmnG11 then cmnG10 else cmnG11
+        let mcG0_10 = if cmnG10 < cmnG11 then ccG10 else ccG11
+        let mzG0_10 = if cmnG10 < cmnG11 then czG10 else czG11
+        let mG0_12 = if cmnG12 < cmnG13 then cmnG12 else cmnG13
+        let mcG0_12 = if cmnG12 < cmnG13 then ccG12 else ccG13
+        let mzG0_12 = if cmnG12 < cmnG13 then czG12 else czG13
+        let mG0_14 = if cmnG14 < cmnG15 then cmnG14 else cmnG15
+        let mcG0_14 = if cmnG14 < cmnG15 then ccG14 else ccG15
+        let mzG0_14 = if cmnG14 < cmnG15 then czG14 else czG15
+        let mG1_0 = if mG0_0 < mG0_2 then mG0_0 else mG0_2
+        let mcG1_0 = if mG0_0 < mG0_2 then mcG0_0 else mcG0_2
+        let mzG1_0 = if mG0_0 < mG0_2 then mzG0_0 else mzG0_2
+        let mG1_2 = if mG0_4 < mG0_6 then mG0_4 else mG0_6
+        let mcG1_2 = if mG0_4 < mG0_6 then mcG0_4 else mcG0_6
+        let mzG1_2 = if mG0_4 < mG0_6 then mzG0_4 else mzG0_6
+        let mG1_4 = if mG0_8 < mG0_10 then mG0_8 else mG0_10
+        let mcG1_4 = if mG0_8 < mG0_10 then mcG0_8 else mcG0_10
+        let mzG1_4 = if mG0_8 < mG0_10 then mzG0_8 else mzG0_10
+        let mG1_6 = if mG0_12 < mG0_14 then mG0_12 else mG0_14
+        let mcG1_6 = if mG0_12 < mG0_14 then mcG0_12 else mcG0_14
+        let mzG1_6 = if mG0_12 < mG0_14 then mzG0_12 else mzG0_14
+        let mG2_0 = if mG1_0 < mG1_2 then mG1_0 else mG1_2
+        let mcG2_0 = if mG1_0 < mG1_2 then mcG1_0 else mcG1_2
+        let mzG2_0 = if mG1_0 < mG1_2 then mzG1_0 else mzG1_2
+        let mG2_2 = if mG1_4 < mG1_6 then mG1_4 else mG1_6
+        let mcG2_2 = if mG1_4 < mG1_6 then mcG1_4 else mcG1_6
+        let mzG2_2 = if mG1_4 < mG1_6 then mzG1_4 else mzG1_6
+        let mG3_0 = if mG2_0 < mG2_2 then mG2_0 else mG2_2
+        let mcG3_0 = if mG2_0 < mG2_2 then mcG2_0 else mcG2_2
+        let mzG3_0 = if mG2_0 < mG2_2 then mzG2_0 else mzG2_2
+        let xG0_0 = if cmxG0 < cmxG1 then cmxG1 else cmxG0
+        let xcG0_0 = if cmxG0 < cmxG1 then ccG1 else ccG0
+        let xzG0_0 = if cmxG0 < cmxG1 then czG1 else czG0
+        let xG0_2 = if cmxG2 < cmxG3 then cmxG3 else cmxG2
+        let xcG0_2 = if cmxG2 < cmxG3 then ccG3 else ccG2
+        let xzG0_2 = if cmxG2 < cmxG3 then czG3 else czG2
+        let xG0_4 = if cmxG4 < cmxG5 then cmxG5 else cmxG4
+        let xcG0_4 = if cmxG4 < cmxG5 then ccG5 else ccG4
+        let xzG0_4 = if cmxG4 < cmxG5 then czG5 else czG4
+        let xG0_6 = if cmxG6 < cmxG7 then cmxG7 else cmxG6
+        let xcG0_6 = if cmxG6 < cmxG7 then ccG7 else ccG6
+        let xzG0_6 = if cmxG6 < cmxG7 then czG7 else czG6
+        let xG0_8 = if cmxG8 < cmxG9 then cmxG9 else cmxG8
+        let xcG0_8 = if cmxG8 < cmxG9 then ccG9 else ccG8
+        let xzG0_8 = if cmxG8 < cmxG9 then czG9 else czG8
+        let xG0_10 = if cmxG10 < cmxG11 then cmxG11 else cmxG10
+        let xcG0_10 = if cmxG10 < cmxG11 then ccG11 else ccG10
+        let xzG0_10 = if cmxG10 < cmxG11 then czG11 else czG10
+        let xG0_12 = if cmxG12 < cmxG13 then cmxG13 else cmxG12
+        let xcG0_12 = if cmxG12 < cmxG13 then ccG13 else ccG12
+        let xzG0_12 = if cmxG12 < cmxG13 then czG13 else czG12
+        let xG0_14 = if cmxG14 < cmxG15 then cmxG15 else cmxG14
+        let xcG0_14 = if cmxG14 < cmxG15 then ccG15 else ccG14
+        let xzG0_14 = if cmxG14 < cmxG15 then czG15 else czG14
+        let xG1_0 = if xG0_0 < xG0_2 then xG0_2 else xG0_0
+        let xcG1_0 = if xG0_0 < xG0_2 then xcG0_2 else xcG0_0
+        let xzG1_0 = if xG0_0 < xG0_2 then xzG0_2 else xzG0_0
+        let xG1_2 = if xG0_4 < xG0_6 then xG0_6 else xG0_4
+        let xcG1_2 = if xG0_4 < xG0_6 then xcG0_6 else xcG0_4
+        let xzG1_2 = if xG0_4 < xG0_6 then xzG0_6 else xzG0_4
+        let xG1_4 = if xG0_8 < xG0_10 then xG0_10 else xG0_8
+        let xcG1_4 = if xG0_8 < xG0_10 then xcG0_10 else xcG0_8
+        let xzG1_4 = if xG0_8 < xG0_10 then xzG0_10 else xzG0_8
+        let xG1_6 = if xG0_12 < xG0_14 then xG0_14 else xG0_12
+        let xcG1_6 = if xG0_12 < xG0_14 then xcG0_14 else xcG0_12
+        let xzG1_6 = if xG0_12 < xG0_14 then xzG0_14 else xzG0_12
+        let xG2_0 = if xG1_0 < xG1_2 then xG1_2 else xG1_0
+        let xcG2_0 = if xG1_0 < xG1_2 then xcG1_2 else xcG1_0
+        let xzG2_0 = if xG1_0 < xG1_2 then xzG1_2 else xzG1_0
+        let xG2_2 = if xG1_4 < xG1_6 then xG1_6 else xG1_4
+        let xcG2_2 = if xG1_4 < xG1_6 then xcG1_6 else xcG1_4
+        let xzG2_2 = if xG1_4 < xG1_6 then xzG1_6 else xzG1_4
+        let xG3_0 = if xG2_0 < xG2_2 then xG2_2 else xG2_0
+        let xcG3_0 = if xG2_0 < xG2_2 then xcG2_2 else xcG2_0
+        let xzG3_0 = if xG2_0 < xG2_2 then xzG2_2 else xzG2_0
+        if mG3_0 >= 200.0 || xG3_0 < 0.0 || mG3_0 >= SWF {
+          pcol7 = 200.0
+          pcurR7 = 100.0
+        } else {
+          pcol7 = if mG3_0 < 0.0 then 0.0 else (mG3_0 | 0)
+          pcurR7 = if xG3_0 >= SWF then SWF - 1.0 else (xG3_0 | 0)
+          xL7 = mG3_0
+          if !erasing {
+            let cra = (rrowG | 0)
+            if pcurR7 >= pcol7 && pcol7 <= 63.0 {
+              if covMin[cra] > 199.0 {
+                covMin[cra] = pcol7
+                covMax[cra] = pcurR7
+              } else {
+                if pcol7 < covMin[cra] { covMin[cra] = pcol7 }
+                if pcurR7 > covMax[cra] { covMax[cra] = pcurR7 }
+              }
+              if cra < covLo { covLo = cra }
+              if cra > covHi { covHi = cra }
+            }
+          }
+          cLo7 = mcG3_0
+          let span7 = xG3_0 - mG3_0
+          let inv7 = if span7 > 0.0 then 1.0 / span7 else 0.0
+          rowSlope7 = (xcG3_0 - cLo7) * inv7
+          zLo7 = mzG3_0
+          zSlope7 = (xzG3_0 - zLo7) * inv7
+          cLo7 = Color(cLo7.r * bf, cLo7.g * bf, cLo7.b * bf, cLo7.a)
+          rowSlope7 = Color(rowSlope7.r * bf, rowSlope7.g * bf, rowSlope7.b * bf, rowSlope7.a)
+        }
+          }
+        }
+      }
+      if polyOn {
+        if pcol8 > pcurR8 {
+          let rrowH = prow + 7.0
+          if rrowH <= plast {
+        let cvH0 = rrowH >= eLo0 && rrowH < eHi0
+        let cxH0 = eX0 + eS0 * (rrowH - eY0)
+        let ccH0 = pC0 + (rrowH - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let czH0 = pzV0 + (rrowH - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cmnH0 = if cvH0 then cxH0 else 200.0
+        let cmxH0 = if cvH0 then cxH0 else -200.0
+        let cvH1 = rrowH >= eLo1 && rrowH < eHi1
+        let cxH1 = eX1 + eS1 * (rrowH - eY1)
+        let ccH1 = pC1 + (rrowH - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let czH1 = pzV1 + (rrowH - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cmnH1 = if cvH1 then cxH1 else 200.0
+        let cmxH1 = if cvH1 then cxH1 else -200.0
+        let cvH2 = rrowH >= eLo2 && rrowH < eHi2
+        let cxH2 = eX2 + eS2 * (rrowH - eY2)
+        let ccH2 = pC2 + (rrowH - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let czH2 = pzV2 + (rrowH - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cmnH2 = if cvH2 then cxH2 else 200.0
+        let cmxH2 = if cvH2 then cxH2 else -200.0
+        let cvH3 = rrowH >= eLo3 && rrowH < eHi3
+        let cxH3 = eX3 + eS3 * (rrowH - eY3)
+        let ccH3 = pC3 + (rrowH - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let czH3 = pzV3 + (rrowH - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cmnH3 = if cvH3 then cxH3 else 200.0
+        let cmxH3 = if cvH3 then cxH3 else -200.0
+        let cvH4 = rrowH >= eLo4 && rrowH < eHi4
+        let cxH4 = eX4 + eS4 * (rrowH - eY4)
+        let ccH4 = pC4 + (rrowH - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let czH4 = pzV4 + (rrowH - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cmnH4 = if cvH4 then cxH4 else 200.0
+        let cmxH4 = if cvH4 then cxH4 else -200.0
+        let cvH5 = rrowH >= eLo5 && rrowH < eHi5
+        let cxH5 = eX5 + eS5 * (rrowH - eY5)
+        let ccH5 = pC5 + (rrowH - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let czH5 = pzV5 + (rrowH - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cmnH5 = if cvH5 then cxH5 else 200.0
+        let cmxH5 = if cvH5 then cxH5 else -200.0
+        let cvH6 = rrowH >= eLo6 && rrowH < eHi6
+        let cxH6 = eX6 + eS6 * (rrowH - eY6)
+        let ccH6 = pC6 + (rrowH - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let czH6 = pzV6 + (rrowH - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cmnH6 = if cvH6 then cxH6 else 200.0
+        let cmxH6 = if cvH6 then cxH6 else -200.0
+        let cvH7 = rrowH >= eLo7 && rrowH < eHi7
+        let cxH7 = eX7 + eS7 * (rrowH - eY7)
+        let ccH7 = pC7 + (rrowH - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let czH7 = pzV7 + (rrowH - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cmnH7 = if cvH7 then cxH7 else 200.0
+        let cmxH7 = if cvH7 then cxH7 else -200.0
+        let cvH8 = rrowH >= eLo8 && rrowH < eHi8
+        let cxH8 = eX8 + eS8 * (rrowH - eY8)
+        let ccH8 = pC8 + (rrowH - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let czH8 = pzV8 + (rrowH - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cmnH8 = if cvH8 then cxH8 else 200.0
+        let cmxH8 = if cvH8 then cxH8 else -200.0
+        let cvH9 = rrowH >= eLo9 && rrowH < eHi9
+        let cxH9 = eX9 + eS9 * (rrowH - eY9)
+        let ccH9 = pC9 + (rrowH - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let czH9 = pzV9 + (rrowH - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cmnH9 = if cvH9 then cxH9 else 200.0
+        let cmxH9 = if cvH9 then cxH9 else -200.0
+        let cvH10 = rrowH >= eLo10 && rrowH < eHi10
+        let cxH10 = eX10 + eS10 * (rrowH - eY10)
+        let ccH10 = pC10 + (rrowH - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let czH10 = pzV10 + (rrowH - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cmnH10 = if cvH10 then cxH10 else 200.0
+        let cmxH10 = if cvH10 then cxH10 else -200.0
+        let cvH11 = rrowH >= eLo11 && rrowH < eHi11
+        let cxH11 = eX11 + eS11 * (rrowH - eY11)
+        let ccH11 = pC11 + (rrowH - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let czH11 = pzV11 + (rrowH - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cmnH11 = if cvH11 then cxH11 else 200.0
+        let cmxH11 = if cvH11 then cxH11 else -200.0
+        let cvH12 = rrowH >= eLo12 && rrowH < eHi12
+        let cxH12 = eX12 + eS12 * (rrowH - eY12)
+        let ccH12 = pC12 + (rrowH - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let czH12 = pzV12 + (rrowH - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cmnH12 = if cvH12 then cxH12 else 200.0
+        let cmxH12 = if cvH12 then cxH12 else -200.0
+        let cvH13 = rrowH >= eLo13 && rrowH < eHi13
+        let cxH13 = eX13 + eS13 * (rrowH - eY13)
+        let ccH13 = pC13 + (rrowH - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let czH13 = pzV13 + (rrowH - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cmnH13 = if cvH13 then cxH13 else 200.0
+        let cmxH13 = if cvH13 then cxH13 else -200.0
+        let cvH14 = rrowH >= eLo14 && rrowH < eHi14
+        let cxH14 = eX14 + eS14 * (rrowH - eY14)
+        let ccH14 = pC14 + (rrowH - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let czH14 = pzV14 + (rrowH - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cmnH14 = if cvH14 then cxH14 else 200.0
+        let cmxH14 = if cvH14 then cxH14 else -200.0
+        let cvH15 = rrowH >= eLo15 && rrowH < eHi15
+        let cxH15 = eX15 + eS15 * (rrowH - eY15)
+        let ccH15 = pC15 + (rrowH - eY15) * eInv15 * (pC0 - pC15)
+        let czH15 = pzV15 + (rrowH - eY15) * eInv15 * (pzV0 - pzV15)
+        let cmnH15 = if cvH15 then cxH15 else 200.0
+        let cmxH15 = if cvH15 then cxH15 else -200.0
+        let mH0_0 = if cmnH0 < cmnH1 then cmnH0 else cmnH1
+        let mcH0_0 = if cmnH0 < cmnH1 then ccH0 else ccH1
+        let mzH0_0 = if cmnH0 < cmnH1 then czH0 else czH1
+        let mH0_2 = if cmnH2 < cmnH3 then cmnH2 else cmnH3
+        let mcH0_2 = if cmnH2 < cmnH3 then ccH2 else ccH3
+        let mzH0_2 = if cmnH2 < cmnH3 then czH2 else czH3
+        let mH0_4 = if cmnH4 < cmnH5 then cmnH4 else cmnH5
+        let mcH0_4 = if cmnH4 < cmnH5 then ccH4 else ccH5
+        let mzH0_4 = if cmnH4 < cmnH5 then czH4 else czH5
+        let mH0_6 = if cmnH6 < cmnH7 then cmnH6 else cmnH7
+        let mcH0_6 = if cmnH6 < cmnH7 then ccH6 else ccH7
+        let mzH0_6 = if cmnH6 < cmnH7 then czH6 else czH7
+        let mH0_8 = if cmnH8 < cmnH9 then cmnH8 else cmnH9
+        let mcH0_8 = if cmnH8 < cmnH9 then ccH8 else ccH9
+        let mzH0_8 = if cmnH8 < cmnH9 then czH8 else czH9
+        let mH0_10 = if cmnH10 < cmnH11 then cmnH10 else cmnH11
+        let mcH0_10 = if cmnH10 < cmnH11 then ccH10 else ccH11
+        let mzH0_10 = if cmnH10 < cmnH11 then czH10 else czH11
+        let mH0_12 = if cmnH12 < cmnH13 then cmnH12 else cmnH13
+        let mcH0_12 = if cmnH12 < cmnH13 then ccH12 else ccH13
+        let mzH0_12 = if cmnH12 < cmnH13 then czH12 else czH13
+        let mH0_14 = if cmnH14 < cmnH15 then cmnH14 else cmnH15
+        let mcH0_14 = if cmnH14 < cmnH15 then ccH14 else ccH15
+        let mzH0_14 = if cmnH14 < cmnH15 then czH14 else czH15
+        let mH1_0 = if mH0_0 < mH0_2 then mH0_0 else mH0_2
+        let mcH1_0 = if mH0_0 < mH0_2 then mcH0_0 else mcH0_2
+        let mzH1_0 = if mH0_0 < mH0_2 then mzH0_0 else mzH0_2
+        let mH1_2 = if mH0_4 < mH0_6 then mH0_4 else mH0_6
+        let mcH1_2 = if mH0_4 < mH0_6 then mcH0_4 else mcH0_6
+        let mzH1_2 = if mH0_4 < mH0_6 then mzH0_4 else mzH0_6
+        let mH1_4 = if mH0_8 < mH0_10 then mH0_8 else mH0_10
+        let mcH1_4 = if mH0_8 < mH0_10 then mcH0_8 else mcH0_10
+        let mzH1_4 = if mH0_8 < mH0_10 then mzH0_8 else mzH0_10
+        let mH1_6 = if mH0_12 < mH0_14 then mH0_12 else mH0_14
+        let mcH1_6 = if mH0_12 < mH0_14 then mcH0_12 else mcH0_14
+        let mzH1_6 = if mH0_12 < mH0_14 then mzH0_12 else mzH0_14
+        let mH2_0 = if mH1_0 < mH1_2 then mH1_0 else mH1_2
+        let mcH2_0 = if mH1_0 < mH1_2 then mcH1_0 else mcH1_2
+        let mzH2_0 = if mH1_0 < mH1_2 then mzH1_0 else mzH1_2
+        let mH2_2 = if mH1_4 < mH1_6 then mH1_4 else mH1_6
+        let mcH2_2 = if mH1_4 < mH1_6 then mcH1_4 else mcH1_6
+        let mzH2_2 = if mH1_4 < mH1_6 then mzH1_4 else mzH1_6
+        let mH3_0 = if mH2_0 < mH2_2 then mH2_0 else mH2_2
+        let mcH3_0 = if mH2_0 < mH2_2 then mcH2_0 else mcH2_2
+        let mzH3_0 = if mH2_0 < mH2_2 then mzH2_0 else mzH2_2
+        let xH0_0 = if cmxH0 < cmxH1 then cmxH1 else cmxH0
+        let xcH0_0 = if cmxH0 < cmxH1 then ccH1 else ccH0
+        let xzH0_0 = if cmxH0 < cmxH1 then czH1 else czH0
+        let xH0_2 = if cmxH2 < cmxH3 then cmxH3 else cmxH2
+        let xcH0_2 = if cmxH2 < cmxH3 then ccH3 else ccH2
+        let xzH0_2 = if cmxH2 < cmxH3 then czH3 else czH2
+        let xH0_4 = if cmxH4 < cmxH5 then cmxH5 else cmxH4
+        let xcH0_4 = if cmxH4 < cmxH5 then ccH5 else ccH4
+        let xzH0_4 = if cmxH4 < cmxH5 then czH5 else czH4
+        let xH0_6 = if cmxH6 < cmxH7 then cmxH7 else cmxH6
+        let xcH0_6 = if cmxH6 < cmxH7 then ccH7 else ccH6
+        let xzH0_6 = if cmxH6 < cmxH7 then czH7 else czH6
+        let xH0_8 = if cmxH8 < cmxH9 then cmxH9 else cmxH8
+        let xcH0_8 = if cmxH8 < cmxH9 then ccH9 else ccH8
+        let xzH0_8 = if cmxH8 < cmxH9 then czH9 else czH8
+        let xH0_10 = if cmxH10 < cmxH11 then cmxH11 else cmxH10
+        let xcH0_10 = if cmxH10 < cmxH11 then ccH11 else ccH10
+        let xzH0_10 = if cmxH10 < cmxH11 then czH11 else czH10
+        let xH0_12 = if cmxH12 < cmxH13 then cmxH13 else cmxH12
+        let xcH0_12 = if cmxH12 < cmxH13 then ccH13 else ccH12
+        let xzH0_12 = if cmxH12 < cmxH13 then czH13 else czH12
+        let xH0_14 = if cmxH14 < cmxH15 then cmxH15 else cmxH14
+        let xcH0_14 = if cmxH14 < cmxH15 then ccH15 else ccH14
+        let xzH0_14 = if cmxH14 < cmxH15 then czH15 else czH14
+        let xH1_0 = if xH0_0 < xH0_2 then xH0_2 else xH0_0
+        let xcH1_0 = if xH0_0 < xH0_2 then xcH0_2 else xcH0_0
+        let xzH1_0 = if xH0_0 < xH0_2 then xzH0_2 else xzH0_0
+        let xH1_2 = if xH0_4 < xH0_6 then xH0_6 else xH0_4
+        let xcH1_2 = if xH0_4 < xH0_6 then xcH0_6 else xcH0_4
+        let xzH1_2 = if xH0_4 < xH0_6 then xzH0_6 else xzH0_4
+        let xH1_4 = if xH0_8 < xH0_10 then xH0_10 else xH0_8
+        let xcH1_4 = if xH0_8 < xH0_10 then xcH0_10 else xcH0_8
+        let xzH1_4 = if xH0_8 < xH0_10 then xzH0_10 else xzH0_8
+        let xH1_6 = if xH0_12 < xH0_14 then xH0_14 else xH0_12
+        let xcH1_6 = if xH0_12 < xH0_14 then xcH0_14 else xcH0_12
+        let xzH1_6 = if xH0_12 < xH0_14 then xzH0_14 else xzH0_12
+        let xH2_0 = if xH1_0 < xH1_2 then xH1_2 else xH1_0
+        let xcH2_0 = if xH1_0 < xH1_2 then xcH1_2 else xcH1_0
+        let xzH2_0 = if xH1_0 < xH1_2 then xzH1_2 else xzH1_0
+        let xH2_2 = if xH1_4 < xH1_6 then xH1_6 else xH1_4
+        let xcH2_2 = if xH1_4 < xH1_6 then xcH1_6 else xcH1_4
+        let xzH2_2 = if xH1_4 < xH1_6 then xzH1_6 else xzH1_4
+        let xH3_0 = if xH2_0 < xH2_2 then xH2_2 else xH2_0
+        let xcH3_0 = if xH2_0 < xH2_2 then xcH2_2 else xcH2_0
+        let xzH3_0 = if xH2_0 < xH2_2 then xzH2_2 else xzH2_0
+        if mH3_0 >= 200.0 || xH3_0 < 0.0 || mH3_0 >= SWF {
+          pcol8 = 200.0
+          pcurR8 = 100.0
+        } else {
+          pcol8 = if mH3_0 < 0.0 then 0.0 else (mH3_0 | 0)
+          pcurR8 = if xH3_0 >= SWF then SWF - 1.0 else (xH3_0 | 0)
+          xL8 = mH3_0
+          if !erasing {
+            let cra = (rrowH | 0)
+            if pcurR8 >= pcol8 && pcol8 <= 63.0 {
+              if covMin[cra] > 199.0 {
+                covMin[cra] = pcol8
+                covMax[cra] = pcurR8
+              } else {
+                if pcol8 < covMin[cra] { covMin[cra] = pcol8 }
+                if pcurR8 > covMax[cra] { covMax[cra] = pcurR8 }
+              }
+              if cra < covLo { covLo = cra }
+              if cra > covHi { covHi = cra }
+            }
+          }
+          cLo8 = mcH3_0
+          let span8 = xH3_0 - mH3_0
+          let inv8 = if span8 > 0.0 then 1.0 / span8 else 0.0
+          rowSlope8 = (xcH3_0 - cLo8) * inv8
+          zLo8 = mzH3_0
+          zSlope8 = (xzH3_0 - zLo8) * inv8
+          cLo8 = Color(cLo8.r * bf, cLo8.g * bf, cLo8.b * bf, cLo8.a)
+          rowSlope8 = Color(rowSlope8.r * bf, rowSlope8.g * bf, rowSlope8.b * bf, rowSlope8.a)
+        }
+          }
+        }
+      }
       if prow > plast {
         polyOn = false
+        noDepth = false
         if pending {
           pending = false
           justCleared = true
@@ -13971,48 +16749,63 @@ mod paintTick() {
           if sSeg > 0.0 {
             rX0 = rX1
             rY0 = rY1
+            rZ0 = rZ1
             rC0 = rC1
             rX1 = rX2
             rY1 = rY2
+            rZ1 = rZ2
             rC1 = rC2
             rX2 = rX3
             rY2 = rY3
+            rZ2 = rZ3
             rC2 = rC3
             rX3 = rX4
             rY3 = rY4
+            rZ3 = rZ4
             rC3 = rC4
             rX4 = rX5
             rY4 = rY5
+            rZ4 = rZ5
             rC4 = rC5
             rX5 = rX6
             rY5 = rY6
+            rZ5 = rZ6
             rC5 = rC6
             rX6 = rX7
             rY6 = rY7
+            rZ6 = rZ7
             rC6 = rC7
             rX7 = rX8
             rY7 = rY8
+            rZ7 = rZ8
             rC7 = rC8
             rX8 = rX9
             rY8 = rY9
+            rZ8 = rZ9
             rC8 = rC9
             rX9 = rX10
             rY9 = rY10
+            rZ9 = rZ10
             rC9 = rC10
             rX10 = rX11
             rY10 = rY11
+            rZ10 = rZ11
             rC10 = rC11
             rX11 = rX12
             rY11 = rY12
+            rZ11 = rZ12
             rC11 = rC12
             rX12 = rX13
             rY12 = rY13
+            rZ12 = rZ13
             rC12 = rC13
             rX13 = rX14
             rY13 = rY14
+            rZ13 = rZ14
             rC13 = rC14
             rX14 = rX15
             rY14 = rY15
+            rZ14 = rZ15
             rC14 = rC15
           }
           cA = rC0
@@ -14034,12 +16827,16 @@ mod paintTick() {
             let sby = rY1 + sty
             qAx = sax + snx
             qAy = say + sny
+            qAz = rZ0
             qBx = sbx + snx
             qBy = sby + sny
+            qBz = rZ1
             qCx = sbx - snx
             qCy = sby - sny
+            qCz = rZ1
             qDx = sax - snx
             qDy = say - sny
+            qDz = rZ0
             let dAB = qBy - qAy
             let dCD = qDy - qCy
             iAB = if dAB > 0.0 then 1.0 / dAB else if dAB < 0.0 then 1.0 / dAB else 0.0
@@ -14061,6 +16858,7 @@ mod paintTick() {
             let bu0x = qAx + bu0s * (prow + 1.0 - qAy)
             let bu0v = prow + 1.0 >= bu0lo && prow + 1.0 < bu0hi
             uc0B = cA + (prow + 1.0 - qAy) * iAB * (cB - cA)
+            let uz0B = rZ0 + (prow + 1.0 - qAy) * iAB * (rZ1 - rZ0)
             let bun0 = if bu0v then bu0x else 200.0
             let bux0 = if bu0v then bu0x else -200.0
             let bu1lo = if qBy < qCy then qBy else qCy
@@ -14069,6 +16867,7 @@ mod paintTick() {
             let bu1x = qBx + bu1s * (prow + 1.0 - qBy)
             let bu1v = prow + 1.0 >= bu1lo && prow + 1.0 < bu1hi
             let buc1 = cB
+            let bz1 = rZ1
             let bun1 = if bu1v then bu1x else 200.0
             let bux1 = if bu1v then bu1x else -200.0
             let bu2lo = if qCy < qDy then qCy else qDy
@@ -14077,6 +16876,7 @@ mod paintTick() {
             let bu2x = qCx + bu2s * (prow + 1.0 - qCy)
             let bu2v = prow + 1.0 >= bu2lo && prow + 1.0 < bu2hi
             uc2B = cB + (prow + 1.0 - qCy) * iCD * (cA - cB)
+            let uz2B = rZ1 + (prow + 1.0 - qCy) * iCD * (rZ0 - rZ1)
             let bun2 = if bu2v then bu2x else 200.0
             let bux2 = if bu2v then bu2x else -200.0
             let bu3lo = if qDy < qAy then qDy else qAy
@@ -14085,6 +16885,7 @@ mod paintTick() {
             let bu3x = qDx + bu3s * (prow + 1.0 - qDy)
             let bu3v = prow + 1.0 >= bu3lo && prow + 1.0 < bu3hi
             let buc3 = cA
+            let bz3 = rZ0
             let bun3 = if bu3v then bu3x else 200.0
             let bux3 = if bu3v then bu3x else -200.0
             let bumn01 = if bun0 < bun1 then bun0 else bun1
@@ -14093,12 +16894,18 @@ mod paintTick() {
             let bumc01 = if bun0 < bun1 then uc0B else buc1
             let bumc23 = if bun2 < bun3 then uc2B else buc3
             let bumnc = if bumn01 < bumn23 then bumc01 else bumc23
+            let bumz01 = if bun0 < bun1 then uz0B else bz1
+            let bumz23 = if bun2 < bun3 then uz2B else bz3
+            let bumnz = if bumn01 < bumn23 then bumz01 else bumz23
             let bumx01 = if bux0 < bux1 then bux1 else bux0
             let bumx23 = if bux2 < bux3 then bux3 else bux2
             let bumx = if bumx01 < bumx23 then bumx23 else bumx01
             let buxc01 = if bux0 < bux1 then buc1 else uc0B
             let buxc23 = if bux2 < bux3 then buc3 else uc2B
             let bumxc = if bumx01 < bumx23 then buxc23 else buxc01
+            let bumxz01 = if bux0 < bux1 then bz1 else uz0B
+            let bumxz23 = if bux2 < bux3 then bz3 else uz2B
+            let bumxz = if bumx01 < bumx23 then bumxz23 else bumxz01
             if bumn >= 200.0 || bumx < 0.0 || bumn >= SWF {
               pcol2 = 200.0
               pcurR2 = 100.0
@@ -14124,6 +16931,8 @@ mod paintTick() {
               let bspan = bumx - bumn
               let binv = if bspan > 0.0 then 1.0 / bspan else 0.0
               rowSlope2 = (bumxc - cLo2) * binv
+              zLo2 = bumnz
+              zSlope2 = (bumxz - zLo2) * binv
               cLo2 = Color(cLo2.r * bf, cLo2.g * bf, cLo2.b * bf, cLo2.a)
               rowSlope2 = Color(rowSlope2.r * bf, rowSlope2.g * bf, rowSlope2.b * bf, rowSlope2.a)
             }
@@ -14137,6 +16946,7 @@ mod paintTick() {
           let u0x = qAx + u0s * (prow - qAy)
           let u0v = prow >= u0lo && prow < u0hi
           uc0 = cA + (prow - qAy) * iAB * (cB - cA)
+          let uz0 = rZ0 + (prow - qAy) * iAB * (rZ1 - rZ0)
           let un0 = if u0v then u0x else 200.0
           let ux0 = if u0v then u0x else -200.0
           let u1lo = if qBy < qCy then qBy else qCy
@@ -14145,6 +16955,7 @@ mod paintTick() {
           let u1x = qBx + u1s * (prow - qBy)
           let u1v = prow >= u1lo && prow < u1hi
           let uc1 = cB
+          let uz1 = rZ1
           let un1 = if u1v then u1x else 200.0
           let ux1 = if u1v then u1x else -200.0
           let u2lo = if qCy < qDy then qCy else qDy
@@ -14153,6 +16964,7 @@ mod paintTick() {
           let u2x = qCx + u2s * (prow - qCy)
           let u2v = prow >= u2lo && prow < u2hi
           uc2 = cB + (prow - qCy) * iCD * (cA - cB)
+          let uz2 = rZ1 + (prow - qCy) * iCD * (rZ0 - rZ1)
           let un2 = if u2v then u2x else 200.0
           let ux2 = if u2v then u2x else -200.0
           let u3lo = if qDy < qAy then qDy else qAy
@@ -14161,6 +16973,7 @@ mod paintTick() {
           let u3x = qDx + u3s * (prow - qDy)
           let u3v = prow >= u3lo && prow < u3hi
           let uc3 = cA
+          let uz3 = rZ0
           let un3 = if u3v then u3x else 200.0
           let ux3 = if u3v then u3x else -200.0
           let umn01 = if un0 < un1 then un0 else un1
@@ -14169,12 +16982,18 @@ mod paintTick() {
           let umc01 = if un0 < un1 then uc0 else uc1
           let umc23 = if un2 < un3 then uc2 else uc3
           let umnc = if umn01 < umn23 then umc01 else umc23
+          let umz01 = if un0 < un1 then uz0 else uz1
+          let umz23 = if un2 < un3 then uz2 else uz3
+          let umnz = if umn01 < umn23 then umz01 else umz23
           let umx01 = if ux0 < ux1 then ux1 else ux0
           let umx23 = if ux2 < ux3 then ux3 else ux2
           let umx = if umx01 < umx23 then umx23 else umx01
           let uxc01 = if ux0 < ux1 then uc1 else uc0
           let uxc23 = if ux2 < ux3 then uc3 else uc2
           let umxc = if umx01 < umx23 then uxc23 else uxc01
+          let umxz01 = if ux0 < ux1 then uz1 else uz0
+          let umxz23 = if ux2 < ux3 then uz3 else uz2
+          let umxz = if umx01 < umx23 then umxz23 else umxz01
           if umn >= 200.0 || umx < 0.0 || umn >= SWF {
             pcol = 200.0
             pcurR = 100.0
@@ -14200,6 +17019,8 @@ mod paintTick() {
             let span = umx - umn
             let inv = if span > 0.0 then 1.0 / span else 0.0
             rowSlope = (umxc - cLo) * inv
+            zLo = umnz
+            zSlope = (umxz - zLo) * inv
             cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf, cLo.a)
             rowSlope = Color(rowSlope.r * bf, rowSlope.g * bf, rowSlope.b * bf, rowSlope.a)
           }
@@ -14225,772 +17046,5130 @@ mod paintTick() {
       if tj0 <= pcurR {
         let ridx0 = ((aRow * SWF + tj0) | 0)
         let dt0 = tj0 - xL
-        fb[ridx0] = cLo + rowSlope * dt0
+        let pdz0 = zLo + zSlope * dt0
+        if noDepth || pdz0 >= fbZ[ridx0] {
+          fb[ridx0] = cLo + rowSlope * dt0
+          fbZ[ridx0] = if noDepth then ZBACK else pdz0
+        }
       }
       let tj1 = pcol + 1.0
       if tj1 <= pcurR {
         let ridx1 = ((aRow * SWF + tj1) | 0)
         let dt1 = tj1 - xL
-        fb[ridx1] = cLo + rowSlope * dt1
+        let pdz1 = zLo + zSlope * dt1
+        if noDepth || pdz1 >= fbZ[ridx1] {
+          fb[ridx1] = cLo + rowSlope * dt1
+          fbZ[ridx1] = if noDepth then ZBACK else pdz1
+        }
       }
       let tj2 = pcol + 2.0
       if tj2 <= pcurR {
         let ridx2 = ((aRow * SWF + tj2) | 0)
         let dt2 = tj2 - xL
-        fb[ridx2] = cLo + rowSlope * dt2
+        let pdz2 = zLo + zSlope * dt2
+        if noDepth || pdz2 >= fbZ[ridx2] {
+          fb[ridx2] = cLo + rowSlope * dt2
+          fbZ[ridx2] = if noDepth then ZBACK else pdz2
+        }
       }
       let tj3 = pcol + 3.0
       if tj3 <= pcurR {
         let ridx3 = ((aRow * SWF + tj3) | 0)
         let dt3 = tj3 - xL
-        fb[ridx3] = cLo + rowSlope * dt3
+        let pdz3 = zLo + zSlope * dt3
+        if noDepth || pdz3 >= fbZ[ridx3] {
+          fb[ridx3] = cLo + rowSlope * dt3
+          fbZ[ridx3] = if noDepth then ZBACK else pdz3
+        }
       }
       let tj4 = pcol + 4.0
       if tj4 <= pcurR {
         let ridx4 = ((aRow * SWF + tj4) | 0)
         let dt4 = tj4 - xL
-        fb[ridx4] = cLo + rowSlope * dt4
+        let pdz4 = zLo + zSlope * dt4
+        if noDepth || pdz4 >= fbZ[ridx4] {
+          fb[ridx4] = cLo + rowSlope * dt4
+          fbZ[ridx4] = if noDepth then ZBACK else pdz4
+        }
       }
       let tj5 = pcol + 5.0
       if tj5 <= pcurR {
         let ridx5 = ((aRow * SWF + tj5) | 0)
         let dt5 = tj5 - xL
-        fb[ridx5] = cLo + rowSlope * dt5
+        let pdz5 = zLo + zSlope * dt5
+        if noDepth || pdz5 >= fbZ[ridx5] {
+          fb[ridx5] = cLo + rowSlope * dt5
+          fbZ[ridx5] = if noDepth then ZBACK else pdz5
+        }
       }
       let tj6 = pcol + 6.0
       if tj6 <= pcurR {
         let ridx6 = ((aRow * SWF + tj6) | 0)
         let dt6 = tj6 - xL
-        fb[ridx6] = cLo + rowSlope * dt6
+        let pdz6 = zLo + zSlope * dt6
+        if noDepth || pdz6 >= fbZ[ridx6] {
+          fb[ridx6] = cLo + rowSlope * dt6
+          fbZ[ridx6] = if noDepth then ZBACK else pdz6
+        }
       }
       let tj7 = pcol + 7.0
       if tj7 <= pcurR {
         let ridx7 = ((aRow * SWF + tj7) | 0)
         let dt7 = tj7 - xL
-        fb[ridx7] = cLo + rowSlope * dt7
+        let pdz7 = zLo + zSlope * dt7
+        if noDepth || pdz7 >= fbZ[ridx7] {
+          fb[ridx7] = cLo + rowSlope * dt7
+          fbZ[ridx7] = if noDepth then ZBACK else pdz7
+        }
       }
       let tj8 = pcol + 8.0
       if tj8 <= pcurR {
         let ridx8 = ((aRow * SWF + tj8) | 0)
         let dt8 = tj8 - xL
-        fb[ridx8] = cLo + rowSlope * dt8
+        let pdz8 = zLo + zSlope * dt8
+        if noDepth || pdz8 >= fbZ[ridx8] {
+          fb[ridx8] = cLo + rowSlope * dt8
+          fbZ[ridx8] = if noDepth then ZBACK else pdz8
+        }
       }
       let tj9 = pcol + 9.0
       if tj9 <= pcurR {
         let ridx9 = ((aRow * SWF + tj9) | 0)
         let dt9 = tj9 - xL
-        fb[ridx9] = cLo + rowSlope * dt9
+        let pdz9 = zLo + zSlope * dt9
+        if noDepth || pdz9 >= fbZ[ridx9] {
+          fb[ridx9] = cLo + rowSlope * dt9
+          fbZ[ridx9] = if noDepth then ZBACK else pdz9
+        }
       }
       let tj10 = pcol + 10.0
       if tj10 <= pcurR {
         let ridx10 = ((aRow * SWF + tj10) | 0)
         let dt10 = tj10 - xL
-        fb[ridx10] = cLo + rowSlope * dt10
+        let pdz10 = zLo + zSlope * dt10
+        if noDepth || pdz10 >= fbZ[ridx10] {
+          fb[ridx10] = cLo + rowSlope * dt10
+          fbZ[ridx10] = if noDepth then ZBACK else pdz10
+        }
       }
       let tj11 = pcol + 11.0
       if tj11 <= pcurR {
         let ridx11 = ((aRow * SWF + tj11) | 0)
         let dt11 = tj11 - xL
-        fb[ridx11] = cLo + rowSlope * dt11
+        let pdz11 = zLo + zSlope * dt11
+        if noDepth || pdz11 >= fbZ[ridx11] {
+          fb[ridx11] = cLo + rowSlope * dt11
+          fbZ[ridx11] = if noDepth then ZBACK else pdz11
+        }
       }
       let tj12 = pcol + 12.0
       if tj12 <= pcurR {
         let ridx12 = ((aRow * SWF + tj12) | 0)
         let dt12 = tj12 - xL
-        fb[ridx12] = cLo + rowSlope * dt12
+        let pdz12 = zLo + zSlope * dt12
+        if noDepth || pdz12 >= fbZ[ridx12] {
+          fb[ridx12] = cLo + rowSlope * dt12
+          fbZ[ridx12] = if noDepth then ZBACK else pdz12
+        }
       }
       let tj13 = pcol + 13.0
       if tj13 <= pcurR {
         let ridx13 = ((aRow * SWF + tj13) | 0)
         let dt13 = tj13 - xL
-        fb[ridx13] = cLo + rowSlope * dt13
+        let pdz13 = zLo + zSlope * dt13
+        if noDepth || pdz13 >= fbZ[ridx13] {
+          fb[ridx13] = cLo + rowSlope * dt13
+          fbZ[ridx13] = if noDepth then ZBACK else pdz13
+        }
       }
       let tj14 = pcol + 14.0
       if tj14 <= pcurR {
         let ridx14 = ((aRow * SWF + tj14) | 0)
         let dt14 = tj14 - xL
-        fb[ridx14] = cLo + rowSlope * dt14
+        let pdz14 = zLo + zSlope * dt14
+        if noDepth || pdz14 >= fbZ[ridx14] {
+          fb[ridx14] = cLo + rowSlope * dt14
+          fbZ[ridx14] = if noDepth then ZBACK else pdz14
+        }
       }
       let tj15 = pcol + 15.0
       if tj15 <= pcurR {
         let ridx15 = ((aRow * SWF + tj15) | 0)
         let dt15 = tj15 - xL
-        fb[ridx15] = cLo + rowSlope * dt15
+        let pdz15 = zLo + zSlope * dt15
+        if noDepth || pdz15 >= fbZ[ridx15] {
+          fb[ridx15] = cLo + rowSlope * dt15
+          fbZ[ridx15] = if noDepth then ZBACK else pdz15
+        }
       }
       let tj16 = pcol + 16.0
       if tj16 <= pcurR {
         let ridx16 = ((aRow * SWF + tj16) | 0)
         let dt16 = tj16 - xL
-        fb[ridx16] = cLo + rowSlope * dt16
+        let pdz16 = zLo + zSlope * dt16
+        if noDepth || pdz16 >= fbZ[ridx16] {
+          fb[ridx16] = cLo + rowSlope * dt16
+          fbZ[ridx16] = if noDepth then ZBACK else pdz16
+        }
       }
       let tj17 = pcol + 17.0
       if tj17 <= pcurR {
         let ridx17 = ((aRow * SWF + tj17) | 0)
         let dt17 = tj17 - xL
-        fb[ridx17] = cLo + rowSlope * dt17
+        let pdz17 = zLo + zSlope * dt17
+        if noDepth || pdz17 >= fbZ[ridx17] {
+          fb[ridx17] = cLo + rowSlope * dt17
+          fbZ[ridx17] = if noDepth then ZBACK else pdz17
+        }
       }
       let tj18 = pcol + 18.0
       if tj18 <= pcurR {
         let ridx18 = ((aRow * SWF + tj18) | 0)
         let dt18 = tj18 - xL
-        fb[ridx18] = cLo + rowSlope * dt18
+        let pdz18 = zLo + zSlope * dt18
+        if noDepth || pdz18 >= fbZ[ridx18] {
+          fb[ridx18] = cLo + rowSlope * dt18
+          fbZ[ridx18] = if noDepth then ZBACK else pdz18
+        }
       }
       let tj19 = pcol + 19.0
       if tj19 <= pcurR {
         let ridx19 = ((aRow * SWF + tj19) | 0)
         let dt19 = tj19 - xL
-        fb[ridx19] = cLo + rowSlope * dt19
+        let pdz19 = zLo + zSlope * dt19
+        if noDepth || pdz19 >= fbZ[ridx19] {
+          fb[ridx19] = cLo + rowSlope * dt19
+          fbZ[ridx19] = if noDepth then ZBACK else pdz19
+        }
       }
       let tj20 = pcol + 20.0
       if tj20 <= pcurR {
         let ridx20 = ((aRow * SWF + tj20) | 0)
         let dt20 = tj20 - xL
-        fb[ridx20] = cLo + rowSlope * dt20
+        let pdz20 = zLo + zSlope * dt20
+        if noDepth || pdz20 >= fbZ[ridx20] {
+          fb[ridx20] = cLo + rowSlope * dt20
+          fbZ[ridx20] = if noDepth then ZBACK else pdz20
+        }
       }
       let tj21 = pcol + 21.0
       if tj21 <= pcurR {
         let ridx21 = ((aRow * SWF + tj21) | 0)
         let dt21 = tj21 - xL
-        fb[ridx21] = cLo + rowSlope * dt21
+        let pdz21 = zLo + zSlope * dt21
+        if noDepth || pdz21 >= fbZ[ridx21] {
+          fb[ridx21] = cLo + rowSlope * dt21
+          fbZ[ridx21] = if noDepth then ZBACK else pdz21
+        }
       }
       let tj22 = pcol + 22.0
       if tj22 <= pcurR {
         let ridx22 = ((aRow * SWF + tj22) | 0)
         let dt22 = tj22 - xL
-        fb[ridx22] = cLo + rowSlope * dt22
+        let pdz22 = zLo + zSlope * dt22
+        if noDepth || pdz22 >= fbZ[ridx22] {
+          fb[ridx22] = cLo + rowSlope * dt22
+          fbZ[ridx22] = if noDepth then ZBACK else pdz22
+        }
       }
       let tj23 = pcol + 23.0
       if tj23 <= pcurR {
         let ridx23 = ((aRow * SWF + tj23) | 0)
         let dt23 = tj23 - xL
-        fb[ridx23] = cLo + rowSlope * dt23
+        let pdz23 = zLo + zSlope * dt23
+        if noDepth || pdz23 >= fbZ[ridx23] {
+          fb[ridx23] = cLo + rowSlope * dt23
+          fbZ[ridx23] = if noDepth then ZBACK else pdz23
+        }
       }
       let tj24 = pcol + 24.0
       if tj24 <= pcurR {
         let ridx24 = ((aRow * SWF + tj24) | 0)
         let dt24 = tj24 - xL
-        fb[ridx24] = cLo + rowSlope * dt24
+        let pdz24 = zLo + zSlope * dt24
+        if noDepth || pdz24 >= fbZ[ridx24] {
+          fb[ridx24] = cLo + rowSlope * dt24
+          fbZ[ridx24] = if noDepth then ZBACK else pdz24
+        }
       }
       let tj25 = pcol + 25.0
       if tj25 <= pcurR {
         let ridx25 = ((aRow * SWF + tj25) | 0)
         let dt25 = tj25 - xL
-        fb[ridx25] = cLo + rowSlope * dt25
+        let pdz25 = zLo + zSlope * dt25
+        if noDepth || pdz25 >= fbZ[ridx25] {
+          fb[ridx25] = cLo + rowSlope * dt25
+          fbZ[ridx25] = if noDepth then ZBACK else pdz25
+        }
       }
       let tj26 = pcol + 26.0
       if tj26 <= pcurR {
         let ridx26 = ((aRow * SWF + tj26) | 0)
         let dt26 = tj26 - xL
-        fb[ridx26] = cLo + rowSlope * dt26
+        let pdz26 = zLo + zSlope * dt26
+        if noDepth || pdz26 >= fbZ[ridx26] {
+          fb[ridx26] = cLo + rowSlope * dt26
+          fbZ[ridx26] = if noDepth then ZBACK else pdz26
+        }
       }
       let tj27 = pcol + 27.0
       if tj27 <= pcurR {
         let ridx27 = ((aRow * SWF + tj27) | 0)
         let dt27 = tj27 - xL
-        fb[ridx27] = cLo + rowSlope * dt27
+        let pdz27 = zLo + zSlope * dt27
+        if noDepth || pdz27 >= fbZ[ridx27] {
+          fb[ridx27] = cLo + rowSlope * dt27
+          fbZ[ridx27] = if noDepth then ZBACK else pdz27
+        }
       }
       let tj28 = pcol + 28.0
       if tj28 <= pcurR {
         let ridx28 = ((aRow * SWF + tj28) | 0)
         let dt28 = tj28 - xL
-        fb[ridx28] = cLo + rowSlope * dt28
+        let pdz28 = zLo + zSlope * dt28
+        if noDepth || pdz28 >= fbZ[ridx28] {
+          fb[ridx28] = cLo + rowSlope * dt28
+          fbZ[ridx28] = if noDepth then ZBACK else pdz28
+        }
       }
       let tj29 = pcol + 29.0
       if tj29 <= pcurR {
         let ridx29 = ((aRow * SWF + tj29) | 0)
         let dt29 = tj29 - xL
-        fb[ridx29] = cLo + rowSlope * dt29
+        let pdz29 = zLo + zSlope * dt29
+        if noDepth || pdz29 >= fbZ[ridx29] {
+          fb[ridx29] = cLo + rowSlope * dt29
+          fbZ[ridx29] = if noDepth then ZBACK else pdz29
+        }
       }
       let tj30 = pcol + 30.0
       if tj30 <= pcurR {
         let ridx30 = ((aRow * SWF + tj30) | 0)
         let dt30 = tj30 - xL
-        fb[ridx30] = cLo + rowSlope * dt30
+        let pdz30 = zLo + zSlope * dt30
+        if noDepth || pdz30 >= fbZ[ridx30] {
+          fb[ridx30] = cLo + rowSlope * dt30
+          fbZ[ridx30] = if noDepth then ZBACK else pdz30
+        }
       }
       let tj31 = pcol + 31.0
       if tj31 <= pcurR {
         let ridx31 = ((aRow * SWF + tj31) | 0)
         let dt31 = tj31 - xL
-        fb[ridx31] = cLo + rowSlope * dt31
+        let pdz31 = zLo + zSlope * dt31
+        if noDepth || pdz31 >= fbZ[ridx31] {
+          fb[ridx31] = cLo + rowSlope * dt31
+          fbZ[ridx31] = if noDepth then ZBACK else pdz31
+        }
       }
       let tj32 = pcol + 32.0
       if tj32 <= pcurR {
         let ridx32 = ((aRow * SWF + tj32) | 0)
         let dt32 = tj32 - xL
-        fb[ridx32] = cLo + rowSlope * dt32
+        let pdz32 = zLo + zSlope * dt32
+        if noDepth || pdz32 >= fbZ[ridx32] {
+          fb[ridx32] = cLo + rowSlope * dt32
+          fbZ[ridx32] = if noDepth then ZBACK else pdz32
+        }
       }
       let tj33 = pcol + 33.0
       if tj33 <= pcurR {
         let ridx33 = ((aRow * SWF + tj33) | 0)
         let dt33 = tj33 - xL
-        fb[ridx33] = cLo + rowSlope * dt33
+        let pdz33 = zLo + zSlope * dt33
+        if noDepth || pdz33 >= fbZ[ridx33] {
+          fb[ridx33] = cLo + rowSlope * dt33
+          fbZ[ridx33] = if noDepth then ZBACK else pdz33
+        }
       }
       let tj34 = pcol + 34.0
       if tj34 <= pcurR {
         let ridx34 = ((aRow * SWF + tj34) | 0)
         let dt34 = tj34 - xL
-        fb[ridx34] = cLo + rowSlope * dt34
+        let pdz34 = zLo + zSlope * dt34
+        if noDepth || pdz34 >= fbZ[ridx34] {
+          fb[ridx34] = cLo + rowSlope * dt34
+          fbZ[ridx34] = if noDepth then ZBACK else pdz34
+        }
       }
       let tj35 = pcol + 35.0
       if tj35 <= pcurR {
         let ridx35 = ((aRow * SWF + tj35) | 0)
         let dt35 = tj35 - xL
-        fb[ridx35] = cLo + rowSlope * dt35
+        let pdz35 = zLo + zSlope * dt35
+        if noDepth || pdz35 >= fbZ[ridx35] {
+          fb[ridx35] = cLo + rowSlope * dt35
+          fbZ[ridx35] = if noDepth then ZBACK else pdz35
+        }
       }
       let tj36 = pcol + 36.0
       if tj36 <= pcurR {
         let ridx36 = ((aRow * SWF + tj36) | 0)
         let dt36 = tj36 - xL
-        fb[ridx36] = cLo + rowSlope * dt36
+        let pdz36 = zLo + zSlope * dt36
+        if noDepth || pdz36 >= fbZ[ridx36] {
+          fb[ridx36] = cLo + rowSlope * dt36
+          fbZ[ridx36] = if noDepth then ZBACK else pdz36
+        }
       }
       let tj37 = pcol + 37.0
       if tj37 <= pcurR {
         let ridx37 = ((aRow * SWF + tj37) | 0)
         let dt37 = tj37 - xL
-        fb[ridx37] = cLo + rowSlope * dt37
+        let pdz37 = zLo + zSlope * dt37
+        if noDepth || pdz37 >= fbZ[ridx37] {
+          fb[ridx37] = cLo + rowSlope * dt37
+          fbZ[ridx37] = if noDepth then ZBACK else pdz37
+        }
       }
       let tj38 = pcol + 38.0
       if tj38 <= pcurR {
         let ridx38 = ((aRow * SWF + tj38) | 0)
         let dt38 = tj38 - xL
-        fb[ridx38] = cLo + rowSlope * dt38
+        let pdz38 = zLo + zSlope * dt38
+        if noDepth || pdz38 >= fbZ[ridx38] {
+          fb[ridx38] = cLo + rowSlope * dt38
+          fbZ[ridx38] = if noDepth then ZBACK else pdz38
+        }
       }
       let tj39 = pcol + 39.0
       if tj39 <= pcurR {
         let ridx39 = ((aRow * SWF + tj39) | 0)
         let dt39 = tj39 - xL
-        fb[ridx39] = cLo + rowSlope * dt39
+        let pdz39 = zLo + zSlope * dt39
+        if noDepth || pdz39 >= fbZ[ridx39] {
+          fb[ridx39] = cLo + rowSlope * dt39
+          fbZ[ridx39] = if noDepth then ZBACK else pdz39
+        }
       }
       let tj40 = pcol + 40.0
       if tj40 <= pcurR {
         let ridx40 = ((aRow * SWF + tj40) | 0)
         let dt40 = tj40 - xL
-        fb[ridx40] = cLo + rowSlope * dt40
+        let pdz40 = zLo + zSlope * dt40
+        if noDepth || pdz40 >= fbZ[ridx40] {
+          fb[ridx40] = cLo + rowSlope * dt40
+          fbZ[ridx40] = if noDepth then ZBACK else pdz40
+        }
       }
       let tj41 = pcol + 41.0
       if tj41 <= pcurR {
         let ridx41 = ((aRow * SWF + tj41) | 0)
         let dt41 = tj41 - xL
-        fb[ridx41] = cLo + rowSlope * dt41
+        let pdz41 = zLo + zSlope * dt41
+        if noDepth || pdz41 >= fbZ[ridx41] {
+          fb[ridx41] = cLo + rowSlope * dt41
+          fbZ[ridx41] = if noDepth then ZBACK else pdz41
+        }
       }
       let tj42 = pcol + 42.0
       if tj42 <= pcurR {
         let ridx42 = ((aRow * SWF + tj42) | 0)
         let dt42 = tj42 - xL
-        fb[ridx42] = cLo + rowSlope * dt42
+        let pdz42 = zLo + zSlope * dt42
+        if noDepth || pdz42 >= fbZ[ridx42] {
+          fb[ridx42] = cLo + rowSlope * dt42
+          fbZ[ridx42] = if noDepth then ZBACK else pdz42
+        }
       }
       let tj43 = pcol + 43.0
       if tj43 <= pcurR {
         let ridx43 = ((aRow * SWF + tj43) | 0)
         let dt43 = tj43 - xL
-        fb[ridx43] = cLo + rowSlope * dt43
+        let pdz43 = zLo + zSlope * dt43
+        if noDepth || pdz43 >= fbZ[ridx43] {
+          fb[ridx43] = cLo + rowSlope * dt43
+          fbZ[ridx43] = if noDepth then ZBACK else pdz43
+        }
       }
       let tj44 = pcol + 44.0
       if tj44 <= pcurR {
         let ridx44 = ((aRow * SWF + tj44) | 0)
         let dt44 = tj44 - xL
-        fb[ridx44] = cLo + rowSlope * dt44
+        let pdz44 = zLo + zSlope * dt44
+        if noDepth || pdz44 >= fbZ[ridx44] {
+          fb[ridx44] = cLo + rowSlope * dt44
+          fbZ[ridx44] = if noDepth then ZBACK else pdz44
+        }
       }
       let tj45 = pcol + 45.0
       if tj45 <= pcurR {
         let ridx45 = ((aRow * SWF + tj45) | 0)
         let dt45 = tj45 - xL
-        fb[ridx45] = cLo + rowSlope * dt45
+        let pdz45 = zLo + zSlope * dt45
+        if noDepth || pdz45 >= fbZ[ridx45] {
+          fb[ridx45] = cLo + rowSlope * dt45
+          fbZ[ridx45] = if noDepth then ZBACK else pdz45
+        }
       }
       let tj46 = pcol + 46.0
       if tj46 <= pcurR {
         let ridx46 = ((aRow * SWF + tj46) | 0)
         let dt46 = tj46 - xL
-        fb[ridx46] = cLo + rowSlope * dt46
+        let pdz46 = zLo + zSlope * dt46
+        if noDepth || pdz46 >= fbZ[ridx46] {
+          fb[ridx46] = cLo + rowSlope * dt46
+          fbZ[ridx46] = if noDepth then ZBACK else pdz46
+        }
       }
       let tj47 = pcol + 47.0
       if tj47 <= pcurR {
         let ridx47 = ((aRow * SWF + tj47) | 0)
         let dt47 = tj47 - xL
-        fb[ridx47] = cLo + rowSlope * dt47
+        let pdz47 = zLo + zSlope * dt47
+        if noDepth || pdz47 >= fbZ[ridx47] {
+          fb[ridx47] = cLo + rowSlope * dt47
+          fbZ[ridx47] = if noDepth then ZBACK else pdz47
+        }
       }
       let tj48 = pcol + 48.0
       if tj48 <= pcurR {
         let ridx48 = ((aRow * SWF + tj48) | 0)
         let dt48 = tj48 - xL
-        fb[ridx48] = cLo + rowSlope * dt48
+        let pdz48 = zLo + zSlope * dt48
+        if noDepth || pdz48 >= fbZ[ridx48] {
+          fb[ridx48] = cLo + rowSlope * dt48
+          fbZ[ridx48] = if noDepth then ZBACK else pdz48
+        }
       }
       let tj49 = pcol + 49.0
       if tj49 <= pcurR {
         let ridx49 = ((aRow * SWF + tj49) | 0)
         let dt49 = tj49 - xL
-        fb[ridx49] = cLo + rowSlope * dt49
+        let pdz49 = zLo + zSlope * dt49
+        if noDepth || pdz49 >= fbZ[ridx49] {
+          fb[ridx49] = cLo + rowSlope * dt49
+          fbZ[ridx49] = if noDepth then ZBACK else pdz49
+        }
       }
       let tj50 = pcol + 50.0
       if tj50 <= pcurR {
         let ridx50 = ((aRow * SWF + tj50) | 0)
         let dt50 = tj50 - xL
-        fb[ridx50] = cLo + rowSlope * dt50
+        let pdz50 = zLo + zSlope * dt50
+        if noDepth || pdz50 >= fbZ[ridx50] {
+          fb[ridx50] = cLo + rowSlope * dt50
+          fbZ[ridx50] = if noDepth then ZBACK else pdz50
+        }
       }
       let tj51 = pcol + 51.0
       if tj51 <= pcurR {
         let ridx51 = ((aRow * SWF + tj51) | 0)
         let dt51 = tj51 - xL
-        fb[ridx51] = cLo + rowSlope * dt51
+        let pdz51 = zLo + zSlope * dt51
+        if noDepth || pdz51 >= fbZ[ridx51] {
+          fb[ridx51] = cLo + rowSlope * dt51
+          fbZ[ridx51] = if noDepth then ZBACK else pdz51
+        }
       }
       let tj52 = pcol + 52.0
       if tj52 <= pcurR {
         let ridx52 = ((aRow * SWF + tj52) | 0)
         let dt52 = tj52 - xL
-        fb[ridx52] = cLo + rowSlope * dt52
+        let pdz52 = zLo + zSlope * dt52
+        if noDepth || pdz52 >= fbZ[ridx52] {
+          fb[ridx52] = cLo + rowSlope * dt52
+          fbZ[ridx52] = if noDepth then ZBACK else pdz52
+        }
       }
       let tj53 = pcol + 53.0
       if tj53 <= pcurR {
         let ridx53 = ((aRow * SWF + tj53) | 0)
         let dt53 = tj53 - xL
-        fb[ridx53] = cLo + rowSlope * dt53
+        let pdz53 = zLo + zSlope * dt53
+        if noDepth || pdz53 >= fbZ[ridx53] {
+          fb[ridx53] = cLo + rowSlope * dt53
+          fbZ[ridx53] = if noDepth then ZBACK else pdz53
+        }
       }
       let tj54 = pcol + 54.0
       if tj54 <= pcurR {
         let ridx54 = ((aRow * SWF + tj54) | 0)
         let dt54 = tj54 - xL
-        fb[ridx54] = cLo + rowSlope * dt54
+        let pdz54 = zLo + zSlope * dt54
+        if noDepth || pdz54 >= fbZ[ridx54] {
+          fb[ridx54] = cLo + rowSlope * dt54
+          fbZ[ridx54] = if noDepth then ZBACK else pdz54
+        }
       }
       let tj55 = pcol + 55.0
       if tj55 <= pcurR {
         let ridx55 = ((aRow * SWF + tj55) | 0)
         let dt55 = tj55 - xL
-        fb[ridx55] = cLo + rowSlope * dt55
+        let pdz55 = zLo + zSlope * dt55
+        if noDepth || pdz55 >= fbZ[ridx55] {
+          fb[ridx55] = cLo + rowSlope * dt55
+          fbZ[ridx55] = if noDepth then ZBACK else pdz55
+        }
       }
       let tj56 = pcol + 56.0
       if tj56 <= pcurR {
         let ridx56 = ((aRow * SWF + tj56) | 0)
         let dt56 = tj56 - xL
-        fb[ridx56] = cLo + rowSlope * dt56
+        let pdz56 = zLo + zSlope * dt56
+        if noDepth || pdz56 >= fbZ[ridx56] {
+          fb[ridx56] = cLo + rowSlope * dt56
+          fbZ[ridx56] = if noDepth then ZBACK else pdz56
+        }
       }
       let tj57 = pcol + 57.0
       if tj57 <= pcurR {
         let ridx57 = ((aRow * SWF + tj57) | 0)
         let dt57 = tj57 - xL
-        fb[ridx57] = cLo + rowSlope * dt57
+        let pdz57 = zLo + zSlope * dt57
+        if noDepth || pdz57 >= fbZ[ridx57] {
+          fb[ridx57] = cLo + rowSlope * dt57
+          fbZ[ridx57] = if noDepth then ZBACK else pdz57
+        }
       }
       let tj58 = pcol + 58.0
       if tj58 <= pcurR {
         let ridx58 = ((aRow * SWF + tj58) | 0)
         let dt58 = tj58 - xL
-        fb[ridx58] = cLo + rowSlope * dt58
+        let pdz58 = zLo + zSlope * dt58
+        if noDepth || pdz58 >= fbZ[ridx58] {
+          fb[ridx58] = cLo + rowSlope * dt58
+          fbZ[ridx58] = if noDepth then ZBACK else pdz58
+        }
       }
       let tj59 = pcol + 59.0
       if tj59 <= pcurR {
         let ridx59 = ((aRow * SWF + tj59) | 0)
         let dt59 = tj59 - xL
-        fb[ridx59] = cLo + rowSlope * dt59
+        let pdz59 = zLo + zSlope * dt59
+        if noDepth || pdz59 >= fbZ[ridx59] {
+          fb[ridx59] = cLo + rowSlope * dt59
+          fbZ[ridx59] = if noDepth then ZBACK else pdz59
+        }
       }
       let tj60 = pcol + 60.0
       if tj60 <= pcurR {
         let ridx60 = ((aRow * SWF + tj60) | 0)
         let dt60 = tj60 - xL
-        fb[ridx60] = cLo + rowSlope * dt60
+        let pdz60 = zLo + zSlope * dt60
+        if noDepth || pdz60 >= fbZ[ridx60] {
+          fb[ridx60] = cLo + rowSlope * dt60
+          fbZ[ridx60] = if noDepth then ZBACK else pdz60
+        }
       }
       let tj61 = pcol + 61.0
       if tj61 <= pcurR {
         let ridx61 = ((aRow * SWF + tj61) | 0)
         let dt61 = tj61 - xL
-        fb[ridx61] = cLo + rowSlope * dt61
+        let pdz61 = zLo + zSlope * dt61
+        if noDepth || pdz61 >= fbZ[ridx61] {
+          fb[ridx61] = cLo + rowSlope * dt61
+          fbZ[ridx61] = if noDepth then ZBACK else pdz61
+        }
       }
       let tj62 = pcol + 62.0
       if tj62 <= pcurR {
         let ridx62 = ((aRow * SWF + tj62) | 0)
         let dt62 = tj62 - xL
-        fb[ridx62] = cLo + rowSlope * dt62
+        let pdz62 = zLo + zSlope * dt62
+        if noDepth || pdz62 >= fbZ[ridx62] {
+          fb[ridx62] = cLo + rowSlope * dt62
+          fbZ[ridx62] = if noDepth then ZBACK else pdz62
+        }
       }
       let tj63 = pcol + 63.0
       if tj63 <= pcurR {
         let ridx63 = ((aRow * SWF + tj63) | 0)
         let dt63 = tj63 - xL
-        fb[ridx63] = cLo + rowSlope * dt63
+        let pdz63 = zLo + zSlope * dt63
+        if noDepth || pdz63 >= fbZ[ridx63] {
+          fb[ridx63] = cLo + rowSlope * dt63
+          fbZ[ridx63] = if noDepth then ZBACK else pdz63
+        }
       }
       pcol = pcol + 64.0
       let tjB0 = pcol2 + 0.0
       if tjB0 <= pcurR2 {
         let ridxB0 = (((prow + 1.0) * SWF + tjB0) | 0)
         let dtB0 = tjB0 - xL2
-        fb[ridxB0] = cLo2 + rowSlope2 * dtB0
+        let pdzB0 = zLo2 + zSlope2 * dtB0
+        if noDepth || pdzB0 >= fbZ[ridxB0] {
+          fb[ridxB0] = cLo2 + rowSlope2 * dtB0
+          fbZ[ridxB0] = if noDepth then ZBACK else pdzB0
+        }
       }
       let tjB1 = pcol2 + 1.0
       if tjB1 <= pcurR2 {
         let ridxB1 = (((prow + 1.0) * SWF + tjB1) | 0)
         let dtB1 = tjB1 - xL2
-        fb[ridxB1] = cLo2 + rowSlope2 * dtB1
+        let pdzB1 = zLo2 + zSlope2 * dtB1
+        if noDepth || pdzB1 >= fbZ[ridxB1] {
+          fb[ridxB1] = cLo2 + rowSlope2 * dtB1
+          fbZ[ridxB1] = if noDepth then ZBACK else pdzB1
+        }
       }
       let tjB2 = pcol2 + 2.0
       if tjB2 <= pcurR2 {
         let ridxB2 = (((prow + 1.0) * SWF + tjB2) | 0)
         let dtB2 = tjB2 - xL2
-        fb[ridxB2] = cLo2 + rowSlope2 * dtB2
+        let pdzB2 = zLo2 + zSlope2 * dtB2
+        if noDepth || pdzB2 >= fbZ[ridxB2] {
+          fb[ridxB2] = cLo2 + rowSlope2 * dtB2
+          fbZ[ridxB2] = if noDepth then ZBACK else pdzB2
+        }
       }
       let tjB3 = pcol2 + 3.0
       if tjB3 <= pcurR2 {
         let ridxB3 = (((prow + 1.0) * SWF + tjB3) | 0)
         let dtB3 = tjB3 - xL2
-        fb[ridxB3] = cLo2 + rowSlope2 * dtB3
+        let pdzB3 = zLo2 + zSlope2 * dtB3
+        if noDepth || pdzB3 >= fbZ[ridxB3] {
+          fb[ridxB3] = cLo2 + rowSlope2 * dtB3
+          fbZ[ridxB3] = if noDepth then ZBACK else pdzB3
+        }
       }
       let tjB4 = pcol2 + 4.0
       if tjB4 <= pcurR2 {
         let ridxB4 = (((prow + 1.0) * SWF + tjB4) | 0)
         let dtB4 = tjB4 - xL2
-        fb[ridxB4] = cLo2 + rowSlope2 * dtB4
+        let pdzB4 = zLo2 + zSlope2 * dtB4
+        if noDepth || pdzB4 >= fbZ[ridxB4] {
+          fb[ridxB4] = cLo2 + rowSlope2 * dtB4
+          fbZ[ridxB4] = if noDepth then ZBACK else pdzB4
+        }
       }
       let tjB5 = pcol2 + 5.0
       if tjB5 <= pcurR2 {
         let ridxB5 = (((prow + 1.0) * SWF + tjB5) | 0)
         let dtB5 = tjB5 - xL2
-        fb[ridxB5] = cLo2 + rowSlope2 * dtB5
+        let pdzB5 = zLo2 + zSlope2 * dtB5
+        if noDepth || pdzB5 >= fbZ[ridxB5] {
+          fb[ridxB5] = cLo2 + rowSlope2 * dtB5
+          fbZ[ridxB5] = if noDepth then ZBACK else pdzB5
+        }
       }
       let tjB6 = pcol2 + 6.0
       if tjB6 <= pcurR2 {
         let ridxB6 = (((prow + 1.0) * SWF + tjB6) | 0)
         let dtB6 = tjB6 - xL2
-        fb[ridxB6] = cLo2 + rowSlope2 * dtB6
+        let pdzB6 = zLo2 + zSlope2 * dtB6
+        if noDepth || pdzB6 >= fbZ[ridxB6] {
+          fb[ridxB6] = cLo2 + rowSlope2 * dtB6
+          fbZ[ridxB6] = if noDepth then ZBACK else pdzB6
+        }
       }
       let tjB7 = pcol2 + 7.0
       if tjB7 <= pcurR2 {
         let ridxB7 = (((prow + 1.0) * SWF + tjB7) | 0)
         let dtB7 = tjB7 - xL2
-        fb[ridxB7] = cLo2 + rowSlope2 * dtB7
+        let pdzB7 = zLo2 + zSlope2 * dtB7
+        if noDepth || pdzB7 >= fbZ[ridxB7] {
+          fb[ridxB7] = cLo2 + rowSlope2 * dtB7
+          fbZ[ridxB7] = if noDepth then ZBACK else pdzB7
+        }
       }
       let tjB8 = pcol2 + 8.0
       if tjB8 <= pcurR2 {
         let ridxB8 = (((prow + 1.0) * SWF + tjB8) | 0)
         let dtB8 = tjB8 - xL2
-        fb[ridxB8] = cLo2 + rowSlope2 * dtB8
+        let pdzB8 = zLo2 + zSlope2 * dtB8
+        if noDepth || pdzB8 >= fbZ[ridxB8] {
+          fb[ridxB8] = cLo2 + rowSlope2 * dtB8
+          fbZ[ridxB8] = if noDepth then ZBACK else pdzB8
+        }
       }
       let tjB9 = pcol2 + 9.0
       if tjB9 <= pcurR2 {
         let ridxB9 = (((prow + 1.0) * SWF + tjB9) | 0)
         let dtB9 = tjB9 - xL2
-        fb[ridxB9] = cLo2 + rowSlope2 * dtB9
+        let pdzB9 = zLo2 + zSlope2 * dtB9
+        if noDepth || pdzB9 >= fbZ[ridxB9] {
+          fb[ridxB9] = cLo2 + rowSlope2 * dtB9
+          fbZ[ridxB9] = if noDepth then ZBACK else pdzB9
+        }
       }
       let tjB10 = pcol2 + 10.0
       if tjB10 <= pcurR2 {
         let ridxB10 = (((prow + 1.0) * SWF + tjB10) | 0)
         let dtB10 = tjB10 - xL2
-        fb[ridxB10] = cLo2 + rowSlope2 * dtB10
+        let pdzB10 = zLo2 + zSlope2 * dtB10
+        if noDepth || pdzB10 >= fbZ[ridxB10] {
+          fb[ridxB10] = cLo2 + rowSlope2 * dtB10
+          fbZ[ridxB10] = if noDepth then ZBACK else pdzB10
+        }
       }
       let tjB11 = pcol2 + 11.0
       if tjB11 <= pcurR2 {
         let ridxB11 = (((prow + 1.0) * SWF + tjB11) | 0)
         let dtB11 = tjB11 - xL2
-        fb[ridxB11] = cLo2 + rowSlope2 * dtB11
+        let pdzB11 = zLo2 + zSlope2 * dtB11
+        if noDepth || pdzB11 >= fbZ[ridxB11] {
+          fb[ridxB11] = cLo2 + rowSlope2 * dtB11
+          fbZ[ridxB11] = if noDepth then ZBACK else pdzB11
+        }
       }
       let tjB12 = pcol2 + 12.0
       if tjB12 <= pcurR2 {
         let ridxB12 = (((prow + 1.0) * SWF + tjB12) | 0)
         let dtB12 = tjB12 - xL2
-        fb[ridxB12] = cLo2 + rowSlope2 * dtB12
+        let pdzB12 = zLo2 + zSlope2 * dtB12
+        if noDepth || pdzB12 >= fbZ[ridxB12] {
+          fb[ridxB12] = cLo2 + rowSlope2 * dtB12
+          fbZ[ridxB12] = if noDepth then ZBACK else pdzB12
+        }
       }
       let tjB13 = pcol2 + 13.0
       if tjB13 <= pcurR2 {
         let ridxB13 = (((prow + 1.0) * SWF + tjB13) | 0)
         let dtB13 = tjB13 - xL2
-        fb[ridxB13] = cLo2 + rowSlope2 * dtB13
+        let pdzB13 = zLo2 + zSlope2 * dtB13
+        if noDepth || pdzB13 >= fbZ[ridxB13] {
+          fb[ridxB13] = cLo2 + rowSlope2 * dtB13
+          fbZ[ridxB13] = if noDepth then ZBACK else pdzB13
+        }
       }
       let tjB14 = pcol2 + 14.0
       if tjB14 <= pcurR2 {
         let ridxB14 = (((prow + 1.0) * SWF + tjB14) | 0)
         let dtB14 = tjB14 - xL2
-        fb[ridxB14] = cLo2 + rowSlope2 * dtB14
+        let pdzB14 = zLo2 + zSlope2 * dtB14
+        if noDepth || pdzB14 >= fbZ[ridxB14] {
+          fb[ridxB14] = cLo2 + rowSlope2 * dtB14
+          fbZ[ridxB14] = if noDepth then ZBACK else pdzB14
+        }
       }
       let tjB15 = pcol2 + 15.0
       if tjB15 <= pcurR2 {
         let ridxB15 = (((prow + 1.0) * SWF + tjB15) | 0)
         let dtB15 = tjB15 - xL2
-        fb[ridxB15] = cLo2 + rowSlope2 * dtB15
+        let pdzB15 = zLo2 + zSlope2 * dtB15
+        if noDepth || pdzB15 >= fbZ[ridxB15] {
+          fb[ridxB15] = cLo2 + rowSlope2 * dtB15
+          fbZ[ridxB15] = if noDepth then ZBACK else pdzB15
+        }
       }
       let tjB16 = pcol2 + 16.0
       if tjB16 <= pcurR2 {
         let ridxB16 = (((prow + 1.0) * SWF + tjB16) | 0)
         let dtB16 = tjB16 - xL2
-        fb[ridxB16] = cLo2 + rowSlope2 * dtB16
+        let pdzB16 = zLo2 + zSlope2 * dtB16
+        if noDepth || pdzB16 >= fbZ[ridxB16] {
+          fb[ridxB16] = cLo2 + rowSlope2 * dtB16
+          fbZ[ridxB16] = if noDepth then ZBACK else pdzB16
+        }
       }
       let tjB17 = pcol2 + 17.0
       if tjB17 <= pcurR2 {
         let ridxB17 = (((prow + 1.0) * SWF + tjB17) | 0)
         let dtB17 = tjB17 - xL2
-        fb[ridxB17] = cLo2 + rowSlope2 * dtB17
+        let pdzB17 = zLo2 + zSlope2 * dtB17
+        if noDepth || pdzB17 >= fbZ[ridxB17] {
+          fb[ridxB17] = cLo2 + rowSlope2 * dtB17
+          fbZ[ridxB17] = if noDepth then ZBACK else pdzB17
+        }
       }
       let tjB18 = pcol2 + 18.0
       if tjB18 <= pcurR2 {
         let ridxB18 = (((prow + 1.0) * SWF + tjB18) | 0)
         let dtB18 = tjB18 - xL2
-        fb[ridxB18] = cLo2 + rowSlope2 * dtB18
+        let pdzB18 = zLo2 + zSlope2 * dtB18
+        if noDepth || pdzB18 >= fbZ[ridxB18] {
+          fb[ridxB18] = cLo2 + rowSlope2 * dtB18
+          fbZ[ridxB18] = if noDepth then ZBACK else pdzB18
+        }
       }
       let tjB19 = pcol2 + 19.0
       if tjB19 <= pcurR2 {
         let ridxB19 = (((prow + 1.0) * SWF + tjB19) | 0)
         let dtB19 = tjB19 - xL2
-        fb[ridxB19] = cLo2 + rowSlope2 * dtB19
+        let pdzB19 = zLo2 + zSlope2 * dtB19
+        if noDepth || pdzB19 >= fbZ[ridxB19] {
+          fb[ridxB19] = cLo2 + rowSlope2 * dtB19
+          fbZ[ridxB19] = if noDepth then ZBACK else pdzB19
+        }
       }
       let tjB20 = pcol2 + 20.0
       if tjB20 <= pcurR2 {
         let ridxB20 = (((prow + 1.0) * SWF + tjB20) | 0)
         let dtB20 = tjB20 - xL2
-        fb[ridxB20] = cLo2 + rowSlope2 * dtB20
+        let pdzB20 = zLo2 + zSlope2 * dtB20
+        if noDepth || pdzB20 >= fbZ[ridxB20] {
+          fb[ridxB20] = cLo2 + rowSlope2 * dtB20
+          fbZ[ridxB20] = if noDepth then ZBACK else pdzB20
+        }
       }
       let tjB21 = pcol2 + 21.0
       if tjB21 <= pcurR2 {
         let ridxB21 = (((prow + 1.0) * SWF + tjB21) | 0)
         let dtB21 = tjB21 - xL2
-        fb[ridxB21] = cLo2 + rowSlope2 * dtB21
+        let pdzB21 = zLo2 + zSlope2 * dtB21
+        if noDepth || pdzB21 >= fbZ[ridxB21] {
+          fb[ridxB21] = cLo2 + rowSlope2 * dtB21
+          fbZ[ridxB21] = if noDepth then ZBACK else pdzB21
+        }
       }
       let tjB22 = pcol2 + 22.0
       if tjB22 <= pcurR2 {
         let ridxB22 = (((prow + 1.0) * SWF + tjB22) | 0)
         let dtB22 = tjB22 - xL2
-        fb[ridxB22] = cLo2 + rowSlope2 * dtB22
+        let pdzB22 = zLo2 + zSlope2 * dtB22
+        if noDepth || pdzB22 >= fbZ[ridxB22] {
+          fb[ridxB22] = cLo2 + rowSlope2 * dtB22
+          fbZ[ridxB22] = if noDepth then ZBACK else pdzB22
+        }
       }
       let tjB23 = pcol2 + 23.0
       if tjB23 <= pcurR2 {
         let ridxB23 = (((prow + 1.0) * SWF + tjB23) | 0)
         let dtB23 = tjB23 - xL2
-        fb[ridxB23] = cLo2 + rowSlope2 * dtB23
+        let pdzB23 = zLo2 + zSlope2 * dtB23
+        if noDepth || pdzB23 >= fbZ[ridxB23] {
+          fb[ridxB23] = cLo2 + rowSlope2 * dtB23
+          fbZ[ridxB23] = if noDepth then ZBACK else pdzB23
+        }
       }
       let tjB24 = pcol2 + 24.0
       if tjB24 <= pcurR2 {
         let ridxB24 = (((prow + 1.0) * SWF + tjB24) | 0)
         let dtB24 = tjB24 - xL2
-        fb[ridxB24] = cLo2 + rowSlope2 * dtB24
+        let pdzB24 = zLo2 + zSlope2 * dtB24
+        if noDepth || pdzB24 >= fbZ[ridxB24] {
+          fb[ridxB24] = cLo2 + rowSlope2 * dtB24
+          fbZ[ridxB24] = if noDepth then ZBACK else pdzB24
+        }
       }
       let tjB25 = pcol2 + 25.0
       if tjB25 <= pcurR2 {
         let ridxB25 = (((prow + 1.0) * SWF + tjB25) | 0)
         let dtB25 = tjB25 - xL2
-        fb[ridxB25] = cLo2 + rowSlope2 * dtB25
+        let pdzB25 = zLo2 + zSlope2 * dtB25
+        if noDepth || pdzB25 >= fbZ[ridxB25] {
+          fb[ridxB25] = cLo2 + rowSlope2 * dtB25
+          fbZ[ridxB25] = if noDepth then ZBACK else pdzB25
+        }
       }
       let tjB26 = pcol2 + 26.0
       if tjB26 <= pcurR2 {
         let ridxB26 = (((prow + 1.0) * SWF + tjB26) | 0)
         let dtB26 = tjB26 - xL2
-        fb[ridxB26] = cLo2 + rowSlope2 * dtB26
+        let pdzB26 = zLo2 + zSlope2 * dtB26
+        if noDepth || pdzB26 >= fbZ[ridxB26] {
+          fb[ridxB26] = cLo2 + rowSlope2 * dtB26
+          fbZ[ridxB26] = if noDepth then ZBACK else pdzB26
+        }
       }
       let tjB27 = pcol2 + 27.0
       if tjB27 <= pcurR2 {
         let ridxB27 = (((prow + 1.0) * SWF + tjB27) | 0)
         let dtB27 = tjB27 - xL2
-        fb[ridxB27] = cLo2 + rowSlope2 * dtB27
+        let pdzB27 = zLo2 + zSlope2 * dtB27
+        if noDepth || pdzB27 >= fbZ[ridxB27] {
+          fb[ridxB27] = cLo2 + rowSlope2 * dtB27
+          fbZ[ridxB27] = if noDepth then ZBACK else pdzB27
+        }
       }
       let tjB28 = pcol2 + 28.0
       if tjB28 <= pcurR2 {
         let ridxB28 = (((prow + 1.0) * SWF + tjB28) | 0)
         let dtB28 = tjB28 - xL2
-        fb[ridxB28] = cLo2 + rowSlope2 * dtB28
+        let pdzB28 = zLo2 + zSlope2 * dtB28
+        if noDepth || pdzB28 >= fbZ[ridxB28] {
+          fb[ridxB28] = cLo2 + rowSlope2 * dtB28
+          fbZ[ridxB28] = if noDepth then ZBACK else pdzB28
+        }
       }
       let tjB29 = pcol2 + 29.0
       if tjB29 <= pcurR2 {
         let ridxB29 = (((prow + 1.0) * SWF + tjB29) | 0)
         let dtB29 = tjB29 - xL2
-        fb[ridxB29] = cLo2 + rowSlope2 * dtB29
+        let pdzB29 = zLo2 + zSlope2 * dtB29
+        if noDepth || pdzB29 >= fbZ[ridxB29] {
+          fb[ridxB29] = cLo2 + rowSlope2 * dtB29
+          fbZ[ridxB29] = if noDepth then ZBACK else pdzB29
+        }
       }
       let tjB30 = pcol2 + 30.0
       if tjB30 <= pcurR2 {
         let ridxB30 = (((prow + 1.0) * SWF + tjB30) | 0)
         let dtB30 = tjB30 - xL2
-        fb[ridxB30] = cLo2 + rowSlope2 * dtB30
+        let pdzB30 = zLo2 + zSlope2 * dtB30
+        if noDepth || pdzB30 >= fbZ[ridxB30] {
+          fb[ridxB30] = cLo2 + rowSlope2 * dtB30
+          fbZ[ridxB30] = if noDepth then ZBACK else pdzB30
+        }
       }
       let tjB31 = pcol2 + 31.0
       if tjB31 <= pcurR2 {
         let ridxB31 = (((prow + 1.0) * SWF + tjB31) | 0)
         let dtB31 = tjB31 - xL2
-        fb[ridxB31] = cLo2 + rowSlope2 * dtB31
+        let pdzB31 = zLo2 + zSlope2 * dtB31
+        if noDepth || pdzB31 >= fbZ[ridxB31] {
+          fb[ridxB31] = cLo2 + rowSlope2 * dtB31
+          fbZ[ridxB31] = if noDepth then ZBACK else pdzB31
+        }
       }
       let tjB32 = pcol2 + 32.0
       if tjB32 <= pcurR2 {
         let ridxB32 = (((prow + 1.0) * SWF + tjB32) | 0)
         let dtB32 = tjB32 - xL2
-        fb[ridxB32] = cLo2 + rowSlope2 * dtB32
+        let pdzB32 = zLo2 + zSlope2 * dtB32
+        if noDepth || pdzB32 >= fbZ[ridxB32] {
+          fb[ridxB32] = cLo2 + rowSlope2 * dtB32
+          fbZ[ridxB32] = if noDepth then ZBACK else pdzB32
+        }
       }
       let tjB33 = pcol2 + 33.0
       if tjB33 <= pcurR2 {
         let ridxB33 = (((prow + 1.0) * SWF + tjB33) | 0)
         let dtB33 = tjB33 - xL2
-        fb[ridxB33] = cLo2 + rowSlope2 * dtB33
+        let pdzB33 = zLo2 + zSlope2 * dtB33
+        if noDepth || pdzB33 >= fbZ[ridxB33] {
+          fb[ridxB33] = cLo2 + rowSlope2 * dtB33
+          fbZ[ridxB33] = if noDepth then ZBACK else pdzB33
+        }
       }
       let tjB34 = pcol2 + 34.0
       if tjB34 <= pcurR2 {
         let ridxB34 = (((prow + 1.0) * SWF + tjB34) | 0)
         let dtB34 = tjB34 - xL2
-        fb[ridxB34] = cLo2 + rowSlope2 * dtB34
+        let pdzB34 = zLo2 + zSlope2 * dtB34
+        if noDepth || pdzB34 >= fbZ[ridxB34] {
+          fb[ridxB34] = cLo2 + rowSlope2 * dtB34
+          fbZ[ridxB34] = if noDepth then ZBACK else pdzB34
+        }
       }
       let tjB35 = pcol2 + 35.0
       if tjB35 <= pcurR2 {
         let ridxB35 = (((prow + 1.0) * SWF + tjB35) | 0)
         let dtB35 = tjB35 - xL2
-        fb[ridxB35] = cLo2 + rowSlope2 * dtB35
+        let pdzB35 = zLo2 + zSlope2 * dtB35
+        if noDepth || pdzB35 >= fbZ[ridxB35] {
+          fb[ridxB35] = cLo2 + rowSlope2 * dtB35
+          fbZ[ridxB35] = if noDepth then ZBACK else pdzB35
+        }
       }
       let tjB36 = pcol2 + 36.0
       if tjB36 <= pcurR2 {
         let ridxB36 = (((prow + 1.0) * SWF + tjB36) | 0)
         let dtB36 = tjB36 - xL2
-        fb[ridxB36] = cLo2 + rowSlope2 * dtB36
+        let pdzB36 = zLo2 + zSlope2 * dtB36
+        if noDepth || pdzB36 >= fbZ[ridxB36] {
+          fb[ridxB36] = cLo2 + rowSlope2 * dtB36
+          fbZ[ridxB36] = if noDepth then ZBACK else pdzB36
+        }
       }
       let tjB37 = pcol2 + 37.0
       if tjB37 <= pcurR2 {
         let ridxB37 = (((prow + 1.0) * SWF + tjB37) | 0)
         let dtB37 = tjB37 - xL2
-        fb[ridxB37] = cLo2 + rowSlope2 * dtB37
+        let pdzB37 = zLo2 + zSlope2 * dtB37
+        if noDepth || pdzB37 >= fbZ[ridxB37] {
+          fb[ridxB37] = cLo2 + rowSlope2 * dtB37
+          fbZ[ridxB37] = if noDepth then ZBACK else pdzB37
+        }
       }
       let tjB38 = pcol2 + 38.0
       if tjB38 <= pcurR2 {
         let ridxB38 = (((prow + 1.0) * SWF + tjB38) | 0)
         let dtB38 = tjB38 - xL2
-        fb[ridxB38] = cLo2 + rowSlope2 * dtB38
+        let pdzB38 = zLo2 + zSlope2 * dtB38
+        if noDepth || pdzB38 >= fbZ[ridxB38] {
+          fb[ridxB38] = cLo2 + rowSlope2 * dtB38
+          fbZ[ridxB38] = if noDepth then ZBACK else pdzB38
+        }
       }
       let tjB39 = pcol2 + 39.0
       if tjB39 <= pcurR2 {
         let ridxB39 = (((prow + 1.0) * SWF + tjB39) | 0)
         let dtB39 = tjB39 - xL2
-        fb[ridxB39] = cLo2 + rowSlope2 * dtB39
+        let pdzB39 = zLo2 + zSlope2 * dtB39
+        if noDepth || pdzB39 >= fbZ[ridxB39] {
+          fb[ridxB39] = cLo2 + rowSlope2 * dtB39
+          fbZ[ridxB39] = if noDepth then ZBACK else pdzB39
+        }
       }
       let tjB40 = pcol2 + 40.0
       if tjB40 <= pcurR2 {
         let ridxB40 = (((prow + 1.0) * SWF + tjB40) | 0)
         let dtB40 = tjB40 - xL2
-        fb[ridxB40] = cLo2 + rowSlope2 * dtB40
+        let pdzB40 = zLo2 + zSlope2 * dtB40
+        if noDepth || pdzB40 >= fbZ[ridxB40] {
+          fb[ridxB40] = cLo2 + rowSlope2 * dtB40
+          fbZ[ridxB40] = if noDepth then ZBACK else pdzB40
+        }
       }
       let tjB41 = pcol2 + 41.0
       if tjB41 <= pcurR2 {
         let ridxB41 = (((prow + 1.0) * SWF + tjB41) | 0)
         let dtB41 = tjB41 - xL2
-        fb[ridxB41] = cLo2 + rowSlope2 * dtB41
+        let pdzB41 = zLo2 + zSlope2 * dtB41
+        if noDepth || pdzB41 >= fbZ[ridxB41] {
+          fb[ridxB41] = cLo2 + rowSlope2 * dtB41
+          fbZ[ridxB41] = if noDepth then ZBACK else pdzB41
+        }
       }
       let tjB42 = pcol2 + 42.0
       if tjB42 <= pcurR2 {
         let ridxB42 = (((prow + 1.0) * SWF + tjB42) | 0)
         let dtB42 = tjB42 - xL2
-        fb[ridxB42] = cLo2 + rowSlope2 * dtB42
+        let pdzB42 = zLo2 + zSlope2 * dtB42
+        if noDepth || pdzB42 >= fbZ[ridxB42] {
+          fb[ridxB42] = cLo2 + rowSlope2 * dtB42
+          fbZ[ridxB42] = if noDepth then ZBACK else pdzB42
+        }
       }
       let tjB43 = pcol2 + 43.0
       if tjB43 <= pcurR2 {
         let ridxB43 = (((prow + 1.0) * SWF + tjB43) | 0)
         let dtB43 = tjB43 - xL2
-        fb[ridxB43] = cLo2 + rowSlope2 * dtB43
+        let pdzB43 = zLo2 + zSlope2 * dtB43
+        if noDepth || pdzB43 >= fbZ[ridxB43] {
+          fb[ridxB43] = cLo2 + rowSlope2 * dtB43
+          fbZ[ridxB43] = if noDepth then ZBACK else pdzB43
+        }
       }
       let tjB44 = pcol2 + 44.0
       if tjB44 <= pcurR2 {
         let ridxB44 = (((prow + 1.0) * SWF + tjB44) | 0)
         let dtB44 = tjB44 - xL2
-        fb[ridxB44] = cLo2 + rowSlope2 * dtB44
+        let pdzB44 = zLo2 + zSlope2 * dtB44
+        if noDepth || pdzB44 >= fbZ[ridxB44] {
+          fb[ridxB44] = cLo2 + rowSlope2 * dtB44
+          fbZ[ridxB44] = if noDepth then ZBACK else pdzB44
+        }
       }
       let tjB45 = pcol2 + 45.0
       if tjB45 <= pcurR2 {
         let ridxB45 = (((prow + 1.0) * SWF + tjB45) | 0)
         let dtB45 = tjB45 - xL2
-        fb[ridxB45] = cLo2 + rowSlope2 * dtB45
+        let pdzB45 = zLo2 + zSlope2 * dtB45
+        if noDepth || pdzB45 >= fbZ[ridxB45] {
+          fb[ridxB45] = cLo2 + rowSlope2 * dtB45
+          fbZ[ridxB45] = if noDepth then ZBACK else pdzB45
+        }
       }
       let tjB46 = pcol2 + 46.0
       if tjB46 <= pcurR2 {
         let ridxB46 = (((prow + 1.0) * SWF + tjB46) | 0)
         let dtB46 = tjB46 - xL2
-        fb[ridxB46] = cLo2 + rowSlope2 * dtB46
+        let pdzB46 = zLo2 + zSlope2 * dtB46
+        if noDepth || pdzB46 >= fbZ[ridxB46] {
+          fb[ridxB46] = cLo2 + rowSlope2 * dtB46
+          fbZ[ridxB46] = if noDepth then ZBACK else pdzB46
+        }
       }
       let tjB47 = pcol2 + 47.0
       if tjB47 <= pcurR2 {
         let ridxB47 = (((prow + 1.0) * SWF + tjB47) | 0)
         let dtB47 = tjB47 - xL2
-        fb[ridxB47] = cLo2 + rowSlope2 * dtB47
+        let pdzB47 = zLo2 + zSlope2 * dtB47
+        if noDepth || pdzB47 >= fbZ[ridxB47] {
+          fb[ridxB47] = cLo2 + rowSlope2 * dtB47
+          fbZ[ridxB47] = if noDepth then ZBACK else pdzB47
+        }
       }
       let tjB48 = pcol2 + 48.0
       if tjB48 <= pcurR2 {
         let ridxB48 = (((prow + 1.0) * SWF + tjB48) | 0)
         let dtB48 = tjB48 - xL2
-        fb[ridxB48] = cLo2 + rowSlope2 * dtB48
+        let pdzB48 = zLo2 + zSlope2 * dtB48
+        if noDepth || pdzB48 >= fbZ[ridxB48] {
+          fb[ridxB48] = cLo2 + rowSlope2 * dtB48
+          fbZ[ridxB48] = if noDepth then ZBACK else pdzB48
+        }
       }
       let tjB49 = pcol2 + 49.0
       if tjB49 <= pcurR2 {
         let ridxB49 = (((prow + 1.0) * SWF + tjB49) | 0)
         let dtB49 = tjB49 - xL2
-        fb[ridxB49] = cLo2 + rowSlope2 * dtB49
+        let pdzB49 = zLo2 + zSlope2 * dtB49
+        if noDepth || pdzB49 >= fbZ[ridxB49] {
+          fb[ridxB49] = cLo2 + rowSlope2 * dtB49
+          fbZ[ridxB49] = if noDepth then ZBACK else pdzB49
+        }
       }
       let tjB50 = pcol2 + 50.0
       if tjB50 <= pcurR2 {
         let ridxB50 = (((prow + 1.0) * SWF + tjB50) | 0)
         let dtB50 = tjB50 - xL2
-        fb[ridxB50] = cLo2 + rowSlope2 * dtB50
+        let pdzB50 = zLo2 + zSlope2 * dtB50
+        if noDepth || pdzB50 >= fbZ[ridxB50] {
+          fb[ridxB50] = cLo2 + rowSlope2 * dtB50
+          fbZ[ridxB50] = if noDepth then ZBACK else pdzB50
+        }
       }
       let tjB51 = pcol2 + 51.0
       if tjB51 <= pcurR2 {
         let ridxB51 = (((prow + 1.0) * SWF + tjB51) | 0)
         let dtB51 = tjB51 - xL2
-        fb[ridxB51] = cLo2 + rowSlope2 * dtB51
+        let pdzB51 = zLo2 + zSlope2 * dtB51
+        if noDepth || pdzB51 >= fbZ[ridxB51] {
+          fb[ridxB51] = cLo2 + rowSlope2 * dtB51
+          fbZ[ridxB51] = if noDepth then ZBACK else pdzB51
+        }
       }
       let tjB52 = pcol2 + 52.0
       if tjB52 <= pcurR2 {
         let ridxB52 = (((prow + 1.0) * SWF + tjB52) | 0)
         let dtB52 = tjB52 - xL2
-        fb[ridxB52] = cLo2 + rowSlope2 * dtB52
+        let pdzB52 = zLo2 + zSlope2 * dtB52
+        if noDepth || pdzB52 >= fbZ[ridxB52] {
+          fb[ridxB52] = cLo2 + rowSlope2 * dtB52
+          fbZ[ridxB52] = if noDepth then ZBACK else pdzB52
+        }
       }
       let tjB53 = pcol2 + 53.0
       if tjB53 <= pcurR2 {
         let ridxB53 = (((prow + 1.0) * SWF + tjB53) | 0)
         let dtB53 = tjB53 - xL2
-        fb[ridxB53] = cLo2 + rowSlope2 * dtB53
+        let pdzB53 = zLo2 + zSlope2 * dtB53
+        if noDepth || pdzB53 >= fbZ[ridxB53] {
+          fb[ridxB53] = cLo2 + rowSlope2 * dtB53
+          fbZ[ridxB53] = if noDepth then ZBACK else pdzB53
+        }
       }
       let tjB54 = pcol2 + 54.0
       if tjB54 <= pcurR2 {
         let ridxB54 = (((prow + 1.0) * SWF + tjB54) | 0)
         let dtB54 = tjB54 - xL2
-        fb[ridxB54] = cLo2 + rowSlope2 * dtB54
+        let pdzB54 = zLo2 + zSlope2 * dtB54
+        if noDepth || pdzB54 >= fbZ[ridxB54] {
+          fb[ridxB54] = cLo2 + rowSlope2 * dtB54
+          fbZ[ridxB54] = if noDepth then ZBACK else pdzB54
+        }
       }
       let tjB55 = pcol2 + 55.0
       if tjB55 <= pcurR2 {
         let ridxB55 = (((prow + 1.0) * SWF + tjB55) | 0)
         let dtB55 = tjB55 - xL2
-        fb[ridxB55] = cLo2 + rowSlope2 * dtB55
+        let pdzB55 = zLo2 + zSlope2 * dtB55
+        if noDepth || pdzB55 >= fbZ[ridxB55] {
+          fb[ridxB55] = cLo2 + rowSlope2 * dtB55
+          fbZ[ridxB55] = if noDepth then ZBACK else pdzB55
+        }
       }
       let tjB56 = pcol2 + 56.0
       if tjB56 <= pcurR2 {
         let ridxB56 = (((prow + 1.0) * SWF + tjB56) | 0)
         let dtB56 = tjB56 - xL2
-        fb[ridxB56] = cLo2 + rowSlope2 * dtB56
+        let pdzB56 = zLo2 + zSlope2 * dtB56
+        if noDepth || pdzB56 >= fbZ[ridxB56] {
+          fb[ridxB56] = cLo2 + rowSlope2 * dtB56
+          fbZ[ridxB56] = if noDepth then ZBACK else pdzB56
+        }
       }
       let tjB57 = pcol2 + 57.0
       if tjB57 <= pcurR2 {
         let ridxB57 = (((prow + 1.0) * SWF + tjB57) | 0)
         let dtB57 = tjB57 - xL2
-        fb[ridxB57] = cLo2 + rowSlope2 * dtB57
+        let pdzB57 = zLo2 + zSlope2 * dtB57
+        if noDepth || pdzB57 >= fbZ[ridxB57] {
+          fb[ridxB57] = cLo2 + rowSlope2 * dtB57
+          fbZ[ridxB57] = if noDepth then ZBACK else pdzB57
+        }
       }
       let tjB58 = pcol2 + 58.0
       if tjB58 <= pcurR2 {
         let ridxB58 = (((prow + 1.0) * SWF + tjB58) | 0)
         let dtB58 = tjB58 - xL2
-        fb[ridxB58] = cLo2 + rowSlope2 * dtB58
+        let pdzB58 = zLo2 + zSlope2 * dtB58
+        if noDepth || pdzB58 >= fbZ[ridxB58] {
+          fb[ridxB58] = cLo2 + rowSlope2 * dtB58
+          fbZ[ridxB58] = if noDepth then ZBACK else pdzB58
+        }
       }
       let tjB59 = pcol2 + 59.0
       if tjB59 <= pcurR2 {
         let ridxB59 = (((prow + 1.0) * SWF + tjB59) | 0)
         let dtB59 = tjB59 - xL2
-        fb[ridxB59] = cLo2 + rowSlope2 * dtB59
+        let pdzB59 = zLo2 + zSlope2 * dtB59
+        if noDepth || pdzB59 >= fbZ[ridxB59] {
+          fb[ridxB59] = cLo2 + rowSlope2 * dtB59
+          fbZ[ridxB59] = if noDepth then ZBACK else pdzB59
+        }
       }
       let tjB60 = pcol2 + 60.0
       if tjB60 <= pcurR2 {
         let ridxB60 = (((prow + 1.0) * SWF + tjB60) | 0)
         let dtB60 = tjB60 - xL2
-        fb[ridxB60] = cLo2 + rowSlope2 * dtB60
+        let pdzB60 = zLo2 + zSlope2 * dtB60
+        if noDepth || pdzB60 >= fbZ[ridxB60] {
+          fb[ridxB60] = cLo2 + rowSlope2 * dtB60
+          fbZ[ridxB60] = if noDepth then ZBACK else pdzB60
+        }
       }
       let tjB61 = pcol2 + 61.0
       if tjB61 <= pcurR2 {
         let ridxB61 = (((prow + 1.0) * SWF + tjB61) | 0)
         let dtB61 = tjB61 - xL2
-        fb[ridxB61] = cLo2 + rowSlope2 * dtB61
+        let pdzB61 = zLo2 + zSlope2 * dtB61
+        if noDepth || pdzB61 >= fbZ[ridxB61] {
+          fb[ridxB61] = cLo2 + rowSlope2 * dtB61
+          fbZ[ridxB61] = if noDepth then ZBACK else pdzB61
+        }
       }
       let tjB62 = pcol2 + 62.0
       if tjB62 <= pcurR2 {
         let ridxB62 = (((prow + 1.0) * SWF + tjB62) | 0)
         let dtB62 = tjB62 - xL2
-        fb[ridxB62] = cLo2 + rowSlope2 * dtB62
+        let pdzB62 = zLo2 + zSlope2 * dtB62
+        if noDepth || pdzB62 >= fbZ[ridxB62] {
+          fb[ridxB62] = cLo2 + rowSlope2 * dtB62
+          fbZ[ridxB62] = if noDepth then ZBACK else pdzB62
+        }
       }
       let tjB63 = pcol2 + 63.0
       if tjB63 <= pcurR2 {
         let ridxB63 = (((prow + 1.0) * SWF + tjB63) | 0)
         let dtB63 = tjB63 - xL2
-        fb[ridxB63] = cLo2 + rowSlope2 * dtB63
+        let pdzB63 = zLo2 + zSlope2 * dtB63
+        if noDepth || pdzB63 >= fbZ[ridxB63] {
+          fb[ridxB63] = cLo2 + rowSlope2 * dtB63
+          fbZ[ridxB63] = if noDepth then ZBACK else pdzB63
+        }
       }
       pcol2 = pcol2 + 64.0
+      let tjC0 = pcol3 + 0.0
+      if tjC0 <= pcurR3 {
+        let ridxC0 = (((prow + 2.0) * SWF + tjC0) | 0)
+        let dtC0 = tjC0 - xL3
+        let pdzC0 = zLo3 + zSlope3 * dtC0
+        if noDepth || pdzC0 >= fbZ[ridxC0] {
+          fb[ridxC0] = cLo3 + rowSlope3 * dtC0
+          fbZ[ridxC0] = if noDepth then ZBACK else pdzC0
+        }
+      }
+      let tjC1 = pcol3 + 1.0
+      if tjC1 <= pcurR3 {
+        let ridxC1 = (((prow + 2.0) * SWF + tjC1) | 0)
+        let dtC1 = tjC1 - xL3
+        let pdzC1 = zLo3 + zSlope3 * dtC1
+        if noDepth || pdzC1 >= fbZ[ridxC1] {
+          fb[ridxC1] = cLo3 + rowSlope3 * dtC1
+          fbZ[ridxC1] = if noDepth then ZBACK else pdzC1
+        }
+      }
+      let tjC2 = pcol3 + 2.0
+      if tjC2 <= pcurR3 {
+        let ridxC2 = (((prow + 2.0) * SWF + tjC2) | 0)
+        let dtC2 = tjC2 - xL3
+        let pdzC2 = zLo3 + zSlope3 * dtC2
+        if noDepth || pdzC2 >= fbZ[ridxC2] {
+          fb[ridxC2] = cLo3 + rowSlope3 * dtC2
+          fbZ[ridxC2] = if noDepth then ZBACK else pdzC2
+        }
+      }
+      let tjC3 = pcol3 + 3.0
+      if tjC3 <= pcurR3 {
+        let ridxC3 = (((prow + 2.0) * SWF + tjC3) | 0)
+        let dtC3 = tjC3 - xL3
+        let pdzC3 = zLo3 + zSlope3 * dtC3
+        if noDepth || pdzC3 >= fbZ[ridxC3] {
+          fb[ridxC3] = cLo3 + rowSlope3 * dtC3
+          fbZ[ridxC3] = if noDepth then ZBACK else pdzC3
+        }
+      }
+      let tjC4 = pcol3 + 4.0
+      if tjC4 <= pcurR3 {
+        let ridxC4 = (((prow + 2.0) * SWF + tjC4) | 0)
+        let dtC4 = tjC4 - xL3
+        let pdzC4 = zLo3 + zSlope3 * dtC4
+        if noDepth || pdzC4 >= fbZ[ridxC4] {
+          fb[ridxC4] = cLo3 + rowSlope3 * dtC4
+          fbZ[ridxC4] = if noDepth then ZBACK else pdzC4
+        }
+      }
+      let tjC5 = pcol3 + 5.0
+      if tjC5 <= pcurR3 {
+        let ridxC5 = (((prow + 2.0) * SWF + tjC5) | 0)
+        let dtC5 = tjC5 - xL3
+        let pdzC5 = zLo3 + zSlope3 * dtC5
+        if noDepth || pdzC5 >= fbZ[ridxC5] {
+          fb[ridxC5] = cLo3 + rowSlope3 * dtC5
+          fbZ[ridxC5] = if noDepth then ZBACK else pdzC5
+        }
+      }
+      let tjC6 = pcol3 + 6.0
+      if tjC6 <= pcurR3 {
+        let ridxC6 = (((prow + 2.0) * SWF + tjC6) | 0)
+        let dtC6 = tjC6 - xL3
+        let pdzC6 = zLo3 + zSlope3 * dtC6
+        if noDepth || pdzC6 >= fbZ[ridxC6] {
+          fb[ridxC6] = cLo3 + rowSlope3 * dtC6
+          fbZ[ridxC6] = if noDepth then ZBACK else pdzC6
+        }
+      }
+      let tjC7 = pcol3 + 7.0
+      if tjC7 <= pcurR3 {
+        let ridxC7 = (((prow + 2.0) * SWF + tjC7) | 0)
+        let dtC7 = tjC7 - xL3
+        let pdzC7 = zLo3 + zSlope3 * dtC7
+        if noDepth || pdzC7 >= fbZ[ridxC7] {
+          fb[ridxC7] = cLo3 + rowSlope3 * dtC7
+          fbZ[ridxC7] = if noDepth then ZBACK else pdzC7
+        }
+      }
+      let tjC8 = pcol3 + 8.0
+      if tjC8 <= pcurR3 {
+        let ridxC8 = (((prow + 2.0) * SWF + tjC8) | 0)
+        let dtC8 = tjC8 - xL3
+        let pdzC8 = zLo3 + zSlope3 * dtC8
+        if noDepth || pdzC8 >= fbZ[ridxC8] {
+          fb[ridxC8] = cLo3 + rowSlope3 * dtC8
+          fbZ[ridxC8] = if noDepth then ZBACK else pdzC8
+        }
+      }
+      let tjC9 = pcol3 + 9.0
+      if tjC9 <= pcurR3 {
+        let ridxC9 = (((prow + 2.0) * SWF + tjC9) | 0)
+        let dtC9 = tjC9 - xL3
+        let pdzC9 = zLo3 + zSlope3 * dtC9
+        if noDepth || pdzC9 >= fbZ[ridxC9] {
+          fb[ridxC9] = cLo3 + rowSlope3 * dtC9
+          fbZ[ridxC9] = if noDepth then ZBACK else pdzC9
+        }
+      }
+      let tjC10 = pcol3 + 10.0
+      if tjC10 <= pcurR3 {
+        let ridxC10 = (((prow + 2.0) * SWF + tjC10) | 0)
+        let dtC10 = tjC10 - xL3
+        let pdzC10 = zLo3 + zSlope3 * dtC10
+        if noDepth || pdzC10 >= fbZ[ridxC10] {
+          fb[ridxC10] = cLo3 + rowSlope3 * dtC10
+          fbZ[ridxC10] = if noDepth then ZBACK else pdzC10
+        }
+      }
+      let tjC11 = pcol3 + 11.0
+      if tjC11 <= pcurR3 {
+        let ridxC11 = (((prow + 2.0) * SWF + tjC11) | 0)
+        let dtC11 = tjC11 - xL3
+        let pdzC11 = zLo3 + zSlope3 * dtC11
+        if noDepth || pdzC11 >= fbZ[ridxC11] {
+          fb[ridxC11] = cLo3 + rowSlope3 * dtC11
+          fbZ[ridxC11] = if noDepth then ZBACK else pdzC11
+        }
+      }
+      let tjC12 = pcol3 + 12.0
+      if tjC12 <= pcurR3 {
+        let ridxC12 = (((prow + 2.0) * SWF + tjC12) | 0)
+        let dtC12 = tjC12 - xL3
+        let pdzC12 = zLo3 + zSlope3 * dtC12
+        if noDepth || pdzC12 >= fbZ[ridxC12] {
+          fb[ridxC12] = cLo3 + rowSlope3 * dtC12
+          fbZ[ridxC12] = if noDepth then ZBACK else pdzC12
+        }
+      }
+      let tjC13 = pcol3 + 13.0
+      if tjC13 <= pcurR3 {
+        let ridxC13 = (((prow + 2.0) * SWF + tjC13) | 0)
+        let dtC13 = tjC13 - xL3
+        let pdzC13 = zLo3 + zSlope3 * dtC13
+        if noDepth || pdzC13 >= fbZ[ridxC13] {
+          fb[ridxC13] = cLo3 + rowSlope3 * dtC13
+          fbZ[ridxC13] = if noDepth then ZBACK else pdzC13
+        }
+      }
+      let tjC14 = pcol3 + 14.0
+      if tjC14 <= pcurR3 {
+        let ridxC14 = (((prow + 2.0) * SWF + tjC14) | 0)
+        let dtC14 = tjC14 - xL3
+        let pdzC14 = zLo3 + zSlope3 * dtC14
+        if noDepth || pdzC14 >= fbZ[ridxC14] {
+          fb[ridxC14] = cLo3 + rowSlope3 * dtC14
+          fbZ[ridxC14] = if noDepth then ZBACK else pdzC14
+        }
+      }
+      let tjC15 = pcol3 + 15.0
+      if tjC15 <= pcurR3 {
+        let ridxC15 = (((prow + 2.0) * SWF + tjC15) | 0)
+        let dtC15 = tjC15 - xL3
+        let pdzC15 = zLo3 + zSlope3 * dtC15
+        if noDepth || pdzC15 >= fbZ[ridxC15] {
+          fb[ridxC15] = cLo3 + rowSlope3 * dtC15
+          fbZ[ridxC15] = if noDepth then ZBACK else pdzC15
+        }
+      }
+      let tjC16 = pcol3 + 16.0
+      if tjC16 <= pcurR3 {
+        let ridxC16 = (((prow + 2.0) * SWF + tjC16) | 0)
+        let dtC16 = tjC16 - xL3
+        let pdzC16 = zLo3 + zSlope3 * dtC16
+        if noDepth || pdzC16 >= fbZ[ridxC16] {
+          fb[ridxC16] = cLo3 + rowSlope3 * dtC16
+          fbZ[ridxC16] = if noDepth then ZBACK else pdzC16
+        }
+      }
+      let tjC17 = pcol3 + 17.0
+      if tjC17 <= pcurR3 {
+        let ridxC17 = (((prow + 2.0) * SWF + tjC17) | 0)
+        let dtC17 = tjC17 - xL3
+        let pdzC17 = zLo3 + zSlope3 * dtC17
+        if noDepth || pdzC17 >= fbZ[ridxC17] {
+          fb[ridxC17] = cLo3 + rowSlope3 * dtC17
+          fbZ[ridxC17] = if noDepth then ZBACK else pdzC17
+        }
+      }
+      let tjC18 = pcol3 + 18.0
+      if tjC18 <= pcurR3 {
+        let ridxC18 = (((prow + 2.0) * SWF + tjC18) | 0)
+        let dtC18 = tjC18 - xL3
+        let pdzC18 = zLo3 + zSlope3 * dtC18
+        if noDepth || pdzC18 >= fbZ[ridxC18] {
+          fb[ridxC18] = cLo3 + rowSlope3 * dtC18
+          fbZ[ridxC18] = if noDepth then ZBACK else pdzC18
+        }
+      }
+      let tjC19 = pcol3 + 19.0
+      if tjC19 <= pcurR3 {
+        let ridxC19 = (((prow + 2.0) * SWF + tjC19) | 0)
+        let dtC19 = tjC19 - xL3
+        let pdzC19 = zLo3 + zSlope3 * dtC19
+        if noDepth || pdzC19 >= fbZ[ridxC19] {
+          fb[ridxC19] = cLo3 + rowSlope3 * dtC19
+          fbZ[ridxC19] = if noDepth then ZBACK else pdzC19
+        }
+      }
+      let tjC20 = pcol3 + 20.0
+      if tjC20 <= pcurR3 {
+        let ridxC20 = (((prow + 2.0) * SWF + tjC20) | 0)
+        let dtC20 = tjC20 - xL3
+        let pdzC20 = zLo3 + zSlope3 * dtC20
+        if noDepth || pdzC20 >= fbZ[ridxC20] {
+          fb[ridxC20] = cLo3 + rowSlope3 * dtC20
+          fbZ[ridxC20] = if noDepth then ZBACK else pdzC20
+        }
+      }
+      let tjC21 = pcol3 + 21.0
+      if tjC21 <= pcurR3 {
+        let ridxC21 = (((prow + 2.0) * SWF + tjC21) | 0)
+        let dtC21 = tjC21 - xL3
+        let pdzC21 = zLo3 + zSlope3 * dtC21
+        if noDepth || pdzC21 >= fbZ[ridxC21] {
+          fb[ridxC21] = cLo3 + rowSlope3 * dtC21
+          fbZ[ridxC21] = if noDepth then ZBACK else pdzC21
+        }
+      }
+      let tjC22 = pcol3 + 22.0
+      if tjC22 <= pcurR3 {
+        let ridxC22 = (((prow + 2.0) * SWF + tjC22) | 0)
+        let dtC22 = tjC22 - xL3
+        let pdzC22 = zLo3 + zSlope3 * dtC22
+        if noDepth || pdzC22 >= fbZ[ridxC22] {
+          fb[ridxC22] = cLo3 + rowSlope3 * dtC22
+          fbZ[ridxC22] = if noDepth then ZBACK else pdzC22
+        }
+      }
+      let tjC23 = pcol3 + 23.0
+      if tjC23 <= pcurR3 {
+        let ridxC23 = (((prow + 2.0) * SWF + tjC23) | 0)
+        let dtC23 = tjC23 - xL3
+        let pdzC23 = zLo3 + zSlope3 * dtC23
+        if noDepth || pdzC23 >= fbZ[ridxC23] {
+          fb[ridxC23] = cLo3 + rowSlope3 * dtC23
+          fbZ[ridxC23] = if noDepth then ZBACK else pdzC23
+        }
+      }
+      let tjC24 = pcol3 + 24.0
+      if tjC24 <= pcurR3 {
+        let ridxC24 = (((prow + 2.0) * SWF + tjC24) | 0)
+        let dtC24 = tjC24 - xL3
+        let pdzC24 = zLo3 + zSlope3 * dtC24
+        if noDepth || pdzC24 >= fbZ[ridxC24] {
+          fb[ridxC24] = cLo3 + rowSlope3 * dtC24
+          fbZ[ridxC24] = if noDepth then ZBACK else pdzC24
+        }
+      }
+      let tjC25 = pcol3 + 25.0
+      if tjC25 <= pcurR3 {
+        let ridxC25 = (((prow + 2.0) * SWF + tjC25) | 0)
+        let dtC25 = tjC25 - xL3
+        let pdzC25 = zLo3 + zSlope3 * dtC25
+        if noDepth || pdzC25 >= fbZ[ridxC25] {
+          fb[ridxC25] = cLo3 + rowSlope3 * dtC25
+          fbZ[ridxC25] = if noDepth then ZBACK else pdzC25
+        }
+      }
+      let tjC26 = pcol3 + 26.0
+      if tjC26 <= pcurR3 {
+        let ridxC26 = (((prow + 2.0) * SWF + tjC26) | 0)
+        let dtC26 = tjC26 - xL3
+        let pdzC26 = zLo3 + zSlope3 * dtC26
+        if noDepth || pdzC26 >= fbZ[ridxC26] {
+          fb[ridxC26] = cLo3 + rowSlope3 * dtC26
+          fbZ[ridxC26] = if noDepth then ZBACK else pdzC26
+        }
+      }
+      let tjC27 = pcol3 + 27.0
+      if tjC27 <= pcurR3 {
+        let ridxC27 = (((prow + 2.0) * SWF + tjC27) | 0)
+        let dtC27 = tjC27 - xL3
+        let pdzC27 = zLo3 + zSlope3 * dtC27
+        if noDepth || pdzC27 >= fbZ[ridxC27] {
+          fb[ridxC27] = cLo3 + rowSlope3 * dtC27
+          fbZ[ridxC27] = if noDepth then ZBACK else pdzC27
+        }
+      }
+      let tjC28 = pcol3 + 28.0
+      if tjC28 <= pcurR3 {
+        let ridxC28 = (((prow + 2.0) * SWF + tjC28) | 0)
+        let dtC28 = tjC28 - xL3
+        let pdzC28 = zLo3 + zSlope3 * dtC28
+        if noDepth || pdzC28 >= fbZ[ridxC28] {
+          fb[ridxC28] = cLo3 + rowSlope3 * dtC28
+          fbZ[ridxC28] = if noDepth then ZBACK else pdzC28
+        }
+      }
+      let tjC29 = pcol3 + 29.0
+      if tjC29 <= pcurR3 {
+        let ridxC29 = (((prow + 2.0) * SWF + tjC29) | 0)
+        let dtC29 = tjC29 - xL3
+        let pdzC29 = zLo3 + zSlope3 * dtC29
+        if noDepth || pdzC29 >= fbZ[ridxC29] {
+          fb[ridxC29] = cLo3 + rowSlope3 * dtC29
+          fbZ[ridxC29] = if noDepth then ZBACK else pdzC29
+        }
+      }
+      let tjC30 = pcol3 + 30.0
+      if tjC30 <= pcurR3 {
+        let ridxC30 = (((prow + 2.0) * SWF + tjC30) | 0)
+        let dtC30 = tjC30 - xL3
+        let pdzC30 = zLo3 + zSlope3 * dtC30
+        if noDepth || pdzC30 >= fbZ[ridxC30] {
+          fb[ridxC30] = cLo3 + rowSlope3 * dtC30
+          fbZ[ridxC30] = if noDepth then ZBACK else pdzC30
+        }
+      }
+      let tjC31 = pcol3 + 31.0
+      if tjC31 <= pcurR3 {
+        let ridxC31 = (((prow + 2.0) * SWF + tjC31) | 0)
+        let dtC31 = tjC31 - xL3
+        let pdzC31 = zLo3 + zSlope3 * dtC31
+        if noDepth || pdzC31 >= fbZ[ridxC31] {
+          fb[ridxC31] = cLo3 + rowSlope3 * dtC31
+          fbZ[ridxC31] = if noDepth then ZBACK else pdzC31
+        }
+      }
+      let tjC32 = pcol3 + 32.0
+      if tjC32 <= pcurR3 {
+        let ridxC32 = (((prow + 2.0) * SWF + tjC32) | 0)
+        let dtC32 = tjC32 - xL3
+        let pdzC32 = zLo3 + zSlope3 * dtC32
+        if noDepth || pdzC32 >= fbZ[ridxC32] {
+          fb[ridxC32] = cLo3 + rowSlope3 * dtC32
+          fbZ[ridxC32] = if noDepth then ZBACK else pdzC32
+        }
+      }
+      let tjC33 = pcol3 + 33.0
+      if tjC33 <= pcurR3 {
+        let ridxC33 = (((prow + 2.0) * SWF + tjC33) | 0)
+        let dtC33 = tjC33 - xL3
+        let pdzC33 = zLo3 + zSlope3 * dtC33
+        if noDepth || pdzC33 >= fbZ[ridxC33] {
+          fb[ridxC33] = cLo3 + rowSlope3 * dtC33
+          fbZ[ridxC33] = if noDepth then ZBACK else pdzC33
+        }
+      }
+      let tjC34 = pcol3 + 34.0
+      if tjC34 <= pcurR3 {
+        let ridxC34 = (((prow + 2.0) * SWF + tjC34) | 0)
+        let dtC34 = tjC34 - xL3
+        let pdzC34 = zLo3 + zSlope3 * dtC34
+        if noDepth || pdzC34 >= fbZ[ridxC34] {
+          fb[ridxC34] = cLo3 + rowSlope3 * dtC34
+          fbZ[ridxC34] = if noDepth then ZBACK else pdzC34
+        }
+      }
+      let tjC35 = pcol3 + 35.0
+      if tjC35 <= pcurR3 {
+        let ridxC35 = (((prow + 2.0) * SWF + tjC35) | 0)
+        let dtC35 = tjC35 - xL3
+        let pdzC35 = zLo3 + zSlope3 * dtC35
+        if noDepth || pdzC35 >= fbZ[ridxC35] {
+          fb[ridxC35] = cLo3 + rowSlope3 * dtC35
+          fbZ[ridxC35] = if noDepth then ZBACK else pdzC35
+        }
+      }
+      let tjC36 = pcol3 + 36.0
+      if tjC36 <= pcurR3 {
+        let ridxC36 = (((prow + 2.0) * SWF + tjC36) | 0)
+        let dtC36 = tjC36 - xL3
+        let pdzC36 = zLo3 + zSlope3 * dtC36
+        if noDepth || pdzC36 >= fbZ[ridxC36] {
+          fb[ridxC36] = cLo3 + rowSlope3 * dtC36
+          fbZ[ridxC36] = if noDepth then ZBACK else pdzC36
+        }
+      }
+      let tjC37 = pcol3 + 37.0
+      if tjC37 <= pcurR3 {
+        let ridxC37 = (((prow + 2.0) * SWF + tjC37) | 0)
+        let dtC37 = tjC37 - xL3
+        let pdzC37 = zLo3 + zSlope3 * dtC37
+        if noDepth || pdzC37 >= fbZ[ridxC37] {
+          fb[ridxC37] = cLo3 + rowSlope3 * dtC37
+          fbZ[ridxC37] = if noDepth then ZBACK else pdzC37
+        }
+      }
+      let tjC38 = pcol3 + 38.0
+      if tjC38 <= pcurR3 {
+        let ridxC38 = (((prow + 2.0) * SWF + tjC38) | 0)
+        let dtC38 = tjC38 - xL3
+        let pdzC38 = zLo3 + zSlope3 * dtC38
+        if noDepth || pdzC38 >= fbZ[ridxC38] {
+          fb[ridxC38] = cLo3 + rowSlope3 * dtC38
+          fbZ[ridxC38] = if noDepth then ZBACK else pdzC38
+        }
+      }
+      let tjC39 = pcol3 + 39.0
+      if tjC39 <= pcurR3 {
+        let ridxC39 = (((prow + 2.0) * SWF + tjC39) | 0)
+        let dtC39 = tjC39 - xL3
+        let pdzC39 = zLo3 + zSlope3 * dtC39
+        if noDepth || pdzC39 >= fbZ[ridxC39] {
+          fb[ridxC39] = cLo3 + rowSlope3 * dtC39
+          fbZ[ridxC39] = if noDepth then ZBACK else pdzC39
+        }
+      }
+      let tjC40 = pcol3 + 40.0
+      if tjC40 <= pcurR3 {
+        let ridxC40 = (((prow + 2.0) * SWF + tjC40) | 0)
+        let dtC40 = tjC40 - xL3
+        let pdzC40 = zLo3 + zSlope3 * dtC40
+        if noDepth || pdzC40 >= fbZ[ridxC40] {
+          fb[ridxC40] = cLo3 + rowSlope3 * dtC40
+          fbZ[ridxC40] = if noDepth then ZBACK else pdzC40
+        }
+      }
+      let tjC41 = pcol3 + 41.0
+      if tjC41 <= pcurR3 {
+        let ridxC41 = (((prow + 2.0) * SWF + tjC41) | 0)
+        let dtC41 = tjC41 - xL3
+        let pdzC41 = zLo3 + zSlope3 * dtC41
+        if noDepth || pdzC41 >= fbZ[ridxC41] {
+          fb[ridxC41] = cLo3 + rowSlope3 * dtC41
+          fbZ[ridxC41] = if noDepth then ZBACK else pdzC41
+        }
+      }
+      let tjC42 = pcol3 + 42.0
+      if tjC42 <= pcurR3 {
+        let ridxC42 = (((prow + 2.0) * SWF + tjC42) | 0)
+        let dtC42 = tjC42 - xL3
+        let pdzC42 = zLo3 + zSlope3 * dtC42
+        if noDepth || pdzC42 >= fbZ[ridxC42] {
+          fb[ridxC42] = cLo3 + rowSlope3 * dtC42
+          fbZ[ridxC42] = if noDepth then ZBACK else pdzC42
+        }
+      }
+      let tjC43 = pcol3 + 43.0
+      if tjC43 <= pcurR3 {
+        let ridxC43 = (((prow + 2.0) * SWF + tjC43) | 0)
+        let dtC43 = tjC43 - xL3
+        let pdzC43 = zLo3 + zSlope3 * dtC43
+        if noDepth || pdzC43 >= fbZ[ridxC43] {
+          fb[ridxC43] = cLo3 + rowSlope3 * dtC43
+          fbZ[ridxC43] = if noDepth then ZBACK else pdzC43
+        }
+      }
+      let tjC44 = pcol3 + 44.0
+      if tjC44 <= pcurR3 {
+        let ridxC44 = (((prow + 2.0) * SWF + tjC44) | 0)
+        let dtC44 = tjC44 - xL3
+        let pdzC44 = zLo3 + zSlope3 * dtC44
+        if noDepth || pdzC44 >= fbZ[ridxC44] {
+          fb[ridxC44] = cLo3 + rowSlope3 * dtC44
+          fbZ[ridxC44] = if noDepth then ZBACK else pdzC44
+        }
+      }
+      let tjC45 = pcol3 + 45.0
+      if tjC45 <= pcurR3 {
+        let ridxC45 = (((prow + 2.0) * SWF + tjC45) | 0)
+        let dtC45 = tjC45 - xL3
+        let pdzC45 = zLo3 + zSlope3 * dtC45
+        if noDepth || pdzC45 >= fbZ[ridxC45] {
+          fb[ridxC45] = cLo3 + rowSlope3 * dtC45
+          fbZ[ridxC45] = if noDepth then ZBACK else pdzC45
+        }
+      }
+      let tjC46 = pcol3 + 46.0
+      if tjC46 <= pcurR3 {
+        let ridxC46 = (((prow + 2.0) * SWF + tjC46) | 0)
+        let dtC46 = tjC46 - xL3
+        let pdzC46 = zLo3 + zSlope3 * dtC46
+        if noDepth || pdzC46 >= fbZ[ridxC46] {
+          fb[ridxC46] = cLo3 + rowSlope3 * dtC46
+          fbZ[ridxC46] = if noDepth then ZBACK else pdzC46
+        }
+      }
+      let tjC47 = pcol3 + 47.0
+      if tjC47 <= pcurR3 {
+        let ridxC47 = (((prow + 2.0) * SWF + tjC47) | 0)
+        let dtC47 = tjC47 - xL3
+        let pdzC47 = zLo3 + zSlope3 * dtC47
+        if noDepth || pdzC47 >= fbZ[ridxC47] {
+          fb[ridxC47] = cLo3 + rowSlope3 * dtC47
+          fbZ[ridxC47] = if noDepth then ZBACK else pdzC47
+        }
+      }
+      let tjC48 = pcol3 + 48.0
+      if tjC48 <= pcurR3 {
+        let ridxC48 = (((prow + 2.0) * SWF + tjC48) | 0)
+        let dtC48 = tjC48 - xL3
+        let pdzC48 = zLo3 + zSlope3 * dtC48
+        if noDepth || pdzC48 >= fbZ[ridxC48] {
+          fb[ridxC48] = cLo3 + rowSlope3 * dtC48
+          fbZ[ridxC48] = if noDepth then ZBACK else pdzC48
+        }
+      }
+      let tjC49 = pcol3 + 49.0
+      if tjC49 <= pcurR3 {
+        let ridxC49 = (((prow + 2.0) * SWF + tjC49) | 0)
+        let dtC49 = tjC49 - xL3
+        let pdzC49 = zLo3 + zSlope3 * dtC49
+        if noDepth || pdzC49 >= fbZ[ridxC49] {
+          fb[ridxC49] = cLo3 + rowSlope3 * dtC49
+          fbZ[ridxC49] = if noDepth then ZBACK else pdzC49
+        }
+      }
+      let tjC50 = pcol3 + 50.0
+      if tjC50 <= pcurR3 {
+        let ridxC50 = (((prow + 2.0) * SWF + tjC50) | 0)
+        let dtC50 = tjC50 - xL3
+        let pdzC50 = zLo3 + zSlope3 * dtC50
+        if noDepth || pdzC50 >= fbZ[ridxC50] {
+          fb[ridxC50] = cLo3 + rowSlope3 * dtC50
+          fbZ[ridxC50] = if noDepth then ZBACK else pdzC50
+        }
+      }
+      let tjC51 = pcol3 + 51.0
+      if tjC51 <= pcurR3 {
+        let ridxC51 = (((prow + 2.0) * SWF + tjC51) | 0)
+        let dtC51 = tjC51 - xL3
+        let pdzC51 = zLo3 + zSlope3 * dtC51
+        if noDepth || pdzC51 >= fbZ[ridxC51] {
+          fb[ridxC51] = cLo3 + rowSlope3 * dtC51
+          fbZ[ridxC51] = if noDepth then ZBACK else pdzC51
+        }
+      }
+      let tjC52 = pcol3 + 52.0
+      if tjC52 <= pcurR3 {
+        let ridxC52 = (((prow + 2.0) * SWF + tjC52) | 0)
+        let dtC52 = tjC52 - xL3
+        let pdzC52 = zLo3 + zSlope3 * dtC52
+        if noDepth || pdzC52 >= fbZ[ridxC52] {
+          fb[ridxC52] = cLo3 + rowSlope3 * dtC52
+          fbZ[ridxC52] = if noDepth then ZBACK else pdzC52
+        }
+      }
+      let tjC53 = pcol3 + 53.0
+      if tjC53 <= pcurR3 {
+        let ridxC53 = (((prow + 2.0) * SWF + tjC53) | 0)
+        let dtC53 = tjC53 - xL3
+        let pdzC53 = zLo3 + zSlope3 * dtC53
+        if noDepth || pdzC53 >= fbZ[ridxC53] {
+          fb[ridxC53] = cLo3 + rowSlope3 * dtC53
+          fbZ[ridxC53] = if noDepth then ZBACK else pdzC53
+        }
+      }
+      let tjC54 = pcol3 + 54.0
+      if tjC54 <= pcurR3 {
+        let ridxC54 = (((prow + 2.0) * SWF + tjC54) | 0)
+        let dtC54 = tjC54 - xL3
+        let pdzC54 = zLo3 + zSlope3 * dtC54
+        if noDepth || pdzC54 >= fbZ[ridxC54] {
+          fb[ridxC54] = cLo3 + rowSlope3 * dtC54
+          fbZ[ridxC54] = if noDepth then ZBACK else pdzC54
+        }
+      }
+      let tjC55 = pcol3 + 55.0
+      if tjC55 <= pcurR3 {
+        let ridxC55 = (((prow + 2.0) * SWF + tjC55) | 0)
+        let dtC55 = tjC55 - xL3
+        let pdzC55 = zLo3 + zSlope3 * dtC55
+        if noDepth || pdzC55 >= fbZ[ridxC55] {
+          fb[ridxC55] = cLo3 + rowSlope3 * dtC55
+          fbZ[ridxC55] = if noDepth then ZBACK else pdzC55
+        }
+      }
+      let tjC56 = pcol3 + 56.0
+      if tjC56 <= pcurR3 {
+        let ridxC56 = (((prow + 2.0) * SWF + tjC56) | 0)
+        let dtC56 = tjC56 - xL3
+        let pdzC56 = zLo3 + zSlope3 * dtC56
+        if noDepth || pdzC56 >= fbZ[ridxC56] {
+          fb[ridxC56] = cLo3 + rowSlope3 * dtC56
+          fbZ[ridxC56] = if noDepth then ZBACK else pdzC56
+        }
+      }
+      let tjC57 = pcol3 + 57.0
+      if tjC57 <= pcurR3 {
+        let ridxC57 = (((prow + 2.0) * SWF + tjC57) | 0)
+        let dtC57 = tjC57 - xL3
+        let pdzC57 = zLo3 + zSlope3 * dtC57
+        if noDepth || pdzC57 >= fbZ[ridxC57] {
+          fb[ridxC57] = cLo3 + rowSlope3 * dtC57
+          fbZ[ridxC57] = if noDepth then ZBACK else pdzC57
+        }
+      }
+      let tjC58 = pcol3 + 58.0
+      if tjC58 <= pcurR3 {
+        let ridxC58 = (((prow + 2.0) * SWF + tjC58) | 0)
+        let dtC58 = tjC58 - xL3
+        let pdzC58 = zLo3 + zSlope3 * dtC58
+        if noDepth || pdzC58 >= fbZ[ridxC58] {
+          fb[ridxC58] = cLo3 + rowSlope3 * dtC58
+          fbZ[ridxC58] = if noDepth then ZBACK else pdzC58
+        }
+      }
+      let tjC59 = pcol3 + 59.0
+      if tjC59 <= pcurR3 {
+        let ridxC59 = (((prow + 2.0) * SWF + tjC59) | 0)
+        let dtC59 = tjC59 - xL3
+        let pdzC59 = zLo3 + zSlope3 * dtC59
+        if noDepth || pdzC59 >= fbZ[ridxC59] {
+          fb[ridxC59] = cLo3 + rowSlope3 * dtC59
+          fbZ[ridxC59] = if noDepth then ZBACK else pdzC59
+        }
+      }
+      let tjC60 = pcol3 + 60.0
+      if tjC60 <= pcurR3 {
+        let ridxC60 = (((prow + 2.0) * SWF + tjC60) | 0)
+        let dtC60 = tjC60 - xL3
+        let pdzC60 = zLo3 + zSlope3 * dtC60
+        if noDepth || pdzC60 >= fbZ[ridxC60] {
+          fb[ridxC60] = cLo3 + rowSlope3 * dtC60
+          fbZ[ridxC60] = if noDepth then ZBACK else pdzC60
+        }
+      }
+      let tjC61 = pcol3 + 61.0
+      if tjC61 <= pcurR3 {
+        let ridxC61 = (((prow + 2.0) * SWF + tjC61) | 0)
+        let dtC61 = tjC61 - xL3
+        let pdzC61 = zLo3 + zSlope3 * dtC61
+        if noDepth || pdzC61 >= fbZ[ridxC61] {
+          fb[ridxC61] = cLo3 + rowSlope3 * dtC61
+          fbZ[ridxC61] = if noDepth then ZBACK else pdzC61
+        }
+      }
+      let tjC62 = pcol3 + 62.0
+      if tjC62 <= pcurR3 {
+        let ridxC62 = (((prow + 2.0) * SWF + tjC62) | 0)
+        let dtC62 = tjC62 - xL3
+        let pdzC62 = zLo3 + zSlope3 * dtC62
+        if noDepth || pdzC62 >= fbZ[ridxC62] {
+          fb[ridxC62] = cLo3 + rowSlope3 * dtC62
+          fbZ[ridxC62] = if noDepth then ZBACK else pdzC62
+        }
+      }
+      let tjC63 = pcol3 + 63.0
+      if tjC63 <= pcurR3 {
+        let ridxC63 = (((prow + 2.0) * SWF + tjC63) | 0)
+        let dtC63 = tjC63 - xL3
+        let pdzC63 = zLo3 + zSlope3 * dtC63
+        if noDepth || pdzC63 >= fbZ[ridxC63] {
+          fb[ridxC63] = cLo3 + rowSlope3 * dtC63
+          fbZ[ridxC63] = if noDepth then ZBACK else pdzC63
+        }
+      }
+      pcol3 = pcol3 + 64.0
+      let tjD0 = pcol4 + 0.0
+      if tjD0 <= pcurR4 {
+        let ridxD0 = (((prow + 3.0) * SWF + tjD0) | 0)
+        let dtD0 = tjD0 - xL4
+        let pdzD0 = zLo4 + zSlope4 * dtD0
+        if noDepth || pdzD0 >= fbZ[ridxD0] {
+          fb[ridxD0] = cLo4 + rowSlope4 * dtD0
+          fbZ[ridxD0] = if noDepth then ZBACK else pdzD0
+        }
+      }
+      let tjD1 = pcol4 + 1.0
+      if tjD1 <= pcurR4 {
+        let ridxD1 = (((prow + 3.0) * SWF + tjD1) | 0)
+        let dtD1 = tjD1 - xL4
+        let pdzD1 = zLo4 + zSlope4 * dtD1
+        if noDepth || pdzD1 >= fbZ[ridxD1] {
+          fb[ridxD1] = cLo4 + rowSlope4 * dtD1
+          fbZ[ridxD1] = if noDepth then ZBACK else pdzD1
+        }
+      }
+      let tjD2 = pcol4 + 2.0
+      if tjD2 <= pcurR4 {
+        let ridxD2 = (((prow + 3.0) * SWF + tjD2) | 0)
+        let dtD2 = tjD2 - xL4
+        let pdzD2 = zLo4 + zSlope4 * dtD2
+        if noDepth || pdzD2 >= fbZ[ridxD2] {
+          fb[ridxD2] = cLo4 + rowSlope4 * dtD2
+          fbZ[ridxD2] = if noDepth then ZBACK else pdzD2
+        }
+      }
+      let tjD3 = pcol4 + 3.0
+      if tjD3 <= pcurR4 {
+        let ridxD3 = (((prow + 3.0) * SWF + tjD3) | 0)
+        let dtD3 = tjD3 - xL4
+        let pdzD3 = zLo4 + zSlope4 * dtD3
+        if noDepth || pdzD3 >= fbZ[ridxD3] {
+          fb[ridxD3] = cLo4 + rowSlope4 * dtD3
+          fbZ[ridxD3] = if noDepth then ZBACK else pdzD3
+        }
+      }
+      let tjD4 = pcol4 + 4.0
+      if tjD4 <= pcurR4 {
+        let ridxD4 = (((prow + 3.0) * SWF + tjD4) | 0)
+        let dtD4 = tjD4 - xL4
+        let pdzD4 = zLo4 + zSlope4 * dtD4
+        if noDepth || pdzD4 >= fbZ[ridxD4] {
+          fb[ridxD4] = cLo4 + rowSlope4 * dtD4
+          fbZ[ridxD4] = if noDepth then ZBACK else pdzD4
+        }
+      }
+      let tjD5 = pcol4 + 5.0
+      if tjD5 <= pcurR4 {
+        let ridxD5 = (((prow + 3.0) * SWF + tjD5) | 0)
+        let dtD5 = tjD5 - xL4
+        let pdzD5 = zLo4 + zSlope4 * dtD5
+        if noDepth || pdzD5 >= fbZ[ridxD5] {
+          fb[ridxD5] = cLo4 + rowSlope4 * dtD5
+          fbZ[ridxD5] = if noDepth then ZBACK else pdzD5
+        }
+      }
+      let tjD6 = pcol4 + 6.0
+      if tjD6 <= pcurR4 {
+        let ridxD6 = (((prow + 3.0) * SWF + tjD6) | 0)
+        let dtD6 = tjD6 - xL4
+        let pdzD6 = zLo4 + zSlope4 * dtD6
+        if noDepth || pdzD6 >= fbZ[ridxD6] {
+          fb[ridxD6] = cLo4 + rowSlope4 * dtD6
+          fbZ[ridxD6] = if noDepth then ZBACK else pdzD6
+        }
+      }
+      let tjD7 = pcol4 + 7.0
+      if tjD7 <= pcurR4 {
+        let ridxD7 = (((prow + 3.0) * SWF + tjD7) | 0)
+        let dtD7 = tjD7 - xL4
+        let pdzD7 = zLo4 + zSlope4 * dtD7
+        if noDepth || pdzD7 >= fbZ[ridxD7] {
+          fb[ridxD7] = cLo4 + rowSlope4 * dtD7
+          fbZ[ridxD7] = if noDepth then ZBACK else pdzD7
+        }
+      }
+      let tjD8 = pcol4 + 8.0
+      if tjD8 <= pcurR4 {
+        let ridxD8 = (((prow + 3.0) * SWF + tjD8) | 0)
+        let dtD8 = tjD8 - xL4
+        let pdzD8 = zLo4 + zSlope4 * dtD8
+        if noDepth || pdzD8 >= fbZ[ridxD8] {
+          fb[ridxD8] = cLo4 + rowSlope4 * dtD8
+          fbZ[ridxD8] = if noDepth then ZBACK else pdzD8
+        }
+      }
+      let tjD9 = pcol4 + 9.0
+      if tjD9 <= pcurR4 {
+        let ridxD9 = (((prow + 3.0) * SWF + tjD9) | 0)
+        let dtD9 = tjD9 - xL4
+        let pdzD9 = zLo4 + zSlope4 * dtD9
+        if noDepth || pdzD9 >= fbZ[ridxD9] {
+          fb[ridxD9] = cLo4 + rowSlope4 * dtD9
+          fbZ[ridxD9] = if noDepth then ZBACK else pdzD9
+        }
+      }
+      let tjD10 = pcol4 + 10.0
+      if tjD10 <= pcurR4 {
+        let ridxD10 = (((prow + 3.0) * SWF + tjD10) | 0)
+        let dtD10 = tjD10 - xL4
+        let pdzD10 = zLo4 + zSlope4 * dtD10
+        if noDepth || pdzD10 >= fbZ[ridxD10] {
+          fb[ridxD10] = cLo4 + rowSlope4 * dtD10
+          fbZ[ridxD10] = if noDepth then ZBACK else pdzD10
+        }
+      }
+      let tjD11 = pcol4 + 11.0
+      if tjD11 <= pcurR4 {
+        let ridxD11 = (((prow + 3.0) * SWF + tjD11) | 0)
+        let dtD11 = tjD11 - xL4
+        let pdzD11 = zLo4 + zSlope4 * dtD11
+        if noDepth || pdzD11 >= fbZ[ridxD11] {
+          fb[ridxD11] = cLo4 + rowSlope4 * dtD11
+          fbZ[ridxD11] = if noDepth then ZBACK else pdzD11
+        }
+      }
+      let tjD12 = pcol4 + 12.0
+      if tjD12 <= pcurR4 {
+        let ridxD12 = (((prow + 3.0) * SWF + tjD12) | 0)
+        let dtD12 = tjD12 - xL4
+        let pdzD12 = zLo4 + zSlope4 * dtD12
+        if noDepth || pdzD12 >= fbZ[ridxD12] {
+          fb[ridxD12] = cLo4 + rowSlope4 * dtD12
+          fbZ[ridxD12] = if noDepth then ZBACK else pdzD12
+        }
+      }
+      let tjD13 = pcol4 + 13.0
+      if tjD13 <= pcurR4 {
+        let ridxD13 = (((prow + 3.0) * SWF + tjD13) | 0)
+        let dtD13 = tjD13 - xL4
+        let pdzD13 = zLo4 + zSlope4 * dtD13
+        if noDepth || pdzD13 >= fbZ[ridxD13] {
+          fb[ridxD13] = cLo4 + rowSlope4 * dtD13
+          fbZ[ridxD13] = if noDepth then ZBACK else pdzD13
+        }
+      }
+      let tjD14 = pcol4 + 14.0
+      if tjD14 <= pcurR4 {
+        let ridxD14 = (((prow + 3.0) * SWF + tjD14) | 0)
+        let dtD14 = tjD14 - xL4
+        let pdzD14 = zLo4 + zSlope4 * dtD14
+        if noDepth || pdzD14 >= fbZ[ridxD14] {
+          fb[ridxD14] = cLo4 + rowSlope4 * dtD14
+          fbZ[ridxD14] = if noDepth then ZBACK else pdzD14
+        }
+      }
+      let tjD15 = pcol4 + 15.0
+      if tjD15 <= pcurR4 {
+        let ridxD15 = (((prow + 3.0) * SWF + tjD15) | 0)
+        let dtD15 = tjD15 - xL4
+        let pdzD15 = zLo4 + zSlope4 * dtD15
+        if noDepth || pdzD15 >= fbZ[ridxD15] {
+          fb[ridxD15] = cLo4 + rowSlope4 * dtD15
+          fbZ[ridxD15] = if noDepth then ZBACK else pdzD15
+        }
+      }
+      let tjD16 = pcol4 + 16.0
+      if tjD16 <= pcurR4 {
+        let ridxD16 = (((prow + 3.0) * SWF + tjD16) | 0)
+        let dtD16 = tjD16 - xL4
+        let pdzD16 = zLo4 + zSlope4 * dtD16
+        if noDepth || pdzD16 >= fbZ[ridxD16] {
+          fb[ridxD16] = cLo4 + rowSlope4 * dtD16
+          fbZ[ridxD16] = if noDepth then ZBACK else pdzD16
+        }
+      }
+      let tjD17 = pcol4 + 17.0
+      if tjD17 <= pcurR4 {
+        let ridxD17 = (((prow + 3.0) * SWF + tjD17) | 0)
+        let dtD17 = tjD17 - xL4
+        let pdzD17 = zLo4 + zSlope4 * dtD17
+        if noDepth || pdzD17 >= fbZ[ridxD17] {
+          fb[ridxD17] = cLo4 + rowSlope4 * dtD17
+          fbZ[ridxD17] = if noDepth then ZBACK else pdzD17
+        }
+      }
+      let tjD18 = pcol4 + 18.0
+      if tjD18 <= pcurR4 {
+        let ridxD18 = (((prow + 3.0) * SWF + tjD18) | 0)
+        let dtD18 = tjD18 - xL4
+        let pdzD18 = zLo4 + zSlope4 * dtD18
+        if noDepth || pdzD18 >= fbZ[ridxD18] {
+          fb[ridxD18] = cLo4 + rowSlope4 * dtD18
+          fbZ[ridxD18] = if noDepth then ZBACK else pdzD18
+        }
+      }
+      let tjD19 = pcol4 + 19.0
+      if tjD19 <= pcurR4 {
+        let ridxD19 = (((prow + 3.0) * SWF + tjD19) | 0)
+        let dtD19 = tjD19 - xL4
+        let pdzD19 = zLo4 + zSlope4 * dtD19
+        if noDepth || pdzD19 >= fbZ[ridxD19] {
+          fb[ridxD19] = cLo4 + rowSlope4 * dtD19
+          fbZ[ridxD19] = if noDepth then ZBACK else pdzD19
+        }
+      }
+      let tjD20 = pcol4 + 20.0
+      if tjD20 <= pcurR4 {
+        let ridxD20 = (((prow + 3.0) * SWF + tjD20) | 0)
+        let dtD20 = tjD20 - xL4
+        let pdzD20 = zLo4 + zSlope4 * dtD20
+        if noDepth || pdzD20 >= fbZ[ridxD20] {
+          fb[ridxD20] = cLo4 + rowSlope4 * dtD20
+          fbZ[ridxD20] = if noDepth then ZBACK else pdzD20
+        }
+      }
+      let tjD21 = pcol4 + 21.0
+      if tjD21 <= pcurR4 {
+        let ridxD21 = (((prow + 3.0) * SWF + tjD21) | 0)
+        let dtD21 = tjD21 - xL4
+        let pdzD21 = zLo4 + zSlope4 * dtD21
+        if noDepth || pdzD21 >= fbZ[ridxD21] {
+          fb[ridxD21] = cLo4 + rowSlope4 * dtD21
+          fbZ[ridxD21] = if noDepth then ZBACK else pdzD21
+        }
+      }
+      let tjD22 = pcol4 + 22.0
+      if tjD22 <= pcurR4 {
+        let ridxD22 = (((prow + 3.0) * SWF + tjD22) | 0)
+        let dtD22 = tjD22 - xL4
+        let pdzD22 = zLo4 + zSlope4 * dtD22
+        if noDepth || pdzD22 >= fbZ[ridxD22] {
+          fb[ridxD22] = cLo4 + rowSlope4 * dtD22
+          fbZ[ridxD22] = if noDepth then ZBACK else pdzD22
+        }
+      }
+      let tjD23 = pcol4 + 23.0
+      if tjD23 <= pcurR4 {
+        let ridxD23 = (((prow + 3.0) * SWF + tjD23) | 0)
+        let dtD23 = tjD23 - xL4
+        let pdzD23 = zLo4 + zSlope4 * dtD23
+        if noDepth || pdzD23 >= fbZ[ridxD23] {
+          fb[ridxD23] = cLo4 + rowSlope4 * dtD23
+          fbZ[ridxD23] = if noDepth then ZBACK else pdzD23
+        }
+      }
+      let tjD24 = pcol4 + 24.0
+      if tjD24 <= pcurR4 {
+        let ridxD24 = (((prow + 3.0) * SWF + tjD24) | 0)
+        let dtD24 = tjD24 - xL4
+        let pdzD24 = zLo4 + zSlope4 * dtD24
+        if noDepth || pdzD24 >= fbZ[ridxD24] {
+          fb[ridxD24] = cLo4 + rowSlope4 * dtD24
+          fbZ[ridxD24] = if noDepth then ZBACK else pdzD24
+        }
+      }
+      let tjD25 = pcol4 + 25.0
+      if tjD25 <= pcurR4 {
+        let ridxD25 = (((prow + 3.0) * SWF + tjD25) | 0)
+        let dtD25 = tjD25 - xL4
+        let pdzD25 = zLo4 + zSlope4 * dtD25
+        if noDepth || pdzD25 >= fbZ[ridxD25] {
+          fb[ridxD25] = cLo4 + rowSlope4 * dtD25
+          fbZ[ridxD25] = if noDepth then ZBACK else pdzD25
+        }
+      }
+      let tjD26 = pcol4 + 26.0
+      if tjD26 <= pcurR4 {
+        let ridxD26 = (((prow + 3.0) * SWF + tjD26) | 0)
+        let dtD26 = tjD26 - xL4
+        let pdzD26 = zLo4 + zSlope4 * dtD26
+        if noDepth || pdzD26 >= fbZ[ridxD26] {
+          fb[ridxD26] = cLo4 + rowSlope4 * dtD26
+          fbZ[ridxD26] = if noDepth then ZBACK else pdzD26
+        }
+      }
+      let tjD27 = pcol4 + 27.0
+      if tjD27 <= pcurR4 {
+        let ridxD27 = (((prow + 3.0) * SWF + tjD27) | 0)
+        let dtD27 = tjD27 - xL4
+        let pdzD27 = zLo4 + zSlope4 * dtD27
+        if noDepth || pdzD27 >= fbZ[ridxD27] {
+          fb[ridxD27] = cLo4 + rowSlope4 * dtD27
+          fbZ[ridxD27] = if noDepth then ZBACK else pdzD27
+        }
+      }
+      let tjD28 = pcol4 + 28.0
+      if tjD28 <= pcurR4 {
+        let ridxD28 = (((prow + 3.0) * SWF + tjD28) | 0)
+        let dtD28 = tjD28 - xL4
+        let pdzD28 = zLo4 + zSlope4 * dtD28
+        if noDepth || pdzD28 >= fbZ[ridxD28] {
+          fb[ridxD28] = cLo4 + rowSlope4 * dtD28
+          fbZ[ridxD28] = if noDepth then ZBACK else pdzD28
+        }
+      }
+      let tjD29 = pcol4 + 29.0
+      if tjD29 <= pcurR4 {
+        let ridxD29 = (((prow + 3.0) * SWF + tjD29) | 0)
+        let dtD29 = tjD29 - xL4
+        let pdzD29 = zLo4 + zSlope4 * dtD29
+        if noDepth || pdzD29 >= fbZ[ridxD29] {
+          fb[ridxD29] = cLo4 + rowSlope4 * dtD29
+          fbZ[ridxD29] = if noDepth then ZBACK else pdzD29
+        }
+      }
+      let tjD30 = pcol4 + 30.0
+      if tjD30 <= pcurR4 {
+        let ridxD30 = (((prow + 3.0) * SWF + tjD30) | 0)
+        let dtD30 = tjD30 - xL4
+        let pdzD30 = zLo4 + zSlope4 * dtD30
+        if noDepth || pdzD30 >= fbZ[ridxD30] {
+          fb[ridxD30] = cLo4 + rowSlope4 * dtD30
+          fbZ[ridxD30] = if noDepth then ZBACK else pdzD30
+        }
+      }
+      let tjD31 = pcol4 + 31.0
+      if tjD31 <= pcurR4 {
+        let ridxD31 = (((prow + 3.0) * SWF + tjD31) | 0)
+        let dtD31 = tjD31 - xL4
+        let pdzD31 = zLo4 + zSlope4 * dtD31
+        if noDepth || pdzD31 >= fbZ[ridxD31] {
+          fb[ridxD31] = cLo4 + rowSlope4 * dtD31
+          fbZ[ridxD31] = if noDepth then ZBACK else pdzD31
+        }
+      }
+      let tjD32 = pcol4 + 32.0
+      if tjD32 <= pcurR4 {
+        let ridxD32 = (((prow + 3.0) * SWF + tjD32) | 0)
+        let dtD32 = tjD32 - xL4
+        let pdzD32 = zLo4 + zSlope4 * dtD32
+        if noDepth || pdzD32 >= fbZ[ridxD32] {
+          fb[ridxD32] = cLo4 + rowSlope4 * dtD32
+          fbZ[ridxD32] = if noDepth then ZBACK else pdzD32
+        }
+      }
+      let tjD33 = pcol4 + 33.0
+      if tjD33 <= pcurR4 {
+        let ridxD33 = (((prow + 3.0) * SWF + tjD33) | 0)
+        let dtD33 = tjD33 - xL4
+        let pdzD33 = zLo4 + zSlope4 * dtD33
+        if noDepth || pdzD33 >= fbZ[ridxD33] {
+          fb[ridxD33] = cLo4 + rowSlope4 * dtD33
+          fbZ[ridxD33] = if noDepth then ZBACK else pdzD33
+        }
+      }
+      let tjD34 = pcol4 + 34.0
+      if tjD34 <= pcurR4 {
+        let ridxD34 = (((prow + 3.0) * SWF + tjD34) | 0)
+        let dtD34 = tjD34 - xL4
+        let pdzD34 = zLo4 + zSlope4 * dtD34
+        if noDepth || pdzD34 >= fbZ[ridxD34] {
+          fb[ridxD34] = cLo4 + rowSlope4 * dtD34
+          fbZ[ridxD34] = if noDepth then ZBACK else pdzD34
+        }
+      }
+      let tjD35 = pcol4 + 35.0
+      if tjD35 <= pcurR4 {
+        let ridxD35 = (((prow + 3.0) * SWF + tjD35) | 0)
+        let dtD35 = tjD35 - xL4
+        let pdzD35 = zLo4 + zSlope4 * dtD35
+        if noDepth || pdzD35 >= fbZ[ridxD35] {
+          fb[ridxD35] = cLo4 + rowSlope4 * dtD35
+          fbZ[ridxD35] = if noDepth then ZBACK else pdzD35
+        }
+      }
+      let tjD36 = pcol4 + 36.0
+      if tjD36 <= pcurR4 {
+        let ridxD36 = (((prow + 3.0) * SWF + tjD36) | 0)
+        let dtD36 = tjD36 - xL4
+        let pdzD36 = zLo4 + zSlope4 * dtD36
+        if noDepth || pdzD36 >= fbZ[ridxD36] {
+          fb[ridxD36] = cLo4 + rowSlope4 * dtD36
+          fbZ[ridxD36] = if noDepth then ZBACK else pdzD36
+        }
+      }
+      let tjD37 = pcol4 + 37.0
+      if tjD37 <= pcurR4 {
+        let ridxD37 = (((prow + 3.0) * SWF + tjD37) | 0)
+        let dtD37 = tjD37 - xL4
+        let pdzD37 = zLo4 + zSlope4 * dtD37
+        if noDepth || pdzD37 >= fbZ[ridxD37] {
+          fb[ridxD37] = cLo4 + rowSlope4 * dtD37
+          fbZ[ridxD37] = if noDepth then ZBACK else pdzD37
+        }
+      }
+      let tjD38 = pcol4 + 38.0
+      if tjD38 <= pcurR4 {
+        let ridxD38 = (((prow + 3.0) * SWF + tjD38) | 0)
+        let dtD38 = tjD38 - xL4
+        let pdzD38 = zLo4 + zSlope4 * dtD38
+        if noDepth || pdzD38 >= fbZ[ridxD38] {
+          fb[ridxD38] = cLo4 + rowSlope4 * dtD38
+          fbZ[ridxD38] = if noDepth then ZBACK else pdzD38
+        }
+      }
+      let tjD39 = pcol4 + 39.0
+      if tjD39 <= pcurR4 {
+        let ridxD39 = (((prow + 3.0) * SWF + tjD39) | 0)
+        let dtD39 = tjD39 - xL4
+        let pdzD39 = zLo4 + zSlope4 * dtD39
+        if noDepth || pdzD39 >= fbZ[ridxD39] {
+          fb[ridxD39] = cLo4 + rowSlope4 * dtD39
+          fbZ[ridxD39] = if noDepth then ZBACK else pdzD39
+        }
+      }
+      let tjD40 = pcol4 + 40.0
+      if tjD40 <= pcurR4 {
+        let ridxD40 = (((prow + 3.0) * SWF + tjD40) | 0)
+        let dtD40 = tjD40 - xL4
+        let pdzD40 = zLo4 + zSlope4 * dtD40
+        if noDepth || pdzD40 >= fbZ[ridxD40] {
+          fb[ridxD40] = cLo4 + rowSlope4 * dtD40
+          fbZ[ridxD40] = if noDepth then ZBACK else pdzD40
+        }
+      }
+      let tjD41 = pcol4 + 41.0
+      if tjD41 <= pcurR4 {
+        let ridxD41 = (((prow + 3.0) * SWF + tjD41) | 0)
+        let dtD41 = tjD41 - xL4
+        let pdzD41 = zLo4 + zSlope4 * dtD41
+        if noDepth || pdzD41 >= fbZ[ridxD41] {
+          fb[ridxD41] = cLo4 + rowSlope4 * dtD41
+          fbZ[ridxD41] = if noDepth then ZBACK else pdzD41
+        }
+      }
+      let tjD42 = pcol4 + 42.0
+      if tjD42 <= pcurR4 {
+        let ridxD42 = (((prow + 3.0) * SWF + tjD42) | 0)
+        let dtD42 = tjD42 - xL4
+        let pdzD42 = zLo4 + zSlope4 * dtD42
+        if noDepth || pdzD42 >= fbZ[ridxD42] {
+          fb[ridxD42] = cLo4 + rowSlope4 * dtD42
+          fbZ[ridxD42] = if noDepth then ZBACK else pdzD42
+        }
+      }
+      let tjD43 = pcol4 + 43.0
+      if tjD43 <= pcurR4 {
+        let ridxD43 = (((prow + 3.0) * SWF + tjD43) | 0)
+        let dtD43 = tjD43 - xL4
+        let pdzD43 = zLo4 + zSlope4 * dtD43
+        if noDepth || pdzD43 >= fbZ[ridxD43] {
+          fb[ridxD43] = cLo4 + rowSlope4 * dtD43
+          fbZ[ridxD43] = if noDepth then ZBACK else pdzD43
+        }
+      }
+      let tjD44 = pcol4 + 44.0
+      if tjD44 <= pcurR4 {
+        let ridxD44 = (((prow + 3.0) * SWF + tjD44) | 0)
+        let dtD44 = tjD44 - xL4
+        let pdzD44 = zLo4 + zSlope4 * dtD44
+        if noDepth || pdzD44 >= fbZ[ridxD44] {
+          fb[ridxD44] = cLo4 + rowSlope4 * dtD44
+          fbZ[ridxD44] = if noDepth then ZBACK else pdzD44
+        }
+      }
+      let tjD45 = pcol4 + 45.0
+      if tjD45 <= pcurR4 {
+        let ridxD45 = (((prow + 3.0) * SWF + tjD45) | 0)
+        let dtD45 = tjD45 - xL4
+        let pdzD45 = zLo4 + zSlope4 * dtD45
+        if noDepth || pdzD45 >= fbZ[ridxD45] {
+          fb[ridxD45] = cLo4 + rowSlope4 * dtD45
+          fbZ[ridxD45] = if noDepth then ZBACK else pdzD45
+        }
+      }
+      let tjD46 = pcol4 + 46.0
+      if tjD46 <= pcurR4 {
+        let ridxD46 = (((prow + 3.0) * SWF + tjD46) | 0)
+        let dtD46 = tjD46 - xL4
+        let pdzD46 = zLo4 + zSlope4 * dtD46
+        if noDepth || pdzD46 >= fbZ[ridxD46] {
+          fb[ridxD46] = cLo4 + rowSlope4 * dtD46
+          fbZ[ridxD46] = if noDepth then ZBACK else pdzD46
+        }
+      }
+      let tjD47 = pcol4 + 47.0
+      if tjD47 <= pcurR4 {
+        let ridxD47 = (((prow + 3.0) * SWF + tjD47) | 0)
+        let dtD47 = tjD47 - xL4
+        let pdzD47 = zLo4 + zSlope4 * dtD47
+        if noDepth || pdzD47 >= fbZ[ridxD47] {
+          fb[ridxD47] = cLo4 + rowSlope4 * dtD47
+          fbZ[ridxD47] = if noDepth then ZBACK else pdzD47
+        }
+      }
+      let tjD48 = pcol4 + 48.0
+      if tjD48 <= pcurR4 {
+        let ridxD48 = (((prow + 3.0) * SWF + tjD48) | 0)
+        let dtD48 = tjD48 - xL4
+        let pdzD48 = zLo4 + zSlope4 * dtD48
+        if noDepth || pdzD48 >= fbZ[ridxD48] {
+          fb[ridxD48] = cLo4 + rowSlope4 * dtD48
+          fbZ[ridxD48] = if noDepth then ZBACK else pdzD48
+        }
+      }
+      let tjD49 = pcol4 + 49.0
+      if tjD49 <= pcurR4 {
+        let ridxD49 = (((prow + 3.0) * SWF + tjD49) | 0)
+        let dtD49 = tjD49 - xL4
+        let pdzD49 = zLo4 + zSlope4 * dtD49
+        if noDepth || pdzD49 >= fbZ[ridxD49] {
+          fb[ridxD49] = cLo4 + rowSlope4 * dtD49
+          fbZ[ridxD49] = if noDepth then ZBACK else pdzD49
+        }
+      }
+      let tjD50 = pcol4 + 50.0
+      if tjD50 <= pcurR4 {
+        let ridxD50 = (((prow + 3.0) * SWF + tjD50) | 0)
+        let dtD50 = tjD50 - xL4
+        let pdzD50 = zLo4 + zSlope4 * dtD50
+        if noDepth || pdzD50 >= fbZ[ridxD50] {
+          fb[ridxD50] = cLo4 + rowSlope4 * dtD50
+          fbZ[ridxD50] = if noDepth then ZBACK else pdzD50
+        }
+      }
+      let tjD51 = pcol4 + 51.0
+      if tjD51 <= pcurR4 {
+        let ridxD51 = (((prow + 3.0) * SWF + tjD51) | 0)
+        let dtD51 = tjD51 - xL4
+        let pdzD51 = zLo4 + zSlope4 * dtD51
+        if noDepth || pdzD51 >= fbZ[ridxD51] {
+          fb[ridxD51] = cLo4 + rowSlope4 * dtD51
+          fbZ[ridxD51] = if noDepth then ZBACK else pdzD51
+        }
+      }
+      let tjD52 = pcol4 + 52.0
+      if tjD52 <= pcurR4 {
+        let ridxD52 = (((prow + 3.0) * SWF + tjD52) | 0)
+        let dtD52 = tjD52 - xL4
+        let pdzD52 = zLo4 + zSlope4 * dtD52
+        if noDepth || pdzD52 >= fbZ[ridxD52] {
+          fb[ridxD52] = cLo4 + rowSlope4 * dtD52
+          fbZ[ridxD52] = if noDepth then ZBACK else pdzD52
+        }
+      }
+      let tjD53 = pcol4 + 53.0
+      if tjD53 <= pcurR4 {
+        let ridxD53 = (((prow + 3.0) * SWF + tjD53) | 0)
+        let dtD53 = tjD53 - xL4
+        let pdzD53 = zLo4 + zSlope4 * dtD53
+        if noDepth || pdzD53 >= fbZ[ridxD53] {
+          fb[ridxD53] = cLo4 + rowSlope4 * dtD53
+          fbZ[ridxD53] = if noDepth then ZBACK else pdzD53
+        }
+      }
+      let tjD54 = pcol4 + 54.0
+      if tjD54 <= pcurR4 {
+        let ridxD54 = (((prow + 3.0) * SWF + tjD54) | 0)
+        let dtD54 = tjD54 - xL4
+        let pdzD54 = zLo4 + zSlope4 * dtD54
+        if noDepth || pdzD54 >= fbZ[ridxD54] {
+          fb[ridxD54] = cLo4 + rowSlope4 * dtD54
+          fbZ[ridxD54] = if noDepth then ZBACK else pdzD54
+        }
+      }
+      let tjD55 = pcol4 + 55.0
+      if tjD55 <= pcurR4 {
+        let ridxD55 = (((prow + 3.0) * SWF + tjD55) | 0)
+        let dtD55 = tjD55 - xL4
+        let pdzD55 = zLo4 + zSlope4 * dtD55
+        if noDepth || pdzD55 >= fbZ[ridxD55] {
+          fb[ridxD55] = cLo4 + rowSlope4 * dtD55
+          fbZ[ridxD55] = if noDepth then ZBACK else pdzD55
+        }
+      }
+      let tjD56 = pcol4 + 56.0
+      if tjD56 <= pcurR4 {
+        let ridxD56 = (((prow + 3.0) * SWF + tjD56) | 0)
+        let dtD56 = tjD56 - xL4
+        let pdzD56 = zLo4 + zSlope4 * dtD56
+        if noDepth || pdzD56 >= fbZ[ridxD56] {
+          fb[ridxD56] = cLo4 + rowSlope4 * dtD56
+          fbZ[ridxD56] = if noDepth then ZBACK else pdzD56
+        }
+      }
+      let tjD57 = pcol4 + 57.0
+      if tjD57 <= pcurR4 {
+        let ridxD57 = (((prow + 3.0) * SWF + tjD57) | 0)
+        let dtD57 = tjD57 - xL4
+        let pdzD57 = zLo4 + zSlope4 * dtD57
+        if noDepth || pdzD57 >= fbZ[ridxD57] {
+          fb[ridxD57] = cLo4 + rowSlope4 * dtD57
+          fbZ[ridxD57] = if noDepth then ZBACK else pdzD57
+        }
+      }
+      let tjD58 = pcol4 + 58.0
+      if tjD58 <= pcurR4 {
+        let ridxD58 = (((prow + 3.0) * SWF + tjD58) | 0)
+        let dtD58 = tjD58 - xL4
+        let pdzD58 = zLo4 + zSlope4 * dtD58
+        if noDepth || pdzD58 >= fbZ[ridxD58] {
+          fb[ridxD58] = cLo4 + rowSlope4 * dtD58
+          fbZ[ridxD58] = if noDepth then ZBACK else pdzD58
+        }
+      }
+      let tjD59 = pcol4 + 59.0
+      if tjD59 <= pcurR4 {
+        let ridxD59 = (((prow + 3.0) * SWF + tjD59) | 0)
+        let dtD59 = tjD59 - xL4
+        let pdzD59 = zLo4 + zSlope4 * dtD59
+        if noDepth || pdzD59 >= fbZ[ridxD59] {
+          fb[ridxD59] = cLo4 + rowSlope4 * dtD59
+          fbZ[ridxD59] = if noDepth then ZBACK else pdzD59
+        }
+      }
+      let tjD60 = pcol4 + 60.0
+      if tjD60 <= pcurR4 {
+        let ridxD60 = (((prow + 3.0) * SWF + tjD60) | 0)
+        let dtD60 = tjD60 - xL4
+        let pdzD60 = zLo4 + zSlope4 * dtD60
+        if noDepth || pdzD60 >= fbZ[ridxD60] {
+          fb[ridxD60] = cLo4 + rowSlope4 * dtD60
+          fbZ[ridxD60] = if noDepth then ZBACK else pdzD60
+        }
+      }
+      let tjD61 = pcol4 + 61.0
+      if tjD61 <= pcurR4 {
+        let ridxD61 = (((prow + 3.0) * SWF + tjD61) | 0)
+        let dtD61 = tjD61 - xL4
+        let pdzD61 = zLo4 + zSlope4 * dtD61
+        if noDepth || pdzD61 >= fbZ[ridxD61] {
+          fb[ridxD61] = cLo4 + rowSlope4 * dtD61
+          fbZ[ridxD61] = if noDepth then ZBACK else pdzD61
+        }
+      }
+      let tjD62 = pcol4 + 62.0
+      if tjD62 <= pcurR4 {
+        let ridxD62 = (((prow + 3.0) * SWF + tjD62) | 0)
+        let dtD62 = tjD62 - xL4
+        let pdzD62 = zLo4 + zSlope4 * dtD62
+        if noDepth || pdzD62 >= fbZ[ridxD62] {
+          fb[ridxD62] = cLo4 + rowSlope4 * dtD62
+          fbZ[ridxD62] = if noDepth then ZBACK else pdzD62
+        }
+      }
+      let tjD63 = pcol4 + 63.0
+      if tjD63 <= pcurR4 {
+        let ridxD63 = (((prow + 3.0) * SWF + tjD63) | 0)
+        let dtD63 = tjD63 - xL4
+        let pdzD63 = zLo4 + zSlope4 * dtD63
+        if noDepth || pdzD63 >= fbZ[ridxD63] {
+          fb[ridxD63] = cLo4 + rowSlope4 * dtD63
+          fbZ[ridxD63] = if noDepth then ZBACK else pdzD63
+        }
+      }
+      pcol4 = pcol4 + 64.0
+      let tjE0 = pcol5 + 0.0
+      if tjE0 <= pcurR5 {
+        let ridxE0 = (((prow + 4.0) * SWF + tjE0) | 0)
+        let dtE0 = tjE0 - xL5
+        let pdzE0 = zLo5 + zSlope5 * dtE0
+        if noDepth || pdzE0 >= fbZ[ridxE0] {
+          fb[ridxE0] = cLo5 + rowSlope5 * dtE0
+          fbZ[ridxE0] = if noDepth then ZBACK else pdzE0
+        }
+      }
+      let tjE1 = pcol5 + 1.0
+      if tjE1 <= pcurR5 {
+        let ridxE1 = (((prow + 4.0) * SWF + tjE1) | 0)
+        let dtE1 = tjE1 - xL5
+        let pdzE1 = zLo5 + zSlope5 * dtE1
+        if noDepth || pdzE1 >= fbZ[ridxE1] {
+          fb[ridxE1] = cLo5 + rowSlope5 * dtE1
+          fbZ[ridxE1] = if noDepth then ZBACK else pdzE1
+        }
+      }
+      let tjE2 = pcol5 + 2.0
+      if tjE2 <= pcurR5 {
+        let ridxE2 = (((prow + 4.0) * SWF + tjE2) | 0)
+        let dtE2 = tjE2 - xL5
+        let pdzE2 = zLo5 + zSlope5 * dtE2
+        if noDepth || pdzE2 >= fbZ[ridxE2] {
+          fb[ridxE2] = cLo5 + rowSlope5 * dtE2
+          fbZ[ridxE2] = if noDepth then ZBACK else pdzE2
+        }
+      }
+      let tjE3 = pcol5 + 3.0
+      if tjE3 <= pcurR5 {
+        let ridxE3 = (((prow + 4.0) * SWF + tjE3) | 0)
+        let dtE3 = tjE3 - xL5
+        let pdzE3 = zLo5 + zSlope5 * dtE3
+        if noDepth || pdzE3 >= fbZ[ridxE3] {
+          fb[ridxE3] = cLo5 + rowSlope5 * dtE3
+          fbZ[ridxE3] = if noDepth then ZBACK else pdzE3
+        }
+      }
+      let tjE4 = pcol5 + 4.0
+      if tjE4 <= pcurR5 {
+        let ridxE4 = (((prow + 4.0) * SWF + tjE4) | 0)
+        let dtE4 = tjE4 - xL5
+        let pdzE4 = zLo5 + zSlope5 * dtE4
+        if noDepth || pdzE4 >= fbZ[ridxE4] {
+          fb[ridxE4] = cLo5 + rowSlope5 * dtE4
+          fbZ[ridxE4] = if noDepth then ZBACK else pdzE4
+        }
+      }
+      let tjE5 = pcol5 + 5.0
+      if tjE5 <= pcurR5 {
+        let ridxE5 = (((prow + 4.0) * SWF + tjE5) | 0)
+        let dtE5 = tjE5 - xL5
+        let pdzE5 = zLo5 + zSlope5 * dtE5
+        if noDepth || pdzE5 >= fbZ[ridxE5] {
+          fb[ridxE5] = cLo5 + rowSlope5 * dtE5
+          fbZ[ridxE5] = if noDepth then ZBACK else pdzE5
+        }
+      }
+      let tjE6 = pcol5 + 6.0
+      if tjE6 <= pcurR5 {
+        let ridxE6 = (((prow + 4.0) * SWF + tjE6) | 0)
+        let dtE6 = tjE6 - xL5
+        let pdzE6 = zLo5 + zSlope5 * dtE6
+        if noDepth || pdzE6 >= fbZ[ridxE6] {
+          fb[ridxE6] = cLo5 + rowSlope5 * dtE6
+          fbZ[ridxE6] = if noDepth then ZBACK else pdzE6
+        }
+      }
+      let tjE7 = pcol5 + 7.0
+      if tjE7 <= pcurR5 {
+        let ridxE7 = (((prow + 4.0) * SWF + tjE7) | 0)
+        let dtE7 = tjE7 - xL5
+        let pdzE7 = zLo5 + zSlope5 * dtE7
+        if noDepth || pdzE7 >= fbZ[ridxE7] {
+          fb[ridxE7] = cLo5 + rowSlope5 * dtE7
+          fbZ[ridxE7] = if noDepth then ZBACK else pdzE7
+        }
+      }
+      let tjE8 = pcol5 + 8.0
+      if tjE8 <= pcurR5 {
+        let ridxE8 = (((prow + 4.0) * SWF + tjE8) | 0)
+        let dtE8 = tjE8 - xL5
+        let pdzE8 = zLo5 + zSlope5 * dtE8
+        if noDepth || pdzE8 >= fbZ[ridxE8] {
+          fb[ridxE8] = cLo5 + rowSlope5 * dtE8
+          fbZ[ridxE8] = if noDepth then ZBACK else pdzE8
+        }
+      }
+      let tjE9 = pcol5 + 9.0
+      if tjE9 <= pcurR5 {
+        let ridxE9 = (((prow + 4.0) * SWF + tjE9) | 0)
+        let dtE9 = tjE9 - xL5
+        let pdzE9 = zLo5 + zSlope5 * dtE9
+        if noDepth || pdzE9 >= fbZ[ridxE9] {
+          fb[ridxE9] = cLo5 + rowSlope5 * dtE9
+          fbZ[ridxE9] = if noDepth then ZBACK else pdzE9
+        }
+      }
+      let tjE10 = pcol5 + 10.0
+      if tjE10 <= pcurR5 {
+        let ridxE10 = (((prow + 4.0) * SWF + tjE10) | 0)
+        let dtE10 = tjE10 - xL5
+        let pdzE10 = zLo5 + zSlope5 * dtE10
+        if noDepth || pdzE10 >= fbZ[ridxE10] {
+          fb[ridxE10] = cLo5 + rowSlope5 * dtE10
+          fbZ[ridxE10] = if noDepth then ZBACK else pdzE10
+        }
+      }
+      let tjE11 = pcol5 + 11.0
+      if tjE11 <= pcurR5 {
+        let ridxE11 = (((prow + 4.0) * SWF + tjE11) | 0)
+        let dtE11 = tjE11 - xL5
+        let pdzE11 = zLo5 + zSlope5 * dtE11
+        if noDepth || pdzE11 >= fbZ[ridxE11] {
+          fb[ridxE11] = cLo5 + rowSlope5 * dtE11
+          fbZ[ridxE11] = if noDepth then ZBACK else pdzE11
+        }
+      }
+      let tjE12 = pcol5 + 12.0
+      if tjE12 <= pcurR5 {
+        let ridxE12 = (((prow + 4.0) * SWF + tjE12) | 0)
+        let dtE12 = tjE12 - xL5
+        let pdzE12 = zLo5 + zSlope5 * dtE12
+        if noDepth || pdzE12 >= fbZ[ridxE12] {
+          fb[ridxE12] = cLo5 + rowSlope5 * dtE12
+          fbZ[ridxE12] = if noDepth then ZBACK else pdzE12
+        }
+      }
+      let tjE13 = pcol5 + 13.0
+      if tjE13 <= pcurR5 {
+        let ridxE13 = (((prow + 4.0) * SWF + tjE13) | 0)
+        let dtE13 = tjE13 - xL5
+        let pdzE13 = zLo5 + zSlope5 * dtE13
+        if noDepth || pdzE13 >= fbZ[ridxE13] {
+          fb[ridxE13] = cLo5 + rowSlope5 * dtE13
+          fbZ[ridxE13] = if noDepth then ZBACK else pdzE13
+        }
+      }
+      let tjE14 = pcol5 + 14.0
+      if tjE14 <= pcurR5 {
+        let ridxE14 = (((prow + 4.0) * SWF + tjE14) | 0)
+        let dtE14 = tjE14 - xL5
+        let pdzE14 = zLo5 + zSlope5 * dtE14
+        if noDepth || pdzE14 >= fbZ[ridxE14] {
+          fb[ridxE14] = cLo5 + rowSlope5 * dtE14
+          fbZ[ridxE14] = if noDepth then ZBACK else pdzE14
+        }
+      }
+      let tjE15 = pcol5 + 15.0
+      if tjE15 <= pcurR5 {
+        let ridxE15 = (((prow + 4.0) * SWF + tjE15) | 0)
+        let dtE15 = tjE15 - xL5
+        let pdzE15 = zLo5 + zSlope5 * dtE15
+        if noDepth || pdzE15 >= fbZ[ridxE15] {
+          fb[ridxE15] = cLo5 + rowSlope5 * dtE15
+          fbZ[ridxE15] = if noDepth then ZBACK else pdzE15
+        }
+      }
+      let tjE16 = pcol5 + 16.0
+      if tjE16 <= pcurR5 {
+        let ridxE16 = (((prow + 4.0) * SWF + tjE16) | 0)
+        let dtE16 = tjE16 - xL5
+        let pdzE16 = zLo5 + zSlope5 * dtE16
+        if noDepth || pdzE16 >= fbZ[ridxE16] {
+          fb[ridxE16] = cLo5 + rowSlope5 * dtE16
+          fbZ[ridxE16] = if noDepth then ZBACK else pdzE16
+        }
+      }
+      let tjE17 = pcol5 + 17.0
+      if tjE17 <= pcurR5 {
+        let ridxE17 = (((prow + 4.0) * SWF + tjE17) | 0)
+        let dtE17 = tjE17 - xL5
+        let pdzE17 = zLo5 + zSlope5 * dtE17
+        if noDepth || pdzE17 >= fbZ[ridxE17] {
+          fb[ridxE17] = cLo5 + rowSlope5 * dtE17
+          fbZ[ridxE17] = if noDepth then ZBACK else pdzE17
+        }
+      }
+      let tjE18 = pcol5 + 18.0
+      if tjE18 <= pcurR5 {
+        let ridxE18 = (((prow + 4.0) * SWF + tjE18) | 0)
+        let dtE18 = tjE18 - xL5
+        let pdzE18 = zLo5 + zSlope5 * dtE18
+        if noDepth || pdzE18 >= fbZ[ridxE18] {
+          fb[ridxE18] = cLo5 + rowSlope5 * dtE18
+          fbZ[ridxE18] = if noDepth then ZBACK else pdzE18
+        }
+      }
+      let tjE19 = pcol5 + 19.0
+      if tjE19 <= pcurR5 {
+        let ridxE19 = (((prow + 4.0) * SWF + tjE19) | 0)
+        let dtE19 = tjE19 - xL5
+        let pdzE19 = zLo5 + zSlope5 * dtE19
+        if noDepth || pdzE19 >= fbZ[ridxE19] {
+          fb[ridxE19] = cLo5 + rowSlope5 * dtE19
+          fbZ[ridxE19] = if noDepth then ZBACK else pdzE19
+        }
+      }
+      let tjE20 = pcol5 + 20.0
+      if tjE20 <= pcurR5 {
+        let ridxE20 = (((prow + 4.0) * SWF + tjE20) | 0)
+        let dtE20 = tjE20 - xL5
+        let pdzE20 = zLo5 + zSlope5 * dtE20
+        if noDepth || pdzE20 >= fbZ[ridxE20] {
+          fb[ridxE20] = cLo5 + rowSlope5 * dtE20
+          fbZ[ridxE20] = if noDepth then ZBACK else pdzE20
+        }
+      }
+      let tjE21 = pcol5 + 21.0
+      if tjE21 <= pcurR5 {
+        let ridxE21 = (((prow + 4.0) * SWF + tjE21) | 0)
+        let dtE21 = tjE21 - xL5
+        let pdzE21 = zLo5 + zSlope5 * dtE21
+        if noDepth || pdzE21 >= fbZ[ridxE21] {
+          fb[ridxE21] = cLo5 + rowSlope5 * dtE21
+          fbZ[ridxE21] = if noDepth then ZBACK else pdzE21
+        }
+      }
+      let tjE22 = pcol5 + 22.0
+      if tjE22 <= pcurR5 {
+        let ridxE22 = (((prow + 4.0) * SWF + tjE22) | 0)
+        let dtE22 = tjE22 - xL5
+        let pdzE22 = zLo5 + zSlope5 * dtE22
+        if noDepth || pdzE22 >= fbZ[ridxE22] {
+          fb[ridxE22] = cLo5 + rowSlope5 * dtE22
+          fbZ[ridxE22] = if noDepth then ZBACK else pdzE22
+        }
+      }
+      let tjE23 = pcol5 + 23.0
+      if tjE23 <= pcurR5 {
+        let ridxE23 = (((prow + 4.0) * SWF + tjE23) | 0)
+        let dtE23 = tjE23 - xL5
+        let pdzE23 = zLo5 + zSlope5 * dtE23
+        if noDepth || pdzE23 >= fbZ[ridxE23] {
+          fb[ridxE23] = cLo5 + rowSlope5 * dtE23
+          fbZ[ridxE23] = if noDepth then ZBACK else pdzE23
+        }
+      }
+      let tjE24 = pcol5 + 24.0
+      if tjE24 <= pcurR5 {
+        let ridxE24 = (((prow + 4.0) * SWF + tjE24) | 0)
+        let dtE24 = tjE24 - xL5
+        let pdzE24 = zLo5 + zSlope5 * dtE24
+        if noDepth || pdzE24 >= fbZ[ridxE24] {
+          fb[ridxE24] = cLo5 + rowSlope5 * dtE24
+          fbZ[ridxE24] = if noDepth then ZBACK else pdzE24
+        }
+      }
+      let tjE25 = pcol5 + 25.0
+      if tjE25 <= pcurR5 {
+        let ridxE25 = (((prow + 4.0) * SWF + tjE25) | 0)
+        let dtE25 = tjE25 - xL5
+        let pdzE25 = zLo5 + zSlope5 * dtE25
+        if noDepth || pdzE25 >= fbZ[ridxE25] {
+          fb[ridxE25] = cLo5 + rowSlope5 * dtE25
+          fbZ[ridxE25] = if noDepth then ZBACK else pdzE25
+        }
+      }
+      let tjE26 = pcol5 + 26.0
+      if tjE26 <= pcurR5 {
+        let ridxE26 = (((prow + 4.0) * SWF + tjE26) | 0)
+        let dtE26 = tjE26 - xL5
+        let pdzE26 = zLo5 + zSlope5 * dtE26
+        if noDepth || pdzE26 >= fbZ[ridxE26] {
+          fb[ridxE26] = cLo5 + rowSlope5 * dtE26
+          fbZ[ridxE26] = if noDepth then ZBACK else pdzE26
+        }
+      }
+      let tjE27 = pcol5 + 27.0
+      if tjE27 <= pcurR5 {
+        let ridxE27 = (((prow + 4.0) * SWF + tjE27) | 0)
+        let dtE27 = tjE27 - xL5
+        let pdzE27 = zLo5 + zSlope5 * dtE27
+        if noDepth || pdzE27 >= fbZ[ridxE27] {
+          fb[ridxE27] = cLo5 + rowSlope5 * dtE27
+          fbZ[ridxE27] = if noDepth then ZBACK else pdzE27
+        }
+      }
+      let tjE28 = pcol5 + 28.0
+      if tjE28 <= pcurR5 {
+        let ridxE28 = (((prow + 4.0) * SWF + tjE28) | 0)
+        let dtE28 = tjE28 - xL5
+        let pdzE28 = zLo5 + zSlope5 * dtE28
+        if noDepth || pdzE28 >= fbZ[ridxE28] {
+          fb[ridxE28] = cLo5 + rowSlope5 * dtE28
+          fbZ[ridxE28] = if noDepth then ZBACK else pdzE28
+        }
+      }
+      let tjE29 = pcol5 + 29.0
+      if tjE29 <= pcurR5 {
+        let ridxE29 = (((prow + 4.0) * SWF + tjE29) | 0)
+        let dtE29 = tjE29 - xL5
+        let pdzE29 = zLo5 + zSlope5 * dtE29
+        if noDepth || pdzE29 >= fbZ[ridxE29] {
+          fb[ridxE29] = cLo5 + rowSlope5 * dtE29
+          fbZ[ridxE29] = if noDepth then ZBACK else pdzE29
+        }
+      }
+      let tjE30 = pcol5 + 30.0
+      if tjE30 <= pcurR5 {
+        let ridxE30 = (((prow + 4.0) * SWF + tjE30) | 0)
+        let dtE30 = tjE30 - xL5
+        let pdzE30 = zLo5 + zSlope5 * dtE30
+        if noDepth || pdzE30 >= fbZ[ridxE30] {
+          fb[ridxE30] = cLo5 + rowSlope5 * dtE30
+          fbZ[ridxE30] = if noDepth then ZBACK else pdzE30
+        }
+      }
+      let tjE31 = pcol5 + 31.0
+      if tjE31 <= pcurR5 {
+        let ridxE31 = (((prow + 4.0) * SWF + tjE31) | 0)
+        let dtE31 = tjE31 - xL5
+        let pdzE31 = zLo5 + zSlope5 * dtE31
+        if noDepth || pdzE31 >= fbZ[ridxE31] {
+          fb[ridxE31] = cLo5 + rowSlope5 * dtE31
+          fbZ[ridxE31] = if noDepth then ZBACK else pdzE31
+        }
+      }
+      let tjE32 = pcol5 + 32.0
+      if tjE32 <= pcurR5 {
+        let ridxE32 = (((prow + 4.0) * SWF + tjE32) | 0)
+        let dtE32 = tjE32 - xL5
+        let pdzE32 = zLo5 + zSlope5 * dtE32
+        if noDepth || pdzE32 >= fbZ[ridxE32] {
+          fb[ridxE32] = cLo5 + rowSlope5 * dtE32
+          fbZ[ridxE32] = if noDepth then ZBACK else pdzE32
+        }
+      }
+      let tjE33 = pcol5 + 33.0
+      if tjE33 <= pcurR5 {
+        let ridxE33 = (((prow + 4.0) * SWF + tjE33) | 0)
+        let dtE33 = tjE33 - xL5
+        let pdzE33 = zLo5 + zSlope5 * dtE33
+        if noDepth || pdzE33 >= fbZ[ridxE33] {
+          fb[ridxE33] = cLo5 + rowSlope5 * dtE33
+          fbZ[ridxE33] = if noDepth then ZBACK else pdzE33
+        }
+      }
+      let tjE34 = pcol5 + 34.0
+      if tjE34 <= pcurR5 {
+        let ridxE34 = (((prow + 4.0) * SWF + tjE34) | 0)
+        let dtE34 = tjE34 - xL5
+        let pdzE34 = zLo5 + zSlope5 * dtE34
+        if noDepth || pdzE34 >= fbZ[ridxE34] {
+          fb[ridxE34] = cLo5 + rowSlope5 * dtE34
+          fbZ[ridxE34] = if noDepth then ZBACK else pdzE34
+        }
+      }
+      let tjE35 = pcol5 + 35.0
+      if tjE35 <= pcurR5 {
+        let ridxE35 = (((prow + 4.0) * SWF + tjE35) | 0)
+        let dtE35 = tjE35 - xL5
+        let pdzE35 = zLo5 + zSlope5 * dtE35
+        if noDepth || pdzE35 >= fbZ[ridxE35] {
+          fb[ridxE35] = cLo5 + rowSlope5 * dtE35
+          fbZ[ridxE35] = if noDepth then ZBACK else pdzE35
+        }
+      }
+      let tjE36 = pcol5 + 36.0
+      if tjE36 <= pcurR5 {
+        let ridxE36 = (((prow + 4.0) * SWF + tjE36) | 0)
+        let dtE36 = tjE36 - xL5
+        let pdzE36 = zLo5 + zSlope5 * dtE36
+        if noDepth || pdzE36 >= fbZ[ridxE36] {
+          fb[ridxE36] = cLo5 + rowSlope5 * dtE36
+          fbZ[ridxE36] = if noDepth then ZBACK else pdzE36
+        }
+      }
+      let tjE37 = pcol5 + 37.0
+      if tjE37 <= pcurR5 {
+        let ridxE37 = (((prow + 4.0) * SWF + tjE37) | 0)
+        let dtE37 = tjE37 - xL5
+        let pdzE37 = zLo5 + zSlope5 * dtE37
+        if noDepth || pdzE37 >= fbZ[ridxE37] {
+          fb[ridxE37] = cLo5 + rowSlope5 * dtE37
+          fbZ[ridxE37] = if noDepth then ZBACK else pdzE37
+        }
+      }
+      let tjE38 = pcol5 + 38.0
+      if tjE38 <= pcurR5 {
+        let ridxE38 = (((prow + 4.0) * SWF + tjE38) | 0)
+        let dtE38 = tjE38 - xL5
+        let pdzE38 = zLo5 + zSlope5 * dtE38
+        if noDepth || pdzE38 >= fbZ[ridxE38] {
+          fb[ridxE38] = cLo5 + rowSlope5 * dtE38
+          fbZ[ridxE38] = if noDepth then ZBACK else pdzE38
+        }
+      }
+      let tjE39 = pcol5 + 39.0
+      if tjE39 <= pcurR5 {
+        let ridxE39 = (((prow + 4.0) * SWF + tjE39) | 0)
+        let dtE39 = tjE39 - xL5
+        let pdzE39 = zLo5 + zSlope5 * dtE39
+        if noDepth || pdzE39 >= fbZ[ridxE39] {
+          fb[ridxE39] = cLo5 + rowSlope5 * dtE39
+          fbZ[ridxE39] = if noDepth then ZBACK else pdzE39
+        }
+      }
+      let tjE40 = pcol5 + 40.0
+      if tjE40 <= pcurR5 {
+        let ridxE40 = (((prow + 4.0) * SWF + tjE40) | 0)
+        let dtE40 = tjE40 - xL5
+        let pdzE40 = zLo5 + zSlope5 * dtE40
+        if noDepth || pdzE40 >= fbZ[ridxE40] {
+          fb[ridxE40] = cLo5 + rowSlope5 * dtE40
+          fbZ[ridxE40] = if noDepth then ZBACK else pdzE40
+        }
+      }
+      let tjE41 = pcol5 + 41.0
+      if tjE41 <= pcurR5 {
+        let ridxE41 = (((prow + 4.0) * SWF + tjE41) | 0)
+        let dtE41 = tjE41 - xL5
+        let pdzE41 = zLo5 + zSlope5 * dtE41
+        if noDepth || pdzE41 >= fbZ[ridxE41] {
+          fb[ridxE41] = cLo5 + rowSlope5 * dtE41
+          fbZ[ridxE41] = if noDepth then ZBACK else pdzE41
+        }
+      }
+      let tjE42 = pcol5 + 42.0
+      if tjE42 <= pcurR5 {
+        let ridxE42 = (((prow + 4.0) * SWF + tjE42) | 0)
+        let dtE42 = tjE42 - xL5
+        let pdzE42 = zLo5 + zSlope5 * dtE42
+        if noDepth || pdzE42 >= fbZ[ridxE42] {
+          fb[ridxE42] = cLo5 + rowSlope5 * dtE42
+          fbZ[ridxE42] = if noDepth then ZBACK else pdzE42
+        }
+      }
+      let tjE43 = pcol5 + 43.0
+      if tjE43 <= pcurR5 {
+        let ridxE43 = (((prow + 4.0) * SWF + tjE43) | 0)
+        let dtE43 = tjE43 - xL5
+        let pdzE43 = zLo5 + zSlope5 * dtE43
+        if noDepth || pdzE43 >= fbZ[ridxE43] {
+          fb[ridxE43] = cLo5 + rowSlope5 * dtE43
+          fbZ[ridxE43] = if noDepth then ZBACK else pdzE43
+        }
+      }
+      let tjE44 = pcol5 + 44.0
+      if tjE44 <= pcurR5 {
+        let ridxE44 = (((prow + 4.0) * SWF + tjE44) | 0)
+        let dtE44 = tjE44 - xL5
+        let pdzE44 = zLo5 + zSlope5 * dtE44
+        if noDepth || pdzE44 >= fbZ[ridxE44] {
+          fb[ridxE44] = cLo5 + rowSlope5 * dtE44
+          fbZ[ridxE44] = if noDepth then ZBACK else pdzE44
+        }
+      }
+      let tjE45 = pcol5 + 45.0
+      if tjE45 <= pcurR5 {
+        let ridxE45 = (((prow + 4.0) * SWF + tjE45) | 0)
+        let dtE45 = tjE45 - xL5
+        let pdzE45 = zLo5 + zSlope5 * dtE45
+        if noDepth || pdzE45 >= fbZ[ridxE45] {
+          fb[ridxE45] = cLo5 + rowSlope5 * dtE45
+          fbZ[ridxE45] = if noDepth then ZBACK else pdzE45
+        }
+      }
+      let tjE46 = pcol5 + 46.0
+      if tjE46 <= pcurR5 {
+        let ridxE46 = (((prow + 4.0) * SWF + tjE46) | 0)
+        let dtE46 = tjE46 - xL5
+        let pdzE46 = zLo5 + zSlope5 * dtE46
+        if noDepth || pdzE46 >= fbZ[ridxE46] {
+          fb[ridxE46] = cLo5 + rowSlope5 * dtE46
+          fbZ[ridxE46] = if noDepth then ZBACK else pdzE46
+        }
+      }
+      let tjE47 = pcol5 + 47.0
+      if tjE47 <= pcurR5 {
+        let ridxE47 = (((prow + 4.0) * SWF + tjE47) | 0)
+        let dtE47 = tjE47 - xL5
+        let pdzE47 = zLo5 + zSlope5 * dtE47
+        if noDepth || pdzE47 >= fbZ[ridxE47] {
+          fb[ridxE47] = cLo5 + rowSlope5 * dtE47
+          fbZ[ridxE47] = if noDepth then ZBACK else pdzE47
+        }
+      }
+      let tjE48 = pcol5 + 48.0
+      if tjE48 <= pcurR5 {
+        let ridxE48 = (((prow + 4.0) * SWF + tjE48) | 0)
+        let dtE48 = tjE48 - xL5
+        let pdzE48 = zLo5 + zSlope5 * dtE48
+        if noDepth || pdzE48 >= fbZ[ridxE48] {
+          fb[ridxE48] = cLo5 + rowSlope5 * dtE48
+          fbZ[ridxE48] = if noDepth then ZBACK else pdzE48
+        }
+      }
+      let tjE49 = pcol5 + 49.0
+      if tjE49 <= pcurR5 {
+        let ridxE49 = (((prow + 4.0) * SWF + tjE49) | 0)
+        let dtE49 = tjE49 - xL5
+        let pdzE49 = zLo5 + zSlope5 * dtE49
+        if noDepth || pdzE49 >= fbZ[ridxE49] {
+          fb[ridxE49] = cLo5 + rowSlope5 * dtE49
+          fbZ[ridxE49] = if noDepth then ZBACK else pdzE49
+        }
+      }
+      let tjE50 = pcol5 + 50.0
+      if tjE50 <= pcurR5 {
+        let ridxE50 = (((prow + 4.0) * SWF + tjE50) | 0)
+        let dtE50 = tjE50 - xL5
+        let pdzE50 = zLo5 + zSlope5 * dtE50
+        if noDepth || pdzE50 >= fbZ[ridxE50] {
+          fb[ridxE50] = cLo5 + rowSlope5 * dtE50
+          fbZ[ridxE50] = if noDepth then ZBACK else pdzE50
+        }
+      }
+      let tjE51 = pcol5 + 51.0
+      if tjE51 <= pcurR5 {
+        let ridxE51 = (((prow + 4.0) * SWF + tjE51) | 0)
+        let dtE51 = tjE51 - xL5
+        let pdzE51 = zLo5 + zSlope5 * dtE51
+        if noDepth || pdzE51 >= fbZ[ridxE51] {
+          fb[ridxE51] = cLo5 + rowSlope5 * dtE51
+          fbZ[ridxE51] = if noDepth then ZBACK else pdzE51
+        }
+      }
+      let tjE52 = pcol5 + 52.0
+      if tjE52 <= pcurR5 {
+        let ridxE52 = (((prow + 4.0) * SWF + tjE52) | 0)
+        let dtE52 = tjE52 - xL5
+        let pdzE52 = zLo5 + zSlope5 * dtE52
+        if noDepth || pdzE52 >= fbZ[ridxE52] {
+          fb[ridxE52] = cLo5 + rowSlope5 * dtE52
+          fbZ[ridxE52] = if noDepth then ZBACK else pdzE52
+        }
+      }
+      let tjE53 = pcol5 + 53.0
+      if tjE53 <= pcurR5 {
+        let ridxE53 = (((prow + 4.0) * SWF + tjE53) | 0)
+        let dtE53 = tjE53 - xL5
+        let pdzE53 = zLo5 + zSlope5 * dtE53
+        if noDepth || pdzE53 >= fbZ[ridxE53] {
+          fb[ridxE53] = cLo5 + rowSlope5 * dtE53
+          fbZ[ridxE53] = if noDepth then ZBACK else pdzE53
+        }
+      }
+      let tjE54 = pcol5 + 54.0
+      if tjE54 <= pcurR5 {
+        let ridxE54 = (((prow + 4.0) * SWF + tjE54) | 0)
+        let dtE54 = tjE54 - xL5
+        let pdzE54 = zLo5 + zSlope5 * dtE54
+        if noDepth || pdzE54 >= fbZ[ridxE54] {
+          fb[ridxE54] = cLo5 + rowSlope5 * dtE54
+          fbZ[ridxE54] = if noDepth then ZBACK else pdzE54
+        }
+      }
+      let tjE55 = pcol5 + 55.0
+      if tjE55 <= pcurR5 {
+        let ridxE55 = (((prow + 4.0) * SWF + tjE55) | 0)
+        let dtE55 = tjE55 - xL5
+        let pdzE55 = zLo5 + zSlope5 * dtE55
+        if noDepth || pdzE55 >= fbZ[ridxE55] {
+          fb[ridxE55] = cLo5 + rowSlope5 * dtE55
+          fbZ[ridxE55] = if noDepth then ZBACK else pdzE55
+        }
+      }
+      let tjE56 = pcol5 + 56.0
+      if tjE56 <= pcurR5 {
+        let ridxE56 = (((prow + 4.0) * SWF + tjE56) | 0)
+        let dtE56 = tjE56 - xL5
+        let pdzE56 = zLo5 + zSlope5 * dtE56
+        if noDepth || pdzE56 >= fbZ[ridxE56] {
+          fb[ridxE56] = cLo5 + rowSlope5 * dtE56
+          fbZ[ridxE56] = if noDepth then ZBACK else pdzE56
+        }
+      }
+      let tjE57 = pcol5 + 57.0
+      if tjE57 <= pcurR5 {
+        let ridxE57 = (((prow + 4.0) * SWF + tjE57) | 0)
+        let dtE57 = tjE57 - xL5
+        let pdzE57 = zLo5 + zSlope5 * dtE57
+        if noDepth || pdzE57 >= fbZ[ridxE57] {
+          fb[ridxE57] = cLo5 + rowSlope5 * dtE57
+          fbZ[ridxE57] = if noDepth then ZBACK else pdzE57
+        }
+      }
+      let tjE58 = pcol5 + 58.0
+      if tjE58 <= pcurR5 {
+        let ridxE58 = (((prow + 4.0) * SWF + tjE58) | 0)
+        let dtE58 = tjE58 - xL5
+        let pdzE58 = zLo5 + zSlope5 * dtE58
+        if noDepth || pdzE58 >= fbZ[ridxE58] {
+          fb[ridxE58] = cLo5 + rowSlope5 * dtE58
+          fbZ[ridxE58] = if noDepth then ZBACK else pdzE58
+        }
+      }
+      let tjE59 = pcol5 + 59.0
+      if tjE59 <= pcurR5 {
+        let ridxE59 = (((prow + 4.0) * SWF + tjE59) | 0)
+        let dtE59 = tjE59 - xL5
+        let pdzE59 = zLo5 + zSlope5 * dtE59
+        if noDepth || pdzE59 >= fbZ[ridxE59] {
+          fb[ridxE59] = cLo5 + rowSlope5 * dtE59
+          fbZ[ridxE59] = if noDepth then ZBACK else pdzE59
+        }
+      }
+      let tjE60 = pcol5 + 60.0
+      if tjE60 <= pcurR5 {
+        let ridxE60 = (((prow + 4.0) * SWF + tjE60) | 0)
+        let dtE60 = tjE60 - xL5
+        let pdzE60 = zLo5 + zSlope5 * dtE60
+        if noDepth || pdzE60 >= fbZ[ridxE60] {
+          fb[ridxE60] = cLo5 + rowSlope5 * dtE60
+          fbZ[ridxE60] = if noDepth then ZBACK else pdzE60
+        }
+      }
+      let tjE61 = pcol5 + 61.0
+      if tjE61 <= pcurR5 {
+        let ridxE61 = (((prow + 4.0) * SWF + tjE61) | 0)
+        let dtE61 = tjE61 - xL5
+        let pdzE61 = zLo5 + zSlope5 * dtE61
+        if noDepth || pdzE61 >= fbZ[ridxE61] {
+          fb[ridxE61] = cLo5 + rowSlope5 * dtE61
+          fbZ[ridxE61] = if noDepth then ZBACK else pdzE61
+        }
+      }
+      let tjE62 = pcol5 + 62.0
+      if tjE62 <= pcurR5 {
+        let ridxE62 = (((prow + 4.0) * SWF + tjE62) | 0)
+        let dtE62 = tjE62 - xL5
+        let pdzE62 = zLo5 + zSlope5 * dtE62
+        if noDepth || pdzE62 >= fbZ[ridxE62] {
+          fb[ridxE62] = cLo5 + rowSlope5 * dtE62
+          fbZ[ridxE62] = if noDepth then ZBACK else pdzE62
+        }
+      }
+      let tjE63 = pcol5 + 63.0
+      if tjE63 <= pcurR5 {
+        let ridxE63 = (((prow + 4.0) * SWF + tjE63) | 0)
+        let dtE63 = tjE63 - xL5
+        let pdzE63 = zLo5 + zSlope5 * dtE63
+        if noDepth || pdzE63 >= fbZ[ridxE63] {
+          fb[ridxE63] = cLo5 + rowSlope5 * dtE63
+          fbZ[ridxE63] = if noDepth then ZBACK else pdzE63
+        }
+      }
+      pcol5 = pcol5 + 64.0
+      let tjF0 = pcol6 + 0.0
+      if tjF0 <= pcurR6 {
+        let ridxF0 = (((prow + 5.0) * SWF + tjF0) | 0)
+        let dtF0 = tjF0 - xL6
+        let pdzF0 = zLo6 + zSlope6 * dtF0
+        if noDepth || pdzF0 >= fbZ[ridxF0] {
+          fb[ridxF0] = cLo6 + rowSlope6 * dtF0
+          fbZ[ridxF0] = if noDepth then ZBACK else pdzF0
+        }
+      }
+      let tjF1 = pcol6 + 1.0
+      if tjF1 <= pcurR6 {
+        let ridxF1 = (((prow + 5.0) * SWF + tjF1) | 0)
+        let dtF1 = tjF1 - xL6
+        let pdzF1 = zLo6 + zSlope6 * dtF1
+        if noDepth || pdzF1 >= fbZ[ridxF1] {
+          fb[ridxF1] = cLo6 + rowSlope6 * dtF1
+          fbZ[ridxF1] = if noDepth then ZBACK else pdzF1
+        }
+      }
+      let tjF2 = pcol6 + 2.0
+      if tjF2 <= pcurR6 {
+        let ridxF2 = (((prow + 5.0) * SWF + tjF2) | 0)
+        let dtF2 = tjF2 - xL6
+        let pdzF2 = zLo6 + zSlope6 * dtF2
+        if noDepth || pdzF2 >= fbZ[ridxF2] {
+          fb[ridxF2] = cLo6 + rowSlope6 * dtF2
+          fbZ[ridxF2] = if noDepth then ZBACK else pdzF2
+        }
+      }
+      let tjF3 = pcol6 + 3.0
+      if tjF3 <= pcurR6 {
+        let ridxF3 = (((prow + 5.0) * SWF + tjF3) | 0)
+        let dtF3 = tjF3 - xL6
+        let pdzF3 = zLo6 + zSlope6 * dtF3
+        if noDepth || pdzF3 >= fbZ[ridxF3] {
+          fb[ridxF3] = cLo6 + rowSlope6 * dtF3
+          fbZ[ridxF3] = if noDepth then ZBACK else pdzF3
+        }
+      }
+      let tjF4 = pcol6 + 4.0
+      if tjF4 <= pcurR6 {
+        let ridxF4 = (((prow + 5.0) * SWF + tjF4) | 0)
+        let dtF4 = tjF4 - xL6
+        let pdzF4 = zLo6 + zSlope6 * dtF4
+        if noDepth || pdzF4 >= fbZ[ridxF4] {
+          fb[ridxF4] = cLo6 + rowSlope6 * dtF4
+          fbZ[ridxF4] = if noDepth then ZBACK else pdzF4
+        }
+      }
+      let tjF5 = pcol6 + 5.0
+      if tjF5 <= pcurR6 {
+        let ridxF5 = (((prow + 5.0) * SWF + tjF5) | 0)
+        let dtF5 = tjF5 - xL6
+        let pdzF5 = zLo6 + zSlope6 * dtF5
+        if noDepth || pdzF5 >= fbZ[ridxF5] {
+          fb[ridxF5] = cLo6 + rowSlope6 * dtF5
+          fbZ[ridxF5] = if noDepth then ZBACK else pdzF5
+        }
+      }
+      let tjF6 = pcol6 + 6.0
+      if tjF6 <= pcurR6 {
+        let ridxF6 = (((prow + 5.0) * SWF + tjF6) | 0)
+        let dtF6 = tjF6 - xL6
+        let pdzF6 = zLo6 + zSlope6 * dtF6
+        if noDepth || pdzF6 >= fbZ[ridxF6] {
+          fb[ridxF6] = cLo6 + rowSlope6 * dtF6
+          fbZ[ridxF6] = if noDepth then ZBACK else pdzF6
+        }
+      }
+      let tjF7 = pcol6 + 7.0
+      if tjF7 <= pcurR6 {
+        let ridxF7 = (((prow + 5.0) * SWF + tjF7) | 0)
+        let dtF7 = tjF7 - xL6
+        let pdzF7 = zLo6 + zSlope6 * dtF7
+        if noDepth || pdzF7 >= fbZ[ridxF7] {
+          fb[ridxF7] = cLo6 + rowSlope6 * dtF7
+          fbZ[ridxF7] = if noDepth then ZBACK else pdzF7
+        }
+      }
+      let tjF8 = pcol6 + 8.0
+      if tjF8 <= pcurR6 {
+        let ridxF8 = (((prow + 5.0) * SWF + tjF8) | 0)
+        let dtF8 = tjF8 - xL6
+        let pdzF8 = zLo6 + zSlope6 * dtF8
+        if noDepth || pdzF8 >= fbZ[ridxF8] {
+          fb[ridxF8] = cLo6 + rowSlope6 * dtF8
+          fbZ[ridxF8] = if noDepth then ZBACK else pdzF8
+        }
+      }
+      let tjF9 = pcol6 + 9.0
+      if tjF9 <= pcurR6 {
+        let ridxF9 = (((prow + 5.0) * SWF + tjF9) | 0)
+        let dtF9 = tjF9 - xL6
+        let pdzF9 = zLo6 + zSlope6 * dtF9
+        if noDepth || pdzF9 >= fbZ[ridxF9] {
+          fb[ridxF9] = cLo6 + rowSlope6 * dtF9
+          fbZ[ridxF9] = if noDepth then ZBACK else pdzF9
+        }
+      }
+      let tjF10 = pcol6 + 10.0
+      if tjF10 <= pcurR6 {
+        let ridxF10 = (((prow + 5.0) * SWF + tjF10) | 0)
+        let dtF10 = tjF10 - xL6
+        let pdzF10 = zLo6 + zSlope6 * dtF10
+        if noDepth || pdzF10 >= fbZ[ridxF10] {
+          fb[ridxF10] = cLo6 + rowSlope6 * dtF10
+          fbZ[ridxF10] = if noDepth then ZBACK else pdzF10
+        }
+      }
+      let tjF11 = pcol6 + 11.0
+      if tjF11 <= pcurR6 {
+        let ridxF11 = (((prow + 5.0) * SWF + tjF11) | 0)
+        let dtF11 = tjF11 - xL6
+        let pdzF11 = zLo6 + zSlope6 * dtF11
+        if noDepth || pdzF11 >= fbZ[ridxF11] {
+          fb[ridxF11] = cLo6 + rowSlope6 * dtF11
+          fbZ[ridxF11] = if noDepth then ZBACK else pdzF11
+        }
+      }
+      let tjF12 = pcol6 + 12.0
+      if tjF12 <= pcurR6 {
+        let ridxF12 = (((prow + 5.0) * SWF + tjF12) | 0)
+        let dtF12 = tjF12 - xL6
+        let pdzF12 = zLo6 + zSlope6 * dtF12
+        if noDepth || pdzF12 >= fbZ[ridxF12] {
+          fb[ridxF12] = cLo6 + rowSlope6 * dtF12
+          fbZ[ridxF12] = if noDepth then ZBACK else pdzF12
+        }
+      }
+      let tjF13 = pcol6 + 13.0
+      if tjF13 <= pcurR6 {
+        let ridxF13 = (((prow + 5.0) * SWF + tjF13) | 0)
+        let dtF13 = tjF13 - xL6
+        let pdzF13 = zLo6 + zSlope6 * dtF13
+        if noDepth || pdzF13 >= fbZ[ridxF13] {
+          fb[ridxF13] = cLo6 + rowSlope6 * dtF13
+          fbZ[ridxF13] = if noDepth then ZBACK else pdzF13
+        }
+      }
+      let tjF14 = pcol6 + 14.0
+      if tjF14 <= pcurR6 {
+        let ridxF14 = (((prow + 5.0) * SWF + tjF14) | 0)
+        let dtF14 = tjF14 - xL6
+        let pdzF14 = zLo6 + zSlope6 * dtF14
+        if noDepth || pdzF14 >= fbZ[ridxF14] {
+          fb[ridxF14] = cLo6 + rowSlope6 * dtF14
+          fbZ[ridxF14] = if noDepth then ZBACK else pdzF14
+        }
+      }
+      let tjF15 = pcol6 + 15.0
+      if tjF15 <= pcurR6 {
+        let ridxF15 = (((prow + 5.0) * SWF + tjF15) | 0)
+        let dtF15 = tjF15 - xL6
+        let pdzF15 = zLo6 + zSlope6 * dtF15
+        if noDepth || pdzF15 >= fbZ[ridxF15] {
+          fb[ridxF15] = cLo6 + rowSlope6 * dtF15
+          fbZ[ridxF15] = if noDepth then ZBACK else pdzF15
+        }
+      }
+      let tjF16 = pcol6 + 16.0
+      if tjF16 <= pcurR6 {
+        let ridxF16 = (((prow + 5.0) * SWF + tjF16) | 0)
+        let dtF16 = tjF16 - xL6
+        let pdzF16 = zLo6 + zSlope6 * dtF16
+        if noDepth || pdzF16 >= fbZ[ridxF16] {
+          fb[ridxF16] = cLo6 + rowSlope6 * dtF16
+          fbZ[ridxF16] = if noDepth then ZBACK else pdzF16
+        }
+      }
+      let tjF17 = pcol6 + 17.0
+      if tjF17 <= pcurR6 {
+        let ridxF17 = (((prow + 5.0) * SWF + tjF17) | 0)
+        let dtF17 = tjF17 - xL6
+        let pdzF17 = zLo6 + zSlope6 * dtF17
+        if noDepth || pdzF17 >= fbZ[ridxF17] {
+          fb[ridxF17] = cLo6 + rowSlope6 * dtF17
+          fbZ[ridxF17] = if noDepth then ZBACK else pdzF17
+        }
+      }
+      let tjF18 = pcol6 + 18.0
+      if tjF18 <= pcurR6 {
+        let ridxF18 = (((prow + 5.0) * SWF + tjF18) | 0)
+        let dtF18 = tjF18 - xL6
+        let pdzF18 = zLo6 + zSlope6 * dtF18
+        if noDepth || pdzF18 >= fbZ[ridxF18] {
+          fb[ridxF18] = cLo6 + rowSlope6 * dtF18
+          fbZ[ridxF18] = if noDepth then ZBACK else pdzF18
+        }
+      }
+      let tjF19 = pcol6 + 19.0
+      if tjF19 <= pcurR6 {
+        let ridxF19 = (((prow + 5.0) * SWF + tjF19) | 0)
+        let dtF19 = tjF19 - xL6
+        let pdzF19 = zLo6 + zSlope6 * dtF19
+        if noDepth || pdzF19 >= fbZ[ridxF19] {
+          fb[ridxF19] = cLo6 + rowSlope6 * dtF19
+          fbZ[ridxF19] = if noDepth then ZBACK else pdzF19
+        }
+      }
+      let tjF20 = pcol6 + 20.0
+      if tjF20 <= pcurR6 {
+        let ridxF20 = (((prow + 5.0) * SWF + tjF20) | 0)
+        let dtF20 = tjF20 - xL6
+        let pdzF20 = zLo6 + zSlope6 * dtF20
+        if noDepth || pdzF20 >= fbZ[ridxF20] {
+          fb[ridxF20] = cLo6 + rowSlope6 * dtF20
+          fbZ[ridxF20] = if noDepth then ZBACK else pdzF20
+        }
+      }
+      let tjF21 = pcol6 + 21.0
+      if tjF21 <= pcurR6 {
+        let ridxF21 = (((prow + 5.0) * SWF + tjF21) | 0)
+        let dtF21 = tjF21 - xL6
+        let pdzF21 = zLo6 + zSlope6 * dtF21
+        if noDepth || pdzF21 >= fbZ[ridxF21] {
+          fb[ridxF21] = cLo6 + rowSlope6 * dtF21
+          fbZ[ridxF21] = if noDepth then ZBACK else pdzF21
+        }
+      }
+      let tjF22 = pcol6 + 22.0
+      if tjF22 <= pcurR6 {
+        let ridxF22 = (((prow + 5.0) * SWF + tjF22) | 0)
+        let dtF22 = tjF22 - xL6
+        let pdzF22 = zLo6 + zSlope6 * dtF22
+        if noDepth || pdzF22 >= fbZ[ridxF22] {
+          fb[ridxF22] = cLo6 + rowSlope6 * dtF22
+          fbZ[ridxF22] = if noDepth then ZBACK else pdzF22
+        }
+      }
+      let tjF23 = pcol6 + 23.0
+      if tjF23 <= pcurR6 {
+        let ridxF23 = (((prow + 5.0) * SWF + tjF23) | 0)
+        let dtF23 = tjF23 - xL6
+        let pdzF23 = zLo6 + zSlope6 * dtF23
+        if noDepth || pdzF23 >= fbZ[ridxF23] {
+          fb[ridxF23] = cLo6 + rowSlope6 * dtF23
+          fbZ[ridxF23] = if noDepth then ZBACK else pdzF23
+        }
+      }
+      let tjF24 = pcol6 + 24.0
+      if tjF24 <= pcurR6 {
+        let ridxF24 = (((prow + 5.0) * SWF + tjF24) | 0)
+        let dtF24 = tjF24 - xL6
+        let pdzF24 = zLo6 + zSlope6 * dtF24
+        if noDepth || pdzF24 >= fbZ[ridxF24] {
+          fb[ridxF24] = cLo6 + rowSlope6 * dtF24
+          fbZ[ridxF24] = if noDepth then ZBACK else pdzF24
+        }
+      }
+      let tjF25 = pcol6 + 25.0
+      if tjF25 <= pcurR6 {
+        let ridxF25 = (((prow + 5.0) * SWF + tjF25) | 0)
+        let dtF25 = tjF25 - xL6
+        let pdzF25 = zLo6 + zSlope6 * dtF25
+        if noDepth || pdzF25 >= fbZ[ridxF25] {
+          fb[ridxF25] = cLo6 + rowSlope6 * dtF25
+          fbZ[ridxF25] = if noDepth then ZBACK else pdzF25
+        }
+      }
+      let tjF26 = pcol6 + 26.0
+      if tjF26 <= pcurR6 {
+        let ridxF26 = (((prow + 5.0) * SWF + tjF26) | 0)
+        let dtF26 = tjF26 - xL6
+        let pdzF26 = zLo6 + zSlope6 * dtF26
+        if noDepth || pdzF26 >= fbZ[ridxF26] {
+          fb[ridxF26] = cLo6 + rowSlope6 * dtF26
+          fbZ[ridxF26] = if noDepth then ZBACK else pdzF26
+        }
+      }
+      let tjF27 = pcol6 + 27.0
+      if tjF27 <= pcurR6 {
+        let ridxF27 = (((prow + 5.0) * SWF + tjF27) | 0)
+        let dtF27 = tjF27 - xL6
+        let pdzF27 = zLo6 + zSlope6 * dtF27
+        if noDepth || pdzF27 >= fbZ[ridxF27] {
+          fb[ridxF27] = cLo6 + rowSlope6 * dtF27
+          fbZ[ridxF27] = if noDepth then ZBACK else pdzF27
+        }
+      }
+      let tjF28 = pcol6 + 28.0
+      if tjF28 <= pcurR6 {
+        let ridxF28 = (((prow + 5.0) * SWF + tjF28) | 0)
+        let dtF28 = tjF28 - xL6
+        let pdzF28 = zLo6 + zSlope6 * dtF28
+        if noDepth || pdzF28 >= fbZ[ridxF28] {
+          fb[ridxF28] = cLo6 + rowSlope6 * dtF28
+          fbZ[ridxF28] = if noDepth then ZBACK else pdzF28
+        }
+      }
+      let tjF29 = pcol6 + 29.0
+      if tjF29 <= pcurR6 {
+        let ridxF29 = (((prow + 5.0) * SWF + tjF29) | 0)
+        let dtF29 = tjF29 - xL6
+        let pdzF29 = zLo6 + zSlope6 * dtF29
+        if noDepth || pdzF29 >= fbZ[ridxF29] {
+          fb[ridxF29] = cLo6 + rowSlope6 * dtF29
+          fbZ[ridxF29] = if noDepth then ZBACK else pdzF29
+        }
+      }
+      let tjF30 = pcol6 + 30.0
+      if tjF30 <= pcurR6 {
+        let ridxF30 = (((prow + 5.0) * SWF + tjF30) | 0)
+        let dtF30 = tjF30 - xL6
+        let pdzF30 = zLo6 + zSlope6 * dtF30
+        if noDepth || pdzF30 >= fbZ[ridxF30] {
+          fb[ridxF30] = cLo6 + rowSlope6 * dtF30
+          fbZ[ridxF30] = if noDepth then ZBACK else pdzF30
+        }
+      }
+      let tjF31 = pcol6 + 31.0
+      if tjF31 <= pcurR6 {
+        let ridxF31 = (((prow + 5.0) * SWF + tjF31) | 0)
+        let dtF31 = tjF31 - xL6
+        let pdzF31 = zLo6 + zSlope6 * dtF31
+        if noDepth || pdzF31 >= fbZ[ridxF31] {
+          fb[ridxF31] = cLo6 + rowSlope6 * dtF31
+          fbZ[ridxF31] = if noDepth then ZBACK else pdzF31
+        }
+      }
+      let tjF32 = pcol6 + 32.0
+      if tjF32 <= pcurR6 {
+        let ridxF32 = (((prow + 5.0) * SWF + tjF32) | 0)
+        let dtF32 = tjF32 - xL6
+        let pdzF32 = zLo6 + zSlope6 * dtF32
+        if noDepth || pdzF32 >= fbZ[ridxF32] {
+          fb[ridxF32] = cLo6 + rowSlope6 * dtF32
+          fbZ[ridxF32] = if noDepth then ZBACK else pdzF32
+        }
+      }
+      let tjF33 = pcol6 + 33.0
+      if tjF33 <= pcurR6 {
+        let ridxF33 = (((prow + 5.0) * SWF + tjF33) | 0)
+        let dtF33 = tjF33 - xL6
+        let pdzF33 = zLo6 + zSlope6 * dtF33
+        if noDepth || pdzF33 >= fbZ[ridxF33] {
+          fb[ridxF33] = cLo6 + rowSlope6 * dtF33
+          fbZ[ridxF33] = if noDepth then ZBACK else pdzF33
+        }
+      }
+      let tjF34 = pcol6 + 34.0
+      if tjF34 <= pcurR6 {
+        let ridxF34 = (((prow + 5.0) * SWF + tjF34) | 0)
+        let dtF34 = tjF34 - xL6
+        let pdzF34 = zLo6 + zSlope6 * dtF34
+        if noDepth || pdzF34 >= fbZ[ridxF34] {
+          fb[ridxF34] = cLo6 + rowSlope6 * dtF34
+          fbZ[ridxF34] = if noDepth then ZBACK else pdzF34
+        }
+      }
+      let tjF35 = pcol6 + 35.0
+      if tjF35 <= pcurR6 {
+        let ridxF35 = (((prow + 5.0) * SWF + tjF35) | 0)
+        let dtF35 = tjF35 - xL6
+        let pdzF35 = zLo6 + zSlope6 * dtF35
+        if noDepth || pdzF35 >= fbZ[ridxF35] {
+          fb[ridxF35] = cLo6 + rowSlope6 * dtF35
+          fbZ[ridxF35] = if noDepth then ZBACK else pdzF35
+        }
+      }
+      let tjF36 = pcol6 + 36.0
+      if tjF36 <= pcurR6 {
+        let ridxF36 = (((prow + 5.0) * SWF + tjF36) | 0)
+        let dtF36 = tjF36 - xL6
+        let pdzF36 = zLo6 + zSlope6 * dtF36
+        if noDepth || pdzF36 >= fbZ[ridxF36] {
+          fb[ridxF36] = cLo6 + rowSlope6 * dtF36
+          fbZ[ridxF36] = if noDepth then ZBACK else pdzF36
+        }
+      }
+      let tjF37 = pcol6 + 37.0
+      if tjF37 <= pcurR6 {
+        let ridxF37 = (((prow + 5.0) * SWF + tjF37) | 0)
+        let dtF37 = tjF37 - xL6
+        let pdzF37 = zLo6 + zSlope6 * dtF37
+        if noDepth || pdzF37 >= fbZ[ridxF37] {
+          fb[ridxF37] = cLo6 + rowSlope6 * dtF37
+          fbZ[ridxF37] = if noDepth then ZBACK else pdzF37
+        }
+      }
+      let tjF38 = pcol6 + 38.0
+      if tjF38 <= pcurR6 {
+        let ridxF38 = (((prow + 5.0) * SWF + tjF38) | 0)
+        let dtF38 = tjF38 - xL6
+        let pdzF38 = zLo6 + zSlope6 * dtF38
+        if noDepth || pdzF38 >= fbZ[ridxF38] {
+          fb[ridxF38] = cLo6 + rowSlope6 * dtF38
+          fbZ[ridxF38] = if noDepth then ZBACK else pdzF38
+        }
+      }
+      let tjF39 = pcol6 + 39.0
+      if tjF39 <= pcurR6 {
+        let ridxF39 = (((prow + 5.0) * SWF + tjF39) | 0)
+        let dtF39 = tjF39 - xL6
+        let pdzF39 = zLo6 + zSlope6 * dtF39
+        if noDepth || pdzF39 >= fbZ[ridxF39] {
+          fb[ridxF39] = cLo6 + rowSlope6 * dtF39
+          fbZ[ridxF39] = if noDepth then ZBACK else pdzF39
+        }
+      }
+      let tjF40 = pcol6 + 40.0
+      if tjF40 <= pcurR6 {
+        let ridxF40 = (((prow + 5.0) * SWF + tjF40) | 0)
+        let dtF40 = tjF40 - xL6
+        let pdzF40 = zLo6 + zSlope6 * dtF40
+        if noDepth || pdzF40 >= fbZ[ridxF40] {
+          fb[ridxF40] = cLo6 + rowSlope6 * dtF40
+          fbZ[ridxF40] = if noDepth then ZBACK else pdzF40
+        }
+      }
+      let tjF41 = pcol6 + 41.0
+      if tjF41 <= pcurR6 {
+        let ridxF41 = (((prow + 5.0) * SWF + tjF41) | 0)
+        let dtF41 = tjF41 - xL6
+        let pdzF41 = zLo6 + zSlope6 * dtF41
+        if noDepth || pdzF41 >= fbZ[ridxF41] {
+          fb[ridxF41] = cLo6 + rowSlope6 * dtF41
+          fbZ[ridxF41] = if noDepth then ZBACK else pdzF41
+        }
+      }
+      let tjF42 = pcol6 + 42.0
+      if tjF42 <= pcurR6 {
+        let ridxF42 = (((prow + 5.0) * SWF + tjF42) | 0)
+        let dtF42 = tjF42 - xL6
+        let pdzF42 = zLo6 + zSlope6 * dtF42
+        if noDepth || pdzF42 >= fbZ[ridxF42] {
+          fb[ridxF42] = cLo6 + rowSlope6 * dtF42
+          fbZ[ridxF42] = if noDepth then ZBACK else pdzF42
+        }
+      }
+      let tjF43 = pcol6 + 43.0
+      if tjF43 <= pcurR6 {
+        let ridxF43 = (((prow + 5.0) * SWF + tjF43) | 0)
+        let dtF43 = tjF43 - xL6
+        let pdzF43 = zLo6 + zSlope6 * dtF43
+        if noDepth || pdzF43 >= fbZ[ridxF43] {
+          fb[ridxF43] = cLo6 + rowSlope6 * dtF43
+          fbZ[ridxF43] = if noDepth then ZBACK else pdzF43
+        }
+      }
+      let tjF44 = pcol6 + 44.0
+      if tjF44 <= pcurR6 {
+        let ridxF44 = (((prow + 5.0) * SWF + tjF44) | 0)
+        let dtF44 = tjF44 - xL6
+        let pdzF44 = zLo6 + zSlope6 * dtF44
+        if noDepth || pdzF44 >= fbZ[ridxF44] {
+          fb[ridxF44] = cLo6 + rowSlope6 * dtF44
+          fbZ[ridxF44] = if noDepth then ZBACK else pdzF44
+        }
+      }
+      let tjF45 = pcol6 + 45.0
+      if tjF45 <= pcurR6 {
+        let ridxF45 = (((prow + 5.0) * SWF + tjF45) | 0)
+        let dtF45 = tjF45 - xL6
+        let pdzF45 = zLo6 + zSlope6 * dtF45
+        if noDepth || pdzF45 >= fbZ[ridxF45] {
+          fb[ridxF45] = cLo6 + rowSlope6 * dtF45
+          fbZ[ridxF45] = if noDepth then ZBACK else pdzF45
+        }
+      }
+      let tjF46 = pcol6 + 46.0
+      if tjF46 <= pcurR6 {
+        let ridxF46 = (((prow + 5.0) * SWF + tjF46) | 0)
+        let dtF46 = tjF46 - xL6
+        let pdzF46 = zLo6 + zSlope6 * dtF46
+        if noDepth || pdzF46 >= fbZ[ridxF46] {
+          fb[ridxF46] = cLo6 + rowSlope6 * dtF46
+          fbZ[ridxF46] = if noDepth then ZBACK else pdzF46
+        }
+      }
+      let tjF47 = pcol6 + 47.0
+      if tjF47 <= pcurR6 {
+        let ridxF47 = (((prow + 5.0) * SWF + tjF47) | 0)
+        let dtF47 = tjF47 - xL6
+        let pdzF47 = zLo6 + zSlope6 * dtF47
+        if noDepth || pdzF47 >= fbZ[ridxF47] {
+          fb[ridxF47] = cLo6 + rowSlope6 * dtF47
+          fbZ[ridxF47] = if noDepth then ZBACK else pdzF47
+        }
+      }
+      let tjF48 = pcol6 + 48.0
+      if tjF48 <= pcurR6 {
+        let ridxF48 = (((prow + 5.0) * SWF + tjF48) | 0)
+        let dtF48 = tjF48 - xL6
+        let pdzF48 = zLo6 + zSlope6 * dtF48
+        if noDepth || pdzF48 >= fbZ[ridxF48] {
+          fb[ridxF48] = cLo6 + rowSlope6 * dtF48
+          fbZ[ridxF48] = if noDepth then ZBACK else pdzF48
+        }
+      }
+      let tjF49 = pcol6 + 49.0
+      if tjF49 <= pcurR6 {
+        let ridxF49 = (((prow + 5.0) * SWF + tjF49) | 0)
+        let dtF49 = tjF49 - xL6
+        let pdzF49 = zLo6 + zSlope6 * dtF49
+        if noDepth || pdzF49 >= fbZ[ridxF49] {
+          fb[ridxF49] = cLo6 + rowSlope6 * dtF49
+          fbZ[ridxF49] = if noDepth then ZBACK else pdzF49
+        }
+      }
+      let tjF50 = pcol6 + 50.0
+      if tjF50 <= pcurR6 {
+        let ridxF50 = (((prow + 5.0) * SWF + tjF50) | 0)
+        let dtF50 = tjF50 - xL6
+        let pdzF50 = zLo6 + zSlope6 * dtF50
+        if noDepth || pdzF50 >= fbZ[ridxF50] {
+          fb[ridxF50] = cLo6 + rowSlope6 * dtF50
+          fbZ[ridxF50] = if noDepth then ZBACK else pdzF50
+        }
+      }
+      let tjF51 = pcol6 + 51.0
+      if tjF51 <= pcurR6 {
+        let ridxF51 = (((prow + 5.0) * SWF + tjF51) | 0)
+        let dtF51 = tjF51 - xL6
+        let pdzF51 = zLo6 + zSlope6 * dtF51
+        if noDepth || pdzF51 >= fbZ[ridxF51] {
+          fb[ridxF51] = cLo6 + rowSlope6 * dtF51
+          fbZ[ridxF51] = if noDepth then ZBACK else pdzF51
+        }
+      }
+      let tjF52 = pcol6 + 52.0
+      if tjF52 <= pcurR6 {
+        let ridxF52 = (((prow + 5.0) * SWF + tjF52) | 0)
+        let dtF52 = tjF52 - xL6
+        let pdzF52 = zLo6 + zSlope6 * dtF52
+        if noDepth || pdzF52 >= fbZ[ridxF52] {
+          fb[ridxF52] = cLo6 + rowSlope6 * dtF52
+          fbZ[ridxF52] = if noDepth then ZBACK else pdzF52
+        }
+      }
+      let tjF53 = pcol6 + 53.0
+      if tjF53 <= pcurR6 {
+        let ridxF53 = (((prow + 5.0) * SWF + tjF53) | 0)
+        let dtF53 = tjF53 - xL6
+        let pdzF53 = zLo6 + zSlope6 * dtF53
+        if noDepth || pdzF53 >= fbZ[ridxF53] {
+          fb[ridxF53] = cLo6 + rowSlope6 * dtF53
+          fbZ[ridxF53] = if noDepth then ZBACK else pdzF53
+        }
+      }
+      let tjF54 = pcol6 + 54.0
+      if tjF54 <= pcurR6 {
+        let ridxF54 = (((prow + 5.0) * SWF + tjF54) | 0)
+        let dtF54 = tjF54 - xL6
+        let pdzF54 = zLo6 + zSlope6 * dtF54
+        if noDepth || pdzF54 >= fbZ[ridxF54] {
+          fb[ridxF54] = cLo6 + rowSlope6 * dtF54
+          fbZ[ridxF54] = if noDepth then ZBACK else pdzF54
+        }
+      }
+      let tjF55 = pcol6 + 55.0
+      if tjF55 <= pcurR6 {
+        let ridxF55 = (((prow + 5.0) * SWF + tjF55) | 0)
+        let dtF55 = tjF55 - xL6
+        let pdzF55 = zLo6 + zSlope6 * dtF55
+        if noDepth || pdzF55 >= fbZ[ridxF55] {
+          fb[ridxF55] = cLo6 + rowSlope6 * dtF55
+          fbZ[ridxF55] = if noDepth then ZBACK else pdzF55
+        }
+      }
+      let tjF56 = pcol6 + 56.0
+      if tjF56 <= pcurR6 {
+        let ridxF56 = (((prow + 5.0) * SWF + tjF56) | 0)
+        let dtF56 = tjF56 - xL6
+        let pdzF56 = zLo6 + zSlope6 * dtF56
+        if noDepth || pdzF56 >= fbZ[ridxF56] {
+          fb[ridxF56] = cLo6 + rowSlope6 * dtF56
+          fbZ[ridxF56] = if noDepth then ZBACK else pdzF56
+        }
+      }
+      let tjF57 = pcol6 + 57.0
+      if tjF57 <= pcurR6 {
+        let ridxF57 = (((prow + 5.0) * SWF + tjF57) | 0)
+        let dtF57 = tjF57 - xL6
+        let pdzF57 = zLo6 + zSlope6 * dtF57
+        if noDepth || pdzF57 >= fbZ[ridxF57] {
+          fb[ridxF57] = cLo6 + rowSlope6 * dtF57
+          fbZ[ridxF57] = if noDepth then ZBACK else pdzF57
+        }
+      }
+      let tjF58 = pcol6 + 58.0
+      if tjF58 <= pcurR6 {
+        let ridxF58 = (((prow + 5.0) * SWF + tjF58) | 0)
+        let dtF58 = tjF58 - xL6
+        let pdzF58 = zLo6 + zSlope6 * dtF58
+        if noDepth || pdzF58 >= fbZ[ridxF58] {
+          fb[ridxF58] = cLo6 + rowSlope6 * dtF58
+          fbZ[ridxF58] = if noDepth then ZBACK else pdzF58
+        }
+      }
+      let tjF59 = pcol6 + 59.0
+      if tjF59 <= pcurR6 {
+        let ridxF59 = (((prow + 5.0) * SWF + tjF59) | 0)
+        let dtF59 = tjF59 - xL6
+        let pdzF59 = zLo6 + zSlope6 * dtF59
+        if noDepth || pdzF59 >= fbZ[ridxF59] {
+          fb[ridxF59] = cLo6 + rowSlope6 * dtF59
+          fbZ[ridxF59] = if noDepth then ZBACK else pdzF59
+        }
+      }
+      let tjF60 = pcol6 + 60.0
+      if tjF60 <= pcurR6 {
+        let ridxF60 = (((prow + 5.0) * SWF + tjF60) | 0)
+        let dtF60 = tjF60 - xL6
+        let pdzF60 = zLo6 + zSlope6 * dtF60
+        if noDepth || pdzF60 >= fbZ[ridxF60] {
+          fb[ridxF60] = cLo6 + rowSlope6 * dtF60
+          fbZ[ridxF60] = if noDepth then ZBACK else pdzF60
+        }
+      }
+      let tjF61 = pcol6 + 61.0
+      if tjF61 <= pcurR6 {
+        let ridxF61 = (((prow + 5.0) * SWF + tjF61) | 0)
+        let dtF61 = tjF61 - xL6
+        let pdzF61 = zLo6 + zSlope6 * dtF61
+        if noDepth || pdzF61 >= fbZ[ridxF61] {
+          fb[ridxF61] = cLo6 + rowSlope6 * dtF61
+          fbZ[ridxF61] = if noDepth then ZBACK else pdzF61
+        }
+      }
+      let tjF62 = pcol6 + 62.0
+      if tjF62 <= pcurR6 {
+        let ridxF62 = (((prow + 5.0) * SWF + tjF62) | 0)
+        let dtF62 = tjF62 - xL6
+        let pdzF62 = zLo6 + zSlope6 * dtF62
+        if noDepth || pdzF62 >= fbZ[ridxF62] {
+          fb[ridxF62] = cLo6 + rowSlope6 * dtF62
+          fbZ[ridxF62] = if noDepth then ZBACK else pdzF62
+        }
+      }
+      let tjF63 = pcol6 + 63.0
+      if tjF63 <= pcurR6 {
+        let ridxF63 = (((prow + 5.0) * SWF + tjF63) | 0)
+        let dtF63 = tjF63 - xL6
+        let pdzF63 = zLo6 + zSlope6 * dtF63
+        if noDepth || pdzF63 >= fbZ[ridxF63] {
+          fb[ridxF63] = cLo6 + rowSlope6 * dtF63
+          fbZ[ridxF63] = if noDepth then ZBACK else pdzF63
+        }
+      }
+      pcol6 = pcol6 + 64.0
+      let tjG0 = pcol7 + 0.0
+      if tjG0 <= pcurR7 {
+        let ridxG0 = (((prow + 6.0) * SWF + tjG0) | 0)
+        let dtG0 = tjG0 - xL7
+        let pdzG0 = zLo7 + zSlope7 * dtG0
+        if noDepth || pdzG0 >= fbZ[ridxG0] {
+          fb[ridxG0] = cLo7 + rowSlope7 * dtG0
+          fbZ[ridxG0] = if noDepth then ZBACK else pdzG0
+        }
+      }
+      let tjG1 = pcol7 + 1.0
+      if tjG1 <= pcurR7 {
+        let ridxG1 = (((prow + 6.0) * SWF + tjG1) | 0)
+        let dtG1 = tjG1 - xL7
+        let pdzG1 = zLo7 + zSlope7 * dtG1
+        if noDepth || pdzG1 >= fbZ[ridxG1] {
+          fb[ridxG1] = cLo7 + rowSlope7 * dtG1
+          fbZ[ridxG1] = if noDepth then ZBACK else pdzG1
+        }
+      }
+      let tjG2 = pcol7 + 2.0
+      if tjG2 <= pcurR7 {
+        let ridxG2 = (((prow + 6.0) * SWF + tjG2) | 0)
+        let dtG2 = tjG2 - xL7
+        let pdzG2 = zLo7 + zSlope7 * dtG2
+        if noDepth || pdzG2 >= fbZ[ridxG2] {
+          fb[ridxG2] = cLo7 + rowSlope7 * dtG2
+          fbZ[ridxG2] = if noDepth then ZBACK else pdzG2
+        }
+      }
+      let tjG3 = pcol7 + 3.0
+      if tjG3 <= pcurR7 {
+        let ridxG3 = (((prow + 6.0) * SWF + tjG3) | 0)
+        let dtG3 = tjG3 - xL7
+        let pdzG3 = zLo7 + zSlope7 * dtG3
+        if noDepth || pdzG3 >= fbZ[ridxG3] {
+          fb[ridxG3] = cLo7 + rowSlope7 * dtG3
+          fbZ[ridxG3] = if noDepth then ZBACK else pdzG3
+        }
+      }
+      let tjG4 = pcol7 + 4.0
+      if tjG4 <= pcurR7 {
+        let ridxG4 = (((prow + 6.0) * SWF + tjG4) | 0)
+        let dtG4 = tjG4 - xL7
+        let pdzG4 = zLo7 + zSlope7 * dtG4
+        if noDepth || pdzG4 >= fbZ[ridxG4] {
+          fb[ridxG4] = cLo7 + rowSlope7 * dtG4
+          fbZ[ridxG4] = if noDepth then ZBACK else pdzG4
+        }
+      }
+      let tjG5 = pcol7 + 5.0
+      if tjG5 <= pcurR7 {
+        let ridxG5 = (((prow + 6.0) * SWF + tjG5) | 0)
+        let dtG5 = tjG5 - xL7
+        let pdzG5 = zLo7 + zSlope7 * dtG5
+        if noDepth || pdzG5 >= fbZ[ridxG5] {
+          fb[ridxG5] = cLo7 + rowSlope7 * dtG5
+          fbZ[ridxG5] = if noDepth then ZBACK else pdzG5
+        }
+      }
+      let tjG6 = pcol7 + 6.0
+      if tjG6 <= pcurR7 {
+        let ridxG6 = (((prow + 6.0) * SWF + tjG6) | 0)
+        let dtG6 = tjG6 - xL7
+        let pdzG6 = zLo7 + zSlope7 * dtG6
+        if noDepth || pdzG6 >= fbZ[ridxG6] {
+          fb[ridxG6] = cLo7 + rowSlope7 * dtG6
+          fbZ[ridxG6] = if noDepth then ZBACK else pdzG6
+        }
+      }
+      let tjG7 = pcol7 + 7.0
+      if tjG7 <= pcurR7 {
+        let ridxG7 = (((prow + 6.0) * SWF + tjG7) | 0)
+        let dtG7 = tjG7 - xL7
+        let pdzG7 = zLo7 + zSlope7 * dtG7
+        if noDepth || pdzG7 >= fbZ[ridxG7] {
+          fb[ridxG7] = cLo7 + rowSlope7 * dtG7
+          fbZ[ridxG7] = if noDepth then ZBACK else pdzG7
+        }
+      }
+      let tjG8 = pcol7 + 8.0
+      if tjG8 <= pcurR7 {
+        let ridxG8 = (((prow + 6.0) * SWF + tjG8) | 0)
+        let dtG8 = tjG8 - xL7
+        let pdzG8 = zLo7 + zSlope7 * dtG8
+        if noDepth || pdzG8 >= fbZ[ridxG8] {
+          fb[ridxG8] = cLo7 + rowSlope7 * dtG8
+          fbZ[ridxG8] = if noDepth then ZBACK else pdzG8
+        }
+      }
+      let tjG9 = pcol7 + 9.0
+      if tjG9 <= pcurR7 {
+        let ridxG9 = (((prow + 6.0) * SWF + tjG9) | 0)
+        let dtG9 = tjG9 - xL7
+        let pdzG9 = zLo7 + zSlope7 * dtG9
+        if noDepth || pdzG9 >= fbZ[ridxG9] {
+          fb[ridxG9] = cLo7 + rowSlope7 * dtG9
+          fbZ[ridxG9] = if noDepth then ZBACK else pdzG9
+        }
+      }
+      let tjG10 = pcol7 + 10.0
+      if tjG10 <= pcurR7 {
+        let ridxG10 = (((prow + 6.0) * SWF + tjG10) | 0)
+        let dtG10 = tjG10 - xL7
+        let pdzG10 = zLo7 + zSlope7 * dtG10
+        if noDepth || pdzG10 >= fbZ[ridxG10] {
+          fb[ridxG10] = cLo7 + rowSlope7 * dtG10
+          fbZ[ridxG10] = if noDepth then ZBACK else pdzG10
+        }
+      }
+      let tjG11 = pcol7 + 11.0
+      if tjG11 <= pcurR7 {
+        let ridxG11 = (((prow + 6.0) * SWF + tjG11) | 0)
+        let dtG11 = tjG11 - xL7
+        let pdzG11 = zLo7 + zSlope7 * dtG11
+        if noDepth || pdzG11 >= fbZ[ridxG11] {
+          fb[ridxG11] = cLo7 + rowSlope7 * dtG11
+          fbZ[ridxG11] = if noDepth then ZBACK else pdzG11
+        }
+      }
+      let tjG12 = pcol7 + 12.0
+      if tjG12 <= pcurR7 {
+        let ridxG12 = (((prow + 6.0) * SWF + tjG12) | 0)
+        let dtG12 = tjG12 - xL7
+        let pdzG12 = zLo7 + zSlope7 * dtG12
+        if noDepth || pdzG12 >= fbZ[ridxG12] {
+          fb[ridxG12] = cLo7 + rowSlope7 * dtG12
+          fbZ[ridxG12] = if noDepth then ZBACK else pdzG12
+        }
+      }
+      let tjG13 = pcol7 + 13.0
+      if tjG13 <= pcurR7 {
+        let ridxG13 = (((prow + 6.0) * SWF + tjG13) | 0)
+        let dtG13 = tjG13 - xL7
+        let pdzG13 = zLo7 + zSlope7 * dtG13
+        if noDepth || pdzG13 >= fbZ[ridxG13] {
+          fb[ridxG13] = cLo7 + rowSlope7 * dtG13
+          fbZ[ridxG13] = if noDepth then ZBACK else pdzG13
+        }
+      }
+      let tjG14 = pcol7 + 14.0
+      if tjG14 <= pcurR7 {
+        let ridxG14 = (((prow + 6.0) * SWF + tjG14) | 0)
+        let dtG14 = tjG14 - xL7
+        let pdzG14 = zLo7 + zSlope7 * dtG14
+        if noDepth || pdzG14 >= fbZ[ridxG14] {
+          fb[ridxG14] = cLo7 + rowSlope7 * dtG14
+          fbZ[ridxG14] = if noDepth then ZBACK else pdzG14
+        }
+      }
+      let tjG15 = pcol7 + 15.0
+      if tjG15 <= pcurR7 {
+        let ridxG15 = (((prow + 6.0) * SWF + tjG15) | 0)
+        let dtG15 = tjG15 - xL7
+        let pdzG15 = zLo7 + zSlope7 * dtG15
+        if noDepth || pdzG15 >= fbZ[ridxG15] {
+          fb[ridxG15] = cLo7 + rowSlope7 * dtG15
+          fbZ[ridxG15] = if noDepth then ZBACK else pdzG15
+        }
+      }
+      let tjG16 = pcol7 + 16.0
+      if tjG16 <= pcurR7 {
+        let ridxG16 = (((prow + 6.0) * SWF + tjG16) | 0)
+        let dtG16 = tjG16 - xL7
+        let pdzG16 = zLo7 + zSlope7 * dtG16
+        if noDepth || pdzG16 >= fbZ[ridxG16] {
+          fb[ridxG16] = cLo7 + rowSlope7 * dtG16
+          fbZ[ridxG16] = if noDepth then ZBACK else pdzG16
+        }
+      }
+      let tjG17 = pcol7 + 17.0
+      if tjG17 <= pcurR7 {
+        let ridxG17 = (((prow + 6.0) * SWF + tjG17) | 0)
+        let dtG17 = tjG17 - xL7
+        let pdzG17 = zLo7 + zSlope7 * dtG17
+        if noDepth || pdzG17 >= fbZ[ridxG17] {
+          fb[ridxG17] = cLo7 + rowSlope7 * dtG17
+          fbZ[ridxG17] = if noDepth then ZBACK else pdzG17
+        }
+      }
+      let tjG18 = pcol7 + 18.0
+      if tjG18 <= pcurR7 {
+        let ridxG18 = (((prow + 6.0) * SWF + tjG18) | 0)
+        let dtG18 = tjG18 - xL7
+        let pdzG18 = zLo7 + zSlope7 * dtG18
+        if noDepth || pdzG18 >= fbZ[ridxG18] {
+          fb[ridxG18] = cLo7 + rowSlope7 * dtG18
+          fbZ[ridxG18] = if noDepth then ZBACK else pdzG18
+        }
+      }
+      let tjG19 = pcol7 + 19.0
+      if tjG19 <= pcurR7 {
+        let ridxG19 = (((prow + 6.0) * SWF + tjG19) | 0)
+        let dtG19 = tjG19 - xL7
+        let pdzG19 = zLo7 + zSlope7 * dtG19
+        if noDepth || pdzG19 >= fbZ[ridxG19] {
+          fb[ridxG19] = cLo7 + rowSlope7 * dtG19
+          fbZ[ridxG19] = if noDepth then ZBACK else pdzG19
+        }
+      }
+      let tjG20 = pcol7 + 20.0
+      if tjG20 <= pcurR7 {
+        let ridxG20 = (((prow + 6.0) * SWF + tjG20) | 0)
+        let dtG20 = tjG20 - xL7
+        let pdzG20 = zLo7 + zSlope7 * dtG20
+        if noDepth || pdzG20 >= fbZ[ridxG20] {
+          fb[ridxG20] = cLo7 + rowSlope7 * dtG20
+          fbZ[ridxG20] = if noDepth then ZBACK else pdzG20
+        }
+      }
+      let tjG21 = pcol7 + 21.0
+      if tjG21 <= pcurR7 {
+        let ridxG21 = (((prow + 6.0) * SWF + tjG21) | 0)
+        let dtG21 = tjG21 - xL7
+        let pdzG21 = zLo7 + zSlope7 * dtG21
+        if noDepth || pdzG21 >= fbZ[ridxG21] {
+          fb[ridxG21] = cLo7 + rowSlope7 * dtG21
+          fbZ[ridxG21] = if noDepth then ZBACK else pdzG21
+        }
+      }
+      let tjG22 = pcol7 + 22.0
+      if tjG22 <= pcurR7 {
+        let ridxG22 = (((prow + 6.0) * SWF + tjG22) | 0)
+        let dtG22 = tjG22 - xL7
+        let pdzG22 = zLo7 + zSlope7 * dtG22
+        if noDepth || pdzG22 >= fbZ[ridxG22] {
+          fb[ridxG22] = cLo7 + rowSlope7 * dtG22
+          fbZ[ridxG22] = if noDepth then ZBACK else pdzG22
+        }
+      }
+      let tjG23 = pcol7 + 23.0
+      if tjG23 <= pcurR7 {
+        let ridxG23 = (((prow + 6.0) * SWF + tjG23) | 0)
+        let dtG23 = tjG23 - xL7
+        let pdzG23 = zLo7 + zSlope7 * dtG23
+        if noDepth || pdzG23 >= fbZ[ridxG23] {
+          fb[ridxG23] = cLo7 + rowSlope7 * dtG23
+          fbZ[ridxG23] = if noDepth then ZBACK else pdzG23
+        }
+      }
+      let tjG24 = pcol7 + 24.0
+      if tjG24 <= pcurR7 {
+        let ridxG24 = (((prow + 6.0) * SWF + tjG24) | 0)
+        let dtG24 = tjG24 - xL7
+        let pdzG24 = zLo7 + zSlope7 * dtG24
+        if noDepth || pdzG24 >= fbZ[ridxG24] {
+          fb[ridxG24] = cLo7 + rowSlope7 * dtG24
+          fbZ[ridxG24] = if noDepth then ZBACK else pdzG24
+        }
+      }
+      let tjG25 = pcol7 + 25.0
+      if tjG25 <= pcurR7 {
+        let ridxG25 = (((prow + 6.0) * SWF + tjG25) | 0)
+        let dtG25 = tjG25 - xL7
+        let pdzG25 = zLo7 + zSlope7 * dtG25
+        if noDepth || pdzG25 >= fbZ[ridxG25] {
+          fb[ridxG25] = cLo7 + rowSlope7 * dtG25
+          fbZ[ridxG25] = if noDepth then ZBACK else pdzG25
+        }
+      }
+      let tjG26 = pcol7 + 26.0
+      if tjG26 <= pcurR7 {
+        let ridxG26 = (((prow + 6.0) * SWF + tjG26) | 0)
+        let dtG26 = tjG26 - xL7
+        let pdzG26 = zLo7 + zSlope7 * dtG26
+        if noDepth || pdzG26 >= fbZ[ridxG26] {
+          fb[ridxG26] = cLo7 + rowSlope7 * dtG26
+          fbZ[ridxG26] = if noDepth then ZBACK else pdzG26
+        }
+      }
+      let tjG27 = pcol7 + 27.0
+      if tjG27 <= pcurR7 {
+        let ridxG27 = (((prow + 6.0) * SWF + tjG27) | 0)
+        let dtG27 = tjG27 - xL7
+        let pdzG27 = zLo7 + zSlope7 * dtG27
+        if noDepth || pdzG27 >= fbZ[ridxG27] {
+          fb[ridxG27] = cLo7 + rowSlope7 * dtG27
+          fbZ[ridxG27] = if noDepth then ZBACK else pdzG27
+        }
+      }
+      let tjG28 = pcol7 + 28.0
+      if tjG28 <= pcurR7 {
+        let ridxG28 = (((prow + 6.0) * SWF + tjG28) | 0)
+        let dtG28 = tjG28 - xL7
+        let pdzG28 = zLo7 + zSlope7 * dtG28
+        if noDepth || pdzG28 >= fbZ[ridxG28] {
+          fb[ridxG28] = cLo7 + rowSlope7 * dtG28
+          fbZ[ridxG28] = if noDepth then ZBACK else pdzG28
+        }
+      }
+      let tjG29 = pcol7 + 29.0
+      if tjG29 <= pcurR7 {
+        let ridxG29 = (((prow + 6.0) * SWF + tjG29) | 0)
+        let dtG29 = tjG29 - xL7
+        let pdzG29 = zLo7 + zSlope7 * dtG29
+        if noDepth || pdzG29 >= fbZ[ridxG29] {
+          fb[ridxG29] = cLo7 + rowSlope7 * dtG29
+          fbZ[ridxG29] = if noDepth then ZBACK else pdzG29
+        }
+      }
+      let tjG30 = pcol7 + 30.0
+      if tjG30 <= pcurR7 {
+        let ridxG30 = (((prow + 6.0) * SWF + tjG30) | 0)
+        let dtG30 = tjG30 - xL7
+        let pdzG30 = zLo7 + zSlope7 * dtG30
+        if noDepth || pdzG30 >= fbZ[ridxG30] {
+          fb[ridxG30] = cLo7 + rowSlope7 * dtG30
+          fbZ[ridxG30] = if noDepth then ZBACK else pdzG30
+        }
+      }
+      let tjG31 = pcol7 + 31.0
+      if tjG31 <= pcurR7 {
+        let ridxG31 = (((prow + 6.0) * SWF + tjG31) | 0)
+        let dtG31 = tjG31 - xL7
+        let pdzG31 = zLo7 + zSlope7 * dtG31
+        if noDepth || pdzG31 >= fbZ[ridxG31] {
+          fb[ridxG31] = cLo7 + rowSlope7 * dtG31
+          fbZ[ridxG31] = if noDepth then ZBACK else pdzG31
+        }
+      }
+      let tjG32 = pcol7 + 32.0
+      if tjG32 <= pcurR7 {
+        let ridxG32 = (((prow + 6.0) * SWF + tjG32) | 0)
+        let dtG32 = tjG32 - xL7
+        let pdzG32 = zLo7 + zSlope7 * dtG32
+        if noDepth || pdzG32 >= fbZ[ridxG32] {
+          fb[ridxG32] = cLo7 + rowSlope7 * dtG32
+          fbZ[ridxG32] = if noDepth then ZBACK else pdzG32
+        }
+      }
+      let tjG33 = pcol7 + 33.0
+      if tjG33 <= pcurR7 {
+        let ridxG33 = (((prow + 6.0) * SWF + tjG33) | 0)
+        let dtG33 = tjG33 - xL7
+        let pdzG33 = zLo7 + zSlope7 * dtG33
+        if noDepth || pdzG33 >= fbZ[ridxG33] {
+          fb[ridxG33] = cLo7 + rowSlope7 * dtG33
+          fbZ[ridxG33] = if noDepth then ZBACK else pdzG33
+        }
+      }
+      let tjG34 = pcol7 + 34.0
+      if tjG34 <= pcurR7 {
+        let ridxG34 = (((prow + 6.0) * SWF + tjG34) | 0)
+        let dtG34 = tjG34 - xL7
+        let pdzG34 = zLo7 + zSlope7 * dtG34
+        if noDepth || pdzG34 >= fbZ[ridxG34] {
+          fb[ridxG34] = cLo7 + rowSlope7 * dtG34
+          fbZ[ridxG34] = if noDepth then ZBACK else pdzG34
+        }
+      }
+      let tjG35 = pcol7 + 35.0
+      if tjG35 <= pcurR7 {
+        let ridxG35 = (((prow + 6.0) * SWF + tjG35) | 0)
+        let dtG35 = tjG35 - xL7
+        let pdzG35 = zLo7 + zSlope7 * dtG35
+        if noDepth || pdzG35 >= fbZ[ridxG35] {
+          fb[ridxG35] = cLo7 + rowSlope7 * dtG35
+          fbZ[ridxG35] = if noDepth then ZBACK else pdzG35
+        }
+      }
+      let tjG36 = pcol7 + 36.0
+      if tjG36 <= pcurR7 {
+        let ridxG36 = (((prow + 6.0) * SWF + tjG36) | 0)
+        let dtG36 = tjG36 - xL7
+        let pdzG36 = zLo7 + zSlope7 * dtG36
+        if noDepth || pdzG36 >= fbZ[ridxG36] {
+          fb[ridxG36] = cLo7 + rowSlope7 * dtG36
+          fbZ[ridxG36] = if noDepth then ZBACK else pdzG36
+        }
+      }
+      let tjG37 = pcol7 + 37.0
+      if tjG37 <= pcurR7 {
+        let ridxG37 = (((prow + 6.0) * SWF + tjG37) | 0)
+        let dtG37 = tjG37 - xL7
+        let pdzG37 = zLo7 + zSlope7 * dtG37
+        if noDepth || pdzG37 >= fbZ[ridxG37] {
+          fb[ridxG37] = cLo7 + rowSlope7 * dtG37
+          fbZ[ridxG37] = if noDepth then ZBACK else pdzG37
+        }
+      }
+      let tjG38 = pcol7 + 38.0
+      if tjG38 <= pcurR7 {
+        let ridxG38 = (((prow + 6.0) * SWF + tjG38) | 0)
+        let dtG38 = tjG38 - xL7
+        let pdzG38 = zLo7 + zSlope7 * dtG38
+        if noDepth || pdzG38 >= fbZ[ridxG38] {
+          fb[ridxG38] = cLo7 + rowSlope7 * dtG38
+          fbZ[ridxG38] = if noDepth then ZBACK else pdzG38
+        }
+      }
+      let tjG39 = pcol7 + 39.0
+      if tjG39 <= pcurR7 {
+        let ridxG39 = (((prow + 6.0) * SWF + tjG39) | 0)
+        let dtG39 = tjG39 - xL7
+        let pdzG39 = zLo7 + zSlope7 * dtG39
+        if noDepth || pdzG39 >= fbZ[ridxG39] {
+          fb[ridxG39] = cLo7 + rowSlope7 * dtG39
+          fbZ[ridxG39] = if noDepth then ZBACK else pdzG39
+        }
+      }
+      let tjG40 = pcol7 + 40.0
+      if tjG40 <= pcurR7 {
+        let ridxG40 = (((prow + 6.0) * SWF + tjG40) | 0)
+        let dtG40 = tjG40 - xL7
+        let pdzG40 = zLo7 + zSlope7 * dtG40
+        if noDepth || pdzG40 >= fbZ[ridxG40] {
+          fb[ridxG40] = cLo7 + rowSlope7 * dtG40
+          fbZ[ridxG40] = if noDepth then ZBACK else pdzG40
+        }
+      }
+      let tjG41 = pcol7 + 41.0
+      if tjG41 <= pcurR7 {
+        let ridxG41 = (((prow + 6.0) * SWF + tjG41) | 0)
+        let dtG41 = tjG41 - xL7
+        let pdzG41 = zLo7 + zSlope7 * dtG41
+        if noDepth || pdzG41 >= fbZ[ridxG41] {
+          fb[ridxG41] = cLo7 + rowSlope7 * dtG41
+          fbZ[ridxG41] = if noDepth then ZBACK else pdzG41
+        }
+      }
+      let tjG42 = pcol7 + 42.0
+      if tjG42 <= pcurR7 {
+        let ridxG42 = (((prow + 6.0) * SWF + tjG42) | 0)
+        let dtG42 = tjG42 - xL7
+        let pdzG42 = zLo7 + zSlope7 * dtG42
+        if noDepth || pdzG42 >= fbZ[ridxG42] {
+          fb[ridxG42] = cLo7 + rowSlope7 * dtG42
+          fbZ[ridxG42] = if noDepth then ZBACK else pdzG42
+        }
+      }
+      let tjG43 = pcol7 + 43.0
+      if tjG43 <= pcurR7 {
+        let ridxG43 = (((prow + 6.0) * SWF + tjG43) | 0)
+        let dtG43 = tjG43 - xL7
+        let pdzG43 = zLo7 + zSlope7 * dtG43
+        if noDepth || pdzG43 >= fbZ[ridxG43] {
+          fb[ridxG43] = cLo7 + rowSlope7 * dtG43
+          fbZ[ridxG43] = if noDepth then ZBACK else pdzG43
+        }
+      }
+      let tjG44 = pcol7 + 44.0
+      if tjG44 <= pcurR7 {
+        let ridxG44 = (((prow + 6.0) * SWF + tjG44) | 0)
+        let dtG44 = tjG44 - xL7
+        let pdzG44 = zLo7 + zSlope7 * dtG44
+        if noDepth || pdzG44 >= fbZ[ridxG44] {
+          fb[ridxG44] = cLo7 + rowSlope7 * dtG44
+          fbZ[ridxG44] = if noDepth then ZBACK else pdzG44
+        }
+      }
+      let tjG45 = pcol7 + 45.0
+      if tjG45 <= pcurR7 {
+        let ridxG45 = (((prow + 6.0) * SWF + tjG45) | 0)
+        let dtG45 = tjG45 - xL7
+        let pdzG45 = zLo7 + zSlope7 * dtG45
+        if noDepth || pdzG45 >= fbZ[ridxG45] {
+          fb[ridxG45] = cLo7 + rowSlope7 * dtG45
+          fbZ[ridxG45] = if noDepth then ZBACK else pdzG45
+        }
+      }
+      let tjG46 = pcol7 + 46.0
+      if tjG46 <= pcurR7 {
+        let ridxG46 = (((prow + 6.0) * SWF + tjG46) | 0)
+        let dtG46 = tjG46 - xL7
+        let pdzG46 = zLo7 + zSlope7 * dtG46
+        if noDepth || pdzG46 >= fbZ[ridxG46] {
+          fb[ridxG46] = cLo7 + rowSlope7 * dtG46
+          fbZ[ridxG46] = if noDepth then ZBACK else pdzG46
+        }
+      }
+      let tjG47 = pcol7 + 47.0
+      if tjG47 <= pcurR7 {
+        let ridxG47 = (((prow + 6.0) * SWF + tjG47) | 0)
+        let dtG47 = tjG47 - xL7
+        let pdzG47 = zLo7 + zSlope7 * dtG47
+        if noDepth || pdzG47 >= fbZ[ridxG47] {
+          fb[ridxG47] = cLo7 + rowSlope7 * dtG47
+          fbZ[ridxG47] = if noDepth then ZBACK else pdzG47
+        }
+      }
+      let tjG48 = pcol7 + 48.0
+      if tjG48 <= pcurR7 {
+        let ridxG48 = (((prow + 6.0) * SWF + tjG48) | 0)
+        let dtG48 = tjG48 - xL7
+        let pdzG48 = zLo7 + zSlope7 * dtG48
+        if noDepth || pdzG48 >= fbZ[ridxG48] {
+          fb[ridxG48] = cLo7 + rowSlope7 * dtG48
+          fbZ[ridxG48] = if noDepth then ZBACK else pdzG48
+        }
+      }
+      let tjG49 = pcol7 + 49.0
+      if tjG49 <= pcurR7 {
+        let ridxG49 = (((prow + 6.0) * SWF + tjG49) | 0)
+        let dtG49 = tjG49 - xL7
+        let pdzG49 = zLo7 + zSlope7 * dtG49
+        if noDepth || pdzG49 >= fbZ[ridxG49] {
+          fb[ridxG49] = cLo7 + rowSlope7 * dtG49
+          fbZ[ridxG49] = if noDepth then ZBACK else pdzG49
+        }
+      }
+      let tjG50 = pcol7 + 50.0
+      if tjG50 <= pcurR7 {
+        let ridxG50 = (((prow + 6.0) * SWF + tjG50) | 0)
+        let dtG50 = tjG50 - xL7
+        let pdzG50 = zLo7 + zSlope7 * dtG50
+        if noDepth || pdzG50 >= fbZ[ridxG50] {
+          fb[ridxG50] = cLo7 + rowSlope7 * dtG50
+          fbZ[ridxG50] = if noDepth then ZBACK else pdzG50
+        }
+      }
+      let tjG51 = pcol7 + 51.0
+      if tjG51 <= pcurR7 {
+        let ridxG51 = (((prow + 6.0) * SWF + tjG51) | 0)
+        let dtG51 = tjG51 - xL7
+        let pdzG51 = zLo7 + zSlope7 * dtG51
+        if noDepth || pdzG51 >= fbZ[ridxG51] {
+          fb[ridxG51] = cLo7 + rowSlope7 * dtG51
+          fbZ[ridxG51] = if noDepth then ZBACK else pdzG51
+        }
+      }
+      let tjG52 = pcol7 + 52.0
+      if tjG52 <= pcurR7 {
+        let ridxG52 = (((prow + 6.0) * SWF + tjG52) | 0)
+        let dtG52 = tjG52 - xL7
+        let pdzG52 = zLo7 + zSlope7 * dtG52
+        if noDepth || pdzG52 >= fbZ[ridxG52] {
+          fb[ridxG52] = cLo7 + rowSlope7 * dtG52
+          fbZ[ridxG52] = if noDepth then ZBACK else pdzG52
+        }
+      }
+      let tjG53 = pcol7 + 53.0
+      if tjG53 <= pcurR7 {
+        let ridxG53 = (((prow + 6.0) * SWF + tjG53) | 0)
+        let dtG53 = tjG53 - xL7
+        let pdzG53 = zLo7 + zSlope7 * dtG53
+        if noDepth || pdzG53 >= fbZ[ridxG53] {
+          fb[ridxG53] = cLo7 + rowSlope7 * dtG53
+          fbZ[ridxG53] = if noDepth then ZBACK else pdzG53
+        }
+      }
+      let tjG54 = pcol7 + 54.0
+      if tjG54 <= pcurR7 {
+        let ridxG54 = (((prow + 6.0) * SWF + tjG54) | 0)
+        let dtG54 = tjG54 - xL7
+        let pdzG54 = zLo7 + zSlope7 * dtG54
+        if noDepth || pdzG54 >= fbZ[ridxG54] {
+          fb[ridxG54] = cLo7 + rowSlope7 * dtG54
+          fbZ[ridxG54] = if noDepth then ZBACK else pdzG54
+        }
+      }
+      let tjG55 = pcol7 + 55.0
+      if tjG55 <= pcurR7 {
+        let ridxG55 = (((prow + 6.0) * SWF + tjG55) | 0)
+        let dtG55 = tjG55 - xL7
+        let pdzG55 = zLo7 + zSlope7 * dtG55
+        if noDepth || pdzG55 >= fbZ[ridxG55] {
+          fb[ridxG55] = cLo7 + rowSlope7 * dtG55
+          fbZ[ridxG55] = if noDepth then ZBACK else pdzG55
+        }
+      }
+      let tjG56 = pcol7 + 56.0
+      if tjG56 <= pcurR7 {
+        let ridxG56 = (((prow + 6.0) * SWF + tjG56) | 0)
+        let dtG56 = tjG56 - xL7
+        let pdzG56 = zLo7 + zSlope7 * dtG56
+        if noDepth || pdzG56 >= fbZ[ridxG56] {
+          fb[ridxG56] = cLo7 + rowSlope7 * dtG56
+          fbZ[ridxG56] = if noDepth then ZBACK else pdzG56
+        }
+      }
+      let tjG57 = pcol7 + 57.0
+      if tjG57 <= pcurR7 {
+        let ridxG57 = (((prow + 6.0) * SWF + tjG57) | 0)
+        let dtG57 = tjG57 - xL7
+        let pdzG57 = zLo7 + zSlope7 * dtG57
+        if noDepth || pdzG57 >= fbZ[ridxG57] {
+          fb[ridxG57] = cLo7 + rowSlope7 * dtG57
+          fbZ[ridxG57] = if noDepth then ZBACK else pdzG57
+        }
+      }
+      let tjG58 = pcol7 + 58.0
+      if tjG58 <= pcurR7 {
+        let ridxG58 = (((prow + 6.0) * SWF + tjG58) | 0)
+        let dtG58 = tjG58 - xL7
+        let pdzG58 = zLo7 + zSlope7 * dtG58
+        if noDepth || pdzG58 >= fbZ[ridxG58] {
+          fb[ridxG58] = cLo7 + rowSlope7 * dtG58
+          fbZ[ridxG58] = if noDepth then ZBACK else pdzG58
+        }
+      }
+      let tjG59 = pcol7 + 59.0
+      if tjG59 <= pcurR7 {
+        let ridxG59 = (((prow + 6.0) * SWF + tjG59) | 0)
+        let dtG59 = tjG59 - xL7
+        let pdzG59 = zLo7 + zSlope7 * dtG59
+        if noDepth || pdzG59 >= fbZ[ridxG59] {
+          fb[ridxG59] = cLo7 + rowSlope7 * dtG59
+          fbZ[ridxG59] = if noDepth then ZBACK else pdzG59
+        }
+      }
+      let tjG60 = pcol7 + 60.0
+      if tjG60 <= pcurR7 {
+        let ridxG60 = (((prow + 6.0) * SWF + tjG60) | 0)
+        let dtG60 = tjG60 - xL7
+        let pdzG60 = zLo7 + zSlope7 * dtG60
+        if noDepth || pdzG60 >= fbZ[ridxG60] {
+          fb[ridxG60] = cLo7 + rowSlope7 * dtG60
+          fbZ[ridxG60] = if noDepth then ZBACK else pdzG60
+        }
+      }
+      let tjG61 = pcol7 + 61.0
+      if tjG61 <= pcurR7 {
+        let ridxG61 = (((prow + 6.0) * SWF + tjG61) | 0)
+        let dtG61 = tjG61 - xL7
+        let pdzG61 = zLo7 + zSlope7 * dtG61
+        if noDepth || pdzG61 >= fbZ[ridxG61] {
+          fb[ridxG61] = cLo7 + rowSlope7 * dtG61
+          fbZ[ridxG61] = if noDepth then ZBACK else pdzG61
+        }
+      }
+      let tjG62 = pcol7 + 62.0
+      if tjG62 <= pcurR7 {
+        let ridxG62 = (((prow + 6.0) * SWF + tjG62) | 0)
+        let dtG62 = tjG62 - xL7
+        let pdzG62 = zLo7 + zSlope7 * dtG62
+        if noDepth || pdzG62 >= fbZ[ridxG62] {
+          fb[ridxG62] = cLo7 + rowSlope7 * dtG62
+          fbZ[ridxG62] = if noDepth then ZBACK else pdzG62
+        }
+      }
+      let tjG63 = pcol7 + 63.0
+      if tjG63 <= pcurR7 {
+        let ridxG63 = (((prow + 6.0) * SWF + tjG63) | 0)
+        let dtG63 = tjG63 - xL7
+        let pdzG63 = zLo7 + zSlope7 * dtG63
+        if noDepth || pdzG63 >= fbZ[ridxG63] {
+          fb[ridxG63] = cLo7 + rowSlope7 * dtG63
+          fbZ[ridxG63] = if noDepth then ZBACK else pdzG63
+        }
+      }
+      pcol7 = pcol7 + 64.0
+      let tjH0 = pcol8 + 0.0
+      if tjH0 <= pcurR8 {
+        let ridxH0 = (((prow + 7.0) * SWF + tjH0) | 0)
+        let dtH0 = tjH0 - xL8
+        let pdzH0 = zLo8 + zSlope8 * dtH0
+        if noDepth || pdzH0 >= fbZ[ridxH0] {
+          fb[ridxH0] = cLo8 + rowSlope8 * dtH0
+          fbZ[ridxH0] = if noDepth then ZBACK else pdzH0
+        }
+      }
+      let tjH1 = pcol8 + 1.0
+      if tjH1 <= pcurR8 {
+        let ridxH1 = (((prow + 7.0) * SWF + tjH1) | 0)
+        let dtH1 = tjH1 - xL8
+        let pdzH1 = zLo8 + zSlope8 * dtH1
+        if noDepth || pdzH1 >= fbZ[ridxH1] {
+          fb[ridxH1] = cLo8 + rowSlope8 * dtH1
+          fbZ[ridxH1] = if noDepth then ZBACK else pdzH1
+        }
+      }
+      let tjH2 = pcol8 + 2.0
+      if tjH2 <= pcurR8 {
+        let ridxH2 = (((prow + 7.0) * SWF + tjH2) | 0)
+        let dtH2 = tjH2 - xL8
+        let pdzH2 = zLo8 + zSlope8 * dtH2
+        if noDepth || pdzH2 >= fbZ[ridxH2] {
+          fb[ridxH2] = cLo8 + rowSlope8 * dtH2
+          fbZ[ridxH2] = if noDepth then ZBACK else pdzH2
+        }
+      }
+      let tjH3 = pcol8 + 3.0
+      if tjH3 <= pcurR8 {
+        let ridxH3 = (((prow + 7.0) * SWF + tjH3) | 0)
+        let dtH3 = tjH3 - xL8
+        let pdzH3 = zLo8 + zSlope8 * dtH3
+        if noDepth || pdzH3 >= fbZ[ridxH3] {
+          fb[ridxH3] = cLo8 + rowSlope8 * dtH3
+          fbZ[ridxH3] = if noDepth then ZBACK else pdzH3
+        }
+      }
+      let tjH4 = pcol8 + 4.0
+      if tjH4 <= pcurR8 {
+        let ridxH4 = (((prow + 7.0) * SWF + tjH4) | 0)
+        let dtH4 = tjH4 - xL8
+        let pdzH4 = zLo8 + zSlope8 * dtH4
+        if noDepth || pdzH4 >= fbZ[ridxH4] {
+          fb[ridxH4] = cLo8 + rowSlope8 * dtH4
+          fbZ[ridxH4] = if noDepth then ZBACK else pdzH4
+        }
+      }
+      let tjH5 = pcol8 + 5.0
+      if tjH5 <= pcurR8 {
+        let ridxH5 = (((prow + 7.0) * SWF + tjH5) | 0)
+        let dtH5 = tjH5 - xL8
+        let pdzH5 = zLo8 + zSlope8 * dtH5
+        if noDepth || pdzH5 >= fbZ[ridxH5] {
+          fb[ridxH5] = cLo8 + rowSlope8 * dtH5
+          fbZ[ridxH5] = if noDepth then ZBACK else pdzH5
+        }
+      }
+      let tjH6 = pcol8 + 6.0
+      if tjH6 <= pcurR8 {
+        let ridxH6 = (((prow + 7.0) * SWF + tjH6) | 0)
+        let dtH6 = tjH6 - xL8
+        let pdzH6 = zLo8 + zSlope8 * dtH6
+        if noDepth || pdzH6 >= fbZ[ridxH6] {
+          fb[ridxH6] = cLo8 + rowSlope8 * dtH6
+          fbZ[ridxH6] = if noDepth then ZBACK else pdzH6
+        }
+      }
+      let tjH7 = pcol8 + 7.0
+      if tjH7 <= pcurR8 {
+        let ridxH7 = (((prow + 7.0) * SWF + tjH7) | 0)
+        let dtH7 = tjH7 - xL8
+        let pdzH7 = zLo8 + zSlope8 * dtH7
+        if noDepth || pdzH7 >= fbZ[ridxH7] {
+          fb[ridxH7] = cLo8 + rowSlope8 * dtH7
+          fbZ[ridxH7] = if noDepth then ZBACK else pdzH7
+        }
+      }
+      let tjH8 = pcol8 + 8.0
+      if tjH8 <= pcurR8 {
+        let ridxH8 = (((prow + 7.0) * SWF + tjH8) | 0)
+        let dtH8 = tjH8 - xL8
+        let pdzH8 = zLo8 + zSlope8 * dtH8
+        if noDepth || pdzH8 >= fbZ[ridxH8] {
+          fb[ridxH8] = cLo8 + rowSlope8 * dtH8
+          fbZ[ridxH8] = if noDepth then ZBACK else pdzH8
+        }
+      }
+      let tjH9 = pcol8 + 9.0
+      if tjH9 <= pcurR8 {
+        let ridxH9 = (((prow + 7.0) * SWF + tjH9) | 0)
+        let dtH9 = tjH9 - xL8
+        let pdzH9 = zLo8 + zSlope8 * dtH9
+        if noDepth || pdzH9 >= fbZ[ridxH9] {
+          fb[ridxH9] = cLo8 + rowSlope8 * dtH9
+          fbZ[ridxH9] = if noDepth then ZBACK else pdzH9
+        }
+      }
+      let tjH10 = pcol8 + 10.0
+      if tjH10 <= pcurR8 {
+        let ridxH10 = (((prow + 7.0) * SWF + tjH10) | 0)
+        let dtH10 = tjH10 - xL8
+        let pdzH10 = zLo8 + zSlope8 * dtH10
+        if noDepth || pdzH10 >= fbZ[ridxH10] {
+          fb[ridxH10] = cLo8 + rowSlope8 * dtH10
+          fbZ[ridxH10] = if noDepth then ZBACK else pdzH10
+        }
+      }
+      let tjH11 = pcol8 + 11.0
+      if tjH11 <= pcurR8 {
+        let ridxH11 = (((prow + 7.0) * SWF + tjH11) | 0)
+        let dtH11 = tjH11 - xL8
+        let pdzH11 = zLo8 + zSlope8 * dtH11
+        if noDepth || pdzH11 >= fbZ[ridxH11] {
+          fb[ridxH11] = cLo8 + rowSlope8 * dtH11
+          fbZ[ridxH11] = if noDepth then ZBACK else pdzH11
+        }
+      }
+      let tjH12 = pcol8 + 12.0
+      if tjH12 <= pcurR8 {
+        let ridxH12 = (((prow + 7.0) * SWF + tjH12) | 0)
+        let dtH12 = tjH12 - xL8
+        let pdzH12 = zLo8 + zSlope8 * dtH12
+        if noDepth || pdzH12 >= fbZ[ridxH12] {
+          fb[ridxH12] = cLo8 + rowSlope8 * dtH12
+          fbZ[ridxH12] = if noDepth then ZBACK else pdzH12
+        }
+      }
+      let tjH13 = pcol8 + 13.0
+      if tjH13 <= pcurR8 {
+        let ridxH13 = (((prow + 7.0) * SWF + tjH13) | 0)
+        let dtH13 = tjH13 - xL8
+        let pdzH13 = zLo8 + zSlope8 * dtH13
+        if noDepth || pdzH13 >= fbZ[ridxH13] {
+          fb[ridxH13] = cLo8 + rowSlope8 * dtH13
+          fbZ[ridxH13] = if noDepth then ZBACK else pdzH13
+        }
+      }
+      let tjH14 = pcol8 + 14.0
+      if tjH14 <= pcurR8 {
+        let ridxH14 = (((prow + 7.0) * SWF + tjH14) | 0)
+        let dtH14 = tjH14 - xL8
+        let pdzH14 = zLo8 + zSlope8 * dtH14
+        if noDepth || pdzH14 >= fbZ[ridxH14] {
+          fb[ridxH14] = cLo8 + rowSlope8 * dtH14
+          fbZ[ridxH14] = if noDepth then ZBACK else pdzH14
+        }
+      }
+      let tjH15 = pcol8 + 15.0
+      if tjH15 <= pcurR8 {
+        let ridxH15 = (((prow + 7.0) * SWF + tjH15) | 0)
+        let dtH15 = tjH15 - xL8
+        let pdzH15 = zLo8 + zSlope8 * dtH15
+        if noDepth || pdzH15 >= fbZ[ridxH15] {
+          fb[ridxH15] = cLo8 + rowSlope8 * dtH15
+          fbZ[ridxH15] = if noDepth then ZBACK else pdzH15
+        }
+      }
+      let tjH16 = pcol8 + 16.0
+      if tjH16 <= pcurR8 {
+        let ridxH16 = (((prow + 7.0) * SWF + tjH16) | 0)
+        let dtH16 = tjH16 - xL8
+        let pdzH16 = zLo8 + zSlope8 * dtH16
+        if noDepth || pdzH16 >= fbZ[ridxH16] {
+          fb[ridxH16] = cLo8 + rowSlope8 * dtH16
+          fbZ[ridxH16] = if noDepth then ZBACK else pdzH16
+        }
+      }
+      let tjH17 = pcol8 + 17.0
+      if tjH17 <= pcurR8 {
+        let ridxH17 = (((prow + 7.0) * SWF + tjH17) | 0)
+        let dtH17 = tjH17 - xL8
+        let pdzH17 = zLo8 + zSlope8 * dtH17
+        if noDepth || pdzH17 >= fbZ[ridxH17] {
+          fb[ridxH17] = cLo8 + rowSlope8 * dtH17
+          fbZ[ridxH17] = if noDepth then ZBACK else pdzH17
+        }
+      }
+      let tjH18 = pcol8 + 18.0
+      if tjH18 <= pcurR8 {
+        let ridxH18 = (((prow + 7.0) * SWF + tjH18) | 0)
+        let dtH18 = tjH18 - xL8
+        let pdzH18 = zLo8 + zSlope8 * dtH18
+        if noDepth || pdzH18 >= fbZ[ridxH18] {
+          fb[ridxH18] = cLo8 + rowSlope8 * dtH18
+          fbZ[ridxH18] = if noDepth then ZBACK else pdzH18
+        }
+      }
+      let tjH19 = pcol8 + 19.0
+      if tjH19 <= pcurR8 {
+        let ridxH19 = (((prow + 7.0) * SWF + tjH19) | 0)
+        let dtH19 = tjH19 - xL8
+        let pdzH19 = zLo8 + zSlope8 * dtH19
+        if noDepth || pdzH19 >= fbZ[ridxH19] {
+          fb[ridxH19] = cLo8 + rowSlope8 * dtH19
+          fbZ[ridxH19] = if noDepth then ZBACK else pdzH19
+        }
+      }
+      let tjH20 = pcol8 + 20.0
+      if tjH20 <= pcurR8 {
+        let ridxH20 = (((prow + 7.0) * SWF + tjH20) | 0)
+        let dtH20 = tjH20 - xL8
+        let pdzH20 = zLo8 + zSlope8 * dtH20
+        if noDepth || pdzH20 >= fbZ[ridxH20] {
+          fb[ridxH20] = cLo8 + rowSlope8 * dtH20
+          fbZ[ridxH20] = if noDepth then ZBACK else pdzH20
+        }
+      }
+      let tjH21 = pcol8 + 21.0
+      if tjH21 <= pcurR8 {
+        let ridxH21 = (((prow + 7.0) * SWF + tjH21) | 0)
+        let dtH21 = tjH21 - xL8
+        let pdzH21 = zLo8 + zSlope8 * dtH21
+        if noDepth || pdzH21 >= fbZ[ridxH21] {
+          fb[ridxH21] = cLo8 + rowSlope8 * dtH21
+          fbZ[ridxH21] = if noDepth then ZBACK else pdzH21
+        }
+      }
+      let tjH22 = pcol8 + 22.0
+      if tjH22 <= pcurR8 {
+        let ridxH22 = (((prow + 7.0) * SWF + tjH22) | 0)
+        let dtH22 = tjH22 - xL8
+        let pdzH22 = zLo8 + zSlope8 * dtH22
+        if noDepth || pdzH22 >= fbZ[ridxH22] {
+          fb[ridxH22] = cLo8 + rowSlope8 * dtH22
+          fbZ[ridxH22] = if noDepth then ZBACK else pdzH22
+        }
+      }
+      let tjH23 = pcol8 + 23.0
+      if tjH23 <= pcurR8 {
+        let ridxH23 = (((prow + 7.0) * SWF + tjH23) | 0)
+        let dtH23 = tjH23 - xL8
+        let pdzH23 = zLo8 + zSlope8 * dtH23
+        if noDepth || pdzH23 >= fbZ[ridxH23] {
+          fb[ridxH23] = cLo8 + rowSlope8 * dtH23
+          fbZ[ridxH23] = if noDepth then ZBACK else pdzH23
+        }
+      }
+      let tjH24 = pcol8 + 24.0
+      if tjH24 <= pcurR8 {
+        let ridxH24 = (((prow + 7.0) * SWF + tjH24) | 0)
+        let dtH24 = tjH24 - xL8
+        let pdzH24 = zLo8 + zSlope8 * dtH24
+        if noDepth || pdzH24 >= fbZ[ridxH24] {
+          fb[ridxH24] = cLo8 + rowSlope8 * dtH24
+          fbZ[ridxH24] = if noDepth then ZBACK else pdzH24
+        }
+      }
+      let tjH25 = pcol8 + 25.0
+      if tjH25 <= pcurR8 {
+        let ridxH25 = (((prow + 7.0) * SWF + tjH25) | 0)
+        let dtH25 = tjH25 - xL8
+        let pdzH25 = zLo8 + zSlope8 * dtH25
+        if noDepth || pdzH25 >= fbZ[ridxH25] {
+          fb[ridxH25] = cLo8 + rowSlope8 * dtH25
+          fbZ[ridxH25] = if noDepth then ZBACK else pdzH25
+        }
+      }
+      let tjH26 = pcol8 + 26.0
+      if tjH26 <= pcurR8 {
+        let ridxH26 = (((prow + 7.0) * SWF + tjH26) | 0)
+        let dtH26 = tjH26 - xL8
+        let pdzH26 = zLo8 + zSlope8 * dtH26
+        if noDepth || pdzH26 >= fbZ[ridxH26] {
+          fb[ridxH26] = cLo8 + rowSlope8 * dtH26
+          fbZ[ridxH26] = if noDepth then ZBACK else pdzH26
+        }
+      }
+      let tjH27 = pcol8 + 27.0
+      if tjH27 <= pcurR8 {
+        let ridxH27 = (((prow + 7.0) * SWF + tjH27) | 0)
+        let dtH27 = tjH27 - xL8
+        let pdzH27 = zLo8 + zSlope8 * dtH27
+        if noDepth || pdzH27 >= fbZ[ridxH27] {
+          fb[ridxH27] = cLo8 + rowSlope8 * dtH27
+          fbZ[ridxH27] = if noDepth then ZBACK else pdzH27
+        }
+      }
+      let tjH28 = pcol8 + 28.0
+      if tjH28 <= pcurR8 {
+        let ridxH28 = (((prow + 7.0) * SWF + tjH28) | 0)
+        let dtH28 = tjH28 - xL8
+        let pdzH28 = zLo8 + zSlope8 * dtH28
+        if noDepth || pdzH28 >= fbZ[ridxH28] {
+          fb[ridxH28] = cLo8 + rowSlope8 * dtH28
+          fbZ[ridxH28] = if noDepth then ZBACK else pdzH28
+        }
+      }
+      let tjH29 = pcol8 + 29.0
+      if tjH29 <= pcurR8 {
+        let ridxH29 = (((prow + 7.0) * SWF + tjH29) | 0)
+        let dtH29 = tjH29 - xL8
+        let pdzH29 = zLo8 + zSlope8 * dtH29
+        if noDepth || pdzH29 >= fbZ[ridxH29] {
+          fb[ridxH29] = cLo8 + rowSlope8 * dtH29
+          fbZ[ridxH29] = if noDepth then ZBACK else pdzH29
+        }
+      }
+      let tjH30 = pcol8 + 30.0
+      if tjH30 <= pcurR8 {
+        let ridxH30 = (((prow + 7.0) * SWF + tjH30) | 0)
+        let dtH30 = tjH30 - xL8
+        let pdzH30 = zLo8 + zSlope8 * dtH30
+        if noDepth || pdzH30 >= fbZ[ridxH30] {
+          fb[ridxH30] = cLo8 + rowSlope8 * dtH30
+          fbZ[ridxH30] = if noDepth then ZBACK else pdzH30
+        }
+      }
+      let tjH31 = pcol8 + 31.0
+      if tjH31 <= pcurR8 {
+        let ridxH31 = (((prow + 7.0) * SWF + tjH31) | 0)
+        let dtH31 = tjH31 - xL8
+        let pdzH31 = zLo8 + zSlope8 * dtH31
+        if noDepth || pdzH31 >= fbZ[ridxH31] {
+          fb[ridxH31] = cLo8 + rowSlope8 * dtH31
+          fbZ[ridxH31] = if noDepth then ZBACK else pdzH31
+        }
+      }
+      let tjH32 = pcol8 + 32.0
+      if tjH32 <= pcurR8 {
+        let ridxH32 = (((prow + 7.0) * SWF + tjH32) | 0)
+        let dtH32 = tjH32 - xL8
+        let pdzH32 = zLo8 + zSlope8 * dtH32
+        if noDepth || pdzH32 >= fbZ[ridxH32] {
+          fb[ridxH32] = cLo8 + rowSlope8 * dtH32
+          fbZ[ridxH32] = if noDepth then ZBACK else pdzH32
+        }
+      }
+      let tjH33 = pcol8 + 33.0
+      if tjH33 <= pcurR8 {
+        let ridxH33 = (((prow + 7.0) * SWF + tjH33) | 0)
+        let dtH33 = tjH33 - xL8
+        let pdzH33 = zLo8 + zSlope8 * dtH33
+        if noDepth || pdzH33 >= fbZ[ridxH33] {
+          fb[ridxH33] = cLo8 + rowSlope8 * dtH33
+          fbZ[ridxH33] = if noDepth then ZBACK else pdzH33
+        }
+      }
+      let tjH34 = pcol8 + 34.0
+      if tjH34 <= pcurR8 {
+        let ridxH34 = (((prow + 7.0) * SWF + tjH34) | 0)
+        let dtH34 = tjH34 - xL8
+        let pdzH34 = zLo8 + zSlope8 * dtH34
+        if noDepth || pdzH34 >= fbZ[ridxH34] {
+          fb[ridxH34] = cLo8 + rowSlope8 * dtH34
+          fbZ[ridxH34] = if noDepth then ZBACK else pdzH34
+        }
+      }
+      let tjH35 = pcol8 + 35.0
+      if tjH35 <= pcurR8 {
+        let ridxH35 = (((prow + 7.0) * SWF + tjH35) | 0)
+        let dtH35 = tjH35 - xL8
+        let pdzH35 = zLo8 + zSlope8 * dtH35
+        if noDepth || pdzH35 >= fbZ[ridxH35] {
+          fb[ridxH35] = cLo8 + rowSlope8 * dtH35
+          fbZ[ridxH35] = if noDepth then ZBACK else pdzH35
+        }
+      }
+      let tjH36 = pcol8 + 36.0
+      if tjH36 <= pcurR8 {
+        let ridxH36 = (((prow + 7.0) * SWF + tjH36) | 0)
+        let dtH36 = tjH36 - xL8
+        let pdzH36 = zLo8 + zSlope8 * dtH36
+        if noDepth || pdzH36 >= fbZ[ridxH36] {
+          fb[ridxH36] = cLo8 + rowSlope8 * dtH36
+          fbZ[ridxH36] = if noDepth then ZBACK else pdzH36
+        }
+      }
+      let tjH37 = pcol8 + 37.0
+      if tjH37 <= pcurR8 {
+        let ridxH37 = (((prow + 7.0) * SWF + tjH37) | 0)
+        let dtH37 = tjH37 - xL8
+        let pdzH37 = zLo8 + zSlope8 * dtH37
+        if noDepth || pdzH37 >= fbZ[ridxH37] {
+          fb[ridxH37] = cLo8 + rowSlope8 * dtH37
+          fbZ[ridxH37] = if noDepth then ZBACK else pdzH37
+        }
+      }
+      let tjH38 = pcol8 + 38.0
+      if tjH38 <= pcurR8 {
+        let ridxH38 = (((prow + 7.0) * SWF + tjH38) | 0)
+        let dtH38 = tjH38 - xL8
+        let pdzH38 = zLo8 + zSlope8 * dtH38
+        if noDepth || pdzH38 >= fbZ[ridxH38] {
+          fb[ridxH38] = cLo8 + rowSlope8 * dtH38
+          fbZ[ridxH38] = if noDepth then ZBACK else pdzH38
+        }
+      }
+      let tjH39 = pcol8 + 39.0
+      if tjH39 <= pcurR8 {
+        let ridxH39 = (((prow + 7.0) * SWF + tjH39) | 0)
+        let dtH39 = tjH39 - xL8
+        let pdzH39 = zLo8 + zSlope8 * dtH39
+        if noDepth || pdzH39 >= fbZ[ridxH39] {
+          fb[ridxH39] = cLo8 + rowSlope8 * dtH39
+          fbZ[ridxH39] = if noDepth then ZBACK else pdzH39
+        }
+      }
+      let tjH40 = pcol8 + 40.0
+      if tjH40 <= pcurR8 {
+        let ridxH40 = (((prow + 7.0) * SWF + tjH40) | 0)
+        let dtH40 = tjH40 - xL8
+        let pdzH40 = zLo8 + zSlope8 * dtH40
+        if noDepth || pdzH40 >= fbZ[ridxH40] {
+          fb[ridxH40] = cLo8 + rowSlope8 * dtH40
+          fbZ[ridxH40] = if noDepth then ZBACK else pdzH40
+        }
+      }
+      let tjH41 = pcol8 + 41.0
+      if tjH41 <= pcurR8 {
+        let ridxH41 = (((prow + 7.0) * SWF + tjH41) | 0)
+        let dtH41 = tjH41 - xL8
+        let pdzH41 = zLo8 + zSlope8 * dtH41
+        if noDepth || pdzH41 >= fbZ[ridxH41] {
+          fb[ridxH41] = cLo8 + rowSlope8 * dtH41
+          fbZ[ridxH41] = if noDepth then ZBACK else pdzH41
+        }
+      }
+      let tjH42 = pcol8 + 42.0
+      if tjH42 <= pcurR8 {
+        let ridxH42 = (((prow + 7.0) * SWF + tjH42) | 0)
+        let dtH42 = tjH42 - xL8
+        let pdzH42 = zLo8 + zSlope8 * dtH42
+        if noDepth || pdzH42 >= fbZ[ridxH42] {
+          fb[ridxH42] = cLo8 + rowSlope8 * dtH42
+          fbZ[ridxH42] = if noDepth then ZBACK else pdzH42
+        }
+      }
+      let tjH43 = pcol8 + 43.0
+      if tjH43 <= pcurR8 {
+        let ridxH43 = (((prow + 7.0) * SWF + tjH43) | 0)
+        let dtH43 = tjH43 - xL8
+        let pdzH43 = zLo8 + zSlope8 * dtH43
+        if noDepth || pdzH43 >= fbZ[ridxH43] {
+          fb[ridxH43] = cLo8 + rowSlope8 * dtH43
+          fbZ[ridxH43] = if noDepth then ZBACK else pdzH43
+        }
+      }
+      let tjH44 = pcol8 + 44.0
+      if tjH44 <= pcurR8 {
+        let ridxH44 = (((prow + 7.0) * SWF + tjH44) | 0)
+        let dtH44 = tjH44 - xL8
+        let pdzH44 = zLo8 + zSlope8 * dtH44
+        if noDepth || pdzH44 >= fbZ[ridxH44] {
+          fb[ridxH44] = cLo8 + rowSlope8 * dtH44
+          fbZ[ridxH44] = if noDepth then ZBACK else pdzH44
+        }
+      }
+      let tjH45 = pcol8 + 45.0
+      if tjH45 <= pcurR8 {
+        let ridxH45 = (((prow + 7.0) * SWF + tjH45) | 0)
+        let dtH45 = tjH45 - xL8
+        let pdzH45 = zLo8 + zSlope8 * dtH45
+        if noDepth || pdzH45 >= fbZ[ridxH45] {
+          fb[ridxH45] = cLo8 + rowSlope8 * dtH45
+          fbZ[ridxH45] = if noDepth then ZBACK else pdzH45
+        }
+      }
+      let tjH46 = pcol8 + 46.0
+      if tjH46 <= pcurR8 {
+        let ridxH46 = (((prow + 7.0) * SWF + tjH46) | 0)
+        let dtH46 = tjH46 - xL8
+        let pdzH46 = zLo8 + zSlope8 * dtH46
+        if noDepth || pdzH46 >= fbZ[ridxH46] {
+          fb[ridxH46] = cLo8 + rowSlope8 * dtH46
+          fbZ[ridxH46] = if noDepth then ZBACK else pdzH46
+        }
+      }
+      let tjH47 = pcol8 + 47.0
+      if tjH47 <= pcurR8 {
+        let ridxH47 = (((prow + 7.0) * SWF + tjH47) | 0)
+        let dtH47 = tjH47 - xL8
+        let pdzH47 = zLo8 + zSlope8 * dtH47
+        if noDepth || pdzH47 >= fbZ[ridxH47] {
+          fb[ridxH47] = cLo8 + rowSlope8 * dtH47
+          fbZ[ridxH47] = if noDepth then ZBACK else pdzH47
+        }
+      }
+      let tjH48 = pcol8 + 48.0
+      if tjH48 <= pcurR8 {
+        let ridxH48 = (((prow + 7.0) * SWF + tjH48) | 0)
+        let dtH48 = tjH48 - xL8
+        let pdzH48 = zLo8 + zSlope8 * dtH48
+        if noDepth || pdzH48 >= fbZ[ridxH48] {
+          fb[ridxH48] = cLo8 + rowSlope8 * dtH48
+          fbZ[ridxH48] = if noDepth then ZBACK else pdzH48
+        }
+      }
+      let tjH49 = pcol8 + 49.0
+      if tjH49 <= pcurR8 {
+        let ridxH49 = (((prow + 7.0) * SWF + tjH49) | 0)
+        let dtH49 = tjH49 - xL8
+        let pdzH49 = zLo8 + zSlope8 * dtH49
+        if noDepth || pdzH49 >= fbZ[ridxH49] {
+          fb[ridxH49] = cLo8 + rowSlope8 * dtH49
+          fbZ[ridxH49] = if noDepth then ZBACK else pdzH49
+        }
+      }
+      let tjH50 = pcol8 + 50.0
+      if tjH50 <= pcurR8 {
+        let ridxH50 = (((prow + 7.0) * SWF + tjH50) | 0)
+        let dtH50 = tjH50 - xL8
+        let pdzH50 = zLo8 + zSlope8 * dtH50
+        if noDepth || pdzH50 >= fbZ[ridxH50] {
+          fb[ridxH50] = cLo8 + rowSlope8 * dtH50
+          fbZ[ridxH50] = if noDepth then ZBACK else pdzH50
+        }
+      }
+      let tjH51 = pcol8 + 51.0
+      if tjH51 <= pcurR8 {
+        let ridxH51 = (((prow + 7.0) * SWF + tjH51) | 0)
+        let dtH51 = tjH51 - xL8
+        let pdzH51 = zLo8 + zSlope8 * dtH51
+        if noDepth || pdzH51 >= fbZ[ridxH51] {
+          fb[ridxH51] = cLo8 + rowSlope8 * dtH51
+          fbZ[ridxH51] = if noDepth then ZBACK else pdzH51
+        }
+      }
+      let tjH52 = pcol8 + 52.0
+      if tjH52 <= pcurR8 {
+        let ridxH52 = (((prow + 7.0) * SWF + tjH52) | 0)
+        let dtH52 = tjH52 - xL8
+        let pdzH52 = zLo8 + zSlope8 * dtH52
+        if noDepth || pdzH52 >= fbZ[ridxH52] {
+          fb[ridxH52] = cLo8 + rowSlope8 * dtH52
+          fbZ[ridxH52] = if noDepth then ZBACK else pdzH52
+        }
+      }
+      let tjH53 = pcol8 + 53.0
+      if tjH53 <= pcurR8 {
+        let ridxH53 = (((prow + 7.0) * SWF + tjH53) | 0)
+        let dtH53 = tjH53 - xL8
+        let pdzH53 = zLo8 + zSlope8 * dtH53
+        if noDepth || pdzH53 >= fbZ[ridxH53] {
+          fb[ridxH53] = cLo8 + rowSlope8 * dtH53
+          fbZ[ridxH53] = if noDepth then ZBACK else pdzH53
+        }
+      }
+      let tjH54 = pcol8 + 54.0
+      if tjH54 <= pcurR8 {
+        let ridxH54 = (((prow + 7.0) * SWF + tjH54) | 0)
+        let dtH54 = tjH54 - xL8
+        let pdzH54 = zLo8 + zSlope8 * dtH54
+        if noDepth || pdzH54 >= fbZ[ridxH54] {
+          fb[ridxH54] = cLo8 + rowSlope8 * dtH54
+          fbZ[ridxH54] = if noDepth then ZBACK else pdzH54
+        }
+      }
+      let tjH55 = pcol8 + 55.0
+      if tjH55 <= pcurR8 {
+        let ridxH55 = (((prow + 7.0) * SWF + tjH55) | 0)
+        let dtH55 = tjH55 - xL8
+        let pdzH55 = zLo8 + zSlope8 * dtH55
+        if noDepth || pdzH55 >= fbZ[ridxH55] {
+          fb[ridxH55] = cLo8 + rowSlope8 * dtH55
+          fbZ[ridxH55] = if noDepth then ZBACK else pdzH55
+        }
+      }
+      let tjH56 = pcol8 + 56.0
+      if tjH56 <= pcurR8 {
+        let ridxH56 = (((prow + 7.0) * SWF + tjH56) | 0)
+        let dtH56 = tjH56 - xL8
+        let pdzH56 = zLo8 + zSlope8 * dtH56
+        if noDepth || pdzH56 >= fbZ[ridxH56] {
+          fb[ridxH56] = cLo8 + rowSlope8 * dtH56
+          fbZ[ridxH56] = if noDepth then ZBACK else pdzH56
+        }
+      }
+      let tjH57 = pcol8 + 57.0
+      if tjH57 <= pcurR8 {
+        let ridxH57 = (((prow + 7.0) * SWF + tjH57) | 0)
+        let dtH57 = tjH57 - xL8
+        let pdzH57 = zLo8 + zSlope8 * dtH57
+        if noDepth || pdzH57 >= fbZ[ridxH57] {
+          fb[ridxH57] = cLo8 + rowSlope8 * dtH57
+          fbZ[ridxH57] = if noDepth then ZBACK else pdzH57
+        }
+      }
+      let tjH58 = pcol8 + 58.0
+      if tjH58 <= pcurR8 {
+        let ridxH58 = (((prow + 7.0) * SWF + tjH58) | 0)
+        let dtH58 = tjH58 - xL8
+        let pdzH58 = zLo8 + zSlope8 * dtH58
+        if noDepth || pdzH58 >= fbZ[ridxH58] {
+          fb[ridxH58] = cLo8 + rowSlope8 * dtH58
+          fbZ[ridxH58] = if noDepth then ZBACK else pdzH58
+        }
+      }
+      let tjH59 = pcol8 + 59.0
+      if tjH59 <= pcurR8 {
+        let ridxH59 = (((prow + 7.0) * SWF + tjH59) | 0)
+        let dtH59 = tjH59 - xL8
+        let pdzH59 = zLo8 + zSlope8 * dtH59
+        if noDepth || pdzH59 >= fbZ[ridxH59] {
+          fb[ridxH59] = cLo8 + rowSlope8 * dtH59
+          fbZ[ridxH59] = if noDepth then ZBACK else pdzH59
+        }
+      }
+      let tjH60 = pcol8 + 60.0
+      if tjH60 <= pcurR8 {
+        let ridxH60 = (((prow + 7.0) * SWF + tjH60) | 0)
+        let dtH60 = tjH60 - xL8
+        let pdzH60 = zLo8 + zSlope8 * dtH60
+        if noDepth || pdzH60 >= fbZ[ridxH60] {
+          fb[ridxH60] = cLo8 + rowSlope8 * dtH60
+          fbZ[ridxH60] = if noDepth then ZBACK else pdzH60
+        }
+      }
+      let tjH61 = pcol8 + 61.0
+      if tjH61 <= pcurR8 {
+        let ridxH61 = (((prow + 7.0) * SWF + tjH61) | 0)
+        let dtH61 = tjH61 - xL8
+        let pdzH61 = zLo8 + zSlope8 * dtH61
+        if noDepth || pdzH61 >= fbZ[ridxH61] {
+          fb[ridxH61] = cLo8 + rowSlope8 * dtH61
+          fbZ[ridxH61] = if noDepth then ZBACK else pdzH61
+        }
+      }
+      let tjH62 = pcol8 + 62.0
+      if tjH62 <= pcurR8 {
+        let ridxH62 = (((prow + 7.0) * SWF + tjH62) | 0)
+        let dtH62 = tjH62 - xL8
+        let pdzH62 = zLo8 + zSlope8 * dtH62
+        if noDepth || pdzH62 >= fbZ[ridxH62] {
+          fb[ridxH62] = cLo8 + rowSlope8 * dtH62
+          fbZ[ridxH62] = if noDepth then ZBACK else pdzH62
+        }
+      }
+      let tjH63 = pcol8 + 63.0
+      if tjH63 <= pcurR8 {
+        let ridxH63 = (((prow + 7.0) * SWF + tjH63) | 0)
+        let dtH63 = tjH63 - xL8
+        let pdzH63 = zLo8 + zSlope8 * dtH63
+        if noDepth || pdzH63 >= fbZ[ridxH63] {
+          fb[ridxH63] = cLo8 + rowSlope8 * dtH63
+          fbZ[ridxH63] = if noDepth then ZBACK else pdzH63
+        }
+      }
+      pcol8 = pcol8 + 64.0
   }
   let painting = polyOn || sOn
   if wasPaint && !painting && !rcOn && eraseOK {
@@ -15019,195 +22198,259 @@ mod paintTick() {
         let eOn2 = if oM > nM then 1.0 else 0.0
         if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
           fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 0.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
           fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 1.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
           fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 2.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
           fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 3.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
           fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 4.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
           fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 5.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
           fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 6.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
           fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 7.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
           fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 8.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
           fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 9.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
           fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 10.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
           fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 11.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
           fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 12.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
           fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 13.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
           fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 14.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
           fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 15.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
           fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 16.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
           fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 17.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
           fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 18.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
           fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 19.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
           fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 20.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
           fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 21.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
           fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 22.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
           fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 23.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
           fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 24.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
           fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 25.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
           fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 26.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
           fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 27.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
           fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 28.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
           fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 29.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
           fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 30.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
           fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 31.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
           fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 32.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
           fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 33.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
           fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 34.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
           fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 35.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
           fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 36.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
           fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 37.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
           fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 38.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
           fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 39.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
           fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 40.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
           fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 41.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
           fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 42.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
           fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 43.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
           fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 44.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
           fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 45.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
           fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 46.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
           fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 47.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
           fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 48.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
           fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 49.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
           fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 50.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
           fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 51.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
           fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 52.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
           fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 53.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
           fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 54.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
           fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 55.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
           fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 56.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
           fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 57.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
           fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 58.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
           fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 59.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
           fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 60.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
           fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 61.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
           fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 62.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
           fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 63.0) | 0)] = ZBACK
         }
       }
       erRow = erRow + 1.0
@@ -15228,195 +22471,259 @@ mod paintTick() {
         let eOn2 = if oM > nM then 1.0 else 0.0
         if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
           fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 0.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
           fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 1.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
           fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 2.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
           fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 3.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
           fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 4.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
           fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 5.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
           fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 6.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
           fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 7.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
           fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 8.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
           fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 9.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
           fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 10.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
           fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 11.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
           fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 12.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
           fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 13.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
           fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 14.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
           fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 15.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
           fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 16.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
           fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 17.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
           fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 18.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
           fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 19.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
           fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 20.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
           fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 21.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
           fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 22.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
           fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 23.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
           fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 24.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
           fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 25.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
           fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 26.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
           fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 27.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
           fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 28.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
           fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 29.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
           fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 30.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
           fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 31.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
           fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 32.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
           fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 33.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
           fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 34.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
           fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 35.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
           fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 36.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
           fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 37.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
           fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 38.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
           fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 39.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
           fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 40.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
           fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 41.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
           fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 42.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
           fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 43.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
           fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 44.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
           fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 45.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
           fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 46.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
           fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 47.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
           fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 48.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
           fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 49.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
           fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 50.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
           fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 51.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
           fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 52.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
           fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 53.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
           fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 54.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
           fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 55.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
           fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 56.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
           fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 57.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
           fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 58.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
           fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 59.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
           fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 60.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
           fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 61.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
           fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 62.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
           fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 63.0) | 0)] = ZBACK
         }
       }
       erRow = erRow + 1.0
@@ -15437,195 +22744,259 @@ mod paintTick() {
         let eOn2 = if oM > nM then 1.0 else 0.0
         if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
           fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 0.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
           fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 1.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
           fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 2.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
           fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 3.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
           fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 4.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
           fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 5.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
           fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 6.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
           fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 7.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
           fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 8.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
           fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 9.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
           fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 10.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
           fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 11.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
           fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 12.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
           fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 13.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
           fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 14.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
           fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 15.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
           fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 16.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
           fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 17.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
           fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 18.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
           fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 19.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
           fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 20.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
           fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 21.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
           fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 22.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
           fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 23.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
           fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 24.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
           fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 25.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
           fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 26.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
           fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 27.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
           fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 28.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
           fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 29.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
           fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 30.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
           fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 31.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
           fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 32.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
           fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 33.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
           fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 34.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
           fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 35.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
           fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 36.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
           fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 37.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
           fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 38.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
           fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 39.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
           fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 40.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
           fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 41.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
           fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 42.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
           fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 43.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
           fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 44.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
           fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 45.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
           fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 46.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
           fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 47.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
           fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 48.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
           fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 49.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
           fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 50.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
           fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 51.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
           fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 52.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
           fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 53.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
           fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 54.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
           fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 55.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
           fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 56.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
           fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 57.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
           fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 58.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
           fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 59.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
           fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 60.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
           fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 61.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
           fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 62.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
           fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 63.0) | 0)] = ZBACK
         }
       }
       erRow = erRow + 1.0
@@ -15646,195 +23017,259 @@ mod paintTick() {
         let eOn2 = if oM > nM then 1.0 else 0.0
         if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
           fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 0.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
           fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 1.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
           fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 2.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
           fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 3.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
           fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 4.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
           fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 5.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
           fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 6.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
           fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 7.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
           fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 8.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
           fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 9.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
           fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 10.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
           fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 11.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
           fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 12.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
           fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 13.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
           fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 14.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
           fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 15.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
           fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 16.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
           fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 17.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
           fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 18.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
           fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 19.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
           fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 20.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
           fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 21.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
           fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 22.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
           fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 23.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
           fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 24.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
           fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 25.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
           fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 26.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
           fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 27.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
           fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 28.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
           fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 29.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
           fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 30.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
           fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 31.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
           fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 32.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
           fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 33.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
           fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 34.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
           fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 35.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
           fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 36.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
           fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 37.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
           fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 38.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
           fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 39.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
           fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 40.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
           fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 41.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
           fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 42.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
           fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 43.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
           fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 44.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
           fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 45.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
           fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 46.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
           fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 47.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
           fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 48.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
           fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 49.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
           fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 50.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
           fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 51.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
           fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 52.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
           fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 53.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
           fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 54.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
           fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 55.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
           fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 56.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
           fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 57.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
           fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 58.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
           fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 59.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
           fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 60.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
           fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 61.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
           fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 62.0) | 0)] = ZBACK
         }
         if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
           fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 63.0) | 0)] = ZBACK
         }
       }
       erRow = erRow + 1.0

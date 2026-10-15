@@ -48,27 +48,12 @@ local function plot(ti)
   return (cx + x - 4.0) // 1.0, (cx + y - 4.0) // 1.0
 end
 
--- fire one shape: array is staged, pulse push then draw with one tick
--- holds (push-L and draw-H share a tick: different ports, both edges
--- land cleanly), no post wait -- the next frame's compute outlasts the
--- burst, so a drawAllShapes can never catch one mid-flight
-local function fire(push)
-  outNum(push, 1.0)
-  local c = clock()
-  while clock() == c do end
-  outNum(push, 0.0)
-  outNum(2, 1.0)
-  c = clock()
-  while clock() == c do end
-  outNum(2, 0.0)
-end
-
 -- an 8x8 filled square tracer at (bx,by), palette entry h
 local function tracer(bx, by, h)
   local ex, ey = bx + 8.0, by + 8.0
   outNumArr(1, bx, by, ex, by, ex, ey, bx, ey)
   outNumArr(9, -1.0)
-  fire(1)
+  fire()
 end
 
 -- the core: an octagon of radius r around center, no trig (k = r*tan22.5)
@@ -81,23 +66,7 @@ local function core(r, h)
   outNumArr(1, kx0, y0, kx1, y0, x1, ky0, x1, ky1)
   outNumArr(9, kx1, y1, kx0, y1, x0, ky1, x0, ky0)
   outNumArr(17, -1.0)
-  fire(1)
-end
-
--- clearAllShapes only forgets the slots: the drawAllShapes right after it is the
--- pulse that actually blacks the wall (64 rows), so wait that burst
--- out exactly -- the next frame's compute (~50 ticks) would abandon it
-local function clearAllShapes()
-  outNum(3, 1.0)
-  local c = clock()
-  while clock() == c do end
-  outNum(3, 0.0)
-  outNum(2, 1.0)
-  c = clock()
-  while clock() == c do end
-  outNum(2, 0.0)
-  local target = clock() + 0.66
-  while clock() < target do end
+  fire()
 end
 
 while true do
@@ -129,7 +98,7 @@ while true do
       mode = 2
     end
   else
-    clearAllShapes()
+    clearScreen(0.66)
     idx = idx + 1
     if idx > 5 then idx = 1 end
     t = 0.0

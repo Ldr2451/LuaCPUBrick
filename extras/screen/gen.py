@@ -30,7 +30,7 @@ SW, SH = 64, 64
 NP = SW * SH
 K = int(sys.argv[1]) if len(sys.argv) > 1 else 64
 MAXP = 16                                   # max vertices per polygon
-DEF_BRIGHT = 0.35                           # unwired brightness factor
+DEF_BRIGHT = 0.025                          # unwired brightness factor
 
 
 L = []
@@ -133,11 +133,22 @@ L.append("const NP = %d" % NP)
 L.append("const SWF = %d.0" % SW)
 L.append("const MAXP = %d" % MAXP)
 # The unwired-brightness default, as a factor: an emissive wall at full
-# scale (1.0) washes every colour toward white: four per-point hues
-# against a bright background.  55 of 100 is the shipped default; the
+# scale (1.0) washes every colour toward white.  In game a wired slider
+# of 2-3 reads well, so the unwired default matches that (0.025); the
 # slider still reaches 1.0.
 L.append("const DEF_BRIGHT = %f" % DEF_BRIGHT)
 L.append("var fb: color[]")
+# Per-pixel depth, parallel to fb: the nearest painted z wins (bigger
+# z paints in front), so tilted shapes self-occlude and stacked shapes
+# order by depth instead of slot order.  ZBACK (farther than any world
+# depth) means "nothing painted here yet".
+L.append("const ZBACK = -1000000000000000.0")
+L.append("var fbZ: float[]")
+# Depth bypass for the black clear fill: it must paint every pixel and
+# reset every depth unconditionally (its corners carry no z).  Set by
+# the clearing arm, cleared at fill end and by any user arm -- a push
+# staged mid-clear paints depth-tested like normal.
+L.append("var noDepth: bool = false")
 L.append("var fbInit: bool = false")
 # Per-point colours, staged from the shapeColors array at the arm
 # (literal reads: the connector delivers a tight list).  The walks
@@ -162,6 +173,7 @@ L.append("var qN: float[]")
 L.append("var qPts: float[]")
 L.append("var qCol: color[]")
 L.append("var qXF: float[]")
+L.append("var qXF2: float[]")
 L.append("var qMode: float[]")
 L.append("var qId: float[]")
 # A batched id-0 shape paints with the scene and dies on the next
@@ -206,6 +218,11 @@ L.append("var animDirty: bool = false")
 # immediate pushes copy the port into it (literal reads, fast), slot
 # loads copy a slot into it (computed reads, one pass per shape).
 L.append("var shPts: float[]")
+# Per-point world depth, filled by the transform alongside shPts (local
+# z is always 0: depth comes from the shape's transform, including
+# off-axis tilt).  The fill interpolates it across each span exactly
+# like a colour channel and depth-tests every lane.
+L.append("var shPz: float[]")
 # Eight retained slots: points, colour, mode, live flag, point count.
 # Arrays are sized memory, not gates, so eight slots cost no nodes --
 # only the single load/store paths do.  Slot k (1..8) lives at points
@@ -219,12 +236,19 @@ L.append("var slCount: float[]")
 # scl.x, scl.y, parent id) at base (k-1)*6.  Stored at commit from the
 # staged ports, loaded into the staging vars at recomposite.
 L.append("var slXF: float[]")
+# Depth channels of the slot transform (pos.z, rot.x, rot.y, scl.z) at
+# base (k-1)*4: the vec inputs' third fields, which the planar path
+# never needed.  Stored, queued, animated and parent-walked exactly
+# like slXF; the slot protocol (points/colours/counts) is untouched,
+# so drivers and the connector need no changes.
+L.append("var slXF2: float[]")
 # Per-slot animation deltas (added to the stored values every tick while
 # time remains) plus the per-entry tick counts for the pending queue.
 # Sized memory, not gates -- like the slot arrays, they cost no nodes.
 L.append("var anPts: float[]")
 L.append("var anCol: color[]")
 L.append("var anXF: float[]")
+L.append("var anXF2: float[]")
 L.append("var anTicks: float[]")
 L.append("var qTicks: float[]")
 L.append("var qCN: float[]")
@@ -236,6 +260,17 @@ L.append("var wpy: float = 0.0")
 L.append("var wr: float = 0.0")
 L.append("var wsx: float = 1.0")
 L.append("var wsy: float = 1.0")
+L.append("var wpz: float = 0.0")
+L.append("var wrx: float = 0.0")
+L.append("var wry: float = 0.0")
+L.append("var tilt3d: float = 0.0")
+# Tilted-chain world matrix (3x4, row-major): composed parent-outside
+# from self-local outward, applied per point.  Plain vars, written
+# strictly after every let that reads them is bound (the
+# write-what-a-pending-let-reads trap).
+for _m in ("m00", "m01", "m02", "m03", "m10", "m11", "m12", "m13",
+           "m20", "m21", "m22", "m23"):
+    L.append("var %s: float = 0.0" % _m)
 L.append("var cur: float = 0.0")
 # Compose-step snapshots: nwx/nwy read the pre-step offset, but the
 # step writes wpx before nwy is assigned -- a pure let re-evaluates
@@ -289,10 +324,14 @@ L.append("var clearing: bool = false")
 for i in range(MAXP):
     L.append("var sPx%d: float = 0.0" % i)
     L.append("var sPy%d: float = 0.0" % i)
+    L.append("var sPz%d: float = 0.0" % i)
 for i in range(MAXP):
     L.append("var rX%d: float = 0.0" % i)
     L.append("var rY%d: float = 0.0" % i)
+    L.append("var rZ%d: float = 0.0" % i)
 for qn in ("qAx", "qAy", "qBx", "qBy", "qCx", "qCy", "qDx", "qDy"):
+    L.append("var %s: float = 0.0" % qn)
+for qn in ("qAz", "qBz", "qCz", "qDz"):
     L.append("var %s: float = 0.0" % qn)
 L.append("var sOn: bool = false")
 L.append("var sLive: bool = false")
@@ -339,6 +378,24 @@ L.append("var rowSlope2: color = Color(0.0, 0.0, 0.0, 0.0)")
 L.append("var pcol2: float = 200.0")
 L.append("var pcurR2: float = 100.0")
 L.append("var aRow: float = 0.0")
+# Rows C..H: the fill stages eight rows a tick, so rows past B need
+# their own span, colours, bounds and depth state.  The stroke keeps
+# using A/B only (its quad walk advances two rows a tick).
+for _r in range(3, 9):
+    L.append("var xL%d: float = 0.0" % _r)
+    L.append("var cLo%d: color = Color(1.0, 1.0, 1.0, 1.0)" % _r)
+    L.append("var rowSlope%d: color = Color(0.0, 0.0, 0.0, 0.0)" % _r)
+    L.append("var pcol%d: float = 200.0" % _r)
+    L.append("var pcurR%d: float = 100.0" % _r)
+    L.append("var zLo%d: float = 0.0" % _r)
+    L.append("var zSlope%d: float = 0.0" % _r)
+# Depth state for the A/B rows (z at the span's left edge, per-pixel
+# slope): the lanes interpolate zLo + t*zSlope exactly like colour and
+# keep the nearest pixel (bigger z paints in front).
+L.append("var zLo: float = 0.0")
+L.append("var zSlope: float = 0.0")
+L.append("var zLo2: float = 0.0")
+L.append("var zSlope2: float = 0.0")
 # Per-row painted x-extent: covMin/covMax are the frame being painted,
 # oldMin/oldMax the one before it (200.0 / -200.0 = "nothing painted
 # here").  The lanes fold each staged span into them, and the erase pass
@@ -415,6 +472,11 @@ L.append("var wasPaint: bool = false")
 # per tree that reads it.
 for i in range(MAXP):
     L.append("var cc%d: color = Color(1.0, 1.0, 1.0, 1.0)" % i)
+# Per-point world depth, staged in the arm from shPz: the walks read
+# depth through these (arm lets are block-scoped, invisible to the
+# walks -- the same reason colours travel in pC vars, not lets).
+for i in range(MAXP):
+    L.append("var pzV%d: float = 0.0" % i)
     L.append("var cc2_%d: color = Color(1.0, 1.0, 1.0, 1.0)" % i)
 L.append("var uc0: color = Color(1.0, 1.0, 1.0, 1.0)")
 L.append("var uc2: color = Color(1.0, 1.0, 1.0, 1.0)")
@@ -509,7 +571,7 @@ L.append("      commitR = true")
 L.append("      recompOnly = true")
 L.append("    }")
 L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ {")
-L.append("      prow = pfirst - 2.0")
+L.append("      prow = pfirst - 8.0")
 L.append("      pcol = 200.0")
 L.append("      polyOn = true")
 L.append("    }")
@@ -517,6 +579,7 @@ L.append("    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && 
 for i in range(MAXP):
     L.append("      rX%d = sPx%d" % (i, i))
     L.append("      rY%d = sPy%d" % (i, i))
+    L.append("      rZ%d = sPz%d" % (i, i))
     L.append("      rC%d = sPc%d" % (i, i))
 L.append("      sSeg = -1.0")
 L.append("      prow = 0.0")
@@ -600,7 +663,9 @@ L.append("// non-negative, so truncation is floor).")
 L.append("mod paintTick() {")
 L.append("  if !fbInit {")
 L.append("    fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))")
+L.append("    fbZ.resize(NP, ZBACK)")
 L.append("    shPts.resize(32, 0.0)")
+L.append("    shPz.resize(16, 0.0)")
 L.append("    slPts.resize(256, 0.0)")
 L.append("    slPC.resize(128, Color(1.0, 1.0, 1.0, 1.0))")
 L.append("    slXF.resize(48, 0.0)")
@@ -610,6 +675,7 @@ L.append("    slCount.resize(8, 0.0)")
 L.append("    slPts.resize(288, 0.0)")
 L.append("    slPC.resize(144, Color(1.0, 1.0, 1.0, 1.0))")
 L.append("    slXF.resize(54, 0.0)")
+L.append("    slXF2.resize(36, 0.0)")
 L.append("    covMin.resize(64, 200.0)")
 L.append("    covMax.resize(64, -200.0)")
 L.append("    oldMin.resize(64, 200.0)")
@@ -617,6 +683,7 @@ L.append("    oldMax.resize(64, -200.0)")
 L.append("    anPts.resize(288, 0.0)")
 L.append("    anCol.resize(144, Color(0.0, 0.0, 0.0, 0.0))")
 L.append("    anXF.resize(54, 0.0)")
+L.append("    anXF2.resize(36, 0.0)")
 L.append("    anTicks.resize(9, 0.0)")
 L.append("    qTicks.resize(8, 0.0)")
 L.append("    qCN.resize(8, 0.0)")
@@ -627,6 +694,7 @@ L.append("    qN.resize(8, 0.0)")
 L.append("    qPts.resize(256, 0.0)")
 L.append("    qCol.resize(128, Color(1.0, 1.0, 1.0, 1.0))")
 L.append("    qXF.resize(48, 0.0)")
+L.append("    qXF2.resize(32, 0.0)")
 L.append("    qMode.resize(8, 0.0)")
 L.append("    qId.resize(8, 0.0)")
 L.append("    fbInit = true")
@@ -634,7 +702,7 @@ L.append("  }")
 # The live brightness factor: the brightness port is a user-set slider
 # the connector never drives (it stays unwired in the shipped save), 1
 # to 100, capped both ends; an unwired port reads 0.0, which means the
-# DEFAULT_BRIGHT default (55, not full: an emissive wall at full scale
+# DEFAULT_BRIGHT default (0.025, not full: an emissive wall at full scale
 # washes every colour toward white, so shapes stop reading against a
 # bright background).  Applied per row-setup -- and a twiddle's edge
 # reruns the retained recomposite and refreshes the last immediate
@@ -714,6 +782,10 @@ L.append("    slXF[1] = slXF[1] + anXF[1]")
 L.append("    slXF[2] = slXF[2] + anXF[2]")
 L.append("    slXF[3] = slXF[3] + anXF[3]")
 L.append("    slXF[4] = slXF[4] + anXF[4]")
+L.append("    slXF2[0] = slXF2[0] + anXF2[0]")
+L.append("    slXF2[1] = slXF2[1] + anXF2[1]")
+L.append("    slXF2[2] = slXF2[2] + anXF2[2]")
+L.append("    slXF2[3] = slXF2[3] + anXF2[3]")
 L.append("  }")
 L.append("  if anTicks[1.0] > 0.5 && !rcOn {")
 L.append("    anTicks[1.0] = anTicks[1.0] - 1.0")
@@ -771,6 +843,10 @@ L.append("    slXF[7] = slXF[7] + anXF[7]")
 L.append("    slXF[8] = slXF[8] + anXF[8]")
 L.append("    slXF[9] = slXF[9] + anXF[9]")
 L.append("    slXF[10] = slXF[10] + anXF[10]")
+L.append("    slXF2[4] = slXF2[4] + anXF2[4]")
+L.append("    slXF2[5] = slXF2[5] + anXF2[5]")
+L.append("    slXF2[6] = slXF2[6] + anXF2[6]")
+L.append("    slXF2[7] = slXF2[7] + anXF2[7]")
 L.append("  }")
 L.append("  if anTicks[2.0] > 0.5 && !rcOn {")
 L.append("    anTicks[2.0] = anTicks[2.0] - 1.0")
@@ -828,6 +904,10 @@ L.append("    slXF[13] = slXF[13] + anXF[13]")
 L.append("    slXF[14] = slXF[14] + anXF[14]")
 L.append("    slXF[15] = slXF[15] + anXF[15]")
 L.append("    slXF[16] = slXF[16] + anXF[16]")
+L.append("    slXF2[8] = slXF2[8] + anXF2[8]")
+L.append("    slXF2[9] = slXF2[9] + anXF2[9]")
+L.append("    slXF2[10] = slXF2[10] + anXF2[10]")
+L.append("    slXF2[11] = slXF2[11] + anXF2[11]")
 L.append("  }")
 L.append("  if anTicks[3.0] > 0.5 && !rcOn {")
 L.append("    anTicks[3.0] = anTicks[3.0] - 1.0")
@@ -885,6 +965,10 @@ L.append("    slXF[19] = slXF[19] + anXF[19]")
 L.append("    slXF[20] = slXF[20] + anXF[20]")
 L.append("    slXF[21] = slXF[21] + anXF[21]")
 L.append("    slXF[22] = slXF[22] + anXF[22]")
+L.append("    slXF2[12] = slXF2[12] + anXF2[12]")
+L.append("    slXF2[13] = slXF2[13] + anXF2[13]")
+L.append("    slXF2[14] = slXF2[14] + anXF2[14]")
+L.append("    slXF2[15] = slXF2[15] + anXF2[15]")
 L.append("  }")
 L.append("  if anTicks[4.0] > 0.5 && !rcOn {")
 L.append("    anTicks[4.0] = anTicks[4.0] - 1.0")
@@ -942,6 +1026,10 @@ L.append("    slXF[25] = slXF[25] + anXF[25]")
 L.append("    slXF[26] = slXF[26] + anXF[26]")
 L.append("    slXF[27] = slXF[27] + anXF[27]")
 L.append("    slXF[28] = slXF[28] + anXF[28]")
+L.append("    slXF2[16] = slXF2[16] + anXF2[16]")
+L.append("    slXF2[17] = slXF2[17] + anXF2[17]")
+L.append("    slXF2[18] = slXF2[18] + anXF2[18]")
+L.append("    slXF2[19] = slXF2[19] + anXF2[19]")
 L.append("  }")
 L.append("  if anTicks[5.0] > 0.5 && !rcOn {")
 L.append("    anTicks[5.0] = anTicks[5.0] - 1.0")
@@ -999,6 +1087,10 @@ L.append("    slXF[31] = slXF[31] + anXF[31]")
 L.append("    slXF[32] = slXF[32] + anXF[32]")
 L.append("    slXF[33] = slXF[33] + anXF[33]")
 L.append("    slXF[34] = slXF[34] + anXF[34]")
+L.append("    slXF2[20] = slXF2[20] + anXF2[20]")
+L.append("    slXF2[21] = slXF2[21] + anXF2[21]")
+L.append("    slXF2[22] = slXF2[22] + anXF2[22]")
+L.append("    slXF2[23] = slXF2[23] + anXF2[23]")
 L.append("  }")
 L.append("  if anTicks[6.0] > 0.5 && !rcOn {")
 L.append("    anTicks[6.0] = anTicks[6.0] - 1.0")
@@ -1056,6 +1148,10 @@ L.append("    slXF[37] = slXF[37] + anXF[37]")
 L.append("    slXF[38] = slXF[38] + anXF[38]")
 L.append("    slXF[39] = slXF[39] + anXF[39]")
 L.append("    slXF[40] = slXF[40] + anXF[40]")
+L.append("    slXF2[24] = slXF2[24] + anXF2[24]")
+L.append("    slXF2[25] = slXF2[25] + anXF2[25]")
+L.append("    slXF2[26] = slXF2[26] + anXF2[26]")
+L.append("    slXF2[27] = slXF2[27] + anXF2[27]")
 L.append("  }")
 L.append("  if anTicks[7.0] > 0.5 && !rcOn {")
 L.append("    anTicks[7.0] = anTicks[7.0] - 1.0")
@@ -1113,6 +1209,34 @@ L.append("    slXF[43] = slXF[43] + anXF[43]")
 L.append("    slXF[44] = slXF[44] + anXF[44]")
 L.append("    slXF[45] = slXF[45] + anXF[45]")
 L.append("    slXF[46] = slXF[46] + anXF[46]")
+L.append("    slXF2[28] = slXF2[28] + anXF2[28]")
+L.append("    slXF2[29] = slXF2[29] + anXF2[29]")
+L.append("    slXF2[30] = slXF2[30] + anXF2[30]")
+L.append("    slXF2[31] = slXF2[31] + anXF2[31]")
+L.append("  }")
+L.append("")
+# ---- animation self-refresh: motion without a draw -------------------
+# A slot whose deltas advanced this tick (animDirty) repaints itself as
+# soon as the chip is idle -- the CPU only stages the animation, never
+# pumps drawAllShapes for it.  It is a plain full recomposite (same
+# slots, latest values), so static content repaints pixel-identically
+# and only the motion shows.  It starts only with nothing staged
+# (!pending: a staged-but-undrawn push must never reach the wall
+# through this path) and nothing running; a user push aborts it like
+# any pass, and the advance resumes it on the next idle tick.
+L.append("  if animDirty {")
+L.append("    if !rcOn && !polyOn && !sOn && !arming && !armingS {")
+L.append("    if !erasing && !wasPaint && !pending && !commitR {")
+L.append("    if !commitQ && !brightRC {")
+L.append("    animDirty = false")
+L.append("    rcOn = true")
+L.append("    rcSlot = 1.0")
+L.append("    fromSlot = true")
+for _l in frameRC_lines:
+    L.append("    " + _l)
+L.append("    }")
+L.append("    }")
+L.append("    }")
 L.append("  }")
 L.append("")
 
@@ -1122,6 +1246,7 @@ L.append("    let e = if qCount > 7.0 then 7.0 else qCount")
 L.append("    let pb = e * 32.0")
 L.append("    let cb = e * 16.0")
 L.append("    let xb = e * 6.0")
+L.append("    let xb2 = e * 4.0")
 L.append("    qPts[pb + 0.0] = shapePoints[0]")
 L.append("    qPts[pb + 1.0] = shapePoints[1]")
 L.append("    qPts[pb + 2.0] = shapePoints[2]")
@@ -1181,6 +1306,10 @@ L.append("    qXF[xb + 2.0] = pRot.z")
 L.append("    qXF[xb + 3.0] = if pScl.x == 0.0 then 1.0 else pScl.x")
 L.append("    qXF[xb + 4.0] = if pScl.y == 0.0 then 1.0 else pScl.y")
 L.append("    qXF[xb + 5.0] = pParent")
+L.append("    qXF2[xb2 + 0.0] = pPos.z")
+L.append("    qXF2[xb2 + 1.0] = pRot.x")
+L.append("    qXF2[xb2 + 2.0] = pRot.y")
+L.append("    qXF2[xb2 + 3.0] = if pScl.z == 0.0 then 1.0 else pScl.z")
 L.append("    qCount = e + 1.0")
 L.append("  }")
 L.append("  if commitQ {")
@@ -1194,9 +1323,11 @@ L.append("      let nslot0 = if qId[0] < 0.5 then 8.0 else qId[0] - 1.0")
 L.append("      let nsb0 = nslot0 * 32.0")
 L.append("      let ncb0 = nslot0 * 16.0")
 L.append("      let nxb0 = nslot0 * 6.0")
+L.append("      let mxb0 = nslot0 * 4.0")
 L.append("      let epb0 = 0.0 * 32.0")
 L.append("      let ecb0 = 0.0 * 16.0")
 L.append("      let exb0 = 0.0 * 6.0")
+L.append("      let mxe0 = 0.0 * 4.0")
 L.append("      if ne0 < 1.0 {")
 L.append("        slLive[nslot0] = 0.0")
 L.append("        anTicks[nslot0] = 0.0")
@@ -1257,6 +1388,10 @@ L.append("        anXF[nxb0 + 1.0] = qXF[exb0 + 1.0]")
 L.append("        anXF[nxb0 + 2.0] = qXF[exb0 + 2.0]")
 L.append("        anXF[nxb0 + 3.0] = qXF[exb0 + 3.0]")
 L.append("        anXF[nxb0 + 4.0] = qXF[exb0 + 4.0]")
+L.append("        anXF2[mxb0 + 0.0] = qXF2[mxe0 + 0.0]")
+L.append("        anXF2[mxb0 + 1.0] = qXF2[mxe0 + 1.0]")
+L.append("        anXF2[mxb0 + 2.0] = qXF2[mxe0 + 2.0]")
+L.append("        anXF2[mxb0 + 3.0] = qXF2[mxe0 + 3.0]")
 L.append("      } else {")
 L.append("        slPts[nsb0 + 0.0] = qPts[epb0 + 0.0]")
 L.append("        slPts[nsb0 + 1.0] = qPts[epb0 + 1.0]")
@@ -1315,6 +1450,10 @@ L.append("        slXF[nxb0 + 2.0] = qXF[exb0 + 2.0]")
 L.append("        slXF[nxb0 + 3.0] = qXF[exb0 + 3.0]")
 L.append("        slXF[nxb0 + 4.0] = qXF[exb0 + 4.0]")
 L.append("        slXF[nxb0 + 5.0] = qXF[exb0 + 5.0]")
+L.append("        slXF2[mxb0 + 0.0] = qXF2[mxe0 + 0.0]")
+L.append("        slXF2[mxb0 + 1.0] = qXF2[mxe0 + 1.0]")
+L.append("        slXF2[mxb0 + 2.0] = qXF2[mxe0 + 2.0]")
+L.append("        slXF2[mxb0 + 3.0] = qXF2[mxe0 + 3.0]")
 L.append("        anTicks[nslot0] = 0.0")
 L.append("        needRC = true")
 L.append("      }")
@@ -1325,9 +1464,11 @@ L.append("      let nslot1 = if qId[1] < 0.5 then 8.0 else qId[1] - 1.0")
 L.append("      let nsb1 = nslot1 * 32.0")
 L.append("      let ncb1 = nslot1 * 16.0")
 L.append("      let nxb1 = nslot1 * 6.0")
+L.append("      let mxb1 = nslot1 * 4.0")
 L.append("      let epb1 = 1.0 * 32.0")
 L.append("      let ecb1 = 1.0 * 16.0")
 L.append("      let exb1 = 1.0 * 6.0")
+L.append("      let mxe1 = 1.0 * 4.0")
 L.append("      if ne1 < 1.0 {")
 L.append("        slLive[nslot1] = 0.0")
 L.append("        anTicks[nslot1] = 0.0")
@@ -1388,6 +1529,10 @@ L.append("        anXF[nxb1 + 1.0] = qXF[exb1 + 1.0]")
 L.append("        anXF[nxb1 + 2.0] = qXF[exb1 + 2.0]")
 L.append("        anXF[nxb1 + 3.0] = qXF[exb1 + 3.0]")
 L.append("        anXF[nxb1 + 4.0] = qXF[exb1 + 4.0]")
+L.append("        anXF2[mxb1 + 0.0] = qXF2[mxe1 + 0.0]")
+L.append("        anXF2[mxb1 + 1.0] = qXF2[mxe1 + 1.0]")
+L.append("        anXF2[mxb1 + 2.0] = qXF2[mxe1 + 2.0]")
+L.append("        anXF2[mxb1 + 3.0] = qXF2[mxe1 + 3.0]")
 L.append("      } else {")
 L.append("        slPts[nsb1 + 0.0] = qPts[epb1 + 0.0]")
 L.append("        slPts[nsb1 + 1.0] = qPts[epb1 + 1.0]")
@@ -1446,6 +1591,10 @@ L.append("        slXF[nxb1 + 2.0] = qXF[exb1 + 2.0]")
 L.append("        slXF[nxb1 + 3.0] = qXF[exb1 + 3.0]")
 L.append("        slXF[nxb1 + 4.0] = qXF[exb1 + 4.0]")
 L.append("        slXF[nxb1 + 5.0] = qXF[exb1 + 5.0]")
+L.append("        slXF2[mxb1 + 0.0] = qXF2[mxe1 + 0.0]")
+L.append("        slXF2[mxb1 + 1.0] = qXF2[mxe1 + 1.0]")
+L.append("        slXF2[mxb1 + 2.0] = qXF2[mxe1 + 2.0]")
+L.append("        slXF2[mxb1 + 3.0] = qXF2[mxe1 + 3.0]")
 L.append("        anTicks[nslot1] = 0.0")
 L.append("        needRC = true")
 L.append("      }")
@@ -1456,9 +1605,11 @@ L.append("      let nslot2 = if qId[2] < 0.5 then 8.0 else qId[2] - 1.0")
 L.append("      let nsb2 = nslot2 * 32.0")
 L.append("      let ncb2 = nslot2 * 16.0")
 L.append("      let nxb2 = nslot2 * 6.0")
+L.append("      let mxb2 = nslot2 * 4.0")
 L.append("      let epb2 = 2.0 * 32.0")
 L.append("      let ecb2 = 2.0 * 16.0")
 L.append("      let exb2 = 2.0 * 6.0")
+L.append("      let mxe2 = 2.0 * 4.0")
 L.append("      if ne2 < 1.0 {")
 L.append("        slLive[nslot2] = 0.0")
 L.append("        anTicks[nslot2] = 0.0")
@@ -1519,6 +1670,10 @@ L.append("        anXF[nxb2 + 1.0] = qXF[exb2 + 1.0]")
 L.append("        anXF[nxb2 + 2.0] = qXF[exb2 + 2.0]")
 L.append("        anXF[nxb2 + 3.0] = qXF[exb2 + 3.0]")
 L.append("        anXF[nxb2 + 4.0] = qXF[exb2 + 4.0]")
+L.append("        anXF2[mxb2 + 0.0] = qXF2[mxe2 + 0.0]")
+L.append("        anXF2[mxb2 + 1.0] = qXF2[mxe2 + 1.0]")
+L.append("        anXF2[mxb2 + 2.0] = qXF2[mxe2 + 2.0]")
+L.append("        anXF2[mxb2 + 3.0] = qXF2[mxe2 + 3.0]")
 L.append("      } else {")
 L.append("        slPts[nsb2 + 0.0] = qPts[epb2 + 0.0]")
 L.append("        slPts[nsb2 + 1.0] = qPts[epb2 + 1.0]")
@@ -1577,6 +1732,10 @@ L.append("        slXF[nxb2 + 2.0] = qXF[exb2 + 2.0]")
 L.append("        slXF[nxb2 + 3.0] = qXF[exb2 + 3.0]")
 L.append("        slXF[nxb2 + 4.0] = qXF[exb2 + 4.0]")
 L.append("        slXF[nxb2 + 5.0] = qXF[exb2 + 5.0]")
+L.append("        slXF2[mxb2 + 0.0] = qXF2[mxe2 + 0.0]")
+L.append("        slXF2[mxb2 + 1.0] = qXF2[mxe2 + 1.0]")
+L.append("        slXF2[mxb2 + 2.0] = qXF2[mxe2 + 2.0]")
+L.append("        slXF2[mxb2 + 3.0] = qXF2[mxe2 + 3.0]")
 L.append("        anTicks[nslot2] = 0.0")
 L.append("        needRC = true")
 L.append("      }")
@@ -1587,9 +1746,11 @@ L.append("      let nslot3 = if qId[3] < 0.5 then 8.0 else qId[3] - 1.0")
 L.append("      let nsb3 = nslot3 * 32.0")
 L.append("      let ncb3 = nslot3 * 16.0")
 L.append("      let nxb3 = nslot3 * 6.0")
+L.append("      let mxb3 = nslot3 * 4.0")
 L.append("      let epb3 = 3.0 * 32.0")
 L.append("      let ecb3 = 3.0 * 16.0")
 L.append("      let exb3 = 3.0 * 6.0")
+L.append("      let mxe3 = 3.0 * 4.0")
 L.append("      if ne3 < 1.0 {")
 L.append("        slLive[nslot3] = 0.0")
 L.append("        anTicks[nslot3] = 0.0")
@@ -1650,6 +1811,10 @@ L.append("        anXF[nxb3 + 1.0] = qXF[exb3 + 1.0]")
 L.append("        anXF[nxb3 + 2.0] = qXF[exb3 + 2.0]")
 L.append("        anXF[nxb3 + 3.0] = qXF[exb3 + 3.0]")
 L.append("        anXF[nxb3 + 4.0] = qXF[exb3 + 4.0]")
+L.append("        anXF2[mxb3 + 0.0] = qXF2[mxe3 + 0.0]")
+L.append("        anXF2[mxb3 + 1.0] = qXF2[mxe3 + 1.0]")
+L.append("        anXF2[mxb3 + 2.0] = qXF2[mxe3 + 2.0]")
+L.append("        anXF2[mxb3 + 3.0] = qXF2[mxe3 + 3.0]")
 L.append("      } else {")
 L.append("        slPts[nsb3 + 0.0] = qPts[epb3 + 0.0]")
 L.append("        slPts[nsb3 + 1.0] = qPts[epb3 + 1.0]")
@@ -1708,6 +1873,10 @@ L.append("        slXF[nxb3 + 2.0] = qXF[exb3 + 2.0]")
 L.append("        slXF[nxb3 + 3.0] = qXF[exb3 + 3.0]")
 L.append("        slXF[nxb3 + 4.0] = qXF[exb3 + 4.0]")
 L.append("        slXF[nxb3 + 5.0] = qXF[exb3 + 5.0]")
+L.append("        slXF2[mxb3 + 0.0] = qXF2[mxe3 + 0.0]")
+L.append("        slXF2[mxb3 + 1.0] = qXF2[mxe3 + 1.0]")
+L.append("        slXF2[mxb3 + 2.0] = qXF2[mxe3 + 2.0]")
+L.append("        slXF2[mxb3 + 3.0] = qXF2[mxe3 + 3.0]")
 L.append("        anTicks[nslot3] = 0.0")
 L.append("        needRC = true")
 L.append("      }")
@@ -1718,9 +1887,11 @@ L.append("      let nslot4 = if qId[4] < 0.5 then 8.0 else qId[4] - 1.0")
 L.append("      let nsb4 = nslot4 * 32.0")
 L.append("      let ncb4 = nslot4 * 16.0")
 L.append("      let nxb4 = nslot4 * 6.0")
+L.append("      let mxb4 = nslot4 * 4.0")
 L.append("      let epb4 = 4.0 * 32.0")
 L.append("      let ecb4 = 4.0 * 16.0")
 L.append("      let exb4 = 4.0 * 6.0")
+L.append("      let mxe4 = 4.0 * 4.0")
 L.append("      if ne4 < 1.0 {")
 L.append("        slLive[nslot4] = 0.0")
 L.append("        anTicks[nslot4] = 0.0")
@@ -1781,6 +1952,10 @@ L.append("        anXF[nxb4 + 1.0] = qXF[exb4 + 1.0]")
 L.append("        anXF[nxb4 + 2.0] = qXF[exb4 + 2.0]")
 L.append("        anXF[nxb4 + 3.0] = qXF[exb4 + 3.0]")
 L.append("        anXF[nxb4 + 4.0] = qXF[exb4 + 4.0]")
+L.append("        anXF2[mxb4 + 0.0] = qXF2[mxe4 + 0.0]")
+L.append("        anXF2[mxb4 + 1.0] = qXF2[mxe4 + 1.0]")
+L.append("        anXF2[mxb4 + 2.0] = qXF2[mxe4 + 2.0]")
+L.append("        anXF2[mxb4 + 3.0] = qXF2[mxe4 + 3.0]")
 L.append("      } else {")
 L.append("        slPts[nsb4 + 0.0] = qPts[epb4 + 0.0]")
 L.append("        slPts[nsb4 + 1.0] = qPts[epb4 + 1.0]")
@@ -1839,6 +2014,10 @@ L.append("        slXF[nxb4 + 2.0] = qXF[exb4 + 2.0]")
 L.append("        slXF[nxb4 + 3.0] = qXF[exb4 + 3.0]")
 L.append("        slXF[nxb4 + 4.0] = qXF[exb4 + 4.0]")
 L.append("        slXF[nxb4 + 5.0] = qXF[exb4 + 5.0]")
+L.append("        slXF2[mxb4 + 0.0] = qXF2[mxe4 + 0.0]")
+L.append("        slXF2[mxb4 + 1.0] = qXF2[mxe4 + 1.0]")
+L.append("        slXF2[mxb4 + 2.0] = qXF2[mxe4 + 2.0]")
+L.append("        slXF2[mxb4 + 3.0] = qXF2[mxe4 + 3.0]")
 L.append("        anTicks[nslot4] = 0.0")
 L.append("        needRC = true")
 L.append("      }")
@@ -1849,9 +2028,11 @@ L.append("      let nslot5 = if qId[5] < 0.5 then 8.0 else qId[5] - 1.0")
 L.append("      let nsb5 = nslot5 * 32.0")
 L.append("      let ncb5 = nslot5 * 16.0")
 L.append("      let nxb5 = nslot5 * 6.0")
+L.append("      let mxb5 = nslot5 * 4.0")
 L.append("      let epb5 = 5.0 * 32.0")
 L.append("      let ecb5 = 5.0 * 16.0")
 L.append("      let exb5 = 5.0 * 6.0")
+L.append("      let mxe5 = 5.0 * 4.0")
 L.append("      if ne5 < 1.0 {")
 L.append("        slLive[nslot5] = 0.0")
 L.append("        anTicks[nslot5] = 0.0")
@@ -1912,6 +2093,10 @@ L.append("        anXF[nxb5 + 1.0] = qXF[exb5 + 1.0]")
 L.append("        anXF[nxb5 + 2.0] = qXF[exb5 + 2.0]")
 L.append("        anXF[nxb5 + 3.0] = qXF[exb5 + 3.0]")
 L.append("        anXF[nxb5 + 4.0] = qXF[exb5 + 4.0]")
+L.append("        anXF2[mxb5 + 0.0] = qXF2[mxe5 + 0.0]")
+L.append("        anXF2[mxb5 + 1.0] = qXF2[mxe5 + 1.0]")
+L.append("        anXF2[mxb5 + 2.0] = qXF2[mxe5 + 2.0]")
+L.append("        anXF2[mxb5 + 3.0] = qXF2[mxe5 + 3.0]")
 L.append("      } else {")
 L.append("        slPts[nsb5 + 0.0] = qPts[epb5 + 0.0]")
 L.append("        slPts[nsb5 + 1.0] = qPts[epb5 + 1.0]")
@@ -1970,6 +2155,10 @@ L.append("        slXF[nxb5 + 2.0] = qXF[exb5 + 2.0]")
 L.append("        slXF[nxb5 + 3.0] = qXF[exb5 + 3.0]")
 L.append("        slXF[nxb5 + 4.0] = qXF[exb5 + 4.0]")
 L.append("        slXF[nxb5 + 5.0] = qXF[exb5 + 5.0]")
+L.append("        slXF2[mxb5 + 0.0] = qXF2[mxe5 + 0.0]")
+L.append("        slXF2[mxb5 + 1.0] = qXF2[mxe5 + 1.0]")
+L.append("        slXF2[mxb5 + 2.0] = qXF2[mxe5 + 2.0]")
+L.append("        slXF2[mxb5 + 3.0] = qXF2[mxe5 + 3.0]")
 L.append("        anTicks[nslot5] = 0.0")
 L.append("        needRC = true")
 L.append("      }")
@@ -1980,9 +2169,11 @@ L.append("      let nslot6 = if qId[6] < 0.5 then 8.0 else qId[6] - 1.0")
 L.append("      let nsb6 = nslot6 * 32.0")
 L.append("      let ncb6 = nslot6 * 16.0")
 L.append("      let nxb6 = nslot6 * 6.0")
+L.append("      let mxb6 = nslot6 * 4.0")
 L.append("      let epb6 = 6.0 * 32.0")
 L.append("      let ecb6 = 6.0 * 16.0")
 L.append("      let exb6 = 6.0 * 6.0")
+L.append("      let mxe6 = 6.0 * 4.0")
 L.append("      if ne6 < 1.0 {")
 L.append("        slLive[nslot6] = 0.0")
 L.append("        anTicks[nslot6] = 0.0")
@@ -2043,6 +2234,10 @@ L.append("        anXF[nxb6 + 1.0] = qXF[exb6 + 1.0]")
 L.append("        anXF[nxb6 + 2.0] = qXF[exb6 + 2.0]")
 L.append("        anXF[nxb6 + 3.0] = qXF[exb6 + 3.0]")
 L.append("        anXF[nxb6 + 4.0] = qXF[exb6 + 4.0]")
+L.append("        anXF2[mxb6 + 0.0] = qXF2[mxe6 + 0.0]")
+L.append("        anXF2[mxb6 + 1.0] = qXF2[mxe6 + 1.0]")
+L.append("        anXF2[mxb6 + 2.0] = qXF2[mxe6 + 2.0]")
+L.append("        anXF2[mxb6 + 3.0] = qXF2[mxe6 + 3.0]")
 L.append("      } else {")
 L.append("        slPts[nsb6 + 0.0] = qPts[epb6 + 0.0]")
 L.append("        slPts[nsb6 + 1.0] = qPts[epb6 + 1.0]")
@@ -2101,6 +2296,10 @@ L.append("        slXF[nxb6 + 2.0] = qXF[exb6 + 2.0]")
 L.append("        slXF[nxb6 + 3.0] = qXF[exb6 + 3.0]")
 L.append("        slXF[nxb6 + 4.0] = qXF[exb6 + 4.0]")
 L.append("        slXF[nxb6 + 5.0] = qXF[exb6 + 5.0]")
+L.append("        slXF2[mxb6 + 0.0] = qXF2[mxe6 + 0.0]")
+L.append("        slXF2[mxb6 + 1.0] = qXF2[mxe6 + 1.0]")
+L.append("        slXF2[mxb6 + 2.0] = qXF2[mxe6 + 2.0]")
+L.append("        slXF2[mxb6 + 3.0] = qXF2[mxe6 + 3.0]")
 L.append("        anTicks[nslot6] = 0.0")
 L.append("        needRC = true")
 L.append("      }")
@@ -2111,9 +2310,11 @@ L.append("      let nslot7 = if qId[7] < 0.5 then 8.0 else qId[7] - 1.0")
 L.append("      let nsb7 = nslot7 * 32.0")
 L.append("      let ncb7 = nslot7 * 16.0")
 L.append("      let nxb7 = nslot7 * 6.0")
+L.append("      let mxb7 = nslot7 * 4.0")
 L.append("      let epb7 = 7.0 * 32.0")
 L.append("      let ecb7 = 7.0 * 16.0")
 L.append("      let exb7 = 7.0 * 6.0")
+L.append("      let mxe7 = 7.0 * 4.0")
 L.append("      if ne7 < 1.0 {")
 L.append("        slLive[nslot7] = 0.0")
 L.append("        anTicks[nslot7] = 0.0")
@@ -2174,6 +2375,10 @@ L.append("        anXF[nxb7 + 1.0] = qXF[exb7 + 1.0]")
 L.append("        anXF[nxb7 + 2.0] = qXF[exb7 + 2.0]")
 L.append("        anXF[nxb7 + 3.0] = qXF[exb7 + 3.0]")
 L.append("        anXF[nxb7 + 4.0] = qXF[exb7 + 4.0]")
+L.append("        anXF2[mxb7 + 0.0] = qXF2[mxe7 + 0.0]")
+L.append("        anXF2[mxb7 + 1.0] = qXF2[mxe7 + 1.0]")
+L.append("        anXF2[mxb7 + 2.0] = qXF2[mxe7 + 2.0]")
+L.append("        anXF2[mxb7 + 3.0] = qXF2[mxe7 + 3.0]")
 L.append("      } else {")
 L.append("        slPts[nsb7 + 0.0] = qPts[epb7 + 0.0]")
 L.append("        slPts[nsb7 + 1.0] = qPts[epb7 + 1.0]")
@@ -2232,6 +2437,10 @@ L.append("        slXF[nxb7 + 2.0] = qXF[exb7 + 2.0]")
 L.append("        slXF[nxb7 + 3.0] = qXF[exb7 + 3.0]")
 L.append("        slXF[nxb7 + 4.0] = qXF[exb7 + 4.0]")
 L.append("        slXF[nxb7 + 5.0] = qXF[exb7 + 5.0]")
+L.append("        slXF2[mxb7 + 0.0] = qXF2[mxe7 + 0.0]")
+L.append("        slXF2[mxb7 + 1.0] = qXF2[mxe7 + 1.0]")
+L.append("        slXF2[mxb7 + 2.0] = qXF2[mxe7 + 2.0]")
+L.append("        slXF2[mxb7 + 3.0] = qXF2[mxe7 + 3.0]")
 L.append("        anTicks[nslot7] = 0.0")
 L.append("        needRC = true")
 L.append("      }")
@@ -2267,6 +2476,7 @@ L.append("    let slot = (pId - 1.0) | 0")
 L.append("    let sbase = slot * 32.0")
 L.append("    let cbase = slot * 16.0")
 L.append("    let xbase = slot * 6.0")
+L.append("    let xbase2 = slot * 4.0")
 L.append("    needRC = false")
 # A bare drawAllShapes with live animation repaints through this path
 # without storing anything (recompOnly); an animated push to a live
@@ -2336,6 +2546,14 @@ L.append("      anXF[xbase + 1.0] = pPos.y")
 L.append("      anXF[xbase + 2.0] = pRot.z")
 L.append("      anXF[xbase + 3.0] = pScl.x")
 L.append("      anXF[xbase + 4.0] = pScl.y")
+L.append("      anXF2[xbase2 + 0.0] = pPos.z")
+L.append("      anXF2[xbase2 + 1.0] = pRot.x")
+L.append("      anXF2[xbase2 + 2.0] = pRot.y")
+L.append("      anXF2[xbase2 + 3.0] = pScl.z")
+L.append("      anXF2[xbase2 + 0.0] = pPos.z")
+L.append("      anXF2[xbase2 + 1.0] = pRot.x")
+L.append("      anXF2[xbase2 + 2.0] = pRot.y")
+L.append("      anXF2[xbase2 + 3.0] = pScl.z")
 L.append("    } else {")
 for i in range(32):
     L.append("      slPts[sbase + %d.0] = shapePoints[%d]" % (i, i))
@@ -2349,11 +2567,15 @@ L.append("      slCount[slot] = n")
 L.append("      slXF[xbase + 0.0] = pPos.x")
 L.append("      slXF[xbase + 1.0] = pPos.y")
 L.append("      slXF[xbase + 2.0] = pRot.z")
+L.append("      slXF2[xbase2 + 0.0] = pPos.z")
+L.append("      slXF2[xbase2 + 1.0] = pRot.x")
+L.append("      slXF2[xbase2 + 2.0] = pRot.y")
 # Stored scales are defaulted (zeroes mean identity): the ancestor
 # walk can then compose without a per-step guard.
 L.append("      slXF[xbase + 3.0] = if pScl.x == 0.0 then 1.0 else pScl.x")
 L.append("      slXF[xbase + 4.0] = if pScl.y == 0.0 then 1.0 else pScl.y")
 L.append("      slXF[xbase + 5.0] = pParent")
+L.append("      slXF2[xbase2 + 3.0] = if pScl.z == 0.0 then 1.0 else pScl.z")
 L.append("      anTicks[slot] = 0.0")
 L.append("      needRC = true")
 L.append("    }")
@@ -2413,7 +2635,7 @@ L.append("        plast = bPL")
 L.append("        sSegs = bSEGS")
 L.append("      }")
 L.append("      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending {")
-L.append("        prow = pfirst - 2.0")
+L.append("        prow = pfirst - 8.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("      }")
@@ -2421,6 +2643,7 @@ L.append("      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR &
 for i in range(MAXP):
     L.append("        rX%d = sPx%d" % (i, i))
     L.append("        rY%d = sPy%d" % (i, i))
+    L.append("        rZ%d = sPz%d" % (i, i))
     L.append("        rC%d = sPc%d" % (i, i))
 L.append("        sFresh = false")
 L.append("        sFreshLast = false")
@@ -2469,9 +2692,9 @@ L.append("        sSegs = n")
 for i in range(MAXP):
     L.append("        pC%d = slPC[ff * 16 + %d.0]" % (i, i))
 L.append("        pWire = slMode[ff] > 0.5")
-L.append("        pPos = Vec(slXF[ff * 6 + 0.0], slXF[ff * 6 + 1.0], 0.0)")
-L.append("        pRot = Vec(0.0, 0.0, slXF[ff * 6 + 2.0])")
-L.append("        pScl = Vec(slXF[ff * 6 + 3.0], slXF[ff * 6 + 4.0], 1.0)")
+L.append("        pPos = Vec(slXF[ff * 6 + 0.0], slXF[ff * 6 + 1.0], slXF2[ff * 4 + 0.0])")
+L.append("        pRot = Vec(slXF2[ff * 4 + 1.0], slXF2[ff * 4 + 2.0], slXF[ff * 6 + 2.0])")
+L.append("        pScl = Vec(slXF[ff * 6 + 3.0], slXF[ff * 6 + 4.0], slXF2[ff * 4 + 3.0])")
 L.append("        pParent = slXF[ff * 6 + 5.0]")
 L.append("        needXF = true")
 L.append("        fromSlot = true")
@@ -2506,27 +2729,36 @@ L.append("  }")
 # Runs once per staged shape, after the shadow/slot load and before
 # either arm.  The world transform (own locals composed through every
 # ancestor) is resolved from the staging vars and the slot store, then
-# the 16 staged points are transformed in place: shapeScale, rotate about
-# the origin by shapeRotation.z (radians), translate.  Both arms then
-# proceed unchanged -- fills, strokes, replays and the retained store
-# all see world-space points.  The ancestor walk is straight-line and
-# capped at 8 steps (the slot count, so the deepest acyclic chain):
-# a dead, missing or out-of-range parent resolves to identity above
-# it; a cycle revisits and paints its 8-fold composition.  An
-# unparented shape
-# skips the walk entirely (its guard never fires, so the 48 slow
-# computed reads cost nothing in the sim).  The black clearing fill
-# skips the whole block: its corners are screen-space by construction.
+# the 16 staged points are transformed in place.  All three vector
+# fields are live: shapePosition.xyz translates, shapeRotation.xyz
+# rotates (radians, R = Rz*Ry*Rx, off-axis tilt foreshortens),
+# shapeScale.xyz scales (zeroes mean identity).  Projection is
+# orthographic (screen x/y are world x/y); world z is the depth the
+# fill's depth buffer tests (bigger z paints in front).
+# The ancestor walk is straight-line and capped at 8 steps (the slot
+# count, so the deepest acyclic chain): a dead, missing or out-of-range
+# parent resolves to identity above it; a cycle revisits and paints its
+# 8-fold composition.  With no tilt anywhere in the chain the legacy
+# planar path runs bit-identically to before (same op order) and depth
+# is one translated scalar; tilted chains take the matrix path.  An
+# unparented shape skips the walk entirely (its guard never fires, so
+# the slow computed reads cost nothing in the sim).  The black clearing
+# fill skips the whole block: its corners are screen-space already.
 L.append("  if needXF {")
 L.append("    needXF = false")
 L.append("    if !clearing {")
 L.append("      let lsx = if pScl.x == 0.0 then 1.0 else pScl.x")
 L.append("      let lsy = if pScl.y == 0.0 then 1.0 else pScl.y")
+L.append("      let lsz = if pScl.z == 0.0 then 1.0 else pScl.z")
 L.append("      wpx = pPos.x")
 L.append("      wpy = pPos.y")
+L.append("      wpz = pPos.z")
+L.append("      wrx = pRot.x")
+L.append("      wry = pRot.y")
 L.append("      wr = pRot.z")
 L.append("      wsx = lsx")
 L.append("      wsy = lsy")
+L.append("      tilt3d = if pRot.x == 0.0 && pRot.y == 0.0 then 0.0 else 1.0")
 L.append("      cur = pParent")
 for _s in range(8):
     # cur is always an integer in 0..8 (staging clamps it, the store
@@ -2540,6 +2772,10 @@ for _s in range(8):
     L.append("          let psx = slXF[pli * 6 + 3.0]")
     L.append("          let psy = slXF[pli * 6 + 4.0]")
     L.append("          let ppar = slXF[pli * 6 + 5.0]")
+    L.append("          let ppz = slXF2[pli * 4 + 0.0]")
+    L.append("          let prx = slXF2[pli * 4 + 1.0]")
+    L.append("          let pry = slXF2[pli * 4 + 2.0]")
+    L.append("          let psz = slXF2[pli * 4 + 3.0]")
     L.append("          let cosp = cos(pra)")
     L.append("          let sinp = sin(pra)")
     L.append("          wr = pra + wr")
@@ -2551,8 +2787,10 @@ for _s in range(8):
               " + ((psy * swy) * cosp)")
     L.append("          wpx = nwx")
     L.append("          wpy = nwy")
+    L.append("          wpz = psz * wpz + ppz")
     L.append("          wsx = psx * wsx")
     L.append("          wsy = psy * wsy")
+    L.append("          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }")
     L.append("          cur = ppar")
     L.append("        } else {")
     L.append("          cur = 0.0")
@@ -2562,15 +2800,135 @@ for _s in range(8):
     L.append("      }")
 # A cycle revisits for all 8 steps and paints its 8-fold composition
 # (defined, degraded -- the wall never blanks on a bad parent).
-L.append("      let ct = cos(wr)")
-L.append("      let st = sin(wr)")
+# Untilted chains take the legacy planar path bit-identically (same op
+# order, so every 2D suite pixel is untouched) with one translated
+# depth; tilted chains compose full 3x4 matrices in a second walk and
+# apply them per point (local z is always 0, so only two basis
+# columns plus translation run per point).
+L.append("      if tilt3d < 0.5 {")
+L.append("        let ct = cos(wr)")
+L.append("        let st = sin(wr)")
 for i in range(MAXP):
-    L.append("      let ox%d = shPts[%d] * wsx" % (i, 2 * i))
-    L.append("      let oy%d = shPts[%d] * wsy" % (i, 2 * i + 1))
-    L.append("      shPts[%d] = wpx + ((ox%d * ct) - (oy%d * st))"
+    L.append("        let ox%d = shPts[%d] * wsx" % (i, 2 * i))
+    L.append("        let oy%d = shPts[%d] * wsy" % (i, 2 * i + 1))
+    L.append("        shPts[%d] = wpx + ((ox%d * ct) - (oy%d * st))"
              % (2 * i, i, i))
-    L.append("      shPts[%d] = wpy + ((ox%d * st) + (oy%d * ct))"
+    L.append("        shPts[%d] = wpy + ((ox%d * st) + (oy%d * ct))"
              % (2 * i + 1, i, i))
+    L.append("        shPz[%d] = wpz" % i)
+L.append("      } else {")
+L.append("        let mcx = cos(pRot.x)")
+L.append("        let msx = sin(pRot.x)")
+L.append("        let mcy = cos(pRot.y)")
+L.append("        let msy = sin(pRot.y)")
+L.append("        let mcz = cos(pRot.z)")
+L.append("        let msz = sin(pRot.z)")
+L.append("        let mr00 = mcz * mcy")
+L.append("        let mr01 = mcz * msy * msx - msz * mcx")
+L.append("        let mr02 = mcz * msy * mcx + msz * msx")
+L.append("        let mr10 = msz * mcy")
+L.append("        let mr11 = msz * msy * msx + mcz * mcx")
+L.append("        let mr12 = msz * msy * mcx - mcz * msx")
+L.append("        let mr20 = 0.0 - msy")
+L.append("        let mr21 = mcy * msx")
+L.append("        let mr22 = mcy * mcx")
+L.append("        let mm00 = mr00 * lsx")
+L.append("        let mm01 = mr01 * lsy")
+L.append("        let mm02 = mr02 * lsz")
+L.append("        let mm10 = mr10 * lsx")
+L.append("        let mm11 = mr11 * lsy")
+L.append("        let mm12 = mr12 * lsz")
+L.append("        let mm20 = mr20 * lsx")
+L.append("        let mm21 = mr21 * lsy")
+L.append("        let mm22 = mr22 * lsz")
+L.append("        m00 = mm00")
+L.append("        m01 = mm01")
+L.append("        m02 = mm02")
+L.append("        m03 = pPos.x")
+L.append("        m10 = mm10")
+L.append("        m11 = mm11")
+L.append("        m12 = mm12")
+L.append("        m13 = pPos.y")
+L.append("        m20 = mm20")
+L.append("        m21 = mm21")
+L.append("        m22 = mm22")
+L.append("        m23 = pPos.z")
+L.append("        cur = pParent")
+for _s in range(8):
+    L.append("        if cur >= 1.0 {")
+    L.append("          let qli = (cur - 1.0) | 0")
+    L.append("          if slLive[qli] > 0.5 {")
+    L.append("            let qpx = slXF[qli * 6 + 0.0]")
+    L.append("            let qpy = slXF[qli * 6 + 1.0]")
+    L.append("            let qrz = slXF[qli * 6 + 2.0]")
+    L.append("            let qsx = slXF[qli * 6 + 3.0]")
+    L.append("            let qsy = slXF[qli * 6 + 4.0]")
+    L.append("            let qqz = slXF2[qli * 4 + 0.0]")
+    L.append("            let qrx = slXF2[qli * 4 + 1.0]")
+    L.append("            let qry = slXF2[qli * 4 + 2.0]")
+    L.append("            let qsz = slXF2[qli * 4 + 3.0]")
+    L.append("            let qcx = cos(qrx)")
+    L.append("            let qsx2 = sin(qrx)")
+    L.append("            let qcy = cos(qry)")
+    L.append("            let qsy2 = sin(qry)")
+    L.append("            let qcz = cos(qrz)")
+    L.append("            let qsz2 = sin(qrz)")
+    L.append("            let qr00 = qcz * qcy")
+    L.append("            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx")
+    L.append("            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2")
+    L.append("            let qr10 = qsz2 * qcy")
+    L.append("            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx")
+    L.append("            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2")
+    L.append("            let qr20 = 0.0 - qsy2")
+    L.append("            let qr21 = qcy * qsx2")
+    L.append("            let qr22 = qcy * qcx")
+    L.append("            let qp00 = qr00 * qsx")
+    L.append("            let qp01 = qr01 * qsy")
+    L.append("            let qp02 = qr02 * qsz")
+    L.append("            let qp10 = qr10 * qsx")
+    L.append("            let qp11 = qr11 * qsy")
+    L.append("            let qp12 = qr12 * qsz")
+    L.append("            let qp20 = qr20 * qsx")
+    L.append("            let qp21 = qr21 * qsy")
+    L.append("            let qp22 = qr22 * qsz")
+    L.append("            let n00 = qp00 * m00 + qp01 * m10 + qp02 * m20")
+    L.append("            let n01 = qp00 * m01 + qp01 * m11 + qp02 * m21")
+    L.append("            let n02 = qp00 * m02 + qp01 * m12 + qp02 * m22")
+    L.append("            let n03 = qp00 * m03 + qp01 * m13 + qp02 * m23 + qpx")
+    L.append("            let n10 = qp10 * m00 + qp11 * m10 + qp12 * m20")
+    L.append("            let n11 = qp10 * m01 + qp11 * m11 + qp12 * m21")
+    L.append("            let n12 = qp10 * m02 + qp11 * m12 + qp12 * m22")
+    L.append("            let n13 = qp10 * m03 + qp11 * m13 + qp12 * m23 + qpy")
+    L.append("            let n20 = qp20 * m00 + qp21 * m10 + qp22 * m20")
+    L.append("            let n21 = qp20 * m01 + qp21 * m11 + qp22 * m21")
+    L.append("            let n22 = qp20 * m02 + qp21 * m12 + qp22 * m22")
+    L.append("            let n23 = qp20 * m03 + qp21 * m13 + qp22 * m23 + qqz")
+    L.append("            m00 = n00")
+    L.append("            m01 = n01")
+    L.append("            m02 = n02")
+    L.append("            m03 = n03")
+    L.append("            m10 = n10")
+    L.append("            m11 = n11")
+    L.append("            m12 = n12")
+    L.append("            m13 = n13")
+    L.append("            m20 = n20")
+    L.append("            m21 = n21")
+    L.append("            m22 = n22")
+    L.append("            m23 = n23")
+    L.append("            cur = slXF[qli * 6 + 5.0]")
+    L.append("          } else {")
+    L.append("            cur = 0.0")
+    L.append("          }")
+    L.append("        } else {")
+    L.append("          cur = 0.0")
+    L.append("        }")
+for i in range(MAXP):
+    L.append("        let qx%d = shPts[%d]" % (i, 2 * i))
+    L.append("        let qy%d = shPts[%d]" % (i, 2 * i + 1))
+    L.append("        shPts[%d] = m00 * qx%d + m01 * qy%d + m03" % (2 * i, i, i))
+    L.append("        shPts[%d] = m10 * qx%d + m11 * qy%d + m13" % (2 * i + 1, i, i))
+    L.append("        shPz[%d] = m20 * qx%d + m21 * qy%d + m23" % (i, i, i))
+L.append("      }")
 L.append("    }")
 L.append("  }")
 
@@ -2633,6 +2991,7 @@ L.append("      erasing = false")
 L.append("      clearing = false")
 L.append("      fromSlot = false")
 L.append("      eraseOK = true")
+L.append("      noDepth = true")
 L.append("      shPts[0] = 0.0")
 L.append("      shPts[1] = 0.0")
 L.append("      shPts[2] = 64.0")
@@ -2652,6 +3011,7 @@ for i in range(MAXP):
     L.append("      pC%d = Color(0.0, 0.0, 0.0, 1.0)" % i)
 L.append("    } else {")
 L.append("      erasing = false")
+L.append("      noDepth = false")
 L.append("      if fromSlot {")
 L.append("        fromSlot = false")
 L.append("        eraseOK = true")
@@ -2677,6 +3037,8 @@ L.append("    if n >= 3.0 {")
 for i in range(MAXP):
     L.append("      let px%d = shPts[%d]" % (i, 2 * i))
     L.append("      let py%d = shPts[%d]" % (i, 2 * i + 1))
+for i in range(MAXP):
+    L.append("      pzV%d = shPz[%d]" % (i, i))
 for i in range(MAXP):
     if i + 1 < MAXP:
         L.append("      let qx%d = if %d.0 < n then px%d else px0"
@@ -2722,7 +3084,7 @@ L.append("        polyLive = false")
 L.append("      } else {")
 L.append("        pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)")
 L.append("        plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)")
-L.append("        prow = pfirst - 2.0")
+L.append("        prow = pfirst - 8.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("        polyLive = true")
@@ -2743,6 +3105,7 @@ L.append("    polyLive = false")
 for i in range(MAXP):
     L.append("    sPx%d = shPts[%d]" % (i, 2 * i))
     L.append("    sPy%d = shPts[%d]" % (i, 2 * i + 1))
+    L.append("    sPz%d = shPz[%d]" % (i, i))
     L.append("    sPc%d = pC%d" % (i, i))
 L.append("    if fromSlot {")
 L.append("      fromSlot = false")
@@ -2784,12 +3147,16 @@ L.append("          iAB = 0.0")
 L.append("          iCD = 0.0")
 L.append("          qAx = sPx0 | 0")
 L.append("          qAy = sPy0 | 0")
+L.append("          qAz = sPz0")
 L.append("          qBx = (sPx0 | 0) + 1.0")
 L.append("          qBy = sPy0 | 0")
+L.append("          qBz = sPz0")
 L.append("          qCx = (sPx0 | 0) + 1.0")
 L.append("          qCy = (sPy0 | 0) + 2.0")
+L.append("          qCz = sPz0")
 L.append("          qDx = sPx0 | 0")
 L.append("          qDy = (sPy0 | 0) + 2.0")
+L.append("          qDz = sPz0")
 L.append("          sFresh = false")
 L.append("          sFreshLast = false")
 L.append("          sEnd = false")
@@ -2803,6 +3170,7 @@ L.append("        sSegs = sSegs - 1.0")
 for i in range(MAXP):
     L.append("        rX%d = sPx%d" % (i, i))
     L.append("        rY%d = sPy%d" % (i, i))
+    L.append("        rZ%d = sPz%d" % (i, i))
     L.append("        rC%d = sPc%d" % (i, i))
 L.append("        sFresh = false")
 L.append("        sFreshLast = false")
@@ -2828,7 +3196,7 @@ L.append("  }")
 # machinery.
 L.append("  if polyOn {")
 L.append("    if pcol > pcurR {")
-L.append("      prow = prow + (if prow + 2.0 <= plast then 2.0 else 1.0)")
+L.append("      prow = prow + 8.0")
 L.append("      if prow > plast {")
 L.append("        polyOn = false")
 L.append("      } else {")
@@ -2854,6 +3222,12 @@ for i in range(MAXP):
     L.append("        let cx%d = eX%d + eS%d * (prow - eY%d)" % (i, i, i, i))
     L.append("        cc%d = pC%d + (prow - eY%d) * eInv%d"
              " * (%s - pC%d)" % (i, i, i, i, end, i))
+    if i + 1 < MAXP:
+        zend = "(if %d.0 < n then pzV%d else pzV0)" % (i + 1, i + 1)
+    else:
+        zend = "pzV0"
+    L.append("        let cz%d = pzV%d + (prow - eY%d) * eInv%d"
+             " * (%s - pzV%d)" % (i, i, i, i, zend, i))
     # Two masks, one per reduction: the min needs its invalid edges large
     # and the max needs them small, or a 16-edge polygon's twelve dead
     # edges win the max and every row fills to the wall's right edge.
@@ -2862,45 +3236,61 @@ for i in range(MAXP):
     L.append("        let cmx%d = if cv%d then cx%d else -200.0" % (i, i, i))
 mn = ["cmn%d" % i for i in range(MAXP)]
 mnc = ["cc%d" % i for i in range(MAXP)]
+mnz = ["cz%d" % i for i in range(MAXP)]
 layer = 0
 while len(mn) > 1:
     nxt = []
     nxtc = []
+    nxtz = []
     for a in range(0, len(mn) - 1, 2):
         nm = "n%d_%d" % (layer, a)
         ncm = "nc%d_%d" % (layer, a)
+        nzm = "nz%d_%d" % (layer, a)
         L.append("        let %s = if %s < %s then %s else %s"
                  % (nm, mn[a], mn[a + 1], mn[a], mn[a + 1]))
         L.append("        let %s = if %s < %s then %s else %s"
                  % (ncm, mn[a], mn[a + 1], mnc[a], mnc[a + 1]))
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (nzm, mn[a], mn[a + 1], mnz[a], mnz[a + 1]))
         nxt.append(nm)
         nxtc.append(ncm)
+        nxtz.append(nzm)
     if len(mn) % 2:
         nxt.append(mn[-1])
         nxtc.append(mnc[-1])
+        nxtz.append(mnz[-1])
     mn = nxt
     mnc = nxtc
+    mnz = nxtz
     layer += 1
 mx = ["cmx%d" % i for i in range(MAXP)]
 mxc = ["cc%d" % i for i in range(MAXP)]
+mxz = ["cz%d" % i for i in range(MAXP)]
 layer = 0
 while len(mx) > 1:
     nxt = []
     nxtc = []
+    nxtz = []
     for a in range(0, len(mx) - 1, 2):
         nm = "x%d_%d" % (layer, a)
         ncm = "xc%d_%d" % (layer, a)
+        nzm = "xz%d_%d" % (layer, a)
         L.append("        let %s = if %s < %s then %s else %s"
                  % (nm, mx[a], mx[a + 1], mx[a + 1], mx[a]))
         L.append("        let %s = if %s < %s then %s else %s"
                  % (ncm, mx[a], mx[a + 1], mxc[a + 1], mxc[a]))
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (nzm, mx[a], mx[a + 1], mxz[a + 1], mxz[a]))
         nxt.append(nm)
         nxtc.append(ncm)
+        nxtz.append(nzm)
     if len(mx) % 2:
         nxt.append(mx[-1])
         nxtc.append(mxc[-1])
+        nxtz.append(mxz[-1])
     mx = nxt
     mxc = nxtc
+    mxz = nxtz
     layer += 1
 L.append("        if %s >= 200.0 || %s < 0.0 || %s >= SWF {"
          % (mn[0], mx[0], mn[0]))
@@ -2929,6 +3319,8 @@ L.append("          cLo = %s" % mnc[0])
 L.append("          let span = %s - %s" % (mx[0], mn[0]))
 L.append("          let inv = if span > 0.0 then 1.0 / span else 0.0")
 L.append("          rowSlope = (%s - cLo) * inv" % mxc[0])
+L.append("          zLo = %s" % mnz[0])
+L.append("          zSlope = (%s - zLo) * inv" % mxz[0])
 L.append("          cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf,"
          " cLo.a)")
 L.append("          rowSlope = Color(rowSlope.r * bf, rowSlope.g * bf,"
@@ -2955,49 +3347,71 @@ for i in range(MAXP):
     L.append("        let cxB%d = eX%d + eS%d * (brow - eY%d)" % (i, i, i, i))
     L.append("        cc2_%d = pC%d + (brow - eY%d) * eInv%d"
              " * (%s - pC%d)" % (i, i, i, i, end, i))
+    if i + 1 < MAXP:
+        zendB = "(if %d.0 < n then pzV%d else pzV0)" % (i + 1, i + 1)
+    else:
+        zendB = "pzV0"
+    L.append("        let cz2_%d = pzV%d + (brow - eY%d) * eInv%d"
+             " * (%s - pzV%d)" % (i, i, i, i, zendB, i))
     L.append("        let cmnB%d = if cvB%d then cxB%d else 200.0" % (i, i, i))
     L.append("        let cmxB%d = if cvB%d then cxB%d else -200.0" % (i, i, i))
 bmn = ["cmnB%d" % i for i in range(MAXP)]
 bmnc = ["cc2_%d" % i for i in range(MAXP)]
+bmnz = ["cz2_%d" % i for i in range(MAXP)]
 layer = 0
 while len(bmn) > 1:
     nxt = []
     nxtc = []
+    nxtz = []
     for a in range(0, len(bmn) - 1, 2):
         nm = "bn%d_%d" % (layer, a)
         ncm = "bnc%d_%d" % (layer, a)
+        nzm = "bnz%d_%d" % (layer, a)
         L.append("        let %s = if %s < %s then %s else %s"
                  % (nm, bmn[a], bmn[a + 1], bmn[a], bmn[a + 1]))
         L.append("        let %s = if %s < %s then %s else %s"
                  % (ncm, bmn[a], bmn[a + 1], bmnc[a], bmnc[a + 1]))
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (nzm, bmn[a], bmn[a + 1], bmnz[a], bmnz[a + 1]))
         nxt.append(nm)
         nxtc.append(ncm)
+        nxtz.append(nzm)
     if len(bmn) % 2:
         nxt.append(bmn[-1])
         nxtc.append(bmnc[-1])
+        nxtz.append(bmnz[-1])
     bmn = nxt
     bmnc = nxtc
+    bmnz = nxtz
     layer += 1
 bmx = ["cmxB%d" % i for i in range(MAXP)]
 bmxc = ["cc2_%d" % i for i in range(MAXP)]
+bmxz = ["cz2_%d" % i for i in range(MAXP)]
 layer = 0
 while len(bmx) > 1:
     nxt = []
     nxtc = []
+    nxtz = []
     for a in range(0, len(bmx) - 1, 2):
         nm = "bx%d_%d" % (layer, a)
         ncm = "bxc%d_%d" % (layer, a)
+        nzm = "bxz%d_%d" % (layer, a)
         L.append("        let %s = if %s < %s then %s else %s"
                  % (nm, bmx[a], bmx[a + 1], bmx[a + 1], bmx[a]))
         L.append("        let %s = if %s < %s then %s else %s"
                  % (ncm, bmx[a], bmx[a + 1], bmxc[a + 1], bmxc[a]))
+        L.append("        let %s = if %s < %s then %s else %s"
+                 % (nzm, bmx[a], bmx[a + 1], bmxz[a + 1], bmxz[a]))
         nxt.append(nm)
         nxtc.append(ncm)
+        nxtz.append(nzm)
     if len(bmx) % 2:
         nxt.append(bmx[-1])
         nxtc.append(bmxc[-1])
+        nxtz.append(bmxz[-1])
     bmx = nxt
     bmxc = nxtc
+    bmxz = nxtz
     layer += 1
 L.append("        if %s >= 200.0 || %s < 0.0 || %s >= SWF {"
          % (bmn[0], bmx[0], bmn[0]))
@@ -3027,6 +3441,8 @@ L.append("          cLo2 = %s" % bmnc[0])
 L.append("          let bspan = %s - %s" % (bmx[0], bmn[0]))
 L.append("          let binv = if bspan > 0.0 then 1.0 / bspan else 0.0")
 L.append("          rowSlope2 = (%s - cLo2) * binv" % bmxc[0])
+L.append("          zLo2 = %s" % bmnz[0])
+L.append("          zSlope2 = (%s - zLo2) * binv" % bmxz[0])
 L.append("          cLo2 = Color(cLo2.r * bf, cLo2.g * bf, cLo2.b * bf,"
          " cLo2.a)")
 L.append("          rowSlope2 = Color(rowSlope2.r * bf,"
@@ -3036,11 +3452,145 @@ L.append("          }")
 L.append("        }")
 L.append("      }")
 L.append("    }")
+# ---- rows C..H: six more fill rows a tick --------------------------------
+# Same shape as B (own row var, span state, colours, depth, coverage
+# fold): the fill stages and paints eight rows a tick.  Fill-only --
+# the stroke keeps A/B (its quad walk advances two rows a tick).
+for _ri, _R in enumerate(("C", "D", "E", "F", "G", "H")):
+    _k = _ri + 2
+    _sfx = str(_ri + 3)
+    L.append("      if polyOn {")
+    L.append("        if pcol%s > pcurR%s {" % (_sfx, _sfx))
+    L.append("          let rrow%s = prow + %d.0" % (_R, _k))
+    L.append("          if rrow%s <= plast {" % _R)
+    for i in range(MAXP):
+        if i + 1 < MAXP:
+            end = "(if %d.0 < n then pC%d else pC0)" % (i + 1, i + 1)
+            zend = "(if %d.0 < n then pzV%d else pzV0)" % (i + 1, i + 1)
+        else:
+            end = "pC0"
+            zend = "pzV0"
+        L.append("        let cv%s%d = rrow%s >= eLo%d && rrow%s < eHi%d"
+                 % (_R, i, _R, i, _R, i))
+        L.append("        let cx%s%d = eX%d + eS%d * (rrow%s - eY%d)"
+                 % (_R, i, i, i, _R, i))
+        L.append("        let cc%s%d = pC%d + (rrow%s - eY%d) * eInv%d"
+                 " * (%s - pC%d)" % (_R, i, i, _R, i, i, end, i))
+        L.append("        let cz%s%d = pzV%d + (rrow%s - eY%d) * eInv%d"
+                 " * (%s - pzV%d)" % (_R, i, i, _R, i, i, zend, i))
+        L.append("        let cmn%s%d = if cv%s%d then cx%s%d else 200.0"
+                 % (_R, i, _R, i, _R, i))
+        L.append("        let cmx%s%d = if cv%s%d then cx%s%d else -200.0"
+                 % (_R, i, _R, i, _R, i))
+    _mn = ["cmn%s%d" % (_R, i) for i in range(MAXP)]
+    _mnc = ["cc%s%d" % (_R, i) for i in range(MAXP)]
+    _mnz = ["cz%s%d" % (_R, i) for i in range(MAXP)]
+    _layer = 0
+    while len(_mn) > 1:
+        _nxt = []
+        _nxtc = []
+        _nxtz = []
+        for a in range(0, len(_mn) - 1, 2):
+            _nm = "m%s%d_%d" % (_R, _layer, a)
+            _ncm = "mc%s%d_%d" % (_R, _layer, a)
+            _nzm = "mz%s%d_%d" % (_R, _layer, a)
+            L.append("        let %s = if %s < %s then %s else %s"
+                     % (_nm, _mn[a], _mn[a + 1], _mn[a], _mn[a + 1]))
+            L.append("        let %s = if %s < %s then %s else %s"
+                     % (_ncm, _mn[a], _mn[a + 1], _mnc[a], _mnc[a + 1]))
+            L.append("        let %s = if %s < %s then %s else %s"
+                     % (_nzm, _mn[a], _mn[a + 1], _mnz[a], _mnz[a + 1]))
+            _nxt.append(_nm)
+            _nxtc.append(_ncm)
+            _nxtz.append(_nzm)
+        if len(_mn) % 2:
+            _nxt.append(_mn[-1])
+            _nxtc.append(_mnc[-1])
+            _nxtz.append(_mnz[-1])
+        _mn = _nxt
+        _mnc = _nxtc
+        _mnz = _nxtz
+        _layer += 1
+    _mx = ["cmx%s%d" % (_R, i) for i in range(MAXP)]
+    _mxc = ["cc%s%d" % (_R, i) for i in range(MAXP)]
+    _mxz = ["cz%s%d" % (_R, i) for i in range(MAXP)]
+    _layer = 0
+    while len(_mx) > 1:
+        _nxt = []
+        _nxtc = []
+        _nxtz = []
+        for a in range(0, len(_mx) - 1, 2):
+            _nm = "x%s%d_%d" % (_R, _layer, a)
+            _ncm = "xc%s%d_%d" % (_R, _layer, a)
+            _nzm = "xz%s%d_%d" % (_R, _layer, a)
+            L.append("        let %s = if %s < %s then %s else %s"
+                     % (_nm, _mx[a], _mx[a + 1], _mx[a + 1], _mx[a]))
+            L.append("        let %s = if %s < %s then %s else %s"
+                     % (_ncm, _mx[a], _mx[a + 1], _mxc[a + 1], _mxc[a]))
+            L.append("        let %s = if %s < %s then %s else %s"
+                     % (_nzm, _mx[a], _mx[a + 1], _mxz[a + 1], _mxz[a]))
+            _nxt.append(_nm)
+            _nxtc.append(_ncm)
+            _nxtz.append(_nzm)
+        if len(_mx) % 2:
+            _nxt.append(_mx[-1])
+            _nxtc.append(_mxc[-1])
+            _nxtz.append(_mxz[-1])
+        _mx = _nxt
+        _mxc = _nxtc
+        _mxz = _nxtz
+        _layer += 1
+    L.append("        if %s >= 200.0 || %s < 0.0 || %s >= SWF {"
+             % (_mn[0], _mx[0], _mn[0]))
+    L.append("          pcol%s = 200.0" % _sfx)
+    L.append("          pcurR%s = 100.0" % _sfx)
+    L.append("        } else {")
+    L.append("          pcol%s = if %s < 0.0 then 0.0 else (%s | 0)"
+             % (_sfx, _mn[0], _mn[0]))
+    L.append("          pcurR%s = if %s >= SWF then SWF - 1.0 else (%s | 0)"
+             % (_sfx, _mx[0], _mx[0]))
+    L.append("          xL%s = %s" % (_sfx, _mn[0]))
+    L.append("          if !erasing {")
+    L.append("            let cra = (rrow%s | 0)" % _R)
+    L.append("            if pcurR%s >= pcol%s && pcol%s <= 63.0 {"
+             % (_sfx, _sfx, _sfx))
+    L.append("              if covMin[cra] > 199.0 {")
+    L.append("                covMin[cra] = pcol%s" % _sfx)
+    L.append("                covMax[cra] = pcurR%s" % _sfx)
+    L.append("              } else {")
+    L.append("                if pcol%s < covMin[cra] { covMin[cra] = pcol%s }"
+             % (_sfx, _sfx))
+    L.append("                if pcurR%s > covMax[cra] { covMax[cra] = pcurR%s }"
+             % (_sfx, _sfx))
+    L.append("              }")
+    L.append("              if cra < covLo { covLo = cra }")
+    L.append("              if cra > covHi { covHi = cra }")
+    L.append("            }")
+    L.append("          }")
+    L.append("          cLo%s = %s" % (_sfx, _mnc[0]))
+    L.append("          let span%s = %s - %s" % (_sfx, _mx[0], _mn[0]))
+    L.append("          let inv%s = if span%s > 0.0 then 1.0 / span%s else 0.0"
+             % (_sfx, _sfx, _sfx))
+    L.append("          rowSlope%s = (%s - cLo%s) * inv%s"
+             % (_sfx, _mxc[0], _sfx, _sfx))
+    L.append("          zLo%s = %s" % (_sfx, _mnz[0]))
+    L.append("          zSlope%s = (%s - zLo%s) * inv%s"
+             % (_sfx, _mxz[0], _sfx, _sfx))
+    L.append("          cLo%s = Color(cLo%s.r * bf, cLo%s.g * bf, cLo%s.b * bf,"
+             " cLo%s.a)" % (_sfx, _sfx, _sfx, _sfx, _sfx))
+    L.append("          rowSlope%s = Color(rowSlope%s.r * bf,"
+             " rowSlope%s.g * bf, rowSlope%s.b * bf, rowSlope%s.a)"
+             % (_sfx, _sfx, _sfx, _sfx, _sfx))
+    L.append("        }")
+    L.append("          }")
+    L.append("        }")
+    L.append("      }")
 # The fill walk ends: a staged pending shape re-arms here (the
 # clearAllShapes black fill runs first, the shape paints right after --
 # justCleared tells its commit to skip a second clear).
 L.append("      if prow > plast {")
 L.append("        polyOn = false")
+L.append("        noDepth = false")
 L.append("        if pending {")
 L.append("          pending = false")
 L.append("          justCleared = true")
@@ -3096,6 +3646,7 @@ L.append("          if sSeg > 0.0 {")
 for i in range(MAXP - 1):
     L.append("            rX%d = rX%d" % (i, i + 1))
     L.append("            rY%d = rY%d" % (i, i + 1))
+    L.append("            rZ%d = rZ%d" % (i, i + 1))
     L.append("            rC%d = rC%d" % (i, i + 1))
 L.append("          }")
 # The segment's two colours stage right after the shift, before the
@@ -3121,12 +3672,16 @@ L.append("            let sbx = rX1 + stx")
 L.append("            let sby = rY1 + sty")
 L.append("            qAx = sax + snx")
 L.append("            qAy = say + sny")
+L.append("            qAz = rZ0")
 L.append("            qBx = sbx + snx")
 L.append("            qBy = sby + sny")
+L.append("            qBz = rZ1")
 L.append("            qCx = sbx - snx")
 L.append("            qCy = sby - sny")
+L.append("            qCz = rZ1")
 L.append("            qDx = sax - snx")
 L.append("            qDy = say - sny")
+L.append("            qDz = rZ0")
 L.append("            let dAB = qBy - qAy")
 L.append("            let dCD = qDy - qCy")
 L.append("            iAB = if dAB > 0.0 then 1.0 / dAB"
@@ -3150,6 +3705,7 @@ L.append("            let bu0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) els
 L.append("            let bu0x = qAx + bu0s * (prow + 1.0 - qAy)")
 L.append("            let bu0v = prow + 1.0 >= bu0lo && prow + 1.0 < bu0hi")
 L.append("            uc0B = cA + (prow + 1.0 - qAy) * iAB * (cB - cA)")
+L.append("            let uz0B = rZ0 + (prow + 1.0 - qAy) * iAB * (rZ1 - rZ0)")
 L.append("            let bun0 = if bu0v then bu0x else 200.0")
 L.append("            let bux0 = if bu0v then bu0x else -200.0")
 L.append("            let bu1lo = if qBy < qCy then qBy else qCy")
@@ -3158,6 +3714,7 @@ L.append("            let bu1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) els
 L.append("            let bu1x = qBx + bu1s * (prow + 1.0 - qBy)")
 L.append("            let bu1v = prow + 1.0 >= bu1lo && prow + 1.0 < bu1hi")
 L.append("            let buc1 = cB")
+L.append("            let bz1 = rZ1")
 L.append("            let bun1 = if bu1v then bu1x else 200.0")
 L.append("            let bux1 = if bu1v then bu1x else -200.0")
 L.append("            let bu2lo = if qCy < qDy then qCy else qDy")
@@ -3166,6 +3723,7 @@ L.append("            let bu2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) els
 L.append("            let bu2x = qCx + bu2s * (prow + 1.0 - qCy)")
 L.append("            let bu2v = prow + 1.0 >= bu2lo && prow + 1.0 < bu2hi")
 L.append("            uc2B = cB + (prow + 1.0 - qCy) * iCD * (cA - cB)")
+L.append("            let uz2B = rZ1 + (prow + 1.0 - qCy) * iCD * (rZ0 - rZ1)")
 L.append("            let bun2 = if bu2v then bu2x else 200.0")
 L.append("            let bux2 = if bu2v then bu2x else -200.0")
 L.append("            let bu3lo = if qDy < qAy then qDy else qAy")
@@ -3174,6 +3732,7 @@ L.append("            let bu3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) els
 L.append("            let bu3x = qDx + bu3s * (prow + 1.0 - qDy)")
 L.append("            let bu3v = prow + 1.0 >= bu3lo && prow + 1.0 < bu3hi")
 L.append("            let buc3 = cA")
+L.append("            let bz3 = rZ0")
 L.append("            let bun3 = if bu3v then bu3x else 200.0")
 L.append("            let bux3 = if bu3v then bu3x else -200.0")
 L.append("            let bumn01 = if bun0 < bun1 then bun0 else bun1")
@@ -3182,12 +3741,18 @@ L.append("            let bumn = if bumn01 < bumn23 then bumn01 else bumn23")
 L.append("            let bumc01 = if bun0 < bun1 then uc0B else buc1")
 L.append("            let bumc23 = if bun2 < bun3 then uc2B else buc3")
 L.append("            let bumnc = if bumn01 < bumn23 then bumc01 else bumc23")
+L.append("            let bumz01 = if bun0 < bun1 then uz0B else bz1")
+L.append("            let bumz23 = if bun2 < bun3 then uz2B else bz3")
+L.append("            let bumnz = if bumn01 < bumn23 then bumz01 else bumz23")
 L.append("            let bumx01 = if bux0 < bux1 then bux1 else bux0")
 L.append("            let bumx23 = if bux2 < bux3 then bux3 else bux2")
 L.append("            let bumx = if bumx01 < bumx23 then bumx23 else bumx01")
 L.append("            let buxc01 = if bux0 < bux1 then buc1 else uc0B")
 L.append("            let buxc23 = if bux2 < bux3 then buc3 else uc2B")
 L.append("            let bumxc = if bumx01 < bumx23 then buxc23 else buxc01")
+L.append("            let bumxz01 = if bux0 < bux1 then bz1 else uz0B")
+L.append("            let bumxz23 = if bux2 < bux3 then bz3 else uz2B")
+L.append("            let bumxz = if bumx01 < bumx23 then bumxz23 else bumxz01")
 L.append("            if bumn >= 200.0 || bumx < 0.0 || bumn >= SWF {")
 L.append("              pcol2 = 200.0")
 L.append("              pcurR2 = 100.0")
@@ -3213,6 +3778,8 @@ L.append("              cLo2 = bumnc")
 L.append("              let bspan = bumx - bumn")
 L.append("              let binv = if bspan > 0.0 then 1.0 / bspan else 0.0")
 L.append("              rowSlope2 = (bumxc - cLo2) * binv")
+L.append("              zLo2 = bumnz")
+L.append("              zSlope2 = (bumxz - zLo2) * binv")
 L.append("              cLo2 = Color(cLo2.r * bf, cLo2.g * bf, cLo2.b * bf, cLo2.a)")
 L.append("              rowSlope2 = Color(rowSlope2.r * bf, rowSlope2.g * bf, rowSlope2.b * bf, rowSlope2.a)")
 L.append("            }")
@@ -3227,6 +3794,7 @@ L.append("          let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else i
 L.append("          let u0x = qAx + u0s * (prow - qAy)")
 L.append("          let u0v = prow >= u0lo && prow < u0hi")
 L.append("          uc0 = cA + (prow - qAy) * iAB * (cB - cA)")
+L.append("          let uz0 = rZ0 + (prow - qAy) * iAB * (rZ1 - rZ0)")
 L.append("          let un0 = if u0v then u0x else 200.0")
 L.append("          let ux0 = if u0v then u0x else -200.0")
 L.append("          let u1lo = if qBy < qCy then qBy else qCy")
@@ -3235,6 +3803,7 @@ L.append("          let u1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else i
 L.append("          let u1x = qBx + u1s * (prow - qBy)")
 L.append("          let u1v = prow >= u1lo && prow < u1hi")
 L.append("          let uc1 = cB")
+L.append("          let uz1 = rZ1")
 L.append("          let un1 = if u1v then u1x else 200.0")
 L.append("          let ux1 = if u1v then u1x else -200.0")
 L.append("          let u2lo = if qCy < qDy then qCy else qDy")
@@ -3243,6 +3812,7 @@ L.append("          let u2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else i
 L.append("          let u2x = qCx + u2s * (prow - qCy)")
 L.append("          let u2v = prow >= u2lo && prow < u2hi")
 L.append("          uc2 = cB + (prow - qCy) * iCD * (cA - cB)")
+L.append("          let uz2 = rZ1 + (prow - qCy) * iCD * (rZ0 - rZ1)")
 L.append("          let un2 = if u2v then u2x else 200.0")
 L.append("          let ux2 = if u2v then u2x else -200.0")
 L.append("          let u3lo = if qDy < qAy then qDy else qAy")
@@ -3251,6 +3821,7 @@ L.append("          let u3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else i
 L.append("          let u3x = qDx + u3s * (prow - qDy)")
 L.append("          let u3v = prow >= u3lo && prow < u3hi")
 L.append("          let uc3 = cA")
+L.append("          let uz3 = rZ0")
 L.append("          let un3 = if u3v then u3x else 200.0")
 L.append("          let ux3 = if u3v then u3x else -200.0")
 L.append("          let umn01 = if un0 < un1 then un0 else un1")
@@ -3259,12 +3830,18 @@ L.append("          let umn = if umn01 < umn23 then umn01 else umn23")
 L.append("          let umc01 = if un0 < un1 then uc0 else uc1")
 L.append("          let umc23 = if un2 < un3 then uc2 else uc3")
 L.append("          let umnc = if umn01 < umn23 then umc01 else umc23")
+L.append("          let umz01 = if un0 < un1 then uz0 else uz1")
+L.append("          let umz23 = if un2 < un3 then uz2 else uz3")
+L.append("          let umnz = if umn01 < umn23 then umz01 else umz23")
 L.append("          let umx01 = if ux0 < ux1 then ux1 else ux0")
 L.append("          let umx23 = if ux2 < ux3 then ux3 else ux2")
 L.append("          let umx = if umx01 < umx23 then umx23 else umx01")
 L.append("          let uxc01 = if ux0 < ux1 then uc1 else uc0")
 L.append("          let uxc23 = if ux2 < ux3 then uc3 else uc2")
 L.append("          let umxc = if umx01 < umx23 then uxc23 else uxc01")
+L.append("          let umxz01 = if ux0 < ux1 then uz1 else uz0")
+L.append("          let umxz23 = if ux2 < ux3 then uz3 else uz2")
+L.append("          let umxz = if umx01 < umx23 then umxz23 else umxz01")
 L.append("          if umn >= 200.0 || umx < 0.0 || umn >= SWF {")
 L.append("            pcol = 200.0")
 L.append("            pcurR = 100.0")
@@ -3290,6 +3867,8 @@ L.append("            cLo = umnc")
 L.append("            let span = umx - umn")
 L.append("            let inv = if span > 0.0 then 1.0 / span else 0.0")
 L.append("            rowSlope = (umxc - cLo) * inv")
+L.append("            zLo = umnz")
+L.append("            zSlope = (umxz - zLo) * inv")
 L.append("            cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf,"
          " cLo.a)")
 L.append("            rowSlope = Color(rowSlope.r * bf,"
@@ -3323,7 +3902,12 @@ for j in range(K):
     L.append("      if tj%d <= pcurR {" % j)
     L.append("        let ridx%d = ((aRow * SWF + tj%d) | 0)" % (j, j))
     L.append("        let dt%d = tj%d - xL" % (j, j))
-    L.append("        fb[ridx%d] = cLo + rowSlope * dt%d" % (j, j))
+    L.append("        let pdz%d = zLo + zSlope * dt%d" % (j, j))
+    L.append("        if noDepth || pdz%d >= fbZ[ridx%d] {" % (j, j))
+    L.append("          fb[ridx%d] = cLo + rowSlope * dt%d" % (j, j))
+    L.append("          fbZ[ridx%d] = if noDepth then ZBACK else pdz%d"
+             % (j, j))
+    L.append("        }")
     L.append("      }")
 L.append("      pcol = pcol + %d.0" % K)
 # The B row paints from its own span at prow (advanced past A): the same
@@ -3334,9 +3918,35 @@ for j in range(K):
     L.append("      if tjB%d <= pcurR2 {" % j)
     L.append("        let ridxB%d = (((prow + 1.0) * SWF + tjB%d) | 0)" % (j, j))
     L.append("        let dtB%d = tjB%d - xL2" % (j, j))
-    L.append("        fb[ridxB%d] = cLo2 + rowSlope2 * dtB%d" % (j, j))
+    L.append("        let pdzB%d = zLo2 + zSlope2 * dtB%d" % (j, j))
+    L.append("        if noDepth || pdzB%d >= fbZ[ridxB%d] {" % (j, j))
+    L.append("          fb[ridxB%d] = cLo2 + rowSlope2 * dtB%d" % (j, j))
+    L.append("          fbZ[ridxB%d] = if noDepth then ZBACK else pdzB%d"
+             % (j, j))
+    L.append("        }")
     L.append("      }")
 L.append("      pcol2 = pcol2 + %d.0" % K)
+# Rows C..H paint from their own spans: same shape once more per row.
+for _ri, _R in enumerate(("C", "D", "E", "F", "G", "H")):
+    _k = _ri + 2
+    _sfx = str(_ri + 3)
+    for j in range(K):
+        L.append("      let tj%s%d = pcol%s + %d.0" % (_R, j, _sfx, j))
+        L.append("      if tj%s%d <= pcurR%s {" % (_R, j, _sfx))
+        L.append("        let ridx%s%d = (((prow + %d.0) * SWF + tj%s%d) | 0)"
+                 % (_R, j, _k, _R, j))
+        L.append("        let dt%s%d = tj%s%d - xL%s" % (_R, j, _R, j, _sfx))
+        L.append("        let pdz%s%d = zLo%s + zSlope%s * dt%s%d"
+                 % (_R, j, _sfx, _sfx, _R, j))
+        L.append("        if noDepth || pdz%s%d >= fbZ[ridx%s%d] {"
+                 % (_R, j, _R, j))
+        L.append("          fb[ridx%s%d] = cLo%s + rowSlope%s * dt%s%d"
+                 % (_R, j, _sfx, _sfx, _R, j))
+        L.append("          fbZ[ridx%s%d] = if noDepth then ZBACK else pdz%s%d"
+                 % (_R, j, _R, j))
+        L.append("        }")
+        L.append("      }")
+    L.append("      pcol%s = pcol%s + %d.0" % (_sfx, _sfx, K))
 L.append("  }")
 # The scanout: every pixel global mirrors its fb slot, every tick.
 # ---- the erase pass: black what the new frame no longer covers -----
@@ -3387,6 +3997,7 @@ for _k in range(4):
                  % (_tj, _tj, _tj, _tj))
         L.append("          fb[((erfl * 64.0 + %d.0) | 0)]"
                  " = Color(0.0, 0.0, 0.0, 1.0)" % _tj)
+        L.append("          fbZ[((erfl * 64.0 + %d.0) | 0)] = ZBACK" % _tj)
         L.append("        }")
     L.append("      }")
     L.append("      erRow = erRow + 1.0")

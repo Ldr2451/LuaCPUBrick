@@ -2,23 +2,6 @@
 -- clearAllShapes, the pending queue and per-tick animation.
 -- Protocol and wiring: extras/screen/README.md (wall + chip) and
 -- extras/cpu-screen-connector/README.md (connector, slot 100 = ticks).
-local function tick()
-local c = clock()
-while clock() == c do end
-end
-local function nap(c)
-local t = clock()
-while clock() < t + c do end
-end
-local function fire(after)
-outNum(1, 1.0)
-tick()
-outNum(1, 0.0)
-outNum(2, 1.0)
-tick()
-outNum(2, 0.0)
-if after > 0.0 then nap(after) end
-end
 local pal = {}
 local i = 0
 while i < 32 do
@@ -33,11 +16,6 @@ h = h % 32
 if k == nil then k = 1.0 end
 outNumArr(slot, pal[h * 3 + 1] * k, pal[h * 3 + 2] * k,
 pal[h * 3 + 3] * k, a)
-end
-local function xf(px, py, ang, sx, sy)
-outStrArr(1, tostring(px), tostring(py), "0", "0", "0",
-tostring(ang), tostring(sx), tostring(sy))
-outStrArr(9, "1")
 end
 local sx, sy, cx, cy = {}, {}, {}, {}
 i = 0
@@ -58,7 +36,7 @@ pcol(10, h, 1.0, 0.16)
 pcol(14, h + 8, 1.0, 0.16)
 pcol(18, h + 16, 1.0, 0.16)
 pcol(22, h + 24, 1.0, 0.16)
-xf(0.0, 0.0, 0.0, 1.0, 1.0)
+setTransform({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
 fire(0.8)
 end
 local function morph(t, hue)
@@ -89,7 +67,7 @@ pcol(34, hue + 4, 0.85)
 pcol(38, hue + 5, 0.95)
 pcol(42, hue + 6, 0.75)
 pcol(46, hue + 7, 1.0)
-xf(0.0, 0.0, 0.0, 1.0, 1.0)
+setTransform({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
 fire(0.9)
 end
 local function mover(mx, my, ang, sc, hue)
@@ -99,7 +77,7 @@ pcol(10, hue, 0.55)
 pcol(14, hue + 2, 0.8)
 pcol(18, hue + 4, 0.65)
 pcol(22, hue + 6, 1.0)
-xf(mx, my, ang, sc, sc)
+setTransform({mx, my, 0.0, 0.0, 0.0, ang, sc, sc, 1.0})
 fire(1.0)
 end
 local function satellite(hue)
@@ -110,7 +88,7 @@ outNumArr(7, -4.0)
 pcol(8, hue, 1.0)
 pcol(12, hue + 10, 1.0)
 pcol(16, hue + 20, 1.0)
-xf(0.0, 0.0, 0.0, 1.0, 1.0)
+setTransform({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
 fire(1.0)
 outStr(2, "")
 outStr(1, "3")
@@ -127,35 +105,6 @@ c[i * 4 + 4] = a
 i = i + 1
 end
 return c
-end
-local function stage(id, pts, cols, px, py, ang, sx, sy)
-outStr(1, id)
-local n = #pts // 2
-local i = 0
-while i < n do
-outNumArr(i * 2 + 1, pts[i * 2 + 1], pts[i * 2 + 2])
-i = i + 1
-end
-if cols then
-outNumArr(n * 2 + 1, -(1 + #cols // 4))
-local j = 0
-while j < #cols // 4 do
-outNumArr(n * 2 + 2 + j * 4, cols[j * 4 + 1], cols[j * 4 + 2],
-cols[j * 4 + 3], cols[j * 4 + 4])
-j = j + 1
-end
-else
-outNumArr(n * 2 + 1, -1.0)
-end
-xf(px, py, ang, sx, sy)
-outNum(1, 1.0)
-tick()
-outNum(1, 0.0)
-end
-local function draw()
-outNum(2, 1.0)
-tick()
-outNum(2, 0.0)
 end
 local hue = 0
 while true do
@@ -192,28 +141,33 @@ f = f + 1
 end
 outStr(1, "4")
 outStr(2, "")
-outNumArr(1, -1.0)
-fire(1.0)
+deleteShape("4")
+nap(1.0)
 outStr(1, "3")
-outNumArr(1, -1.0)
-fire(1.0)
+deleteShape("3")
+nap(1.0)
 outStr(1, "")
 nap(1.0)
-stage("2", {30.0, 8.0, 36.0, 14.0, 30.0, 20.0, 24.0, 14.0},
-cols4(hue, 1.0), 0.0, 0.0, 0.0, 1.0, 1.0)
+stagePush({30.0, 8.0, 36.0, 14.0, 30.0, 20.0, 24.0, 14.0},
+cols4(hue, 1.0), {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0},
+nil, nil, nil, "2")
 hue = hue + 5
-stage("4", {40.0, 30.0, 46.0, 30.0, 46.0, 36.0, 40.0, 36.0},
-cols4(hue, 1.0), 0.0, 0.0, 0.0, 1.0, 1.0)
+stagePush({40.0, 30.0, 46.0, 30.0, 46.0, 36.0, 40.0, 36.0},
+cols4(hue, 1.0), {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0},
+nil, nil, nil, "4")
 hue = hue + 5
-stage("0", {8.0, 30.0, 14.0, 30.0, 11.0, 36.0},
-cols4(hue, 0.5), 0.0, 0.0, 0.0, 1.0, 1.0)
+stagePush({8.0, 30.0, 14.0, 30.0, 11.0, 36.0},
+cols4(hue, 0.5), {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0},
+nil, nil, nil, "0")
 hue = hue + 5
 draw()
 nap(1.0)
-stage("2", {26.0, 10.0, 34.0, 18.0, 18.0, 18.0, 26.0, 10.0},
-cols4(hue, 1.0), 0.0, 0.0, 0.0, 1.0, 1.0)
+stagePush({26.0, 10.0, 34.0, 18.0, 18.0, 18.0, 26.0, 10.0},
+cols4(hue, 1.0), {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0},
+nil, nil, nil, "2")
 hue = hue + 5
-stage("4", {}, nil, 0.0, 0.0, 0.0, 1.0, 1.0)
+stagePush({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0},
+nil, nil, nil, "4")
 draw()
 nap(1.0)
 outStr(1, "5")
@@ -223,19 +177,14 @@ outNumArr(7, -4.0)
 pcol(8, hue, 1.0)
 pcol(12, hue + 10, 1.0)
 pcol(16, hue + 20, 1.0)
-xf(0.0, 0.0, 0.0, 1.0, 1.0)
+setTransform({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
 outNumArr(100, -1.0)
 fire(0.0)
 outStr(1, "")
 nap(0.5)
 outStr(1, "5")
-outNumArr(1, 0.0, 0.0)
-outNumArr(3, -1.0)
-outNumArr(100, -13.0)
-xf(2.0, 0.0, 0.0, 0.0, 0.0)
-outNum(1, 1.0)
-tick()
-outNum(1, 0.0)
+stagePush({0.0, 0.0}, nil, {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0},
+nil, 12.0, nil, "5")
 draw()
 outStr(1, "")
 outNumArr(100, -1.0)

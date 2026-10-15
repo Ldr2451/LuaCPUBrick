@@ -135,8 +135,21 @@ def expect(cond, label, detail=""):
     return cond
 
 
+def strip_lib(src):
+    """Drop full-line comments and blanks for the in-game length cap."""
+    return "\n".join(l for l in src.split("\n")
+                     if l.strip() != ""
+                     and not l.strip().startswith("--"))
+
+
 def main():
     src = open(ANIM, encoding="utf-8").read()
+    # the animation body calls the gfx library: prepend it, stripped
+    # (see showtest).
+    gfx = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
+                       "gfx.lua")
+    src = strip_lib(open(gfx, encoding="utf-8").read() + "\n" + src)
+    print("program chars: %d" % len(src))
     dumps = []
     ok = True
     try:

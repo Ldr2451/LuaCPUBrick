@@ -1,20 +1,3 @@
-local function tick()
-local c = clock()
-while clock() == c do end
-end
-local function nap(c)
-local t = clock()
-while clock() < t + c do end
-end
-local function fire(after)
-outNum(1, 1.0)
-tick()
-outNum(1, 0.0)
-outNum(2, 1.0)
-tick()
-outNum(2, 0.0)
-if after > 0.0 then nap(after) end
-end
 local sn = {}
 local cs = {}
 local rs = {}
@@ -127,7 +110,7 @@ tri(10.0 + d)
 f = f + 1
 n = n + 1
 end
-outNum(4, 1.0)
+setWire(1.0)
 n = 0
 while n < 16 do
 wire(f % 16)
@@ -140,13 +123,13 @@ wave(f)
 f = f + 1
 n = n + 1
 end
-outNum(4, 0.0)
-outNum(4, 1.0)
+setWire(0.0)
+setWire(1.0)
 outStr(1, "1")
 outNumArr(1, 2.0, 2.0, 62.0, 2.0, 62.0, 62.0, 2.0, 62.0)
 outNumArr(9, 2.0, 2.0, -1.0)
 fire(1.2)
-outNum(4, 0.0)
+setWire(0.0)
 outStr(1, "2")
 octagon(16.0, 44.0, 7.0)
 outStr(1, "3")

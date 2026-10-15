@@ -427,6 +427,135 @@ def xf_compose(parent, child):
             pra + cra, (psx * csx, psy * csy))
 
 
+ZBACK = -1e15
+
+
+def mat_local(pos, eul, scl):
+    """One 3x4 world matrix (row-major 12 floats), transcribed from
+    gen.py in order: R = Rz*Ry*Rx closed form, columns
+    scaled, translation appended.  Matches the chip's matrix path
+    exactly (same op order); the planar path uses xf_points instead."""
+    cx, sx = math.cos(eul[0]), math.sin(eul[0])
+    cy, sy = math.cos(eul[1]), math.sin(eul[1])
+    cz, sz = math.cos(eul[2]), math.sin(eul[2])
+    mr00 = cz * cy
+    mr01 = cz * sy * sx - sz * cx
+    mr02 = cz * sy * cx + sz * sx
+    mr10 = sz * cy
+    mr11 = sz * sy * sx + cz * cx
+    mr12 = sz * sy * cx - cz * sx
+    mr20 = 0.0 - sy
+    mr21 = cy * sx
+    mr22 = cy * cx
+    return [mr00 * scl[0], mr01 * scl[1], mr02 * scl[2], pos[0],
+            mr10 * scl[0], mr11 * scl[1], mr12 * scl[2], pos[1],
+            mr20 * scl[0], mr21 * scl[1], mr22 * scl[2], pos[2]]
+
+
+def mat_mul(p, a):
+    """parent 3x4 times child 3x4, transcribed in order."""
+    return [
+        p[0] * a[0] + p[1] * a[4] + p[2] * a[8],
+        p[0] * a[1] + p[1] * a[5] + p[2] * a[9],
+        p[0] * a[2] + p[1] * a[6] + p[2] * a[10],
+        p[0] * a[3] + p[1] * a[7] + p[2] * a[11] + p[3],
+        p[4] * a[0] + p[5] * a[4] + p[6] * a[8],
+        p[4] * a[1] + p[5] * a[5] + p[6] * a[9],
+        p[4] * a[2] + p[5] * a[6] + p[6] * a[10],
+        p[4] * a[3] + p[5] * a[7] + p[6] * a[11] + p[7],
+        p[8] * a[0] + p[9] * a[4] + p[10] * a[8],
+        p[8] * a[1] + p[9] * a[5] + p[10] * a[9],
+        p[8] * a[2] + p[9] * a[6] + p[10] * a[10],
+        p[8] * a[3] + p[9] * a[7] + p[10] * a[11] + p[11],
+    ]
+
+
+def xf_points3(pts2, pos, eul, scl, chain=()):
+    """Flat xy points -> world xyz.  chain holds ancestor (pos, eul,
+    scl) triples, innermost first (composed parent-outside).  Points
+    carry z = 0 locally: depth comes from the transform alone."""
+    m = mat_local(pos, eul, scl)
+    for apar, aeul, ascl in chain:
+        m = mat_mul(mat_local(apar, aeul, ascl), m)
+    out = []
+    for i in range(0, len(pts2), 2):
+        x, y = pts2[i], pts2[i + 1]
+        out.append((m[0] * x + m[1] * y + m[3],
+                    m[4] * x + m[5] * y + m[7],
+                    m[8] * x + m[9] * y + m[11]))
+    return out
+
+
+def z_colors(wpts, colors):
+    """The chip's depth-tested fill: {pixel: (colour, z)}.
+
+    poly_pixels' scanline algorithm with the chip's z lerp (per-edge
+    endpoint depths through the same row parameter, carried through
+    the min/max with the colour) and its depth test (bigger z paints
+    in front; ties repaint).  The frame model z-buffers slots in
+    order, exactly like the lanes.
+    """
+    n = len(wpts)
+    if n < 3:
+        return {}
+    pts = list(wpts) + [(0.0, 0.0, 0.0)] * (16 - n)
+    cols = list(colors) + [(1.0, 1.0, 1.0, 1.0)] * (16 - len(colors))
+    ys = [p[1] for p in pts[:n]]
+    xs = [p[0] for p in pts[:n]]
+    if max(ys) < 0.0 or min(ys) >= 64.0 or max(xs) < 0.0 or min(xs) >= 64.0:
+        return {}
+    edges = []
+    for i in range(16):
+        ax, ay, az = pts[i]
+        j = i + 1 if (i + 1) < n else 0
+        bx, by, bz = pts[j]
+        dx, dy = bx - ax, by - ay
+        s = dx / dy if dy != 0.0 else 0.0
+        einv = 1.0 / (by - ay) if (by - ay) != 0.0 else float("inf")
+        lo, hi = (ay, by) if ay < by else (by, ay)
+        if i < n:
+            elo, ehi = lo, hi
+        else:
+            elo, ehi = 200.0, -200.0
+        edges.append((ax, ay, az, s, einv, elo, ehi, cols[i], cols[j],
+                      bz))
+    first = 0.0 if min(ys) < 0.0 else float(int(min(ys)))
+    last = 63.0 if max(ys) >= 64.0 else float(int(max(ys)))
+    fb = {}
+    zb = {}
+    row = first
+    while row <= last:
+        items = []
+        for (ax, ay, az, s, einv, elo, ehi, c0, c1, bz) in edges:
+            if elo <= row < ehi:
+                x = ax + s * (row - ay)
+                cc = tuple(a + (row - ay) * einv * (b - a)
+                           for a, b in zip(c0, c1))
+                zz = az + (row - ay) * einv * (bz - az)
+                items.append((x, cc, zz))
+        if items:
+            mn = min(items, key=lambda t: t[0])
+            mx = max(items, key=lambda t: t[0])
+            lo, hi = mn[0], mx[0]
+            if not (lo >= 200.0 or hi < 0.0 or lo >= 64.0):
+                l = 0.0 if lo < 0.0 else float(int(lo))
+                r = 63.0 if hi >= 64.0 else float(int(hi))
+                if l <= r:
+                    span = hi - lo
+                    inv = 1.0 / span if span > 0.0 else 0.0
+                    for c in range(int(l), int(r) + 1):
+                        dt = c - lo
+                        col = tuple(mn[1][k] + (mx[1][k] - mn[1][k])
+                                    * inv * dt for k in range(4))
+                        pz = mn[2] + (mx[2] - mn[2]) * inv * dt
+                        idx = int(row) * SW + c
+                        if pz >= zb.get(idx, ZBACK):
+                            zb[idx] = pz
+                            fb[idx] = col
+        row += 1.0
+    return {i: (fb[i], zb[i]) for i in fb}
+
+
 IDENT = ((0.0, 0.0), 0.0, (1.0, 1.0))
 
 
@@ -1136,6 +1265,162 @@ def main():
                          "%d of 4096 differ, first at %d"
                          % (len(badx), badx[0] if badx else 0))
 
+        # ---- depth: z-order, tilt, tilted parents -------------------------
+        # The vec inputs' third fields are live: shapePosition.z places a
+        # shape forwards/backwards (bigger z paints in front, ties
+        # repaint), shapeRotation.x/y tilt off-axis, shapeScale.z scales
+        # depth.  Projection is orthographic; a per-pixel depth buffer
+        # orders everything, so slot order never decides ties of
+        # geometry.  Five small runs: front wins both slot orders, a
+        # 30-degree tilt matches the matrix model exactly, the tilt
+        # crossing a flat shape resolves per pixel, and a flipped
+        # parent carries its child through the matrix compose.
+        def want3(slots):
+            fbz = {}
+            want = {}
+            for kk in sorted(slots):
+                spts, scols, pos, eul, scl, par = slots[kk]
+                # ancestor chain innermost-first for xf_points3
+                chain = []
+                p = par
+                d = 0
+                while p >= 0.5 and int(p) in slots and d < 8:
+                    q = slots[int(p)]
+                    chain.append((q[2], q[3], q[4]))
+                    p = q[5]
+                    d += 1
+                got = z_colors(xf_points3(spts, pos, eul, scl, chain),
+                               scols)
+                for i, (c, z) in got.items():
+                    if z >= fbz.get(i, ZBACK):
+                        fbz[i] = z
+                        want[i] = c
+            return want
+
+        def run3(commits, step=64):
+            sim, gids, _, _, pts_aid, cols_aid = fresh_sim(dump_path)
+            sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                          "pushShape": False, "shapeWireMode": False,
+                          "shapeId": 0.0, "drawAllShapes": False,
+                          "clearAllShapes": False,
+                          "shapePosition": (0.0, 0.0, 0.0),
+                          "shapeRotation": (0.0, 0.0, 0.0),
+                          "shapeScale": (0.0, 0.0, 0.0),
+                          "parentShapeId": 0.0, "brightness": 100.0}
+            sim.run(1)
+            sim.inputs = {k: v for k, v in sim.inputs.items()
+                          if k != "shapePoints"}
+            plan = {}
+            t = 10
+            ends = []
+            for pts, cols, sid, pos, eul, scl, par in commits:
+                plan[t] = {"shapePoints": list(pts),
+                           "shapeColors": list(cols),
+                           "shapeWireMode": False, "shapeId": sid,
+                           "shapePosition": (pos[0], pos[1], pos[2]),
+                           "shapeRotation": (eul[0], eul[1], eul[2]),
+                           "shapeScale": (scl[0], scl[1], scl[2]),
+                           "parentShapeId": par}
+                plan[t + 2] = {"pushShape": True}
+                plan[t + 4] = {"pushShape": False}
+                plan[t + 6] = {"drawAllShapes": True}
+                plan[t + 8] = {"drawAllShapes": False}
+                t += step
+                ends.append(t)
+            snaps = {}
+
+            def watch3(sn, tick):
+                if tick in plan:
+                    st = plan[tick]
+                    if "shapePoints" in st:
+                        slide(sn, pts_aid, cols_aid, st["shapePoints"],
+                              st.get("shapeColors"))
+                        st = {k: v for k, v in st.items()
+                              if k not in ("shapePoints", "shapeColors")}
+                    sn.inputs = dict(sn.inputs, **st)
+                if tick in ends:
+                    snaps[tick] = {i: col(sn, gids, i)
+                                   for i in range(SW * SW)}
+
+            sim.run(t + 20, on_tick=watch3)
+            return snaps, ends
+
+        Z0 = (0.0, 0.0, 0.0)
+        R0 = (0.0, 0.0, 0.0)
+        S1 = (1.0, 1.0, 1.0)
+        dA = rect_pts(4.0, 4.0, 12.0, 12.0)
+        dB = rect_pts(8.0, 8.0, 16.0, 16.0)
+        dF = (0.0, 0.0, 5.0)
+        snaps, ends = run3([
+            (dA, [RED] * 4, 1.0, Z0, R0, S1, 0.0),
+            (dB, [blue] * 4, 2.0, dF, R0, S1, 0.0),
+        ])
+        slots = {1: (dA, [RED] * 4, Z0, R0, S1, 0.0),
+                 2: (dB, [blue] * 4, dF, R0, S1, 0.0)}
+        bad = [i for i in range(SW * SW)
+               if not close(snaps[ends[1]][i],
+                            want3(slots).get(i, BLACK))]
+        ok &= expect(not bad, "nearer shape paints in front",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bad), bad[0] if bad else 0))
+        snaps, ends = run3([
+            (dB, [blue] * 4, 1.0, dF, R0, S1, 0.0),
+            (dA, [RED] * 4, 2.0, Z0, R0, S1, 0.0),
+        ])
+        slots = {1: (dB, [blue] * 4, dF, R0, S1, 0.0),
+                 2: (dA, [RED] * 4, Z0, R0, S1, 0.0)}
+        bad = [i for i in range(SW * SW)
+               if not close(snaps[ends[1]][i],
+                            want3(slots).get(i, BLACK))]
+        ok &= expect(not bad, "depth beats slot order",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bad), bad[0] if bad else 0))
+        rc = [-8.0, -4.0, 8.0, -4.0, 8.0, 4.0, -8.0, 4.0]
+        r30 = (0.0, math.pi / 6, 0.0)
+        snaps, ends = run3([
+            (rc, [green] * 4, 1.0, (16.0, 12.0, 0.0), r30, S1, 0.0),
+        ])
+        slots = {1: (rc, [green] * 4, (16.0, 12.0, 0.0), r30, S1, 0.0)}
+        bad = [i for i in range(SW * SW)
+               if not close(snaps[ends[0]][i],
+                            want3(slots).get(i, BLACK))]
+        ok &= expect(not bad, "off-axis tilt paints",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bad), bad[0] if bad else 0))
+        snaps, ends = run3([
+            (rect_pts(8.0, 8.0, 24.0, 16.0), [RED] * 4, 1.0,
+             Z0, R0, S1, 0.0),
+            (rc, [blue] * 4, 2.0, (16.0, 12.0, 0.0), r30, S1, 0.0),
+        ])
+        slots = {1: (rect_pts(8.0, 8.0, 24.0, 16.0), [RED] * 4,
+                     Z0, R0, S1, 0.0),
+                 2: (rc, [blue] * 4, (16.0, 12.0, 0.0), r30, S1, 0.0)}
+        bad = [i for i in range(SW * SW)
+               if not close(snaps[ends[1]][i],
+                            want3(slots).get(i, BLACK))]
+        ok &= expect(not bad, "tilt resolves per pixel",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bad), bad[0] if bad else 0))
+        par = rect_pts(4.0, 4.0, 8.0, 8.0)
+        ch = rect_pts(20.0, 20.0, 26.0, 26.0)
+        fl = rect_pts(18.0, 10.0, 28.0, 20.0)
+        ppos = (0.0, 32.0, 5.0)
+        prot = (math.pi, 0.0, 0.0)
+        snaps, ends = run3([
+            (par, [blue] * 4, 1.0, ppos, prot, S1, 0.0),
+            (ch, [green] * 4, 2.0, Z0, R0, S1, 1.0),
+            (fl, [RED] * 4, 3.0, Z0, R0, S1, 0.0),
+        ])
+        slots = {1: (par, [blue] * 4, ppos, prot, S1, 0.0),
+                 2: (ch, [green] * 4, Z0, R0, S1, 1.0),
+                 3: (fl, [RED] * 4, Z0, R0, S1, 0.0)}
+        bad = [i for i in range(SW * SW)
+               if not close(snaps[ends[2]][i],
+                            want3(slots).get(i, BLACK))]
+        ok &= expect(not bad, "tilted parent carries child",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bad), bad[0] if bad else 0))
+
         # ---- the load-time phantom paints correctly -----------------------
         # Tick-0 seeding fires every Change detector once, so a walk arms
         # from the seeded array with no pulse at all.  Seed a real closed
@@ -1347,10 +1632,12 @@ def main():
                             awant0.get(i, BLACK))]
         ok &= expect(not bad, "animated slot establishes",
                      "%d of 4096 differ" % len(bad))
+        amoved8 = dict(poly_colors(
+            xf_points(aA, (8.0, 0.0), 0.0, (1.0, 1.0)), [RED] * 4))
         bad = [i for i in range(SW * SW)
                if not close(asnaps[aend1].get(i, BLACK),
-                            awant0.get(i, BLACK))]
-        ok &= expect(not bad, "animated commit repaints nothing",
+                            amoved8.get(i, BLACK))]
+        ok &= expect(not bad, "motion advances with no draw",
                      "%d of 4096 differ" % len(bad))
         amoved = dict(poly_colors(
             xf_points(aA, (8.0, 0.0), 0.0, (1.0, 1.0)), [RED] * 4))

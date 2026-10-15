@@ -36,113 +36,58 @@ LUA_WS = os.path.join(ROOT, "lua.ws")
 CONN_WS = os.path.join(HERE, "connector.ws")
 SCREEN_WS = os.path.join(HERE, "..", "screen", "screen.ws")
 SW = 64
-TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
+TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 4000
 BLACK = (0.0, 0.0, 0.0, 1.0)
-# The driver is quiet until ~1750 (boot parses ~2.5 chars/tick, so
-# every program line shifts the whole driver later -- keep the budget
-# generous when extending it); both replays skip that dead head
-# (phases 2-3 run TICKS - SLICE ticks feeding samples and rows at
-# +SLICE).  The connector is combinational and the screen has no
-# edges before the first push, so the slice is exactly equivalent.
-SLICE = 1750
+# The driver is quiet until ~1750 plus ~2.5 chars/tick of boot parse
+# per program char (the gfx library prepended below lengthens it --
+# keep the budget generous when extending either); both replays skip
+# that dead head (phases 2-3 run TICKS - SLICE ticks feeding samples
+# and rows at +SLICE).  The connector is combinational and the screen
+# has no edges before the first push, so the slice is exactly
+# equivalent.
+SLICE = 2400
 
-DRIVER = """
-local function tick()
-  local c = clock()
-  while clock() == c do end
-end
-local function nap(c)
-  local t = clock()
-  while clock() < t + c do end
-end
-local function fire()
-  outNum(1, 1.0)
-  tick()
-  outNum(1, 0.0)
-  outNum(2, 1.0)
-  tick()
-  outNum(2, 0.0)
-  tick()
-end
--- shape 1: immediate red fill square; points first, then a -5
--- terminator (its magnitude is the colour count: 4), then the colours.
--- outNumArr takes at most 8 values a call, so 16 colour floats are two
--- calls.
-outNumArr(1, 4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0)
-outNumArr(9, -5.0)
-outNumArr(10, 1.0, 0.0, 0.0, 1.0,
-              1.0, 0.0, 0.0, 1.0)
-outNumArr(18, 1.0, 0.0, 0.0, 1.0,
-              1.0, 0.0, 0.0, 1.0)
-fire()
--- shape 2: immediate blue stroke (outNum4 = wire)
-outNum(4, 1.0)
-outNumArr(1, 30.0, 30.0, 50.0, 30.0, 30.0, 50.0)
-outNumArr(7, -4.0)
-outNumArr(8, 0.1, 0.4, 1.0, 1.0,
-             0.1, 0.4, 1.0, 1.0)
-outNumArr(16, 0.1, 0.4, 1.0, 1.0)
-fire()
-outNum(4, 0.0)
+DRIVER = open(os.path.join(HERE, "gfx.lua"),
+               encoding="utf-8").read() + "\n" + """
+-- shape 1: immediate red fill square via the gfx library.
+pushShape({4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0},
+{1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0,
+1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0})
+setWire(1.0)
+pushShape({30.0, 30.0, 50.0, 30.0, 30.0, 50.0},
+{0.1, 0.4, 1.0, 1.0, 0.1, 0.4, 1.0, 1.0, 0.1, 0.4, 1.0, 1.0})
+setWire(0.0)
 -- the stroke is ~22 rows plus its segment steps: nap past the burst
 -- (drivers pace bursts; a push would abort the walk mid-flight and
 -- the wall would keep a partial stroke)
 nap(0.4)
--- shape 3: immediate moved square -- the transform rides outStrArr
--- (8 values a call at most, so nine slots are two calls), the parent
--- rides outStr2 ("2" here, a dead slot: proves a nonzero id parses
--- while painting with the identity, like an empty outStr1 would)
-outStr(2, "2")
-outStrArr(1, "8", "4", "0", "0", "0", "0", "1", "1")
-outStrArr(9, "1")
-outNumArr(1, 4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0)
-outNumArr(9, -5.0)
-outNumArr(10, 0.0, 0.0, 1.0, 1.0,
-              0.0, 0.0, 1.0, 1.0)
-outNumArr(18, 0.0, 0.0, 1.0, 1.0,
-              0.0, 0.0, 1.0, 1.0)
-fire()
+-- shape 3: immediate moved square -- transform plus a dead-slot
+-- parent (proves a nonzero id parses while painting identity).
+pushShape({4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0},
+{0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0,
+0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0},
+{8.0, 4.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "2")
 outStr(2, "")
--- shape 4: retained green triangle, slot 1 (outStr1 = id as text).
--- The transform and parent stage per push, so this resets both to
--- identity first -- otherwise the slot would inherit shape 3's move.
-outStr(1, "1")
-outStr(2, "")
-outStrArr(1, "0", "0", "0", "0", "0", "0", "1", "1")
-outStrArr(9, "1")
-outNumArr(1, 8.0, 8.0, 20.0, 8.0, 8.0, 20.0)
-outNumArr(7, -4.0)
-outNumArr(8, 0.0, 1.0, 0.0, 0.5,
-             0.0, 1.0, 0.0, 0.5)
-outNumArr(16, 0.0, 1.0, 0.0, 0.5)
-fire()
+-- shape 4: retained green triangle in slot 1 (identity transform
+-- restated: a push carries its full shape or inherits the mover's).
+editShape("1", {8.0, 8.0, 20.0, 8.0, 8.0, 20.0},
+{0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5},
+{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0})
 outStr(1, "")
--- shape 5: animate slot 1's triangle (+2 x/tick over 4 ticks; slot
--- 100 = -(1+4)).  The commit stages the animation and paints
--- nothing; a bare draw after the ticks shows the motion.  (Slot 1
--- is already live from shape 4, so no establish is needed -- and
--- the nap below is shape 4's burst settling before the new push,
--- which would otherwise abort it mid-flight.)
+-- shape 5: animate slot 1's triangle (+2 x/tick over 4 ticks).
+-- The nap below is shape 4's burst settling before the new push,
+-- which would otherwise abort it mid-flight.
 local wa = clock()
 while clock() < wa + 1.2 do end
-outStr(1, "1")
-outStrArr(1, "2", "0", "0", "0", "0", "0", "0", "0")
-outStrArr(9, "0")
-outNumArr(1, 0.0, 0.0)
-outNumArr(3, -1.0)
-outNumArr(100, -5.0)
-fire()
+editShape("1", {0.0, 0.0}, nil,
+{2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, "0", 4.0)
 outStr(1, "")
 outNumArr(100, -1.0)
 -- the animated commit paints nothing and the 4 ticks run free; one
 -- bare draw afterwards shows the triangle moved +8 in x
 local wb = clock()
 while clock() < wb + 0.4 do end
-outNum(2, 1.0)
-tick()
-outNum(2, 0.0)
-tick()
-tick()
+draw()
 -- let the bare draw's burst finish before clearing, or the pulse
 -- abandons it mid-flight and no moved triangle ever lands
 -- clearing, or the pulse abandons it mid-flight and no complete triangle
@@ -467,7 +412,7 @@ def main():
         # wall still shows the triangle); the bare draw after the
         # ticks shows it moved +8 in x (snapB).
         snap3_tick = (reds[2] + 2 + 18) if len(reds) >= 4 else None
-        snapA_tick = (reds[4] + 2 + 25) if len(reds) >= 6 else None
+        snapA_tick = (reds[4] + 2 + 120) if len(reds) >= 6 else None
         snapB_tick = (reds[5] + 2 + 95) if len(reds) >= 6 else None
         snap = None
 
@@ -597,18 +542,21 @@ def main():
             ok &= expect(False, "retained store through connector",
                          "no snapshot (only %d redraws)" % len(reds))
         asq = [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0]
-        # shape 5 animates slot 1's triangle in place: the commit
-        # paints nothing, so the wall still shows the triangle alone.
-        wantA = {p: (0.0, 1.0, 0.0, 0.5) for p in poly_pixels(tri)}
+        # shape 5 animates slot 1's triangle in place: the motion
+        # advances with no draw (the chip repaints live slots itself),
+        # so snapA -- taken with no drawAllShapes since the commit --
+        # already shows the triangle moved.
+        movedA0 = xf_points(tri, (8.0, 0.0), 0.0, (1.0, 1.0))
+        wantA = {p: (0.0, 1.0, 0.0, 0.5) for p in poly_pixels(movedA0)}
         if snap_holder.get("wallA") is not None:
             badA = [i for i in range(SW * SW)
                     if snap_holder["wallA"][i] != wantA.get(
                         i, (0.0, 0.0, 0.0, 1.0))]
-            ok &= expect(not badA, "animated commit repaints nothing",
+            ok &= expect(not badA, "motion advances with no draw",
                          "%d of 4096 differ, first at %d"
                          % (len(badA), badA[0] if badA else 0))
         else:
-            ok &= expect(False, "animated commit repaints nothing",
+            ok &= expect(False, "motion advances with no draw",
                          "no snapshot (only %d redraws)" % len(reds))
         if snap_holder.get("wallB") is not None:
             movedA = xf_points(tri, (8.0, 0.0), 0.0, (1.0, 1.0))

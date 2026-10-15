@@ -51,6 +51,13 @@ def close(a, b, tol=1e-9):
         abs(float(x) - float(y)) <= tol for x, y in zip(a, b))
 
 
+def strip_lib(src):
+    """Drop full-line comments and blanks for the in-game length cap."""
+    return "\n".join(l for l in src.split("\n")
+                     if l.strip() != ""
+                     and not l.strip().startswith("--"))
+
+
 def destr(v):
     # one string-array element: strip the "quoted" wrapper the same
     # way as the scalar string ports
@@ -77,6 +84,12 @@ def stovec(sa, off):
 
 def main():
     src = open(SHOW, encoding="utf-8").read()
+    # the body calls the gfx library: prepend it, stripped (see
+    # showtest for why).
+    gfx = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
+                       "gfx.lua")
+    src = strip_lib(open(gfx, encoding="utf-8").read() + "\n" + src)
+    print("program chars: %d" % len(src))
     dumps = []
     ok = True
     try:
