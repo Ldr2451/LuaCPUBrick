@@ -59,9 +59,20 @@ painted without a draw, so a frame is a push followed by a draw.
   one push to a parent moves its children with it. Leave them unwired
   for the identity.
 - `brightness` -- 1 to 100, a dimmer for the whole panel. Unwired means
-  the default (35: the bricks glow, and full brightness washes every
+  the default (0.025: the bricks glow, and full brightness washes every
   colour out).
 - `addToShapeInTicks` -- see below.
+
+All three of `shapePosition`, `shapeRotation` and `shapeScale` take a
+full vector. The third field of each is live: `shapePosition.z` places a
+shape forwards or backwards in depth, `shapeRotation.x/y` tilt it
+off-axis (a tilted shape foreshortens and self-occludes), and
+`shapeScale.z` scales that depth. Projection is orthographic -- screen
+x/y are world x/y -- and a per-pixel depth buffer decides what paints in
+front, so a nearer shape wins over a later one and a tilted shape
+occludes itself. Points stay flat `x, y` pairs; depth comes from the
+transform, so a solid at several depths is built from shapes at several
+`shapePosition.z` under one rotating parent (see `showcase3.lua`).
 
 Nothing expires and nothing needs refreshing: a shape stays on the
 panel until a draw paints something else over it.
@@ -73,17 +84,33 @@ every other staged input becomes a *change per tick*, applied again
 each tick for N ticks -- so one push walks a shape across the panel and
 the CPU is free until it lands.
 
-The animation becomes visible on `drawAllShapes`, like everything
-else, and a new push to the same shape always replaces an animation
-still in flight. Pushing with it left at 0 (or unwired) is the plain
-instant push.
+The animation drives itself: once a slot's ticks are running, the chip
+repaints that slot every tick with no `drawAllShapes` from the CPU at
+all, so a shape walks on its own and the CPU only stages the animation.
+Only what `addToShapeInTicks` asked to update ever reaches the panel --
+a push that also carries points still waits for its `drawAllShapes`, so a
+staged-but-undrawn shape is never shown.
 
 ```
 outNumArr(100, -(1.0 + 30))     -- animate the staged shape over 30 ticks
 outNumArr(100, -1.0)            -- instant, as before
 ```
 
-See the connector's README for the array layout that carries it.
+See the connector's README for the array layout that carries it, and for
+the `gfx` Lua library -- `pushShape`, `editShape`, `deleteShape`,
+`clearScreen` and friends -- which wraps this whole protocol so a driver
+never has to pick an output port. The showcase programs
+(`showcase.lua`, `showcase2.lua`, `showcase3.lua`) use it and between
+them cover per-point colours, retained editing, the deferred clear, the
+pending queue, animation, and 3D depth and tilt.
+
+## Refresh
+
+The panel paints four rows a tick, so a full-wall shape settles in about
+16 ticks and a small one in two. That is measured, not estimated, and it
+is the trade the node count puts on it: a wider fill is proportionally
+faster and proportionally more gates, and the chip sits at 46,306 nodes
+against the Lua CPU's 44,016.
 
 ## Running the tests
 
