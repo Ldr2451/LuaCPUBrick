@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(ROOT, "irrun"))
 sys.path.insert(0, HERE)
 
 from irsims import share_dump, sim_from_dump, _extract  # noqa: E402
+import luastream  # noqa: E402
 import colormath  # noqa: E402
 
 colormath.install()
@@ -45,9 +46,30 @@ from painttest import poly_pixels, poly_colors, slide  # noqa: E402
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
 ANIM = os.path.join(HERE, "anim.lua")
+GFX = os.path.join(os.path.dirname(HERE), "cpu-screen-connector", "gfx.lua")
 SW = 64
 WHITE = (1.0, 1.0, 1.0, 1.0)
-TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 3600
+TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 9000
+# Virtual-tick budget for the real-Lua stream.  The checks below name
+# four shapes and a well-spaced redraw, and the program paces itself
+# ~300 ticks a frame, so 3000 gives ~45 frames -- an order of magnitude
+# more than the checks need, while keeping the screen replay (the only
+# expensive part left) short.
+BUDGET = int(os.environ.get("STREAM_BUDGET") or 3000)
+force_chip = "--chip" in sys.argv
+
+
+def lua_stream(src, gfx_path, budget, force_chip=False):
+    """The program's port stream: real Lua 5.5 when it is on the box.
+
+    Returns per-tick rows, or None to tell the caller to run the chip.
+    --chip forces the chip, and a box with no Lua 5.5 falls back to it,
+    so the suite never silently depends on the oracle being installed.
+    """
+    if force_chip or luastream.LUA_BIN is None:
+        return None
+    return luastream.sample_rows(
+        luastream.record(src, gfx_path, budget=budget), cols=4)
 
 
 def out_port_id(sim, name):
@@ -142,52 +164,111 @@ def strip_lib(src):
                      and not l.strip().startswith("--"))
 
 
+class Stream:
+    """A port sampler that stops paying for the dead parse head.
+
+    The Lua chip takes ~1 char/tick to parse the program (measured:
+    3861 chars -> parse end at tick 4029), so the first few thousand
+    ticks of phase 1 carry nothing.  Sampling the 128-slot arrays
+    through them costs a fresh list per tick for all-zero values.
+
+    A short ring holds the lookback the edge logic needs; full sampling
+    starts at the first live edge, which is also the first tick the
+    128-slot array is read.  `samples` then indexes exactly like the
+    old list -- index k is tick k + head.
+    """
+
+    def __init__(self, look=256):
+        self.look = look
+        self.out = []
+        self.ring = []
+        self.head = 0
+
+    def push(self, sample, live):
+        if self.out:
+            self.out.append(sample)
+            return
+        self.ring.append(sample)
+        if len(self.ring) > self.look:
+            self.head += 1
+            self.ring.pop(0)
+        if live:
+            self.out = self.ring
+            self.ring = []
+
+    def __len__(self):
+        return len(self.out)
+
+    def __getitem__(self, k):
+        return self.out[k]
+
+    def __iter__(self):
+        return iter(self.out)
+
+
 def main():
-    src = open(ANIM, encoding="utf-8").read()
+    body = open(ANIM, encoding="utf-8").read()
     # the animation body calls the gfx library: prepend it, stripped
-    # (see showtest).
-    gfx = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
-                       "gfx.lua")
-    src = strip_lib(open(gfx, encoding="utf-8").read() + "\n" + src)
+    # (see showtest).  `body` stays lib-free: the oracle prepends the
+    # library itself, so handing it the assembled program would load
+    # the library twice and its busy-wait tick would win over the
+    # harness's virtual one.
+    src = strip_lib(open(GFX, encoding="utf-8").read() + "\n" + body)
     print("program chars: %d" % len(src))
     dumps = []
     ok = True
     try:
-        # ---- phase 1: run the animation on the Lua chip ----------------
-        with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-            lua_dump = f.name
-        dumps.append(lua_dump)
-        share_dump(LUA_WS, lua_dump)
-        lsim = sim_from_dump(lua_dump)
-        pid_push = out_port_id(lsim, "outNum1")
-        pid_red = out_port_id(lsim, "outNum2")
-        pid_clr = out_port_id(lsim, "outNum3")
-        pid_arr = out_port_id(lsim, "outNumArr")
-        r_push = resolve_port(lsim, pid_push)
-        r_red = resolve_port(lsim, pid_red)
-        r_clr = resolve_port(lsim, pid_clr)
-        r_arr = resolve_port(lsim, pid_arr)
+        # ---- phase 1: the program's port stream -----------------------
+        # Real Lua 5.5 with a virtual clock, so the several thousand
+        # ticks the chip would spend parsing the program are never
+        # simulated.  --chip (or no Lua 5.5 on the box) runs the chip.
+        samples = lua_stream(body, GFX, BUDGET, force_chip=force_chip)
+        if samples is not None:
+            print("   stream: %d ticks (real Lua 5.5 oracle)"
+                  % len(samples))
+        if samples is None:
+            with tempfile.NamedTemporaryFile(suffix=".pkl",
+                                             delete=False) as f:
+                lua_dump = f.name
+            dumps.append(lua_dump)
+            share_dump(LUA_WS, lua_dump)
+            lsim = sim_from_dump(lua_dump)
+            pid_push = out_port_id(lsim, "outNum1")
+            pid_red = out_port_id(lsim, "outNum2")
+            pid_clr = out_port_id(lsim, "outNum3")
+            pid_arr = out_port_id(lsim, "outNumArr")
+            r_push = resolve_port(lsim, pid_push)
+            r_red = resolve_port(lsim, pid_red)
+            r_clr = resolve_port(lsim, pid_clr)
+            r_arr = resolve_port(lsim, pid_arr)
 
-        samples = []
+            samples = Stream()
+            live = [False]
 
-        def hook(s, tick):
-            samples.append((
-                port_val(s, r_push),
-                port_val(s, r_red),
-                port_val(s, r_clr),
-                port_slice(s, r_arr),
-            ))
+            def hook(s, tick):
+                p = port_val(s, r_push)
+                r = port_val(s, r_red)
+                c = port_val(s, r_clr)
+                if live[0]:
+                    samples.push((p, r, c, port_slice(s, r_arr)), True)
+                else:
+                    samples.push((p, r, c, []), False)
+                    if p > 0.5 or r > 0.5 or c > 0.5:
+                        live[0] = True
 
-        lsim.reset()
-        lsim.inputs = {"program": src, "run": True}
-        lsim.run(TICKS, on_tick=hook)
+            lsim.reset()
+            lsim.inputs = {"program": src, "run": True}
+            lsim.run(TICKS, on_tick=hook)
 
-        og = lsim.capture()["outGlobals"]
-        dbg = og.get("progDebug") or ""
-        ok &= expect(not og.get("runErrors"),
-                     "animation runs without errors", str(og.get("runErrors")))
-        ok &= expect(not any(l.startswith("err:") for l in dbg.splitlines()),
-                     "animation compiles clean", str(dbg))
+            og = lsim.capture()["outGlobals"]
+            dbg = og.get("progDebug") or ""
+            ok &= expect(not og.get("runErrors"),
+                         "animation runs without errors",
+                         str(og.get("runErrors")))
+            ok &= expect(not any(l.startswith("err:")
+                                 for l in dbg.splitlines()),
+                         "animation compiles clean", str(dbg))
+            print("   stream: %d ticks (Lua chip)" % len(samples))
 
         # ---- parse the stream ------------------------------------------
         pushes, reds, clears, latched = [], [], [], []
