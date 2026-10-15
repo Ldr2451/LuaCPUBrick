@@ -38,6 +38,10 @@ SCREEN_WS = os.path.join(HERE, "..", "screen", "screen.ws")
 SW = 64
 TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 4000
 BLACK = (0.0, 0.0, 0.0, 1.0)
+# Brightness 100 is FULL_BRIGHT (the pre-port factor), so the wall reads
+# at 0.35 * pushed colour.  Divided back out where the wall is read, so
+# the rest of the chain test compares a pushed colour against the wall.
+BF = 0.35
 # The driver is quiet until ~1750 plus ~2.5 chars/tick of boot parse
 # per program char (the gfx library prepended below lengthens it --
 # keep the budget generous when extending either); both replays skip
@@ -493,7 +497,8 @@ def main():
         got = []
         for i in range(SW * SW):
             v = ssim.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))
-            got.append(tuple(float(x) for x in v[:4]))
+            got.append(tuple(float(x) / BF if k < 3 else float(x)
+                             for k, x in enumerate(v[:4])))
 
         tri = [8.0, 8.0, 20.0, 8.0, 8.0, 20.0]
         sq = [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0]

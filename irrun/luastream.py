@@ -228,6 +228,10 @@ def sample_rows(writes, n_arr=NSLOT, n_str=NSTR, cols=8):
                     sid2 = str(wr.vals[0]) if wr.vals else ""
         if cols >= 8:
             rows.append((p, r, c, w, list(arr), sid, sid2, list(strarr)))
+        elif cols >= 6:
+            # showtest reads no second string port and no transform
+            # array, so its rows carry just the first id string
+            rows.append((p, r, c, w, list(arr), sid))
         else:
             rows.append((p, r, c, list(arr)))
         t += 1

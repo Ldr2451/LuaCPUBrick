@@ -45,6 +45,10 @@ GFX = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
                    "gfx.lua")
 SW = 64
 TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 17000
+# Brightness 100 is FULL_BRIGHT (the pre-port factor), so the wall reads
+# at 0.35 * pushed colour.  Divided back out where the wall is read, so
+# the slot model below compares a pushed colour against the wall.
+BF = 0.35
 BUDGET = int(os.environ.get("STREAM_BUDGET") or 17000)
 force_chip = "--chip" in sys.argv
 BLACK = (0.0, 0.0, 0.0, 1.0)
@@ -60,7 +64,7 @@ def lua_stream(src, gfx_path, budget, force_chip=False):
     if force_chip or luastream.LUA_BIN is None:
         return None
     return luastream.sample_rows(
-        luastream.record(src, gfx_path, budget=budget))
+        luastream.record(src, gfx_path, budget=budget), cols=6)
 
 
 def parse_id(s):
@@ -301,8 +305,9 @@ def main():
             lb = _ex(nd.props.get("_label", ("raw", "")))
             if isinstance(lb, str) and lb.startswith("g") and lb[1:].isdigit():
                 gids[int(lb[1:])] = nid
-        got = [tuple(float(x) for x in
-                     ssim.vars.get(gids[i], (0, 0, 0, 0))[:4])
+        got = [tuple(float(x) / BF if k < 3 else float(x)
+                     for k, x in enumerate(
+                         ssim.vars.get(gids[i], (0, 0, 0, 0))[:4]))
                for i in range(SW * SW)]
 
         # ---- phase 3: slot model --------------------------------------

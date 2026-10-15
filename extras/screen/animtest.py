@@ -49,6 +49,10 @@ ANIM = os.path.join(HERE, "anim.lua")
 GFX = os.path.join(os.path.dirname(HERE), "cpu-screen-connector", "gfx.lua")
 SW = 64
 WHITE = (1.0, 1.0, 1.0, 1.0)
+# Brightness 100 is FULL_BRIGHT (the pre-port factor), so the wall reads
+# at 0.35 * pushed colour.  Divided back out where the wall is read, so
+# the model below keeps comparing a pushed colour against the wall.
+BF = 0.35
 TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 9000
 # Virtual-tick budget for the real-Lua stream.  The checks below name
 # four shapes and a well-spaced redraw, and the program paces itself
@@ -382,7 +386,8 @@ def main():
         got = []
         for i in range(SW * SW):
             v = ssim.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))
-            got.append(tuple(float(x) for x in v[:4]))
+            got.append(tuple(float(x) / BF if k < 3 else float(x)
+                             for k, x in enumerate(v[:4])))
 
         # ---- phase 3: model of the protocol ----------------------------
         # Immediate mode: each drawAllShapes paints the pushed shape.  A

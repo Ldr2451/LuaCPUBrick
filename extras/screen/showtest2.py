@@ -57,6 +57,13 @@ def parse_id(s):
         return 0.0
 
 
+# Brightness 100 is FULL_BRIGHT (the pre-port factor), and the screen is
+# driven at 100, so the wall reads at 0.35 * pushed colour.  Divided
+# back out here so the rest of the suite compares a pushed colour
+# against the wall; see painttest.col for why it lives in one place.
+BF = 0.35
+
+
 def close(a, b, tol=1e-9):
     return len(a) == len(b) and all(
         abs(float(x) - float(y)) <= tol for x, y in zip(a, b))
@@ -374,8 +381,9 @@ def main():
             lb = _extract(nd.props.get("_label", ("raw", "")))
             if isinstance(lb, str) and lb.startswith("g") and lb[1:].isdigit():
                 gids[int(lb[1:])] = nid
-        got = [tuple(float(x) for x in
-                     ssim.vars.get(gids[i], (0, 0, 0, 0))[:4])
+        got = [tuple(float(x) / BF if k < 3 else float(x)
+                     for k, x in enumerate(
+                         ssim.vars.get(gids[i], (0, 0, 0, 0))[:4]))
                for i in range(SW * SW)]
 
         # ---- phase 3: slot model --------------------------------------
