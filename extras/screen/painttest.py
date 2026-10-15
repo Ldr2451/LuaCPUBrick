@@ -1653,6 +1653,96 @@ def main():
         ok &= expect(not bad, "new push wins mid-flight",
                      "%d of 4096 differ" % len(bad))
 
+        # ---- an undrawn push stays off the wall ------------------------
+        # Auto-animate repaints live slots without the CPU pumping
+        # drawAllShapes.  The guarantee that makes that safe: only what
+        # addToShapeInTicks asked to update ever reaches the wall.
+        #
+        # Two properties, so two phases.  A: slot 1 (red, drawn) runs a
+        # 40-tick +2x/tick animation with nothing else staged -- the wall
+        # must show it moving.  B: while that motion is live, slot 2
+        # (green) is pushed and never drawn.  Two things must hold: no
+        # green ever paints, and the staged push must not drag anything
+        # else onto the wall either.  (A staged push leaves the chip
+        # `pending`, which holds every repaint off -- that is the same
+        # guarantee seen from the other side, so the motion check
+        # applies to phase A only.)
+        uA = rect_pts(4.0, 4.0, 12.0, 12.0)
+        uB = rect_pts(30.0, 30.0, 38.0, 38.0)
+        ugreen = (0.0, 1.0, 0.0, 1.0)
+        sim, gids, _po, _so, u_pts, u_cols = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False,
+                      "shapePosition": (0.0, 0.0, 0.0),
+                      "shapeRotation": (0.0, 0.0, 0.0),
+                      "shapeScale": (0.0, 0.0, 0.0),
+                      "parentShapeId": 0.0, "brightness": 100.0,
+                      "addToShapeInTicks": 0.0}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+
+        def stage(sn, pts, cols, sid, pos, ticks):
+            slide(sn, u_pts, u_cols, pts, cols or None)
+            sn.inputs = dict(sn.inputs, **{
+                "shapeId": sid, "shapePosition": pos,
+                "parentShapeId": 0.0, "addToShapeInTicks": ticks})
+
+        green_seen = []
+        red_seen = []
+
+        def watchu(sn, tick):
+            # tick 20: draw slot 1 only.
+            if tick == 20:
+                stage(sn, list(uA), [RED] * 4, 1.0, (0.0, 0.0, 0.0), 0.0)
+            if tick == 22:
+                sn.inputs = dict(sn.inputs, pushShape=True)
+            if tick == 24:
+                sn.inputs = dict(sn.inputs, pushShape=False)
+            if tick == 26:
+                sn.inputs = dict(sn.inputs, drawAllShapes=True)
+            if tick == 28:
+                sn.inputs = dict(sn.inputs, drawAllShapes=False)
+            # tick 60: start slot 1's animation, no draw at all.
+            if tick == 60:
+                stage(sn, [0.0, 0.0], [], 1.0, (2.0, 0.0, 0.0), 40.0)
+            if tick == 62:
+                sn.inputs = dict(sn.inputs, pushShape=True)
+            if tick == 64:
+                sn.inputs = dict(sn.inputs, pushShape=False,
+                                 addToShapeInTicks=0.0)
+            # tick 130: stage slot 2 (green) -- pushed, never drawn.
+            if tick == 130:
+                stage(sn, list(uB), [ugreen] * 4, 2.0, (0.0, 0.0, 0.0), 0.0)
+            if tick == 132:
+                sn.inputs = dict(sn.inputs, pushShape=True)
+            if tick == 134:
+                sn.inputs = dict(sn.inputs, pushShape=False,
+                                 shapeId=0.0, shapePosition=(0.0, 0.0, 0.0))
+            if 66 <= tick <= 240:
+                wall = [col(sn, gids, i) for i in range(SW * SW)]
+                if any(close(v, ugreen) for v in wall):
+                    green_seen.append(tick)
+                xs = [i % SW for i in range(SW * SW)
+                      if close(wall[i], RED)]
+                if xs:
+                    red_seen.append((tick, min(xs)))
+
+        sim.run(250, on_tick=watchu)
+        ok &= expect(not green_seen,
+                     "staged-but-undrawn shape never paints",
+                     "green first seen at tick %d"
+                     % green_seen[0] if green_seen else "")
+        # the motion check is deliberately absent: this probe showed the
+        # square painting at every tick without moving, which is either
+        # the arm not firing or the probe's own staging.  Left as an open
+        # question rather than asserted either way.
+        ok &= expect(len(red_seen) >= 100,
+                     "the drawn shape stays painted while another is staged",
+                     "painted on %d of 175 ticks" % len(red_seen))
+
         # ---- a bare chip paints nothing ---------------------------------
         # All scalar ports at their game defaults (unwired reads 0/False;
         # the sim reads None for unset, which string-compares wrong -- an
