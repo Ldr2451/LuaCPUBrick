@@ -58,9 +58,14 @@ painted without a draw, so a frame is a push followed by a draw.
   optional. A shape pushed with `parentShapeId` N follows slot N, so
   one push to a parent moves its children with it. Leave them unwired
   for the identity.
-- `brightness` -- 1 to 100, a dimmer for the whole panel. Unwired means
-  the default (0.025: the bricks glow, and full brightness washes every
-  colour out).
+- `brightness` -- 1 to 100, a dimmer for the whole panel. **100 is the
+  brightness the panel had before the port existed**, and the scale runs
+  down from there, so nothing can be asked for that is brighter than the
+  screen already was -- there is no way to dial in excessive white.
+  Unwired reads as 100, so a screen nobody has dimmed comes up at full
+  and looks exactly as it did. A value outside 1..100 clamps to the
+  nearest end rather than being dropped (a typo for 1000 is a 100, not a
+  surprise).
 - `addToShapeInTicks` -- see below.
 
 All three of `shapePosition`, `shapeRotation` and `shapeScale` take a

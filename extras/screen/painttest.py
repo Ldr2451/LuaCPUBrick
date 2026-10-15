@@ -79,10 +79,31 @@ def fresh_sim(dump_path):
     return sim, gids, polyon, son, pts_aid, cols_aid
 
 
+# Brightness 100 is FULL_BRIGHT, the factor the panel had before the
+# port existed -- the top of the scale, so nothing above it can be
+# asked for.  Every section below drives brightness 100, so the wall
+# reads at 0.35 * pushed-colour.  That factor is undone here, once, so
+# the rest of the suite can keep comparing a pushed colour against the
+# wall: the scale is a property of the input, not of what was painted.
+BF = 0.35
+
+
+def undim(c):
+    """A wall colour with the brightness factor divided back out.
+
+    Alpha passes through untouched (the dimmer scales RGB only), and
+    black stays black, so an erased or never-painted pixel is unaffected.
+    """
+    if not isinstance(c, (tuple, list)) or len(c) < 4:
+        return c
+    return tuple(float(x) / BF if k < 3 else float(x)
+                 for k, x in enumerate(c[:4]))
+
+
 def col(sim, gids, i):
     v = sim.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))
     if isinstance(v, (tuple, list)) and len(v) >= 4:
-        return tuple(float(x) for x in v[:4])
+        return undim(tuple(float(x) for x in v[:4]))
     return v
 
 

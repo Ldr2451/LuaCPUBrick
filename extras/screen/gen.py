@@ -30,7 +30,7 @@ SW, SH = 64, 64
 NP = SW * SH
 K = int(sys.argv[1]) if len(sys.argv) > 1 else 64
 MAXP = 16                                   # max vertices per polygon
-DEF_BRIGHT = 0.025                          # unwired brightness factor
+DEF_BRIGHT = 0.35                          # unwired brightness factor
 
 
 L = []
@@ -132,10 +132,15 @@ L.append("const SH = %d" % SH)
 L.append("const NP = %d" % NP)
 L.append("const SWF = %d.0" % SW)
 L.append("const MAXP = %d" % MAXP)
-# The unwired-brightness default, as a factor: an emissive wall at full
-# scale (1.0) washes every colour toward white.  In game a wired slider
-# of 2-3 reads well, so the unwired default matches that (0.025); the
-# slider still reaches 1.0.
+# Two brightness constants, and the scale between them.
+#
+# FULL_BRIGHT is the factor the panel used before the port existed, so
+# brightness 100 is exactly that and nothing above it can be asked for
+# -- there is no way to dial in more white than the screen already had.
+# DEF_BRIGHT is what an unwired port reads as, and it is the same
+# number: an unwired screen is a screen nobody has dimmed, so it comes
+# up at 100 and looks exactly as it did before the port existed.
+L.append("const FULL_BRIGHT = 0.35")
 L.append("const DEF_BRIGHT = %f" % DEF_BRIGHT)
 L.append("var fb: color[]")
 # Per-pixel depth, parallel to fb: the nearest painted z wins (bigger
@@ -702,14 +707,19 @@ L.append("  }")
 # The live brightness factor: the brightness port is a user-set slider
 # the connector never drives (it stays unwired in the shipped save), 1
 # to 100, capped both ends; an unwired port reads 0.0, which means the
-# DEFAULT_BRIGHT default (0.025, not full: an emissive wall at full scale
-# washes every colour toward white, so shapes stop reading against a
-# bright background).  Applied per row-setup -- and a twiddle's edge
-# reruns the retained recomposite and refreshes the last immediate
-# reaches 100.  Applied per row-setup -- and a twiddle edge reruns the
-L.append("  bf = if brightness <= 0.0 then DEF_BRIGHT else if brightness < 1.0"
-         " then 0.01 else if brightness > 100.0 then 1.0"
-         " else brightness / 100.0")
+# The bf line, with the scale and the clamp in one place.
+#
+# A wired value outside 1..100 clamps to the nearest end rather than
+# being dropped, which is what the previous form did (a <1 reading
+# silently became 0.01, a >100 reading 1.0 -- a full-scale white-out
+# from a typo).  0 is the one value that cannot be clamped to a
+# sensible dimness: a port holding 0 is how an unwired input reads, and
+# it is outside the range anyway, so it means "no dimmer asked for" and
+# gets the default (which is 100).
+L.append("  let bclamp = if brightness < 1.0 then 1.0")
+L.append("    else if brightness > 100.0 then 100.0 else brightness")
+L.append("  bf = if brightness <= 0.0 then DEF_BRIGHT")
+L.append("    else bclamp * FULL_BRIGHT / 100.0")
 
 # ---- retained commit: store the staged shape, start recomposite ------------
 # A retained push (id 1..8) lands here on drawAllShapes: the pushed points
