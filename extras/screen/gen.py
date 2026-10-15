@@ -459,6 +459,11 @@ frameRC_lines.append("cDirty = false")
 # Erase-pass state: running, the row cursor, which of a row's two
 # stale spans is next, and the rect being fed to the fill walk.
 L.append("var erasing: bool = false")
+# eraseOK gates the erase; erArmed stops one burst arming it twice.
+# frWait holds the coverage roll until the frame is whole and the erase
+# walk it started has finished -- see the roll block after the lanes.
+L.append("var erArmed: bool = false")
+L.append("var frWait: bool = false")
 L.append("var erRow: float = 0.0")
 L.append("var erL: float = 0.0")
 L.append("var erR: float = 0.0")
@@ -3034,10 +3039,20 @@ for _i in range(64):
     roll_lines.append("oldMin[%d] = covMin[%d]" % (_i, _i))
     roll_lines.append("oldMax[%d] = covMax[%d]" % (_i, _i))
 L.append("      if erasing {")
-for _l in roll_lines:
-    L.append("        " + _l)
-L.append("        oldLo = covLo")
-L.append("        oldHi = covHi")
+# A walk interrupted by a new paint has not visited every row, and the
+# rows it skipped still hold the extents of the frame before last.  The
+# roll that used to finish the frame from in here is gone: it belongs to
+# the frame now, and fires when the chip goes idle -- which a walk
+# interrupted by a new paint never is.  A stale `old` is harmless,
+# because the next frame's roll overwrites it and the next frame's walk
+# blacks whatever the new frame does not cover.
+#
+# What is NOT harmless is rolling in here: it fires mid-frame (the walk
+# is running because a burst is running) and writes a partial coverage
+# into `old`, after which the erase's band and its stale spans are both
+# computed from a frame that was never on the wall.  All this does now is
+# stop the walk.
+L.append("        erasing = false")
 L.append("      }")
 L.append("      if erasing || cDirty {")
 for _l in reset_lines:
@@ -3961,6 +3976,109 @@ L.append("  // -- pure lets re-evaluate per use, so the fold captures")
 L.append("  // the pre-write values and the burst paints nothing or the")
 L.append("  // wrong row.  The direct form is the original chip's lane")
 L.append("  // shape, which never had that hazard.")
+L.append("  let painting = polyOn || sOn")
+# The erase is armed when the paint burst STARTS, not when it ends, and
+# it walks the old band in the same four rows a tick the fill does -- so
+# a row is blacked of its old extent and painted with its new spans
+# inside the SAME tick.  Arming at the end instead left the previous
+# frame on the wall for as long as the whole repaint took, which reads
+# as a trail: a moving square occupied a 16-wide span where one 8-wide
+# square belongs, for 8 ticks a move.
+#
+# erArmed stops one burst arming twice: the walk can outlive the burst
+# that started it, and re-arming would restart it from oldLo and erase
+# rows the new frame had already corrected.
+L.append("  if painting && !erasing && eraseOK && !erArmed {")
+L.append("    erArmed = true")
+L.append("    erasing = true")
+L.append("    erRow = oldLo")
+L.append("  } else if !painting && !erasing {")
+# the burst is over.  Held while erasing too, so a walk that outlives
+# its burst does not immediately re-arm and erase the frame it just
+# finished.
+L.append("    erArmed = false")
+L.append("  }")
+L.append("  if erasing && !arming {")
+# The band is the union of both frames' extents: the previous frame's
+# (which is what needs blacking) and the new one's (which is what is
+# being painted).  Taking the old frame's alone made the walk stop as
+# soon as the new frame had not yet been staged past the erase's cursor
+# -- it exited after one tick of rows and left the previous frame on the
+# wall anyway.
+L.append("    let erHi = if oldHi > covHi then oldHi else covHi")
+L.append("    let erLo = if oldLo < covLo then oldLo else covLo")
+for _k in range(4):
+# The visit only READS coverage: the roll into the previous frame
+# happens once at walk end, and erRow advances after the writes.
+# ( lets re-resolve per use in this toolchain, so writing old or
+# erRow before the spans are staged would corrupt them -- an early
+# version blackened rows 5-7 while silently skipping row 4.)
+    L.append("    if erRow <= erHi && erRow <= 63.0 {")
+    L.append("      let eri = (erRow | 0)")
+    L.append("      let erfl = erRow")
+    L.append("      let om = oldMin[eri]")
+    L.append("      let oM = oldMax[eri]")
+    L.append("      let nm = covMin[eri]")
+    L.append("      let nM = covMax[eri]")
+    L.append("      if oM >= 0.0 {")
+    L.append("        let eL1 = om")
+    L.append("        let eR1 = if oM < nm - 1.0 then oM else nm - 1.0")
+    L.append("        let eOn1 = if nm > om then 1.0 else 0.0")
+    L.append("        let eL2 = if nM + 1.0 > om then nM + 1.0 else om")
+    L.append("        let eR2 = oM")
+    L.append("        let eOn2 = if oM > nM then 1.0 else 0.0")
+    for _tj in range(64):
+        L.append("        if (eOn1 > 0.5 && %d.0 >= eL1 && %d.0 <= eR1)"
+                 " || (eOn2 > 0.5 && %d.0 >= eL2 && %d.0 <= eR2) {"
+                 % (_tj, _tj, _tj, _tj))
+        L.append("          fb[((erfl * 64.0 + %d.0) | 0)]"
+                 " = Color(0.0, 0.0, 0.0, 1.0)" % _tj)
+        L.append("          fbZ[((erfl * 64.0 + %d.0) | 0)] = ZBACK" % _tj)
+        L.append("        }")
+    L.append("      }")
+    L.append("      erRow = erRow + 1.0")
+    L.append("    }")
+L.append("    if erRow > erHi {")
+# The band is walked: stop the walk.  It rolls NOTHING.
+#
+# The roll used to live here, and that is what made this fix fail: driven
+# by the erase's completion it fired on a half-painted frame once the
+# erase and the fill walked separately, writing a partial coverage into
+# `old` -- after which the erase band was wrong, the walk stopped after
+# one tick of rows, and the previous frame stayed on the wall anyway.
+#
+# The roll now belongs to the frame, not to the erase: it fires when the
+# paint burst ends, once, with the whole frame's coverage in place.  See
+# the burst-end block below.
+L.append("      erasing = false")
+L.append("    }")
+L.append("  }")
+# ---- the frame is whole: roll the coverage -----------------------------
+# One roll, driven by the frame and not by the erase, so it can never
+# fire on a half-painted frame.  `frWait` is raised while a paint burst
+# runs and consumed the tick the wall is quiet AND the erase walk that
+# burst started has finished -- the erase reads `old` for its band and
+# its spans, so rolling under it would move the ground it walks on.
+L.append("  if painting {")
+L.append("    frWait = true")
+L.append("  } else if frWait && !rcOn && !polyOn && !sOn && !arming")
+L.append("    && !armingS && !erasing && !commitR && !commitQ {")
+# The frame boundary is the chip going IDLE, not the fill walk dropping
+# polyOn.  polyOn toggles inside one recomposite -- it is low on the
+# ticks the iterator spends jumping slots -- so keying the roll off it
+# fired mid-frame and wrote a partial coverage into `old` (measured:
+# oldLo 8 oldHi 11 for a frame that covered rows 6 to 15).
+L.append("    frWait = false")
+for _i in range(64):
+    L.append("      oldMin[%d] = covMin[%d]" % (_i, _i))
+    L.append("      oldMax[%d] = covMax[%d]" % (_i, _i))
+L.append("      oldLo = covLo")
+L.append("      oldHi = covHi")
+L.append("      covLo = 200.0")
+L.append("      covHi = -200.0")
+L.append("      cDirty = true")
+L.append("  }")
+# ---- the lanes: paint the staged spans --------------------------------
 L.append("  if polyOn || sOn {")
     # The rows this tick stages fold their spans into the coverage.
     # Both spans are read before either lane loop runs: the loops
@@ -4027,70 +4145,6 @@ L.append("  }")
 # one-pixel span is not degenerate), no brightness factor (black
 # times anything is black).  A row is examined exactly once: its
 # extents roll into the previous frame's whether stale or not.
-L.append("  let painting = polyOn || sOn")
-L.append("  if wasPaint && !painting && !rcOn && eraseOK {")
-L.append("    wasPaint = false")
-L.append("    erasing = true")
-L.append("    erRow = if oldLo < covLo then oldLo else covLo")
-L.append("  } else if painting && !erasing {")
-# not while erasing: direct fb writes are not a fill burst, so they
-# never set polyOn/sOn and can never re-stage the erase anyway; this
-# just keeps the burst detector from seeing the walk as paint.
-L.append("    wasPaint = true")
-L.append("  }")
-L.append("  if erasing && !painting && !rcOn && !arming {")
-L.append("    let erHi = if oldHi > covHi then oldHi else covHi")
-L.append("    let erLo = if oldLo < covLo then oldLo else covLo")
-for _k in range(4):
-# The visit only READS coverage: the roll into the previous frame
-# happens once at walk end, and erRow advances after the writes.
-# ( lets re-resolve per use in this toolchain, so writing old or
-# erRow before the spans are staged would corrupt them -- an early
-# version blackened rows 5-7 while silently skipping row 4.)
-    L.append("    if erRow <= erHi && erRow <= 63.0 {")
-    L.append("      let eri = (erRow | 0)")
-    L.append("      let erfl = erRow")
-    L.append("      let om = oldMin[eri]")
-    L.append("      let oM = oldMax[eri]")
-    L.append("      let nm = covMin[eri]")
-    L.append("      let nM = covMax[eri]")
-    L.append("      if oM >= 0.0 {")
-    L.append("        let eL1 = om")
-    L.append("        let eR1 = if oM < nm - 1.0 then oM else nm - 1.0")
-    L.append("        let eOn1 = if nm > om then 1.0 else 0.0")
-    L.append("        let eL2 = if nM + 1.0 > om then nM + 1.0 else om")
-    L.append("        let eR2 = oM")
-    L.append("        let eOn2 = if oM > nM then 1.0 else 0.0")
-    for _tj in range(64):
-        L.append("        if (eOn1 > 0.5 && %d.0 >= eL1 && %d.0 <= eR1)"
-                 " || (eOn2 > 0.5 && %d.0 >= eL2 && %d.0 <= eR2) {"
-                 % (_tj, _tj, _tj, _tj))
-        L.append("          fb[((erfl * 64.0 + %d.0) | 0)]"
-                 " = Color(0.0, 0.0, 0.0, 1.0)" % _tj)
-        L.append("          fbZ[((erfl * 64.0 + %d.0) | 0)] = ZBACK" % _tj)
-        L.append("        }")
-    L.append("      }")
-    L.append("      erRow = erRow + 1.0")
-    L.append("    }")
-L.append("    if erRow > erHi {")
-# the band is walked.  Roll the whole frame into the previous frame's
-# here, in one place, after every read: per-row rolling re-read
-# corrupted spans mid-visit.  A walk cancelled early never reaches
-# this, and the arm's cancel-roll covers that case instead.
-for _i in range(64):
-    L.append("      oldMin[%d] = covMin[%d]" % (_i, _i))
-    L.append("      oldMax[%d] = covMax[%d]" % (_i, _i))
-L.append("      erasing = false")
-L.append("      oldLo = covLo")
-L.append("      oldHi = covHi")
-L.append("      covLo = 200.0")
-L.append("      covHi = -200.0")
-# the frame's extents have all rolled into the previous frame's, row by
-# row, during the walk -- so the arrays hold last frame's numbers too and
-# the next frame's first arm must clear them.
-L.append("      cDirty = true")
-L.append("    }")
-L.append("  }")
 for i in range(NP):
     L.append("  g%d = fb[%d]" % (i, i))
 L.append("}")
