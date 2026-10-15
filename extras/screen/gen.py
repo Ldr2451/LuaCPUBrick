@@ -378,10 +378,10 @@ L.append("var rowSlope2: color = Color(0.0, 0.0, 0.0, 0.0)")
 L.append("var pcol2: float = 200.0")
 L.append("var pcurR2: float = 100.0")
 L.append("var aRow: float = 0.0")
-# Rows C..H: the fill stages eight rows a tick, so rows past B need
+# Rows C..D: the fill stages four rows a tick, so rows past B need
 # their own span, colours, bounds and depth state.  The stroke keeps
 # using A/B only (its quad walk advances two rows a tick).
-for _r in range(3, 9):
+for _r in range(3, 5):
     L.append("var xL%d: float = 0.0" % _r)
     L.append("var cLo%d: color = Color(1.0, 1.0, 1.0, 1.0)" % _r)
     L.append("var rowSlope%d: color = Color(0.0, 0.0, 0.0, 0.0)" % _r)
@@ -571,7 +571,7 @@ L.append("      commitR = true")
 L.append("      recompOnly = true")
 L.append("    }")
 L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ {")
-L.append("      prow = pfirst - 8.0")
+L.append("      prow = pfirst - 4.0")
 L.append("      pcol = 200.0")
 L.append("      polyOn = true")
 L.append("    }")
@@ -2695,7 +2695,7 @@ L.append("        plast = bPL")
 L.append("        sSegs = bSEGS")
 L.append("      }")
 L.append("      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending {")
-L.append("        prow = pfirst - 8.0")
+L.append("        prow = pfirst - 4.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("      }")
@@ -3144,7 +3144,7 @@ L.append("        polyLive = false")
 L.append("      } else {")
 L.append("        pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)")
 L.append("        plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)")
-L.append("        prow = pfirst - 8.0")
+L.append("        prow = pfirst - 4.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("        polyLive = true")
@@ -3256,7 +3256,7 @@ L.append("  }")
 # machinery.
 L.append("  if polyOn {")
 L.append("    if pcol > pcurR {")
-L.append("      prow = prow + 8.0")
+L.append("      prow = prow + 4.0")
 L.append("      if prow > plast {")
 L.append("        polyOn = false")
 L.append("      } else {")
@@ -3512,11 +3512,11 @@ L.append("          }")
 L.append("        }")
 L.append("      }")
 L.append("    }")
-# ---- rows C..H: six more fill rows a tick --------------------------------
+# ---- rows C..D: two more fill rows a tick --------------------------------
 # Same shape as B (own row var, span state, colours, depth, coverage
-# fold): the fill stages and paints eight rows a tick.  Fill-only --
+# fold): the fill stages and paints four rows a tick.  Fill-only --
 # the stroke keeps A/B (its quad walk advances two rows a tick).
-for _ri, _R in enumerate(("C", "D", "E", "F", "G", "H")):
+for _ri, _R in enumerate(("C", "D")):
     _k = _ri + 2
     _sfx = str(_ri + 3)
     L.append("      if polyOn {")
@@ -3986,8 +3986,8 @@ for j in range(K):
     L.append("        }")
     L.append("      }")
 L.append("      pcol2 = pcol2 + %d.0" % K)
-# Rows C..H paint from their own spans: same shape once more per row.
-for _ri, _R in enumerate(("C", "D", "E", "F", "G", "H")):
+# Rows C..D paint from their own spans: same shape once more per row.
+for _ri, _R in enumerate(("C", "D")):
     _k = _ri + 2
     _sfx = str(_ri + 3)
     for j in range(K):
