@@ -719,6 +719,36 @@ L.append("  bf = if brightness <= 0.0 then DEF_BRIGHT else if brightness < 1.0"
 # unless a clearAllShapes fill just ran (justCleared), in which case the
 # repaint arms directly.  Immediate pushes (id 0) never come here;
 # they arm their walk directly.
+# ---- an animation-only push commits itself ---------------------------
+# A staged push (pending) normally waits for its drawAllShapes, which is
+# what commits it -- that is the guarantee a driver relies on: nothing
+# reaches the wall until it is asked for.  An animated push is the
+# exception the user asked for: addToShapeInTicks must update on its
+# own, with no drawAllShapes anywhere.
+#
+# The line is drawn by what the push carries.  A push whose staged
+# points are too few to paint anything is a pure delta -- it moves a
+# live slot and changes no geometry -- so it commits itself, and the
+# recomposite that commit starts is the automatic update.  A push that
+# also carries points changes what the wall shows, and that still waits
+# for the CPU's draw: the wall never shows a shape the CPU did not ask
+# to see.  The threshold is the same one the arms use (a fill needs 3
+# points, a stroke needs 2 to draw a segment -- fewer paints nothing).
+#
+# It runs here, before the advance block below, so the commit's stored
+# deltas and anTicks are visible to the advance on the NEXT tick; that
+# tick's advance raises animDirty, which the self-refresh arm at the
+# end of this block turns into a repaint.  Clearing `pending` is what
+# unblocks that arm, and it is safe to clear precisely because this
+# branch only fires for a push that paints nothing itself.
+L.append("  if pending && pTicks > 0.5 && !clearing {")
+L.append("    let anN = (shapePoints.length() / 2.0) | 0")
+L.append("    if anN < (if pWire then 2.0 else 3.0) {")
+L.append("      pending = false")
+L.append("      commitR = true")
+L.append("    }")
+L.append("  }")
+L.append("")
 # ---- per-tick animation: advance every live slot ----------------------
 # Runs before every store, load and arm below, so all of them read
 # fresh values (program order: the sanctioned snapshot pattern).

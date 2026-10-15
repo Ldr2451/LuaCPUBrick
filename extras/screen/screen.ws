@@ -9192,6 +9192,14 @@ mod paintTick() {
     fbInit = true
   }
   bf = if brightness <= 0.0 then DEF_BRIGHT else if brightness < 1.0 then 0.01 else if brightness > 100.0 then 1.0 else brightness / 100.0
+  if pending && pTicks > 0.5 && !clearing {
+    let anN = (shapePoints.length() / 2.0) | 0
+    if anN < (if pWire then 2.0 else 3.0) {
+      pending = false
+      commitR = true
+    }
+  }
+
   if anTicks[0.0] > 0.5 && !rcOn {
     anTicks[0.0] = anTicks[0.0] - 1.0
     animDirty = true
