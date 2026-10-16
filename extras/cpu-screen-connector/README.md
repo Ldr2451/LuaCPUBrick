@@ -38,10 +38,13 @@ touch them -- like `anim.lua` -- behave exactly as before.
 terminator (1-based Lua slots):
 ```
 1..2k   points x1, y1, x2, y2, ... (at most 16 points)
-2k+1    terminator: any value <= -1 in the x slot after the last
-        point.  Its magnitude carries the colour count: -1 means NO
-        colours (every point defaults to white), -(1+c) means c
-        colours follow.
+2k+1    terminator: an exact integer in [-17, -1] in the x slot
+        after the last point.  Its magnitude carries the colour
+        count: -1 means NO colours (every point defaults to white),
+        -(1+c) means c colours follow.  Any other value -- including
+        a negative coordinate -- is a point like any other, so
+        pivot-relative geometry (negative x around the local origin)
+        transmits fine.
 2k+2..  colours r1, g1, b1, a1, ... four per point
 ```
 
@@ -54,16 +57,18 @@ there, so a fixed-width colour read would paint stale floats as
 colours -- the magnitude is what tells the bridge there is nothing to
 read, and a colourless driver keeps writing the plain `-1` it always
 did.  Two more Lua-side limits to know: `outNumArr` takes at most 8
-values per call (a 16-colour shape is two calls), and valid
-coordinates are 0..63 so any value <= -1 is unambiguous.
+values per call (a 16-colour shape is two calls).  Coordinates are no
+longer limited to 0..63 on the way in -- negative x transmits fine and
+the screen clips it -- only an exact integer in [-17, -1] in an x slot
+reads as a terminator.
 
-The first x below -0.5 ends the point scan, so stale slots past it can
-never leak in as `(0,0)` points; forgetting the terminator reads up to
-16 points, all white.  A terminator straight at slot 1 is the empty
-shape (paints nothing, deletes a retained slot).  The colour floats
-feed real `Color` outputs -- the one thing the Lua chip cannot emit
-itself -- and the points are truncated to a tight array the screen's
-length-based count reads directly.
+The first exact-integer x in [-17, -1] ends the point scan, so stale
+slots past it can never leak in as `(0,0)` points; forgetting the
+terminator reads up to 16 points, all white.  A terminator straight at
+slot 1 is the empty shape (paints nothing, deletes a retained slot).
+The colour floats feed real `Color` outputs -- the one thing the Lua
+chip cannot emit itself -- and the points are truncated to a tight
+array the screen's length-based count reads directly.
 
 `outStr2` carries the parent slot id as text (`"0"`..`"8"`, empty =
 no parent), parsed the same pure way as `outStr1`.  `outStrArr`
@@ -96,9 +101,10 @@ chunking; functions take at most 8 parameters, hence the packed
 ```lua
 -- stage a full shape: points, terminator, colours (or nil = white),
 -- transform as {px, py, ang, sx, sy}, parent slot ("0" = none),
--- animation ticks (nil/0 = instant).  The tick count rides slot 100 as
--- a second terminator: -1 instant, -(1+T) animate over T ticks.  It is
--- always written (even -1): an unwritten slot keeps the previous
+-- animation ticks (nil/0 = instant, -1 = forever).  The tick count
+-- rides slot 100 as a second terminator: 0 instant, -(1+T) animate
+-- over T ticks, -1 forever (until another command edits the slot).
+-- It is always written (even 0): an unwritten slot keeps the previous
 -- push's value, which would ghost-animate later shapes.
 local function putn(slot, t, first)
   local i = first or 1

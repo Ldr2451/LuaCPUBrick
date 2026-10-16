@@ -1777,6 +1777,95 @@ def main():
                      "the drawn shape stays painted through the motion",
                      "painted on %d of 175 ticks" % len(red_seen))
 
+        # ---- a -1 animation runs until superseded ----------------------
+        # addToShapeInTicks -1 means FOREVER: the slot keeps updating
+        # with no drawAllShapes until another command edits it.  A: draw
+        # a square, start a -1 rotation drift with no draw -- the wall
+        # must keep changing long past any finite count, and anTicks
+        # must read back -1.  B: push a finite animation to the same
+        # slot -- once its ticks run out the wall must go still (the
+        # forever is over).
+        fA = rect_pts(4.0, 4.0, 12.0, 12.0)
+        sim, gids, _po, _so, f_pts, f_cols = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False,
+                      "shapePosition": (0.0, 0.0, 0.0),
+                      "shapeRotation": (0.0, 0.0, 0.0),
+                      "shapeScale": (0.0, 0.0, 0.0),
+                      "parentShapeId": 0.0, "brightness": 100.0,
+                      "addToShapeInTicks": 0.0}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+        fant = None
+        for _nid, _nd in sim.nodes.items():
+            from irsims import _extract as _ex
+            if _ex(_nd.props.get("_label", ("raw", ""))) == "anTicks":
+                fant = _nid
+                break
+        fwalls = {}
+        fticks = {}
+
+        def stagef(sn, pts, cols, sid, rot, ticks):
+            slide(sn, f_pts, f_cols, pts, cols or None)
+            sn.inputs = dict(sn.inputs, **{
+                "shapeId": sid, "shapeRotation": rot,
+                "parentShapeId": 0.0, "addToShapeInTicks": ticks})
+
+        def watchf(sn, tick):
+            if tick == 20:
+                stagef(sn, list(fA), [RED] * 4, 1.0,
+                       (0.0, 0.0, 0.0), 0.0)
+            if tick == 22:
+                sn.inputs = dict(sn.inputs, pushShape=True)
+            if tick == 24:
+                sn.inputs = dict(sn.inputs, pushShape=False)
+            if tick == 26:
+                sn.inputs = dict(sn.inputs, drawAllShapes=True)
+            if tick == 28:
+                sn.inputs = dict(sn.inputs, drawAllShapes=False)
+            if tick == 60:
+                stagef(sn, [0.0, 0.0], [], 1.0, (0.0, 0.0, 0.1),
+                       -1.0)
+            if tick == 62:
+                sn.inputs = dict(sn.inputs, pushShape=True)
+            if tick == 64:
+                sn.inputs = dict(sn.inputs, pushShape=False,
+                                 addToShapeInTicks=0.0)
+            if tick == 300:
+                stagef(sn, [0.0, 0.0], [], 1.0, (0.0, 0.0, 0.0),
+                       4.0)
+                sn.inputs = dict(sn.inputs,
+                                 shapePosition=(2.0, 0.0, 0.0))
+            if tick == 302:
+                sn.inputs = dict(sn.inputs, pushShape=True)
+            if tick == 304:
+                sn.inputs = dict(sn.inputs, pushShape=False,
+                                 addToShapeInTicks=0.0,
+                                 shapePosition=(0.0, 0.0, 0.0))
+                sn.inputs = dict(sn.inputs, shapeId=0.0)
+            if tick in (120, 200, 280, 340, 420, 500):
+                fwalls[tick] = tuple(col(sn, gids, i)
+                                     for i in range(SW * SW))
+                arr = sn.arrays.get(fant) or []
+                fticks[tick] = list(arr[:2]) if len(arr) >= 2 else []
+
+        sim.run(520, on_tick=watchf)
+        ok &= expect(all(fticks[t] == [-1.0, 0.0]
+                         for t in (120, 200, 280)),
+                     "forever animation holds its ticks",
+                     str({t: fticks.get(t) for t in (120, 200, 280)}))
+        moving = sum(1 for a, b in zip(
+            [fwalls[t] for t in (120, 200, 280)],
+            [fwalls[t] for t in (200, 280, 340)]) if a != b)
+        ok &= expect(moving >= 2,
+                     "forever animation keeps repainting (%d of 3 windows)"
+                     % moving)
+        ok &= expect(fwalls[420] == fwalls[500],
+                     "a finite push supersedes forever")
+
         # ---- a bare chip paints nothing ---------------------------------
         # All scalar ports at their game defaults (unwired reads 0/False;
         # the sim reads None for unset, which string-compares wrong -- an

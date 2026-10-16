@@ -94,7 +94,7 @@ while clock() < wa + 1.2 do end
 editShape("1", {0.0, 0.0}, nil,
 {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, "0", 4.0)
 outStr(1, "")
-outNumArr(100, -1.0)
+outNumArr(100, 0.0)
 -- the animated commit paints nothing and the 4 ticks run free; one
 -- bare draw afterwards shows the triangle moved +8 in x
 local wb = clock()

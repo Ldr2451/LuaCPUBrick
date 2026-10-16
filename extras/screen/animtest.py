@@ -130,15 +130,18 @@ def port_slice(sim, res, n=128):
 
 def tight(a):
     """The connector's truncation and colour split, mirrored: points
-    from slot 1 on, the first x <= -0.5 ends the list (at most 16
+    from slot 1 on, the first x that ends the list (at most 16
     points) and its magnitude minus one is the colour count, then
     four floats per point as that point's colour -- white where the
-    driver sent none."""
+    driver sent none.  The terminator is an exact integer in [-17, -1]
+    (so -1 ends colourless, -(1+c) brings c colours); any other value
+    -- including negative coordinates -- is a point like any other,
+    exactly like the connector's scan."""
     pts = []
     term = -1.0
     for i in range(16):
         x = a[2 * i] if len(a) > 2 * i else -1.0
-        if x < -0.5:
+        if x == int(x) and -17.0 <= x <= -1.0:
             term = x
             break
         y = a[2 * i + 1] if len(a) > 2 * i + 1 else 0.0

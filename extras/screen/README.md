@@ -98,7 +98,9 @@ staged-but-undrawn shape is never shown.
 
 ```
 outNumArr(100, -(1.0 + 30))     -- animate the staged shape over 30 ticks
-outNumArr(100, -1.0)            -- instant, as before
+outNumArr(100, -1.0)            -- FOREVER: runs until another command
+                                 -- edits the slot (via the gfx library,
+                                 -- `ticks` of -1; instant is 0.0)
 ```
 
 See the connector's README for the array layout that carries it, and for

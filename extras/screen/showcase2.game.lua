@@ -59,10 +59,12 @@ outStr(1, tostring(s))
 if wire ~= nil then outNum(4, wire) end
 local t = ticks
 if t == nil then t = 0.0 end
-if t >= 1.0 then
+if t == -1.0 then
+outNumArr(100, -1.0)
+elseif t >= 1.0 then
 outNumArr(100, -(1.0 + t))
 else
-outNumArr(100, -1.0)
+outNumArr(100, 0.0)
 end
 end
 function fire(after)
@@ -278,7 +280,7 @@ pcol(8, hue, 1.0)
 pcol(12, hue + 10, 1.0)
 pcol(16, hue + 20, 1.0)
 setTransform({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
-outNumArr(100, -1.0)
+outNumArr(100, 0.0)
 fire(0.0)
 outStr(1, "")
 nap(0.5)
@@ -287,7 +289,7 @@ stagePush({0.0, 0.0}, nil, {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0},
 nil, 12.0, nil, "5")
 draw()
 outStr(1, "")
-outNumArr(100, -1.0)
+outNumArr(100, 0.0)
 nap(0.4)
 draw()
 nap(1.0)

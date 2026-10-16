@@ -59,10 +59,12 @@ outStr(1, tostring(s))
 if wire ~= nil then outNum(4, wire) end
 local t = ticks
 if t == nil then t = 0.0 end
-if t >= 1.0 then
+if t == -1.0 then
+outNumArr(100, -1.0)
+elseif t >= 1.0 then
 outNumArr(100, -(1.0 + t))
 else
-outNumArr(100, -1.0)
+outNumArr(100, 0.0)
 end
 end
 function fire(after)

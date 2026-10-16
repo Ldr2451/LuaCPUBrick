@@ -8923,7 +8923,7 @@ on Change(pushShape) {
     pRot = shapeRotation
     pScl = shapeScale
     pParent = if parentShapeId < 0.0 then 0.0 else if parentShapeId > 8.0 then 8.0 else (parentShapeId | 0)
-    pTicks = if addToShapeInTicks < 1.0 then 0.0 else (addToShapeInTicks | 0)
+    pTicks = if addToShapeInTicks < -0.5 then -1.0 else if addToShapeInTicks < 1.0 then 0.0 else (addToShapeInTicks | 0)
     pending = true
     qPush = true
     polyOn = false
@@ -9168,7 +9168,7 @@ mod paintTick() {
     else if brightness > 100.0 then 100.0 else brightness
   bf = if brightness <= 0.0 then DEF_BRIGHT
     else bclamp * FULL_BRIGHT / 100.0
-  if pending && pTicks > 0.5 && !clearing {
+  if pending && (pTicks > 0.5 || pTicks < -0.5) && !clearing {
     let anN = (shapePoints.length() / 2.0) | 0
     if anN < (if pWire then 2.0 else 3.0) {
       pending = false
@@ -9529,8 +9529,8 @@ mod paintTick() {
     }
   }
 
-  if anTicks[0.0] > 0.5 && !rcOn {
-    anTicks[0.0] = anTicks[0.0] - 1.0
+  if (anTicks[0.0] > 0.5 || anTicks[0.0] < -0.5) && !rcOn {
+    if anTicks[0.0] > 0.5 { anTicks[0.0] = anTicks[0.0] - 1.0 }
     animDirty = true
     slPts[0] = slPts[0] + anPts[0]
     slPts[1] = slPts[1] + anPts[1]
@@ -9590,8 +9590,8 @@ mod paintTick() {
     slXF2[2] = slXF2[2] + anXF2[2]
     slXF2[3] = slXF2[3] + anXF2[3]
   }
-  if anTicks[1.0] > 0.5 && !rcOn {
-    anTicks[1.0] = anTicks[1.0] - 1.0
+  if (anTicks[1.0] > 0.5 || anTicks[1.0] < -0.5) && !rcOn {
+    if anTicks[1.0] > 0.5 { anTicks[1.0] = anTicks[1.0] - 1.0 }
     animDirty = true
     slPts[32] = slPts[32] + anPts[32]
     slPts[33] = slPts[33] + anPts[33]
@@ -9651,8 +9651,8 @@ mod paintTick() {
     slXF2[6] = slXF2[6] + anXF2[6]
     slXF2[7] = slXF2[7] + anXF2[7]
   }
-  if anTicks[2.0] > 0.5 && !rcOn {
-    anTicks[2.0] = anTicks[2.0] - 1.0
+  if (anTicks[2.0] > 0.5 || anTicks[2.0] < -0.5) && !rcOn {
+    if anTicks[2.0] > 0.5 { anTicks[2.0] = anTicks[2.0] - 1.0 }
     animDirty = true
     slPts[64] = slPts[64] + anPts[64]
     slPts[65] = slPts[65] + anPts[65]
@@ -9712,8 +9712,8 @@ mod paintTick() {
     slXF2[10] = slXF2[10] + anXF2[10]
     slXF2[11] = slXF2[11] + anXF2[11]
   }
-  if anTicks[3.0] > 0.5 && !rcOn {
-    anTicks[3.0] = anTicks[3.0] - 1.0
+  if (anTicks[3.0] > 0.5 || anTicks[3.0] < -0.5) && !rcOn {
+    if anTicks[3.0] > 0.5 { anTicks[3.0] = anTicks[3.0] - 1.0 }
     animDirty = true
     slPts[96] = slPts[96] + anPts[96]
     slPts[97] = slPts[97] + anPts[97]
@@ -9773,8 +9773,8 @@ mod paintTick() {
     slXF2[14] = slXF2[14] + anXF2[14]
     slXF2[15] = slXF2[15] + anXF2[15]
   }
-  if anTicks[4.0] > 0.5 && !rcOn {
-    anTicks[4.0] = anTicks[4.0] - 1.0
+  if (anTicks[4.0] > 0.5 || anTicks[4.0] < -0.5) && !rcOn {
+    if anTicks[4.0] > 0.5 { anTicks[4.0] = anTicks[4.0] - 1.0 }
     animDirty = true
     slPts[128] = slPts[128] + anPts[128]
     slPts[129] = slPts[129] + anPts[129]
@@ -9834,8 +9834,8 @@ mod paintTick() {
     slXF2[18] = slXF2[18] + anXF2[18]
     slXF2[19] = slXF2[19] + anXF2[19]
   }
-  if anTicks[5.0] > 0.5 && !rcOn {
-    anTicks[5.0] = anTicks[5.0] - 1.0
+  if (anTicks[5.0] > 0.5 || anTicks[5.0] < -0.5) && !rcOn {
+    if anTicks[5.0] > 0.5 { anTicks[5.0] = anTicks[5.0] - 1.0 }
     animDirty = true
     slPts[160] = slPts[160] + anPts[160]
     slPts[161] = slPts[161] + anPts[161]
@@ -9895,8 +9895,8 @@ mod paintTick() {
     slXF2[22] = slXF2[22] + anXF2[22]
     slXF2[23] = slXF2[23] + anXF2[23]
   }
-  if anTicks[6.0] > 0.5 && !rcOn {
-    anTicks[6.0] = anTicks[6.0] - 1.0
+  if (anTicks[6.0] > 0.5 || anTicks[6.0] < -0.5) && !rcOn {
+    if anTicks[6.0] > 0.5 { anTicks[6.0] = anTicks[6.0] - 1.0 }
     animDirty = true
     slPts[192] = slPts[192] + anPts[192]
     slPts[193] = slPts[193] + anPts[193]
@@ -9956,8 +9956,8 @@ mod paintTick() {
     slXF2[26] = slXF2[26] + anXF2[26]
     slXF2[27] = slXF2[27] + anXF2[27]
   }
-  if anTicks[7.0] > 0.5 && !rcOn {
-    anTicks[7.0] = anTicks[7.0] - 1.0
+  if (anTicks[7.0] > 0.5 || anTicks[7.0] < -0.5) && !rcOn {
+    if anTicks[7.0] > 0.5 { anTicks[7.0] = anTicks[7.0] - 1.0 }
     animDirty = true
     slPts[224] = slPts[224] + anPts[224]
     slPts[225] = slPts[225] + anPts[225]
@@ -10386,7 +10386,7 @@ mod paintTick() {
         slLive[nslot0] = 0.0
         anTicks[nslot0] = 0.0
         needRC = true
-      } else if qTicks[0] > 0.5 && slLive[nslot0] > 0.5 {
+      } else if (qTicks[0] > 0.5 || qTicks[0] < -0.5) && slLive[nslot0] > 0.5 {
         anPts[nsb0 + 0.0] = if 0.0 < ne0 * 2.0 then qPts[epb0 + 0.0] else 0.0
         anPts[nsb0 + 1.0] = if 1.0 < ne0 * 2.0 then qPts[epb0 + 1.0] else 0.0
         anPts[nsb0 + 2.0] = if 2.0 < ne0 * 2.0 then qPts[epb0 + 2.0] else 0.0
@@ -10527,7 +10527,7 @@ mod paintTick() {
         slLive[nslot1] = 0.0
         anTicks[nslot1] = 0.0
         needRC = true
-      } else if qTicks[1] > 0.5 && slLive[nslot1] > 0.5 {
+      } else if (qTicks[1] > 0.5 || qTicks[1] < -0.5) && slLive[nslot1] > 0.5 {
         anPts[nsb1 + 0.0] = if 0.0 < ne1 * 2.0 then qPts[epb1 + 0.0] else 0.0
         anPts[nsb1 + 1.0] = if 1.0 < ne1 * 2.0 then qPts[epb1 + 1.0] else 0.0
         anPts[nsb1 + 2.0] = if 2.0 < ne1 * 2.0 then qPts[epb1 + 2.0] else 0.0
@@ -10668,7 +10668,7 @@ mod paintTick() {
         slLive[nslot2] = 0.0
         anTicks[nslot2] = 0.0
         needRC = true
-      } else if qTicks[2] > 0.5 && slLive[nslot2] > 0.5 {
+      } else if (qTicks[2] > 0.5 || qTicks[2] < -0.5) && slLive[nslot2] > 0.5 {
         anPts[nsb2 + 0.0] = if 0.0 < ne2 * 2.0 then qPts[epb2 + 0.0] else 0.0
         anPts[nsb2 + 1.0] = if 1.0 < ne2 * 2.0 then qPts[epb2 + 1.0] else 0.0
         anPts[nsb2 + 2.0] = if 2.0 < ne2 * 2.0 then qPts[epb2 + 2.0] else 0.0
@@ -10809,7 +10809,7 @@ mod paintTick() {
         slLive[nslot3] = 0.0
         anTicks[nslot3] = 0.0
         needRC = true
-      } else if qTicks[3] > 0.5 && slLive[nslot3] > 0.5 {
+      } else if (qTicks[3] > 0.5 || qTicks[3] < -0.5) && slLive[nslot3] > 0.5 {
         anPts[nsb3 + 0.0] = if 0.0 < ne3 * 2.0 then qPts[epb3 + 0.0] else 0.0
         anPts[nsb3 + 1.0] = if 1.0 < ne3 * 2.0 then qPts[epb3 + 1.0] else 0.0
         anPts[nsb3 + 2.0] = if 2.0 < ne3 * 2.0 then qPts[epb3 + 2.0] else 0.0
@@ -10950,7 +10950,7 @@ mod paintTick() {
         slLive[nslot4] = 0.0
         anTicks[nslot4] = 0.0
         needRC = true
-      } else if qTicks[4] > 0.5 && slLive[nslot4] > 0.5 {
+      } else if (qTicks[4] > 0.5 || qTicks[4] < -0.5) && slLive[nslot4] > 0.5 {
         anPts[nsb4 + 0.0] = if 0.0 < ne4 * 2.0 then qPts[epb4 + 0.0] else 0.0
         anPts[nsb4 + 1.0] = if 1.0 < ne4 * 2.0 then qPts[epb4 + 1.0] else 0.0
         anPts[nsb4 + 2.0] = if 2.0 < ne4 * 2.0 then qPts[epb4 + 2.0] else 0.0
@@ -11091,7 +11091,7 @@ mod paintTick() {
         slLive[nslot5] = 0.0
         anTicks[nslot5] = 0.0
         needRC = true
-      } else if qTicks[5] > 0.5 && slLive[nslot5] > 0.5 {
+      } else if (qTicks[5] > 0.5 || qTicks[5] < -0.5) && slLive[nslot5] > 0.5 {
         anPts[nsb5 + 0.0] = if 0.0 < ne5 * 2.0 then qPts[epb5 + 0.0] else 0.0
         anPts[nsb5 + 1.0] = if 1.0 < ne5 * 2.0 then qPts[epb5 + 1.0] else 0.0
         anPts[nsb5 + 2.0] = if 2.0 < ne5 * 2.0 then qPts[epb5 + 2.0] else 0.0
@@ -11232,7 +11232,7 @@ mod paintTick() {
         slLive[nslot6] = 0.0
         anTicks[nslot6] = 0.0
         needRC = true
-      } else if qTicks[6] > 0.5 && slLive[nslot6] > 0.5 {
+      } else if (qTicks[6] > 0.5 || qTicks[6] < -0.5) && slLive[nslot6] > 0.5 {
         anPts[nsb6 + 0.0] = if 0.0 < ne6 * 2.0 then qPts[epb6 + 0.0] else 0.0
         anPts[nsb6 + 1.0] = if 1.0 < ne6 * 2.0 then qPts[epb6 + 1.0] else 0.0
         anPts[nsb6 + 2.0] = if 2.0 < ne6 * 2.0 then qPts[epb6 + 2.0] else 0.0
@@ -11373,7 +11373,7 @@ mod paintTick() {
         slLive[nslot7] = 0.0
         anTicks[nslot7] = 0.0
         needRC = true
-      } else if qTicks[7] > 0.5 && slLive[nslot7] > 0.5 {
+      } else if (qTicks[7] > 0.5 || qTicks[7] < -0.5) && slLive[nslot7] > 0.5 {
         anPts[nsb7 + 0.0] = if 0.0 < ne7 * 2.0 then qPts[epb7 + 0.0] else 0.0
         anPts[nsb7 + 1.0] = if 1.0 < ne7 * 2.0 then qPts[epb7 + 1.0] else 0.0
         anPts[nsb7 + 2.0] = if 2.0 < ne7 * 2.0 then qPts[epb7 + 2.0] else 0.0
@@ -12055,7 +12055,7 @@ mod paintTick() {
       slLive[slot] = 0.0
       anTicks[slot] = 0.0
       needRC = true
-    } else if pTicks > 0.5 && slLive[slot] > 0.5 {
+    } else if (pTicks > 0.5 || pTicks < -0.5) && slLive[slot] > 0.5 {
       anTicks[slot] = pTicks
       anPts[sbase + 0.0] = if 0.0 < n * 2.0 then shapePoints[0] else 0.0
       anPts[sbase + 1.0] = if 1.0 < n * 2.0 then shapePoints[1] else 0.0

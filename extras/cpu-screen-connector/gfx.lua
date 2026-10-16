@@ -59,10 +59,16 @@ outStr(1, tostring(s))
 if wire ~= nil then outNum(4, wire) end
 local t = ticks
 if t == nil then t = 0.0 end
-if t >= 1.0 then
+-- one number, one meaning: -1 is FOREVER (the animation runs until
+-- another command edits the slot), 0 is INSTANT, N > 0 runs N ticks.
+-- -1.0 at slot 100 used to mean instant, so it now means forever;
+-- instant moved to 0.0 (which is also what an unwritten slot reads).
+if t == -1.0 then
+outNumArr(100, -1.0)
+elseif t >= 1.0 then
 outNumArr(100, -(1.0 + t))
 else
-outNumArr(100, -1.0)
+outNumArr(100, 0.0)
 end
 end
 function fire(after)
