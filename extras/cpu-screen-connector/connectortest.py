@@ -30,18 +30,26 @@ import colormath  # noqa: E402
 
 colormath.install()
 from painttest import poly_pixels, stroke_pixels, slide, xf_points  # noqa: E402
+from painttest import close  # noqa: E402
 from animtest import port_slice  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 CONN_WS = os.path.join(HERE, "connector.ws")
 SCREEN_WS = os.path.join(HERE, "..", "screen", "screen.ws")
 SW = 64
-TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 4000
+TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 4400
 BLACK = (0.0, 0.0, 0.0, 1.0)
 # Brightness 100 is FULL_BRIGHT (the pre-port factor), so the wall reads
 # at 0.35 * pushed colour.  Divided back out where the wall is read, so
 # the rest of the chain test compares a pushed colour against the wall.
 BF = 0.35
+
+
+def undim(v):
+    """A wall pixel with the brightness factor divided back out (alpha
+    untouched, black unchanged)."""
+    return tuple(float(x) / BF if k < 3 else float(x)
+                 for k, x in enumerate(v[:4]))
 # The driver is quiet until ~1750 plus ~2.5 chars/tick of boot parse
 # per program char (the gfx library prepended below lengthens it --
 # keep the budget generous when extending either); both replays skip
@@ -425,26 +433,25 @@ def main():
         last_slid = [None, None]
 
         def hook2(s, tick):
-            if tick >= len(cstream):
-                return
-            c = cstream[tick]
-            # arrays/colour lead; the bool edge follows 2 ticks later
-            b = cstream[tick - 2] if tick >= 2 else {}
-            a = c["shapePoints"]
-            cc = c.get("shapeColors")
-            # the connector's colour slice can land a tick after its
-            # points, so re-slide when either half changes
-            if (isinstance(a, list) and a != last_slid[0]) \
-                    or (cc != last_slid[1]):
-                slide(s, spts, scols, list(a) if isinstance(a, list)
-                      else [], cc)
-                last_slid[0] = list(a) if isinstance(a, list) else None
-                last_slid[1] = cc
-            s.inputs = dict(s.inputs, **{
-                "pushShape": (b.get("pushShape") or 0.0) > 0.5,
-                "shapeWireMode": (b.get("shapeWireMode") or 0.0) > 0.5,
-                "shapeId": float(b.get("shapeId") or 0.0),
-                "drawAllShapes": (b.get("drawAllShapes") or 0.0) > 0.5,
+            if tick < len(cstream):
+                c = cstream[tick]
+                # arrays/colour lead; the bool edge follows 2 ticks later
+                b = cstream[tick - 2] if tick >= 2 else {}
+                a = c["shapePoints"]
+                cc = c.get("shapeColors")
+                # the connector's colour slice can land a tick after its
+                # points, so re-slide when either half changes
+                if (isinstance(a, list) and a != last_slid[0]) \
+                        or (cc != last_slid[1]):
+                    slide(s, spts, scols, list(a) if isinstance(a, list)
+                          else [], cc)
+                    last_slid[0] = list(a) if isinstance(a, list) else None
+                    last_slid[1] = cc
+                s.inputs = dict(s.inputs, **{
+                    "pushShape": (b.get("pushShape") or 0.0) > 0.5,
+                    "shapeWireMode": (b.get("shapeWireMode") or 0.0) > 0.5,
+                    "shapeId": float(b.get("shapeId") or 0.0),
+                    "drawAllShapes": (b.get("drawAllShapes") or 0.0) > 0.5,
                 "clearAllShapes": (b.get("clearAllShapes") or 0.0) > 0.5,
                 "parentShapeId":
                     float(b.get("parentShapeId") or 0.0),
@@ -459,28 +466,28 @@ def main():
             })
             if snap_tick is not None and tick == snap_tick:
                 snap_holder["wall"] = tuple(
-                    tuple(float(x) for x in s.vars.get(
-                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
+                    undim(tuple(float(x) for x in s.vars.get(
+                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                     for i in range(SW * SW)) if gids else None
             if snap3_tick is not None and tick == snap3_tick:
                 snap_holder["wall3"] = tuple(
-                    tuple(float(x) for x in s.vars.get(
-                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
+                    undim(tuple(float(x) for x in s.vars.get(
+                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                     for i in range(SW * SW)) if gids else None
             if snap_tick2 is not None and tick == snap_tick2:
                 snap_holder["wall2"] = tuple(
-                    tuple(float(x) for x in s.vars.get(
-                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
+                    undim(tuple(float(x) for x in s.vars.get(
+                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                     for i in range(SW * SW)) if gids else None
             if snapA_tick is not None and tick == snapA_tick:
                 snap_holder["wallA"] = tuple(
-                    tuple(float(x) for x in s.vars.get(
-                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
+                    undim(tuple(float(x) for x in s.vars.get(
+                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                     for i in range(SW * SW)) if gids else None
             if snapB_tick is not None and tick == snapB_tick:
                 snap_holder["wallB"] = tuple(
-                    tuple(float(x) for x in s.vars.get(
-                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
+                    undim(tuple(float(x) for x in s.vars.get(
+                        gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                     for i in range(SW * SW)) if gids else None
 
         # gids must exist before hook2 snapshots; collect them first
@@ -497,8 +504,7 @@ def main():
         got = []
         for i in range(SW * SW):
             v = ssim.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))
-            got.append(tuple(float(x) / BF if k < 3 else float(x)
-                             for k, x in enumerate(v[:4])))
+            got.append(undim(v))
 
         tri = [8.0, 8.0, 20.0, 8.0, 8.0, 20.0]
         sq = [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0]
@@ -520,8 +526,8 @@ def main():
             for p in poly_pixels(moved):
                 want3[p] = (0.0, 0.0, 1.0, 1.0)
             bad3 = [i for i in range(SW * SW)
-                    if snap_holder["wall3"][i] != want3.get(
-                        i, (0.0, 0.0, 0.0, 1.0))]
+                    if not close(snap_holder["wall3"][i], want3.get(
+                        i, (0.0, 0.0, 0.0, 1.0)))]
             ok &= expect(not bad3, "moved square paints through chain",
                          "%d of 4096 differ, first at %d"
                          % (len(bad3), bad3[0] if bad3 else 0))
@@ -532,8 +538,8 @@ def main():
             want_tri = {p: (0.0, 1.0, 0.0, 0.5)
                         for p in poly_pixels(tri)}
             bad = [i for i in range(SW * SW)
-                   if snap_holder["wall"][i] != want_tri.get(
-                       i, (0.0, 0.0, 0.0, 1.0))]
+                   if not close(snap_holder["wall"][i], want_tri.get(
+                       i, (0.0, 0.0, 0.0, 1.0)))]
             detail = [(b // 64, b % 64, snap_holder["wall"][b])
                       for b in bad]
             ok &= expect(not bad, "retained store through connector",
@@ -555,8 +561,8 @@ def main():
         wantA = {p: (0.0, 1.0, 0.0, 0.5) for p in poly_pixels(movedA0)}
         if snap_holder.get("wallA") is not None:
             badA = [i for i in range(SW * SW)
-                    if snap_holder["wallA"][i] != wantA.get(
-                        i, (0.0, 0.0, 0.0, 1.0))]
+                    if not close(snap_holder["wallA"][i], wantA.get(
+                        i, (0.0, 0.0, 0.0, 1.0)))]
             ok &= expect(not badA, "motion advances with no draw",
                          "%d of 4096 differ, first at %d"
                          % (len(badA), badA[0] if badA else 0))
@@ -568,8 +574,8 @@ def main():
             wantB = {p: (0.0, 1.0, 0.0, 0.5)
                      for p in poly_pixels(movedA)}
             badB = [i for i in range(SW * SW)
-                    if snap_holder["wallB"][i] != wantB.get(
-                        i, (0.0, 0.0, 0.0, 1.0))]
+                    if not close(snap_holder["wallB"][i], wantB.get(
+                        i, (0.0, 0.0, 0.0, 1.0)))]
             ok &= expect(not badB, "bare draw shows the motion",
                          "%d of 4096 differ, first at %d"
                          % (len(badB), badB[0] if badB else 0))

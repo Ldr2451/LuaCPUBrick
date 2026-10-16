@@ -223,9 +223,12 @@ def main():
         # intent: every expressive channel actually used
         ok &= expect(len(pushes) >= 95, "full loop ran (%d pushes)"
                      % len(pushes))
-        ok &= expect(len(reds) >= len(pushes) and all(
-            pushes[i] < reds[i] for i in range(len(pushes))),
-            "push-then-redraw pairing")
+        # every push is eventually drawn.  Pushes after the final draw
+        # are cut off by the tick budget, not abandoned, so they are
+        # excluded (same rule as showtest2).
+        ok &= expect(all(any(r > p for r in reds) for p in pushes
+                         if not reds or p < reds[-1]),
+                     "push-then-redraw pairing")
         wires = set(w for _p, _c, w, _s in latched)
         ok &= expect(wires == {True, False}, "fills and strokes both",
                      str(wires))

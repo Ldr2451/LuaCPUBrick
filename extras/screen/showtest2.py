@@ -177,7 +177,7 @@ def main():
         # the several thousand ticks the Lua chip spends parsing the
         # program (~1 char/tick) are never simulated.  The chip runs only
         # when no oracle is on the box (--chip forces it).
-        samples = lua_stream(body, gfx_path, BUDGET, force_chip=force_chip)
+        samples = lua_stream(body, GFX, BUDGET, force_chip=force_chip)
         if samples is not None:
             print("   stream: %d ticks (real Lua 5.5 oracle)"
                   % len(samples))
