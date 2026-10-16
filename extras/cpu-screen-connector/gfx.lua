@@ -230,19 +230,16 @@ local bx = pts[(i1 - 1) * 2 + 1]
 local by = pts[(i1 - 1) * 2 + 2]
 local cx = pts[(i2 - 1) * 2 + 1]
 local cy = pts[(i2 - 1) * 2 + 2]
-local cr = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
-local convex = (ccw and cr > 0.0) or ((not ccw) and cr < 0.0)
+local convex = (ccw and (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) > 0.0) or ((not ccw) and (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0.0)
 local clear = true
 if convex then
 local j = 1
 while j <= nv do
 local q = V[j]
 if q ~= i0 and q ~= i1 and q ~= i2 then
-local px = pts[(q - 1) * 2 + 1]
-local py = pts[(q - 1) * 2 + 2]
-local d1 = (ax - px) * (by - py) - (ay - py) * (bx - px)
-local d2 = (bx - px) * (cy - py) - (by - py) * (cx - px)
-local d3 = (cx - px) * (ay - py) - (cy - py) * (ax - px)
+local d1 = (ax - pts[(q - 1) * 2 + 1]) * (by - pts[(q - 1) * 2 + 2]) - (ay - pts[(q - 1) * 2 + 2]) * (bx - pts[(q - 1) * 2 + 1])
+local d2 = (bx - pts[(q - 1) * 2 + 1]) * (cy - pts[(q - 1) * 2 + 2]) - (by - pts[(q - 1) * 2 + 2]) * (cx - pts[(q - 1) * 2 + 1])
+local d3 = (cx - pts[(q - 1) * 2 + 1]) * (ay - pts[(q - 1) * 2 + 2]) - (cy - pts[(q - 1) * 2 + 2]) * (ax - pts[(q - 1) * 2 + 1])
 if (d1 >= 0.0 and d2 >= 0.0 and d3 >= 0.0) or (d1 <= 0.0 and d2 <= 0.0 and d3 <= 0.0) then clear = false end
 end
 j = j + 1
