@@ -41,7 +41,7 @@ import luastream  # noqa: E402
 import colormath  # noqa: E402
 
 colormath.install()
-from painttest import poly_pixels, poly_colors, slide  # noqa: E402
+from painttest import poly_pixels, poly_colors, slide, close  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
@@ -411,7 +411,7 @@ def main():
                 clear_pending = True
             prev_p, prev_r, prev_c = p, r, c
         bad = [i for i in range(SW * SW)
-               if got[i] != fb.get(i, (0.0, 0.0, 0.0, 1.0))]
+               if not close(got[i], fb.get(i, (0.0, 0.0, 0.0, 1.0)))]
         ok &= expect(not bad, "wall matches the protocol model",
                      "%d pixels differ, first at %d" % (len(bad), bad[0])
                      if bad else "")

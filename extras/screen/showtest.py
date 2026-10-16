@@ -36,7 +36,7 @@ import colormath  # noqa: E402
 colormath.install()
 from animtest import (out_port_id, resolve_port, port_val,  # noqa: E402
                       tight, expect, port_slice)
-from painttest import poly_colors, stroke_colors, slide  # noqa: E402
+from painttest import poly_colors, stroke_colors, slide, close  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
@@ -356,7 +356,7 @@ def main():
                     pending = None
 
         bad = [i for i in range(SW * SW)
-               if got[i] != fb.get(i, BLACK)]
+               if not close(got[i], fb.get(i, BLACK))]
         ok &= expect(not bad, "wall matches the slot model",
                      "%d differ, first at %d" % (len(bad), bad[0])
                      if bad else "")

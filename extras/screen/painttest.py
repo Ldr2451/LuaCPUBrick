@@ -936,7 +936,13 @@ def main():
         sim.run(rtotal, on_tick=watchr)
 
         def expect_wall(snap, want, label):
-            bad = [i for i in range(SW * SW) if snap[i] != want.get(i, BLACK)]
+            # Tolerant: the wall reads through the brightness factor and
+            # col() divides it back out, which costs a last-ulp rounding
+            # on most channels ((0.1*0.35)/0.35 is 0.09999...).  Exact !=
+            # reads that dust as 90 differing pixels on a blue triangle
+            # that is otherwise pixel-perfect.
+            bad = [i for i in range(SW * SW)
+                   if not close(snap[i], want.get(i, BLACK))]
             return expect(not bad, label,
                           "%d of 4096 differ, first at %d"
                           % (len(bad), bad[0] if bad else 0))
@@ -1034,7 +1040,7 @@ def main():
                          1 for v in cblack.values() if v != BLACK))
         wantc = {p: blue for p in poly_pixels(tri2)}
         badc = [i for i in range(SW * SW)
-                if cwall.get(i, BLACK) != wantc.get(i, BLACK)]
+                if not close(cwall.get(i, BLACK), wantc.get(i, BLACK))]
         ok &= expect(not badc, "slots stay forgotten after clear",
                      "%d of 4096 differ, first at %d"
                      % (len(badc), badc[0] if badc else 0))
