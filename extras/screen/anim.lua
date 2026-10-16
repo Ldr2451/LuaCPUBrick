@@ -9,6 +9,7 @@
 -- showcase.lua.  One shape per frame, bursts hidden under the next
 -- frame's compute.  Terse: the lexer runs ~1 char/tick.
 
+clearScreen()
 local sets = {
   {26.0, 12.0, 16.0, 37.7},
   {24.0, 10.0, 16.0, 31.4},

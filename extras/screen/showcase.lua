@@ -1,3 +1,4 @@
+clearScreen()
 local sn = {}
 local cs = {}
 local rs = {}

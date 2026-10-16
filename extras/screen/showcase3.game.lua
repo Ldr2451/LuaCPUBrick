@@ -102,6 +102,7 @@ if after > 0.0 then nap(after) end
 end
 end
 local cx, cy = 32.0, 32.0
+clearScreen()
 local q = {cx - 4.0, cy - 4.0, cx + 4.0, cy - 4.0, cx + 4.0, cy + 4.0, cx - 4.0, cy + 4.0}
 local cam = {0.0, 0.0, 0.0, 0.0, 0.35, 0.0, 1.0, 1.0, 1.0}
 local zs = {0.0, 4.0, 8.0}

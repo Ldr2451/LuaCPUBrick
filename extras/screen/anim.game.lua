@@ -101,6 +101,7 @@ if after ~= nil then
 if after > 0.0 then nap(after) end
 end
 end
+clearScreen()
 local sets = {
   {26.0, 12.0, 16.0, 37.7},
   {24.0, 10.0, 16.0, 31.4},

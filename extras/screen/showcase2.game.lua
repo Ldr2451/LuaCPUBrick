@@ -101,6 +101,7 @@ if after ~= nil then
 if after > 0.0 then nap(after) end
 end
 end
+clearScreen()
 local pal = {}
 local i = 0
 while i < 32 do

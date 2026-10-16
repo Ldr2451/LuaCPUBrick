@@ -2,6 +2,7 @@
 -- clearAllShapes, the pending queue and per-tick animation.
 -- Protocol and wiring: extras/screen/README.md (wall + chip) and
 -- extras/cpu-screen-connector/README.md (connector, slot 100 = ticks).
+clearScreen()
 local pal = {}
 local i = 0
 while i < 32 do

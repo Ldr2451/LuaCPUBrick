@@ -7,6 +7,7 @@
 -- frame is committed.  Off-axis tilt (rotation.y) foreshortens the
 -- plates, so the stack reads as depth rather than as flat overlap.
 local cx, cy = 32.0, 32.0
+clearScreen()
 local q = {cx - 4.0, cy - 4.0, cx + 4.0, cy - 4.0, cx + 4.0, cy + 4.0, cx - 4.0, cy + 4.0}
 local cam = {0.0, 0.0, 0.0, 0.0, 0.35, 0.0, 1.0, 1.0, 1.0}
 local zs = {0.0, 4.0, 8.0}
