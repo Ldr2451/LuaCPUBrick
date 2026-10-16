@@ -36,6 +36,8 @@ i = i + 1
 end
 end
 function stage(pts, cols, xf, parent, ticks, wire, id)
+local n = #pts // 2
+outNumArr(98, n * 1.0)
 local termAt = putn(1, pts)
 if cols == nil then
 outNumArr(termAt, -1.0)

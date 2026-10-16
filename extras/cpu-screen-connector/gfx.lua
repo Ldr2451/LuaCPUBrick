@@ -36,6 +36,13 @@ i = i + 1
 end
 end
 function stage(pts, cols, xf, parent, ticks, wire, id)
+local n = #pts // 2
+-- the point count, 1-based slot 98: the connector reads the
+-- terminator directly instead of scanning for it, so coordinates are
+-- unrestricted (any float, including negatives).  Written on every
+-- push like slot 100: the slots are sticky, so a stale count would
+-- ghost-parse the next shape.
+outNumArr(98, n * 1.0)
 local termAt = putn(1, pts)
 if cols == nil then
 outNumArr(termAt, -1.0)

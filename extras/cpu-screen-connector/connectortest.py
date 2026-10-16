@@ -31,6 +31,7 @@ import colormath  # noqa: E402
 colormath.install()
 from painttest import poly_pixels, stroke_pixels, slide, xf_points  # noqa: E402
 from painttest import close  # noqa: E402
+import luastream  # noqa: E402
 from animtest import port_slice  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
@@ -59,8 +60,13 @@ def undim(v):
 # equivalent.
 SLICE = 2400
 
-DRIVER = open(os.path.join(HERE, "gfx.lua"),
-               encoding="utf-8").read() + "\n" + """
+GFX = os.path.join(HERE, "gfx.lua")
+# the driver body calls the gfx library: the chip path prepends the
+# library file (DRIVER below), the oracle path prepends it itself, so
+# the body stays lib-free here -- handing the oracle the assembled
+# program would load the library twice and its busy-wait tick would
+# win over the harness's virtual one.
+DRIVER_BODY = """
 -- shape 1: immediate red fill square via the gfx library.
 pushShape({4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0},
 {1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0,
@@ -89,23 +95,20 @@ outStr(1, "")
 -- shape 5: animate slot 1's triangle (+2 x/tick over 4 ticks).
 -- The nap below is shape 4's burst settling before the new push,
 -- which would otherwise abort it mid-flight.
-local wa = clock()
-while clock() < wa + 1.2 do end
+nap(1.2)
 editShape("1", {0.0, 0.0}, nil,
 {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, "0", 4.0)
 outStr(1, "")
 outNumArr(100, 0.0)
 -- the animated commit paints nothing and the 4 ticks run free; one
 -- bare draw afterwards shows the triangle moved +8 in x
-local wb = clock()
-while clock() < wb + 0.4 do end
+nap(0.4)
 draw()
 -- let the bare draw's burst finish before clearing, or the pulse
 -- abandons it mid-flight and no moved triangle ever lands
 -- clearing, or the pulse abandons it mid-flight and no complete triangle
 -- ever lands for the snapshot below
-local wc = clock()
-while clock() < wc + 1.2 do end
+nap(1.2)
 -- clear via outNum3 pulse, then off again
 outNum(3, 1.0)
 tick()
@@ -122,6 +125,9 @@ tick()
 tick()
 print('driver done')
 """
+DRIVER = open(GFX, encoding="utf-8").read() + "\n" + DRIVER_BODY
+BUDGET = int(os.environ.get("STREAM_BUDGET") or 4400)
+force_chip = "--chip" in sys.argv
 
 
 def out_port_id(sim, name):
@@ -170,67 +176,84 @@ def main():
     dumps = []
     ok = True
     try:
-        # ---- phase 1: Lua chip runs the driver -------------------------
-        with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-            lua_dump = f.name
-        dumps.append(lua_dump)
-        share_dump(LUA_WS, lua_dump)
-        lsim = sim_from_dump(lua_dump)
-        r1 = resolve_port(lsim, out_port_id(lsim, "outNum1"))
-        r2 = resolve_port(lsim, out_port_id(lsim, "outNum2"))
-        r3 = resolve_port(lsim, out_port_id(lsim, "outNum3"))
-        r4 = resolve_port(lsim, out_port_id(lsim, "outNum4"))
-        ra = resolve_port(lsim, out_port_id(lsim, "outNumArr"))
-        rs = resolve_port(lsim, out_port_id(lsim, "outStr1"))
-        rs2 = resolve_port(lsim, out_port_id(lsim, "outStr2"))
-        rsa = resolve_port(lsim, out_port_id(lsim, "outStrArr"))
-        samples = []
-
-        def destr(v):
-            # one string-array element: strip the "quoted" wrapper the
-            # same way as the scalar string ports
-            import re as _re
-            if not isinstance(v, str):
-                return ""
-            m = _re.search(r'"([^"]*)"', v)
-            return m.group(1) if m else v
-
-        def hook(s, tick):
-            # the id travels as text: read the raw string port (values may
-            # carry "quoted" wrappers, stripped the same way as _out_globals)
-            import re as _re
-            kind, sid = rs
-            raw = s.vars.get(sid, "")
-            if not isinstance(raw, str):
-                raw = ""
+        # ---- phase 1: the driver's port stream --------------------
+        # Real Lua 5.5 with a virtual clock, so the thousands of ticks
+        # the chip would spend parsing the driver are never simulated.
+        # --chip (or no Lua 5.5 on the box) runs the Lua chip instead.
+        samples = None
+        oracled = False
+        if not force_chip and luastream.LUA_BIN is not None:
+            samples = luastream.sample_rows(
+                luastream.record(DRIVER_BODY, GFX, budget=BUDGET))
+            if not samples:
+                samples = None
             else:
-                m = _re.search(r'"([^"]*)"', raw)
-                raw = m.group(1) if m else raw
-            kind2, sid2 = rs2
-            raw2 = s.vars.get(sid2, "")
-            if not isinstance(raw2, str):
-                raw2 = ""
-            else:
-                m = _re.search(r'"([^"]*)"', raw2)
-                raw2 = m.group(1) if m else raw2
-            samples.append((port_val(s, r1), port_val(s, r2),
-                            port_val(s, r3), port_val(s, r4),
-                            port_slice(s, ra), raw, raw2,
-                            [destr(v) for v in port_val(s, rsa)]))
+                oracled = True
+        if samples is not None:
+            print("   stream: %d ticks (real Lua 5.5 oracle)"
+                  % len(samples))
+        if samples is None:
+            with tempfile.NamedTemporaryFile(suffix=".pkl",
+                                             delete=False) as f:
+                lua_dump = f.name
+            dumps.append(lua_dump)
+            share_dump(LUA_WS, lua_dump)
+            lsim = sim_from_dump(lua_dump)
+            r1 = resolve_port(lsim, out_port_id(lsim, "outNum1"))
+            r2 = resolve_port(lsim, out_port_id(lsim, "outNum2"))
+            r3 = resolve_port(lsim, out_port_id(lsim, "outNum3"))
+            r4 = resolve_port(lsim, out_port_id(lsim, "outNum4"))
+            ra = resolve_port(lsim, out_port_id(lsim, "outNumArr"))
+            rs = resolve_port(lsim, out_port_id(lsim, "outStr1"))
+            rs2 = resolve_port(lsim, out_port_id(lsim, "outStr2"))
+            rsa = resolve_port(lsim, out_port_id(lsim, "outStrArr"))
+            samples = []
 
-        lsim.reset()
-        lsim.inputs = {"program": DRIVER, "run": True}
-        lsim.run(TICKS, on_tick=hook)
-        og = lsim.capture()["outGlobals"]
-        ok &= expect(not og.get("runErrors"), "driver runs without errors",
-                     str(og.get("runErrors")))
-        dbg = og.get("progDebug") or ""
-        ok &= expect(not any(l.startswith("err:") for l in dbg.splitlines()),
-                     "driver compiles clean", str(dbg))
-        p3_hi = [k for k, s in enumerate(samples) if s[2] > 0.5]
-        p4_hi = [k for k, s in enumerate(samples) if s[3] > 0.5]
-        print("   lua outNum3 high at: %s  outNum4 high at: %s"
-              % (p3_hi[:8], p4_hi[:8]))
+            def destr(v):
+                # one string-array element: strip the "quoted" wrapper the
+                # same way as the scalar string ports
+                import re as _re
+                if not isinstance(v, str):
+                    return ""
+                m = _re.search(r'"([^"]*)"', v)
+                return m.group(1) if m else v
+
+            def hook(s, tick):
+                # the id travels as text: read the raw string port (values may
+                # carry "quoted" wrappers, stripped the same way as _out_globals)
+                import re as _re
+                kind, sid = rs
+                raw = s.vars.get(sid, "")
+                if not isinstance(raw, str):
+                    raw = ""
+                else:
+                    m = _re.search(r'"([^"]*)"', raw)
+                    raw = m.group(1) if m else raw
+                kind2, sid2 = rs2
+                raw2 = s.vars.get(sid2, "")
+                if not isinstance(raw2, str):
+                    raw2 = ""
+                else:
+                    m = _re.search(r'"([^"]*)"', raw2)
+                    raw2 = m.group(1) if m else raw2
+                samples.append((port_val(s, r1), port_val(s, r2),
+                                port_val(s, r3), port_val(s, r4),
+                                port_slice(s, ra), raw, raw2,
+                                [destr(v) for v in port_val(s, rsa)]))
+
+            lsim.reset()
+            lsim.inputs = {"program": DRIVER, "run": True}
+            lsim.run(TICKS, on_tick=hook)
+            og = lsim.capture()["outGlobals"]
+            ok &= expect(not og.get("runErrors"), "driver runs without errors",
+                         str(og.get("runErrors")))
+            dbg = og.get("progDebug") or ""
+            ok &= expect(not any(l.startswith("err:") for l in dbg.splitlines()),
+                         "driver compiles clean", str(dbg))
+            p3_hi = [k for k, s in enumerate(samples) if s[2] > 0.5]
+            p4_hi = [k for k, s in enumerate(samples) if s[3] > 0.5]
+            print("   lua outNum3 high at: %s  outNum4 high at: %s"
+                  % (p3_hi[:8], p4_hi[:8]))
 
         # ---- phase 2: connector translates ------------------------------
         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
@@ -271,10 +294,15 @@ def main():
         for name in ("pushShape", "drawAllShapes", "shapeWireMode", "shapeId",
                      "clearAllShapes", "parentShapeId", "addToShapeInTicks"):
             cpull[name] = out_port_id(csim, name)
+        # The oracle stream has no parse head (its clock starts with the
+        # program), so phases 2-3 replay it whole; the chip stream skips
+        # the dead head via SLICE exactly as before.
+        slice_eff = 0 if oracled else SLICE
+        ticks_eff = len(samples) if oracled else TICKS
         cstream = []
 
         def hookc2(s, tick):
-            k = tick + SLICE
+            k = tick + slice_eff
             if k < len(samples):
                 p1, p2, p3, p4, a, st, st2, sa = samples[k]
                 s.inputs = dict(s.inputs, **{
@@ -295,7 +323,7 @@ def main():
             row["shapeScale"] = conn_arr(scl_res)
             cstream.append(row)
 
-        csim.run(TICKS - SLICE, on_tick=hookc2)
+        csim.run(ticks_eff - slice_eff, on_tick=hookc2)
 
         # spot-check the translation on a tick where the driver holds a
         # shape: the points pass through tight, the colours follow the

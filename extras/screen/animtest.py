@@ -129,23 +129,34 @@ def port_slice(sim, res, n=128):
 
 
 def tight(a):
-    """The connector's truncation and colour split, mirrored: points
-    from slot 1 on, the first x that ends the list (at most 16
-    points) and its magnitude minus one is the colour count, then
-    four floats per point as that point's colour -- white where the
-    driver sent none.  The terminator is an exact integer in [-17, -1]
-    (so -1 ends colourless, -(1+c) brings c colours); any other value
-    -- including negative coordinates -- is a point like any other,
-    exactly like the connector's scan."""
+    """The connector's truncation and colour split, mirrored: with a
+    point count in 1-based slot 98 the terminator is read directly
+    instead of scanned for, so coordinates are unrestricted; without
+    one the legacy scan applies (an exact integer in [-17, -1] ends
+    the list).  Either way the count after the terminator is colours
+    -- white where the driver sent none."""
+    n = None
+    if len(a) > 97 and a[97] > 0.5:
+        n = max(0, min(16, int(a[97])))
+        term = a[2 * n] if len(a) > 2 * n else -1.0
+        if not (-17.0 <= term <= -1.0 and term == int(term)):
+            term = -1.0
     pts = []
-    term = -1.0
-    for i in range(16):
-        x = a[2 * i] if len(a) > 2 * i else -1.0
-        if x == int(x) and -17.0 <= x <= -1.0:
-            term = x
-            break
-        y = a[2 * i + 1] if len(a) > 2 * i + 1 else 0.0
-        pts += [x, y]
+    if n is None:
+        term = -1.0
+        for i in range(16):
+            x = a[2 * i] if len(a) > 2 * i else -1.0
+            if -17.0 <= x <= -1.0 and x == int(x):
+                term = x
+                break
+            y = a[2 * i + 1] if len(a) > 2 * i + 1 else 0.0
+            pts += [x, y]
+        n = len(pts) // 2
+    else:
+        for i in range(n):
+            x = a[2 * i] if len(a) > 2 * i else 0.0
+            y = a[2 * i + 1] if len(a) > 2 * i + 1 else 0.0
+            pts += [x, y]
     n = len(pts) // 2
     kc = max(0, min(16, int(-term) - 1)) if term <= -1.0 else 16
     cols = []
@@ -298,9 +309,14 @@ def main():
                   % (pushes[0], pushes[0] // 100,
                      (pushes[-1] - pushes[0]) // max(1, len(pushes) - 1)))
         # each shape is pushed then redrawn, and the redraw comes before
-        # the next push -- that is what keeps a burst from being abandoned
-        seq_ok = all(pushes[i] < reds[i] < pushes[i + 1]
-                     for i in range(min(len(reds), len(pushes)) - 1))
+        # the next push -- that is what keeps a burst from being abandoned.
+        # The leading clearScreen contributes a draw before the first
+        # push, so pairing starts from the first draw after it; a final
+        # push cut off by the tick budget has no following draw and is
+        # excluded, like everywhere else.
+        reds2 = [r for r in reds if not pushes or r > pushes[0]]
+        seq_ok = all(pushes[i] < reds2[i] < pushes[i + 1]
+                     for i in range(min(len(reds2), len(pushes)) - 1))
         ok &= expect(seq_ok, "push-then-redraw ordering")
         # no redraw may fire while the previous burst could still be
         # running: pair each redraw with its shape and require the gap to
