@@ -93,6 +93,40 @@ function stagePush(pts, cols, xf, parent, ticks, wire, id)
 stage(pts, cols, xf, parent, ticks, wire, id)
 push()
 end
+-- pushMesh(first, faces, parent): one call uploads a whole mesh.  Each
+-- face is {pts = flat xy (convex, at most 16 points -- the chip
+-- truncates past that), col = {r,g,b,a} or a full per-point array or
+-- nil for white, xf = 9-number transform or nil}.  Faces land in slots
+-- first.. in order with NO draw between them, so one draw() after this
+-- paints the mesh atomically.  Limits, honestly: the mesh shares the
+-- 8 retained slots with everything else (a 6-face cube plus its pivot
+-- fits; a 20-face icosahedron does not), and per-face animation is out
+-- -- animate the parent pivot, or edit slots directly.  Concave faces
+-- are the driver's job to decompose, same as single shapes.
+function pushMesh(first, faces, parent)
+local id = first
+local k = 1
+while k <= #faces do
+if id > 8.0 then error("pushMesh: slots 1..8 hold " .. #faces .. " faces", 0) end
+local fc = faces[k]
+local cc = fc.col
+if cc ~= nil and #cc == 4 then
+local ex = {}
+local m = 0
+while m < #fc.pts // 2 do
+ex[m * 4 + 1] = cc[1]
+ex[m * 4 + 2] = cc[2]
+ex[m * 4 + 3] = cc[3]
+ex[m * 4 + 4] = cc[4]
+m = m + 1
+end
+cc = ex
+end
+stagePush(fc.pts, cc, fc.xf, parent, nil, nil, tostring(id))
+id = id + 1.0
+k = k + 1
+end
+end
 function pushShape(pts, cols, xf, parent)
 stage(pts, cols, xf, parent, nil, nil, "")
 fire()
