@@ -93,27 +93,66 @@ function stagePush(pts, cols, xf, parent, ticks, wire, id)
 stage(pts, cols, xf, parent, ticks, wire, id)
 push()
 end
+-- isConvex(pts): every turn the same sign, i.e. the fill's single-span
+-- rule paints the outline whole.  pushMesh uses it to decide whether a
+-- face needs splitting.
+local function isConvex(pts)
+local n = #pts // 2
+if n < 3 then return true end
+local sgn = 0.0
+local i = 1
+while i <= n do
+local i0 = i - 1
+if i0 < 1 then i0 = n end
+local i2 = i + 1
+if i2 > n then i2 = 1 end
+local ax = pts[(i0 - 1) * 2 + 1]
+local ay = pts[(i0 - 1) * 2 + 2]
+local bx = pts[(i - 1) * 2 + 1]
+local by = pts[(i - 1) * 2 + 2]
+local cx = pts[(i2 - 1) * 2 + 1]
+local cy = pts[(i2 - 1) * 2 + 2]
+local cr = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+if cr > 0.0 then
+if sgn < 0.0 then return false end
+sgn = 1.0
+elseif cr < 0.0 then
+if sgn > 0.0 then return false end
+sgn = -1.0
+end
+i = i + 1
+end
+return true
+end
 -- pushMesh(first, faces, parent): one call uploads a whole mesh.  Each
--- face is {pts = flat xy (convex, at most 16 points -- the chip
--- truncates past that), col = {r,g,b,a} or a full per-point array or
--- nil for white, xf = 9-number transform or nil}.  Faces land in slots
--- first.. in order with NO draw between them, so one draw() after this
--- paints the mesh atomically.  Limits, honestly: the mesh shares the
--- 8 retained slots with everything else (a 6-face cube plus its pivot
--- fits; a 20-face icosahedron does not), and per-face animation is out
--- -- animate the parent pivot, or edit slots directly.  Concave faces
--- are the driver's job to decompose, same as single shapes.
+-- face is {pts = flat xy (at most 16 points -- the chip truncates past
+-- that), col = {r,g,b,a} or a full per-point array or nil for white, xf
+-- = 9-number transform or nil}.  A concave face would fill its hull, so
+-- pushMesh splits it into convex triangles (triangulate) AUTOMATICALLY
+-- -- one slot per triangle; convex faces (the cube's quads) stay one
+-- slot each, so nothing changes for them.  Faces land in slots first..
+-- in order with NO draw between them, so one draw() after this paints
+-- the mesh atomically.  Limits, honestly: the mesh shares the 8 retained
+-- slots with everything else (a 6-face cube plus its pivot fits; a
+-- triangulated 20-face mesh does not), a full per-point colour array
+-- needs a convex face (triangles get the uniform colour), and per-face
+-- animation is out -- animate the parent pivot, or edit slots directly.
 function pushMesh(first, faces, parent)
 local id = first
 local k = 1
 while k <= #faces do
-if id > 8.0 then error("pushMesh: slots 1..8 hold " .. #faces .. " faces", 0) end
 local fc = faces[k]
+local polys = {fc.pts}
+if not isConvex(fc.pts) then polys = triangulate(fc.pts) end
+local p = 1
+while p <= #polys do
+if id > 8.0 then error("pushMesh: slots 1..8 hold " .. #faces .. " faces", 0) end
+local poly = polys[p]
 local cc = fc.col
 if cc ~= nil and #cc == 4 then
 local ex = {}
 local m = 0
-while m < #fc.pts // 2 do
+while m < #poly // 2 do
 ex[m * 4 + 1] = cc[1]
 ex[m * 4 + 2] = cc[2]
 ex[m * 4 + 3] = cc[3]
@@ -122,8 +161,10 @@ m = m + 1
 end
 cc = ex
 end
-stagePush(fc.pts, cc, fc.xf, parent, nil, nil, tostring(id))
+stagePush(poly, cc, fc.xf, parent, nil, nil, tostring(id))
 id = id + 1.0
+p = p + 1
+end
 k = k + 1
 end
 end

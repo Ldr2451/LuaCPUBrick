@@ -60,7 +60,7 @@ def undim(v):
 # equivalent.
 SLICE = 2400
 
-GFX = os.path.join(HERE, "sample-programs", "gfx.lua")
+GFX = os.path.join(HERE, "gfx.lua")
 # the driver body calls the gfx library: the chip path prepends the
 # library file (DRIVER below), the oracle path prepends it itself, so
 # the body stays lib-free here -- handing the oracle the assembled

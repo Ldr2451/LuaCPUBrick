@@ -2,24 +2,26 @@
 
 The screen showcases call the gfx library (tick/nap/fire/pushShape/...)
 instead of touching output ports, so what runs in game is the library
-prepended to the body.  This writes one assembled file per showcase in
-extras/screen -- comment-free and blank-free, since the game caps
-program length and a truncated program fails parsing loudly
+prepended to the body.  gfx.lua is a library and lives in the parent
+(cpu-screen-connector); the bodies and the assembled files stay in
+sample-programs.  Output is comment-free and blank-free -- strip() drops
+comment and blank lines from BOTH the library and the body, so gfx.lua's
+own comments never ship in a game file (the game caps program length and a
+truncated program fails parsing loudly)
 (`err: line N: not a call statement`).
 
-  python -u extras/screen/assemble.py
+  python -u extras/cpu-screen-connector/sample-programs/assemble.py
 
 Writes showcase.game.lua, showcase2.game.lua, anim.game.lua,
 showcase3.game.lua and cube.game.lua next to their bodies, and prints
 every size.  Bodies stay readable (comments and all); the stripping
-happens here, at assembly time.  gfx.lua itself is comment-free by
-construction.
+happens here, at assembly time.  strip() runs on the library too, so the game files stay under the cap.
 """
 import io
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-GFX = os.path.join(HERE, "gfx.lua")
+GFX = os.path.join(os.path.dirname(HERE), "gfx.lua")
 BODIES = ("showcase.lua", "showcase2.lua", "anim.lua", "showcase3.lua",
           "cube.lua")
 

@@ -84,17 +84,50 @@ function stagePush(pts, cols, xf, parent, ticks, wire, id)
 stage(pts, cols, xf, parent, ticks, wire, id)
 push()
 end
+local function isConvex(pts)
+local n = #pts // 2
+if n < 3 then return true end
+local sgn = 0.0
+local i = 1
+while i <= n do
+local i0 = i - 1
+if i0 < 1 then i0 = n end
+local i2 = i + 1
+if i2 > n then i2 = 1 end
+local ax = pts[(i0 - 1) * 2 + 1]
+local ay = pts[(i0 - 1) * 2 + 2]
+local bx = pts[(i - 1) * 2 + 1]
+local by = pts[(i - 1) * 2 + 2]
+local cx = pts[(i2 - 1) * 2 + 1]
+local cy = pts[(i2 - 1) * 2 + 2]
+local cr = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+if cr > 0.0 then
+if sgn < 0.0 then return false end
+sgn = 1.0
+elseif cr < 0.0 then
+if sgn > 0.0 then return false end
+sgn = -1.0
+end
+i = i + 1
+end
+return true
+end
 function pushMesh(first, faces, parent)
 local id = first
 local k = 1
 while k <= #faces do
-if id > 8.0 then error("pushMesh: slots 1..8 hold " .. #faces .. " faces", 0) end
 local fc = faces[k]
+local polys = {fc.pts}
+if not isConvex(fc.pts) then polys = triangulate(fc.pts) end
+local p = 1
+while p <= #polys do
+if id > 8.0 then error("pushMesh: slots 1..8 hold " .. #faces .. " faces", 0) end
+local poly = polys[p]
 local cc = fc.col
 if cc ~= nil and #cc == 4 then
 local ex = {}
 local m = 0
-while m < #fc.pts // 2 do
+while m < #poly // 2 do
 ex[m * 4 + 1] = cc[1]
 ex[m * 4 + 2] = cc[2]
 ex[m * 4 + 3] = cc[3]
@@ -103,8 +136,10 @@ m = m + 1
 end
 cc = ex
 end
-stagePush(fc.pts, cc, fc.xf, parent, nil, nil, tostring(id))
+stagePush(poly, cc, fc.xf, parent, nil, nil, tostring(id))
 id = id + 1.0
+p = p + 1
+end
 k = k + 1
 end
 end
