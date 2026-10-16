@@ -34,9 +34,10 @@ from painttest import (poly_colors, stroke_colors, slide,  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
-SHOW = os.path.join(HERE, "showcase2.lua")
+SHOW = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
+                    "sample-programs/showcase2.lua")
 GFX = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
-                   "gfx.lua")
+                   "sample-programs/gfx.lua")
 SW = 64
 TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 16000
 # Virtual-tick budget for the real-Lua stream.  The program's own

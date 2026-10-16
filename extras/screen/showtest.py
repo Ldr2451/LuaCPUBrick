@@ -40,9 +40,10 @@ from painttest import poly_colors, stroke_colors, slide, close  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
-SHOW = os.path.join(HERE, "showcase.lua")
+SHOW = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
+                    "sample-programs/showcase.lua")
 GFX = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
-                   "gfx.lua")
+                   "sample-programs/gfx.lua")
 SW = 64
 TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 17000
 # Brightness 100 is FULL_BRIGHT (the pre-port factor), so the wall reads

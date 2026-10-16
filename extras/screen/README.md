@@ -106,7 +106,8 @@ outNumArr(100, -1.0)            -- FOREVER: runs until another command
 See the connector's README for the array layout that carries it, and for
 the `gfx` Lua library -- `pushShape`, `editShape`, `deleteShape`,
 `clearScreen` and friends -- which wraps this whole protocol so a driver
-never has to pick an output port. The showcase programs
+never has to pick an output port. The showcase programs (in
+`extras/cpu-screen-connector/sample-programs/`)
 (`showcase.lua`, `showcase2.lua`, `showcase3.lua`) use it and between
 them cover per-point colours, retained editing, the deferred clear, the
 pending queue, animation, and 3D depth and tilt.

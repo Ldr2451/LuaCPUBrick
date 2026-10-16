@@ -40,9 +40,10 @@ from animtest import tight  # noqa: E402
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 SCREEN_WS = os.path.join(HERE, "screen.ws")
-SHOW = os.path.join(HERE, "showcase3.lua")
+SHOW = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
+                    "sample-programs/showcase3.lua")
 GFX = os.path.join(os.path.dirname(HERE), "cpu-screen-connector",
-                   "gfx.lua")
+                   "sample-programs/gfx.lua")
 SW = 64
 BLACK = (0.0, 0.0, 0.0, 1.0)
 # Brightness 100 is FULL_BRIGHT (the pre-port factor), so the wall reads
