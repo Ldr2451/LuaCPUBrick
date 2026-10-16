@@ -96,6 +96,83 @@ end
 -- isConvex(pts): every turn the same sign, i.e. the fill's single-span
 -- rule paints the outline whole.  pushMesh uses it to decide whether a
 -- face needs splitting.
+-- triangulate(pts): ear clipping for simple (non-self-intersecting)
+-- polygons, flat xy like everything else.  Returns a list of flat
+-- 3-point arrays; feeds pushMesh one triangle per face for concave
+-- shapes the fill cannot paint whole (it fills convex spans, so a
+-- concave outline would fill its hull).  n points give n-2 triangles
+-- with identical total area.  Guarded iterations throughout: a
+-- degenerate outline returns what it has instead of hanging the chip.
+-- Defined BEFORE pushMesh: the chip's Lua VM resolves a name at its
+-- first use, so a helper pushMesh calls must already be assigned when
+-- pushMesh compiles, or the call reads as nil ("not a builtin").
+function triangulate(pts)
+local n = #pts // 2
+local tris = {}
+if n < 3 then return tris end
+local V = {}
+local i = 1
+while i <= n do V[i] = i i = i + 1 end
+local nv = n
+local area = 0.0
+local k = 1
+while k <= n do
+local x1 = pts[(k - 1) * 2 + 1]
+local y1 = pts[(k - 1) * 2 + 2]
+local m = k + 1
+if m > n then m = 1 end
+area = area + (pts[(m - 1) * 2 + 1] - x1) * (pts[(m - 1) * 2 + 2] + y1)
+k = k + 1
+end
+local ccw = area < 0.0
+local guard = 0
+while nv > 3 and guard < n * n do
+guard = guard + 1
+local v = 1
+local done = false
+while v <= nv and not done do
+local i0 = V[v - 1] or V[nv]
+local i1 = V[v]
+local i2 = V[v + 1] or V[1]
+local ax = pts[(i0 - 1) * 2 + 1]
+local ay = pts[(i0 - 1) * 2 + 2]
+local bx = pts[(i1 - 1) * 2 + 1]
+local by = pts[(i1 - 1) * 2 + 2]
+local cx = pts[(i2 - 1) * 2 + 1]
+local cy = pts[(i2 - 1) * 2 + 2]
+-- cr and the point coords are inlined (not kept as locals) so the
+-- function stays under the chip VM's 32-locals-per-function cap.
+local convex = (ccw and (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) > 0.0) or ((not ccw) and (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0.0)
+local clear = true
+if convex then
+local j = 1
+while j <= nv do
+local q = V[j]
+if q ~= i0 and q ~= i1 and q ~= i2 then
+local d1 = (ax - pts[(q - 1) * 2 + 1]) * (by - pts[(q - 1) * 2 + 2]) - (ay - pts[(q - 1) * 2 + 2]) * (bx - pts[(q - 1) * 2 + 1])
+local d2 = (bx - pts[(q - 1) * 2 + 1]) * (cy - pts[(q - 1) * 2 + 2]) - (by - pts[(q - 1) * 2 + 2]) * (cx - pts[(q - 1) * 2 + 1])
+local d3 = (cx - pts[(q - 1) * 2 + 1]) * (ay - pts[(q - 1) * 2 + 2]) - (cy - pts[(q - 1) * 2 + 2]) * (ax - pts[(q - 1) * 2 + 1])
+if (d1 >= 0.0 and d2 >= 0.0 and d3 >= 0.0) or (d1 <= 0.0 and d2 <= 0.0 and d3 <= 0.0) then clear = false end
+end
+j = j + 1
+end
+end
+if convex and clear then
+tris[#tris + 1] = {ax, ay, bx, by, cx, cy}
+while v < nv do V[v] = V[v + 1] v = v + 1 end
+V[nv] = nil
+nv = nv - 1
+done = true
+end
+v = v + 1
+end
+if not done then break end
+end
+if nv == 3 then
+tris[#tris + 1] = {pts[(V[1] - 1) * 2 + 1], pts[(V[1] - 1) * 2 + 2], pts[(V[2] - 1) * 2 + 1], pts[(V[2] - 1) * 2 + 2], pts[(V[3] - 1) * 2 + 1], pts[(V[3] - 1) * 2 + 2]}
+end
+return tris
+end
 local function isConvex(pts)
 local n = #pts // 2
 if n < 3 then return true end
@@ -188,76 +265,4 @@ draw()
 if after ~= nil then
 if after > 0.0 then nap(after) end
 end
-end
--- triangulate(pts): ear clipping for simple (non-self-intersecting)
--- polygons, flat xy like everything else.  Returns a list of flat
--- 3-point arrays; feeds pushMesh one triangle per face for concave
--- shapes the fill cannot paint whole (it fills convex spans, so a
--- concave outline would fill its hull).  n points give n-2 triangles
--- with identical total area.  Guarded iterations throughout: a
--- degenerate outline returns what it has instead of hanging the chip.
-function triangulate(pts)
-local n = #pts // 2
-local tris = {}
-if n < 3 then return tris end
-local V = {}
-local i = 1
-while i <= n do V[i] = i i = i + 1 end
-local nv = n
-local area = 0.0
-local k = 1
-while k <= n do
-local x1 = pts[(k - 1) * 2 + 1]
-local y1 = pts[(k - 1) * 2 + 2]
-local m = k + 1
-if m > n then m = 1 end
-area = area + (pts[(m - 1) * 2 + 1] - x1) * (pts[(m - 1) * 2 + 2] + y1)
-k = k + 1
-end
-local ccw = area < 0.0
-local guard = 0
-while nv > 3 and guard < n * n do
-guard = guard + 1
-local v = 1
-local done = false
-while v <= nv and not done do
-local i0 = V[v - 1] or V[nv]
-local i1 = V[v]
-local i2 = V[v + 1] or V[1]
-local ax = pts[(i0 - 1) * 2 + 1]
-local ay = pts[(i0 - 1) * 2 + 2]
-local bx = pts[(i1 - 1) * 2 + 1]
-local by = pts[(i1 - 1) * 2 + 2]
-local cx = pts[(i2 - 1) * 2 + 1]
-local cy = pts[(i2 - 1) * 2 + 2]
-local convex = (ccw and (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) > 0.0) or ((not ccw) and (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0.0)
-local clear = true
-if convex then
-local j = 1
-while j <= nv do
-local q = V[j]
-if q ~= i0 and q ~= i1 and q ~= i2 then
-local d1 = (ax - pts[(q - 1) * 2 + 1]) * (by - pts[(q - 1) * 2 + 2]) - (ay - pts[(q - 1) * 2 + 2]) * (bx - pts[(q - 1) * 2 + 1])
-local d2 = (bx - pts[(q - 1) * 2 + 1]) * (cy - pts[(q - 1) * 2 + 2]) - (by - pts[(q - 1) * 2 + 2]) * (cx - pts[(q - 1) * 2 + 1])
-local d3 = (cx - pts[(q - 1) * 2 + 1]) * (ay - pts[(q - 1) * 2 + 2]) - (cy - pts[(q - 1) * 2 + 2]) * (ax - pts[(q - 1) * 2 + 1])
-if (d1 >= 0.0 and d2 >= 0.0 and d3 >= 0.0) or (d1 <= 0.0 and d2 <= 0.0 and d3 <= 0.0) then clear = false end
-end
-j = j + 1
-end
-end
-if convex and clear then
-tris[#tris + 1] = {ax, ay, bx, by, cx, cy}
-while v < nv do V[v] = V[v + 1] v = v + 1 end
-V[nv] = nil
-nv = nv - 1
-done = true
-end
-v = v + 1
-end
-if not done then break end
-end
-if nv == 3 then
-tris[#tris + 1] = {pts[(V[1] - 1) * 2 + 1], pts[(V[1] - 1) * 2 + 2], pts[(V[2] - 1) * 2 + 1], pts[(V[2] - 1) * 2 + 2], pts[(V[3] - 1) * 2 + 1], pts[(V[3] - 1) * 2 + 2]}
-end
-return tris
 end
