@@ -243,11 +243,7 @@ local py = pts[(q - 1) * 2 + 2]
 local d1 = (ax - px) * (by - py) - (ay - py) * (bx - px)
 local d2 = (bx - px) * (cy - py) - (by - py) * (cx - px)
 local d3 = (cx - px) * (ay - py) - (cy - py) * (ax - px)
-if ccw then
-if d1 > 0.0 and d2 > 0.0 and d3 > 0.0 then clear = false end
-else
-if d1 < 0.0 and d2 < 0.0 and d3 < 0.0 then clear = false end
-end
+if (d1 >= 0.0 and d2 >= 0.0 and d3 >= 0.0) or (d1 <= 0.0 and d2 <= 0.0 and d3 <= 0.0) then clear = false end
 end
 j = j + 1
 end
