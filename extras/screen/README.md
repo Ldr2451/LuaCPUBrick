@@ -114,8 +114,9 @@ pending queue, animation, and 3D depth and tilt.
 The panel paints four rows a tick, so a full-wall shape settles in about
 16 ticks and a small one in two. That is measured, not estimated, and it
 is the trade the node count puts on it: a wider fill is proportionally
-faster and proportionally more gates, and the chip sits at 46,306 nodes
-against the Lua CPU's 44,016.
+faster and proportionally more gates, and the chip sits at 49,442 nodes
+against the Lua CPU's 44,016 -- the in-lane stale-blacking that killed
+the motion trail cost about three thousand of those.
 
 ## Running the tests
 
