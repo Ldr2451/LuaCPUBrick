@@ -148,3 +148,82 @@ if after ~= nil then
 if after > 0.0 then nap(after) end
 end
 end
+-- triangulate(pts): ear clipping for simple (non-self-intersecting)
+-- polygons, flat xy like everything else.  Returns a list of flat
+-- 3-point arrays; feeds pushMesh one triangle per face for concave
+-- shapes the fill cannot paint whole (it fills convex spans, so a
+-- concave outline would fill its hull).  n points give n-2 triangles
+-- with identical total area.  Guarded iterations throughout: a
+-- degenerate outline returns what it has instead of hanging the chip.
+function triangulate(pts)
+local n = #pts // 2
+local tris = {}
+if n < 3 then return tris end
+local V = {}
+local i = 1
+while i <= n do V[i] = i i = i + 1 end
+local nv = n
+local area = 0.0
+local k = 1
+while k <= n do
+local x1 = pts[(k - 1) * 2 + 1]
+local y1 = pts[(k - 1) * 2 + 2]
+local m = k + 1
+if m > n then m = 1 end
+area = area + (pts[(m - 1) * 2 + 1] - x1) * (pts[(m - 1) * 2 + 2] + y1)
+k = k + 1
+end
+local ccw = area < 0.0
+local guard = 0
+while nv > 3 and guard < n * n do
+guard = guard + 1
+local v = 1
+local done = false
+while v <= nv and not done do
+local i0 = V[v - 1] or V[nv]
+local i1 = V[v]
+local i2 = V[v + 1] or V[1]
+local ax = pts[(i0 - 1) * 2 + 1]
+local ay = pts[(i0 - 1) * 2 + 2]
+local bx = pts[(i1 - 1) * 2 + 1]
+local by = pts[(i1 - 1) * 2 + 2]
+local cx = pts[(i2 - 1) * 2 + 1]
+local cy = pts[(i2 - 1) * 2 + 2]
+local cr = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+local convex = (ccw and cr > 0.0) or ((not ccw) and cr < 0.0)
+local clear = true
+if convex then
+local j = 1
+while j <= nv do
+local q = V[j]
+if q ~= i0 and q ~= i1 and q ~= i2 then
+local px = pts[(q - 1) * 2 + 1]
+local py = pts[(q - 1) * 2 + 2]
+local d1 = (ax - px) * (by - py) - (ay - py) * (bx - px)
+local d2 = (bx - px) * (cy - py) - (by - py) * (cx - px)
+local d3 = (cx - px) * (ay - py) - (cy - py) * (ax - px)
+if ccw then
+if d1 > 0.0 and d2 > 0.0 and d3 > 0.0 then clear = false end
+else
+if d1 < 0.0 and d2 < 0.0 and d3 < 0.0 then clear = false end
+end
+end
+j = j + 1
+end
+end
+if convex and clear then
+tris[#tris + 1] = {ax, ay, bx, by, cx, cy}
+while v < nv do V[v] = V[v + 1] v = v + 1 end
+V[nv] = nil
+nv = nv - 1
+done = true
+end
+v = v + 1
+end
+if not done then break end
+end
+if nv == 3 then
+tris[#tris + 1] = {pts[(V[1] - 1) * 2 + 1], pts[(V[1] - 1) * 2 + 2], pts[(V[2] - 1) * 2 + 1], pts[(V[2] - 1) * 2 + 2], pts[(V[3] - 1) * 2 + 1], pts[(V[3] - 1) * 2 + 2]}
+end
+return tris
+end
