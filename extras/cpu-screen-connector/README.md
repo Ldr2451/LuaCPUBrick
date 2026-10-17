@@ -5,27 +5,31 @@ screen-named outputs, no state at all.  Wire it once and the two chips
 talk; the mapping is a few hundred gates (279 nodes).
 
 ```
-connector.ws              the chip, hand-written -- fixed logic, no generator
-connector.brz             the shippable artifact, built by build.py
-build.py                  python -u extras/cpu-screen-connector/build.py
-connectortest.py          three-chip chain: driver -> connector -> screen
+lua chip out        connector in       connector out       screen in
+-------------       -------------      -----------------   -----------------
+outNum1            -> outNum1         -> pushShape        -> pushShape
+outNum2            -> outNum2         -> drawAllShapes    -> drawAllShapes
+outNum3            -> outNum3         -> clearAllShapes   -> clearAllShapes
+outNum4            -> outNum4         -> shapeWireMode    -> shapeWireMode
+outStr1            -> outStr1         -> shapeId          -> shapeId
+outNumArr          -> outNumArr       -> shapeColors      -> shapeColors
+outStr2            -> outStr2         -> shapePoints      -> shapePoints
+outStrArr          -> outStrArr       -> shapePosition    -> shapePosition
+                                         shapeRotation      -> shapeRotation
+                                         shapeScale         -> shapeScale
+                                         parentShapeId      -> parentShapeId
+                                         addToShapeInTicks  -> addToShapeInTicks
 ```
 
-## The interface
+The middle two columns are one chip: Lua-side inputs on the left,
+screen-side outputs on the right -- 12 wires from connector to screen
+in total, every one required.  `addToShapeInTicks` is easy to miss in
+the diagram because it has no Lua-side row of its own (it rides
+`outNumArr` slot 100); without that wire every animation arm reads an
+instant push, the chip deletes instead of arming, and retained shapes
+fall apart.  `brightness` on the screen stays unwired (defaults
+bright).
 
-```
-             outNum1 --|           |-- pushShape
-             outNum2 --| connector |-- drawAllShapes
-             outNum3 --|           |-- clearAllShapes
-             outNum4 --|           |-- shapeWireMode
-             outStr1 --|           |-- shapeId
-           outNumArr --|           |-- shapeColors
-             outStr2 --|           |-- shapePoints
-           outStrArr --|           |-- shapePosition
-                       |           |-- shapeRotation
-                       |           |-- shapeScale
-                       |           |-- parentShapeId
-```
 
 `outNum1`/`outNum2`/`outNum3` pulse push/draw/clear straight through
 (nonzero reads true); `outNum4` holds wire mode (nonzero = stroke) and
