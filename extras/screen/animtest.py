@@ -225,6 +225,140 @@ class Stream:
         return iter(self.out)
 
 
+def zero_point_forever_case():
+    """The cube's forever pivot is a ZERO-POINT arm push to a live
+    retained slot: it must keep the stored points and colours, keep the
+    slot live, and keep the wall animating.  Regression: the commit used
+    to hit the n<1 delete branch before the animation branch, so the arm
+    erased the pivot and the children recomposited unpainted -- the
+    'second frame draws on it' report.  Asserts:
+      1. the established triangle survives the arm (slot kept),
+      2. something keeps rotating (frames differ across the tail),
+      3. no frame ever grows past a ghost bound (the second frame)."""
+    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
+        scr_dump = f.name
+    try:
+        share_dump(SCREEN_WS, scr_dump)
+        ssim = sim_from_dump(scr_dump)
+        ssim.reset()
+        spts = scols = None
+        for nid, nd in ssim.nodes.items():
+            pl = _extract(nd.props.get("PortLabel", ("raw", "")))
+            if pl == "shapePoints":
+                spts = nid
+            elif pl == "shapeColors":
+                scols = nid
+        assert spts is not None and scols is not None
+        gids = {}
+        for nid, nd in ssim.nodes.items():
+            lb = _extract(nd.props.get("_label", ("raw", "")))
+            if isinstance(lb, str) and lb.startswith("g") and lb[1:].isdigit():
+                gids[int(lb[1:])] = nid
+
+        def painted_on():
+            return sum(1 for i in range(SW * SW)
+                       if tuple(float(x) / BF if k < 3 else float(x)
+                                for k, x in
+                                enumerate(ssim.vars.get(
+                                    gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
+                                )[:3] != (0.0, 0.0, 0.0))
+
+        def full_frame():
+            return tuple(tuple(float(x) / BF if k < 3 else float(x)
+                               for k, x in
+                               enumerate(ssim.vars.get(
+                                   gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
+                         for i in range(SW * SW))
+
+        ssim.inputs = {"shapePoints": [0.0] * 8,
+                       "shapeColors": [],
+                       "pushShape": False, "shapeWireMode": False,
+                       "shapeId": 0.0, "drawAllShapes": False,
+                       "clearAllShapes": False,
+                       "shapePosition": (0.0, 0.0, 0.0),
+                       "shapeRotation": (0.0, 0.0, 0.0),
+                       "shapeScale": (1.0, 1.0, 1.0),
+                       "parentShapeId": 0.0, "addToShapeInTicks": 0.0,
+                       "brightness": 100.0}
+        ssim.run(2)
+        ssim.inputs = {k: v for k, v in ssim.inputs.items()
+                       if k != "shapePoints"}
+
+        # run() delivers inputs only from tick 1 (tick 0 runs literals
+        # only), so a pulse must span two ticks of a run; a one-tick
+        # pulse inside run(1) is consumed by tick 0 and never fires.
+        def edge(pin, extra=None):
+            if extra is not None:
+                ssim.inputs = dict(ssim.inputs, **extra)
+            ssim.inputs = dict(ssim.inputs, **{pin: True})
+            ssim.run(2)
+            ssim.inputs = dict(ssim.inputs, **{pin: False})
+            ssim.run(2)
+
+        # the screen boots with a staged black fill consumed by the
+        # FIRST draw; every driver clears first, so does this case.
+        slide(ssim, spts, scols, [], [])
+        ssim.run(2)
+        edge("clearAllShapes")
+        edge("drawAllShapes")
+
+        # establish a coloured triangle on retained slot 1 (instant).
+        # painttest's staging rule: the array must be visible BEFORE the
+        # edge tick, so slide first, run one idle tick, then pulse.
+        pts = [(10.0, 10.0), (34.0, 12.0), (22.0, 30.0)]
+        cols = [(1.0, 0.2, 0.2, 1.0), (0.2, 1.0, 0.2, 1.0),
+                (0.2, 0.2, 1.0, 1.0)]
+        slide(ssim, spts, scols, [v for p in pts for v in p], cols)
+        ssim.run(2)
+        edge("pushShape", {"shapeId": 1.0})
+        edge("drawAllShapes")
+        ssim.run(140)
+        base_px = painted_on()
+        ok = expect(base_px > 0, "slot 1 established (%d px)" % base_px)
+
+        # the zero-point forever arm, exactly like the cube's pivot:
+        # empty points, ticks = -1.0 (forever on the wire), all scale
+        # rates zero (scale fields are per-tick DELTAS here; a nonzero
+        # walk makes the shape explode by design)
+        slide(ssim, spts, scols, [], [])
+        ssim.run(2)
+        edge("pushShape", {
+            "shapeId": 1.0, "addToShapeInTicks": -1.0,
+            "shapePosition": (0.0, 0.0, 0.0),
+            "shapeRotation": (0.0, 0.0, 0.03),
+            "shapeScale": (0.0, 0.0, 0.0)})
+        edge("drawAllShapes")
+        ssim.run(140)
+
+        # watch ~12 repaints: the slot must survive and keep spinning,
+        # and the painted area must never balloon into a second frame.
+        # The self-refresh cycle runs ~100 ticks (advance -> idle ->
+        # recomposite walk), so 40-tick sampling crosses phases.
+        seen = []
+        frames = []
+        for step in range(12):
+            ssim.run(40)
+            frames.append(full_frame())
+            seen.append(painted_on())
+        diff = sum(1 for i in range(SW * SW)
+                   if frames[0][i] != frames[-1][i])
+        nframes = len(set(hash(f) for f in frames))
+        ok &= expect(min(seen) > 0,
+                     "zero-point arm keeps the slot live",
+                     "painted after arm: %s" % seen)
+        ok &= expect(nframes >= 3,
+                     "forever arm keeps animating",
+                     "only %d distinct frames across the tail; painted=%s"
+                     % (nframes, seen))
+        ok &= expect(max(seen) <= max(base_px, 1) * 3 / 2 + 8,
+                     "no ghost growth over the tail",
+                     "base=%d tail=%s" % (base_px, seen))
+        return ok
+    finally:
+        if os.path.exists(scr_dump):
+            os.unlink(scr_dump)
+
+
 def main():
     body = open(ANIM, encoding="utf-8").read()
     # the animation body calls the gfx library: prepend it, stripped
@@ -459,4 +593,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(0 if main() else 1)
+    a = main()
+    z = zero_point_forever_case()
+    print("zero_point_forever_case:", "OK" if z else "FAIL")
+    sys.exit(0 if (a and z) else 1)
