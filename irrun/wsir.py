@@ -501,7 +501,11 @@ class _Parser:
                 continue
             if not (t and t.startswith("!")):
                 return explicit
-            if t[1:].isdigit():          # module metadata begins; item done
+            # Module metadata ends the item: `!3 = !scope(...)` and the
+            # `!inputs`/`!outputs`/`!wire_order` lists are module-level, and
+            # a chip body's own list follows its last node.
+            if (t[1:].isdigit()
+                    or t in ("!inputs", "!outputs", "!wire_order")):
                 return explicit
             mt = tk.take()
             if mt == "!id":
@@ -553,6 +557,19 @@ def _lit_start(tk):
 def _is_class_start(tok):
     return (tok is not None and (tok[0].isalpha() or tok[0] == "_")
             and tok not in _PRIM_TYPES)
+
+
+_TYPE_STARTERS = set(_PRIM_TYPES) | {
+    "*", "map", "union", "tuple", "enum", "component", "param", "array",
+    "outputs",
+}
+
+
+def _type_start(tok):
+    """Does this token open a type?  A ref type starts with `*`, so a chip
+    body's `in *int(%total.VarRef)` pin is a type with no class and no
+    operand name to speak of -- the class-vs-type test has to see that."""
+    return tok in _TYPE_STARTERS or tok == "{"
 
 
 def _pin_ports(cls_tok, ty):
@@ -642,7 +659,7 @@ def _parse_item(p, mod, add):
         sig = None
         if _is_class_start(tk.peek()) and tk.peek() != "loc":
             cls_tok = tk.take()
-        if tk.peek() in _PRIM_TYPES:
+        if _type_start(tk.peek()):
             ty = p.parse_type()
         if tk.at_punct("="):
             tk.take()
@@ -675,13 +692,25 @@ def _parse_item(p, mod, add):
         ty = None
         if _is_class_start(tk.peek()) and tk.peek() != "loc":
             cls_tok = tk.take()
-        if tk.peek() in _PRIM_TYPES:
+        if _type_start(tk.peek()):
             ty = p.parse_type()
         if tk.at_punct("("):
             tk.take()
             if not tk.at_punct(")"):
-                if not tk.at_punct("%") and not _lit_start(tk):
+                # `in 'T' (operand)` or `in 'T' (Port: operand)`.  The port
+                # name is a bare word; a `%ref` and a literal are NOT, so
+                # test the first character rather than equality -- the ref
+                # token is `%total`, not `%`.
+                nxt = tk.peek()
+                named = (nxt is not None and nxt != "%"
+                         and not nxt.startswith("%")
+                         and not _lit_start(tk)
+                         and (nxt[0].isalpha() or nxt[0] == "_"
+                              or nxt.startswith('"')))
+                if named:
                     p.parse_port_name()
+                    if tk.at_punct(":"):
+                        tk.take()
                 p.wire_operand(p.parse_operand(), ("in", vname), "RER_Input",
                                props)
             tk.expect(")")
