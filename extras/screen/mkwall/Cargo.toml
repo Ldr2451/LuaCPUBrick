@@ -1,0 +1,17 @@
+[package]
+name = "mkwall"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# The compiler is NOT patched.  mkwall links it as a library and lays the
+# wall on the World it returns (see src/main.rs), so `build.py` fills this
+# path in from `irdump.WS_DIR` -- the checkout is outside this repo -- and
+# restores the placeholder afterwards.  The checked-in form is the generic
+# one, so the file never carries one machine's temp path.
+wirescript = { path = "PLACEHOLDER/crates/wirescript" }
+brdb = { version = "1.0.0", default-features = false, features = ["brz"] }
+
+[profile.release]
+opt-level = 2

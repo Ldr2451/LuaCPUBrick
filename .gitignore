@@ -1,2 +1,6 @@
 ﻿__pycache__/
 *.pyc
+
+# Cargo build output for the in-repo tools (extras/screen/mkwall).
+target/
+Cargo.lock.orig
