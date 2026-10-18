@@ -205,7 +205,7 @@ def parse_dump(text):
 
 
 def parse_modules(text):
-    """Every module in the dump, root first, chips after.
+    """Every module in the dump, root first, then chip bodies.
 
     A `chip` body is a graph in its own right: its own nodes, its own wires, and
     `MicrochipInput`/`MicrochipOutput` pins carrying values across the boundary.
@@ -214,50 +214,21 @@ def parse_modules(text):
 
     Node ids are globally unique across the tree, so a flat id space is safe and
     one `Sim` can hold every module at once.
+
+    (Parsing now lives in `wsir.py`: the v2 compiler prints `.wsir` text, and
+    that module maps it back onto this structure; the node dicts, the wire
+    tuples and the `WireGraph_...` classes the Sim keys on all keep their old
+    shapes and spellings.)
     """
-    mods = []
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("G["):
-            mods.append({"name": None, "parent": None, "nodes": {},
-                         "wires": [], "nchips": 0})
-            # The header is space-separated (unlike `props={...}`, which is
-            # comma-separated), so split on whitespace -- `_split_top` would
-            # swallow the whole line as one field.
-            for part in line[2:-1].split():
-                k, v = part.split("=", 1)
-                if k == "module":
-                    mods[-1]["name"] = _parse_lit(v)[1]
-                elif k == "parent":
-                    mods[-1]["parent"] = (None if v == "-"
-                                          else int(v))
-        elif line.startswith("N["):
-            m = re.match(r"N\[(\d+) kind=(\w+) class=(\S+) props=\{(.*)\} "
-                         r"in=\[(.*)\] out=\[(.*)\]\]$", line)
-            if not m:
-                raise RuntimeError("unparsed N line: %s" % line[:120])
-            nid, kind, cls = int(m.group(1)), m.group(2), m.group(3)
-            props = {}
-            for p in _split_top(m.group(4)):
-                k, v = p.split("=", 1)
-                props[k.strip()] = _parse_lit(v)
-            mods[-1]["nodes"][nid] = Node(nid, kind, cls,
-                                          props,
-                                          _parse_ports(m.group(5)),
-                                          _parse_ports(m.group(6)))
-        elif line.startswith("W["):
-            m = re.match(r"W\[(\d+):(\S+) -> (\d+):(\S+)\]$", line)
-            mods[-1]["wires"].append((int(m.group(1)), m.group(2),
-                                      int(m.group(3)), m.group(4)))
-        elif line.startswith("M["):
-            mods[-1]["nchips"] = int(re.search(r"chips=(\d+)", line).group(1))
-    if not mods:
-        raise RuntimeError("no G[ module headers; is this --dump-ir-full?")
-    return mods
+    from wsir import parse_program, WsirError
+    try:
+        return parse_program(text)
+    except WsirError as e:
+        raise RuntimeError("bad wsir dump: %s" % e)
 
 
 def _compile_dump(path, brz_out=None):
-    """Run the compiler with --dump-ir-full; return the dump text.
+    """Run the compiler with --dump-ir; return the wsir dump text (stdout).
 
     Always directs the .brz at brz_out (default: alongside a scratch
     copy) so the real artifact is never touched as a side effect.
@@ -269,7 +240,7 @@ def _compile_dump(path, brz_out=None):
         tmp = tempfile.mkdtemp(prefix="irrun")
         brz_out = os.path.join(tmp, "out.brz")
     p = subprocess.run([WS_EXE, "compile", path, "-o", brz_out,
-                        "--dump-ir-full"],
+                        "--dump-ir"],
                        capture_output=True, text=True, cwd=WS_DIR,
                        encoding="utf-8", errors="replace")
     # rc=0 is the test, and it is a real test now: lua.ws used to exit 1 with 53
@@ -284,10 +255,10 @@ def _compile_dump(path, brz_out=None):
         raise RuntimeError("the compiler rejected %s (rc=%d): %s"
                            % (os.path.basename(path), p.returncode,
                               " | ".join(errs[:4]) or p.stderr[-500:]))
-    if "N[" not in p.stderr:
+    if "module @" not in p.stdout:
         raise RuntimeError(f"no IR dump; compiler said: "
-                           f"{p.stdout[-500:]} {p.stderr[-2000:]}")
-    return p.stderr
+                           f"{p.stderr[-500:]} {p.stdout[-2000:]}")
+    return p.stdout
 
 
 def chip_call_groups(mods):
