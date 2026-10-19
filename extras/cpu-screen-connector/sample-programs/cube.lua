@@ -46,8 +46,9 @@ stagePush(pts, cols, nil, "1", nil, 1.0, "7")
 -- notch in the middle of the cube.)
 editShape("1", {0.0, 0.0, 0.0}, nil, {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
 -- ... and it keeps turning, forever, with no further pushes: the slot's
--- animation deltas are the spin.  The wall repaints about ten times a
--- second, so a fast spin reads as a blur between repaints; these rates
--- turn far enough to see the cube's shape change at each one.
-stage({}, nil, {0.0, 0.0, 0.0, 0.003, 0.0, 0.012, 0.0, 0.0, 0.0}, "0", -1.0, nil, "1")
+-- animation deltas are the spin.  It turns about the vertical, not over:
+-- a tumble passes edge-on, where a cube is a line and the picture says
+-- nothing.  The wall repaints about ten times a second, so the rate is
+-- slow enough that each repaint shows a different angle.
+stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.010, 0.0, 0.0, 0.0}, "0", -1.0, nil, "1")
 push()
