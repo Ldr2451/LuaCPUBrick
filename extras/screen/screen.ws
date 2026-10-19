@@ -10808,12 +10808,8 @@ mod paintTick() {
   if commitR {
     commitR = false
     slLive[8] = 0.0
-    n = (shapePoints.length() / (if pIs3 > 0.5 then 3.0 else 2.0)) | 0
-    if pIs3 > 0.5 {
+    n = (shapePoints.length() / 3.0) | 0
       if n > 16.0 { n = 16.0 }
-    } else {
-      if n > 16.0 { n = 16.0 }
-    }
     let slot = (pId - 1.0) | 0
     let sbase = slot * 48.0
     let lim = if pIs3 > 0.5 then n * 3.0 else n * 2.0
@@ -13544,12 +13540,8 @@ mod paintTick() {
       } else {
         rcOn = false
         eraseOK = false
-        n = (shapePoints.length() / (if pIs3 > 0.5 then 3.0 else 2.0)) | 0
-        if pIs3 > 0.5 {
+        n = (shapePoints.length() / 3.0) | 0
           if n > 16.0 { n = 16.0 }
-        } else {
-          if n > 16.0 { n = 16.0 }
-        }
       }
     }
     if n < 3.0 {
@@ -14042,7 +14034,7 @@ mod paintTick() {
       fromSlot = false
     } else {
       rcOn = false
-      sSegs = (shapePoints.length() / (if pIs3 > 0.5 then 3.0 else 2.0)) | 0
+      sSegs = (shapePoints.length() / 3.0) | 0
       if sSegs > 16.0 { sSegs = 16.0 }
     }
     if sSegs < 1.0 {

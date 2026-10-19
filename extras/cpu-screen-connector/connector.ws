@@ -22,9 +22,8 @@
 //                                          | parentShapeId --> screen parentShapeId
 //
 // The Lua protocol, 1-based slots in outNumArr (see extras/screen/anim.lua):
-//   1..m   point floats: x1, y1, ... two per point for a 2D shape, three
-//           per point (x, y, z) for a 3D one.  m is the point count for
-//           2D and three times it for 3D; the terminator follows at m+1.
+//   1..m   point floats: x1, y1, z1, ... three per point.  m is three
+//           times the point count; the terminator follows at m+1.
 //   m+1    terminator: an exact integer in [-17, -1] in the x slot
 //           after the last point float.  Its magnitude carries the colour
 //           count: -1 means NO colours (every point defaults to white),
@@ -37,12 +36,11 @@
 //           read directly at m+1 instead of scanned for, so
 //           coordinates are completely unrestricted -- even exact
 //           integers in the terminator window transmit as points.  It
-//           counts FLOATS, not points, which is what lets one slot carry
-//           a 3D shape: the screen reads the delivered array's length
-//           and an odd length means (x,y,z) triples, so this chip never
-//           has to know what a point is.  The gfx library writes it on
-//           every push; drivers that predate it leave the slot alone
-//           and take the scan above (which is 2D by construction).
+//           counts FLOATS, not points, so this chip copies m numbers
+//           and never asks what a point is.  The gfx library writes
+//           it on every push; drivers that predate it leave the slot
+//           alone and take the scan above (which counts points in
+//           triples).
 //   100     second terminator (optional): -1 means FOREVER -- the
 //           animation runs until another command edits the slot --
 //           -(1+T) animates the staged shape over T ticks, and anything
@@ -134,45 +132,41 @@ mod passArrays() {
   // no working program can depend on the truncation, because what it
   // produced was a cut shape.
   let t0 = (outNumArr[0] | 0) == outNumArr[0] && outNumArr[0] >= -17.0 && outNumArr[0] <= -1.0
-  let t1 = (outNumArr[2] | 0) == outNumArr[2] && outNumArr[2] >= -17.0 && outNumArr[2] <= -1.0
-  let t2 = (outNumArr[4] | 0) == outNumArr[4] && outNumArr[4] >= -17.0 && outNumArr[4] <= -1.0
-  let t3 = (outNumArr[6] | 0) == outNumArr[6] && outNumArr[6] >= -17.0 && outNumArr[6] <= -1.0
-  let t4 = (outNumArr[8] | 0) == outNumArr[8] && outNumArr[8] >= -17.0 && outNumArr[8] <= -1.0
-  let t5 = (outNumArr[10] | 0) == outNumArr[10] && outNumArr[10] >= -17.0 && outNumArr[10] <= -1.0
-  let t6 = (outNumArr[12] | 0) == outNumArr[12] && outNumArr[12] >= -17.0 && outNumArr[12] <= -1.0
-  let t7 = (outNumArr[14] | 0) == outNumArr[14] && outNumArr[14] >= -17.0 && outNumArr[14] <= -1.0
-  let t8 = (outNumArr[16] | 0) == outNumArr[16] && outNumArr[16] >= -17.0 && outNumArr[16] <= -1.0
-  let t9 = (outNumArr[18] | 0) == outNumArr[18] && outNumArr[18] >= -17.0 && outNumArr[18] <= -1.0
-  let t10 = (outNumArr[20] | 0) == outNumArr[20] && outNumArr[20] >= -17.0 && outNumArr[20] <= -1.0
-  let t11 = (outNumArr[22] | 0) == outNumArr[22] && outNumArr[22] >= -17.0 && outNumArr[22] <= -1.0
-  let t12 = (outNumArr[24] | 0) == outNumArr[24] && outNumArr[24] >= -17.0 && outNumArr[24] <= -1.0
-  let t13 = (outNumArr[26] | 0) == outNumArr[26] && outNumArr[26] >= -17.0 && outNumArr[26] <= -1.0
-  let t14 = (outNumArr[28] | 0) == outNumArr[28] && outNumArr[28] >= -17.0 && outNumArr[28] <= -1.0
-  let t15 = (outNumArr[30] | 0) == outNumArr[30] && outNumArr[30] >= -17.0 && outNumArr[30] <= -1.0
+  let t1 = (outNumArr[3] | 0) == outNumArr[3] && outNumArr[2] >= -17.0 && outNumArr[2] <= -1.0
+  let t2 = (outNumArr[6] | 0) == outNumArr[6] && outNumArr[4] >= -17.0 && outNumArr[4] <= -1.0
+  let t3 = (outNumArr[9] | 0) == outNumArr[9] && outNumArr[6] >= -17.0 && outNumArr[6] <= -1.0
+  let t4 = (outNumArr[12] | 0) == outNumArr[12] && outNumArr[8] >= -17.0 && outNumArr[8] <= -1.0
+  let t5 = (outNumArr[15] | 0) == outNumArr[15] && outNumArr[10] >= -17.0 && outNumArr[10] <= -1.0
+  let t6 = (outNumArr[18] | 0) == outNumArr[18] && outNumArr[12] >= -17.0 && outNumArr[12] <= -1.0
+  let t7 = (outNumArr[21] | 0) == outNumArr[21] && outNumArr[14] >= -17.0 && outNumArr[14] <= -1.0
+  let t8 = (outNumArr[24] | 0) == outNumArr[24] && outNumArr[16] >= -17.0 && outNumArr[16] <= -1.0
+  let t9 = (outNumArr[27] | 0) == outNumArr[27] && outNumArr[18] >= -17.0 && outNumArr[18] <= -1.0
+  let t10 = (outNumArr[30] | 0) == outNumArr[30] && outNumArr[20] >= -17.0 && outNumArr[20] <= -1.0
+  let t11 = (outNumArr[33] | 0) == outNumArr[33] && outNumArr[22] >= -17.0 && outNumArr[22] <= -1.0
+  let t12 = (outNumArr[36] | 0) == outNumArr[36] && outNumArr[24] >= -17.0 && outNumArr[24] <= -1.0
+  let t13 = (outNumArr[39] | 0) == outNumArr[39] && outNumArr[26] >= -17.0 && outNumArr[26] <= -1.0
+  let t14 = (outNumArr[42] | 0) == outNumArr[42] && outNumArr[28] >= -17.0 && outNumArr[28] <= -1.0
+  let t15 = (outNumArr[45] | 0) == outNumArr[45] && outNumArr[30] >= -17.0 && outNumArr[30] <= -1.0
   // Point float count, 1-based slot 98 (0-based 97): when a driver states
   // how many floats follow, the terminator is read directly instead of
   // scanned for, so coordinates are completely unrestricted -- any
   // float at all, including exact integers in the terminator window.
-  // FLOATS, not points: a 2D shape states 2k and a 3D one 3k, and the
-  // screen decides which by the delivered array's length (odd = xyz).
-  // So this chip copies m numbers and never asks what a point is.  The
-  // gfx library writes it on every push; drivers that predate it leave
-  // the slot alone and take the scan below, which is 2D by
-  // construction.  Like slot 100 it is sticky, so whoever writes it
-  // writes it every push.  Capped at 32 floats: the screen's staging
-  // array holds 32, and a 3D shape's 10 points (30 floats) fit.
-  let hasCount = if outNumArr.length() > 97.0 then (if outNumArr[97] > 0.5 then 1.0 else 0.0) else 0.0
+// FLOATS, not points: a shape of k points states 3k, and the
+// screen reads the delivered array as triples.
+// the slot alone and take the scan below, which counts points in
+// triples.
+// array holds 48, and a shape's 16 points (48 floats) fit.
   let cnRaw = if hasCount > 0.5 then outNumArr[97] else 0.0
-  let cn = if cnRaw > 32.0 then 32.0 else (cnRaw | 0)
+  let cn = if cnRaw > 48.0 then 48.0 else (cnRaw | 0)
   let rawTerm = if outNumArr.length() > 97.0 then outNumArr[cn] else -1.0
   let rawOk = ((rawTerm | 0) == rawTerm && rawTerm >= -17.0 && rawTerm <= -1.0)
   let n = if hasCount > 0.5 then cn else if t0 then 0.0 else if t1 then 1.0 else if t2 then 2.0 else if t3 then 3.0 else if t4 then 4.0 else if t5 then 5.0 else if t6 then 6.0 else if t7 then 7.0 else if t8 then 8.0 else if t9 then 9.0 else if t10 then 10.0 else if t11 then 11.0 else if t12 then 12.0 else if t13 then 13.0 else if t14 then 14.0 else if t15 then 15.0 else 16.0
   // The stated count is FLOATS, so the array is sliced at the count and
-  // its length reaches the screen verbatim -- which is exactly how a 3D
-  // shape's odd length says "triples" without this chip knowing.  The
-  // scan path below never states a count, and its n is a point count, so
-  // the scan path's length is 2n as before.
-  let nf = if hasCount > 0.5 then cn else n * 2.0
+  // its length reaches the screen verbatim -- which is exactly how the
+  // screen knows the points are triples, without this chip knowing what
+  // a point is.  The scan path below never states a count, and its n is a
+  // point count, so the scan path's length is 3n.
+  let nf = if hasCount > 0.5 then cn else n * 3.0
   // With a stated count the terminator value still carries the colour
   // count, but nothing is scanned for: an invalid value where the
   // terminator should be means white, never stale colours.
