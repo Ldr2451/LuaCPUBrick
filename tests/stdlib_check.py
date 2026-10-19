@@ -63,7 +63,9 @@ def sim_inputs(src, inputs):
     for key, value in inputs.items():
         if key == "sinputs":
             for slot, text in value.items():
-                result["inStr%d" % int(slot)] = text
+                # The chip's input string ports are inStr1..inStr2, 1-based
+                # like its other ports, so slot 0 is inStr1.
+                result["inStr%d" % (int(slot) + 1)] = text
         else:
             result[key] = value
     return result

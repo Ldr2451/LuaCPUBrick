@@ -35,6 +35,20 @@ outStrArr(i, tostring(xf[i]))
 i = i + 1
 end
 end
+local function asTriples(pts)
+local out = {}
+local i = 1
+while i <= #pts do
+out[#out + 1] = pts[i]
+out[#out + 1] = pts[i + 1]
+out[#out + 1] = 0.0
+i = i + 2
+end
+return out
+end
+function stage2d(pts, cols, xf, parent, ticks, wire, id)
+stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
+end
 function stage(pts, cols, xf, parent, ticks, wire, id)
 outNumArr(98, #pts * 1.0)
 local termAt = putn(1, pts)
@@ -81,6 +95,10 @@ end
 end
 function stagePush(pts, cols, xf, parent, ticks, wire, id)
 stage(pts, cols, xf, parent, ticks, wire, id)
+push()
+end
+function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
+stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 push()
 end
 function pushShape(pts, cols, xf, parent)
