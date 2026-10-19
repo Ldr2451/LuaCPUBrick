@@ -14,9 +14,10 @@
 clearScreen()
 -- The half-size of the cube.  The near face is magnified by the
 -- perspective divide (a point at z = h is 48/(48-h) times further out),
--- so a cube that looks small in model space fills more of the wall than
--- it appears to: 15 clipped the right edge, 12 fits.
-local h = 12.0
+-- and a cube that turns presents its diagonal, so the model size is not
+-- the screen size: 15 clipped the right edge of the wall and 12 still
+-- touched it, so the cube is 10.
+local h = 10.0
 -- face(ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz, r,g,b): one closed 3D
 -- outline, five points, one colour per point.
 local function face(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz, r, g, bl)

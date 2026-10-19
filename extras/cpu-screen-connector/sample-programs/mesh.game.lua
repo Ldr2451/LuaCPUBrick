@@ -105,8 +105,8 @@ if after > 0.0 then nap(after) end
 end
 end
 clearScreen()
-local h = 12.0
-local d = 10.0
+local h = 10.0
+local d = 8.0
 local ax, ay = -h, -h * 0.6
 local bx, by = h, -h * 0.6
 local ccx, ccy = 0.0, h * 0.85

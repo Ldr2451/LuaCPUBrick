@@ -8,9 +8,9 @@
 clearScreen()
 -- The prism's half-width and half-depth.  The near face is magnified by
 -- the perspective divide, so the model size is not the screen size: 16
--- clipped the wall, 12 fits.
-local h = 12.0
-local d = 10.0
+-- clipped the wall, 12 still touched it, so the prism is 10 by 8.
+local h = 10.0
+local d = 8.0
 -- the base triangle, then the same three corners pushed to +d and -d
 local ax, ay = -h, -h * 0.6
 local bx, by = h, -h * 0.6

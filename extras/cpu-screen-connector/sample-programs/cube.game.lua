@@ -105,7 +105,7 @@ if after > 0.0 then nap(after) end
 end
 end
 clearScreen()
-local h = 12.0
+local h = 10.0
 local function face(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz, r, g, bl)
 local pts = {ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz, ax, ay, az}
 local cols = {r, g, bl, 1.0, r, g, bl, 1.0, r, g, bl, 1.0, r, g, bl, 1.0, r, g, bl, 1.0}
