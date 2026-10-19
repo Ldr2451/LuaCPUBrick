@@ -40,71 +40,65 @@ build.py        python -u extras/screen/build.py  (screen.brz, panel included)
 `pushShape` latches a shape and `drawAllShapes` paints it. Nothing is
 painted without a draw, so a frame is a push followed by a draw.
 
-- `shapePoints` -- the points, up to 16 of them. A rect covering pixels
-  0..3 has corners 0 and 4. **An odd number of floats means 3D**: the
-  points are then (x, y, z) triples, up to 10 of them, and the chip
-  draws them as a solid in perspective.
+- `shapePoints` -- the points of the shape, up to 16 of them, each
+  given as an (x, y, z) triple: three numbers per point, in that order.
+  A flat shape is one whose z is 0 everywhere, so a square lying on the
+  wall is four triples with a zero third number. (The `gfx` library has
+  `stage2d` for writing such a shape as plain (x, y) pairs.)
 - `shapeColors` -- one colour per point, optional. Different colours per
   point fill as a gradient; one colour fills flat. Leave it out and
   every point is white.
 - `shapeWireMode` -- false fills the shape, true strokes an outline
   along the points. Repeat the first point at the end to close the
   outline. A single point strokes as a small dot.
-- `shapeId` -- 0 paints the shape once; 1..8 keep it, so pushing new
-  points to the same id edits that shape where it stands, and pushing
-  zero points deletes it. A kept shape means the geometry is sent once
+- `shapeId` -- names the shape, so you can change it or delete it later,
+  or make other shapes follow it. 0 means "paint this once and forget
+  it"; 1 to 8 are the shapes the panel remembers. Pushing new points to
+  the same id edits that shape where it stands, and pushing no points
+  at all deletes it. A remembered shape means its geometry is sent once
   and afterwards only moved.
-- `clearAllShapes` -- forgets every kept shape. The panel keeps showing
-  the scene until the next draw, which blacks it.
-- `shapePosition`, `shapeRotation`, `shapeScale`, `parentShapeId` --
-  optional, and all three of the first take a full vector. The third
-  field of each is live: `shapePosition.z` puts a shape nearer or
-  further away, `shapeRotation.x/y` tips it over, and `shapeScale.z`
-  scales that depth. A shape pushed with `parentShapeId` N follows slot
-  N, so one push to a parent moves its children with it. Leave them
-  unwired for no change.
+- `clearAllShapes` -- forgets every remembered shape. The panel keeps
+  showing the scene until the next draw, which blacks it.
+- `shapePosition`, `shapeRotation`, `shapeScale` -- optional, and each
+  takes three numbers, one per axis. A shape's position says where it
+  is, its rotation how it is turned, its scale how big it is, and all
+  three work the same way on every axis: z is a direction like any
+  other, so a shape can sit nearer or further away, tip over, or be
+  squashed in depth, and a shape further away is drawn smaller.
+- `parentShapeId` -- optional. A shape pushed with the id of another
+  shape follows it, so one push to a parent moves its children with it.
+  Leave it unwired for no parent.
 - `brightness` -- 1 to 100, a dimmer for the whole panel. 100 is what
   the panel did before the port existed, so nothing can be asked for
   that is brighter than the screen already was. Unwired reads as 100, so
   a screen nobody has dimmed comes up at full and looks as it always
   did.
-- `addToShapeInTicks` -- see below.
+- `addToShapeInTicks` -- optional, and it turns the push into an
+  animation: with it set to N, every other staged input becomes a
+  *change per tick*, applied again each tick for N ticks, so one push
+  walks a shape across the panel and the CPU is free until it lands.
+  The animation drives itself -- once it is running, the chip repaints
+  that shape every tick with no `drawAllShapes` from the CPU at all. Only
+  what the animation asked to update ever reaches the panel, so a push
+  that also carries points still waits for its `drawAllShapes` and a
+  staged-but-undrawn shape is never shown. 0 means no animation, and
+  -1 means it keeps going until something else changes that shape.
 
-## 3D
-
-Send vertices, get a solid. A face is just an outline -- the chip closes
-it, fills it, and works out which face is in front of which on its own.
-There is no mesh format, no triangulation and nothing to compute on the
-CPU side: a triangle is three points, a quad is four points plus the
-first one again, and the chip does the rest.
-
-The rule for telling the two apart is the length of the array: a 2D
-shape has an even number of floats, a 3D shape an odd one, so a 3D
-outline is sent with an odd number of points.
-
-A 3D shape looks the way you would expect: nearer parts are bigger, and
-the near faces hide the far ones. `shapePosition.z` moves a shape
-nearer or further, which is also how you order two shapes against each
-other.
-
-For 2D points there is no perspective at all -- screen x/y are world
-x/y -- so a solid built from several 2D shapes at different depths is
-put together from `shapePosition.z` under one turning parent (see
-`showcase3.lua`).
+A shape is drawn as a solid: the chip closes each outline, fills it,
+and works out for itself which parts are in front of which. There is no
+mesh format and no triangulation anywhere -- a face is just an outline,
+a triangle is three points and a square is four points plus the first
+one again, and the chip does the rest.
 
 Nothing expires and nothing needs refreshing: a shape stays on the
 panel until a draw paints something else over it.
 
 ## Animating a shape
 
-`addToShapeInTicks` turns a push into an animation. With it set to N,
-every other staged input becomes a *change per tick*, applied again
-each tick for N ticks -- so one push walks a shape across the panel and
-the CPU is free until it lands.
-
-The animation drives itself: once a slot's ticks are running, the chip
-repaints that slot every tick with no `drawAllShapes` from the CPU at
-all, so a shape walks on its own and the CPU only stages the animation.
+`addToShapeInTicks` turns a push into an animation, and the animation
+drives itself: once it is running, the chip repaints that shape every
+tick with no `drawAllShapes` from the CPU at all, so a shape walks on
+its own and the CPU only stages the animation.
 Only what `addToShapeInTicks` asked to update ever reaches the panel --
 a push that also carries points still waits for its `drawAllShapes`, so a
 staged-but-undrawn shape is never shown.
@@ -112,7 +106,7 @@ staged-but-undrawn shape is never shown.
 ```
 outNumArr(100, -(1.0 + 30))     -- animate the staged shape over 30 ticks
 outNumArr(100, -1.0)            -- FOREVER: runs until another command
-                                 -- edits the slot (via the gfx library,
+                                 -- edits the shape (via the gfx library,
                                  -- `ticks` of -1; instant is 0.0)
 ```
 
@@ -123,15 +117,9 @@ which wraps this whole protocol so a driver never has to pick an output
 port. The showcase programs (in
 `extras/cpu-screen-connector/sample-programs/`) (`showcase.lua`,
 `showcase2.lua`, `showcase3.lua`, `cube.lua`, `mesh.lua`) use it and
-between them cover per-point colours, retained editing, the deferred
-clear, the pending queue, animation, and 3D depth and tilt.
-
-## Refresh
-
-The panel paints four rows a tick, so a full-wall shape settles in about
-16 ticks and a small one in two. That is measured, not estimated, and it
-is the trade the node count puts on it: a wider fill is proportionally
-faster and proportionally more gates.
+between them cover per-point colours, editing a shape that is already
+on the panel, the deferred clear, the pending queue, animation, and
+depth and tilt.
 
 ## Running the tests
 
