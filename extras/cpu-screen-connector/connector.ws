@@ -133,20 +133,20 @@ mod passArrays() {
   // produced was a cut shape.
   let t0 = (outNumArr[0] | 0) == outNumArr[0] && outNumArr[0] >= -17.0 && outNumArr[0] <= -1.0
   let t1 = (outNumArr[3] | 0) == outNumArr[3] && outNumArr[2] >= -17.0 && outNumArr[2] <= -1.0
-  let t2 = (outNumArr[6] | 0) == outNumArr[6] && outNumArr[4] >= -17.0 && outNumArr[4] <= -1.0
-  let t3 = (outNumArr[9] | 0) == outNumArr[9] && outNumArr[6] >= -17.0 && outNumArr[6] <= -1.0
-  let t4 = (outNumArr[12] | 0) == outNumArr[12] && outNumArr[8] >= -17.0 && outNumArr[8] <= -1.0
-  let t5 = (outNumArr[15] | 0) == outNumArr[15] && outNumArr[10] >= -17.0 && outNumArr[10] <= -1.0
-  let t6 = (outNumArr[18] | 0) == outNumArr[18] && outNumArr[12] >= -17.0 && outNumArr[12] <= -1.0
-  let t7 = (outNumArr[21] | 0) == outNumArr[21] && outNumArr[14] >= -17.0 && outNumArr[14] <= -1.0
-  let t8 = (outNumArr[24] | 0) == outNumArr[24] && outNumArr[16] >= -17.0 && outNumArr[16] <= -1.0
-  let t9 = (outNumArr[27] | 0) == outNumArr[27] && outNumArr[18] >= -17.0 && outNumArr[18] <= -1.0
-  let t10 = (outNumArr[30] | 0) == outNumArr[30] && outNumArr[20] >= -17.0 && outNumArr[20] <= -1.0
-  let t11 = (outNumArr[33] | 0) == outNumArr[33] && outNumArr[22] >= -17.0 && outNumArr[22] <= -1.0
-  let t12 = (outNumArr[36] | 0) == outNumArr[36] && outNumArr[24] >= -17.0 && outNumArr[24] <= -1.0
-  let t13 = (outNumArr[39] | 0) == outNumArr[39] && outNumArr[26] >= -17.0 && outNumArr[26] <= -1.0
-  let t14 = (outNumArr[42] | 0) == outNumArr[42] && outNumArr[28] >= -17.0 && outNumArr[28] <= -1.0
-  let t15 = (outNumArr[45] | 0) == outNumArr[45] && outNumArr[30] >= -17.0 && outNumArr[30] <= -1.0
+  let t2 = (outNumArr[9] | 0) == outNumArr[9] && outNumArr[4] >= -17.0 && outNumArr[4] <= -1.0
+  let t3 = (outNumArr[12] | 0) == outNumArr[12] && outNumArr[6] >= -17.0 && outNumArr[6] <= -1.0
+  let t4 = (outNumArr[18] | 0) == outNumArr[18] && outNumArr[8] >= -17.0 && outNumArr[8] <= -1.0
+  let t5 = (outNumArr[21] | 0) == outNumArr[21] && outNumArr[10] >= -17.0 && outNumArr[10] <= -1.0
+  let t6 = (outNumArr[27] | 0) == outNumArr[27] && outNumArr[12] >= -17.0 && outNumArr[12] <= -1.0
+  let t7 = (outNumArr[30] | 0) == outNumArr[30] && outNumArr[14] >= -17.0 && outNumArr[14] <= -1.0
+  let t8 = (outNumArr[36] | 0) == outNumArr[36] && outNumArr[16] >= -17.0 && outNumArr[16] <= -1.0
+  let t9 = (outNumArr[39] | 0) == outNumArr[39] && outNumArr[18] >= -17.0 && outNumArr[18] <= -1.0
+  let t10 = (outNumArr[45] | 0) == outNumArr[45] && outNumArr[20] >= -17.0 && outNumArr[20] <= -1.0
+  let t11 = (outNumArr[48] | 0) == outNumArr[48] && outNumArr[22] >= -17.0 && outNumArr[22] <= -1.0
+  let t12 = (outNumArr[54] | 0) == outNumArr[54] && outNumArr[24] >= -17.0 && outNumArr[24] <= -1.0
+  let t13 = (outNumArr[57] | 0) == outNumArr[57] && outNumArr[26] >= -17.0 && outNumArr[26] <= -1.0
+  let t14 = (outNumArr[63] | 0) == outNumArr[63] && outNumArr[28] >= -17.0 && outNumArr[28] <= -1.0
+  let t15 = (outNumArr[66] | 0) == outNumArr[66] && outNumArr[30] >= -17.0 && outNumArr[30] <= -1.0
   // Point float count, 1-based slot 98 (0-based 97): when a driver states
   // how many floats follow, the terminator is read directly instead of
   // scanned for, so coordinates are completely unrestricted -- any
@@ -156,6 +156,7 @@ mod passArrays() {
 // the slot alone and take the scan below, which counts points in
 // triples.
 // array holds 48, and a shape's 16 points (48 floats) fit.
+  let hasCount = if outNumArr.length() > 97.0 then (if outNumArr[97] > 0.5 then 1.0 else 0.0) else 0.0
   let cnRaw = if hasCount > 0.5 then outNumArr[97] else 0.0
   let cn = if cnRaw > 48.0 then 48.0 else (cnRaw | 0)
   let rawTerm = if outNumArr.length() > 97.0 then outNumArr[cn] else -1.0
