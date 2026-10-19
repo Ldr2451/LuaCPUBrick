@@ -22,21 +22,27 @@
 //                                          | parentShapeId --> screen parentShapeId
 //
 // The Lua protocol, 1-based slots in outNumArr (see extras/screen/anim.lua):
-//   1..2k   points x1, y1, x2, y2, ... as many pairs as the shape needs
-//   2k+1    terminator: an exact integer in [-17, -1] in the x slot
-//           after the last point.  Its magnitude carries the colour
+//   1..m   point floats: x1, y1, ... two per point for a 2D shape, three
+//           per point (x, y, z) for a 3D one.  m is the point count for
+//           2D and three times it for 3D; the terminator follows at m+1.
+//   m+1    terminator: an exact integer in [-17, -1] in the x slot
+//           after the last point float.  Its magnitude carries the colour
 //           count: -1 means NO colours (every point defaults to white),
 //           -(1+c) means c colours follow.  Any other value --
 //           including a negative coordinate -- is a point like any
 //           other.  So a colourless driver keeps writing the plain -1
 //           it always did, and never pays for the colour region.
-//   2k+2..  colours r1, g1, b1, a1, ... four per point
-//   98      point count (optional): when positive, the terminator is
-//           read directly at 2k+1 instead of scanned for, so
+//   m+2..  colours r1, g1, b1, a1, ... four per point
+//   98     float count (optional): when positive, the terminator is
+//           read directly at m+1 instead of scanned for, so
 //           coordinates are completely unrestricted -- even exact
-//           integers in the terminator window transmit as points.  The
-//           gfx library writes it on every push; drivers that predate
-//           it leave the slot alone and take the scan above.
+//           integers in the terminator window transmit as points.  It
+//           counts FLOATS, not points, which is what lets one slot carry
+//           a 3D shape: the screen reads the delivered array's length
+//           and an odd length means (x,y,z) triples, so this chip never
+//           has to know what a point is.  The gfx library writes it on
+//           every push; drivers that predate it leave the slot alone
+//           and take the scan above (which is 2D by construction).
 //   100     second terminator (optional): -1 means FOREVER -- the
 //           animation runs until another command edits the slot --
 //           -(1+T) animates the staged shape over T ticks, and anything
@@ -44,9 +50,10 @@
 //           is INSTANT (no animation).  One number, one meaning: -1.0
 //           used to mean instant, so instant moved to 0.0; drivers that
 //           never animate already behave exactly as before, since they
-//           never write this slot.  Fixed slot, so no scan: shapes never
-//           reach past slot 97 (16 points + terminator + 16 colours is
-//           0-based 0..96), so shape data can never collide with it.
+//           never write this slot.  Fixed slot, so no scan: shape data
+//           never reaches past slot 97 (32 point floats + terminator +
+//           16 colours is 0-based 0..96), so shape data can never
+//           collide with it.
 //           Stale values CAN (a previous animated push on the same
 //           port): drivers that animate write this slot on every push,
 //           and write 0 to stop.
@@ -83,10 +90,10 @@
 // that only moves shapes writes just slots 1..2.  (outStrArr takes at
 // most 8 values a call, like outNumArr, so all nine slots are two
 // calls.)
-// The screen receives two tight arrays -- points of length 2*k and one
-// colour per point -- so its length-based count just works with no
-// sentinel logic there, and a direct driver (no bridge) can wire the
-// same two arrays by hand.
+// The screen receives two tight arrays -- the point floats exactly as
+// they arrived (m of them) and one colour per point -- so its
+// length-based count just works with no sentinel logic there, and a
+// direct driver (no bridge) can wire the same two arrays by hand.
 in outNum1: float
 in outNum2: float
 in outNum3: float
@@ -142,27 +149,38 @@ mod passArrays() {
   let t13 = (outNumArr[26] | 0) == outNumArr[26] && outNumArr[26] >= -17.0 && outNumArr[26] <= -1.0
   let t14 = (outNumArr[28] | 0) == outNumArr[28] && outNumArr[28] >= -17.0 && outNumArr[28] <= -1.0
   let t15 = (outNumArr[30] | 0) == outNumArr[30] && outNumArr[30] >= -17.0 && outNumArr[30] <= -1.0
-  // Point count, 1-based slot 98 (0-based 97): when a driver states how
-  // many points follow, the terminator is read directly instead of
+  // Point float count, 1-based slot 98 (0-based 97): when a driver states
+  // how many floats follow, the terminator is read directly instead of
   // scanned for, so coordinates are completely unrestricted -- any
   // float at all, including exact integers in the terminator window.
-  // The gfx library writes it on every push; drivers that predate it
-  // leave the slot alone and take the scan below.  Like slot 100 it is
-  // sticky, so whoever writes it writes it every push.
+  // FLOATS, not points: a 2D shape states 2k and a 3D one 3k, and the
+  // screen decides which by the delivered array's length (odd = xyz).
+  // So this chip copies m numbers and never asks what a point is.  The
+  // gfx library writes it on every push; drivers that predate it leave
+  // the slot alone and take the scan below, which is 2D by
+  // construction.  Like slot 100 it is sticky, so whoever writes it
+  // writes it every push.  Capped at 32 floats: the screen's staging
+  // array holds 32, and a 3D shape's 10 points (30 floats) fit.
   let hasCount = if outNumArr.length() > 97.0 then (if outNumArr[97] > 0.5 then 1.0 else 0.0) else 0.0
   let cnRaw = if hasCount > 0.5 then outNumArr[97] else 0.0
-  let cn = if cnRaw > 16.0 then 16.0 else (cnRaw | 0)
-  let rawTerm = if outNumArr.length() > 97.0 then outNumArr[(cn * 2.0) | 0] else -1.0
+  let cn = if cnRaw > 32.0 then 32.0 else (cnRaw | 0)
+  let rawTerm = if outNumArr.length() > 97.0 then outNumArr[cn] else -1.0
   let rawOk = ((rawTerm | 0) == rawTerm && rawTerm >= -17.0 && rawTerm <= -1.0)
   let n = if hasCount > 0.5 then cn else if t0 then 0.0 else if t1 then 1.0 else if t2 then 2.0 else if t3 then 3.0 else if t4 then 4.0 else if t5 then 5.0 else if t6 then 6.0 else if t7 then 7.0 else if t8 then 8.0 else if t9 then 9.0 else if t10 then 10.0 else if t11 then 11.0 else if t12 then 12.0 else if t13 then 13.0 else if t14 then 14.0 else if t15 then 15.0 else 16.0
+  // The stated count is FLOATS, so the array is sliced at the count and
+  // its length reaches the screen verbatim -- which is exactly how a 3D
+  // shape's odd length says "triples" without this chip knowing.  The
+  // scan path below never states a count, and its n is a point count, so
+  // the scan path's length is 2n as before.
+  let nf = if hasCount > 0.5 then cn else n * 2.0
   // With a stated count the terminator value still carries the colour
   // count, but nothing is scanned for: an invalid value where the
   // terminator should be means white, never stale colours.
   let term = if hasCount > 0.5 then (if rawOk then rawTerm else -1.0) else if t0 then outNumArr[0] else if t1 then outNumArr[2] else if t2 then outNumArr[4] else if t3 then outNumArr[6] else if t4 then outNumArr[8] else if t5 then outNumArr[10] else if t6 then outNumArr[12] else if t7 then outNumArr[14] else if t8 then outNumArr[16] else if t9 then outNumArr[18] else if t10 then outNumArr[20] else if t11 then outNumArr[22] else if t12 then outNumArr[24] else if t13 then outNumArr[26] else if t14 then outNumArr[28] else if t15 then outNumArr[30] else -1.0
   let kc0 = if term <= -1.0 then (0.0 - term) - 1.0 else 16.0
   let kc = if kc0 > 16.0 then 16.0 else if kc0 < 0.0 then 0.0 else kc0
-  pts.slice(outNumArr, 0, (n * 2.0) | 0)
-  cfl.slice(outNumArr, (n * 2.0) + 1.0, (kc * 4.0) | 0)
+  pts.slice(outNumArr, 0, (nf) | 0)
+  cfl.slice(outNumArr, nf + 1.0, (kc * 4.0) | 0)
   let nc = cfl.length()
   cols.resize(16, Color(1.0, 1.0, 1.0, 1.0))
   cols[0] = if nc > 3 then Color(cfl[0], cfl[1], cfl[2], cfl[3]) else Color(1.0, 1.0, 1.0, 1.0)

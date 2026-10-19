@@ -29,6 +29,8 @@ sys.path.insert(0, os.path.join(ROOT, "extras", "screen"))
 # args so flags-first call orders stay valid.
 USE_CHIP = "--chip" in sys.argv
 _args = [a for a in sys.argv[1:] if a.isdigit()]
+MAKE_SAVE = "--save" in sys.argv
+SAVE = os.environ.get("CUBE_FRAMES") if MAKE_SAVE else None
 BUDGET = int(_args[0]) if _args else 1800
 TICKS = int(_args[0]) if _args else (12000 if USE_CHIP else 0) or BUDGET
 # second numeric arg: ticks of forever-animation tail observed past the
@@ -186,6 +188,9 @@ def report(tag, wall):
     if wall is None:
         print("%s: no snapshot" % tag)
         return
+    if SAVE:
+        with open(SAVE, "a", encoding="utf-8") as f:
+            f.write("%s\t%s\n" % (tag, repr(list(wall))))
     left = [(i // SW, i % SW, wall[i])
             for i in range(SW * SW) if wall[i][:3] != (0.0, 0.0, 0.0)]
     rows = sorted(set(r for r, _c, _v in left))

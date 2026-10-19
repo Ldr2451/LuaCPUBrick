@@ -40,13 +40,15 @@ touch them -- like `anim.lua` -- behave exactly as before.
 
 `outNumArr` carries POINTS FIRST, then the colours (1-based Lua slots):
 ```
-1..2k   points x1, y1, x2, y2, ... (at most 16 points, any values)
-2k+1    terminator: -1 means NO colours (all white), -(1+c) means c
-        colours follow
-2k+2..  colours r1, g1, b1, a1, ... four per point
-98      point count (the library writes it; coordinates then have no
-        restrictions at all)
-100     animation ticks: 0 instant, N over N ticks, -1 forever
+1..m   point floats: x1, y1, ... two per point for a 2D shape, three
+       (x, y, z) per point for a 3D one (at most 32 floats: 16 points
+       of 2D, or 10 points of 3D; any values)
+m+1    terminator: -1 means NO colours (all white), -(1+c) means c
+       colours follow
+m+2..  colours r1, g1, b1, a1, ... four per point
+98     point FLOAT count (the library writes it; coordinates then have
+       no restrictions at all, and it is how a 3D shape arrives)
+100    animation ticks: 0 instant, N over N ticks, -1 forever
 ```
 
 A white triangle is one call: `outNumArr(1, x1,y1, x2,y2, x3,y3, -1)`.
@@ -55,14 +57,26 @@ the colours.  `outNumArr` takes at most 8 values per call.  A
 terminator straight at slot 1 is the empty shape (paints nothing,
 deletes a retained slot).
 
+**3D**: send three floats per point and the screen reads the delivered
+array's odd length as (x,y,z) triples -- it transforms each point's own
+z through the whole parent chain, keeps the world z as the depth, and
+projects with a perspective divide (eye at z = -48, denominator clamped
+at 1.0).  Nothing else changes: no extra port, no mesh helper, no
+triangulation.  Because a 2D array is always even, a 3D outline is sent
+with an ODD number of points: a triangle needs nothing (three points,
+nine floats), a quad is sent closed, four corners plus the first again
+(five points, fifteen floats).  The chip projects the result, so the CPU
+never computes a pixel.
+
 `outStr2` carries the parent slot id as text (`"0"`..`"8"`, empty =
 no parent), parsed the same pure way as `outStr1`.  `outStrArr`
 carries the transform as nine numeric strings (1-based slots):
 
 ```
-1..3   shapePosition x, y, z (z orders depth: nearer wins)
-4..6   shapeRotation x, y, z in radians (x/y tilt off-axis)
-7..9   shapeScale x, y, z (only x and y; zeroes mean identity)
+1..3   shapePosition x, y, z (z is depth: nearer wins; with 3D points it
+       is also what the perspective divide scales by)
+4..6   shapeRotation x, y, z in radians (x/y tilt off-axis, z spins)
+7..9   shapeScale x, y, z (zeroes mean identity; z scales depth)
 ```
 
 Missing or garbage slots parse to 0.0, which the screen defaults, so

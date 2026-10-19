@@ -591,6 +591,11 @@ def main():
             badA = [i for i in range(SW * SW)
                     if not close(snap_holder["wallA"][i], wantA.get(
                         i, (0.0, 0.0, 0.0, 1.0)))]
+            if badA:
+                print("   motion diffs: %s"
+                      % [(b // 64, b % 64,
+                          tuple(round(c, 3) for c in snap_holder["wallA"][b]))
+                         for b in badA[:8]])
             ok &= expect(not badA, "motion advances with no draw",
                          "%d of 4096 differ, first at %d"
                          % (len(badA), badA[0] if badA else 0))
