@@ -31,7 +31,7 @@ cy[i] = (32.0 + 10.0 * si) // 1.0
 i = i + 1
 end
 local function background(h)
-outNumArr(1, 0.0, 0.0, 64.0, 0.0, 64.0, 64.0, 0.0, 64.0)
+outNumArr(1, 0.0, 0.0, 0.0, 64.0, 0.0, 0.0, 64.0, 64.0, 0.0, 0.0, 64.0, 0.0)
 outNumArr(9, -5.0)
 pcol(10, h, 1.0, 0.16)
 pcol(14, h + 8, 1.0, 0.16)
@@ -57,7 +57,7 @@ local x6 = (sx[6] + (cx[6] - sx[6]) * t) // 1.0
 local y6 = (sy[6] + (cy[6] - sy[6]) * t) // 1.0
 local x7 = (sx[7] + (cx[7] - sx[7]) * t) // 1.0
 local y7 = (sy[7] + (cy[7] - sy[7]) * t) // 1.0
-outNumArr(1, x0, y0, x1, y1, x2, y2, x3, y3)
+outNumArr(1, x0, y0, 0.0, x1, y1, 0.0, x2, y2, 0.0, x3, y3, 0.0)
 outNumArr(9, x4, y4, x5, y5, x6, y6, x7, y7)
 outNumArr(17, -9.0)
 pcol(18, hue, 0.75)
@@ -72,7 +72,7 @@ setTransform({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
 fire(0.9)
 end
 local function mover(mx, my, ang, sc, hue)
-outNumArr(1, 0.0, 0.0, 8.0, 0.0, 8.0, 6.0, 0.0, 6.0)
+outNumArr(1, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0, 8.0, 6.0, 0.0, 0.0, 6.0, 0.0)
 outNumArr(9, -5.0)
 pcol(10, hue, 0.55)
 pcol(14, hue + 2, 0.8)
@@ -84,7 +84,7 @@ end
 local function satellite(hue)
 outStr(1, "4")
 outStr(2, "3")
-outNumArr(1, 10.0, 1.0, 16.0, 1.0, 13.0, 7.0)
+outNumArr(1, 10.0, 1.0, 0.0, 16.0, 1.0, 0.0, 13.0, 7.0, 0.0)
 outNumArr(7, -4.0)
 pcol(8, hue, 1.0)
 pcol(12, hue + 10, 1.0)
@@ -173,7 +173,7 @@ draw()
 nap(1.0)
 outStr(1, "5")
 outStr(2, "")
-outNumArr(1, 8.0, 44.0, 16.0, 44.0, 12.0, 52.0)
+outNumArr(1, 8.0, 44.0, 0.0, 16.0, 44.0, 0.0, 12.0, 52.0, 0.0)
 outNumArr(7, -4.0)
 pcol(8, hue, 1.0)
 pcol(12, hue + 10, 1.0)

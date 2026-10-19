@@ -85,7 +85,7 @@ const SH = 64
 const NP = 4096
 const SWF = 64.0
 const MAXP = 16
-const MAXP3 = 10
+const MAXP3 = 16
 
 @left in shapePoints: float[]
 @left in shapeColors: color[]
@@ -106,8 +106,10 @@ const SH = 64
 const NP = 4096
 const SWF = 64.0
 const MAXP = 16
-const MAXP3 = 10
+const MAXP3 = 16
 const EYE = 48.000000
+const EYE_X = 32.000000
+const EYE_Y = 32.000000
 const FULL_BRIGHT = 0.35
 const DEF_BRIGHT = 0.350000
 var fb: color[]
@@ -8956,7 +8958,7 @@ on Change(pushShape) {
     pScl = shapeScale
     pParent = if parentShapeId < 0.0 then 0.0 else if parentShapeId > 8.0 then 8.0 else (parentShapeId | 0)
     pTicks = if addToShapeInTicks < -0.5 then -1.0 else if addToShapeInTicks < 1.0 then 0.0 else (addToShapeInTicks | 0)
-    pIs3 = if shapePoints.length() - ((shapePoints.length() / 2.0) | 0) * 2.0 > 0.5 then 1.0 else 0.0
+    pIs3 = 0.0
     pending = true
     qPush = true
     polyOn = false
@@ -9162,16 +9164,16 @@ mod paintTick() {
   if !fbInit {
     fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))
     fbZ.resize(NP, ZBACK)
-    shPts.resize(32, 0.0)
+    shPts.resize(48, 0.0)
     shPz.resize(16, 0.0)
-    slPts.resize(256, 0.0)
+    slPts.resize(384, 0.0)
     slPC.resize(128, Color(1.0, 1.0, 1.0, 1.0))
     slXF.resize(48, 0.0)
     slMode.resize(8, 0.0)
     slLive.resize(8, 0.0)
     slCount.resize(8, 0.0)
     slIs3.resize(8, 0.0)
-    slPts.resize(288, 0.0)
+    slPts.resize(432, 0.0)
     slPC.resize(144, Color(1.0, 1.0, 1.0, 1.0))
     slXF.resize(54, 0.0)
     slXF2.resize(36, 0.0)
@@ -9179,7 +9181,7 @@ mod paintTick() {
     covMax.resize(64, -200.0)
     oldMin.resize(64, 200.0)
     oldMax.resize(64, -200.0)
-    anPts.resize(288, 0.0)
+    anPts.resize(432, 0.0)
     anCol.resize(144, Color(0.0, 0.0, 0.0, 0.0))
     anXF.resize(54, 0.0)
     anXF2.resize(36, 0.0)
@@ -9192,7 +9194,7 @@ mod paintTick() {
     slIs3.resize(9, 0.0)
     qN.resize(8, 0.0)
     qIs3.resize(8, 0.0)
-    qPts.resize(256, 0.0)
+    qPts.resize(384, 0.0)
     qCol.resize(128, Color(1.0, 1.0, 1.0, 1.0))
     qXF.resize(48, 0.0)
     qXF2.resize(32, 0.0)
@@ -9205,14 +9207,14 @@ mod paintTick() {
   bf = if brightness <= 0.0 then DEF_BRIGHT
     else bclamp * FULL_BRIGHT / 100.0
   if pending && (pTicks > 0.5 || pTicks < -0.5) && !clearing {
-    let anN = (shapePoints.length() / (if pIs3 > 0.5 then 3.0 else 2.0)) | 0
+    let anN = (shapePoints.length() / 3.0) | 0
     if anN < (if pWire then 2.0 else 3.0) {
       pending = false
       let slot = (pId - 1.0) | 0
       for aslot in 0..8 {
         if aslot == slot {
           anTicks[aslot] = pTicks
-          let ab = aslot * 32.0
+          let ab = aslot * 48.0
           anPts[ab + 0.0] = 0.0
           anPts[ab + 1.0] = 0.0
           anPts[ab + 2.0] = 0.0
@@ -9245,6 +9247,22 @@ mod paintTick() {
           anPts[ab + 29.0] = 0.0
           anPts[ab + 30.0] = 0.0
           anPts[ab + 31.0] = 0.0
+          anPts[ab + 32.0] = 0.0
+          anPts[ab + 33.0] = 0.0
+          anPts[ab + 34.0] = 0.0
+          anPts[ab + 35.0] = 0.0
+          anPts[ab + 36.0] = 0.0
+          anPts[ab + 37.0] = 0.0
+          anPts[ab + 38.0] = 0.0
+          anPts[ab + 39.0] = 0.0
+          anPts[ab + 40.0] = 0.0
+          anPts[ab + 41.0] = 0.0
+          anPts[ab + 42.0] = 0.0
+          anPts[ab + 43.0] = 0.0
+          anPts[ab + 44.0] = 0.0
+          anPts[ab + 45.0] = 0.0
+          anPts[ab + 46.0] = 0.0
+          anPts[ab + 47.0] = 0.0
           let ax = aslot * 6.0
           let ax2 = aslot * 4.0
           anXF[ax + 0.0] = pPos.x
@@ -9326,22 +9344,6 @@ mod paintTick() {
   if (anTicks[1.0] > 0.5 || anTicks[1.0] < -0.5) && !rcOn {
     if anTicks[1.0] > 0.5 { anTicks[1.0] = anTicks[1.0] - 1.0 }
     animDirty = true
-    slPts[32] = slPts[32] + anPts[32]
-    slPts[33] = slPts[33] + anPts[33]
-    slPts[34] = slPts[34] + anPts[34]
-    slPts[35] = slPts[35] + anPts[35]
-    slPts[36] = slPts[36] + anPts[36]
-    slPts[37] = slPts[37] + anPts[37]
-    slPts[38] = slPts[38] + anPts[38]
-    slPts[39] = slPts[39] + anPts[39]
-    slPts[40] = slPts[40] + anPts[40]
-    slPts[41] = slPts[41] + anPts[41]
-    slPts[42] = slPts[42] + anPts[42]
-    slPts[43] = slPts[43] + anPts[43]
-    slPts[44] = slPts[44] + anPts[44]
-    slPts[45] = slPts[45] + anPts[45]
-    slPts[46] = slPts[46] + anPts[46]
-    slPts[47] = slPts[47] + anPts[47]
     slPts[48] = slPts[48] + anPts[48]
     slPts[49] = slPts[49] + anPts[49]
     slPts[50] = slPts[50] + anPts[50]
@@ -9358,6 +9360,22 @@ mod paintTick() {
     slPts[61] = slPts[61] + anPts[61]
     slPts[62] = slPts[62] + anPts[62]
     slPts[63] = slPts[63] + anPts[63]
+    slPts[64] = slPts[64] + anPts[64]
+    slPts[65] = slPts[65] + anPts[65]
+    slPts[66] = slPts[66] + anPts[66]
+    slPts[67] = slPts[67] + anPts[67]
+    slPts[68] = slPts[68] + anPts[68]
+    slPts[69] = slPts[69] + anPts[69]
+    slPts[70] = slPts[70] + anPts[70]
+    slPts[71] = slPts[71] + anPts[71]
+    slPts[72] = slPts[72] + anPts[72]
+    slPts[73] = slPts[73] + anPts[73]
+    slPts[74] = slPts[74] + anPts[74]
+    slPts[75] = slPts[75] + anPts[75]
+    slPts[76] = slPts[76] + anPts[76]
+    slPts[77] = slPts[77] + anPts[77]
+    slPts[78] = slPts[78] + anPts[78]
+    slPts[79] = slPts[79] + anPts[79]
     slPC[16] = slPC[16] + anCol[16]
     slPC[17] = slPC[17] + anCol[17]
     slPC[18] = slPC[18] + anCol[18]
@@ -9386,67 +9404,6 @@ mod paintTick() {
   }
   if (anTicks[2.0] > 0.5 || anTicks[2.0] < -0.5) && !rcOn {
     if anTicks[2.0] > 0.5 { anTicks[2.0] = anTicks[2.0] - 1.0 }
-    animDirty = true
-    slPts[64] = slPts[64] + anPts[64]
-    slPts[65] = slPts[65] + anPts[65]
-    slPts[66] = slPts[66] + anPts[66]
-    slPts[67] = slPts[67] + anPts[67]
-    slPts[68] = slPts[68] + anPts[68]
-    slPts[69] = slPts[69] + anPts[69]
-    slPts[70] = slPts[70] + anPts[70]
-    slPts[71] = slPts[71] + anPts[71]
-    slPts[72] = slPts[72] + anPts[72]
-    slPts[73] = slPts[73] + anPts[73]
-    slPts[74] = slPts[74] + anPts[74]
-    slPts[75] = slPts[75] + anPts[75]
-    slPts[76] = slPts[76] + anPts[76]
-    slPts[77] = slPts[77] + anPts[77]
-    slPts[78] = slPts[78] + anPts[78]
-    slPts[79] = slPts[79] + anPts[79]
-    slPts[80] = slPts[80] + anPts[80]
-    slPts[81] = slPts[81] + anPts[81]
-    slPts[82] = slPts[82] + anPts[82]
-    slPts[83] = slPts[83] + anPts[83]
-    slPts[84] = slPts[84] + anPts[84]
-    slPts[85] = slPts[85] + anPts[85]
-    slPts[86] = slPts[86] + anPts[86]
-    slPts[87] = slPts[87] + anPts[87]
-    slPts[88] = slPts[88] + anPts[88]
-    slPts[89] = slPts[89] + anPts[89]
-    slPts[90] = slPts[90] + anPts[90]
-    slPts[91] = slPts[91] + anPts[91]
-    slPts[92] = slPts[92] + anPts[92]
-    slPts[93] = slPts[93] + anPts[93]
-    slPts[94] = slPts[94] + anPts[94]
-    slPts[95] = slPts[95] + anPts[95]
-    slPC[32] = slPC[32] + anCol[32]
-    slPC[33] = slPC[33] + anCol[33]
-    slPC[34] = slPC[34] + anCol[34]
-    slPC[35] = slPC[35] + anCol[35]
-    slPC[36] = slPC[36] + anCol[36]
-    slPC[37] = slPC[37] + anCol[37]
-    slPC[38] = slPC[38] + anCol[38]
-    slPC[39] = slPC[39] + anCol[39]
-    slPC[40] = slPC[40] + anCol[40]
-    slPC[41] = slPC[41] + anCol[41]
-    slPC[42] = slPC[42] + anCol[42]
-    slPC[43] = slPC[43] + anCol[43]
-    slPC[44] = slPC[44] + anCol[44]
-    slPC[45] = slPC[45] + anCol[45]
-    slPC[46] = slPC[46] + anCol[46]
-    slPC[47] = slPC[47] + anCol[47]
-    slXF[12] = slXF[12] + anXF[12]
-    slXF[13] = slXF[13] + anXF[13]
-    slXF[14] = slXF[14] + anXF[14]
-    slXF[15] = slXF[15] + anXF[15]
-    slXF[16] = slXF[16] + anXF[16]
-    slXF2[8] = slXF2[8] + anXF2[8]
-    slXF2[9] = slXF2[9] + anXF2[9]
-    slXF2[10] = slXF2[10] + anXF2[10]
-    slXF2[11] = slXF2[11] + anXF2[11]
-  }
-  if (anTicks[3.0] > 0.5 || anTicks[3.0] < -0.5) && !rcOn {
-    if anTicks[3.0] > 0.5 { anTicks[3.0] = anTicks[3.0] - 1.0 }
     animDirty = true
     slPts[96] = slPts[96] + anPts[96]
     slPts[97] = slPts[97] + anPts[97]
@@ -9480,6 +9437,67 @@ mod paintTick() {
     slPts[125] = slPts[125] + anPts[125]
     slPts[126] = slPts[126] + anPts[126]
     slPts[127] = slPts[127] + anPts[127]
+    slPC[32] = slPC[32] + anCol[32]
+    slPC[33] = slPC[33] + anCol[33]
+    slPC[34] = slPC[34] + anCol[34]
+    slPC[35] = slPC[35] + anCol[35]
+    slPC[36] = slPC[36] + anCol[36]
+    slPC[37] = slPC[37] + anCol[37]
+    slPC[38] = slPC[38] + anCol[38]
+    slPC[39] = slPC[39] + anCol[39]
+    slPC[40] = slPC[40] + anCol[40]
+    slPC[41] = slPC[41] + anCol[41]
+    slPC[42] = slPC[42] + anCol[42]
+    slPC[43] = slPC[43] + anCol[43]
+    slPC[44] = slPC[44] + anCol[44]
+    slPC[45] = slPC[45] + anCol[45]
+    slPC[46] = slPC[46] + anCol[46]
+    slPC[47] = slPC[47] + anCol[47]
+    slXF[12] = slXF[12] + anXF[12]
+    slXF[13] = slXF[13] + anXF[13]
+    slXF[14] = slXF[14] + anXF[14]
+    slXF[15] = slXF[15] + anXF[15]
+    slXF[16] = slXF[16] + anXF[16]
+    slXF2[8] = slXF2[8] + anXF2[8]
+    slXF2[9] = slXF2[9] + anXF2[9]
+    slXF2[10] = slXF2[10] + anXF2[10]
+    slXF2[11] = slXF2[11] + anXF2[11]
+  }
+  if (anTicks[3.0] > 0.5 || anTicks[3.0] < -0.5) && !rcOn {
+    if anTicks[3.0] > 0.5 { anTicks[3.0] = anTicks[3.0] - 1.0 }
+    animDirty = true
+    slPts[144] = slPts[144] + anPts[144]
+    slPts[145] = slPts[145] + anPts[145]
+    slPts[146] = slPts[146] + anPts[146]
+    slPts[147] = slPts[147] + anPts[147]
+    slPts[148] = slPts[148] + anPts[148]
+    slPts[149] = slPts[149] + anPts[149]
+    slPts[150] = slPts[150] + anPts[150]
+    slPts[151] = slPts[151] + anPts[151]
+    slPts[152] = slPts[152] + anPts[152]
+    slPts[153] = slPts[153] + anPts[153]
+    slPts[154] = slPts[154] + anPts[154]
+    slPts[155] = slPts[155] + anPts[155]
+    slPts[156] = slPts[156] + anPts[156]
+    slPts[157] = slPts[157] + anPts[157]
+    slPts[158] = slPts[158] + anPts[158]
+    slPts[159] = slPts[159] + anPts[159]
+    slPts[160] = slPts[160] + anPts[160]
+    slPts[161] = slPts[161] + anPts[161]
+    slPts[162] = slPts[162] + anPts[162]
+    slPts[163] = slPts[163] + anPts[163]
+    slPts[164] = slPts[164] + anPts[164]
+    slPts[165] = slPts[165] + anPts[165]
+    slPts[166] = slPts[166] + anPts[166]
+    slPts[167] = slPts[167] + anPts[167]
+    slPts[168] = slPts[168] + anPts[168]
+    slPts[169] = slPts[169] + anPts[169]
+    slPts[170] = slPts[170] + anPts[170]
+    slPts[171] = slPts[171] + anPts[171]
+    slPts[172] = slPts[172] + anPts[172]
+    slPts[173] = slPts[173] + anPts[173]
+    slPts[174] = slPts[174] + anPts[174]
+    slPts[175] = slPts[175] + anPts[175]
     slPC[48] = slPC[48] + anCol[48]
     slPC[49] = slPC[49] + anCol[49]
     slPC[50] = slPC[50] + anCol[50]
@@ -9508,128 +9526,6 @@ mod paintTick() {
   }
   if (anTicks[4.0] > 0.5 || anTicks[4.0] < -0.5) && !rcOn {
     if anTicks[4.0] > 0.5 { anTicks[4.0] = anTicks[4.0] - 1.0 }
-    animDirty = true
-    slPts[128] = slPts[128] + anPts[128]
-    slPts[129] = slPts[129] + anPts[129]
-    slPts[130] = slPts[130] + anPts[130]
-    slPts[131] = slPts[131] + anPts[131]
-    slPts[132] = slPts[132] + anPts[132]
-    slPts[133] = slPts[133] + anPts[133]
-    slPts[134] = slPts[134] + anPts[134]
-    slPts[135] = slPts[135] + anPts[135]
-    slPts[136] = slPts[136] + anPts[136]
-    slPts[137] = slPts[137] + anPts[137]
-    slPts[138] = slPts[138] + anPts[138]
-    slPts[139] = slPts[139] + anPts[139]
-    slPts[140] = slPts[140] + anPts[140]
-    slPts[141] = slPts[141] + anPts[141]
-    slPts[142] = slPts[142] + anPts[142]
-    slPts[143] = slPts[143] + anPts[143]
-    slPts[144] = slPts[144] + anPts[144]
-    slPts[145] = slPts[145] + anPts[145]
-    slPts[146] = slPts[146] + anPts[146]
-    slPts[147] = slPts[147] + anPts[147]
-    slPts[148] = slPts[148] + anPts[148]
-    slPts[149] = slPts[149] + anPts[149]
-    slPts[150] = slPts[150] + anPts[150]
-    slPts[151] = slPts[151] + anPts[151]
-    slPts[152] = slPts[152] + anPts[152]
-    slPts[153] = slPts[153] + anPts[153]
-    slPts[154] = slPts[154] + anPts[154]
-    slPts[155] = slPts[155] + anPts[155]
-    slPts[156] = slPts[156] + anPts[156]
-    slPts[157] = slPts[157] + anPts[157]
-    slPts[158] = slPts[158] + anPts[158]
-    slPts[159] = slPts[159] + anPts[159]
-    slPC[64] = slPC[64] + anCol[64]
-    slPC[65] = slPC[65] + anCol[65]
-    slPC[66] = slPC[66] + anCol[66]
-    slPC[67] = slPC[67] + anCol[67]
-    slPC[68] = slPC[68] + anCol[68]
-    slPC[69] = slPC[69] + anCol[69]
-    slPC[70] = slPC[70] + anCol[70]
-    slPC[71] = slPC[71] + anCol[71]
-    slPC[72] = slPC[72] + anCol[72]
-    slPC[73] = slPC[73] + anCol[73]
-    slPC[74] = slPC[74] + anCol[74]
-    slPC[75] = slPC[75] + anCol[75]
-    slPC[76] = slPC[76] + anCol[76]
-    slPC[77] = slPC[77] + anCol[77]
-    slPC[78] = slPC[78] + anCol[78]
-    slPC[79] = slPC[79] + anCol[79]
-    slXF[24] = slXF[24] + anXF[24]
-    slXF[25] = slXF[25] + anXF[25]
-    slXF[26] = slXF[26] + anXF[26]
-    slXF[27] = slXF[27] + anXF[27]
-    slXF[28] = slXF[28] + anXF[28]
-    slXF2[16] = slXF2[16] + anXF2[16]
-    slXF2[17] = slXF2[17] + anXF2[17]
-    slXF2[18] = slXF2[18] + anXF2[18]
-    slXF2[19] = slXF2[19] + anXF2[19]
-  }
-  if (anTicks[5.0] > 0.5 || anTicks[5.0] < -0.5) && !rcOn {
-    if anTicks[5.0] > 0.5 { anTicks[5.0] = anTicks[5.0] - 1.0 }
-    animDirty = true
-    slPts[160] = slPts[160] + anPts[160]
-    slPts[161] = slPts[161] + anPts[161]
-    slPts[162] = slPts[162] + anPts[162]
-    slPts[163] = slPts[163] + anPts[163]
-    slPts[164] = slPts[164] + anPts[164]
-    slPts[165] = slPts[165] + anPts[165]
-    slPts[166] = slPts[166] + anPts[166]
-    slPts[167] = slPts[167] + anPts[167]
-    slPts[168] = slPts[168] + anPts[168]
-    slPts[169] = slPts[169] + anPts[169]
-    slPts[170] = slPts[170] + anPts[170]
-    slPts[171] = slPts[171] + anPts[171]
-    slPts[172] = slPts[172] + anPts[172]
-    slPts[173] = slPts[173] + anPts[173]
-    slPts[174] = slPts[174] + anPts[174]
-    slPts[175] = slPts[175] + anPts[175]
-    slPts[176] = slPts[176] + anPts[176]
-    slPts[177] = slPts[177] + anPts[177]
-    slPts[178] = slPts[178] + anPts[178]
-    slPts[179] = slPts[179] + anPts[179]
-    slPts[180] = slPts[180] + anPts[180]
-    slPts[181] = slPts[181] + anPts[181]
-    slPts[182] = slPts[182] + anPts[182]
-    slPts[183] = slPts[183] + anPts[183]
-    slPts[184] = slPts[184] + anPts[184]
-    slPts[185] = slPts[185] + anPts[185]
-    slPts[186] = slPts[186] + anPts[186]
-    slPts[187] = slPts[187] + anPts[187]
-    slPts[188] = slPts[188] + anPts[188]
-    slPts[189] = slPts[189] + anPts[189]
-    slPts[190] = slPts[190] + anPts[190]
-    slPts[191] = slPts[191] + anPts[191]
-    slPC[80] = slPC[80] + anCol[80]
-    slPC[81] = slPC[81] + anCol[81]
-    slPC[82] = slPC[82] + anCol[82]
-    slPC[83] = slPC[83] + anCol[83]
-    slPC[84] = slPC[84] + anCol[84]
-    slPC[85] = slPC[85] + anCol[85]
-    slPC[86] = slPC[86] + anCol[86]
-    slPC[87] = slPC[87] + anCol[87]
-    slPC[88] = slPC[88] + anCol[88]
-    slPC[89] = slPC[89] + anCol[89]
-    slPC[90] = slPC[90] + anCol[90]
-    slPC[91] = slPC[91] + anCol[91]
-    slPC[92] = slPC[92] + anCol[92]
-    slPC[93] = slPC[93] + anCol[93]
-    slPC[94] = slPC[94] + anCol[94]
-    slPC[95] = slPC[95] + anCol[95]
-    slXF[30] = slXF[30] + anXF[30]
-    slXF[31] = slXF[31] + anXF[31]
-    slXF[32] = slXF[32] + anXF[32]
-    slXF[33] = slXF[33] + anXF[33]
-    slXF[34] = slXF[34] + anXF[34]
-    slXF2[20] = slXF2[20] + anXF2[20]
-    slXF2[21] = slXF2[21] + anXF2[21]
-    slXF2[22] = slXF2[22] + anXF2[22]
-    slXF2[23] = slXF2[23] + anXF2[23]
-  }
-  if (anTicks[6.0] > 0.5 || anTicks[6.0] < -0.5) && !rcOn {
-    if anTicks[6.0] > 0.5 { anTicks[6.0] = anTicks[6.0] - 1.0 }
     animDirty = true
     slPts[192] = slPts[192] + anPts[192]
     slPts[193] = slPts[193] + anPts[193]
@@ -9663,6 +9559,128 @@ mod paintTick() {
     slPts[221] = slPts[221] + anPts[221]
     slPts[222] = slPts[222] + anPts[222]
     slPts[223] = slPts[223] + anPts[223]
+    slPC[64] = slPC[64] + anCol[64]
+    slPC[65] = slPC[65] + anCol[65]
+    slPC[66] = slPC[66] + anCol[66]
+    slPC[67] = slPC[67] + anCol[67]
+    slPC[68] = slPC[68] + anCol[68]
+    slPC[69] = slPC[69] + anCol[69]
+    slPC[70] = slPC[70] + anCol[70]
+    slPC[71] = slPC[71] + anCol[71]
+    slPC[72] = slPC[72] + anCol[72]
+    slPC[73] = slPC[73] + anCol[73]
+    slPC[74] = slPC[74] + anCol[74]
+    slPC[75] = slPC[75] + anCol[75]
+    slPC[76] = slPC[76] + anCol[76]
+    slPC[77] = slPC[77] + anCol[77]
+    slPC[78] = slPC[78] + anCol[78]
+    slPC[79] = slPC[79] + anCol[79]
+    slXF[24] = slXF[24] + anXF[24]
+    slXF[25] = slXF[25] + anXF[25]
+    slXF[26] = slXF[26] + anXF[26]
+    slXF[27] = slXF[27] + anXF[27]
+    slXF[28] = slXF[28] + anXF[28]
+    slXF2[16] = slXF2[16] + anXF2[16]
+    slXF2[17] = slXF2[17] + anXF2[17]
+    slXF2[18] = slXF2[18] + anXF2[18]
+    slXF2[19] = slXF2[19] + anXF2[19]
+  }
+  if (anTicks[5.0] > 0.5 || anTicks[5.0] < -0.5) && !rcOn {
+    if anTicks[5.0] > 0.5 { anTicks[5.0] = anTicks[5.0] - 1.0 }
+    animDirty = true
+    slPts[240] = slPts[240] + anPts[240]
+    slPts[241] = slPts[241] + anPts[241]
+    slPts[242] = slPts[242] + anPts[242]
+    slPts[243] = slPts[243] + anPts[243]
+    slPts[244] = slPts[244] + anPts[244]
+    slPts[245] = slPts[245] + anPts[245]
+    slPts[246] = slPts[246] + anPts[246]
+    slPts[247] = slPts[247] + anPts[247]
+    slPts[248] = slPts[248] + anPts[248]
+    slPts[249] = slPts[249] + anPts[249]
+    slPts[250] = slPts[250] + anPts[250]
+    slPts[251] = slPts[251] + anPts[251]
+    slPts[252] = slPts[252] + anPts[252]
+    slPts[253] = slPts[253] + anPts[253]
+    slPts[254] = slPts[254] + anPts[254]
+    slPts[255] = slPts[255] + anPts[255]
+    slPts[256] = slPts[256] + anPts[256]
+    slPts[257] = slPts[257] + anPts[257]
+    slPts[258] = slPts[258] + anPts[258]
+    slPts[259] = slPts[259] + anPts[259]
+    slPts[260] = slPts[260] + anPts[260]
+    slPts[261] = slPts[261] + anPts[261]
+    slPts[262] = slPts[262] + anPts[262]
+    slPts[263] = slPts[263] + anPts[263]
+    slPts[264] = slPts[264] + anPts[264]
+    slPts[265] = slPts[265] + anPts[265]
+    slPts[266] = slPts[266] + anPts[266]
+    slPts[267] = slPts[267] + anPts[267]
+    slPts[268] = slPts[268] + anPts[268]
+    slPts[269] = slPts[269] + anPts[269]
+    slPts[270] = slPts[270] + anPts[270]
+    slPts[271] = slPts[271] + anPts[271]
+    slPC[80] = slPC[80] + anCol[80]
+    slPC[81] = slPC[81] + anCol[81]
+    slPC[82] = slPC[82] + anCol[82]
+    slPC[83] = slPC[83] + anCol[83]
+    slPC[84] = slPC[84] + anCol[84]
+    slPC[85] = slPC[85] + anCol[85]
+    slPC[86] = slPC[86] + anCol[86]
+    slPC[87] = slPC[87] + anCol[87]
+    slPC[88] = slPC[88] + anCol[88]
+    slPC[89] = slPC[89] + anCol[89]
+    slPC[90] = slPC[90] + anCol[90]
+    slPC[91] = slPC[91] + anCol[91]
+    slPC[92] = slPC[92] + anCol[92]
+    slPC[93] = slPC[93] + anCol[93]
+    slPC[94] = slPC[94] + anCol[94]
+    slPC[95] = slPC[95] + anCol[95]
+    slXF[30] = slXF[30] + anXF[30]
+    slXF[31] = slXF[31] + anXF[31]
+    slXF[32] = slXF[32] + anXF[32]
+    slXF[33] = slXF[33] + anXF[33]
+    slXF[34] = slXF[34] + anXF[34]
+    slXF2[20] = slXF2[20] + anXF2[20]
+    slXF2[21] = slXF2[21] + anXF2[21]
+    slXF2[22] = slXF2[22] + anXF2[22]
+    slXF2[23] = slXF2[23] + anXF2[23]
+  }
+  if (anTicks[6.0] > 0.5 || anTicks[6.0] < -0.5) && !rcOn {
+    if anTicks[6.0] > 0.5 { anTicks[6.0] = anTicks[6.0] - 1.0 }
+    animDirty = true
+    slPts[288] = slPts[288] + anPts[288]
+    slPts[289] = slPts[289] + anPts[289]
+    slPts[290] = slPts[290] + anPts[290]
+    slPts[291] = slPts[291] + anPts[291]
+    slPts[292] = slPts[292] + anPts[292]
+    slPts[293] = slPts[293] + anPts[293]
+    slPts[294] = slPts[294] + anPts[294]
+    slPts[295] = slPts[295] + anPts[295]
+    slPts[296] = slPts[296] + anPts[296]
+    slPts[297] = slPts[297] + anPts[297]
+    slPts[298] = slPts[298] + anPts[298]
+    slPts[299] = slPts[299] + anPts[299]
+    slPts[300] = slPts[300] + anPts[300]
+    slPts[301] = slPts[301] + anPts[301]
+    slPts[302] = slPts[302] + anPts[302]
+    slPts[303] = slPts[303] + anPts[303]
+    slPts[304] = slPts[304] + anPts[304]
+    slPts[305] = slPts[305] + anPts[305]
+    slPts[306] = slPts[306] + anPts[306]
+    slPts[307] = slPts[307] + anPts[307]
+    slPts[308] = slPts[308] + anPts[308]
+    slPts[309] = slPts[309] + anPts[309]
+    slPts[310] = slPts[310] + anPts[310]
+    slPts[311] = slPts[311] + anPts[311]
+    slPts[312] = slPts[312] + anPts[312]
+    slPts[313] = slPts[313] + anPts[313]
+    slPts[314] = slPts[314] + anPts[314]
+    slPts[315] = slPts[315] + anPts[315]
+    slPts[316] = slPts[316] + anPts[316]
+    slPts[317] = slPts[317] + anPts[317]
+    slPts[318] = slPts[318] + anPts[318]
+    slPts[319] = slPts[319] + anPts[319]
     slPC[96] = slPC[96] + anCol[96]
     slPC[97] = slPC[97] + anCol[97]
     slPC[98] = slPC[98] + anCol[98]
@@ -9692,38 +9710,38 @@ mod paintTick() {
   if (anTicks[7.0] > 0.5 || anTicks[7.0] < -0.5) && !rcOn {
     if anTicks[7.0] > 0.5 { anTicks[7.0] = anTicks[7.0] - 1.0 }
     animDirty = true
-    slPts[224] = slPts[224] + anPts[224]
-    slPts[225] = slPts[225] + anPts[225]
-    slPts[226] = slPts[226] + anPts[226]
-    slPts[227] = slPts[227] + anPts[227]
-    slPts[228] = slPts[228] + anPts[228]
-    slPts[229] = slPts[229] + anPts[229]
-    slPts[230] = slPts[230] + anPts[230]
-    slPts[231] = slPts[231] + anPts[231]
-    slPts[232] = slPts[232] + anPts[232]
-    slPts[233] = slPts[233] + anPts[233]
-    slPts[234] = slPts[234] + anPts[234]
-    slPts[235] = slPts[235] + anPts[235]
-    slPts[236] = slPts[236] + anPts[236]
-    slPts[237] = slPts[237] + anPts[237]
-    slPts[238] = slPts[238] + anPts[238]
-    slPts[239] = slPts[239] + anPts[239]
-    slPts[240] = slPts[240] + anPts[240]
-    slPts[241] = slPts[241] + anPts[241]
-    slPts[242] = slPts[242] + anPts[242]
-    slPts[243] = slPts[243] + anPts[243]
-    slPts[244] = slPts[244] + anPts[244]
-    slPts[245] = slPts[245] + anPts[245]
-    slPts[246] = slPts[246] + anPts[246]
-    slPts[247] = slPts[247] + anPts[247]
-    slPts[248] = slPts[248] + anPts[248]
-    slPts[249] = slPts[249] + anPts[249]
-    slPts[250] = slPts[250] + anPts[250]
-    slPts[251] = slPts[251] + anPts[251]
-    slPts[252] = slPts[252] + anPts[252]
-    slPts[253] = slPts[253] + anPts[253]
-    slPts[254] = slPts[254] + anPts[254]
-    slPts[255] = slPts[255] + anPts[255]
+    slPts[336] = slPts[336] + anPts[336]
+    slPts[337] = slPts[337] + anPts[337]
+    slPts[338] = slPts[338] + anPts[338]
+    slPts[339] = slPts[339] + anPts[339]
+    slPts[340] = slPts[340] + anPts[340]
+    slPts[341] = slPts[341] + anPts[341]
+    slPts[342] = slPts[342] + anPts[342]
+    slPts[343] = slPts[343] + anPts[343]
+    slPts[344] = slPts[344] + anPts[344]
+    slPts[345] = slPts[345] + anPts[345]
+    slPts[346] = slPts[346] + anPts[346]
+    slPts[347] = slPts[347] + anPts[347]
+    slPts[348] = slPts[348] + anPts[348]
+    slPts[349] = slPts[349] + anPts[349]
+    slPts[350] = slPts[350] + anPts[350]
+    slPts[351] = slPts[351] + anPts[351]
+    slPts[352] = slPts[352] + anPts[352]
+    slPts[353] = slPts[353] + anPts[353]
+    slPts[354] = slPts[354] + anPts[354]
+    slPts[355] = slPts[355] + anPts[355]
+    slPts[356] = slPts[356] + anPts[356]
+    slPts[357] = slPts[357] + anPts[357]
+    slPts[358] = slPts[358] + anPts[358]
+    slPts[359] = slPts[359] + anPts[359]
+    slPts[360] = slPts[360] + anPts[360]
+    slPts[361] = slPts[361] + anPts[361]
+    slPts[362] = slPts[362] + anPts[362]
+    slPts[363] = slPts[363] + anPts[363]
+    slPts[364] = slPts[364] + anPts[364]
+    slPts[365] = slPts[365] + anPts[365]
+    slPts[366] = slPts[366] + anPts[366]
+    slPts[367] = slPts[367] + anPts[367]
     slPC[112] = slPC[112] + anCol[112]
     slPC[113] = slPC[113] + anCol[113]
     slPC[114] = slPC[114] + anCol[114]
@@ -10030,7 +10048,7 @@ mod paintTick() {
   if qPush {
     qPush = false
     let e = if qCount > 7.0 then 7.0 else qCount
-    let pb = e * 32.0
+    let pb = e * 48.0
     let cb = e * 16.0
     let xb = e * 6.0
     let xb2 = e * 4.0
@@ -10082,7 +10100,7 @@ mod paintTick() {
     qCol[cb + 13.0] = if shapeColors.length() > 13 then shapeColors[13] else Color(1.0, 1.0, 1.0, 1.0)
     qCol[cb + 14.0] = if shapeColors.length() > 14 then shapeColors[14] else Color(1.0, 1.0, 1.0, 1.0)
     qCol[cb + 15.0] = if shapeColors.length() > 15 then shapeColors[15] else Color(1.0, 1.0, 1.0, 1.0)
-    qN[e] = if pIs3 > 0.5 then (if shapePoints.length() / 3.0 > 10.0 then 10.0 else (shapePoints.length() / 3.0) | 0) else (if (shapePoints.length() / 2.0) > 16.0 then 16.0 else (shapePoints.length() / 2.0) | 0)
+    qN[e] = if shapePoints.length() / 3.0 > 16.0 then 16.0 else (shapePoints.length() / 3.0) | 0
     qIs3[e] = pIs3
     qMode[e] = if pWire then 1.0 else 0.0
     qId[e] = pId
@@ -10109,11 +10127,11 @@ mod paintTick() {
       if qe < qCount {
         let ne = qN[qe]
         let nslot = if qId[qe] < 0.5 then 8.0 else qId[qe] - 1.0
-        let nsb = nslot * 32.0
+        let nsb = nslot * 48.0
         let ncb = nslot * 16.0
         let nxb = nslot * 6.0
         let mxb = nslot * 4.0
-        let epb = qe * 32.0
+        let epb = qe * 48.0
         let ecb = qe * 16.0
         let exb = qe * 6.0
         let mxe = qe * 4.0
@@ -10792,12 +10810,12 @@ mod paintTick() {
     slLive[8] = 0.0
     n = (shapePoints.length() / (if pIs3 > 0.5 then 3.0 else 2.0)) | 0
     if pIs3 > 0.5 {
-      if n > 10.0 { n = 10.0 }
+      if n > 16.0 { n = 16.0 }
     } else {
       if n > 16.0 { n = 16.0 }
     }
     let slot = (pId - 1.0) | 0
-    let sbase = slot * 32.0
+    let sbase = slot * 48.0
     let lim = if pIs3 > 0.5 then n * 3.0 else n * 2.0
     let cbase = slot * 16.0
     let xbase = slot * 6.0
@@ -10908,6 +10926,22 @@ mod paintTick() {
       slPts[sbase + 29.0] = shapePoints[29]
       slPts[sbase + 30.0] = shapePoints[30]
       slPts[sbase + 31.0] = shapePoints[31]
+      slPts[sbase + 32.0] = shapePoints[32]
+      slPts[sbase + 33.0] = shapePoints[33]
+      slPts[sbase + 34.0] = shapePoints[34]
+      slPts[sbase + 35.0] = shapePoints[35]
+      slPts[sbase + 36.0] = shapePoints[36]
+      slPts[sbase + 37.0] = shapePoints[37]
+      slPts[sbase + 38.0] = shapePoints[38]
+      slPts[sbase + 39.0] = shapePoints[39]
+      slPts[sbase + 40.0] = shapePoints[40]
+      slPts[sbase + 41.0] = shapePoints[41]
+      slPts[sbase + 42.0] = shapePoints[42]
+      slPts[sbase + 43.0] = shapePoints[43]
+      slPts[sbase + 44.0] = shapePoints[44]
+      slPts[sbase + 45.0] = shapePoints[45]
+      slPts[sbase + 46.0] = shapePoints[46]
+      slPts[sbase + 47.0] = shapePoints[47]
       slPC[cbase + 0.0] = if shapeColors.length() > 0 then shapeColors[0] else Color(1.0, 1.0, 1.0, 1.0)
       slPC[cbase + 1.0] = if shapeColors.length() > 1 then shapeColors[1] else Color(1.0, 1.0, 1.0, 1.0)
       slPC[cbase + 2.0] = if shapeColors.length() > 2 then shapeColors[2] else Color(1.0, 1.0, 1.0, 1.0)
@@ -11929,38 +11963,54 @@ mod paintTick() {
       if ff > 8.0 {
         rcSlot = 10.0
       } else {
-        shPts[0] = slPts[ff * 32 + 0.0]
-        shPts[1] = slPts[ff * 32 + 1.0]
-        shPts[2] = slPts[ff * 32 + 2.0]
-        shPts[3] = slPts[ff * 32 + 3.0]
-        shPts[4] = slPts[ff * 32 + 4.0]
-        shPts[5] = slPts[ff * 32 + 5.0]
-        shPts[6] = slPts[ff * 32 + 6.0]
-        shPts[7] = slPts[ff * 32 + 7.0]
-        shPts[8] = slPts[ff * 32 + 8.0]
-        shPts[9] = slPts[ff * 32 + 9.0]
-        shPts[10] = slPts[ff * 32 + 10.0]
-        shPts[11] = slPts[ff * 32 + 11.0]
-        shPts[12] = slPts[ff * 32 + 12.0]
-        shPts[13] = slPts[ff * 32 + 13.0]
-        shPts[14] = slPts[ff * 32 + 14.0]
-        shPts[15] = slPts[ff * 32 + 15.0]
-        shPts[16] = slPts[ff * 32 + 16.0]
-        shPts[17] = slPts[ff * 32 + 17.0]
-        shPts[18] = slPts[ff * 32 + 18.0]
-        shPts[19] = slPts[ff * 32 + 19.0]
-        shPts[20] = slPts[ff * 32 + 20.0]
-        shPts[21] = slPts[ff * 32 + 21.0]
-        shPts[22] = slPts[ff * 32 + 22.0]
-        shPts[23] = slPts[ff * 32 + 23.0]
-        shPts[24] = slPts[ff * 32 + 24.0]
-        shPts[25] = slPts[ff * 32 + 25.0]
-        shPts[26] = slPts[ff * 32 + 26.0]
-        shPts[27] = slPts[ff * 32 + 27.0]
-        shPts[28] = slPts[ff * 32 + 28.0]
-        shPts[29] = slPts[ff * 32 + 29.0]
-        shPts[30] = slPts[ff * 32 + 30.0]
-        shPts[31] = slPts[ff * 32 + 31.0]
+        shPts[0] = slPts[ff * 48 + 0.0]
+        shPts[1] = slPts[ff * 48 + 1.0]
+        shPts[2] = slPts[ff * 48 + 2.0]
+        shPts[3] = slPts[ff * 48 + 3.0]
+        shPts[4] = slPts[ff * 48 + 4.0]
+        shPts[5] = slPts[ff * 48 + 5.0]
+        shPts[6] = slPts[ff * 48 + 6.0]
+        shPts[7] = slPts[ff * 48 + 7.0]
+        shPts[8] = slPts[ff * 48 + 8.0]
+        shPts[9] = slPts[ff * 48 + 9.0]
+        shPts[10] = slPts[ff * 48 + 10.0]
+        shPts[11] = slPts[ff * 48 + 11.0]
+        shPts[12] = slPts[ff * 48 + 12.0]
+        shPts[13] = slPts[ff * 48 + 13.0]
+        shPts[14] = slPts[ff * 48 + 14.0]
+        shPts[15] = slPts[ff * 48 + 15.0]
+        shPts[16] = slPts[ff * 48 + 16.0]
+        shPts[17] = slPts[ff * 48 + 17.0]
+        shPts[18] = slPts[ff * 48 + 18.0]
+        shPts[19] = slPts[ff * 48 + 19.0]
+        shPts[20] = slPts[ff * 48 + 20.0]
+        shPts[21] = slPts[ff * 48 + 21.0]
+        shPts[22] = slPts[ff * 48 + 22.0]
+        shPts[23] = slPts[ff * 48 + 23.0]
+        shPts[24] = slPts[ff * 48 + 24.0]
+        shPts[25] = slPts[ff * 48 + 25.0]
+        shPts[26] = slPts[ff * 48 + 26.0]
+        shPts[27] = slPts[ff * 48 + 27.0]
+        shPts[28] = slPts[ff * 48 + 28.0]
+        shPts[29] = slPts[ff * 48 + 29.0]
+        shPts[30] = slPts[ff * 48 + 30.0]
+        shPts[31] = slPts[ff * 48 + 31.0]
+        shPts[32] = slPts[ff * 48 + 32.0]
+        shPts[33] = slPts[ff * 48 + 33.0]
+        shPts[34] = slPts[ff * 48 + 34.0]
+        shPts[35] = slPts[ff * 48 + 35.0]
+        shPts[36] = slPts[ff * 48 + 36.0]
+        shPts[37] = slPts[ff * 48 + 37.0]
+        shPts[38] = slPts[ff * 48 + 38.0]
+        shPts[39] = slPts[ff * 48 + 39.0]
+        shPts[40] = slPts[ff * 48 + 40.0]
+        shPts[41] = slPts[ff * 48 + 41.0]
+        shPts[42] = slPts[ff * 48 + 42.0]
+        shPts[43] = slPts[ff * 48 + 43.0]
+        shPts[44] = slPts[ff * 48 + 44.0]
+        shPts[45] = slPts[ff * 48 + 45.0]
+        shPts[46] = slPts[ff * 48 + 46.0]
+        shPts[47] = slPts[ff * 48 + 47.0]
         n = slCount[ff]
         shIs3 = slIs3[ff]
         sSegs = n
@@ -12030,6 +12080,22 @@ mod paintTick() {
       shPts[29] = shapePoints[29]
       shPts[30] = shapePoints[30]
       shPts[31] = shapePoints[31]
+      shPts[32] = shapePoints[32]
+      shPts[33] = shapePoints[33]
+      shPts[34] = shapePoints[34]
+      shPts[35] = shapePoints[35]
+      shPts[36] = shapePoints[36]
+      shPts[37] = shapePoints[37]
+      shPts[38] = shapePoints[38]
+      shPts[39] = shapePoints[39]
+      shPts[40] = shapePoints[40]
+      shPts[41] = shapePoints[41]
+      shPts[42] = shapePoints[42]
+      shPts[43] = shapePoints[43]
+      shPts[44] = shapePoints[44]
+      shPts[45] = shapePoints[45]
+      shPts[46] = shapePoints[46]
+      shPts[47] = shapePoints[47]
       pC0 = if shapeColors.length() > 0 then shapeColors[0] else Color(1.0, 1.0, 1.0, 1.0)
       pC1 = if shapeColors.length() > 1 then shapeColors[1] else Color(1.0, 1.0, 1.0, 1.0)
       pC2 = if shapeColors.length() > 2 then shapeColors[2] else Color(1.0, 1.0, 1.0, 1.0)
@@ -12330,90 +12396,6 @@ mod paintTick() {
       } else {
         cur = 0.0
       }
-      if tilt3d < 0.5 && shIs3 < 0.5 {
-        let ct = cos(wr)
-        let st = sin(wr)
-        let ox0 = shPts[0] * wsx
-        let oy0 = shPts[1] * wsy
-        shPts[0] = wpx + ((ox0 * ct) - (oy0 * st))
-        shPts[1] = wpy + ((ox0 * st) + (oy0 * ct))
-        shPz[0] = wpz
-        let ox1 = shPts[2] * wsx
-        let oy1 = shPts[3] * wsy
-        shPts[2] = wpx + ((ox1 * ct) - (oy1 * st))
-        shPts[3] = wpy + ((ox1 * st) + (oy1 * ct))
-        shPz[1] = wpz
-        let ox2 = shPts[4] * wsx
-        let oy2 = shPts[5] * wsy
-        shPts[4] = wpx + ((ox2 * ct) - (oy2 * st))
-        shPts[5] = wpy + ((ox2 * st) + (oy2 * ct))
-        shPz[2] = wpz
-        let ox3 = shPts[6] * wsx
-        let oy3 = shPts[7] * wsy
-        shPts[6] = wpx + ((ox3 * ct) - (oy3 * st))
-        shPts[7] = wpy + ((ox3 * st) + (oy3 * ct))
-        shPz[3] = wpz
-        let ox4 = shPts[8] * wsx
-        let oy4 = shPts[9] * wsy
-        shPts[8] = wpx + ((ox4 * ct) - (oy4 * st))
-        shPts[9] = wpy + ((ox4 * st) + (oy4 * ct))
-        shPz[4] = wpz
-        let ox5 = shPts[10] * wsx
-        let oy5 = shPts[11] * wsy
-        shPts[10] = wpx + ((ox5 * ct) - (oy5 * st))
-        shPts[11] = wpy + ((ox5 * st) + (oy5 * ct))
-        shPz[5] = wpz
-        let ox6 = shPts[12] * wsx
-        let oy6 = shPts[13] * wsy
-        shPts[12] = wpx + ((ox6 * ct) - (oy6 * st))
-        shPts[13] = wpy + ((ox6 * st) + (oy6 * ct))
-        shPz[6] = wpz
-        let ox7 = shPts[14] * wsx
-        let oy7 = shPts[15] * wsy
-        shPts[14] = wpx + ((ox7 * ct) - (oy7 * st))
-        shPts[15] = wpy + ((ox7 * st) + (oy7 * ct))
-        shPz[7] = wpz
-        let ox8 = shPts[16] * wsx
-        let oy8 = shPts[17] * wsy
-        shPts[16] = wpx + ((ox8 * ct) - (oy8 * st))
-        shPts[17] = wpy + ((ox8 * st) + (oy8 * ct))
-        shPz[8] = wpz
-        let ox9 = shPts[18] * wsx
-        let oy9 = shPts[19] * wsy
-        shPts[18] = wpx + ((ox9 * ct) - (oy9 * st))
-        shPts[19] = wpy + ((ox9 * st) + (oy9 * ct))
-        shPz[9] = wpz
-        let ox10 = shPts[20] * wsx
-        let oy10 = shPts[21] * wsy
-        shPts[20] = wpx + ((ox10 * ct) - (oy10 * st))
-        shPts[21] = wpy + ((ox10 * st) + (oy10 * ct))
-        shPz[10] = wpz
-        let ox11 = shPts[22] * wsx
-        let oy11 = shPts[23] * wsy
-        shPts[22] = wpx + ((ox11 * ct) - (oy11 * st))
-        shPts[23] = wpy + ((ox11 * st) + (oy11 * ct))
-        shPz[11] = wpz
-        let ox12 = shPts[24] * wsx
-        let oy12 = shPts[25] * wsy
-        shPts[24] = wpx + ((ox12 * ct) - (oy12 * st))
-        shPts[25] = wpy + ((ox12 * st) + (oy12 * ct))
-        shPz[12] = wpz
-        let ox13 = shPts[26] * wsx
-        let oy13 = shPts[27] * wsy
-        shPts[26] = wpx + ((ox13 * ct) - (oy13 * st))
-        shPts[27] = wpy + ((ox13 * st) + (oy13 * ct))
-        shPz[13] = wpz
-        let ox14 = shPts[28] * wsx
-        let oy14 = shPts[29] * wsy
-        shPts[28] = wpx + ((ox14 * ct) - (oy14 * st))
-        shPts[29] = wpy + ((ox14 * st) + (oy14 * ct))
-        shPz[14] = wpz
-        let ox15 = shPts[30] * wsx
-        let oy15 = shPts[31] * wsy
-        shPts[30] = wpx + ((ox15 * ct) - (oy15 * st))
-        shPts[31] = wpy + ((ox15 * st) + (oy15 * ct))
-        shPz[15] = wpz
-      } else {
         let mcx = cos(pRot.x)
         let msx = sin(pRot.x)
         let mcy = cos(pRot.y)
@@ -13083,16 +13065,15 @@ mod paintTick() {
         } else {
           cur = 0.0
         }
-        if shIs3 > 0.5 {
           let ux0 = shPts[0]
           let uy0 = shPts[1]
           let uz0 = shPts[2]
           let wx0 = m00 * ux0 + m01 * uy0 + m02 * uz0 + m03
           let wy0 = m10 * ux0 + m11 * uy0 + m12 * uz0 + m13
           let wz0 = m20 * ux0 + m21 * uy0 + m22 * uz0 + m23
-          let wd0 = if EYE + wz0 < 1.0 then 1.0 else EYE + wz0
-          shPts[0] = EYE * wx0 / wd0
-          shPts[1] = EYE * wy0 / wd0
+          let wd0 = if EYE - wz0 < 1.0 then 1.0 else EYE - wz0
+          shPts[0] = EYE * (wx0 - EYE_X) / wd0 + EYE_X
+          shPts[1] = EYE * (wy0 - EYE_Y) / wd0 + EYE_Y
           shPz[0] = wz0
           let ux1 = shPts[3]
           let uy1 = shPts[4]
@@ -13100,9 +13081,9 @@ mod paintTick() {
           let wx1 = m00 * ux1 + m01 * uy1 + m02 * uz1 + m03
           let wy1 = m10 * ux1 + m11 * uy1 + m12 * uz1 + m13
           let wz1 = m20 * ux1 + m21 * uy1 + m22 * uz1 + m23
-          let wd1 = if EYE + wz1 < 1.0 then 1.0 else EYE + wz1
-          shPts[2] = EYE * wx1 / wd1
-          shPts[3] = EYE * wy1 / wd1
+          let wd1 = if EYE - wz1 < 1.0 then 1.0 else EYE - wz1
+          shPts[2] = EYE * (wx1 - EYE_X) / wd1 + EYE_X
+          shPts[3] = EYE * (wy1 - EYE_Y) / wd1 + EYE_Y
           shPz[1] = wz1
           let ux2 = shPts[6]
           let uy2 = shPts[7]
@@ -13110,9 +13091,9 @@ mod paintTick() {
           let wx2 = m00 * ux2 + m01 * uy2 + m02 * uz2 + m03
           let wy2 = m10 * ux2 + m11 * uy2 + m12 * uz2 + m13
           let wz2 = m20 * ux2 + m21 * uy2 + m22 * uz2 + m23
-          let wd2 = if EYE + wz2 < 1.0 then 1.0 else EYE + wz2
-          shPts[4] = EYE * wx2 / wd2
-          shPts[5] = EYE * wy2 / wd2
+          let wd2 = if EYE - wz2 < 1.0 then 1.0 else EYE - wz2
+          shPts[4] = EYE * (wx2 - EYE_X) / wd2 + EYE_X
+          shPts[5] = EYE * (wy2 - EYE_Y) / wd2 + EYE_Y
           shPz[2] = wz2
           let ux3 = shPts[9]
           let uy3 = shPts[10]
@@ -13120,9 +13101,9 @@ mod paintTick() {
           let wx3 = m00 * ux3 + m01 * uy3 + m02 * uz3 + m03
           let wy3 = m10 * ux3 + m11 * uy3 + m12 * uz3 + m13
           let wz3 = m20 * ux3 + m21 * uy3 + m22 * uz3 + m23
-          let wd3 = if EYE + wz3 < 1.0 then 1.0 else EYE + wz3
-          shPts[6] = EYE * wx3 / wd3
-          shPts[7] = EYE * wy3 / wd3
+          let wd3 = if EYE - wz3 < 1.0 then 1.0 else EYE - wz3
+          shPts[6] = EYE * (wx3 - EYE_X) / wd3 + EYE_X
+          shPts[7] = EYE * (wy3 - EYE_Y) / wd3 + EYE_Y
           shPz[3] = wz3
           let ux4 = shPts[12]
           let uy4 = shPts[13]
@@ -13130,9 +13111,9 @@ mod paintTick() {
           let wx4 = m00 * ux4 + m01 * uy4 + m02 * uz4 + m03
           let wy4 = m10 * ux4 + m11 * uy4 + m12 * uz4 + m13
           let wz4 = m20 * ux4 + m21 * uy4 + m22 * uz4 + m23
-          let wd4 = if EYE + wz4 < 1.0 then 1.0 else EYE + wz4
-          shPts[8] = EYE * wx4 / wd4
-          shPts[9] = EYE * wy4 / wd4
+          let wd4 = if EYE - wz4 < 1.0 then 1.0 else EYE - wz4
+          shPts[8] = EYE * (wx4 - EYE_X) / wd4 + EYE_X
+          shPts[9] = EYE * (wy4 - EYE_Y) / wd4 + EYE_Y
           shPz[4] = wz4
           let ux5 = shPts[15]
           let uy5 = shPts[16]
@@ -13140,9 +13121,9 @@ mod paintTick() {
           let wx5 = m00 * ux5 + m01 * uy5 + m02 * uz5 + m03
           let wy5 = m10 * ux5 + m11 * uy5 + m12 * uz5 + m13
           let wz5 = m20 * ux5 + m21 * uy5 + m22 * uz5 + m23
-          let wd5 = if EYE + wz5 < 1.0 then 1.0 else EYE + wz5
-          shPts[10] = EYE * wx5 / wd5
-          shPts[11] = EYE * wy5 / wd5
+          let wd5 = if EYE - wz5 < 1.0 then 1.0 else EYE - wz5
+          shPts[10] = EYE * (wx5 - EYE_X) / wd5 + EYE_X
+          shPts[11] = EYE * (wy5 - EYE_Y) / wd5 + EYE_Y
           shPz[5] = wz5
           let ux6 = shPts[18]
           let uy6 = shPts[19]
@@ -13150,9 +13131,9 @@ mod paintTick() {
           let wx6 = m00 * ux6 + m01 * uy6 + m02 * uz6 + m03
           let wy6 = m10 * ux6 + m11 * uy6 + m12 * uz6 + m13
           let wz6 = m20 * ux6 + m21 * uy6 + m22 * uz6 + m23
-          let wd6 = if EYE + wz6 < 1.0 then 1.0 else EYE + wz6
-          shPts[12] = EYE * wx6 / wd6
-          shPts[13] = EYE * wy6 / wd6
+          let wd6 = if EYE - wz6 < 1.0 then 1.0 else EYE - wz6
+          shPts[12] = EYE * (wx6 - EYE_X) / wd6 + EYE_X
+          shPts[13] = EYE * (wy6 - EYE_Y) / wd6 + EYE_Y
           shPz[6] = wz6
           let ux7 = shPts[21]
           let uy7 = shPts[22]
@@ -13160,9 +13141,9 @@ mod paintTick() {
           let wx7 = m00 * ux7 + m01 * uy7 + m02 * uz7 + m03
           let wy7 = m10 * ux7 + m11 * uy7 + m12 * uz7 + m13
           let wz7 = m20 * ux7 + m21 * uy7 + m22 * uz7 + m23
-          let wd7 = if EYE + wz7 < 1.0 then 1.0 else EYE + wz7
-          shPts[14] = EYE * wx7 / wd7
-          shPts[15] = EYE * wy7 / wd7
+          let wd7 = if EYE - wz7 < 1.0 then 1.0 else EYE - wz7
+          shPts[14] = EYE * (wx7 - EYE_X) / wd7 + EYE_X
+          shPts[15] = EYE * (wy7 - EYE_Y) / wd7 + EYE_Y
           shPz[7] = wz7
           let ux8 = shPts[24]
           let uy8 = shPts[25]
@@ -13170,9 +13151,9 @@ mod paintTick() {
           let wx8 = m00 * ux8 + m01 * uy8 + m02 * uz8 + m03
           let wy8 = m10 * ux8 + m11 * uy8 + m12 * uz8 + m13
           let wz8 = m20 * ux8 + m21 * uy8 + m22 * uz8 + m23
-          let wd8 = if EYE + wz8 < 1.0 then 1.0 else EYE + wz8
-          shPts[16] = EYE * wx8 / wd8
-          shPts[17] = EYE * wy8 / wd8
+          let wd8 = if EYE - wz8 < 1.0 then 1.0 else EYE - wz8
+          shPts[16] = EYE * (wx8 - EYE_X) / wd8 + EYE_X
+          shPts[17] = EYE * (wy8 - EYE_Y) / wd8 + EYE_Y
           shPz[8] = wz8
           let ux9 = shPts[27]
           let uy9 = shPts[28]
@@ -13180,93 +13161,70 @@ mod paintTick() {
           let wx9 = m00 * ux9 + m01 * uy9 + m02 * uz9 + m03
           let wy9 = m10 * ux9 + m11 * uy9 + m12 * uz9 + m13
           let wz9 = m20 * ux9 + m21 * uy9 + m22 * uz9 + m23
-          let wd9 = if EYE + wz9 < 1.0 then 1.0 else EYE + wz9
-          shPts[18] = EYE * wx9 / wd9
-          shPts[19] = EYE * wy9 / wd9
+          let wd9 = if EYE - wz9 < 1.0 then 1.0 else EYE - wz9
+          shPts[18] = EYE * (wx9 - EYE_X) / wd9 + EYE_X
+          shPts[19] = EYE * (wy9 - EYE_Y) / wd9 + EYE_Y
           shPz[9] = wz9
-        } else {
-          let qx0 = shPts[0]
-          let qy0 = shPts[1]
-          shPts[0] = m00 * qx0 + m01 * qy0 + m03
-          shPts[1] = m10 * qx0 + m11 * qy0 + m13
-          shPz[0] = m20 * qx0 + m21 * qy0 + m23
-          let qx1 = shPts[2]
-          let qy1 = shPts[3]
-          shPts[2] = m00 * qx1 + m01 * qy1 + m03
-          shPts[3] = m10 * qx1 + m11 * qy1 + m13
-          shPz[1] = m20 * qx1 + m21 * qy1 + m23
-          let qx2 = shPts[4]
-          let qy2 = shPts[5]
-          shPts[4] = m00 * qx2 + m01 * qy2 + m03
-          shPts[5] = m10 * qx2 + m11 * qy2 + m13
-          shPz[2] = m20 * qx2 + m21 * qy2 + m23
-          let qx3 = shPts[6]
-          let qy3 = shPts[7]
-          shPts[6] = m00 * qx3 + m01 * qy3 + m03
-          shPts[7] = m10 * qx3 + m11 * qy3 + m13
-          shPz[3] = m20 * qx3 + m21 * qy3 + m23
-          let qx4 = shPts[8]
-          let qy4 = shPts[9]
-          shPts[8] = m00 * qx4 + m01 * qy4 + m03
-          shPts[9] = m10 * qx4 + m11 * qy4 + m13
-          shPz[4] = m20 * qx4 + m21 * qy4 + m23
-          let qx5 = shPts[10]
-          let qy5 = shPts[11]
-          shPts[10] = m00 * qx5 + m01 * qy5 + m03
-          shPts[11] = m10 * qx5 + m11 * qy5 + m13
-          shPz[5] = m20 * qx5 + m21 * qy5 + m23
-          let qx6 = shPts[12]
-          let qy6 = shPts[13]
-          shPts[12] = m00 * qx6 + m01 * qy6 + m03
-          shPts[13] = m10 * qx6 + m11 * qy6 + m13
-          shPz[6] = m20 * qx6 + m21 * qy6 + m23
-          let qx7 = shPts[14]
-          let qy7 = shPts[15]
-          shPts[14] = m00 * qx7 + m01 * qy7 + m03
-          shPts[15] = m10 * qx7 + m11 * qy7 + m13
-          shPz[7] = m20 * qx7 + m21 * qy7 + m23
-          let qx8 = shPts[16]
-          let qy8 = shPts[17]
-          shPts[16] = m00 * qx8 + m01 * qy8 + m03
-          shPts[17] = m10 * qx8 + m11 * qy8 + m13
-          shPz[8] = m20 * qx8 + m21 * qy8 + m23
-          let qx9 = shPts[18]
-          let qy9 = shPts[19]
-          shPts[18] = m00 * qx9 + m01 * qy9 + m03
-          shPts[19] = m10 * qx9 + m11 * qy9 + m13
-          shPz[9] = m20 * qx9 + m21 * qy9 + m23
-          let qx10 = shPts[20]
-          let qy10 = shPts[21]
-          shPts[20] = m00 * qx10 + m01 * qy10 + m03
-          shPts[21] = m10 * qx10 + m11 * qy10 + m13
-          shPz[10] = m20 * qx10 + m21 * qy10 + m23
-          let qx11 = shPts[22]
-          let qy11 = shPts[23]
-          shPts[22] = m00 * qx11 + m01 * qy11 + m03
-          shPts[23] = m10 * qx11 + m11 * qy11 + m13
-          shPz[11] = m20 * qx11 + m21 * qy11 + m23
-          let qx12 = shPts[24]
-          let qy12 = shPts[25]
-          shPts[24] = m00 * qx12 + m01 * qy12 + m03
-          shPts[25] = m10 * qx12 + m11 * qy12 + m13
-          shPz[12] = m20 * qx12 + m21 * qy12 + m23
-          let qx13 = shPts[26]
-          let qy13 = shPts[27]
-          shPts[26] = m00 * qx13 + m01 * qy13 + m03
-          shPts[27] = m10 * qx13 + m11 * qy13 + m13
-          shPz[13] = m20 * qx13 + m21 * qy13 + m23
-          let qx14 = shPts[28]
-          let qy14 = shPts[29]
-          shPts[28] = m00 * qx14 + m01 * qy14 + m03
-          shPts[29] = m10 * qx14 + m11 * qy14 + m13
-          shPz[14] = m20 * qx14 + m21 * qy14 + m23
-          let qx15 = shPts[30]
-          let qy15 = shPts[31]
-          shPts[30] = m00 * qx15 + m01 * qy15 + m03
-          shPts[31] = m10 * qx15 + m11 * qy15 + m13
-          shPz[15] = m20 * qx15 + m21 * qy15 + m23
-        }
-      }
+          let ux10 = shPts[30]
+          let uy10 = shPts[31]
+          let uz10 = shPts[32]
+          let wx10 = m00 * ux10 + m01 * uy10 + m02 * uz10 + m03
+          let wy10 = m10 * ux10 + m11 * uy10 + m12 * uz10 + m13
+          let wz10 = m20 * ux10 + m21 * uy10 + m22 * uz10 + m23
+          let wd10 = if EYE - wz10 < 1.0 then 1.0 else EYE - wz10
+          shPts[20] = EYE * (wx10 - EYE_X) / wd10 + EYE_X
+          shPts[21] = EYE * (wy10 - EYE_Y) / wd10 + EYE_Y
+          shPz[10] = wz10
+          let ux11 = shPts[33]
+          let uy11 = shPts[34]
+          let uz11 = shPts[35]
+          let wx11 = m00 * ux11 + m01 * uy11 + m02 * uz11 + m03
+          let wy11 = m10 * ux11 + m11 * uy11 + m12 * uz11 + m13
+          let wz11 = m20 * ux11 + m21 * uy11 + m22 * uz11 + m23
+          let wd11 = if EYE - wz11 < 1.0 then 1.0 else EYE - wz11
+          shPts[22] = EYE * (wx11 - EYE_X) / wd11 + EYE_X
+          shPts[23] = EYE * (wy11 - EYE_Y) / wd11 + EYE_Y
+          shPz[11] = wz11
+          let ux12 = shPts[36]
+          let uy12 = shPts[37]
+          let uz12 = shPts[38]
+          let wx12 = m00 * ux12 + m01 * uy12 + m02 * uz12 + m03
+          let wy12 = m10 * ux12 + m11 * uy12 + m12 * uz12 + m13
+          let wz12 = m20 * ux12 + m21 * uy12 + m22 * uz12 + m23
+          let wd12 = if EYE - wz12 < 1.0 then 1.0 else EYE - wz12
+          shPts[24] = EYE * (wx12 - EYE_X) / wd12 + EYE_X
+          shPts[25] = EYE * (wy12 - EYE_Y) / wd12 + EYE_Y
+          shPz[12] = wz12
+          let ux13 = shPts[39]
+          let uy13 = shPts[40]
+          let uz13 = shPts[41]
+          let wx13 = m00 * ux13 + m01 * uy13 + m02 * uz13 + m03
+          let wy13 = m10 * ux13 + m11 * uy13 + m12 * uz13 + m13
+          let wz13 = m20 * ux13 + m21 * uy13 + m22 * uz13 + m23
+          let wd13 = if EYE - wz13 < 1.0 then 1.0 else EYE - wz13
+          shPts[26] = EYE * (wx13 - EYE_X) / wd13 + EYE_X
+          shPts[27] = EYE * (wy13 - EYE_Y) / wd13 + EYE_Y
+          shPz[13] = wz13
+          let ux14 = shPts[42]
+          let uy14 = shPts[43]
+          let uz14 = shPts[44]
+          let wx14 = m00 * ux14 + m01 * uy14 + m02 * uz14 + m03
+          let wy14 = m10 * ux14 + m11 * uy14 + m12 * uz14 + m13
+          let wz14 = m20 * ux14 + m21 * uy14 + m22 * uz14 + m23
+          let wd14 = if EYE - wz14 < 1.0 then 1.0 else EYE - wz14
+          shPts[28] = EYE * (wx14 - EYE_X) / wd14 + EYE_X
+          shPts[29] = EYE * (wy14 - EYE_Y) / wd14 + EYE_Y
+          shPz[14] = wz14
+          let ux15 = shPts[45]
+          let uy15 = shPts[46]
+          let uz15 = shPts[47]
+          let wx15 = m00 * ux15 + m01 * uy15 + m02 * uz15 + m03
+          let wy15 = m10 * ux15 + m11 * uy15 + m12 * uz15 + m13
+          let wz15 = m20 * ux15 + m21 * uy15 + m22 * uz15 + m23
+          let wd15 = if EYE - wz15 < 1.0 then 1.0 else EYE - wz15
+          shPts[30] = EYE * (wx15 - EYE_X) / wd15 + EYE_X
+          shPts[31] = EYE * (wy15 - EYE_Y) / wd15 + EYE_Y
+          shPz[15] = wz15
     }
   }
   if arming {
@@ -13588,7 +13546,7 @@ mod paintTick() {
         eraseOK = false
         n = (shapePoints.length() / (if pIs3 > 0.5 then 3.0 else 2.0)) | 0
         if pIs3 > 0.5 {
-          if n > 10.0 { n = 10.0 }
+          if n > 16.0 { n = 16.0 }
         } else {
           if n > 16.0 { n = 16.0 }
         }

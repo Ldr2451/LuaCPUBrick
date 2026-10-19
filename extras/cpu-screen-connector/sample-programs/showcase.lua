@@ -17,12 +17,12 @@ i = i + 1
 end
 local function square(bx, by)
 local ex, ey = bx + 10.0, by + 10.0
-outNumArr(1, bx, by, ex, by, ex, ey, bx, ey)
+outNumArr(1, bx, by, 0.0, ex, by, 0.0, ex, ey, 0.0, bx, ey, 0.0)
 outNumArr(9, -1.0)
 fire(0.16)
 end
 local function tri(tx)
-outNumArr(1, 22.0, 10.0, 42.0, 10.0, tx, 30.0)
+outNumArr(1, 22.0, 10.0, 0.0, 42.0, 10.0, 0.0, tx, 30.0, 0.0)
 outNumArr(7, -1.0)
 fire(0.26)
 end
@@ -35,14 +35,12 @@ local x2 = 32.0 - cs[k + 1]
 local y2 = 32.0 - rs[k + 1]
 local x3 = 32.0 + rs[k + 1]
 local y3 = 32.0 - cs[k + 1]
-outNumArr(1, x0, y0, x1, y1, x2, y2, x3, y3)
+outNumArr(1, x0, y0, 0.0, x1, y1, 0.0, x2, y2, 0.0, x3, y3, 0.0)
 outNumArr(9, x0, y0, -1.0)
 fire(0.36)
 end
 local function wave(f)
-outNumArr(1, 0.0, 32.0 + sn[(f % 32) + 1], 4.0,
-32.0 + sn[((f + 2) % 32) + 1], 8.0, 32.0 + sn[((f + 4) % 32) + 1],
-12.0, 32.0 + sn[((f + 6) % 32) + 1])
+outNumArr(1, 0.0, 32.0 + sn[(f % 32) + 1], 0.0, 4.0, 32.0 + sn[((f + 2) % 32) + 1], 0.0, 8.0, 32.0 + sn[((f + 4) % 32) + 1], 0.0, 12.0, 32.0 + sn[((f + 6) % 32) + 1], 0.0)
 outNumArr(9, 16.0, 32.0 + sn[((f + 8) % 32) + 1], 20.0,
 32.0 + sn[((f + 10) % 32) + 1], 24.0, 32.0 + sn[((f + 12) % 32) + 1],
 28.0, 32.0 + sn[((f + 14) % 32) + 1])
@@ -59,17 +57,13 @@ local function octagon(cx, cy, r)
 local k = r * 0.4142136
 local x0, x1 = cx - r, cx + r
 local y0, y1 = cy - r, cy + r
-outNumArr(1, cx - k, y0, cx + k, y0, x1, cy - k, x1, cy + k)
+outNumArr(1, cx - k, y0, 0.0, cx + k, y0, 0.0, x1, cy - k, 0.0, x1, cy + k, 0.0)
 outNumArr(9, cx + k, y1, cx - k, y1, x0, cy + k, x0, cy - k)
 outNumArr(17, -1.0)
 fire(1.2)
 end
 local function ring()
-outNumArr(1, 32.0 + cs[1] * 18.0 / 14.0 // 1.0,
-32.0 + rs[1] * 18.0 / 14.0 // 1.0, 32.0 + cs[2] * 18.0 / 14.0 // 1.0,
-32.0 + rs[2] * 18.0 / 14.0 // 1.0, 32.0 + cs[3] * 18.0 / 14.0 // 1.0,
-32.0 + rs[3] * 18.0 / 14.0 // 1.0, 32.0 + cs[4] * 18.0 / 14.0 // 1.0,
-32.0 + rs[4] * 18.0 / 14.0 // 1.0)
+outNumArr(1, 32.0 + cs[1] * 18.0 / 14.0 // 1.0, 32.0 + rs[1] * 18.0 / 14.0 // 1.0, 0.0, 32.0 + cs[2] * 18.0 / 14.0 // 1.0, 32.0 + rs[2] * 18.0 / 14.0 // 1.0, 0.0, 32.0 + cs[3] * 18.0 / 14.0 // 1.0, 32.0 + rs[3] * 18.0 / 14.0 // 1.0, 0.0, 32.0 + cs[4] * 18.0 / 14.0 // 1.0, 32.0 + rs[4] * 18.0 / 14.0 // 1.0, 0.0)
 outNumArr(9, 32.0 + cs[5] * 18.0 / 14.0 // 1.0,
 32.0 + rs[5] * 18.0 / 14.0 // 1.0, 32.0 + cs[6] * 18.0 / 14.0 // 1.0,
 32.0 + rs[6] * 18.0 / 14.0 // 1.0, 32.0 + cs[7] * 18.0 / 14.0 // 1.0,
@@ -127,7 +121,7 @@ end
 setWire(0.0)
 setWire(1.0)
 outStr(1, "1")
-outNumArr(1, 2.0, 2.0, 62.0, 2.0, 62.0, 62.0, 2.0, 62.0)
+outNumArr(1, 2.0, 2.0, 0.0, 62.0, 2.0, 0.0, 62.0, 62.0, 0.0, 2.0, 62.0, 0.0)
 outNumArr(9, 2.0, 2.0, -1.0)
 fire(1.2)
 setWire(0.0)
@@ -145,7 +139,7 @@ vx, vy = 3.0, 2.0
 n = 0
 while n < 18 do
 local ex, ey = bx + 6.0, by + 6.0
-outNumArr(1, bx, by, ex, by, ex, ey, bx, ey)
+outNumArr(1, bx, by, 0.0, ex, by, 0.0, ex, ey, 0.0, bx, ey, 0.0)
 outNumArr(9, -1.0)
 fire(0.12)
 bx = bx + vx

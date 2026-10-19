@@ -8,7 +8,7 @@
 -- plates, so the stack reads as depth rather than as flat overlap.
 local cx, cy = 32.0, 32.0
 clearScreen()
-local q = {cx - 4.0, cy - 4.0, cx + 4.0, cy - 4.0, cx + 4.0, cy + 4.0, cx - 4.0, cy + 4.0}
+local q = {cx - 4.0, cy - 4.0, 0.0, cx + 4.0, cy - 4.0, 0.0, cx + 4.0, cy + 4.0, 0.0, cx - 4.0, cy + 4.0, 0.0}
 local cam = {0.0, 0.0, 0.0, 0.0, 0.35, 0.0, 1.0, 1.0, 1.0}
 local zs = {0.0, 4.0, 8.0}
 local i = 0
@@ -19,7 +19,7 @@ editShape(tostring(i + 2), q, nil, x, "1")
 i = i + 1
 end
 local cols = {0.1, 0.9, 0.4, 0.5, 0.2, 0.7, 1.0, 0.5, 0.9, 0.3, 0.2, 0.5}
-editShape("1", {0.0, 0.0, 9.0, 0.0, 4.5, 7.8}, cols,
+editShape("1", {0.0, 0.0, 9.0, 0.0, 0.0, 4.5, 7.8, 0.0}, cols,
 {32.0, 32.0, 0.0, 0.0, 0.35, 0.0, 1.0, 1.0, 1.0}, "0", 600.0)
 draw()
 local k = 0

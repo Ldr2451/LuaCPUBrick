@@ -494,20 +494,20 @@ def mat_mul(p, a):
 def xf_points3(pts2, pos, eul, scl, chain=()):
     """Flat xy points -> world xyz.  chain holds ancestor (pos, eul,
     scl) triples, innermost first (composed parent-outside).  Points
-    carry z = 0 locally: depth comes from the transform alone."""
-    m = mat_local(pos, eul, scl)
-    for apar, aeul, ascl in chain:
-        m = mat_mul(mat_local(apar, aeul, ascl), m)
-    out = []
+    carry z = 0 locally: depth comes from the transform alone.
+
+    The chip has ONE path now -- every point is an (x,y,z) triple -- so
+    a flat shape is the same model with z = 0, and it is projected by
+    the same rule.  This is that model."""
+    pts3 = []
     for i in range(0, len(pts2), 2):
-        x, y = pts2[i], pts2[i + 1]
-        out.append((m[0] * x + m[1] * y + m[3],
-                    m[4] * x + m[5] * y + m[7],
-                    m[8] * x + m[9] * y + m[11]))
-    return out
+        pts3 += [pts2[i], pts2[i + 1], 0.0]
+    return xf_points3d(pts3, pos, eul, scl, chain)
 
 
 EYE = 48.0
+EYE_X = 32.0          # the eye stands at the wall's centre, not its corner
+EYE_Y = 32.0
 
 
 def xf_points3d(pts3, pos, eul, scl, chain=()):
@@ -515,10 +515,14 @@ def xf_points3d(pts3, pos, eul, scl, chain=()):
 
     The chip's 3D per-point step, in its own order: the full local
     vector through the 3x4 matrix (so the local z counts), then the
-    perspective divide with the eye at z = -EYE and the denominator
-    clamped at 1.0.  The depth handed on is the WORLD z -- the divide
-    moves x/y, not how far the point is -- so the fill's depth test
-    still orders the faces."""
+    perspective divide with the eye at the WALL'S CENTRE and IN FRONT of
+    it -- (32, 32, +EYE) -- and the denominator clamped at 1.0.  The eye
+    is in front because +z is the direction the depth test calls "in
+    front", and the two have to agree: a nearer thing is bigger.  A
+    point at z = 0 is unchanged by the divide (the offsets cancel), so a
+    flat shape lands exactly where the 2D path would put it.  The depth
+    handed on is the WORLD z -- the divide moves x/y, not how far the
+    point is -- so the fill's depth test still orders the faces."""
     m = mat_local(pos, eul, scl)
     for apar, aeul, ascl in chain:
         m = mat_mul(mat_local(apar, aeul, ascl), m)
@@ -528,10 +532,11 @@ def xf_points3d(pts3, pos, eul, scl, chain=()):
         wx = m[0] * x + m[1] * y + m[2] * z + m[3]
         wy = m[4] * x + m[5] * y + m[6] * z + m[7]
         wz = m[8] * x + m[9] * y + m[10] * z + m[11]
-        d = EYE + wz
+        d = EYE - wz
         if d < 1.0:
             d = 1.0
-        out.append((EYE * wx / d, EYE * wy / d, wz))
+        out.append((EYE * (wx - EYE_X) / d + EYE_X,
+                    EYE * (wy - EYE_Y) / d + EYE_Y, wz))
     return out
 
 
@@ -637,7 +642,28 @@ def slide(sim, pts_aid, cols_aid, values, colors=None):
     through sim.inputs re-materialises the port on every change, which
     costs seconds a tick in the sim, while replacing the delivered
     value is the same wire event at the normal rate.
+
+    `values` is a FLAT shape, written as pairs for brevity, and is
+    delivered as the triples the chip wants (z = 0).  `slide3` delivers
+    triples as given.  This is the suite's shorthand, not the chip's
+    protocol: the port takes triples and only triples.
     """
+    sim.arrays[pts_aid] = flat3(values)
+    if colors is not None:
+        sim.arrays[cols_aid] = list(colors)
+
+
+def flat3(pts2):
+    """A flat shape written as (x, y) pairs -> the (x, y, z) triples the
+    chip's port takes."""
+    out = []
+    for i in range(0, len(pts2) - 1, 2):
+        out += [pts2[i], pts2[i + 1], 0.0]
+    return out
+
+
+def slide3(sim, pts_aid, cols_aid, values, colors=None):
+    """Deliver a 3D shape: the points are (x, y, z) triples, as given."""
     sim.arrays[pts_aid] = list(values)
     if colors is not None:
         sim.arrays[cols_aid] = list(colors)
@@ -1425,8 +1451,8 @@ def main():
                 if tick in plan:
                     st = plan[tick]
                     if "shapePoints" in st:
-                        slide(sn, pts_aid, cols_aid, st["shapePoints"],
-                              st.get("shapeColors"))
+                        slide3(sn, pts_aid, cols_aid, st["shapePoints"],
+                               st.get("shapeColors"))
                         st = {k: v for k, v in st.items()
                               if k not in ("shapePoints", "shapeColors")}
                     sn.inputs = dict(sn.inputs, **st)
@@ -1537,8 +1563,8 @@ def main():
                      "%d lit vs %d modelled, first diff %r"
                      % (len(painted), len(poly_pixels(flat)),
                         sorted(painted ^ poly_pixels(flat))[:4]))
-        far = quad3(20.0, 20.0, 44.0, 44.0, 20.0)
-        near = quad3(20.0, 20.0, 44.0, 44.0, -20.0)
+        far = quad3(20.0, 20.0, 44.0, 44.0, -20.0)
+        near = quad3(20.0, 20.0, 44.0, 44.0, 20.0)
         snaps, ends = run3([
             (far, [blue] * 5, 1.0, Z0, R0, S1, 0.0),
             (near, [RED] * 5, 2.0, Z0, R0, S1, 0.0),
@@ -1553,8 +1579,9 @@ def main():
                      % (len(bad), bad[0] if bad else 0))
         # The same outline at three depths must cover three different
         # pixel sets, growing as it nears the eye -- the divide is real.
+        # The eye stands in FRONT of the wall, so a bigger z is nearer.
         cov = []
-        for z, sid in ((20.0, 1.0), (0.0, 2.0), (-20.0, 3.0)):
+        for z, sid in ((-20.0, 1.0), (0.0, 2.0), (20.0, 3.0)):
             qq = quad3(24.0, 24.0, 40.0, 40.0, z)
             snaps, ends = run3([
                 (qq, [RED] * 5, sid, Z0, R0, S1, 0.0),

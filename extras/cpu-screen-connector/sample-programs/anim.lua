@@ -52,7 +52,7 @@ end
 -- an 8x8 filled square tracer at (bx,by), palette entry h
 local function tracer(bx, by, h)
   local ex, ey = bx + 8.0, by + 8.0
-  outNumArr(1, bx, by, ex, by, ex, ey, bx, ey)
+  outNumArr(1, bx, by, 0.0, ex, by, 0.0, ex, ey, 0.0, bx, ey, 0.0)
   outNumArr(9, -1.0)
   fire()
 end
@@ -64,7 +64,7 @@ local function core(r, h)
   local y0, y1 = cx - r, cx + r
   local kx0, kx1 = cx - k, cx + k
   local ky0, ky1 = cx - k, cx + k
-  outNumArr(1, kx0, y0, kx1, y0, x1, ky0, x1, ky1)
+  outNumArr(1, kx0, y0, 0.0, kx1, y0, 0.0, x1, ky0, 0.0, x1, ky1, 0.0)
   outNumArr(9, kx1, y1, kx0, y1, x0, ky1, x0, ky0)
   outNumArr(17, -1.0)
   fire()

@@ -49,6 +49,27 @@ end
 -- (pos.xyz, rot.xyz, scl.xyz), parent the slot id as text, ticks the
 -- animation length (0 instant, n ticks, -1 forever), wire true for a
 -- stroke, id the slot to store ("0".."8", "" = immediate).
+-- stage2d(pts, cols, xf, parent, ticks, wire, id): a FLAT shape, written
+-- as (x, y) pairs, sent as the (x, y, 0) triples the screen takes.  The
+-- screen's port takes triples and only triples, so a flat shape is the
+-- same shape with a zero z -- this is the shorthand for that, not a
+-- second kind of shape.
+local function flat3(pts)
+local out = {}
+local i = 1
+while i <= #pts do
+out[#out + 1] = pts[i]
+out[#out + 1] = pts[i + 1]
+out[#out + 1] = 0.0
+i = i + 2
+end
+return out
+end
+
+function stage2d(pts, cols, xf, parent, ticks, wire, id)
+stage(flat3(pts), cols, xf, parent, ticks, wire, id)
+end
+
 function stage(pts, cols, xf, parent, ticks, wire, id)
 -- the point float count, 1-based slot 98: the connector reads the
 -- terminator directly instead of scanning for it, so coordinates are
@@ -106,6 +127,11 @@ end
 end
 function stagePush(pts, cols, xf, parent, ticks, wire, id)
 stage(pts, cols, xf, parent, ticks, wire, id)
+push()
+end
+-- stagePush2d: a flat shape (pairs) staged and pushed in one call.
+function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
+stage(flat3(pts), cols, xf, parent, ticks, wire, id)
 push()
 end
 function pushShape(pts, cols, xf, parent)
