@@ -54,7 +54,7 @@ end
 -- screen's port takes triples and only triples, so a flat shape is the
 -- same shape with a zero z -- this is the shorthand for that, not a
 -- second kind of shape.
-local function flat3(pts)
+local function asTriples(pts)
 local out = {}
 local i = 1
 while i <= #pts do
@@ -67,7 +67,7 @@ return out
 end
 
 function stage2d(pts, cols, xf, parent, ticks, wire, id)
-stage(flat3(pts), cols, xf, parent, ticks, wire, id)
+stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 end
 
 function stage(pts, cols, xf, parent, ticks, wire, id)
@@ -131,7 +131,7 @@ push()
 end
 -- stagePush2d: a flat shape (pairs) staged and pushed in one call.
 function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
-stage(flat3(pts), cols, xf, parent, ticks, wire, id)
+stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 push()
 end
 function pushShape(pts, cols, xf, parent)

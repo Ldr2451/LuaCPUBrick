@@ -648,12 +648,12 @@ def slide(sim, pts_aid, cols_aid, values, colors=None):
     triples as given.  This is the suite's shorthand, not the chip's
     protocol: the port takes triples and only triples.
     """
-    sim.arrays[pts_aid] = flat3(values)
+    sim.arrays[pts_aid] = asTriples(values)
     if colors is not None:
         sim.arrays[cols_aid] = list(colors)
 
 
-def flat3(pts2):
+def asTriples(pts2):
     """A flat shape written as (x, y) pairs -> the (x, y, z) triples the
     chip's port takes."""
     out = []
