@@ -6,6 +6,66 @@ measured rather than styled; `tools/chip/wswarn.py` flags the visible ones and
 here cost a debugging session, which is why the wording is specific.
 
 Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
+- **A loop's body is a SHARED microchip, and a body that advances a
+  counter the chain reads afterwards is not the same shape.** The screen
+  chip's erase walk ran four row-steps per tick, unrolled; made a loop,
+  the row counter stopped at 24 of 29 and the chip sat with `erasing`
+  true forever -- the walk never finished, the arm never got its
+  cancel-roll, and nothing repainted. The same block as a loop over its
+  COLUMNS was fine. So the rule is not "loops are safe" but "a loop
+  body may compute, not advance": the chain that resumes after the loop
+  reads the counter the body moved, and a shared body is a different
+  graph from an unrolled one.
+- **A `Union` inside a loop body fires on the nodes that ran in the
+  tick, not in the body.** The simulator's Union gate fires only when
+  one of its inputs is in `fired_nodes`, and the main drain records
+  every node it runs there -- but a loop body runs through a different
+  path, so its nodes were never recorded, and the Union after a branch
+  inside a body never fired. The erase walk's chain stopped at exactly
+  that Union.
+- **The `.wsir` dump leaves some node ids to the reader, and a reader that
+  invents them can collide with the dump's own.** A node may be declared
+  without an id (`out %_exec_out exec = %3597` -- the compiler names the
+  pin and leaves the id open), so the parser assigns one. It assigned
+  `last_id + 1`, which is BELOW the ids the dump uses later: the
+  `resolveKw_1` body's output pin took 6162, a later module's node was
+  named 6162, and in the flat id space the later one shadowed the pin --
+  so the pin vanished, the lexer's return never reached its caller, and
+  the parse stopped after one chunk with `jobBusy` stuck true. **Allocate
+  invented ids ABOVE every id the dump uses.** A chip that runs its
+  first steps and then goes quiet is this, not a missing gate.
+- **The `.wsir` dump spells props as bare Rust-Debug strings, so they
+  need unescaping like the old `String("...")` form did.** A prop
+  spelled `"\n"` is a newline; handing the two characters through
+  unescaped made the Lua chip's log arrive as one long line of literal
+  backslash-n, which reads like a string-formatting bug and is not one.
+- **A `for` loop is a MICROCHIP, and the microchip's body is shared.** The
+  compiler lowers `for i in a..b` to a `Component_Internal_Microchip_CountFor`
+  gate whose body module holds a `CallableEntry_CountFor` node instead of an
+  `_exec_in` pin, so the old call machinery cannot see it at all: the caller
+  fires the gate, the gate publishes `Index` on the entry and fires the entry's
+  `Body`, and the body's chain runs once per iteration. A simulator that only
+  knows `_exec_in` sees an unimplemented gate and a program that never runs.
+  The ranges are UPPER-EXCLUSIVE: `for i in 0..10` runs ten times and sums
+  45 (`0..9`), which is the compiler's own documented expectation.
+  **A plain `chip` call with constant arguments proves nothing** -- the
+  certified folder evaluates it at compile time, so the call never reaches the
+  chip machinery; a dynamic argument is what exercises the path.
+- **A `let` is re-evaluated per use, so a step that writes what its own
+  `let`s read composes from a HALF-written matrix.** The chain composition
+  wrote `m00..m23` in order while its `n**` lets read `m00..m23`; each cell
+  was therefore composed from a mix of the new and old matrix, and only the
+  z row showed it (a parent with no z-rotation has `qp10 = 0`, which hid it
+  in rows 0 and 1). The symptom was depth that did not match the x/y it was
+  divided with: `m20 = qp20 * m00'` and `m23 = qp20*32 + qp21*32`, both
+  exactly the half-composed values. **Snapshot the whole pre-step matrix in
+  plain vars** and let the lets read the snapshot.
+- **Array index WRITES need literal bases -- that was the WS007 rule, and
+  the new compiler lifts it.** The screen chip was unrolled per point
+  because writes used literal bases; with computed indices the same 256
+  writes cost 12 nodes instead of 258. Both `for` loops and `chip` calls
+  are available now, so the unrolled copies are a choice, not a
+  constraint.
 
 
 Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;

@@ -125,7 +125,17 @@ def consume_parens(tk):
 
 
 def consume_braces(tk):
-    depth = 1 if tk.at_punct("{") else 0
+    """Consume up to the '}' that closes the '{' the caller just took.
+
+    The opening brace is ALREADY consumed when this is called (the type
+    parser takes it to recognise a record type), so the nesting starts at
+    one.  Starting at zero instead consumed nothing at all, and the
+    record's field names then read as the next port -- which is how
+    `lua.ws` failed to parse at `(Codepoint: {Codepoint: int, Success:
+    bool}, bSuccess: any)`: the parser saw the field name 'Codepoint'
+    where it expected ')'.
+    """
+    depth = 1
     while depth:
         t = tk.take()
         if t == "{":
@@ -353,19 +363,27 @@ def _propval(old_text):
 
     Bare wsir strings (`"noDepth"`) spell as their inner text; everything else
     handed to `irdump._parse_lit`.
+
+    The bare-quoted form still carries Rust's escapes, so it has to be
+    UNESCAPED like the `String("...")` form is: a prop spelled `"\\n"` is
+    a newline, and handing the two characters through unescaped made the
+    Lua chip's log arrive as a line of literal backslash-n.
     """
     if old_text.startswith('"') and old_text.endswith('"') \
             and len(old_text) >= 2:
-        return ("str", old_text[1:-1])
+        from irdump import _unescape_dq
+        return ("str", _unescape_dq(old_text[1:-1]))
     from irdump import _parse_lit
     return _parse_lit(old_text)
 
 
 class _Parser:
-    def __init__(self, tk):
+    def __init__(self, tk, id_floor=0):
         self.tk = tk
         self.name2id = {}
-        self.last_id = 0
+        # Auto-assigned ids start ABOVE every id the dump uses, so a node
+        # the dump left unnamed can never take an id another node owns.
+        self.last_id = id_floor
         self.mods = []
         self.idmod = {}          # node id -> module dict (destination side)
         self.node_by_id = {}
@@ -749,19 +767,31 @@ def _parse_item(p, mod, add):
                 tk.expect(":")
                 operands.append((port, p.parse_operand()))
             tk.expect(")")
-        if tk.at_punct("{"):
-            p.parse_attrs(props)
         if tk.at_punct(":"):
             sig = p.parse_sig()
         explicit = p.parse_metas()
         nid = p.node_id_for(vname, explicit)
         for (port, op) in operands:
             p.wire_operand(op, nid, port, props)
+        # A chip's '{' opens its BODY, never an attribute list.  Reading it
+        # as attributes only worked while metadata happened to sit between
+        # the chip's name and the brace; a chip with no metadata there (a
+        # nested call inside another chip's body, as `lua.ws` has) had its
+        # whole body eaten as props, and the parser then tripped over the
+        # body's own first declaration.
         _parse_module_body(p, nid, body_name or "_anon_%s" % vname)
         if tk.at_punct("loc"):                       # loc follows the body
             tk.take()
             tk.expect("(")
             consume_parens(tk)
+        # Metadata can also follow the body (`} loc(...) !scope !4`), so
+        # take it here too and let an explicit `!id` from either side win.
+        after = p.parse_metas()
+        if after is not None and explicit is None:
+            explicit = after
+            nid = p.node_id_for(vname, explicit)
+            for (port, op) in operands:
+                p.wire_operand(op, nid, port, props)
         add(nid, "Chip", old_class(cls_tok or "Component_Internal_Microchip"),
             props, sig[0] if sig else [], sig[1] if sig else [])
         mod["nchips"] += 1
@@ -829,12 +859,24 @@ def _parse_module_body(p, parent, name):
 
 
 def _default_out_port(node):
-    """The single output port a bare `%name` reference stands for."""
+    """The output port a bare `%name` reference stands for.
+
+    A bare reference means "the value this node produces".  Most nodes
+    have one output and there is nothing to decide; the ones with more
+    are the exec gates, whose value output comes first and whose exec
+    output is only ever named explicitly (`%x.ExecOut`) because a chain
+    step names it to say which branch it is.  So a bare ref to a
+    multi-output node takes the first output that is not an exec port,
+    and the first output at all when they all are.
+    """
     ports = node.pout
     if len(ports) == 1:
         return ports[0][0]
     if len(ports) > 1:
-        raise WsirError("bare ref to %s (outputs %s)" % (node.id, ports))
+        for name, ty in ports:
+            if str(ty).lower() != "exec":
+                return name
+        return ports[0][0]
     raise WsirError("bare ref to node %s with no outputs" % node.id)
 
 
@@ -854,12 +896,34 @@ def parse_program(text):
             consume_parens(tk)
             continue
         # directive name/value token: skipped
-    p = _Parser(tk)
+    p = _Parser(tk, id_floor=_max_dumped_id(text))
     p.tk.take()                       # 'module'
     modname = p.tk.take()[1:].strip('"')
     _parse_module_body(p, None, modname)
     _resolve_wires(p)
     return p.mods
+
+
+def _max_dumped_id(text):
+    """The highest node id the dump itself uses.
+
+    The dump's ids are globally unique, but a node may be declared
+    WITHOUT one (`out %_exec_out exec = %3597` -- the compiler names the
+    pin and leaves the id to the reader).  Those get an id from the
+    parser, and the id must not collide with an id the dump already
+    uses: the flat id space the Sim runs in would hold two nodes with one
+    id, and the later module's node would shadow the earlier one.  That
+    is exactly what happened to `lua.ws`: the `resolveKw_1` body's
+    output pin took id 6162, a later module's node was named 6162, and
+    the pin vanished -- so the lexer's return never reached its caller
+    and the parse stopped after one chunk.
+    """
+    ids = [0]
+    for pat in (r"^\s*%(\d+)\s*=", r"^\s*(?:in|out)\s+%(\d+)\s",
+                r"!id\s+(\d+)"):
+        for m in re.finditer(pat, text, re.M):
+            ids.append(int(m.group(1)))
+    return max(ids)
 
 
 def _resolve_wires(p):

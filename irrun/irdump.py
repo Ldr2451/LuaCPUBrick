@@ -301,8 +301,33 @@ def chip_call_groups(mods):
     return groups
 
 
+def loop_bodies(mods):
+    """Each loop gate's `CallableEntry` node, keyed by the gate that owns it.
+
+    A `for` loop compiles to a microchip-style gate (`..._CountFor`,
+    `..._ForEachArray`, `..._ForEachMap`) whose body module holds a
+    `CallableEntry_*` node instead of an `_exec_in` pin: the gate drives the
+    body by publishing `Body` (exec) and `Index` (and `Value`/`Key`) on that
+    entry, once per iteration.  Nothing in the old call machinery recognises
+    it -- there is no exec pin to trigger on -- so the entry is looked up
+    here, by module parentage, and handed to the Sim the way call groups are.
+
+    Returns {} for a program with no loops.
+    """
+    out = {}
+    for m in mods[1:]:
+        parent = m.get("parent")
+        if parent is None:
+            continue
+        for nid, nd in m["nodes"].items():
+            if "CallableEntry" in nd.cls:
+                out[parent] = nid
+                break
+    return out
+
+
 def dump_source(path, brz_out=None):
-    """Compile path with --dump-ir-full; return (nodes, wires, nchips).
+    """Compile path with --dump-ir; return (nodes, wires, nchips).
 
     Root module only -- a `chip` body is a separate graph, and a caller that wants
     to execute one needs `dump_source_modules`.

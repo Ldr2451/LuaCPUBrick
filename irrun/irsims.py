@@ -174,7 +174,8 @@ def lit_value(lit):
 
 class Sim:
     def __init__(self, nodes: dict[int, Node], wires: list,
-                 groups: dict[int, list[int]] | None = None):
+                 groups: dict[int, list[int]] | None = None,
+                 loops: dict[int, int] | None = None):
         self.nodes = nodes
         self.wires = wires
         # Each chip call's value pins, keyed by its `_exec_in` pin, read off
@@ -183,6 +184,10 @@ class Sim:
         # missed pins twice, because reachability is the wrong question when
         # membership is in the dump.
         self._call_pins: dict[int, list[int]] = groups or {}
+        # Each loop gate's `CallableEntry` node, keyed by the gate that owns
+        # it, from `irdump.loop_bodies` ({} when loopless). A loop has no
+        # `_exec_in` pin, so the call machinery cannot see it at all.
+        self._loop_entries: dict[int, int] = loops or {}
         self.in_wires: dict[tuple[int, str], list] = {}
         self.out_wires: dict[tuple[int, str], list] = {}
         for w in wires:
@@ -243,6 +248,9 @@ class Sim:
                     and w.dst_port == "RER_Input"):
                 self._pin_src.setdefault((w.src_id, w.src_port), []).append(w.dst_id)
         self._eval_stack: set[int] = set()
+        # Loop gates whose body was missing from the dump (a parse gap), so the
+        # warning is once per gate and not once per firing.
+        self._loop_warned: set[int] = set()
         self._unimpl_warned: set[str] = set()
         self._loglines_id: int | None = None
         self._log_appends: list[str] = []
@@ -996,7 +1004,10 @@ class Sim:
     # ---- dispatch ----
     def _exec_node(self, nid: int, node: Node, nq: set):
         cls = node.cls
-        if "WireGraphPseudo_BufferTicks" in cls:
+        if "BufferTicks" in cls:
+            # The gate is spelled `WireGraphPseudo_BufferTicks` in the old
+            # dump and `BufferTicks` in the new one, so the match is on the
+            # bare gate name: the old spelling contains it too.
             self._do_buffer(nid, nq)
         elif "WireGraphPseudo_Var" in cls:
             return  # handled at start of each tick
@@ -1316,7 +1327,9 @@ class Sim:
             self._out_val(nid, "DeltaTime", 0.01 * self.tick_delta)
         elif "WireGraph_Exec_SweepSimple" in cls:
             self._do_sweep(nid, nq)
-        elif "WireGraph_ServerUptime" in cls:
+        elif "ServerUptime" in cls:
+            # Old dump: `WireGraph_ServerUptime`. New dump:
+            # `WireGraph_Expr_ServerUptime`. The bare gate name covers both.
             self._do_uptime(nid, nq)
         elif "Internal_ReadBrickGrid" in cls:
             self._do_grid(nid, nq)
@@ -1415,12 +1428,111 @@ class Sim:
                 # next snapshot only happens on a publish or `_exec_in`, both of
                 # which mean a new call is actually using that pin.
                 self._pin_locked.clear()
+        elif "CallableEntry" in cls:
+            # A loop body's entry node. It is DRIVEN by the loop gate, not by an
+            # event: the gate publishes `Index`/`Value` on it and fires `Body`
+            # once per iteration. Firing it here would be a no-op by design --
+            # there is no input port to fire -- so it only forwards what the
+            # gate already published.
+            for w in self.out_wires.get((nid, "Body"), []):
+                nq.add((w.dst_id, w.dst_port))
+        elif "Microchip_CountFor" in cls or "Microchip_ForEach" in cls:
+            self._do_loop(nid, nq)
         else:
             # Unknown gate: never silent — a skipped gate corrupts the run.
             if cls not in self._unimpl_warned:
                 self._unimpl_warned.add(cls)
                 print("irsims: unimplemented gate %s (nid %d)" % (cls, nid),
                       file=sys.stderr, flush=True)
+
+    # ---- loops ----
+    def _do_loop(self, nid: int, nq: set):
+        """A `for` loop gate: run the body once per iteration, then Completed.
+
+        The gate owns a body module whose `CallableEntry` node publishes the
+        iteration variable; this publishes it once per iteration and fires
+        `Body`, which is the body's whole exec chain for that pass.  Count is
+        the iteration count (`CountFor`) or the element count (`ForEachArray`
+        / `ForEachMap`); `Index` runs FirstIndex, FirstIndex+Step, ... and a
+        zero or missing count runs no iterations, which is what a `0..0` range
+        means.
+
+        One gate firing runs ALL its iterations in this tick, sequentially:
+        `Body` re-fires the chain each time, and the chain's writes (the
+        body's var updates) are what the next iteration reads.  `Completed`
+        and `IterationsExecuted` publish after the last one, so a caller that
+        waits on `Completed` sees the loop's writes already done.
+        """
+        entry = self._loop_entries.get(nid)
+        if entry is None:
+            # A loop with no entry in the dump is a parse gap, not a silent
+            # no-op: say so instead of quietly running nothing.
+            if nid not in self._loop_warned:
+                self._loop_warned.add(nid)
+                print("irsims: loop gate %d has no CallableEntry node" % nid,
+                      file=sys.stderr, flush=True)
+            return
+        count = _as_int(self._in_val(nid, "Count", 0), 0)
+        first = _as_int(self._in_val(nid, "FirstIndex", 0), 0)
+        step = _as_int(self._in_val(nid, "Step", 1), 1)
+        if count < 0:
+            count = 0
+        for i in range(count):
+            self._out_val(entry, "Index", first + i * step)
+            # Run the body's chain for this iteration.  NOT through `nq`: the
+            # main drain would run the chain a second time (this pass does not
+            # mark the body gates tick-done, so nothing suppresses it), and the
+            # body would execute twice per iteration -- `for i in 0..10`
+            # incremented `runs` eleven times a tick.
+            self._run_body_pass(entry)
+        self._out_val(nid, "IterationsExecuted", count)
+        self._out_val(nid, "bRunning", False)
+        self._out_val(nid, "bAborted", False)
+        for w in self.out_wires.get((nid, "Completed"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _run_body_pass(self, entry: int):
+        """Drain one body iteration's exec chain to completion, in this tick.
+
+        The main drain marks a gate done for the tick, so an iteration's chain
+        cannot simply be re-queued through it: the second iteration's gates
+        would be skipped as already-done.  This walks the body's chain on its
+        own, running each gate once per pass, so every iteration executes.
+        """
+        seen: set[tuple[int, str]] = set()
+        stack = [(w.dst_id, w.dst_port)
+                 for w in self.out_wires.get((entry, "Body"), [])]
+        guard = 0
+        while stack and guard < 100000:
+            guard += 1
+            nid, port = stack.pop()
+            if (nid, port) in seen:
+                continue
+            seen.add((nid, port))
+            node = self.nodes.get(nid)
+            if node is None:
+                continue
+            # A body pin is a boundary, not work: the loop gate published it.
+            if "Internal_MicrochipInput" in node.cls:
+                continue
+            if port not in ("Exec", "ExecA", "ExecB") \
+                    and "WireGraph_Exec_" in getattr(node, "cls", "") \
+                    and "ChangeDetector" not in getattr(node, "cls", ""):
+                continue
+            nq: set[tuple[int, str]] = set()
+            # The main drain records every node it runs in `fired_nodes`
+            # and `fired_ports`, and a Union fires only when one of its
+            # inputs is recorded there.  A loop body runs through this
+            # pass, not through the drain, so without this a Union inside
+            # a loop body never fires: the erase walk's chain stopped at
+            # the Union after its branch, the row counter never
+            # advanced, and the chip froze with `erasing` stuck true.
+            self.fired_nodes.add(nid)
+            self.fired_ports.add((nid, port))
+            self._exec_node(nid, node, nq)
+            for item in sorted(nq, key=lambda x: x[0]):
+                if item not in seen:
+                    stack.append(item)
 
     # ---- gate impls ----
     def _do_buffer(self, nid: int, nq: set):
@@ -2485,13 +2597,14 @@ class Sim:
 
 def run_ws(ws_path: str, max_ticks: int = MAX_TICKS,
            inputs: dict | None = None) -> dict:
-    from irdump import dump_source_modules, chip_call_groups
+    from irdump import dump_source_modules, chip_call_groups, loop_bodies
     mods = dump_source_modules(ws_path)
     nodes, wires = {}, []
     for m in mods:
         nodes.update(m["nodes"])
         wires.extend(m["wires"])
-    sim = Sim(nodes, [Wire(*w) for w in wires], chip_call_groups(mods))
+    sim = Sim(nodes, [Wire(*w) for w in wires], chip_call_groups(mods),
+              loop_bodies(mods))
     if inputs:
         sim.inputs = dict(inputs)
     return sim.run(max_ticks)
@@ -2510,14 +2623,15 @@ class ChipRunner:
         # A runner is a sim plus nothing, so a worker that already has the sim
         # (loaded from a share_dump pickle, say) can make one without compiling.
         if sim is None:
-            from irdump import dump_source_modules, chip_call_groups
+            from irdump import (dump_source_modules, chip_call_groups,
+                              loop_bodies)
             mods = dump_source_modules(ws_path)
             nodes, wires = {}, []
             for m in mods:
                 nodes.update(m["nodes"])
                 wires.extend(m["wires"])
             sim = Sim(nodes, [Wire(*w) for w in wires],
-                      chip_call_groups(mods))
+                      chip_call_groups(mods), loop_bodies(mods))
         self.sim = sim
 
     def reset(self):
@@ -2550,14 +2664,15 @@ def share_dump(ws_path: str, path: str) -> str:
     seconds before it runs a program that takes a second.
     """
     import pickle
-    from irdump import dump_source_modules, chip_call_groups
+    from irdump import dump_source_modules, chip_call_groups, loop_bodies
     mods = dump_source_modules(ws_path)
     nodes, wires = {}, []
     for m in mods:
         nodes.update(m["nodes"])
         wires.extend(m["wires"])
     with open(path, "wb") as f:
-        pickle.dump((nodes, wires, chip_call_groups(mods)), f)
+        pickle.dump((nodes, wires, chip_call_groups(mods),
+                     loop_bodies(mods)), f)
     return path
 
 
@@ -2566,9 +2681,11 @@ def sim_from_dump(path: str) -> "Sim":
     import pickle
     with open(path, "rb") as f:
         loaded = pickle.load(f)
-    # Pickles from before the groups existed hold (nodes, wires): chipless
-    # sources never need groups, so those load as group-less rather than
-    # failing. Every current writer stores all three.
+    # Pickles from before the groups existed hold (nodes, wires); before the
+    # loop entries they hold three. Chipless and loopless sources never need
+    # either, so older pickles load as empty rather than failing. Every
+    # current writer stores all four.
     nodes, wires = loaded[0], loaded[1]
     groups = loaded[2] if len(loaded) > 2 else None
-    return Sim(nodes, [Wire(*w) for w in wires], groups)
+    loops = loaded[3] if len(loaded) > 3 else None
+    return Sim(nodes, [Wire(*w) for w in wires], groups, loops)
