@@ -1415,7 +1415,7 @@ def main():
                         want[i] = c
             return want
 
-        def run3(commits, step=64):
+        def run3(commits, step=64, points3d=False):
             sim, gids, _, _, pts_aid, cols_aid = fresh_sim(dump_path)
             sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                           "pushShape": False, "shapeWireMode": False,
@@ -1451,8 +1451,12 @@ def main():
                 if tick in plan:
                     st = plan[tick]
                     if "shapePoints" in st:
-                        slide3(sn, pts_aid, cols_aid, st["shapePoints"],
-                               st.get("shapeColors"))
+                        if points3d:
+                            slide3(sn, pts_aid, cols_aid, st["shapePoints"],
+                                   st.get("shapeColors"))
+                        else:
+                            slide(sn, pts_aid, cols_aid, st["shapePoints"],
+                                  st.get("shapeColors"))
                         st = {k: v for k, v in st.items()
                               if k not in ("shapePoints", "shapeColors")}
                     sn.inputs = dict(sn.inputs, **st)
@@ -1551,7 +1555,7 @@ def main():
         q3 = quad3(20.0, 20.0, 44.0, 44.0, 0.0)
         snaps, ends = run3([
             (q3, [RED] * 5, 1.0, Z0, R0, S1, 0.0),
-        ])
+        ], points3d=True)
         # A plane at z = 0 is exactly EYE from the eye, so the divide is
         # the identity there: the chip's 3D path must paint precisely the
         # pixels its 2D path paints for the same outline (poly_pixels is
@@ -1568,7 +1572,7 @@ def main():
         snaps, ends = run3([
             (far, [blue] * 5, 1.0, Z0, R0, S1, 0.0),
             (near, [RED] * 5, 2.0, Z0, R0, S1, 0.0),
-        ])
+        ], points3d=True)
         slots = {1: (far, [blue] * 5, Z0, R0, S1, 0.0),
                  2: (near, [RED] * 5, Z0, R0, S1, 0.0)}
         bad = [i for i in range(SW * SW)
@@ -1585,7 +1589,7 @@ def main():
             qq = quad3(24.0, 24.0, 40.0, 40.0, z)
             snaps, ends = run3([
                 (qq, [RED] * 5, sid, Z0, R0, S1, 0.0),
-            ])
+            ], points3d=True)
             cov.append(len({i for i in range(SW * SW)
                             if not close(snaps[ends[0]][i], BLACK)}))
         ok &= expect(cov[0] < cov[1] < cov[2],
@@ -1631,7 +1635,7 @@ def main():
         commits = [(pts, [fc] * 5, float(k + 2), Z0, R0, S1, 1.0)
                    for k, (pts, fc) in enumerate(cube_faces)]
         commits.insert(0, (mover, [], 1.0, centre, spin, S1, 0.0))
-        snaps, ends = run3(commits, step=72)
+        snaps, ends = run3(commits, step=72, points3d=True)
         slots = {1: (mover, [], centre, spin, S1, 0.0)}
         for k, (pts, fc) in enumerate(cube_faces):
             slots[k + 2] = (pts, [fc] * 5, Z0, R0, S1, 1.0)
