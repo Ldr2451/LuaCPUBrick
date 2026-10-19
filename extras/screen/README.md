@@ -41,7 +41,10 @@ animtest.py     anim.lua end to end
 painted without a draw, so a frame is a push followed by a draw.
 
 - `shapePoints` -- pixel-corner coordinates (`x1, y1, x2, y2, ...`), up
-  to 16 points. A rect covering pixels 0..3 has corners 0 and 4.
+  to 16 points. A rect covering pixels 0..3 has corners 0 and 4. **An
+  odd-length array is (x,y,z) triples instead** (up to 10 points, 30
+  floats): the chip then transforms each point's own z and projects it,
+  so 3D geometry goes out as vertices and comes back as a solid.
 - `shapeColors` -- one colour per point, optional. A shape with
   different colours per point fills as a gradient; with one colour it
   fills flat. Omit the array and every point is white.
@@ -72,11 +75,25 @@ All three of `shapePosition`, `shapeRotation` and `shapeScale` take a
 full vector. The third field of each is live: `shapePosition.z` places a
 shape forwards or backwards in depth, `shapeRotation.x/y` tilt it
 off-axis (a tilted shape foreshortens and self-occludes), and
-`shapeScale.z` scales that depth. Projection is orthographic -- screen
-x/y are world x/y -- and a per-pixel depth buffer decides what paints in
-front, so a nearer shape wins over a later one and a tilted shape
-occludes itself. Points stay flat `x, y` pairs; depth comes from the
-transform, so a solid at several depths is built from shapes at several
+`shapeScale.z` scales that depth.
+
+**3D.** A shape whose point array has an odd length carries (x,y,z)
+triples. Each point's z is transformed with the rest of the vector,
+through the whole parent chain, and the result is then projected:
+`screen = 48 * world / (48 + world.z)` -- the eye sits at z = -48, and
+the denominator is clamped at 1.0 so a point at or behind the eye plane
+projects to a bounded extreme instead of dividing by nearly zero. The
+projection happens *after* the full matrix, so a parent's rotation is
+part of the point before the divide. Depth stays the world z, and a
+per-pixel depth buffer decides what paints in front (bigger z wins), so
+a nearer face beats a farther one and a solid occludes itself. Nothing
+about this needs a mesh helper or a triangulation anywhere: a face is an
+outline, and the chip fills it. Because a 2D array is always even, a 3D
+outline is sent with an odd number of points -- a triangle needs
+nothing, a quad is sent closed (four corners plus the first again).
+
+For 2D points, projection is orthographic -- screen x/y are world x/y --
+so a solid at several depths is built from shapes at several
 `shapePosition.z` under one rotating parent (see `showcase3.lua`).
 
 Nothing expires and nothing needs refreshing: a shape stays on the

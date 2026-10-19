@@ -507,6 +507,47 @@ def xf_points3(pts2, pos, eul, scl, chain=()):
     return out
 
 
+EYE = 48.0
+
+
+def xf_points3d(pts3, pos, eul, scl, chain=()):
+    """Flat xyz triples -> projected (screen x, screen y, world z).
+
+    The chip's 3D per-point step, in its own order: the full local
+    vector through the 3x4 matrix (so the local z counts), then the
+    perspective divide with the eye at z = -EYE and the denominator
+    clamped at 1.0.  The depth handed on is the WORLD z -- the divide
+    moves x/y, not how far the point is -- so the fill's depth test
+    still orders the faces."""
+    m = mat_local(pos, eul, scl)
+    for apar, aeul, ascl in chain:
+        m = mat_mul(mat_local(apar, aeul, ascl), m)
+    out = []
+    for i in range(0, len(pts3), 3):
+        x, y, z = pts3[i], pts3[i + 1], pts3[i + 2]
+        wx = m[0] * x + m[1] * y + m[2] * z + m[3]
+        wy = m[4] * x + m[5] * y + m[6] * z + m[7]
+        wz = m[8] * x + m[9] * y + m[10] * z + m[11]
+        d = EYE + wz
+        if d < 1.0:
+            d = 1.0
+        out.append((EYE * wx / d, EYE * wy / d, wz))
+    return out
+
+
+def quad3(x0, y0, x1, y1, z, closed=True):
+    """A screen-parallel 3D quad as an outline.
+
+    `closed` repeats the first point, which is what makes a 3D array's
+    length odd -- the chip reads an odd length as triples, and a 2D
+    array is always even.  The repeated vertex adds a degenerate
+    closing edge: it fills nothing and moves no bound."""
+    p = [x0, y0, z, x1, y0, z, x1, y1, z, x0, y1, z]
+    if closed:
+        p += [x0, y0, z]
+    return p
+
+
 def z_colors(wpts, colors):
     """The chip's depth-tested fill: {pixel: (colour, z)}.
 
@@ -1302,21 +1343,45 @@ def main():
         # 30-degree tilt matches the matrix model exactly, the tilt
         # crossing a flat shape resolves per pixel, and a flipped
         # parent carries its child through the matrix compose.
-        def want3(slots):
+        def want3(slots, project=False):
             fbz = {}
             want = {}
+            xf = xf_points3d if project else xf_points3
             for kk in sorted(slots):
                 spts, scols, pos, eul, scl, par = slots[kk]
+                # An EMPTY push to a slot is the delete, so an empty slot is
+                # neither a shape nor a live parent: it paints nothing and its
+                # children resolve against the identity.  Anything else is
+                # live -- a two-point mover included, which is how the demos
+                # carry a pivot that owns a placement and no visible shape of
+                # its own.
+                if not spts:
+                    continue
+                # The chip reads an ODD array as (x,y,z) triples and an even
+                # one as (x,y) pairs, then TRUNCATES to whole points
+                # (`(len / 3.0) | 0`).  A mover pushed as five floats is
+                # therefore one 3D point with two floats left over, not two
+                # points with the last one zero-padded -- matching the
+                # truncation here is what keeps the model's point set equal
+                # to the chip's point set.  The orthographic path only ever
+                # sees 2D shapes (every `project=True` case is the 3D one),
+                # so the parity test costs it nothing.
+                step = 3 if len(spts) % 2 else 2
+                spts = spts[:len(spts) - (len(spts) % step)]
+                if not spts:
+                    continue
                 # ancestor chain innermost-first for xf_points3
                 chain = []
                 p = par
                 d = 0
                 while p >= 0.5 and int(p) in slots and d < 8:
                     q = slots[int(p)]
+                    if not q[0]:
+                        break
                     chain.append((q[2], q[3], q[4]))
                     p = q[5]
                     d += 1
-                got = z_colors(xf_points3(spts, pos, eul, scl, chain),
+                got = z_colors(xf(spts, pos, eul, scl, chain),
                                scols)
                 for i, (c, z) in got.items():
                     if z >= fbz.get(i, ZBACK):
@@ -1447,6 +1512,110 @@ def main():
         ok &= expect(not bad, "tilted parent carries child",
                      "%d of 4096 differ, first at %d"
                      % (len(bad), bad[0] if bad else 0))
+
+        # ---- 3D: the chip projects, the CPU sends vertices ---------------
+        # A shape whose point array has an odd length carries (x,y,z)
+        # triples: the chip transforms each point's own z through the
+        # ancestor chain and then divides by its distance from the eye
+        # at z = -EYE.  These cases pin that the whole chain agrees with
+        # the model, that depth still orders faces by world z, that the
+        # divide actually moves pixels (a near face covers more than a
+        # far one), and that a cube of six faces composites as a solid.
+        # No triangulation and no mesh helper: a face is a plain outline.
+        q3 = quad3(20.0, 20.0, 44.0, 44.0, 0.0)
+        snaps, ends = run3([
+            (q3, [RED] * 5, 1.0, Z0, R0, S1, 0.0),
+        ])
+        # A plane at z = 0 is exactly EYE from the eye, so the divide is
+        # the identity there: the chip's 3D path must paint precisely the
+        # pixels its 2D path paints for the same outline (poly_pixels is
+        # the 2D model, transcribed from the fill itself).
+        flat = [20.0, 20.0, 44.0, 20.0, 44.0, 44.0, 20.0, 44.0, 20.0, 20.0]
+        painted = {i for i in range(SW * SW)
+                   if not close(snaps[ends[0]][i], BLACK)}
+        ok &= expect(painted == poly_pixels(flat), "3D quad at z=0 paints like 2D",
+                     "%d lit vs %d modelled, first diff %r"
+                     % (len(painted), len(poly_pixels(flat)),
+                        sorted(painted ^ poly_pixels(flat))[:4]))
+        far = quad3(20.0, 20.0, 44.0, 44.0, 20.0)
+        near = quad3(20.0, 20.0, 44.0, 44.0, -20.0)
+        snaps, ends = run3([
+            (far, [blue] * 5, 1.0, Z0, R0, S1, 0.0),
+            (near, [RED] * 5, 2.0, Z0, R0, S1, 0.0),
+        ])
+        slots = {1: (far, [blue] * 5, Z0, R0, S1, 0.0),
+                 2: (near, [RED] * 5, Z0, R0, S1, 0.0)}
+        bad = [i for i in range(SW * SW)
+               if not close(snaps[ends[1]][i],
+                            want3(slots, True).get(i, BLACK))]
+        ok &= expect(not bad, "3D depth beats slot order",
+                     "%d of 4096 differ, first at %d"
+                     % (len(bad), bad[0] if bad else 0))
+        # The same outline at three depths must cover three different
+        # pixel sets, growing as it nears the eye -- the divide is real.
+        cov = []
+        for z, sid in ((20.0, 1.0), (0.0, 2.0), (-20.0, 3.0)):
+            qq = quad3(24.0, 24.0, 40.0, 40.0, z)
+            snaps, ends = run3([
+                (qq, [RED] * 5, sid, Z0, R0, S1, 0.0),
+            ])
+            cov.append(len({i for i in range(SW * SW)
+                            if not close(snaps[ends[0]][i], BLACK)}))
+        ok &= expect(cov[0] < cov[1] < cov[2],
+                     "perspective spreads a near face",
+                     "far/mid/near pixels %r" % (cov,))
+        # A cube: six closed faces around a pivot, each a 3D outline,
+        # with a parent slot carrying the spin so the faces inherit it.
+        hx = hy = hz = 8.0
+        cx = cy = cz = 0.0
+        cube_faces = [
+            ([cx - hx, cy - hy, cz + hz, cx + hx, cy - hy, cz + hz,
+              cx + hx, cy + hy, cz + hz, cx - hx, cy + hy, cz + hz,
+              cx - hx, cy - hy, cz + hz], RED),
+            ([cx + hx, cy - hy, cz - hz, cx - hx, cy - hy, cz - hz,
+              cx - hx, cy + hy, cz - hz, cx + hx, cy + hy, cz - hz,
+              cx + hx, cy - hy, cz - hz], green),
+            ([cx - hx, cy - hy, cz - hz, cx + hx, cy - hy, cz - hz,
+              cx + hx, cy - hy, cz + hz, cx - hx, cy - hy, cz + hz,
+              cx - hx, cy - hy, cz - hz], blue),
+            ([cx - hx, cy + hy, cz + hz, cx + hx, cy + hy, cz + hz,
+              cx + hx, cy + hy, cz - hz, cx - hx, cy + hy, cz - hz,
+              cx - hx, cy + hy, cz + hz], (1.0, 1.0, 0.2, 1.0)),
+            ([cx - hx, cy - hy, cz - hz, cx - hx, cy - hy, cz + hz,
+              cx - hx, cy + hy, cz + hz, cx - hx, cy + hy, cz - hz,
+              cx - hx, cy - hy, cz - hz], (0.8, 0.2, 0.8, 1.0)),
+            ([cx + hx, cy - hy, cz - hz, cx + hx, cy - hy, cz + hz,
+              cx + hx, cy + hy, cz + hz, cx + hx, cy + hy, cz - hz,
+              cx + hx, cy - hy, cz - hz], (0.2, 0.8, 0.8, 1.0)),
+        ]
+        centre = (32.0, 32.0, 0.0)
+        spin = (0.35, 0.55, 0.0)
+        commits = [(pts, [fc] * 5, float(k + 2), centre, spin, S1, 1.0)
+                   for k, (pts, fc) in enumerate(cube_faces)]
+        # The pivot: a slot that carries the transform and nothing else, so
+        # the six faces inherit its rotation and position as one solid.  It
+        # needs a real (if tiny) shape of its own -- an EMPTY push to a slot
+        # is the delete -- which is why the mover is a dot just off the top
+        # left corner: it paints nothing visible and the faces carry the
+        # frame.
+        mover = [0.0, 0.0, 0.5, 0.5, 0.0]
+        # The faces carry LOCAL vertices (the pivot holds the placement), so
+        # their own transform is the identity.
+        commits = [(pts, [fc] * 5, float(k + 2), Z0, R0, S1, 1.0)
+                   for k, (pts, fc) in enumerate(cube_faces)]
+        commits.insert(0, (mover, [], 1.0, centre, spin, S1, 0.0))
+        snaps, ends = run3(commits, step=72)
+        slots = {1: (mover, [], centre, spin, S1, 0.0)}
+        for k, (pts, fc) in enumerate(cube_faces):
+            slots[k + 2] = (pts, [fc] * 5, Z0, R0, S1, 1.0)
+        bad = [i for i in range(SW * SW)
+               if not close(snaps[ends[-1]][i],
+                            want3(slots, True).get(i, BLACK))]
+        lit = sum(1 for i in range(SW * SW)
+                  if not close(snaps[ends[-1]][i], BLACK))
+        ok &= expect(not bad, "a cube of six faces paints",
+                     "%d of 4096 differ, first at %d (%d lit)"
+                     % (len(bad), bad[0] if bad else 0, lit))
 
         # ---- the load-time phantom paints correctly -----------------------
         # Tick-0 seeding fires every Change detector once, so a walk arms
