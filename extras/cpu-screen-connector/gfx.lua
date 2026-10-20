@@ -134,6 +134,89 @@ function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
 stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 push()
 end
+-- pushMesh(faces, cols, xf, parent, ticks, wire, firstId): send a whole
+-- mesh -- a list of faces -- to the screen as one shape per face, every
+-- face under the same parent, so one transform moves the whole solid.
+--
+-- A face is a flat list of point floats (x, y, z triples): four corners
+-- for a quad, three for a triangle.  The face is closed here (its first
+-- point repeated at the end) unless the caller closed it already, so a
+-- face is the outline the chip draws.
+--
+-- cols is a list with one entry per face.  An entry is either one
+-- colour (r, g, b, a) for the whole face, or one colour per point --
+-- the same flat list stage takes.  No entry means white.
+--
+-- xf, parent, ticks and wire are stage's.  firstId is the slot number
+-- of the first face; the next faces take the next slots, so a mesh of
+-- six faces under a parent in slot 1 is slots 2 to 7.  The screen
+-- remembers eight slots, so a mesh has room for eight faces at the
+-- most, and one less if the mesh needs a slot of its own for the
+-- parent.
+function pushMesh(faces, cols, xf, parent, ticks, wire, firstId)
+local base = firstId
+if base == nil then base = 0 end
+local i = 1
+local n = #faces
+while i <= n do
+local f = faces[i]
+local m = #f
+local np = m / 3
+-- close the outline: the first point again at the end, unless it is
+-- already there.
+local closed = m >= 6 and f[m - 2] == f[1] and f[m - 1] == f[2]
+and f[m] == f[3]
+local pts = f
+if not closed and np > 1 then
+pts = {}
+local k = 1
+while k <= m do
+pts[k] = f[k]
+k = k + 1
+end
+pts[m + 1] = f[1]
+pts[m + 2] = f[2]
+pts[m + 3] = f[3]
+np = np + 1
+end
+-- the face's colours: one for the whole face, or one per point.
+local c = nil
+if cols ~= nil then
+local e = cols[i]
+if e ~= nil then
+if #e == 4 and np > 1 then
+c = {}
+local q = 0
+while q < np do
+c[q * 4 + 1] = e[1]
+c[q * 4 + 2] = e[2]
+c[q * 4 + 3] = e[3]
+c[q * 4 + 4] = e[4]
+q = q + 1
+end
+elseif not closed and #e == np * 4 - 4 then
+-- one colour per point of the open face: the closing point repeats
+-- the first one.
+c = {}
+local k = 1
+while k <= #e do
+c[k] = e[k]
+k = k + 1
+end
+c[#e + 1] = e[1]
+c[#e + 2] = e[2]
+c[#e + 3] = e[3]
+c[#e + 4] = e[4]
+else
+c = e
+end
+end
+end
+stage(pts, c, xf, parent, ticks, wire, tostring(base + i - 1))
+push()
+i = i + 1
+end
+end
 function pushShape(pts, cols, xf, parent)
 stage(pts, cols, xf, parent, nil, nil, "")
 fire()

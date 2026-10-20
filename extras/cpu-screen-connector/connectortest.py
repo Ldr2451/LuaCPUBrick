@@ -30,7 +30,7 @@ import colormath  # noqa: E402
 
 colormath.install()
 from painttest import poly_pixels, stroke_pixels, slide, xf_points  # noqa: E402
-from painttest import close  # noqa: E402
+from painttest import close, slide3  # noqa: E402
 import luastream  # noqa: E402
 from animtest import port_slice  # noqa: E402
 
@@ -68,11 +68,13 @@ GFX = os.path.join(HERE, "gfx.lua")
 # win over the harness's virtual one.
 DRIVER_BODY = """
 -- shape 1: immediate red fill square via the gfx library.
-pushShape({4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0},
+-- Every shape is a list of (x, y, z) triples: the screen's port takes
+-- triples and only triples, so a flat shape says z = 0.
+pushShape({4.0, 4.0, 0.0, 12.0, 4.0, 0.0, 12.0, 12.0, 0.0, 4.0, 12.0, 0.0},
 {1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0,
 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0})
 setWire(1.0)
-pushShape({30.0, 30.0, 50.0, 30.0, 30.0, 50.0},
+pushShape({30.0, 30.0, 0.0, 50.0, 30.0, 0.0, 30.0, 50.0, 0.0},
 {0.1, 0.4, 1.0, 1.0, 0.1, 0.4, 1.0, 1.0, 0.1, 0.4, 1.0, 1.0})
 setWire(0.0)
 -- the stroke is ~22 rows plus its segment steps: nap past the burst
@@ -81,14 +83,14 @@ setWire(0.0)
 nap(0.4)
 -- shape 3: immediate moved square -- transform plus a dead-slot
 -- parent (proves a nonzero id parses while painting identity).
-pushShape({4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0},
+pushShape({4.0, 4.0, 0.0, 12.0, 4.0, 0.0, 12.0, 12.0, 0.0, 4.0, 12.0, 0.0},
 {0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0,
 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0},
 {8.0, 4.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "2")
 outStr(2, "")
 -- shape 4: retained green triangle in slot 1 (identity transform
 -- restated: a push carries its full shape or inherits the mover's).
-editShape("1", {8.0, 8.0, 20.0, 8.0, 8.0, 20.0},
+editShape("1", {8.0, 8.0, 0.0, 20.0, 8.0, 0.0, 8.0, 20.0, 0.0},
 {0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5},
 {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0})
 outStr(1, "")
@@ -96,7 +98,7 @@ outStr(1, "")
 -- The nap below is shape 4's burst settling before the new push,
 -- which would otherwise abort it mid-flight.
 nap(1.2)
-editShape("1", {0.0, 0.0}, nil,
+editShape("1", {0.0, 0.0, 0.0}, nil,
 {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, "0", 4.0)
 outStr(1, "")
 outNumArr(100, 0.0)
@@ -331,11 +333,15 @@ def main():
         # sits well before shape 2 overwrites the array; skip the boot
         # ticks, where the scan's no-terminator fallback stages all 16
         # points (32 zeros).
+        # the connector's tight array: the driver sends (x, y, z) triples
+        # (the screen's port takes triples and only triples), and a flat
+        # shape says z = 0.
+        sq3 = [4.0, 4.0, 0.0, 12.0, 4.0, 0.0, 12.0, 12.0, 0.0,
+               4.0, 12.0, 0.0]
         held = None
         for k in range(1, len(cstream)):
             cc = cstream[k]["shapeColors"]
-            if cstream[k]["shapePoints"] == \
-                    [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0] \
+            if cstream[k]["shapePoints"] == sq3 \
                     and len(cc) >= 4 \
                     and all(tuple(v[:4]) == (1.0, 0.0, 0.0, 1.0)
                             for v in cc[:4]):
@@ -343,8 +349,7 @@ def main():
                 break
         ok &= expect(held is not None, "connector sees a tight array", "")
         if held is not None:
-            ok &= expect(cstream[held]["shapePoints"] ==
-                         [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0],
+            ok &= expect(cstream[held]["shapePoints"] == sq3,
                          "points truncate at the terminator",
                          "%r" % (cstream[held]["shapePoints"],))
             cc = cstream[held]["shapeColors"]
@@ -358,8 +363,7 @@ def main():
         # (the moved square) and check its parsed vecs and parent id
         th = None
         for k in range(1, len(cstream)):
-            if cstream[k]["shapePoints"] == \
-                    [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0] \
+            if cstream[k]["shapePoints"] == sq3 \
                     and (cstream[k].get("parentShapeId") or 0.0) == 2.0:
                 th = k
                 break
@@ -471,8 +475,12 @@ def main():
                 # points, so re-slide when either half changes
                 if (isinstance(a, list) and a != last_slid[0]) \
                         or (cc != last_slid[1]):
-                    slide(s, spts, scols, list(a) if isinstance(a, list)
-                          else [], cc)
+                    # the connector delivers TRIPLES (the screen's port
+                    # takes triples and only triples), so they go across
+                    # as they are; slide() is the pairs-to-triples
+                    # shorthand and would mangle them.
+                    slide3(s, spts, scols, list(a) if isinstance(a, list)
+                           else [], cc)
                     last_slid[0] = list(a) if isinstance(a, list) else None
                     last_slid[1] = cc
                 s.inputs = dict(s.inputs, **{

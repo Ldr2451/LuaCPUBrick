@@ -101,6 +101,65 @@ function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
 stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 push()
 end
+function pushMesh(faces, cols, xf, parent, ticks, wire, firstId)
+local base = firstId
+if base == nil then base = 0 end
+local i = 1
+local n = #faces
+while i <= n do
+local f = faces[i]
+local m = #f
+local np = m / 3
+local closed = m >= 6 and f[m - 2] == f[1] and f[m - 1] == f[2]
+and f[m] == f[3]
+local pts = f
+if not closed and np > 1 then
+pts = {}
+local k = 1
+while k <= m do
+pts[k] = f[k]
+k = k + 1
+end
+pts[m + 1] = f[1]
+pts[m + 2] = f[2]
+pts[m + 3] = f[3]
+np = np + 1
+end
+local c = nil
+if cols ~= nil then
+local e = cols[i]
+if e ~= nil then
+if #e == 4 and np > 1 then
+c = {}
+local q = 0
+while q < np do
+c[q * 4 + 1] = e[1]
+c[q * 4 + 2] = e[2]
+c[q * 4 + 3] = e[3]
+c[q * 4 + 4] = e[4]
+q = q + 1
+end
+elseif not closed and #e == np * 4 - 4 then
+c = {}
+local k = 1
+while k <= #e do
+c[k] = e[k]
+k = k + 1
+end
+c[#e + 1] = e[1]
+c[#e + 2] = e[2]
+c[#e + 3] = e[3]
+c[#e + 4] = e[4]
+else
+c = e
+end
+end
+end
+stage(pts, c, xf, parent, ticks, wire, tostring(base + i - 1))
+push()
+i = i + 1
+end
+end
 function pushShape(pts, cols, xf, parent)
 stage(pts, cols, xf, parent, nil, nil, "")
 fire()

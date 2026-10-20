@@ -116,7 +116,7 @@ the `gfx` Lua library (`extras/cpu-screen-connector/gfx.lua`) --
 which wraps this whole protocol so a driver never has to pick an output
 port. The showcase programs (in
 `extras/cpu-screen-connector/sample-programs/`) (`showcase.lua`,
-`showcase2.lua`, `showcase3.lua`, `cube.lua`, `mesh.lua`) use it and
+`showcase2.lua`, `showcase3.lua`, `cube.lua`) use it and
 between them cover per-point colours, editing a shape that is already
 on the panel, the deferred clear, the pending queue, animation, and
 depth and tilt.

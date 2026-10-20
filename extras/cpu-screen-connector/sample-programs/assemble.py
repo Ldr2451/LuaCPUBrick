@@ -23,7 +23,7 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 GFX = os.path.join(os.path.dirname(HERE), "gfx.lua")
 BODIES = ("showcase.lua", "showcase2.lua", "anim.lua", "showcase3.lua",
-          "cube.lua", "mesh.lua")
+          "cube.lua")
 
 
 def strip(src):

@@ -42,7 +42,7 @@ sys.argv = [sys.argv[0]] + _args
 from irsims import share_dump, sim_from_dump, _extract  # noqa: E402
 import colormath  # noqa: E402
 colormath.install()
-from painttest import slide  # noqa: E402
+from painttest import slide3  # noqa: E402
 import luastream  # noqa: E402
 from animtest import port_slice  # noqa: E402
 
@@ -364,8 +364,14 @@ def main():
                 cc = c.get("shapeColors")
                 if (isinstance(a, list) and a != last_slid[0]) \
                         or (cc != last_slid[1]):
-                    slide(s, spts, scols, list(a) if isinstance(a, list)
-                          else [], cc)
+                    # the connector delivers TRIPLES (the screen's port
+                    # takes triples and only triples), so they are
+                    # delivered as they are.  slide() is the suite's
+                    # pairs-to-triples shorthand for shapes written as
+                    # (x, y) pairs, and it mangles a delivered triple
+                    # stream into the wrong point count.
+                    slide3(s, spts, scols, list(a) if isinstance(a, list)
+                           else [], cc)
                     last_slid[0] = list(a) if isinstance(a, list) else None
                     last_slid[1] = cc
                 s.inputs = dict(s.inputs, **{
