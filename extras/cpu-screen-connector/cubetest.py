@@ -184,6 +184,13 @@ def latch_edges(samples):
     return out
 
 
+def expect(cond, what, detail=""):
+    """Report one check; the run is green only if every check is."""
+    print("%-4s %s%s" % ("OK" if cond else "FAIL", what,
+                         "" if cond else " -- " + str(detail)))
+    return bool(cond)
+
+
 def report(tag, wall):
     if wall is None:
         print("%s: no snapshot" % tag)
@@ -319,6 +326,52 @@ def main():
     if not shown:
         print("  NO non-zero shapePoints staged => screen gets empties")
         ok = False
+
+    # ---- pushMesh: the cube's six faces arrive as six shapes ---------------
+    # The demo builds its cube with pushMesh (a list of faces, one shape
+    # each, all under one parent), so the connector's stream IS the
+    # helper's contract: six shapes, slots 2..7, each under the pivot
+    # in slot 1, each carrying one face's four corners as a closed
+    # outline (five points, fifteen floats) and one colour per point.
+    faces = []
+    prev = 0.0
+    for k, r in enumerate(cstream):
+        if (r["pushShape"] or 0.0) > 0.5 and prev <= 0.5:
+            faces.append((k, r))
+        prev = r["pushShape"] or 0.0
+    ok &= expect(len(faces) == 8, "pushMesh sends the cube's six faces",
+                 "%d pushes" % len(faces))
+    if len(faces) == 8:
+        for i, (k, r) in enumerate(faces[:6]):
+            ok &= expect((r["shapeId"] or 0.0) == float(i + 2),
+                         "face %d takes slot %d" % (i, i + 2),
+                         "id=%s" % (r.get("shapeId"),))
+            ok &= expect((r["parentShapeId"] or 0.0) == 1.0,
+                         "face %d follows the pivot" % i,
+                         "parent=%s" % (r.get("parentShapeId"),))
+            ok &= expect(len(r["shapePoints"]) == 15,
+                         "face %d is a closed outline" % i,
+                         "%d floats" % len(r["shapePoints"]))
+            ok &= expect((r["shapeWireMode"] or 0.0) > 0.5,
+                         "face %d is a wireframe" % i,
+                         "wire=%s" % (r.get("shapeWireMode"),))
+            cols = r.get("shapeColors") or []
+            # the face's own five points carry one colour each; the
+            # connector's array is padded past them (it sizes the
+            # colour slice by floats, so it runs to its 16 cap), and
+            # the chip reads as many colours as the shape has points.
+            ok &= expect(len(cols) >= 5 and
+                         len(set(tuple(round(x, 3) for x in c[:4])
+                                for c in cols[:5])) == 1,
+                         "face %d carries one colour" % i,
+                         "%r" % (cols[:2],))
+        # the pivot: one point (a live slot with nothing to fill)
+        pk, pr = faces[6]
+        ok &= expect((pr["shapeId"] or 0.0) == 1.0,
+                     "the pivot is slot 1", "id=%s" % (pr.get("shapeId"),))
+        ok &= expect(len(pr["shapePoints"]) == 3,
+                     "the pivot is one point",
+                     "%d floats" % len(pr["shapePoints"]))
 
     # ---- phase 3: screen replay ---------------------------------------
     with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:

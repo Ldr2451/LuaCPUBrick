@@ -237,6 +237,14 @@ def oracle_run(src, inputs=None, sinputs=None, vec=None, col=None,
     pre.append("  SP = 0")
     pre.append("  return function() return io.read('*l') end")
     pre.append("end")
+    # clock() is a chip builtin PUC's Lua does not have, so a program
+    # that calls it dies on the reference before it can print the line
+    # the chip prints.  The shim answers a number that only has to be
+    # the right TYPE and not negative -- the chip's own clock() is a
+    # running tick count, and no test can compare the two values (the
+    # chip's ticks and the host's seconds are different clocks).
+    pre.append("local CLOCK = 0.0")
+    pre.append("clock = function() CLOCK = CLOCK + 0.001 return CLOCK end")
     prog = "\n".join(pre) + "\n" + src
     with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False) as f:
         f.write(prog)
