@@ -13070,7 +13070,7 @@ mod paintTick() {
           let wd0 = if EYE - wz0 < 1.0 then 1.0 else EYE - wz0
           shPts[0] = EYE * (wx0 - EYE_X) / wd0 + EYE_X
           shPts[1] = EYE * (wy0 - EYE_Y) / wd0 + EYE_Y
-          shPz[0] = wz0
+          shPz[0] = 1.0 / wd0
           let ux1 = shPts[3]
           let uy1 = shPts[4]
           let uz1 = shPts[5]
@@ -13080,7 +13080,7 @@ mod paintTick() {
           let wd1 = if EYE - wz1 < 1.0 then 1.0 else EYE - wz1
           shPts[2] = EYE * (wx1 - EYE_X) / wd1 + EYE_X
           shPts[3] = EYE * (wy1 - EYE_Y) / wd1 + EYE_Y
-          shPz[1] = wz1
+          shPz[1] = 1.0 / wd1
           let ux2 = shPts[6]
           let uy2 = shPts[7]
           let uz2 = shPts[8]
@@ -13090,7 +13090,7 @@ mod paintTick() {
           let wd2 = if EYE - wz2 < 1.0 then 1.0 else EYE - wz2
           shPts[4] = EYE * (wx2 - EYE_X) / wd2 + EYE_X
           shPts[5] = EYE * (wy2 - EYE_Y) / wd2 + EYE_Y
-          shPz[2] = wz2
+          shPz[2] = 1.0 / wd2
           let ux3 = shPts[9]
           let uy3 = shPts[10]
           let uz3 = shPts[11]
@@ -13100,7 +13100,7 @@ mod paintTick() {
           let wd3 = if EYE - wz3 < 1.0 then 1.0 else EYE - wz3
           shPts[6] = EYE * (wx3 - EYE_X) / wd3 + EYE_X
           shPts[7] = EYE * (wy3 - EYE_Y) / wd3 + EYE_Y
-          shPz[3] = wz3
+          shPz[3] = 1.0 / wd3
           let ux4 = shPts[12]
           let uy4 = shPts[13]
           let uz4 = shPts[14]
@@ -13110,7 +13110,7 @@ mod paintTick() {
           let wd4 = if EYE - wz4 < 1.0 then 1.0 else EYE - wz4
           shPts[8] = EYE * (wx4 - EYE_X) / wd4 + EYE_X
           shPts[9] = EYE * (wy4 - EYE_Y) / wd4 + EYE_Y
-          shPz[4] = wz4
+          shPz[4] = 1.0 / wd4
           let ux5 = shPts[15]
           let uy5 = shPts[16]
           let uz5 = shPts[17]
@@ -13120,7 +13120,7 @@ mod paintTick() {
           let wd5 = if EYE - wz5 < 1.0 then 1.0 else EYE - wz5
           shPts[10] = EYE * (wx5 - EYE_X) / wd5 + EYE_X
           shPts[11] = EYE * (wy5 - EYE_Y) / wd5 + EYE_Y
-          shPz[5] = wz5
+          shPz[5] = 1.0 / wd5
           let ux6 = shPts[18]
           let uy6 = shPts[19]
           let uz6 = shPts[20]
@@ -13130,7 +13130,7 @@ mod paintTick() {
           let wd6 = if EYE - wz6 < 1.0 then 1.0 else EYE - wz6
           shPts[12] = EYE * (wx6 - EYE_X) / wd6 + EYE_X
           shPts[13] = EYE * (wy6 - EYE_Y) / wd6 + EYE_Y
-          shPz[6] = wz6
+          shPz[6] = 1.0 / wd6
           let ux7 = shPts[21]
           let uy7 = shPts[22]
           let uz7 = shPts[23]
@@ -13140,7 +13140,7 @@ mod paintTick() {
           let wd7 = if EYE - wz7 < 1.0 then 1.0 else EYE - wz7
           shPts[14] = EYE * (wx7 - EYE_X) / wd7 + EYE_X
           shPts[15] = EYE * (wy7 - EYE_Y) / wd7 + EYE_Y
-          shPz[7] = wz7
+          shPz[7] = 1.0 / wd7
           let ux8 = shPts[24]
           let uy8 = shPts[25]
           let uz8 = shPts[26]
@@ -13150,7 +13150,7 @@ mod paintTick() {
           let wd8 = if EYE - wz8 < 1.0 then 1.0 else EYE - wz8
           shPts[16] = EYE * (wx8 - EYE_X) / wd8 + EYE_X
           shPts[17] = EYE * (wy8 - EYE_Y) / wd8 + EYE_Y
-          shPz[8] = wz8
+          shPz[8] = 1.0 / wd8
           let ux9 = shPts[27]
           let uy9 = shPts[28]
           let uz9 = shPts[29]
@@ -13160,7 +13160,7 @@ mod paintTick() {
           let wd9 = if EYE - wz9 < 1.0 then 1.0 else EYE - wz9
           shPts[18] = EYE * (wx9 - EYE_X) / wd9 + EYE_X
           shPts[19] = EYE * (wy9 - EYE_Y) / wd9 + EYE_Y
-          shPz[9] = wz9
+          shPz[9] = 1.0 / wd9
           let ux10 = shPts[30]
           let uy10 = shPts[31]
           let uz10 = shPts[32]
@@ -13170,7 +13170,7 @@ mod paintTick() {
           let wd10 = if EYE - wz10 < 1.0 then 1.0 else EYE - wz10
           shPts[20] = EYE * (wx10 - EYE_X) / wd10 + EYE_X
           shPts[21] = EYE * (wy10 - EYE_Y) / wd10 + EYE_Y
-          shPz[10] = wz10
+          shPz[10] = 1.0 / wd10
           let ux11 = shPts[33]
           let uy11 = shPts[34]
           let uz11 = shPts[35]
@@ -13180,7 +13180,7 @@ mod paintTick() {
           let wd11 = if EYE - wz11 < 1.0 then 1.0 else EYE - wz11
           shPts[22] = EYE * (wx11 - EYE_X) / wd11 + EYE_X
           shPts[23] = EYE * (wy11 - EYE_Y) / wd11 + EYE_Y
-          shPz[11] = wz11
+          shPz[11] = 1.0 / wd11
           let ux12 = shPts[36]
           let uy12 = shPts[37]
           let uz12 = shPts[38]
@@ -13190,7 +13190,7 @@ mod paintTick() {
           let wd12 = if EYE - wz12 < 1.0 then 1.0 else EYE - wz12
           shPts[24] = EYE * (wx12 - EYE_X) / wd12 + EYE_X
           shPts[25] = EYE * (wy12 - EYE_Y) / wd12 + EYE_Y
-          shPz[12] = wz12
+          shPz[12] = 1.0 / wd12
           let ux13 = shPts[39]
           let uy13 = shPts[40]
           let uz13 = shPts[41]
@@ -13200,7 +13200,7 @@ mod paintTick() {
           let wd13 = if EYE - wz13 < 1.0 then 1.0 else EYE - wz13
           shPts[26] = EYE * (wx13 - EYE_X) / wd13 + EYE_X
           shPts[27] = EYE * (wy13 - EYE_Y) / wd13 + EYE_Y
-          shPz[13] = wz13
+          shPz[13] = 1.0 / wd13
           let ux14 = shPts[42]
           let uy14 = shPts[43]
           let uz14 = shPts[44]
@@ -13210,7 +13210,7 @@ mod paintTick() {
           let wd14 = if EYE - wz14 < 1.0 then 1.0 else EYE - wz14
           shPts[28] = EYE * (wx14 - EYE_X) / wd14 + EYE_X
           shPts[29] = EYE * (wy14 - EYE_Y) / wd14 + EYE_Y
-          shPz[14] = wz14
+          shPz[14] = 1.0 / wd14
           let ux15 = shPts[45]
           let uy15 = shPts[46]
           let uz15 = shPts[47]
@@ -13220,7 +13220,7 @@ mod paintTick() {
           let wd15 = if EYE - wz15 < 1.0 then 1.0 else EYE - wz15
           shPts[30] = EYE * (wx15 - EYE_X) / wd15 + EYE_X
           shPts[31] = EYE * (wy15 - EYE_Y) / wd15 + EYE_Y
-          shPz[15] = wz15
+          shPz[15] = 1.0 / wd15
     }
   }
   if arming {

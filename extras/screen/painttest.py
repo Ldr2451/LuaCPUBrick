@@ -511,7 +511,7 @@ EYE_Y = 32.0
 
 
 def xf_points3d(pts3, pos, eul, scl, chain=()):
-    """Flat xyz triples -> projected (screen x, screen y, world z).
+    """Flat xyz triples -> projected (screen x, screen y, 1/d).
 
     The chip's 3D per-point step, in its own order: the full local
     vector through the 3x4 matrix (so the local z counts), then the
@@ -520,9 +520,23 @@ def xf_points3d(pts3, pos, eul, scl, chain=()):
     is in front because +z is the direction the depth test calls "in
     front", and the two have to agree: a nearer thing is bigger.  A
     point at z = 0 is unchanged by the divide (the offsets cancel), so a
-    flat shape lands exactly where the 2D path would put it.  The depth
-    handed on is the WORLD z -- the divide moves x/y, not how far the
-    point is -- so the fill's depth test still orders the faces."""
+    flat shape lands exactly where the 2D path would put it.
+
+    The depth handed on is 1/d -- the RECIPROCAL of the distance the
+    divide uses, not the world z.  The fill ramps the depth linearly in
+    screen space between the row's two crossings, and a plane's true
+    depth is not linear in screen x under a perspective divide: ramping
+    the world z is off by up to 2.1 units on a 20-unit face, while 1/d
+    is exact (it IS affine in screen space for a plane).  Two faces of a
+    solid meet at a shared edge and each ramps its own depth there, so
+    with the world z the two disagree by ~24 units AT that edge and the
+    depth test hands a band of pixels to the wrong face -- the green
+    line.  With 1/d both faces compute the same depth there, because it
+    is one 3D edge.
+
+    The ordering is unchanged: d = EYE - wz, so a bigger world z is a
+    smaller d and a bigger 1/d -- "bigger depth wins" still means "nearer
+    wins"."""
     m = mat_local(pos, eul, scl)
     for apar, aeul, ascl in chain:
         m = mat_mul(mat_local(apar, aeul, ascl), m)
@@ -536,7 +550,7 @@ def xf_points3d(pts3, pos, eul, scl, chain=()):
         if d < 1.0:
             d = 1.0
         out.append((EYE * (wx - EYE_X) / d + EYE_X,
-                    EYE * (wy - EYE_Y) / d + EYE_Y, wz))
+                    EYE * (wy - EYE_Y) / d + EYE_Y, 1.0 / d))
     return out
 
 

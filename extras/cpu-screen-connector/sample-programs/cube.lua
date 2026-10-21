@@ -2,45 +2,58 @@
 --
 -- The chip does the rest: it transforms each vertex through the whole
 -- parent chain, keeps the world z as the depth, and projects with a
--- perspective divide.  So this program sends vertices and per-face
--- colours and never computes a pixel, a projection or a triangulation
--- -- what it sends IS the cube.
+-- perspective divide.  So this program sends vertices and colours and
+-- never computes a pixel, a projection or a triangulation -- what it
+-- sends IS the cube.
 --
--- The cube is six faces, and pushMesh sends them as six shapes under
--- one parent, so the parent's spin moves the whole solid.
+-- The cube is eight vertices and six faces, and pushMesh sends the
+-- faces as six shapes under one parent, so the parent's turn moves the
+-- whole solid.  The vertices are the cube's, and a vertex's colour is
+-- the colour of the EDGES that meet there: every face shares the
+-- vertices it touches, so an edge is drawn once, in one colour, and
+-- the two faces that meet along it cannot show through each other.
 clearScreen()
 -- The half-size of the cube.  The near face is magnified by the
 -- perspective divide, and a cube that turns presents its diagonal, so
 -- the model size is not the screen size: 15 clipped the right edge of
 -- the wall and 12 still touched it, so the cube is 10.
 local h = 10.0
-local x0, x1 = -h, h
-local y0, y1 = -h, h
-local z0, z1 = -h, h
--- The six faces, each four corners (x, y, z).  The winding runs the
--- same way round on every face, so the near face is drawn over the far
--- one and the cube reads as a solid.
-local faces = {
-{x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1},
-{x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0},
-{x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1},
-{x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1},
-{x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0},
-{x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0},
+-- The eight vertices of the cube, in the order the faces below name
+-- them: 1..4 are the near face, 5..8 the far one.
+local pts = {
+-h, -h, h,  h, -h, h,  h, h, h,  -h, h, h,
+-h, -h, -h,  h, -h, -h,  h, h, -h,  -h, h, -h,
 }
--- One colour per face.
+-- One colour per vertex.  A vertex is where three faces meet, so its
+-- colour is the colour of the corner it makes: the four NEAR vertices
+-- are bright and the four FAR ones dark, so the cube reads as one solid
+-- turning rather than as six separate coloured squares.  Because a
+-- vertex is shared, an edge between two faces is drawn in the same
+-- colour from both sides.
 local cols = {
-{0.95, 0.95, 1.0, 1.0},
-{0.22, 0.22, 0.28, 1.0},
-{0.90, 0.25, 0.25, 1.0},
-{0.25, 0.85, 0.35, 1.0},
-{0.95, 0.85, 0.30, 1.0},
-{0.30, 0.80, 0.90, 1.0},
+0.95, 0.95, 1.00, 1.00,
+0.95, 0.90, 0.85, 1.00,
+0.95, 0.85, 0.55, 1.00,
+0.90, 0.80, 0.50, 1.00,
+0.35, 0.30, 0.35, 1.00,
+0.40, 0.35, 0.40, 1.00,
+0.45, 0.40, 0.45, 1.00,
+0.40, 0.35, 0.40, 1.00,
+}
+-- The six faces, each naming its vertices.  Every face is a closed
+-- outline of four vertices.
+local faces = {
+{1, 2, 3, 4},
+{5, 8, 7, 6},
+{1, 5, 6, 2},
+{4, 3, 7, 8},
+{1, 4, 8, 5},
+{2, 6, 7, 3},
 }
 -- The six faces go to the screen as six shapes, slots 2 to 7, all
 -- under the pivot in slot 1.  They go as OUTLINES, so the cube reads
 -- as a wireframe solid: you can see which face is which as it turns.
-pushMesh(faces, cols, nil, "1", nil, 1.0, 2)
+pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
 -- The pivot: where the cube sits on the wall and how it is turned.  It
 -- needs a shape of its own -- an EMPTY push to a slot is the delete --
 -- but it must not paint: one point is a live slot with no edge to

@@ -101,63 +101,60 @@ function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
 stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 push()
 end
-function pushMesh(faces, cols, xf, parent, ticks, wire, firstId)
+function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
 local base = firstId
 if base == nil then base = 0 end
-local i = 1
-local n = #faces
-while i <= n do
-local f = faces[i]
-local m = #f
-local np = m / 3
-local closed = m >= 6 and f[m - 2] == f[1] and f[m - 1] == f[2]
-and f[m] == f[3]
-local pts = f
-if not closed and np > 1 then
-pts = {}
+local f = 1
+local nfaces = #faces
+while f <= nfaces do
+local face = faces[f]
+local m = #face
+local pts = {}
+local cols = {}
+local np = 0
+local nc = 0
 local k = 1
 while k <= m do
-pts[k] = f[k]
-k = k + 1
-end
-pts[m + 1] = f[1]
-pts[m + 2] = f[2]
-pts[m + 3] = f[3]
+local vi = face[k]
+local b = (vi - 1) * 3
 np = np + 1
+pts[np] = points[b]
+np = np + 1
+pts[np] = points[b + 1]
+np = np + 1
+pts[np] = points[b + 2]
+if pcols ~= nil then
+local c = (vi - 1) * 4
+nc = nc + 1
+cols[nc] = pcols[c]
+nc = nc + 1
+cols[nc] = pcols[c + 1]
+nc = nc + 1
+cols[nc] = pcols[c + 2]
+nc = nc + 1
+cols[nc] = pcols[c + 3]
 end
-local c = nil
-if cols ~= nil then
-local e = cols[i]
-if e ~= nil then
-if #e == 4 and np > 1 then
-c = {}
-local q = 0
-while q < np do
-c[q * 4 + 1] = e[1]
-c[q * 4 + 2] = e[2]
-c[q * 4 + 3] = e[3]
-c[q * 4 + 4] = e[4]
-q = q + 1
-end
-elseif not closed and #e == np * 4 - 4 then
-c = {}
-local k = 1
-while k <= #e do
-c[k] = e[k]
 k = k + 1
 end
-c[#e + 1] = e[1]
-c[#e + 2] = e[2]
-c[#e + 3] = e[3]
-c[#e + 4] = e[4]
-else
-c = e
+np = np + 1
+pts[np] = pts[1]
+np = np + 1
+pts[np] = pts[2]
+np = np + 1
+pts[np] = pts[3]
+if pcols ~= nil then
+nc = nc + 1
+cols[nc] = cols[1]
+nc = nc + 1
+cols[nc] = cols[2]
+nc = nc + 1
+cols[nc] = cols[3]
+nc = nc + 1
+cols[nc] = cols[4]
 end
-end
-end
-stage(pts, c, xf, parent, ticks, wire, tostring(base + i - 1))
+stage(pts, cols, xf, parent, ticks, wire, tostring(base + f - 1))
 push()
-i = i + 1
+f = f + 1
 end
 end
 function pushShape(pts, cols, xf, parent)
@@ -183,26 +180,29 @@ end
 end
 clearScreen()
 local h = 10.0
-local x0, x1 = -h, h
-local y0, y1 = -h, h
-local z0, z1 = -h, h
-local faces = {
-{x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1},
-{x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0},
-{x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1},
-{x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1},
-{x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0},
-{x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0},
+local pts = {
+-h, -h, h,  h, -h, h,  h, h, h,  -h, h, h,
+-h, -h, -h,  h, -h, -h,  h, h, -h,  -h, h, -h,
 }
 local cols = {
-{0.95, 0.95, 1.0, 1.0},
-{0.22, 0.22, 0.28, 1.0},
-{0.90, 0.25, 0.25, 1.0},
-{0.25, 0.85, 0.35, 1.0},
-{0.95, 0.85, 0.30, 1.0},
-{0.30, 0.80, 0.90, 1.0},
+0.95, 0.95, 1.00, 1.00,
+0.95, 0.90, 0.85, 1.00,
+0.95, 0.85, 0.55, 1.00,
+0.90, 0.80, 0.50, 1.00,
+0.35, 0.30, 0.35, 1.00,
+0.40, 0.35, 0.40, 1.00,
+0.45, 0.40, 0.45, 1.00,
+0.40, 0.35, 0.40, 1.00,
 }
-pushMesh(faces, cols, nil, "1", nil, 1.0, 2)
+local faces = {
+{1, 2, 3, 4},
+{5, 8, 7, 6},
+{1, 5, 6, 2},
+{4, 3, 7, 8},
+{1, 4, 8, 5},
+{2, 6, 7, 3},
+}
+pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
 editShape("1", {0.0, 0.0, 0.0}, nil, {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
 stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.010, 0.0, 0.0, 0.0}, "0", -1.0, nil, "1")
 push()

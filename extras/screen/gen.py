@@ -2111,13 +2111,15 @@ for _s in range(8):
 # The per-point step: the matrix is applied to a full (x,y,z) vector
 # (x' = m00*x + m01*y + m02*z + m03) and the result is then PROJECTED --
 # divided by its distance from the eye, which is what turns a set of
-# world points into something that looks like a solid.  Depth stays the
-# world z, so the depth buffer still orders the faces.  The projected
-# pair goes back into the shPts slots the arms read, so the arms, the
-# fills and the recomposite are the same code they have always been;
-# only the vertices moved.  A shape carries at most 16 points (48
-# floats) and the points past the shape's count are inert: every edge is
-# gated by `i < n`.
+# world points into something that looks like a solid.  The depth channel
+# carries 1/d (the reciprocal of the same distance the divide uses),
+# NOT the world z: the fill ramps the depth linearly in SCREEN space,
+# and only a screen-affine quantity survives that ramp intact -- see
+# the note where shPz is written.  The projected pair goes back into the
+# shPts slots the arms read, so the arms, the fills and the recomposite
+# are the same code they have always been; only the vertices moved.  A
+# shape carries at most 16 points (48 floats) and the points past the
+# shape's count are inert: every edge is gated by `i < n`.
 for i in range(MAXP3):
     L.append("          let ux%d = shPts[%d]" % (i, 3 * i))
     L.append("          let uy%d = shPts[%d]" % (i, 3 * i + 1))
@@ -2148,7 +2150,30 @@ for i in range(MAXP3):
              % (2 * i, i, i))
     L.append("          shPts[%d] = EYE * (wy%d - EYE_Y) / wd%d + EYE_Y"
              % (2 * i + 1, i, i))
-    L.append("          shPz[%d] = wz%d" % (i, i))
+    # The depth channel carries 1/d, NOT the world z.
+    #
+    # The fill ramps the depth linearly in SCREEN space between the row's
+    # two crossings, so the quantity it carries must be affine in screen
+    # space -- and the world z is not.  Under a perspective divide the
+    # true depth of a plane along a scanline is not linear in screen x:
+    # measured on a 20-unit tilted face, ramping the world z in screen x
+    # is off by up to 2.1 units, while 1/d is exact (error 0.000000),
+    # because 1/d IS affine in screen space for a plane.
+    #
+    # The error is not academic: two faces of a solid meet at a shared
+    # edge, and each face ramps its own depth there.  With the world z
+    # the two ramps disagree by ~24 units AT the shared edge, so the
+    # depth test picks the wrong face for a band of pixels along every
+    # shared edge -- the back face wins a 1-3 px stripe, which is the
+    # green line.  With 1/d both faces compute the SAME depth there (it
+    # is one 3D edge), so the test ties and the later face repaints,
+    # and the two faces agree on the colour as well.
+    #
+    # The ordering is unchanged: d = EYE - wz, so a bigger world z is a
+    # smaller d and a BIGGER 1/d -- "bigger depth wins" still means
+    # "nearer wins", and the flat/2D path lands on the same depths as
+    # before (a flat shape has one z, so one 1/d).
+    L.append("          shPz[%d] = 1.0 / wd%d" % (i, i))
 L.append("    }")
 L.append("  }")
 

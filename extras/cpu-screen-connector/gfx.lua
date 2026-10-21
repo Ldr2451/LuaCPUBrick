@@ -134,87 +134,89 @@ function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
 stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 push()
 end
--- pushMesh(faces, cols, xf, parent, ticks, wire, firstId): send a whole
--- mesh -- a list of faces -- to the screen as one shape per face, every
--- face under the same parent, so one transform moves the whole solid.
+-- pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId):
+-- send a whole mesh to the screen.
 --
--- A face is a flat list of point floats (x, y, z triples): four corners
--- for a quad, three for a triangle.  The face is closed here (its first
--- point repeated at the end) unless the caller closed it already, so a
--- face is the outline the chip draws.
+-- points -- the mesh's vertices, a flat list of (x, y, z) triples.
+-- pcols  -- one colour (r, g, b, a) per vertex, in the same order.
+--           A vertex's colour is ITS colour: a vertex shared by several
+--           faces carries that same colour into every one of them, so a
+--           shared edge is stroked once in one colour and the two faces
+--           meeting there cannot show through each other.
+-- faces  -- the faces, each a list of vertex indices (1-based) into
+--           points: four for a quad, three for a triangle.
 --
--- cols is a list with one entry per face.  An entry is either one
--- colour (r, g, b, a) for the whole face, or one colour per point --
--- the same flat list stage takes.  No entry means white.
+-- Every face goes to the screen as its own shape -- the screen draws one
+-- outline per shape -- and all the faces share one parent, so one
+-- transform moves the whole solid.  firstId is the slot of the first
+-- face and the next faces take the next slots: a six-face cube under a
+-- pivot in slot 1 is slots 2 to 7.  The screen remembers eight slots,
+-- so a mesh has room for eight faces at the most, and one less if the
+-- mesh needs a slot of its own for the parent.
 --
--- xf, parent, ticks and wire are stage's.  firstId is the slot number
--- of the first face; the next faces take the next slots, so a mesh of
--- six faces under a parent in slot 1 is slots 2 to 7.  The screen
--- remembers eight slots, so a mesh has room for eight faces at the
--- most, and one less if the mesh needs a slot of its own for the
--- parent.
-function pushMesh(faces, cols, xf, parent, ticks, wire, firstId)
+-- A face's outline is closed here (its first vertex repeated at the
+-- end), because the screen's stroke joins consecutive points and an
+-- open outline would not come back round.
+function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
 local base = firstId
 if base == nil then base = 0 end
-local i = 1
-local n = #faces
-while i <= n do
-local f = faces[i]
-local m = #f
-local np = m / 3
--- close the outline: the first point again at the end, unless it is
--- already there.
-local closed = m >= 6 and f[m - 2] == f[1] and f[m - 1] == f[2]
-and f[m] == f[3]
-local pts = f
-if not closed and np > 1 then
-pts = {}
+local f = 1
+local nfaces = #faces
+while f <= nfaces do
+local face = faces[f]
+local m = #face
+-- the face's points, closed: the first vertex again at the end.
+-- The counts are kept by hand: writing t[#t + 1] and then t[#t + 2]
+-- re-reads the length after the first write, which leaves a hole in
+-- the table and the shape arrives with a hole in it.
+local pts = {}
+local cols = {}
+local np = 0
+local nc = 0
 local k = 1
 while k <= m do
-pts[k] = f[k]
-k = k + 1
-end
-pts[m + 1] = f[1]
-pts[m + 2] = f[2]
-pts[m + 3] = f[3]
+local vi = face[k]
+local b = (vi - 1) * 3
 np = np + 1
+pts[np] = points[b]
+np = np + 1
+pts[np] = points[b + 1]
+np = np + 1
+pts[np] = points[b + 2]
+-- the vertex's colour, the same one in every face that uses it
+if pcols ~= nil then
+local c = (vi - 1) * 4
+nc = nc + 1
+cols[nc] = pcols[c]
+nc = nc + 1
+cols[nc] = pcols[c + 1]
+nc = nc + 1
+cols[nc] = pcols[c + 2]
+nc = nc + 1
+cols[nc] = pcols[c + 3]
 end
--- the face's colours: one for the whole face, or one per point.
-local c = nil
-if cols ~= nil then
-local e = cols[i]
-if e ~= nil then
-if #e == 4 and np > 1 then
-c = {}
-local q = 0
-while q < np do
-c[q * 4 + 1] = e[1]
-c[q * 4 + 2] = e[2]
-c[q * 4 + 3] = e[3]
-c[q * 4 + 4] = e[4]
-q = q + 1
-end
-elseif not closed and #e == np * 4 - 4 then
--- one colour per point of the open face: the closing point repeats
--- the first one.
-c = {}
-local k = 1
-while k <= #e do
-c[k] = e[k]
 k = k + 1
 end
-c[#e + 1] = e[1]
-c[#e + 2] = e[2]
-c[#e + 3] = e[3]
-c[#e + 4] = e[4]
-else
-c = e
+-- close the outline: the first vertex again, with its colour
+np = np + 1
+pts[np] = pts[1]
+np = np + 1
+pts[np] = pts[2]
+np = np + 1
+pts[np] = pts[3]
+if pcols ~= nil then
+nc = nc + 1
+cols[nc] = cols[1]
+nc = nc + 1
+cols[nc] = cols[2]
+nc = nc + 1
+cols[nc] = cols[3]
+nc = nc + 1
+cols[nc] = cols[4]
 end
-end
-end
-stage(pts, c, xf, parent, ticks, wire, tostring(base + i - 1))
+stage(pts, cols, xf, parent, ticks, wire, tostring(base + f - 1))
 push()
-i = i + 1
+f = f + 1
 end
 end
 function pushShape(pts, cols, xf, parent)
