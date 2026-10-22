@@ -1535,7 +1535,7 @@ L.append("          anCol[ncb + 12.0] = if 12.0 < qCN[qe] then qCol[ecb + 12.0] 
 L.append("          anCol[ncb + 13.0] = if 13.0 < qCN[qe] then qCol[ecb + 13.0] else (if ne < 1.0 then anCol[ncb + 13.0] else Color(0.0, 0.0, 0.0, 0.0))")
 L.append("          anCol[ncb + 14.0] = if 14.0 < qCN[qe] then qCol[ecb + 14.0] else (if ne < 1.0 then anCol[ncb + 14.0] else Color(0.0, 0.0, 0.0, 0.0))")
 L.append("          anCol[ncb + 15.0] = if 15.0 < qCN[qe] then qCol[ecb + 15.0] else (if ne < 1.0 then anCol[ncb + 15.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          slMode[nslot] = qMode[qe] > 0.5")
+L.append("          slMode[nslot] = if qMode[qe] > 0.5 then 1.0 else 0.0")
 L.append("          slXF[nxb + 5.0] = qXF[exb + 5.0]")
 L.append("          anXF[nxb + 0.0] = qXF[exb + 0.0]")
 L.append("          anXF[nxb + 1.0] = qXF[exb + 1.0]")
@@ -1595,7 +1595,7 @@ L.append("          slPC[ncb + 12.0] = qCol[ecb + 12.0]")
 L.append("          slPC[ncb + 13.0] = qCol[ecb + 13.0]")
 L.append("          slPC[ncb + 14.0] = qCol[ecb + 14.0]")
 L.append("          slPC[ncb + 15.0] = qCol[ecb + 15.0]")
-L.append("          slMode[nslot] = qMode[qe] > 0.5")
+L.append("          slMode[nslot] = if qMode[qe] > 0.5 then 1.0 else 0.0")
 L.append("          slLive[nslot] = 1.0")
 L.append("          slCount[nslot] = ne")
 L.append("          slIs3[nslot] = qIs3[qe]")
@@ -2354,6 +2354,14 @@ for i in range(MAXP):
     L.append("    sPc%d = pC%d" % (i, i))
 L.append("    if fromSlot {")
 L.append("      fromSlot = false")
+# A stroke armed from a slot paints over the previous frame exactly as
+# a fill does, so it needs the same erase bookkeeping.  Without this
+# the two flags stayed at the values the last CLEAR left (eraseOK
+# false, noDepth true): coverage was never recorded, no stale span was
+# blacked, and every repaint left the old frame's pixels behind -- a
+# turning cube smeared a trail of its earlier outlines across the wall.
+L.append("      eraseOK = true")
+L.append("      noDepth = false")
 L.append("    } else {")
 L.append("      rcOn = false")
 L.append("      sSegs = (shapePoints.length() / 3.0) | 0")
@@ -3242,7 +3250,7 @@ L.append("  if wasPaint && !painting && !rcOn && eraseOK {")
 L.append("    wasPaint = false")
 L.append("    erasing = true")
 L.append("    erRow = if oldLo < covLo then oldLo else covLo")
-L.append("  } else if painting && !erasing {")
+L.append("  } else if painting && !erasing && eraseOK {")
 # not while erasing: direct fb writes are not a fill burst, so they
 # never set polyOn/sOn and can never re-stage the erase anyway; this
 # just keeps the burst detector from seeing the walk as paint.

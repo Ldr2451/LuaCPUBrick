@@ -10188,7 +10188,7 @@ mod paintTick() {
           anCol[ncb + 13.0] = if 13.0 < qCN[qe] then qCol[ecb + 13.0] else (if ne < 1.0 then anCol[ncb + 13.0] else Color(0.0, 0.0, 0.0, 0.0))
           anCol[ncb + 14.0] = if 14.0 < qCN[qe] then qCol[ecb + 14.0] else (if ne < 1.0 then anCol[ncb + 14.0] else Color(0.0, 0.0, 0.0, 0.0))
           anCol[ncb + 15.0] = if 15.0 < qCN[qe] then qCol[ecb + 15.0] else (if ne < 1.0 then anCol[ncb + 15.0] else Color(0.0, 0.0, 0.0, 0.0))
-          slMode[nslot] = qMode[qe] > 0.5
+          slMode[nslot] = if qMode[qe] > 0.5 then 1.0 else 0.0
           slXF[nxb + 5.0] = qXF[exb + 5.0]
           anXF[nxb + 0.0] = qXF[exb + 0.0]
           anXF[nxb + 1.0] = qXF[exb + 1.0]
@@ -10248,7 +10248,7 @@ mod paintTick() {
           slPC[ncb + 13.0] = qCol[ecb + 13.0]
           slPC[ncb + 14.0] = qCol[ecb + 14.0]
           slPC[ncb + 15.0] = qCol[ecb + 15.0]
-          slMode[nslot] = qMode[qe] > 0.5
+          slMode[nslot] = if qMode[qe] > 0.5 then 1.0 else 0.0
           slLive[nslot] = 1.0
           slCount[nslot] = ne
           slIs3[nslot] = qIs3[qe]
@@ -14032,6 +14032,8 @@ mod paintTick() {
     sPc15 = pC15
     if fromSlot {
       fromSlot = false
+      eraseOK = true
+      noDepth = false
     } else {
       rcOn = false
       sSegs = (shapePoints.length() / 3.0) | 0
@@ -19028,7 +19030,7 @@ mod paintTick() {
     wasPaint = false
     erasing = true
     erRow = if oldLo < covLo then oldLo else covLo
-  } else if painting && !erasing {
+  } else if painting && !erasing && eraseOK {
     wasPaint = true
   }
   if erasing && !painting && !rcOn && !arming {

@@ -285,7 +285,7 @@ class Sim:
                 self._by_label.setdefault(_lbl, _nid)
                 if "ArrayVar" in _nd.cls:
                     self._arr_by_label.setdefault(_lbl, _nid)
-                elif _nd.cls == "WireGraphPseudo_Var":
+                elif "Pseudo_Var" in _nd.cls:
                     self._var_by_label.setdefault(_lbl, _nid)
         self._pure_ids: set[int] = set(
             nid for nid, nd in self.nodes.items()
