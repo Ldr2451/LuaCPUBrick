@@ -1,11 +1,16 @@
 // cpu-screen-connector: Lua CPU -> screen bridge.  Hand-written (fixed
-// logic, nothing generated).  No state at all: five pure combinational
-// scalars, one clocked array pass, and three backing vars rewritten from
-// the current inputs every tick -- every output is a pure function of
-// the current inputs, recomputed, nothing remembered across input
-// changes.  (Outputs mirror vars, the screen's own pattern; array reads
-// need the exec context, so points and colours stage through backing
-// vars.  The edge ports stay pure for zero latency.)
+// logic, nothing generated).  NO CLOCK: the chip has no timer and no
+// free-running pass.  It reacts to two events and nothing else -- a
+// shape push and a redraw -- and both are the CPU's own edges, so the
+// array is sliced when the CPU says a shape is ready, never on a timer
+// that could catch the array half written.
+//
+// The scalars are pure combinational wires: every output is a function
+// of the current inputs, recomputed, nothing remembered.  The arrays
+// need an exec context to read (WS007), so the points and the colours
+// stage through three backing vars, written only when the events
+// above fire -- the slice of a shape that is already complete.  (The
+// edge ports stay pure for zero latency.)
 //
 // Inputs are named exactly like the Lua chip's outputs; outputs exactly
 // like the screen's inputs, so the game wiring is obvious:
@@ -207,6 +212,32 @@ mod passArrays() {
   tscl = Vec(ParseNumber(outStrArr[6]), ParseNumber(outStrArr[7]), ParseNumber(outStrArr[8]))
   ticks = if outNumArr.length() > 99.0 then (if outNumArr[99] == -1.0 then -1.0 else if outNumArr[99] < -1.0 then (0.0 - outNumArr[99]) - 1.0 else 0.0) else 0.0
 }
-on Clock(interval = 0.01) {
-  passArrays()
+// The events this chip reacts to.  There is no clock and no timer: the
+// CPU writes its array and then pulses the push, so the array is
+// complete by the time the push arrives, and the slice is taken then --
+// on the CPU's own edge, not on a tick that might land in the middle of
+// the CPU's next write.
+//
+// A push (outNum1): a new shape is on the ports.  A redraw (outNum2):
+// the screen is about to paint again, and the shape it paints is the one
+// the CPU last staged -- so the slice is refreshed from the same ports.
+// A clear (outNum3): the screen forgets its slots and starts again, so
+// the slice is refreshed here too -- the CPU's array still holds the
+// last shape, and the screen's next paint wants it.
+//
+// All three are rising edges; the falling edge carries no new data.
+on Change(outNum1) {
+  if outNum1 > 0.5 {
+    passArrays()
+  }
+}
+on Change(outNum2) {
+  if outNum2 > 0.5 {
+    passArrays()
+  }
+}
+on Change(outNum3) {
+  if outNum3 > 0.5 {
+    passArrays()
+  }
 }

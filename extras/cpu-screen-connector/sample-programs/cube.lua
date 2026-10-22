@@ -62,7 +62,9 @@ editShape("1", {0.0, 0.0, 0.0}, nil, {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0,
 -- ... and it keeps turning, forever, with no further pushes: the slot's
 -- animation deltas are the spin.  It turns about the vertical, not over:
 -- a tumble passes edge-on, where a cube is a line and the picture says
--- nothing.  The wall repaints about ten times a second, so the rate is
--- slow enough that each repaint shows a different angle.
-stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.010, 0.0, 0.0, 0.0}, "0", -1.0, nil, "1")
+-- nothing.  One delta lands per REPAINT, not per tick: the screen holds
+-- the animation while it scans out a pass (a seven-slot pass is a couple
+-- of hundred ticks), so this step is what the eye sees between frames --
+-- about five degrees, a turn in a minute or so.
+stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.080, 0.0, 0.0, 0.0}, "0", -1.0, nil, "1")
 push()

@@ -176,7 +176,12 @@ local nc = 0
 local k = 1
 while k <= m do
 local vi = face[k]
-local b = (vi - 1) * 3
+-- The flat lists are 1-based, so the first vertex starts at 1 and
+-- every vertex after it three floats on: (vi - 1) * 3 + 1, never
+-- (vi - 1) * 3 -- that reads one float early, so the first vertex
+-- of every face came out as a hole (nothing) and the rest of the
+-- face was the wrong vertex.
+local b = (vi - 1) * 3 + 1
 np = np + 1
 pts[np] = points[b]
 np = np + 1
@@ -185,7 +190,7 @@ np = np + 1
 pts[np] = points[b + 2]
 -- the vertex's colour, the same one in every face that uses it
 if pcols ~= nil then
-local c = (vi - 1) * 4
+local c = (vi - 1) * 4 + 1
 nc = nc + 1
 cols[nc] = pcols[c]
 nc = nc + 1

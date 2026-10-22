@@ -31,6 +31,7 @@ USE_CHIP = "--chip" in sys.argv
 _args = [a for a in sys.argv[1:] if a.isdigit()]
 MAKE_SAVE = "--save" in sys.argv
 SAVE = os.environ.get("CUBE_FRAMES") if MAKE_SAVE else None
+TRACE = os.environ.get("CUBE_TRACE") == "1"
 BUDGET = int(_args[0]) if _args else 1800
 TICKS = int(_args[0]) if _args else (12000 if USE_CHIP else 0) or BUDGET
 # second numeric arg: ticks of forever-animation tail observed past the
@@ -328,11 +329,12 @@ def main():
         ok = False
 
     # ---- pushMesh: the cube's six faces arrive as six shapes ---------------
-    # The demo builds its cube with pushMesh (a list of faces, one shape
-    # each, all under one parent), so the connector's stream IS the
-    # helper's contract: six shapes, slots 2..7, each under the pivot
-    # in slot 1, each carrying one face's four corners as a closed
-    # outline (five points, fifteen floats) and one colour per point.
+    # The demo builds its cube with pushMesh (a mesh of points, one colour
+    # per point, and faces naming the points they use), so the
+    # connector's stream IS the helper's contract: six shapes, slots
+    # 2..7, each under the pivot in slot 1, each carrying one face's
+    # four corners as a closed outline (five points, fifteen floats) and
+    # one colour per point.
     faces = []
     prev = 0.0
     for k, r in enumerate(cstream):
@@ -341,6 +343,24 @@ def main():
         prev = r["pushShape"] or 0.0
     ok &= expect(len(faces) == 8, "pushMesh sends the cube's six faces",
                  "%d pushes" % len(faces))
+    # The mesh's points, as the demo defines them: a cube of eight
+    # corners, each with its own colour.  The demo's cube has half-size
+    # 10, so the points are the eight sign combinations.
+    H = 10.0
+    # The colour each point must carry: the four NEAR points (z = +H)
+    # bright, the four FAR points (z = -H) dark, so a shared edge is one
+    # colour on both sides.
+    def point_colour(p):
+        x, y, z = p
+        if z > 0.0:
+            return {(-H, -H): (0.95, 0.95, 1.00),
+                    (H, -H): (0.95, 0.90, 0.85),
+                    (H, H): (0.95, 0.85, 0.55),
+                    (-H, H): (0.90, 0.80, 0.50)}[(x, y)]
+        return {(-H, -H): (0.35, 0.30, 0.35),
+                (H, -H): (0.40, 0.35, 0.40),
+                (H, H): (0.45, 0.40, 0.45),
+                (-H, H): (0.40, 0.35, 0.40)}[(x, y)]
     if len(faces) == 8:
         for i, (k, r) in enumerate(faces[:6]):
             ok &= expect((r["shapeId"] or 0.0) == float(i + 2),
@@ -356,15 +376,48 @@ def main():
                          "face %d is a wireframe" % i,
                          "wire=%s" % (r.get("shapeWireMode"),))
             cols = r.get("shapeColors") or []
-            # the face's own five points carry one colour each; the
-            # connector's array is padded past them (it sizes the
-            # colour slice by floats, so it runs to its 16 cap), and
-            # the chip reads as many colours as the shape has points.
-            ok &= expect(len(cols) >= 5 and
-                         len(set(tuple(round(x, 3) for x in c[:4])
-                                for c in cols[:5])) == 1,
-                         "face %d carries one colour" % i,
-                         "%r" % (cols[:2],))
+            # Each point of the face carries ITS colour: the connector's
+            # array is padded past them (it sizes the colour slice by
+            # floats, so it runs to its 16 cap), and the chip reads as
+            # many colours as the shape has points.
+            pts = r["shapePoints"]
+            bad = []
+            for j in range(5):
+                pt = (pts[3 * j], pts[3 * j + 1], pts[3 * j + 2])
+                want = tuple(round(x, 3) for x in point_colour(pt))
+                have = tuple(round(x, 3) for x in cols[j][:3]) \
+                    if j < len(cols) else None
+                if have != want:
+                    bad.append((pt, want, have))
+            ok &= expect(not bad,
+                         "face %d colours each point with its own" % i,
+                         "%r" % (bad[:2],))
+            # The face is closed: its last point repeats its first, so
+            # the outline comes back round.
+            ok &= expect(pts[0:3] == pts[12:15],
+                         "face %d closes its outline" % i,
+                         "%r" % (pts[12:15],))
+        # A point that two faces share carries the SAME colour in both --
+        # that is the whole point of the indexed mesh, and it is what
+        # stops a shared edge from showing two colours.
+        shared = {}
+        clash = []
+        for i, (k, r) in enumerate(faces[:6]):
+            cols = r.get("shapeColors") or []
+            pts = r["shapePoints"]
+            for j in range(4):
+                pt = (pts[3 * j], pts[3 * j + 1], pts[3 * j + 2])
+                c = tuple(round(x, 3) for x in cols[j][:3]) \
+                    if j < len(cols) else None
+                if pt in shared and shared[pt] != c:
+                    clash.append((pt, shared[pt], c))
+                shared.setdefault(pt, c)
+        ok &= expect(not clash,
+                     "a shared point keeps its colour in both faces",
+                     "%r" % (clash[:2],))
+        ok &= expect(len(shared) == 8,
+                     "the six faces share eight points",
+                     "%d distinct" % len(shared))
         # the pivot: one point (a live slot with nothing to fill)
         pk, pr = faces[6]
         ok &= expect((pr["shapeId"] or 0.0) == 1.0,
@@ -408,11 +461,27 @@ def main():
                        if k != "shapePoints"}
         snaps = {}
         last_slid = [None, None]
+        last_rc = [False]
+        vids = {}
+        for nid, nd in ssim.nodes.items():
+            lb = _extract(nd.props.get("_label", ("raw", "")))
+            if isinstance(lb, str) and lb in (
+                    "pWire", "pending", "arming", "armingS", "sOn",
+                    "polyOn", "commitR", "commitQ", "sSegs", "qCount",
+                    "rcOn", "fromSlot", "rcSlot", "animDirty", "erasing",
+                    "wasPaint", "brightRC", "pTicks", "eraseOK"):
+                vids[lb] = nid
 
         def hook2(s, tick):
             if tick < len(cstream):
                 c = cstream[tick]
-                b = cstream[tick - 2] if tick >= 2 else {}
+                # The connector has no clock: it slices the CPU's array on
+                # the CPU's own push edge, so the array and the edges
+                # arrive together -- the same row, no lag.  (With the
+                # connector's old clock the slice landed two ticks
+                # before the edge, and the screen had to be fed the old
+                # scalars with the new array.)
+                b = c
                 a = c["shapePoints"]
                 cc = c.get("shapeColors")
                 if (isinstance(a, list) and a != last_slid[0]) \
@@ -443,31 +512,107 @@ def main():
                     "addToShapeInTicks":
                         float(b.get("addToShapeInTicks") or 0.0),
                 })
-            # snapshot the wall every ESTEP ticks past the last draw edge,
-            # through the whole forever-animation tail: a ghost/second
-            # frame shows up as the painted count CLIMBING burst by burst
-            # instead of holding steady near ~1180 px.
-            ESTEP = 80
+            # snapshot the wall: a pass paints over MANY ticks, so a
+            # tick-count sample catches a half-drawn wall.  Under --save
+            # take one frame each time a recomposite COMPLETES (rcOn
+            # falls): that is the moment the wall holds a whole picture,
+            # and the forever-spin has advanced by one delta since the
+            # previous one -- one frame per turn step, which is exactly
+            # what a GIF of the rotation wants.
             base = reds[-1] if reds else 0
-            k = tick - (base + 2 + 40)
-            if k >= 0 and k % ESTEP == 0:
-                snaps[k // ESTEP] = tuple(
-                    undim(tuple(float(x) for x in
-                               s.vars.get(gids[i],
-                               (0.0, 0.0, 0.0, 0.0))[:4]))
-                    for i in range(SW * SW)) if gids else None
+            wall = lambda: tuple(
+                undim(tuple(float(x) for x in
+                            s.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
+                for i in range(SW * SW)) if gids else None
+            if MAKE_SAVE and SAVE:
+                rc = s.vars.get(vids.get("rcOn"))
+                if last_rc[0] and not rc and len(snaps) < 24:
+                    snaps[len(snaps)] = wall()
+                last_rc[0] = bool(rc)
+            else:
+                k = tick - (base + 2 + 40)
+                if k >= 0 and k % 80 == 0:
+                    snaps[k // 80] = wall()
+            if TRACE and reds and base - 3 <= tick <= base + 140 \
+                    and tick % 4 == 0:
+                def g(n):
+                    return s.vars.get(vids.get(n))
 
+                print("t%5d anim=%-5s rcOn=%-5s sOn=%-5s poly=%-5s arm=%-5s "
+                      "armS=%-5s erase=%-5s wasP=%-5s ok=%-5s pend=%-5s"
+                      % (tick, g("animDirty"), g("rcOn"), g("sOn"),
+                         g("polyOn"), g("arming"), g("armingS"),
+                         g("erasing"), g("wasPaint"), g("eraseOK"),
+                         g("pending")))
+
+        if TRACE:
+            prev = False
+            for t, r in enumerate(cstream):
+                p = bool(r.get("pushShape"))
+                if p and not prev:
+                    print("  push@%d id=%s parent=%s wire=%s ticks=%s pts=%d"
+                          % (t, r.get("shapeId"), r.get("parentShapeId"),
+                             r.get("shapeWireMode"),
+                             r.get("addToShapeInTicks"),
+                             len(r.get("shapePoints") or [])))
+                prev = p
         cap = (reds[-1] + 2 + 40 + TAIL) if reds else (len(cstream) + 150)
         cap = min(cap, len(cstream) + 150 + TAIL)
         ssim.run(cap, on_tick=hook2)
-        for e in reds[:8]:
-            report("draw@%d" % e, snaps.get(0))
+        if TRACE:
+            for nm in ("slXF", "anXF", "anTicks"):
+                a = ssim.chip_array(nm)
+                print("  %-7s" % nm,
+                      None if a is None else [round(float(x), 3) for x in a])
+        report("first painted pass", snaps.get(0))
         for k in sorted(snaps):
             if k:
-                report("anim+%03d" % (40 + 80 * k), snaps.get(k))
+                report("turn step %02d" % k, snaps.get(k))
         final = tuple(undim(tuple(float(x) for x in
                                  ssim.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                       for i in range(SW * SW)) if gids else None
+        if MAKE_SAVE:
+            # var dump: what mode did the screen keep for each slot?
+            for nid, nd in ssim.nodes.items():
+                lb = _extract(nd.props.get("_label", ("raw", "")))
+                if isinstance(lb, str) and lb in ("slMode", "pWire", "pId",
+                                                  "pTicks", "slLive"):
+                    v = ssim.arrays.get(nid)
+                    if v is None:
+                        v = ssim.vars.get(nid)
+                    if isinstance(v, (list, tuple)):
+                        v = [round(float(x), 3) for x in v]
+                    print("  var %-8s" % lb, v)
+
+        # The picture, so a wrong-but-green report is still seen.  The
+        # wall paints at BF; undo it or the brightness lies.  The PNGs
+        # get their own directory: SAVE itself is the report()'s text
+        # dump of the same walls (one .png dir alongside it).
+        if MAKE_SAVE and SAVE and final is not None:
+            from PIL import Image
+            PNGD = SAVE + "_png"
+            os.makedirs(PNGD, exist_ok=True)
+            SCL = 8
+
+            def _png(rows, path):
+                img = Image.new("RGBA", (SW, SW), (0, 0, 0, 255))
+                px = img.load()
+                # rows are already undimmed (undim() runs when a snapshot
+                # is stored); dimming them again here clamped every
+                # painted pixel to white and the picture lied.
+                for i, (r, g, b, a) in enumerate(rows):
+                    y, x = divmod(i, SW)
+                    px[x, y] = (int(min(255, max(0, r * 255))),
+                                int(min(255, max(0, g * 255))),
+                                int(min(255, max(0, b * 255))),
+                                int(min(1.0, max(0.0, a)) * 255))
+                img.resize((SW * SCL, SW * SCL), Image.NEAREST).save(path)
+
+            _png(final, os.path.join(PNGD, "final.png"))
+            for k in sorted(snaps):
+                if snaps.get(k) is not None:
+                    _png(snaps[k], os.path.join(PNGD, "snap_%03d.png" % (k,)))
+            print("saved: %s" % PNGD)
         report("final", final)
     finally:
         os.unlink(scr_dump)

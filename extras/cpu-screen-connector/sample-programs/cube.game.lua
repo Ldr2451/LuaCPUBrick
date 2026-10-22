@@ -116,7 +116,7 @@ local nc = 0
 local k = 1
 while k <= m do
 local vi = face[k]
-local b = (vi - 1) * 3
+local b = (vi - 1) * 3 + 1
 np = np + 1
 pts[np] = points[b]
 np = np + 1
@@ -124,7 +124,7 @@ pts[np] = points[b + 1]
 np = np + 1
 pts[np] = points[b + 2]
 if pcols ~= nil then
-local c = (vi - 1) * 4
+local c = (vi - 1) * 4 + 1
 nc = nc + 1
 cols[nc] = pcols[c]
 nc = nc + 1
@@ -204,5 +204,5 @@ local faces = {
 }
 pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
 editShape("1", {0.0, 0.0, 0.0}, nil, {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
-stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.010, 0.0, 0.0, 0.0}, "0", -1.0, nil, "1")
+stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.080, 0.0, 0.0, 0.0}, "0", -1.0, nil, "1")
 push()
