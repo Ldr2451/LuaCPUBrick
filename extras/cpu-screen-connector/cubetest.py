@@ -15,6 +15,7 @@ Exit 0 on GREEN (stream equal, wall painted), 1 on RED.  String-array
 ports are compared at their first 9 fields (the chip port is wider and
 pads with empty strings; real Lua slices to 9).
 """
+import glob
 import os
 import sys
 import tempfile
@@ -32,6 +33,12 @@ _args = [a for a in sys.argv[1:] if a.isdigit()]
 MAKE_SAVE = "--save" in sys.argv
 SAVE = os.environ.get("CUBE_FRAMES") if MAKE_SAVE else None
 TRACE = os.environ.get("CUBE_TRACE") == "1"
+# the paint/erase ORDER, not the numbers: which pass the erase walk runs
+# in, and what paints while it is walking
+ORDER = os.environ.get("CUBE_ORDER") == "1"
+# one line per completed pass: the pivot's angle, so a turn that rocks
+# instead of turning reads as a number sequence, not a guess from a GIF
+PASS = os.environ.get("CUBE_PASS") == "1"
 BUDGET = int(_args[0]) if _args else 1800
 TICKS = int(_args[0]) if _args else (12000 if USE_CHIP else 0) or BUDGET
 # second numeric arg: ticks of forever-animation tail observed past the
@@ -462,6 +469,10 @@ def main():
         snaps = {}
         last_slid = [None, None]
         last_rc = [False]
+        last_er = [False]
+        order_prev = [None]
+        order_erase = [False]
+        angs = []
         vids = {}
         for nid, nd in ssim.nodes.items():
             lb = _extract(nd.props.get("_label", ("raw", "")))
@@ -469,7 +480,8 @@ def main():
                     "pWire", "pending", "arming", "armingS", "sOn",
                     "polyOn", "commitR", "commitQ", "sSegs", "qCount",
                     "rcOn", "fromSlot", "rcSlot", "animDirty", "erasing",
-                    "wasPaint", "brightRC", "pTicks", "eraseOK"):
+                    "wasPaint", "brightRC", "pTicks", "eraseOK",
+                    "erRow", "covLo", "covHi", "oldLo", "oldHi"):
                 vids[lb] = nid
 
         def hook2(s, tick):
@@ -525,25 +537,94 @@ def main():
                             s.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                 for i in range(SW * SW)) if gids else None
             if MAKE_SAVE and SAVE:
-                rc = s.vars.get(vids.get("rcOn"))
-                if last_rc[0] and not rc and len(snaps) < 24:
+                # Capture the SETTLED wall, not the instant the paint
+                # finishes: leftovers from the previous frame are still
+                # on the wall at rcOn falling and the erase that blacks
+                # them runs afterwards.  A frame is a picture at rest.
+                er = s.vars.get(vids.get("erasing"))
+                if last_er[0] and not bool(er) and len(snaps) < 24:
                     snaps[len(snaps)] = wall()
-                last_rc[0] = bool(rc)
+                    # the pivot's accumulated turn, so each frame has a
+                    # number as well as a picture: a turn that reverses
+                    # shows up here and not in the silhouette
+                    xf2 = s.chip_array("slXF2") or []
+                    xf = s.chip_array("slXF") or []
+                    angs.append((round(float(xf[2]), 3) if len(xf) > 2
+                                 else None,
+                                 round(float(xf2[1]), 3) if len(xf2) > 1
+                                 else None,
+                                 round(float(xf2[2]), 3) if len(xf2) > 2
+                                 else None))
+                last_er[0] = bool(er)
             else:
                 k = tick - (base + 2 + 40)
                 if k >= 0 and k % 80 == 0:
                     snaps[k // 80] = wall()
-            if TRACE and reds and base - 3 <= tick <= base + 140 \
-                    and tick % 4 == 0:
-                def g(n):
-                    return s.vars.get(vids.get(n))
+            if ORDER or PASS:
+                # the erase walk's order against the pass it runs in:
+                # one line per state change, so the ticks between the
+                # slots are visible
+                def o(n):
+                    v = s.vars.get(vids.get(n))
+                    return None if v is None else (
+                        bool(v) if isinstance(v, bool) else round(float(v), 3))
 
-                print("t%5d anim=%-5s rcOn=%-5s sOn=%-5s poly=%-5s arm=%-5s "
-                      "armS=%-5s erase=%-5s wasP=%-5s ok=%-5s pend=%-5s"
-                      % (tick, g("animDirty"), g("rcOn"), g("sOn"),
-                         g("polyOn"), g("arming"), g("armingS"),
-                         g("erasing"), g("wasPaint"), g("eraseOK"),
-                         g("pending")))
+                def top():
+                    out = []
+                    for yy in range(11, 18):
+                        row = "".join(
+                            "#" if (sum(s.vars.get(
+                                gids[yy * SW + xx], (0.0, 0.0, 0.0, 0.0))[:3])
+                                > 0.02) else "."
+                            for xx in range(10, 56))
+                        out.append("      r%02d %s" % (yy, row))
+                    return "\n".join(out)
+
+                rc_now = o("rcOn")
+                er_now = o("erasing")
+                if PASS:
+                    xf = s.chip_array("slXF") or []
+                    xf2 = s.chip_array("slXF2") or []
+                    at = s.chip_array("anTicks") or []
+                    # slot 1 is the pivot: rot.z lives in slXF[2], rot.x
+                    # and rot.y in slXF2[1..2]; the demo's delta is on
+                    # ONE of them, and which one is the question
+                    ang = (round(float(xf[2]), 4) if len(xf) > 2 else None,
+                           round(float(xf2[1]), 4) if len(xf2) > 1 else None,
+                           round(float(xf2[2]), 4) if len(xf2) > 2 else None,
+                           round(float(at[0]), 2) if len(at) > 0 else None)
+                    if last_rc[0] and not rc_now:
+                        print("  pass end   t%-6d angle %s" % (tick, ang))
+                    if order_erase[0] and not er_now:
+                        lit = [xx for xx in range(SW * SW)
+                               if sum(s.vars.get(
+                                   gids[xx], (0.0, 0.0, 0.0, 0.0))[:3]) > 0.02]
+                        ys = sorted(set(xx // SW for xx in lit))
+                        print("  erase done t%-6d angle %s rows %s painted %d"
+                              % (tick, ang,
+                                 ("%d..%d" % (ys[0], ys[-1])) if ys else "-",
+                                 len(lit)))
+                if ORDER:
+                    if last_rc[0] and not rc_now:
+                        xf2 = s.chip_array("slXF2") or []
+                        print("  PASS END t%d angle %s wall BEFORE erase:\n%s"
+                              % (tick, round(float(xf2[2]), 3)
+                                 if len(xf2) > 2 else None, top()))
+                    if order_erase[0] and not er_now:
+                        print("  ERASE DONE t%d wall after:\n%s" % (tick, top()))
+
+                    sig = (o("erasing"), o("erRow"), o("eraseOK"), o("sOn"),
+                           o("polyOn"), o("rcOn"), o("pending"), o("commitQ"),
+                           o("arming"), o("armingS"), o("wasPaint"),
+                           o("oldLo"), o("oldHi"), o("covLo"), o("covHi"))
+                    if sig != order_prev[0]:
+                        print("t%6d erasing=%s erRow=%s ok=%s sOn=%s poly=%s "
+                              "rcOn=%s pend=%s cQ=%s arm=%s armS=%s wasP=%s "
+                              "old=%s..%s cov=%s..%s"
+                              % ((tick,) + sig))
+                        order_prev[0] = sig
+                last_rc[0] = bool(rc_now)
+                order_erase[0] = bool(er_now)
 
         if TRACE:
             prev = False
@@ -565,8 +646,13 @@ def main():
                 print("  %-7s" % nm,
                       None if a is None else [round(float(x), 3) for x in a])
         report("first painted pass", snaps.get(0))
+        if angs:
+            print("  angle %s (rot.z, rot.x, rot.y) at the first painted pass"
+                  % (angs[0],))
         for k in sorted(snaps):
             if k:
+                if k < len(angs):
+                    print("  turn %02d angle %s" % (k, angs[k]))
                 report("turn step %02d" % k, snaps.get(k))
         final = tuple(undim(tuple(float(x) for x in
                                  ssim.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
@@ -592,6 +678,10 @@ def main():
             from PIL import Image
             PNGD = SAVE + "_png"
             os.makedirs(PNGD, exist_ok=True)
+            # a shorter run saves fewer frames; the ones a longer run left
+            # behind would otherwise sit at the end and animate the old turn
+            for old in glob.glob(os.path.join(PNGD, "snap_*.png")):
+                os.unlink(old)
             SCL = 8
 
             def _png(rows, path):

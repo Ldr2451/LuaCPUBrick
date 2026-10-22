@@ -242,6 +242,8 @@ var s22: float = 0.0
 var s23: float = 0.0
 var bf: float = 1.0
 var rcOn: bool = false
+var rcPrev: bool = false
+var rcFell: bool = false
 var rcSlot: float = 1.0
 var brightRC: bool = false
 var ff: float = 0.0
@@ -9161,6 +9163,8 @@ on Change(clearAllShapes) {
 // operator, so remainders are floor-based (all values here are
 // non-negative, so truncation is floor).
 mod paintTick() {
+  rcFell = rcPrev && !rcOn
+  rcPrev = rcOn
   if !fbInit {
     fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))
     fbZ.resize(NP, ZBACK)
@@ -9280,7 +9284,7 @@ mod paintTick() {
     }
   }
 
-  if (anTicks[0.0] > 0.5 || anTicks[0.0] < -0.5) && !rcOn {
+  if (anTicks[0.0] > 0.5 || anTicks[0.0] < -0.5) && rcFell {
     if anTicks[0.0] > 0.5 { anTicks[0.0] = anTicks[0.0] - 1.0 }
     animDirty = true
     slPts[0] = slPts[0] + anPts[0]
@@ -9341,7 +9345,7 @@ mod paintTick() {
     slXF2[2] = slXF2[2] + anXF2[2]
     slXF2[3] = slXF2[3] + anXF2[3]
   }
-  if (anTicks[1.0] > 0.5 || anTicks[1.0] < -0.5) && !rcOn {
+  if (anTicks[1.0] > 0.5 || anTicks[1.0] < -0.5) && rcFell {
     if anTicks[1.0] > 0.5 { anTicks[1.0] = anTicks[1.0] - 1.0 }
     animDirty = true
     slPts[48] = slPts[48] + anPts[48]
@@ -9402,7 +9406,7 @@ mod paintTick() {
     slXF2[6] = slXF2[6] + anXF2[6]
     slXF2[7] = slXF2[7] + anXF2[7]
   }
-  if (anTicks[2.0] > 0.5 || anTicks[2.0] < -0.5) && !rcOn {
+  if (anTicks[2.0] > 0.5 || anTicks[2.0] < -0.5) && rcFell {
     if anTicks[2.0] > 0.5 { anTicks[2.0] = anTicks[2.0] - 1.0 }
     animDirty = true
     slPts[96] = slPts[96] + anPts[96]
@@ -9463,7 +9467,7 @@ mod paintTick() {
     slXF2[10] = slXF2[10] + anXF2[10]
     slXF2[11] = slXF2[11] + anXF2[11]
   }
-  if (anTicks[3.0] > 0.5 || anTicks[3.0] < -0.5) && !rcOn {
+  if (anTicks[3.0] > 0.5 || anTicks[3.0] < -0.5) && rcFell {
     if anTicks[3.0] > 0.5 { anTicks[3.0] = anTicks[3.0] - 1.0 }
     animDirty = true
     slPts[144] = slPts[144] + anPts[144]
@@ -9524,7 +9528,7 @@ mod paintTick() {
     slXF2[14] = slXF2[14] + anXF2[14]
     slXF2[15] = slXF2[15] + anXF2[15]
   }
-  if (anTicks[4.0] > 0.5 || anTicks[4.0] < -0.5) && !rcOn {
+  if (anTicks[4.0] > 0.5 || anTicks[4.0] < -0.5) && rcFell {
     if anTicks[4.0] > 0.5 { anTicks[4.0] = anTicks[4.0] - 1.0 }
     animDirty = true
     slPts[192] = slPts[192] + anPts[192]
@@ -9585,7 +9589,7 @@ mod paintTick() {
     slXF2[18] = slXF2[18] + anXF2[18]
     slXF2[19] = slXF2[19] + anXF2[19]
   }
-  if (anTicks[5.0] > 0.5 || anTicks[5.0] < -0.5) && !rcOn {
+  if (anTicks[5.0] > 0.5 || anTicks[5.0] < -0.5) && rcFell {
     if anTicks[5.0] > 0.5 { anTicks[5.0] = anTicks[5.0] - 1.0 }
     animDirty = true
     slPts[240] = slPts[240] + anPts[240]
@@ -9646,7 +9650,7 @@ mod paintTick() {
     slXF2[22] = slXF2[22] + anXF2[22]
     slXF2[23] = slXF2[23] + anXF2[23]
   }
-  if (anTicks[6.0] > 0.5 || anTicks[6.0] < -0.5) && !rcOn {
+  if (anTicks[6.0] > 0.5 || anTicks[6.0] < -0.5) && rcFell {
     if anTicks[6.0] > 0.5 { anTicks[6.0] = anTicks[6.0] - 1.0 }
     animDirty = true
     slPts[288] = slPts[288] + anPts[288]
@@ -9707,7 +9711,7 @@ mod paintTick() {
     slXF2[26] = slXF2[26] + anXF2[26]
     slXF2[27] = slXF2[27] + anXF2[27]
   }
-  if (anTicks[7.0] > 0.5 || anTicks[7.0] < -0.5) && !rcOn {
+  if (anTicks[7.0] > 0.5 || anTicks[7.0] < -0.5) && rcFell {
     if anTicks[7.0] > 0.5 { anTicks[7.0] = anTicks[7.0] - 1.0 }
     animDirty = true
     slPts[336] = slPts[336] + anPts[336]

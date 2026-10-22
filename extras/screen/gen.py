@@ -358,6 +358,12 @@ L.append("var bf: float = 1.0")
 # pattern); the restore is consumed by the walks a tick later, so no
 # pass reads what it wrote.
 L.append("var rcOn: bool = false")
+L.append("var rcPrev: bool = false")
+# The frame edge the animation rides: true on the ONE tick a pass
+# finishes.  A delta per idle tick made the turn rate the length of the
+# erase walk -- the cube jumped 6 deltas one frame and 41 the next,
+# which reads as a spin that changes direction.
+L.append("var rcFell: bool = false")
 L.append("var rcSlot: float = 1.0")
 L.append("var brightRC: bool = false")
 # The recomposite's scan snapshot: eight sequential conditional
@@ -735,6 +741,11 @@ L.append("// array index access outside an exec context as WS007.  There is no %
 L.append("// operator, so remainders are floor-based (all values here are")
 L.append("// non-negative, so truncation is floor).")
 L.append("mod paintTick() {")
+# The pass-finished edge, first thing in the tick: the animation below
+# and the store/load/arm code all read it, and reading it before this
+# tick's pass start is what makes the delta land exactly once.
+L.append("  rcFell = rcPrev && !rcOn")
+L.append("  rcPrev = rcOn")
 L.append("  if !fbInit {")
 L.append("    fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))")
 L.append("    fbZ.resize(NP, ZBACK)")
@@ -865,14 +876,21 @@ L.append("      }")
 L.append("    }")
 L.append("  }")
 L.append("")
-# ---- per-tick animation: advance every live slot ----------------------
+# ---- per-pass animation: advance every live slot ----------------------
 # Runs before every store, load and arm below, so all of them read
 # fresh values (program order: the sanctioned snapshot pattern).
 # A slot with no time left costs one literal read; live slots pay
 # their adds.  Deltas are uniform adds on every channel (points,
 # colour channels, transform); the parent link (index 5) is never
 # animated -- it relinks instantly at stage time.
-L.append("  if (anTicks[0.0] > 0.5 || anTicks[0.0] < -0.5) && !rcOn {")
+#
+# ONE advance per finished PASS (rcFell), not per idle tick: idle
+# ticks are however many the erase walk and the last stroke's tail
+# happen to take, so a per-tick delta turned the speed of the animation
+# into a property of how long the wall took to clean itself -- the cube
+# moved 6 deltas one frame and 41 the next, and read as a turn that
+# reverses.
+L.append("  if (anTicks[0.0] > 0.5 || anTicks[0.0] < -0.5) && rcFell {")
 L.append("    if anTicks[0.0] > 0.5 { anTicks[0.0] = anTicks[0.0] - 1.0 }")
 L.append("    animDirty = true")
 L.append("    slPts[0] = slPts[0] + anPts[0]")
@@ -933,7 +951,7 @@ L.append("    slXF2[1] = slXF2[1] + anXF2[1]")
 L.append("    slXF2[2] = slXF2[2] + anXF2[2]")
 L.append("    slXF2[3] = slXF2[3] + anXF2[3]")
 L.append("  }")
-L.append("  if (anTicks[1.0] > 0.5 || anTicks[1.0] < -0.5) && !rcOn {")
+L.append("  if (anTicks[1.0] > 0.5 || anTicks[1.0] < -0.5) && rcFell {")
 L.append("    if anTicks[1.0] > 0.5 { anTicks[1.0] = anTicks[1.0] - 1.0 }")
 L.append("    animDirty = true")
 L.append("    slPts[48] = slPts[48] + anPts[48]")
@@ -994,7 +1012,7 @@ L.append("    slXF2[5] = slXF2[5] + anXF2[5]")
 L.append("    slXF2[6] = slXF2[6] + anXF2[6]")
 L.append("    slXF2[7] = slXF2[7] + anXF2[7]")
 L.append("  }")
-L.append("  if (anTicks[2.0] > 0.5 || anTicks[2.0] < -0.5) && !rcOn {")
+L.append("  if (anTicks[2.0] > 0.5 || anTicks[2.0] < -0.5) && rcFell {")
 L.append("    if anTicks[2.0] > 0.5 { anTicks[2.0] = anTicks[2.0] - 1.0 }")
 L.append("    animDirty = true")
 L.append("    slPts[96] = slPts[96] + anPts[96]")
@@ -1055,7 +1073,7 @@ L.append("    slXF2[9] = slXF2[9] + anXF2[9]")
 L.append("    slXF2[10] = slXF2[10] + anXF2[10]")
 L.append("    slXF2[11] = slXF2[11] + anXF2[11]")
 L.append("  }")
-L.append("  if (anTicks[3.0] > 0.5 || anTicks[3.0] < -0.5) && !rcOn {")
+L.append("  if (anTicks[3.0] > 0.5 || anTicks[3.0] < -0.5) && rcFell {")
 L.append("    if anTicks[3.0] > 0.5 { anTicks[3.0] = anTicks[3.0] - 1.0 }")
 L.append("    animDirty = true")
 L.append("    slPts[144] = slPts[144] + anPts[144]")
@@ -1116,7 +1134,7 @@ L.append("    slXF2[13] = slXF2[13] + anXF2[13]")
 L.append("    slXF2[14] = slXF2[14] + anXF2[14]")
 L.append("    slXF2[15] = slXF2[15] + anXF2[15]")
 L.append("  }")
-L.append("  if (anTicks[4.0] > 0.5 || anTicks[4.0] < -0.5) && !rcOn {")
+L.append("  if (anTicks[4.0] > 0.5 || anTicks[4.0] < -0.5) && rcFell {")
 L.append("    if anTicks[4.0] > 0.5 { anTicks[4.0] = anTicks[4.0] - 1.0 }")
 L.append("    animDirty = true")
 L.append("    slPts[192] = slPts[192] + anPts[192]")
@@ -1177,7 +1195,7 @@ L.append("    slXF2[17] = slXF2[17] + anXF2[17]")
 L.append("    slXF2[18] = slXF2[18] + anXF2[18]")
 L.append("    slXF2[19] = slXF2[19] + anXF2[19]")
 L.append("  }")
-L.append("  if (anTicks[5.0] > 0.5 || anTicks[5.0] < -0.5) && !rcOn {")
+L.append("  if (anTicks[5.0] > 0.5 || anTicks[5.0] < -0.5) && rcFell {")
 L.append("    if anTicks[5.0] > 0.5 { anTicks[5.0] = anTicks[5.0] - 1.0 }")
 L.append("    animDirty = true")
 L.append("    slPts[240] = slPts[240] + anPts[240]")
@@ -1238,7 +1256,7 @@ L.append("    slXF2[21] = slXF2[21] + anXF2[21]")
 L.append("    slXF2[22] = slXF2[22] + anXF2[22]")
 L.append("    slXF2[23] = slXF2[23] + anXF2[23]")
 L.append("  }")
-L.append("  if (anTicks[6.0] > 0.5 || anTicks[6.0] < -0.5) && !rcOn {")
+L.append("  if (anTicks[6.0] > 0.5 || anTicks[6.0] < -0.5) && rcFell {")
 L.append("    if anTicks[6.0] > 0.5 { anTicks[6.0] = anTicks[6.0] - 1.0 }")
 L.append("    animDirty = true")
 L.append("    slPts[288] = slPts[288] + anPts[288]")
@@ -1299,7 +1317,7 @@ L.append("    slXF2[25] = slXF2[25] + anXF2[25]")
 L.append("    slXF2[26] = slXF2[26] + anXF2[26]")
 L.append("    slXF2[27] = slXF2[27] + anXF2[27]")
 L.append("  }")
-L.append("  if (anTicks[7.0] > 0.5 || anTicks[7.0] < -0.5) && !rcOn {")
+L.append("  if (anTicks[7.0] > 0.5 || anTicks[7.0] < -0.5) && rcFell {")
 L.append("    if anTicks[7.0] > 0.5 { anTicks[7.0] = anTicks[7.0] - 1.0 }")
 L.append("    animDirty = true")
 L.append("    slPts[336] = slPts[336] + anPts[336]")
