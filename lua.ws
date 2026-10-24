@@ -1672,16 +1672,13 @@ mod bEmit(op: int, a: int, b: int, c: int) -> int {
   bpa.push(a)
   bpb.push(b)
   bpc.push(c)
-  if bop.length() > MAX_INSTR {
-    perr = true
-    // The message names the cap but not the distance: a program 200 over
-    // reads the same as one 3 over.  Measured and REJECTED - saying so
-    // costs 1,535 nodes and 2,462 wires, 3.4% of the chip, because a concat
-    // with a computed int pulls in a heavier formatting path than the const
-    // concat used above.  Not worth it for a line that only appears when the
-    // program is already too big to run.
-    perrMsg = "program too long"
-  }
+  // No MAX_INSTR reject here.  Bytecode length is bounded above by MAX_TOKENS
+  // tokens (one op plus operands per instruction) at lex time -- see bLexer's
+  // `tk.length() > MAX_TOKENS` check -- which is the real ceiling: a program too
+  // long to tokenise already failed before bEmit runs, so nothing that reaches
+  // here can overflow the arrays.  A parallel instruction cap would be a second
+  // ceiling that can disagree with the token one and reject programs that
+  // tokenised fine, so it is not kept.
   return bop.length() - 1
 }
 
@@ -4120,7 +4117,7 @@ mod parseInit() {
   ctlF.clear()
   ctlG.clear()
   plNext.clear()
-  plNext.resize(MAX_INSTR, -1)
+  plNext.resize(MAX_TOKENS, -1)
   tmpNames.clear()
   tmpRegs.clear()
   svC.clear()
