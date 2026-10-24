@@ -114,18 +114,17 @@ See the connector's README for the array layout that carries it, and for
 the `gfx` Lua library (`extras/cpu-screen-connector/gfx.lua`) --
 `pushShape`, `editShape`, `deleteShape`, `clearScreen` and friends --
 which wraps this whole protocol so a driver never has to pick an output
-port. The showcase programs (in
-`extras/cpu-screen-connector/sample-programs/`) (`showcase.lua`,
-`showcase2.lua`, `showcase3.lua`, `cube.lua`) use it and
-between them cover per-point colours, editing a shape that is already
-on the panel, the deferred clear, the pending queue, animation, and
-depth and tilt.
+port. The sample programs (in
+`extras/cpu-screen-connector/sample-programs/`) (`cube.lua`,
+`anim.lua`, `curve.lua`, `mover.lua`, `scale.lua`, `breath.lua`) use it
+and between them cover per-point colours, editing a shape that is already
+on the panel, the deferred clear, the pending queue, wireframe and open
+curves, position and scale transforms, parent-child composition, depth,
+and animation.
 
 ## Running the tests
 
 ```
 python -u extras/screen/painttest.py           # ~7 min
 python -u extras/screen/animtest.py [ticks]
-python -u extras/screen/showtest.py [ticks]
-python -u extras/screen/showtest2.py [ticks]
 ```
