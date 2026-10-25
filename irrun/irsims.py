@@ -20,11 +20,6 @@ import gates as GATES
 MAX_TICKS = 5000
 _LOG_LINES = 32       # appends the log keeps, which is not lines: see the push
 _RE_STR = re.compile(r'"([^"]*)"')
-
-# A/B knob for the pull gate: SIM_PULL_ALWAYS=1 restores the old behaviour of
-# recomputing every pure gate on every read, so a suspected staleness can be
-# compared against the pre-gate sim in one run.
-_PULL_ALWAYS = os.environ.get("SIM_PULL_ALWAYS") == "1"
 _WS_ESCAPES = {
     "a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r",
     "t": "\t", "v": "\v", "\\": "\\", '"': '"', "'": "'",
@@ -298,20 +293,6 @@ class Sim:
             or "ServerUptime" in nd.cls
         )
         self._dirty: set[int] = set(self._pure_ids)
-        # Gates wired from a var/array/map node read that storage through the
-        # shortcut in `_in_val`, so no publish reaches them when the storage
-        # moves.  Writing the storage has to mark these gates dirty -- the
-        # pull gate in `_in_val` trusts a cached value only while nothing
-        # moved it.
-        self._mem_pure: dict[int, set[int]] = {}
-        for w in wires:
-            sid = getattr(w, "src_id", None)
-            did = getattr(w, "dst_id", None)
-            if did in self._pure_ids and sid in self.nodes and (
-                    "Pseudo_Var" in self.nodes[sid].cls
-                    or "Pseudo_ArrayVar" in self.nodes[sid].cls
-                    or "Pseudo_MapVar" in self.nodes[sid].cls):
-                self._mem_pure.setdefault(sid, set()).add(did)
         self.clock_ids: list[int] = []
         self.tick_delta: int = 1
         self._queue_carry: dict[int, dict] = {}
@@ -462,13 +443,6 @@ class Sim:
             self.tick_delta = max(1, tick - prev)
             prev = tick
             self.tick_done: set[tuple[int, str]] = set()
-            # A pure gate is fresh only while nothing moved its inputs.  At the
-            # start of a tick nothing is known fresh -- the clock may have
-            # advanced state, a schedule may have expired -- so every gate is
-            # dirty until it is evaluated this tick, and a write re-dirties the
-            # gates it moves.  Repeated reads of an unchanged gate inside one
-            # tick then take the cached prop instead of recomputing its chain.
-            self._dirty = set(self._pure_ids)
             # NOTE: input NODES fire once from the initial queue.  Re-firing them
             # EVERY tick would reset latched state (e.g. re-latch the program
             # source and re-parse forever), so a port is re-read below only when
@@ -495,8 +469,6 @@ class Sim:
                             continue
                         self.port_seen[nid] = list(val)
                         self.arrays[self._arr_id(nid)] = list(val)
-                        # The storage moved; gates reading it see no publish.
-                        self._mark_mem(self._arr_id(nid))
                     else:
                         if val == self.port_seen.get(nid):
                             continue
@@ -697,7 +669,6 @@ class Sim:
         nid = self._var_by_label.get(name) or self._by_label.get(name)
         if nid is not None:
             self.vars[nid] = value
-            self._mark_mem(nid)
         return nid
 
     def chip_array(self, name):
@@ -939,16 +910,10 @@ class Sim:
         for w, src, pure in tail:
             if not src:
                 continue
-            if pure and w.src_id not in self._eval_stack and (
-                    _PULL_ALWAYS or w.src_id in self._dirty):
+            if pure and w.src_id not in self._eval_stack:
                 # Pull evaluation: pure gates are side-effect-free functions
                 # of their inputs, so compute on demand for fresh values
-                # instead of trusting possibly-stale cached outputs.  A gate
-                # that is NOT dirty is fresh -- every write that can move one
-                # of its inputs marks it dirty (`_out_val`, and the memory
-                # writes through `_mem_pure`) -- so a repeated read of the
-                # same gate inside one tick takes the cached prop instead of
-                # recomputing the whole chain again.
+                # instead of trusting possibly-stale cached outputs.
                 self._eval_stack.add(w.src_id)
                 try:
                     self._exec_node(w.src_id, src, set())
@@ -1039,9 +1004,6 @@ class Sim:
     # ---- dispatch ----
     def _exec_node(self, nid: int, node: Node, nq: set):
         cls = node.cls
-        if nid in self._pure_ids:
-            # Evaluated this tick: fresh until an input moves it again.
-            self._dirty.discard(nid)
         if "BufferTicks" in cls:
             # The gate is spelled `WireGraphPseudo_BufferTicks` in the old
             # dump and `BufferTicks` in the new one, so the match is on the
@@ -1591,9 +1553,6 @@ class Sim:
         vid = self._var_id(nid)
         if vid is not None and val is not None:
             self.vars[vid] = val
-            # A var write moves every gate wired from that var node, which
-            # reads it through the shortcut and sees no publish.
-            self._mark_mem(vid)
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
@@ -1609,7 +1568,6 @@ class Sim:
         vid = self._var_id(nid)
         if vid is not None:
             self.vars[vid] = _as_float(self.vars.get(vid, 0)) + step
-            self._mark_mem(vid)
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
@@ -2607,10 +2565,6 @@ class Sim:
         return "array#%d" % nid
 
     def _arr_list(self, aid: int) -> list:
-        # Any op on the storage can write it; gates that read it through the
-        # `_in_val` shortcut see no publish, so mark them dirty here.  Marking
-        # on reads too is deliberate: it keeps every write path covered.
-        self._mark_mem(aid)
         arr = self.arrays.get(aid)
         if arr is None:
             # A pin is not an array: hand back the referent's own list, so the
@@ -2632,25 +2586,13 @@ class Sim:
         return arr
 
     def _map_id(self, nid: int) -> int:
-        # Like `_arr_list`: map ops read and write the same storage, and the
-        # shortcut read sees no publish, so mark the wired gates dirty.
         for w in self.in_wires.get((nid, "MapVarRef"), []):
-            mid = self._ref_node(w.src_id)
-            self._mark_mem(mid)
-            return mid
+            return self._ref_node(w.src_id)
         for w in self.in_wires.get((nid, "VarRef"), []):
             src = self.nodes.get(w.src_id)
             if src and "MapVar" in src.cls:
-                mid = self._ref_node(w.src_id)
-                self._mark_mem(mid)
-                return mid
-        self._mark_mem(nid)
+                return self._ref_node(w.src_id)
         return nid
-
-    def _mark_mem(self, aid: int):
-        cons = self._mem_pure.get(aid)
-        if cons:
-            self._dirty.update(cons)
 
 
 def run_ws(ws_path: str, max_ticks: int = MAX_TICKS,
