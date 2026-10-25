@@ -196,6 +196,12 @@ for i in range(MAXP):
     L.append("var eInv%d: float = 0.0" % i)
 L.append("var n: float = 3.0")
 L.append("var pending: bool = false")
+# An edge is latched, not acted on: a shape's point array arrives one tick
+# AFTER the edge that announced it, so reading shapePoints at the edge tick
+# stores the array the PREVIOUS push left on the ports.  The handler runs on
+# the next paint tick, when the array has settled.
+L.append("var pushArm: bool = false")
+L.append("var drawArm: bool = false")
 # The pending queue: a push APPENDS to it (drawAll commits every entry),
 # so a driver can push several shapes and paint them all with one
 # drawAll instead of one push-draw per shape.  Eight entries -- the slot
@@ -577,8 +583,7 @@ L.append("// A push stages colour, mode and slot, and aborts anything live -- a"
 L.append("// burst, a recomposite, a staged arm -- so the next drawAllShapes always")
 L.append("// starts fresh from the new stage.  (A load-time edge on an unwired")
 L.append("// port stages zeroes: an empty immediate shape, which paints nothing.)")
-L.append("on Change(pushShape) {")
-L.append("  if pushShape {")
+L.append("mod pushEdge() {")
 L.append("    pWire = shapeWireMode")
 L.append("    pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)")
 L.append("    pPos = shapePosition")
@@ -609,6 +614,11 @@ L.append("    arming = false")
 L.append("    armingS = false")
 L.append("    commitR = false")
 L.append("    commitQ = false")
+L.append("}")
+L.append("")
+L.append("on Change(pushShape) {")
+L.append("  if pushShape {")
+L.append("    pushArm = true")
 L.append("  }")
 L.append("}")
 L.append("")
@@ -621,8 +631,7 @@ L.append("// recomposited from every live slot in order.  A staged clearAllShape
 L.append("// (blackPending) runs here first: with a shape staged, the fill runs")
 L.append("// and the shape re-arms when it ends (pending is left set on purpose);")
 L.append("// with nothing staged, the wall simply goes black.")
-L.append("on Change(drawAllShapes) {")
-L.append("  if drawAllShapes {")
+L.append("mod drawEdge() {")
 L.append("    if blackPending {")
 L.append("      blackPending = false")
 L.append("      clearing = true")
@@ -667,6 +676,11 @@ L.append("      sLast = -1.0")
 L.append("      pcol = 200.0")
 L.append("      sOn = true")
 L.append("    }")
+L.append("}")
+L.append("")
+L.append("on Change(drawAllShapes) {")
+L.append("  if drawAllShapes {")
+L.append("    drawArm = true")
 L.append("  }")
 L.append("}")
 L.append("")
@@ -741,6 +755,17 @@ L.append("// array index access outside an exec context as WS007.  There is no %
 L.append("// operator, so remainders are floor-based (all values here are")
 L.append("// non-negative, so truncation is floor).")
 L.append("mod paintTick() {")
+# The edges latched at the edge tick run here, one tick later, so every read
+# of shapePoints/shapeColors sees the array the edge carried, not the one the
+# previous push left behind.
+L.append("  if pushArm {")
+L.append("    pushArm = false")
+L.append("    pushEdge()")
+L.append("  }")
+L.append("  if drawArm {")
+L.append("    drawArm = false")
+L.append("    drawEdge()")
+L.append("  }")
 # The pass-finished edge, first thing in the tick: the animation below
 # and the store/load/arm code all read it, and reading it before this
 # tick's pass start is what makes the delta land exactly once.
@@ -2826,7 +2851,7 @@ L.append("    sEnd = false")
 L.append("  }")
 L.append("    if pcol > pcurR {")
 L.append("      pPrev = prow")
-L.append("      prow = prow + (if sFreshLast then 1.0 else if prow + 2.0 <= sLast then 2.0 else 1.0)")
+L.append("      prow = prow + (if sFreshLast then 1.0 else if prow + 4.0 <= sLast then 4.0 else if prow + 1.0 <= sLast then 1.0 else 1.0)")
 L.append("      if prow > sLast {")
 L.append("        sSeg = sSeg + 1.0")
 L.append("        if sSeg >= sSegs {")
@@ -2889,7 +2914,7 @@ L.append("      }")
 L.append("      if sOn {")
 L.append("        if prow <= sLast {")
 L.append("          aRow = prow")
-L.append("          if (prow == pPrev + 2.0 || prow == pPrev + 1.0) && prow + 1.0 <= sLast {")
+L.append("          if prow + 1.0 <= sLast {")
 L.append("            let bu0lo = if qAy < qBy then qAy else qBy")
 L.append("            let bu0hi = if qAy < qBy then qBy else qAy")
 L.append("            let bu0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0")
@@ -2978,6 +3003,137 @@ L.append("          } else {")
 L.append("            pcol2 = 200.0")
 L.append("            pcurR2 = 100.0")
 L.append("          }")
+# Rows C..D: the stroke now paints four rows a tick, like the fill.  Each
+# row re-crosses the current quad's four edges and stages its own span
+# state; the shared lanes paint prow+2 and prow+3 from it.  Same math as
+# the B row, same pixel set -- the quad walk just reads further ahead.
+for _R, _off, _sfx in (("C", 2.0, "3"), ("D", 3.0, "4")):
+    _r = "prow + %.1f" % _off
+    L.append("          if %s <= sLast {" % _r)
+    L.append("            let bu0lo%s = if qAy < qBy then qAy else qBy" % _R)
+    L.append("            let bu0hi%s = if qAy < qBy then qBy else qAy" % _R)
+    L.append("            let bu0s%s = if qBy > qAy then (qBx - qAx) / (qBy - qAy)"
+             " else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0" % _R)
+    L.append("            let bu0x%s = qAx + bu0s%s * (%s - qAy)" % (_R, _R, _r))
+    L.append("            let bu0v%s = %s >= bu0lo%s && %s < bu0hi%s"
+             % (_R, _r, _R, _r, _R))
+    L.append("            let buc0%s = cA + (%s - qAy) * iAB * (cB - cA)" % (_R, _r))
+    L.append("            let buz0%s = rZ0 + (%s - qAy) * iAB * (rZ1 - rZ0)" % (_R, _r))
+    L.append("            let bun0%s = if bu0v%s then bu0x%s else 200.0" % (_R, _R, _R))
+    L.append("            let bux0%s = if bu0v%s then bu0x%s else -200.0" % (_R, _R, _R))
+    L.append("            let bu1lo%s = if qBy < qCy then qBy else qCy" % _R)
+    L.append("            let bu1hi%s = if qBy < qCy then qCy else qBy" % _R)
+    L.append("            let bu1s%s = if qCy > qBy then (qCx - qBx) / (qCy - qBy)"
+             " else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0" % _R)
+    L.append("            let bu1x%s = qBx + bu1s%s * (%s - qBy)" % (_R, _R, _r))
+    L.append("            let bu1v%s = %s >= bu1lo%s && %s < bu1hi%s"
+             % (_R, _r, _R, _r, _R))
+    L.append("            let buc1%s = cB" % _R)
+    L.append("            let buz1%s = rZ1" % _R)
+    L.append("            let bun1%s = if bu1v%s then bu1x%s else 200.0" % (_R, _R, _R))
+    L.append("            let bux1%s = if bu1v%s then bu1x%s else -200.0" % (_R, _R, _R))
+    L.append("            let bu2lo%s = if qCy < qDy then qCy else qDy" % _R)
+    L.append("            let bu2hi%s = if qCy < qDy then qDy else qCy" % _R)
+    L.append("            let bu2s%s = if qDy > qCy then (qDx - qCx) / (qDy - qCy)"
+             " else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0" % _R)
+    L.append("            let bu2x%s = qCx + bu2s%s * (%s - qCy)" % (_R, _R, _r))
+    L.append("            let bu2v%s = %s >= bu2lo%s && %s < bu2hi%s"
+             % (_R, _r, _R, _r, _R))
+    L.append("            let buc2%s = cB + (%s - qCy) * iCD * (cA - cB)" % (_R, _r))
+    L.append("            let buz2%s = rZ1 + (%s - qCy) * iCD * (rZ0 - rZ1)" % (_R, _r))
+    L.append("            let bun2%s = if bu2v%s then bu2x%s else 200.0" % (_R, _R, _R))
+    L.append("            let bux2%s = if bu2v%s then bu2x%s else -200.0" % (_R, _R, _R))
+    L.append("            let bu3lo%s = if qDy < qAy then qDy else qAy" % _R)
+    L.append("            let bu3hi%s = if qDy < qAy then qAy else qDy" % _R)
+    L.append("            let bu3s%s = if qAy > qDy then (qAx - qDx) / (qAy - qDy)"
+             " else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0" % _R)
+    L.append("            let bu3x%s = qDx + bu3s%s * (%s - qDy)" % (_R, _R, _r))
+    L.append("            let bu3v%s = %s >= bu3lo%s && %s < bu3hi%s"
+             % (_R, _r, _R, _r, _R))
+    L.append("            let buc3%s = cA" % _R)
+    L.append("            let buz3%s = rZ0" % _R)
+    L.append("            let bun3%s = if bu3v%s then bu3x%s else 200.0" % (_R, _R, _R))
+    L.append("            let bux3%s = if bu3v%s then bu3x%s else -200.0" % (_R, _R, _R))
+    L.append("            let bumn01%s = if bun0%s < bun1%s then bun0%s else bun1%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumn23%s = if bun2%s < bun3%s then bun2%s else bun3%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumn%s = if bumn01%s < bumn23%s then bumn01%s else bumn23%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumc01%s = if bun0%s < bun1%s then buc0%s else buc1%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumc23%s = if bun2%s < bun3%s then buc2%s else buc3%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumnc%s = if bumn01%s < bumn23%s then bumc01%s else bumc23%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumz01%s = if bun0%s < bun1%s then buz0%s else buz1%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumz23%s = if bun2%s < bun3%s then buz2%s else buz3%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumnz%s = if bumn01%s < bumn23%s then bumz01%s else bumz23%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumx01%s = if bux0%s < bux1%s then bux1%s else bux0%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumx23%s = if bux2%s < bux3%s then bux3%s else bux2%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumx%s = if bumx01%s < bumx23%s then bumx23%s else bumx01%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let buxc01%s = if bux0%s < bux1%s then buc1%s else buc0%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let buxc23%s = if bux2%s < bux3%s then buc3%s else buc2%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumxc%s = if bumx01%s < bumx23%s then buxc23%s else buxc01%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumxz01%s = if bux0%s < bux1%s then buz1%s else buz0%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumxz23%s = if bux2%s < bux3%s then buz3%s else buz2%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            let bumxz%s = if bumx01%s < bumx23%s then bumxz23%s else bumxz01%s"
+             % (_R, _R, _R, _R, _R))
+    L.append("            if bumn%s >= 200.0 || bumx%s < 0.0 || bumn%s >= SWF {"
+             % (_R, _R, _R))
+    L.append("              pcol%s = 200.0" % _sfx)
+    L.append("              pcurR%s = 100.0" % _sfx)
+    L.append("            } else {")
+    L.append("              pcol%s = if bumn%s < 0.0 then 0.0 else (bumn%s | 0)"
+             % (_sfx, _R, _R))
+    L.append("              pcurR%s = if bumx%s >= SWF then SWF - 1.0 else (bumx%s | 0)"
+             % (_sfx, _R, _R))
+    L.append("              xL%s = bumn%s" % (_sfx, _R))
+    L.append("              if !erasing {")
+    L.append("                let cra%s = (%s | 0)" % (_R, _r))
+    L.append("                if pcurR%s >= pcol%s && pcol%s <= 63.0 {"
+             % (_sfx, _sfx, _sfx))
+    L.append("                  if covMin[cra%s] > 199.0 {" % _R)
+    L.append("                    covMin[cra%s] = pcol%s" % (_R, _sfx))
+    L.append("                    covMax[cra%s] = pcurR%s" % (_R, _sfx))
+    L.append("                  } else {")
+    L.append("                    if pcol%s < covMin[cra%s] { covMin[cra%s] = pcol%s }"
+             % (_sfx, _R, _R, _sfx))
+    L.append("                    if pcurR%s > covMax[cra%s] { covMax[cra%s] = pcurR%s }"
+             % (_sfx, _R, _R, _sfx))
+    L.append("                  }")
+    L.append("                  if cra%s < covLo { covLo = cra%s }" % (_R, _R))
+    L.append("                  if cra%s > covHi { covHi = cra%s }" % (_R, _R))
+    L.append("                }")
+    L.append("              }")
+    L.append("              cLo%s = bumnc%s" % (_sfx, _R))
+    L.append("              let bspan%s = bumx%s - bumn%s" % (_R, _R, _R))
+    L.append("              let binv%s = if bspan%s > 0.0 then 1.0 / bspan%s else 0.0"
+             % (_R, _R, _R))
+    L.append("              rowSlope%s = (bumxc%s - cLo%s) * binv%s" % (_sfx, _R, _sfx, _R))
+    L.append("              zLo%s = bumnz%s" % (_sfx, _R))
+    L.append("              zSlope%s = (bumxz%s - zLo%s) * binv%s" % (_sfx, _R, _sfx, _R))
+    L.append("              cLo%s = Color(cLo%s.r * bf, cLo%s.g * bf, cLo%s.b * bf,"
+             " cLo%s.a)" % (_sfx, _sfx, _sfx, _sfx, _sfx))
+    L.append("              rowSlope%s = Color(rowSlope%s.r * bf,"
+             " rowSlope%s.g * bf, rowSlope%s.b * bf, rowSlope%s.a)"
+             % (_sfx, _sfx, _sfx, _sfx, _sfx))
+    L.append("            }")
+    L.append("          } else {")
+    L.append("            pcol%s = 200.0" % _sfx)
+    L.append("            pcurR%s = 100.0" % _sfx)
+    L.append("          }")
 
 L.append("          let u0lo = if qAy < qBy then qAy else qBy")
 L.append("          let u0hi = if qAy < qBy then qBy else qAy")
@@ -3262,7 +3418,17 @@ for i in range(NP):
 L.append("}")
 L.append("")
 L.append("on Clock(interval = 0.01) {")
-L.append("  paintTick()")
+# The clock gates the paint tick on there being work: a walk, an erase, an
+# arm, a commit, a queued push, a live animation delta, or the tick right
+# after a clear.  An idle screen has nothing to paint -- its pixels already
+# hold the picture -- so the mod does not fire and the whole node graph
+# stays asleep.  The wall refreshes identically: pixels change only when a
+# pass writes them.
+L.append("  if polyOn || sOn || erasing || rcOn || arming || armingS || commitR"
+        " || commitQ || pending || animDirty || justCleared || pushArm || drawArm"
+        " || addToShapeInTicks != 0.0 {")
+L.append("    paintTick()")
+L.append("  }")
 L.append("}")
 path = os.path.join(HERE, "screen.ws")
 open(path, "w", encoding="utf-8", newline="\n").write("\n".join(L) + "\n")

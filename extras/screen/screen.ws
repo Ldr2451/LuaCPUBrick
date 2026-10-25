@@ -151,6 +151,8 @@ var eInv14: float = 0.0
 var eInv15: float = 0.0
 var n: float = 3.0
 var pending: bool = false
+var pushArm: bool = false
+var drawArm: bool = false
 var qCount: float = 0.0
 var qPush: bool = false
 var qN: float[]
@@ -8951,8 +8953,7 @@ out px4095: color = g4095
 // burst, a recomposite, a staged arm -- so the next drawAllShapes always
 // starts fresh from the new stage.  (A load-time edge on an unwired
 // port stages zeroes: an empty immediate shape, which paints nothing.)
-on Change(pushShape) {
-  if pushShape {
+mod pushEdge() {
     pWire = shapeWireMode
     pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)
     pPos = shapePosition
@@ -8973,6 +8974,11 @@ on Change(pushShape) {
     armingS = false
     commitR = false
     commitQ = false
+}
+
+on Change(pushShape) {
+  if pushShape {
+    pushArm = true
   }
 }
 
@@ -8985,8 +8991,7 @@ on Change(pushShape) {
 // (blackPending) runs here first: with a shape staged, the fill runs
 // and the shape re-arms when it ends (pending is left set on purpose);
 // with nothing staged, the wall simply goes black.
-on Change(drawAllShapes) {
-  if drawAllShapes {
+mod drawEdge() {
     if blackPending {
       blackPending = false
       clearing = true
@@ -9090,6 +9095,11 @@ on Change(drawAllShapes) {
       pcol = 200.0
       sOn = true
     }
+}
+
+on Change(drawAllShapes) {
+  if drawAllShapes {
+    drawArm = true
   }
 }
 
@@ -9163,6 +9173,14 @@ on Change(clearAllShapes) {
 // operator, so remainders are floor-based (all values here are
 // non-negative, so truncation is floor).
 mod paintTick() {
+  if pushArm {
+    pushArm = false
+    pushEdge()
+  }
+  if drawArm {
+    drawArm = false
+    drawEdge()
+  }
   rcFell = rcPrev && !rcOn
   rcPrev = rcOn
   if !fbInit {
@@ -15032,7 +15050,7 @@ mod paintTick() {
   }
     if pcol > pcurR {
       pPrev = prow
-      prow = prow + (if sFreshLast then 1.0 else if prow + 2.0 <= sLast then 2.0 else 1.0)
+      prow = prow + (if sFreshLast then 1.0 else if prow + 4.0 <= sLast then 4.0 else if prow + 1.0 <= sLast then 1.0 else 1.0)
       if prow > sLast {
         sSeg = sSeg + 1.0
         if sSeg >= sSegs {
@@ -15144,7 +15162,7 @@ mod paintTick() {
       if sOn {
         if prow <= sLast {
           aRow = prow
-          if (prow == pPrev + 2.0 || prow == pPrev + 1.0) && prow + 1.0 <= sLast {
+          if prow + 1.0 <= sLast {
             let bu0lo = if qAy < qBy then qAy else qBy
             let bu0hi = if qAy < qBy then qBy else qAy
             let bu0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
@@ -15232,6 +15250,184 @@ mod paintTick() {
           } else {
             pcol2 = 200.0
             pcurR2 = 100.0
+          }
+          if prow + 2.0 <= sLast {
+            let bu0loC = if qAy < qBy then qAy else qBy
+            let bu0hiC = if qAy < qBy then qBy else qAy
+            let bu0sC = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
+            let bu0xC = qAx + bu0sC * (prow + 2.0 - qAy)
+            let bu0vC = prow + 2.0 >= bu0loC && prow + 2.0 < bu0hiC
+            let buc0C = cA + (prow + 2.0 - qAy) * iAB * (cB - cA)
+            let buz0C = rZ0 + (prow + 2.0 - qAy) * iAB * (rZ1 - rZ0)
+            let bun0C = if bu0vC then bu0xC else 200.0
+            let bux0C = if bu0vC then bu0xC else -200.0
+            let bu1loC = if qBy < qCy then qBy else qCy
+            let bu1hiC = if qBy < qCy then qCy else qBy
+            let bu1sC = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0
+            let bu1xC = qBx + bu1sC * (prow + 2.0 - qBy)
+            let bu1vC = prow + 2.0 >= bu1loC && prow + 2.0 < bu1hiC
+            let buc1C = cB
+            let buz1C = rZ1
+            let bun1C = if bu1vC then bu1xC else 200.0
+            let bux1C = if bu1vC then bu1xC else -200.0
+            let bu2loC = if qCy < qDy then qCy else qDy
+            let bu2hiC = if qCy < qDy then qDy else qCy
+            let bu2sC = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0
+            let bu2xC = qCx + bu2sC * (prow + 2.0 - qCy)
+            let bu2vC = prow + 2.0 >= bu2loC && prow + 2.0 < bu2hiC
+            let buc2C = cB + (prow + 2.0 - qCy) * iCD * (cA - cB)
+            let buz2C = rZ1 + (prow + 2.0 - qCy) * iCD * (rZ0 - rZ1)
+            let bun2C = if bu2vC then bu2xC else 200.0
+            let bux2C = if bu2vC then bu2xC else -200.0
+            let bu3loC = if qDy < qAy then qDy else qAy
+            let bu3hiC = if qDy < qAy then qAy else qDy
+            let bu3sC = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0
+            let bu3xC = qDx + bu3sC * (prow + 2.0 - qDy)
+            let bu3vC = prow + 2.0 >= bu3loC && prow + 2.0 < bu3hiC
+            let buc3C = cA
+            let buz3C = rZ0
+            let bun3C = if bu3vC then bu3xC else 200.0
+            let bux3C = if bu3vC then bu3xC else -200.0
+            let bumn01C = if bun0C < bun1C then bun0C else bun1C
+            let bumn23C = if bun2C < bun3C then bun2C else bun3C
+            let bumnC = if bumn01C < bumn23C then bumn01C else bumn23C
+            let bumc01C = if bun0C < bun1C then buc0C else buc1C
+            let bumc23C = if bun2C < bun3C then buc2C else buc3C
+            let bumncC = if bumn01C < bumn23C then bumc01C else bumc23C
+            let bumz01C = if bun0C < bun1C then buz0C else buz1C
+            let bumz23C = if bun2C < bun3C then buz2C else buz3C
+            let bumnzC = if bumn01C < bumn23C then bumz01C else bumz23C
+            let bumx01C = if bux0C < bux1C then bux1C else bux0C
+            let bumx23C = if bux2C < bux3C then bux3C else bux2C
+            let bumxC = if bumx01C < bumx23C then bumx23C else bumx01C
+            let buxc01C = if bux0C < bux1C then buc1C else buc0C
+            let buxc23C = if bux2C < bux3C then buc3C else buc2C
+            let bumxcC = if bumx01C < bumx23C then buxc23C else buxc01C
+            let bumxz01C = if bux0C < bux1C then buz1C else buz0C
+            let bumxz23C = if bux2C < bux3C then buz3C else buz2C
+            let bumxzC = if bumx01C < bumx23C then bumxz23C else bumxz01C
+            if bumnC >= 200.0 || bumxC < 0.0 || bumnC >= SWF {
+              pcol3 = 200.0
+              pcurR3 = 100.0
+            } else {
+              pcol3 = if bumnC < 0.0 then 0.0 else (bumnC | 0)
+              pcurR3 = if bumxC >= SWF then SWF - 1.0 else (bumxC | 0)
+              xL3 = bumnC
+              if !erasing {
+                let craC = (prow + 2.0 | 0)
+                if pcurR3 >= pcol3 && pcol3 <= 63.0 {
+                  if covMin[craC] > 199.0 {
+                    covMin[craC] = pcol3
+                    covMax[craC] = pcurR3
+                  } else {
+                    if pcol3 < covMin[craC] { covMin[craC] = pcol3 }
+                    if pcurR3 > covMax[craC] { covMax[craC] = pcurR3 }
+                  }
+                  if craC < covLo { covLo = craC }
+                  if craC > covHi { covHi = craC }
+                }
+              }
+              cLo3 = bumncC
+              let bspanC = bumxC - bumnC
+              let binvC = if bspanC > 0.0 then 1.0 / bspanC else 0.0
+              rowSlope3 = (bumxcC - cLo3) * binvC
+              zLo3 = bumnzC
+              zSlope3 = (bumxzC - zLo3) * binvC
+              cLo3 = Color(cLo3.r * bf, cLo3.g * bf, cLo3.b * bf, cLo3.a)
+              rowSlope3 = Color(rowSlope3.r * bf, rowSlope3.g * bf, rowSlope3.b * bf, rowSlope3.a)
+            }
+          } else {
+            pcol3 = 200.0
+            pcurR3 = 100.0
+          }
+          if prow + 3.0 <= sLast {
+            let bu0loD = if qAy < qBy then qAy else qBy
+            let bu0hiD = if qAy < qBy then qBy else qAy
+            let bu0sD = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
+            let bu0xD = qAx + bu0sD * (prow + 3.0 - qAy)
+            let bu0vD = prow + 3.0 >= bu0loD && prow + 3.0 < bu0hiD
+            let buc0D = cA + (prow + 3.0 - qAy) * iAB * (cB - cA)
+            let buz0D = rZ0 + (prow + 3.0 - qAy) * iAB * (rZ1 - rZ0)
+            let bun0D = if bu0vD then bu0xD else 200.0
+            let bux0D = if bu0vD then bu0xD else -200.0
+            let bu1loD = if qBy < qCy then qBy else qCy
+            let bu1hiD = if qBy < qCy then qCy else qBy
+            let bu1sD = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0
+            let bu1xD = qBx + bu1sD * (prow + 3.0 - qBy)
+            let bu1vD = prow + 3.0 >= bu1loD && prow + 3.0 < bu1hiD
+            let buc1D = cB
+            let buz1D = rZ1
+            let bun1D = if bu1vD then bu1xD else 200.0
+            let bux1D = if bu1vD then bu1xD else -200.0
+            let bu2loD = if qCy < qDy then qCy else qDy
+            let bu2hiD = if qCy < qDy then qDy else qCy
+            let bu2sD = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0
+            let bu2xD = qCx + bu2sD * (prow + 3.0 - qCy)
+            let bu2vD = prow + 3.0 >= bu2loD && prow + 3.0 < bu2hiD
+            let buc2D = cB + (prow + 3.0 - qCy) * iCD * (cA - cB)
+            let buz2D = rZ1 + (prow + 3.0 - qCy) * iCD * (rZ0 - rZ1)
+            let bun2D = if bu2vD then bu2xD else 200.0
+            let bux2D = if bu2vD then bu2xD else -200.0
+            let bu3loD = if qDy < qAy then qDy else qAy
+            let bu3hiD = if qDy < qAy then qAy else qDy
+            let bu3sD = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0
+            let bu3xD = qDx + bu3sD * (prow + 3.0 - qDy)
+            let bu3vD = prow + 3.0 >= bu3loD && prow + 3.0 < bu3hiD
+            let buc3D = cA
+            let buz3D = rZ0
+            let bun3D = if bu3vD then bu3xD else 200.0
+            let bux3D = if bu3vD then bu3xD else -200.0
+            let bumn01D = if bun0D < bun1D then bun0D else bun1D
+            let bumn23D = if bun2D < bun3D then bun2D else bun3D
+            let bumnD = if bumn01D < bumn23D then bumn01D else bumn23D
+            let bumc01D = if bun0D < bun1D then buc0D else buc1D
+            let bumc23D = if bun2D < bun3D then buc2D else buc3D
+            let bumncD = if bumn01D < bumn23D then bumc01D else bumc23D
+            let bumz01D = if bun0D < bun1D then buz0D else buz1D
+            let bumz23D = if bun2D < bun3D then buz2D else buz3D
+            let bumnzD = if bumn01D < bumn23D then bumz01D else bumz23D
+            let bumx01D = if bux0D < bux1D then bux1D else bux0D
+            let bumx23D = if bux2D < bux3D then bux3D else bux2D
+            let bumxD = if bumx01D < bumx23D then bumx23D else bumx01D
+            let buxc01D = if bux0D < bux1D then buc1D else buc0D
+            let buxc23D = if bux2D < bux3D then buc3D else buc2D
+            let bumxcD = if bumx01D < bumx23D then buxc23D else buxc01D
+            let bumxz01D = if bux0D < bux1D then buz1D else buz0D
+            let bumxz23D = if bux2D < bux3D then buz3D else buz2D
+            let bumxzD = if bumx01D < bumx23D then bumxz23D else bumxz01D
+            if bumnD >= 200.0 || bumxD < 0.0 || bumnD >= SWF {
+              pcol4 = 200.0
+              pcurR4 = 100.0
+            } else {
+              pcol4 = if bumnD < 0.0 then 0.0 else (bumnD | 0)
+              pcurR4 = if bumxD >= SWF then SWF - 1.0 else (bumxD | 0)
+              xL4 = bumnD
+              if !erasing {
+                let craD = (prow + 3.0 | 0)
+                if pcurR4 >= pcol4 && pcol4 <= 63.0 {
+                  if covMin[craD] > 199.0 {
+                    covMin[craD] = pcol4
+                    covMax[craD] = pcurR4
+                  } else {
+                    if pcol4 < covMin[craD] { covMin[craD] = pcol4 }
+                    if pcurR4 > covMax[craD] { covMax[craD] = pcurR4 }
+                  }
+                  if craD < covLo { covLo = craD }
+                  if craD > covHi { covHi = craD }
+                }
+              }
+              cLo4 = bumncD
+              let bspanD = bumxD - bumnD
+              let binvD = if bspanD > 0.0 then 1.0 / bspanD else 0.0
+              rowSlope4 = (bumxcD - cLo4) * binvD
+              zLo4 = bumnzD
+              zSlope4 = (bumxzD - zLo4) * binvD
+              cLo4 = Color(cLo4.r * bf, cLo4.g * bf, cLo4.b * bf, cLo4.a)
+              rowSlope4 = Color(rowSlope4.r * bf, rowSlope4.g * bf, rowSlope4.b * bf, rowSlope4.a)
+            }
+          } else {
+            pcol4 = 200.0
+            pcurR4 = 100.0
           }
           let u0lo = if qAy < qBy then qAy else qBy
           let u0hi = if qAy < qBy then qBy else qAy
@@ -24299,5 +24495,7 @@ mod paintTick() {
 }
 
 on Clock(interval = 0.01) {
-  paintTick()
+  if polyOn || sOn || erasing || rcOn || arming || armingS || commitR || commitQ || pending || animDirty || justCleared || pushArm || drawArm || addToShapeInTicks != 0.0 {
+    paintTick()
+  }
 }
