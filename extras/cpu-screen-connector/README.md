@@ -48,7 +48,7 @@ m+1    terminator: -1 means NO colours (all white), -(1+c) means c
 m+2..  colours r1, g1, b1, a1, ... four per point
 98     point FLOAT count (the library writes it; coordinates then have
        no restrictions at all, and it is how a 3D shape arrives)
-100    animation ticks: 0 instant, N over N ticks, -1 forever
+100    animation ticks: 0 instant, N steps (one per repaint), -1 forever
 ```
 
 A white triangle is one call: `outNumArr(1, x1,y1, x2,y2, x3,y3, -1)`.
@@ -102,7 +102,10 @@ chunking; functions take at most 8 parameters, hence the packed
 -- transform as {px, py, ang, sx, sy}, parent slot ("0" = none),
 -- animation ticks (nil/0 = instant, -1 = forever).  The tick count
 -- rides slot 100 as a second terminator: 0 instant, -(1+T) animate
--- over T ticks, -1 forever (until another command edits the slot).
+-- over T REPAINTS, -1 forever (until another command edits the slot).
+-- A step lands at a repaint, not at a clock tick: the screen holds the
+-- animation while it scans out a pass, so T is frames, the rate the eye
+-- can actually see.
 -- It is always written (even 0): an unwritten slot keeps the previous
 -- push's value, which would ghost-animate later shapes.
 local function putn(slot, t, first)

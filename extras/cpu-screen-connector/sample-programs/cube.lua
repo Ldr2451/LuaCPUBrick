@@ -56,8 +56,13 @@ local faces = {
 pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
 -- The pivot: where the cube sits on the wall and how it is turned.  It
 -- needs a shape of its own -- an EMPTY push to a slot is the delete --
--- but it must not paint: one point is a live slot with no edge to
--- fill, so the pivot carries the transform and nothing shows.
+-- but it must not paint: one point is a live slot with no edge to fill,
+-- so the pivot carries the transform and nothing shows.  Wireframe mode
+-- is a port the screen keeps, and the faces above left it ON, so turning
+-- it off here is the program's job: a bare editShape would inherit it,
+-- and one point in wireframe mode is a two-pixel blob -- the white dot
+-- in the middle of the solid.
+setWire(0)
 editShape("1", {0.0, 0.0, 0.0}, nil, {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
 -- ... and it keeps turning, forever, with no further pushes: the slot's
 -- animation deltas are the spin.  It turns about the vertical, not over:

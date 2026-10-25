@@ -47,8 +47,9 @@ end
 -- cols is optional and per-point (four numbers each): one colour per
 -- point, white where absent.  xf is the nine-number transform
 -- (pos.xyz, rot.xyz, scl.xyz), parent the slot id as text, ticks the
--- animation length (0 instant, n ticks, -1 forever), wire true for a
--- stroke, id the slot to store ("0".."8", "" = immediate).
+-- animation length (0 instant, n repaints, -1 forever), wire true for
+-- wireframe (edges only) and false for a filled shape, id the slot to
+-- store ("0".."8", "" = immediate).
 -- stage2d(pts, cols, xf, parent, ticks, wire, id): a FLAT shape, written
 -- as (x, y) pairs, sent as the (x, y, 0) triples the screen takes.  The
 -- screen's port takes triples and only triples, so a flat shape is the
@@ -103,7 +104,10 @@ if wire ~= nil then outNum(4, wire) end
 local t = ticks
 if t == nil then t = 0.0 end
 -- one number, one meaning: -1 is FOREVER (the animation runs until
--- another command edits the slot), 0 is INSTANT, N > 0 runs N ticks.
+-- another command edits the slot), 0 is INSTANT, N > 0 runs N steps.
+-- A step lands at a REPAINT, not at a clock tick: the screen holds its
+-- animation while it scans out a pass, so N is the number of frames the
+-- eye sees, which is the only rate the eye can see anyway.
 -- -1.0 at slot 100 used to mean instant, so it now means forever;
 -- instant moved to 0.0 (which is also what an unwritten slot reads).
 if t == -1.0 then

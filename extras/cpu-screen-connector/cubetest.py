@@ -60,6 +60,20 @@ SCREEN_WS = os.path.join(ROOT, "extras", "screen", "screen.ws")
 GFX = os.path.join(HERE, "gfx.lua")
 BODY_NAME = os.environ.get("CUBE_BODY", "cube.lua")
 BODY = os.path.join(HERE, "sample-programs", BODY_NAME)
+# Replay-only pacing knob: the sim's clock() is uptime, and uptime advances
+# far slower than a chip tick here, so a game-paced nap(420) hangs the
+# replay (420 units is ~40k sim ticks).  CUBE_NAP=<n> rewrites nap(...) in
+# the body to nap(n) so a GIF batch can pace frames while the bodies keep
+# their game pacing.  A repaint settles in ~20..160 ticks, so nap(2) is
+# enough headroom in replay.
+CUBE_NAP = os.environ.get("CUBE_NAP")
+
+
+def pace(src):
+    if CUBE_NAP:
+        import re as _re
+        src = _re.sub(r"nap\([0-9.]+ *\)", "nap(%s)" % float(CUBE_NAP), src)
+    return src
 # The cube's shape-by-shape checks (six faces, the pivot, shared points)
 # only describe cube.lua.  Any other sample still has to paint, but its
 # checks are the picture, not a slot table.
@@ -128,8 +142,8 @@ def destr(v):
 def chip_stream(ticks, ok):
     """Phase 1 off the real Lua chip: rows like the oracle's, tab-priced
     by the chip's own compute.  Returns the rows list."""
-    src = strip_lib(open(GFX, encoding="utf-8").read() + "\n"
-                    + open(BODY, encoding="utf-8").read())
+    src = pace(strip_lib(open(GFX, encoding="utf-8").read() + "\n"
+                          + open(BODY, encoding="utf-8").read()))
     print("chip program chars:", len(src))
     with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
         lua_dump = f.name
@@ -232,7 +246,7 @@ def report(tag, wall):
 
 def main():
     ok = True
-    body = open(BODY, encoding="utf-8").read()
+    body = pace(open(BODY, encoding="utf-8").read())
     # ---- phase 1 -------------------------------------------------------
     if USE_CHIP:
         samples, ok = chip_stream(TICKS, ok)
