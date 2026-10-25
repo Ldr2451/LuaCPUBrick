@@ -293,6 +293,15 @@ class Sim:
             or "ServerUptime" in nd.cls
         )
         self._dirty: set[int] = set(self._pure_ids)
+        # Freshness model: a pure gate is fresh while nothing has moved the
+        # chip's state since it computed.  A state write (var/array/map/port,
+        # a clock-paced node, a tick boundary) bumps `_epoch` and makes every
+        # cached gate value stale at once -- the wholesale rule that keeps a
+        # cached value provably equal to a fresh pull.  A gate's own publish
+        # is derived state: it only dirties the gates wired from it, so a
+        # repeated read of an unchanged gate still takes the cached prop.
+        self._epoch = 0
+        self._pured: dict[int, int] = {}
         self.clock_ids: list[int] = []
         self.tick_delta: int = 1
         self._queue_carry: dict[int, dict] = {}
@@ -419,6 +428,9 @@ class Sim:
         self._queue_carry = {}
         self._timer_state = {}
         self._dirty = set(self._pure_ids)
+        # A fresh run has no cached gate values.
+        self._epoch += 1
+        self._pured.clear()
         self.tick_delta = 1
         self.inputs = {}
         # True when the run ended because the chip said it was done, not because
@@ -469,6 +481,8 @@ class Sim:
                             continue
                         self.port_seen[nid] = list(val)
                         self.arrays[self._arr_id(nid)] = list(val)
+                        # The storage moved with no wire to carry it.
+                        self._bump()
                     else:
                         if val == self.port_seen.get(nid):
                             continue
@@ -666,6 +680,7 @@ class Sim:
     def set_chip_var(self, name, value):
         """Write a named chip var.  For probes: the invariants read the same way,
         so damaging state this way is how each of them is proved live."""
+        self._bump()
         nid = self._var_by_label.get(name) or self._by_label.get(name)
         if nid is not None:
             self.vars[nid] = value
@@ -910,10 +925,18 @@ class Sim:
         for w, src, pure in tail:
             if not src:
                 continue
-            if pure and w.src_id not in self._eval_stack:
+            if pure and w.src_id not in self._eval_stack and (
+                    w.src_id in self._dirty
+                    or self._pured.get(w.src_id, -1) != self._epoch):
                 # Pull evaluation: pure gates are side-effect-free functions
                 # of their inputs, so compute on demand for fresh values
-                # instead of trusting possibly-stale cached outputs.
+                # instead of trusting possibly-stale cached outputs.  A gate
+                # that is fresh -- evaluated in this epoch, with nothing
+                # published to it since (`_dirty`) -- cannot have moved, so a
+                # repeated read inside one tick takes the cached prop instead
+                # of recomputing its whole chain.  Chip state moving bumps the
+                # epoch (`_bump`), and a publish marks its wired readers, so
+                # both ways a gate's inputs can move are covered.
                 self._eval_stack.add(w.src_id)
                 try:
                     self._exec_node(w.src_id, src, set())
@@ -954,6 +977,20 @@ class Sim:
     def _default_for(self, node: Node, port: str):
         iv = node.props.get("InitialValue", ("raw", ""))
         return _extract(iv) if isinstance(iv, tuple) else iv
+
+    def _bump(self):
+        """Chip state moved: every cached gate value is stale.
+
+        A pure gate is a function of chip state, and some of that state moves
+        with no wire to carry it: a var read through the `_in_val` shortcut, a
+        slot replaced in an array in place, a map entry added.  Dirty marks
+        alone missed those (the screen chip's queue counter froze at 1), so the
+        rule is wholesale: one epoch move makes every gate recompute on its
+        next read, and repeated reads inside the same epoch still take the
+        cache.  Cheap because a write is rare next to a read.
+        """
+        self._epoch += 1
+        self._dirty.clear()
 
     def _out_val(self, nid: int, port: str, val: Any):
         if isinstance(val, bool):
@@ -1003,6 +1040,15 @@ class Sim:
 
     # ---- dispatch ----
     def _exec_node(self, nid: int, node: Node, nq: set):
+        self._exec_node_body(nid, node, nq)
+        if nid in self._pure_ids:
+            # Evaluated in this epoch: fresh until state moves (`_bump`) or a
+            # source publishes to it (`_out_val`).  Set AFTER the body so the
+            # gate's own publish cannot make it look stale to itself.
+            self._pured[nid] = self._epoch
+            self._dirty.discard(nid)
+
+    def _exec_node_body(self, nid: int, node: Node, nq: set):
         cls = node.cls
         if "BufferTicks" in cls:
             # The gate is spelled `WireGraphPseudo_BufferTicks` in the old
@@ -1549,6 +1595,7 @@ class Sim:
                 (w.dst_id, w.dst_port) for w in self.out_wires.get((nid, "Output"), []))
 
     def _do_var_set(self, nid: int, nq: set):
+        self._bump()
         val = self._find_value_input(nid)
         vid = self._var_id(nid)
         if vid is not None and val is not None:
@@ -1564,6 +1611,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_increment(self, nid: int, nq: set):
+        self._bump()
         step = _as_float(self._in_val(nid, "Value", 1.0), 1.0)
         vid = self._var_id(nid)
         if vid is not None:
@@ -1868,6 +1916,7 @@ class Sim:
             self._out_val(nid, "bSuccess", False)
 
     def _do_arr_push(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         arr = self._arr_list(aid)
         v = self._in_val(nid, "Value", None)
@@ -1918,6 +1967,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_set(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         arr = self._arr_list(aid)
         idx = _as_int(self._in_val(nid, "Index", 0))
@@ -1968,6 +2018,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_pop(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         arr = self._arr_list(aid)
         if arr:
@@ -1980,6 +2031,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_clear(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         self.arrays[aid] = []
         # The log is mirrored here as well as on push, or clearing it on the chip
@@ -1995,6 +2047,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_copy(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         src = self.in_wires.get((nid, "SourceRef"), [])
         src_arr = None
@@ -2025,6 +2078,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_remove(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         idx = _as_int(self._in_val(nid, "Index", 0))
         arr = self._arr_list(aid)
@@ -2036,6 +2090,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_resize(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         sz = _as_int(self._in_val(nid, "Size", 0))
         fill = self._in_val(nid, "Value", 0.0)
@@ -2060,6 +2115,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_map_set(self, nid: int, nq: set):
+        self._bump()
         mid = self._map_id(nid)
         key = self._in_val(nid, "Key", None)
         val = self._in_val(nid, "Value", None)
@@ -2071,6 +2127,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_map_clear(self, nid: int, nq: set):
+        self._bump()
         self.maps[self._map_id(nid)] = {}
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
@@ -2083,6 +2140,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_map_remove(self, nid: int, nq: set):
+        self._bump()
         mid = self._map_id(nid)
         key = self._in_val(nid, "Key", None)
         m = self.maps.get(mid, {})
@@ -2094,6 +2152,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_map_copy(self, nid: int, nq: set):
+        self._bump()
         mid = self._map_id(nid)
         src = None
         for w in self.in_wires.get((nid, "SourceRef"), []):
@@ -2114,6 +2173,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_map_keys(self, nid: int, nq: set):
+        self._bump()
         mid = self._map_id(nid)
         aid = None
         for w in self.in_wires.get((nid, "ArrayVarRef"), []):
@@ -2125,6 +2185,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_append(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         arr = self._arr_list(aid)
         src_arr = None
@@ -2142,6 +2203,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_slice(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         start = _as_int(self._in_val(nid, "Start", 0))
         count = _as_int(self._in_val(nid, "Count", 0))
@@ -2161,6 +2223,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_map_values(self, nid: int, nq: set):
+        self._bump()
         mid = self._map_id(nid)
         aid = None
         for w in self.in_wires.get((nid, "ArrayVarRef"), []):
@@ -2172,6 +2235,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_insert(self, nid: int, nq: set):
+        self._bump()
         aid = self._arr_id(nid)
         arr = self._arr_list(aid)
         idx = _as_int(self._in_val(nid, "Index", 0))
@@ -2186,6 +2250,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_fill(self, nid: int, nq: set):
+        self._bump()
         arr = self._arr_list(self._arr_id(nid))
         v = self._in_val(nid, "Value", None)
         if v is None:
@@ -2196,11 +2261,13 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_reverse(self, nid: int, nq: set):
+        self._bump()
         self._arr_list(self._arr_id(nid)).reverse()
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_shuffle(self, nid: int, nq: set):
+        self._bump()
         random.shuffle(self._arr_list(self._arr_id(nid)))
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
@@ -2217,12 +2284,14 @@ class Sim:
         return (2, 0.0, repr(v))
 
     def _do_arr_sort(self, nid: int, nq: set):
+        self._bump()
         arr = self._arr_list(self._arr_id(nid))
         arr.sort(key=self._sort_key, reverse=_as_bool(self._in_val(nid, "bDescending", False)))
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_sort_multiple(self, nid: int, nq: set):
+        self._bump()
         # this array is the key; up to 7 parallel arrays follow on ArrayVarRef1..7
         akey = self._arr_id(nid)
         others = []
@@ -2263,6 +2332,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_arr_swap(self, nid: int, nq: set):
+        self._bump()
         arr = self._arr_list(self._arr_id(nid))
         a = _as_int(self._in_val(nid, "IndexA", 0))
         b = _as_int(self._in_val(nid, "IndexB", 0))
@@ -2430,6 +2500,7 @@ class Sim:
             nq.add((w.dst_id, w.dst_port))
 
     def _do_literal(self, nid: int):
+        self._bump()
         node = self.nodes[nid]
         if "WireGraphPseudo_ArrayVar" in node.cls:
             if nid not in self.arrays:
