@@ -835,43 +835,35 @@ L.append("    else bclamp * FULL_BRIGHT / 100.0")
 # unblocks that arm, and it is safe to clear precisely because this
 # branch only fires for a push that paints nothing itself.
 L.append("  if pending && (pTicks > 0.5 || pTicks < -0.5) && !clearing {")
-L.append("    let anN = (shapePoints.length() / 3.0) | 0")
-L.append("    if anN < (if pWire then 2.0 else 3.0) {")
-L.append("      pending = false")
-# A pure delta: the slot's geometry and colours are untouched and only
-# the animation registers for it -- tick count, zeroed point deltas (the
-# staged points are too few to paint, so there is nothing to move) and
-# the nine transform channels.  Raising animDirty here is what the
-# self-refresh arm at the end of this block turns into a repaint, so
-# the wall updates without any drawAllShapes.
-#
-# The slot is 0..7 because staging clamps pId to 1..8.  The eight
-# copies were a ladder of `if slot < n.5` cascades, and the ladder was
-# OFF BY ONE: slot 1 took body 0, slot 7 took body 6, and body 7 was
-# unreachable -- so an animated shape in any slot but the first had its
-# deltas written into the PREVIOUS slot and never moved.  The suite only
-# ever animated slot 1, where the off-by-one lands on the right slot by
-# luck.  One loop over the slot index has no ladder to be off by one.
-L.append("      let slot = (pId - 1.0) | 0")
-L.append("      for aslot in 0..8 {")
-L.append("        if aslot == slot {")
-L.append("          anTicks[aslot] = pTicks")
-L.append("          let ab = aslot * 48.0")
+# addToShapeInTicks is the classifier: a non-zero push is a delta and
+# commits itself, with no drawAllShapes.  The slot's stored geometry and
+# colours are untouched; only the animation registers (tick count, zeroed
+# point deltas, the nine transform channels).  animDirty is what the
+# self-refresh arm turns into a repaint on the next tick's advance.
+L.append("    pending = false")
+L.append("    let slot = (pId - 1.0) | 0")
+L.append("    for aslot in 0..8 {")
+L.append("      if aslot == slot {")
+L.append("        anTicks[aslot] = pTicks")
+L.append("        let ab = aslot * 48.0")
+# The delta moves the transform only; point deltas are zeroed.  Reading
+# shapePoints/shapeColors here would put extra reader gates on the same
+# arrays the paint path consumes and corrupt that path, so a delta never
+# touches point/colour data -- geometry changes belong to a shape push.
 for _i in range(48):
-    L.append("          anPts[ab + %.1f] = 0.0" % _i)
-L.append("          let ax = aslot * 6.0")
-L.append("          let ax2 = aslot * 4.0")
-L.append("          anXF[ax + 0.0] = pPos.x")
-L.append("          anXF[ax + 1.0] = pPos.y")
-L.append("          anXF[ax + 2.0] = pRot.z")
-L.append("          anXF[ax + 3.0] = pScl.x")
-L.append("          anXF[ax + 4.0] = pScl.y")
-L.append("          anXF2[ax2 + 0.0] = pPos.z")
-L.append("          anXF2[ax2 + 1.0] = pRot.x")
-L.append("          anXF2[ax2 + 2.0] = pRot.y")
-L.append("          anXF2[ax2 + 3.0] = pScl.z")
-L.append("          animDirty = true")
-L.append("        }")
+    L.append("        anPts[ab + %d.0] = 0.0" % _i)
+L.append("        let ax = aslot * 6.0")
+L.append("        let ax2 = aslot * 4.0")
+L.append("        anXF[ax + 0.0] = pPos.x")
+L.append("        anXF[ax + 1.0] = pPos.y")
+L.append("        anXF[ax + 2.0] = pRot.z")
+L.append("        anXF[ax + 3.0] = pScl.x")
+L.append("        anXF[ax + 4.0] = pScl.y")
+L.append("        anXF2[ax2 + 0.0] = pPos.z")
+L.append("        anXF2[ax2 + 1.0] = pRot.x")
+L.append("        anXF2[ax2 + 2.0] = pRot.y")
+L.append("        anXF2[ax2 + 3.0] = pScl.z")
+L.append("        animDirty = true")
 L.append("      }")
 L.append("    }")
 L.append("  }")
@@ -1661,10 +1653,6 @@ L.append("    n = (shapePoints.length() / 3.0) | 0")
 L.append("      if n > 16.0 { n = 16.0 }")
 L.append("    let slot = (pId - 1.0) | 0")
 L.append("    let sbase = slot * 48.0")
-# The delivered point count in floats: a 3D shape delivers n*3
-# of them, a 2D one n*2, and the keep-else below must test
-# against what actually arrived.
-L.append("    let lim = if pIs3 > 0.5 then n * 3.0 else n * 2.0")
 L.append("    let cbase = slot * 16.0")
 L.append("    let xbase = slot * 6.0")
 L.append("    let xbase2 = slot * 4.0")
@@ -1680,74 +1668,6 @@ L.append("    } else if n < 1.0 && !(pTicks > 0.5 || pTicks < -0.5) {")
 L.append("      slLive[slot] = 0.0")
 L.append("      anTicks[slot] = 0.0")
 L.append("      needRC = true")
-L.append("    } else if (pTicks > 0.5 || pTicks < -0.5) && slLive[slot] > 0.5 {")
-L.append("      anTicks[slot] = pTicks")
-# A zero-point arm keeps the slot's stored points and colours (n < 1.0
-# here means "animate what's already in the slot", never "overwrite with
-# an empty shape"): the cube's forever pivot arm relies on it.
-L.append("      anPts[sbase + 0.0] = if 0.0 < lim then shapePoints[0] else (if n < 1.0 then anPts[sbase + 0.0] else 0.0)")
-L.append("      anPts[sbase + 1.0] = if 1.0 < lim then shapePoints[1] else (if n < 1.0 then anPts[sbase + 1.0] else 0.0)")
-L.append("      anPts[sbase + 2.0] = if 2.0 < lim then shapePoints[2] else (if n < 1.0 then anPts[sbase + 2.0] else 0.0)")
-L.append("      anPts[sbase + 3.0] = if 3.0 < lim then shapePoints[3] else (if n < 1.0 then anPts[sbase + 3.0] else 0.0)")
-L.append("      anPts[sbase + 4.0] = if 4.0 < lim then shapePoints[4] else (if n < 1.0 then anPts[sbase + 4.0] else 0.0)")
-L.append("      anPts[sbase + 5.0] = if 5.0 < lim then shapePoints[5] else (if n < 1.0 then anPts[sbase + 5.0] else 0.0)")
-L.append("      anPts[sbase + 6.0] = if 6.0 < lim then shapePoints[6] else (if n < 1.0 then anPts[sbase + 6.0] else 0.0)")
-L.append("      anPts[sbase + 7.0] = if 7.0 < lim then shapePoints[7] else (if n < 1.0 then anPts[sbase + 7.0] else 0.0)")
-L.append("      anPts[sbase + 8.0] = if 8.0 < lim then shapePoints[8] else (if n < 1.0 then anPts[sbase + 8.0] else 0.0)")
-L.append("      anPts[sbase + 9.0] = if 9.0 < lim then shapePoints[9] else (if n < 1.0 then anPts[sbase + 9.0] else 0.0)")
-L.append("      anPts[sbase + 10.0] = if 10.0 < lim then shapePoints[10] else (if n < 1.0 then anPts[sbase + 10.0] else 0.0)")
-L.append("      anPts[sbase + 11.0] = if 11.0 < lim then shapePoints[11] else (if n < 1.0 then anPts[sbase + 11.0] else 0.0)")
-L.append("      anPts[sbase + 12.0] = if 12.0 < lim then shapePoints[12] else (if n < 1.0 then anPts[sbase + 12.0] else 0.0)")
-L.append("      anPts[sbase + 13.0] = if 13.0 < lim then shapePoints[13] else (if n < 1.0 then anPts[sbase + 13.0] else 0.0)")
-L.append("      anPts[sbase + 14.0] = if 14.0 < lim then shapePoints[14] else (if n < 1.0 then anPts[sbase + 14.0] else 0.0)")
-L.append("      anPts[sbase + 15.0] = if 15.0 < lim then shapePoints[15] else (if n < 1.0 then anPts[sbase + 15.0] else 0.0)")
-L.append("      anPts[sbase + 16.0] = if 16.0 < lim then shapePoints[16] else (if n < 1.0 then anPts[sbase + 16.0] else 0.0)")
-L.append("      anPts[sbase + 17.0] = if 17.0 < lim then shapePoints[17] else (if n < 1.0 then anPts[sbase + 17.0] else 0.0)")
-L.append("      anPts[sbase + 18.0] = if 18.0 < lim then shapePoints[18] else (if n < 1.0 then anPts[sbase + 18.0] else 0.0)")
-L.append("      anPts[sbase + 19.0] = if 19.0 < lim then shapePoints[19] else (if n < 1.0 then anPts[sbase + 19.0] else 0.0)")
-L.append("      anPts[sbase + 20.0] = if 20.0 < lim then shapePoints[20] else (if n < 1.0 then anPts[sbase + 20.0] else 0.0)")
-L.append("      anPts[sbase + 21.0] = if 21.0 < lim then shapePoints[21] else (if n < 1.0 then anPts[sbase + 21.0] else 0.0)")
-L.append("      anPts[sbase + 22.0] = if 22.0 < lim then shapePoints[22] else (if n < 1.0 then anPts[sbase + 22.0] else 0.0)")
-L.append("      anPts[sbase + 23.0] = if 23.0 < lim then shapePoints[23] else (if n < 1.0 then anPts[sbase + 23.0] else 0.0)")
-L.append("      anPts[sbase + 24.0] = if 24.0 < lim then shapePoints[24] else (if n < 1.0 then anPts[sbase + 24.0] else 0.0)")
-L.append("      anPts[sbase + 25.0] = if 25.0 < lim then shapePoints[25] else (if n < 1.0 then anPts[sbase + 25.0] else 0.0)")
-L.append("      anPts[sbase + 26.0] = if 26.0 < lim then shapePoints[26] else (if n < 1.0 then anPts[sbase + 26.0] else 0.0)")
-L.append("      anPts[sbase + 27.0] = if 27.0 < lim then shapePoints[27] else (if n < 1.0 then anPts[sbase + 27.0] else 0.0)")
-L.append("      anPts[sbase + 28.0] = if 28.0 < lim then shapePoints[28] else (if n < 1.0 then anPts[sbase + 28.0] else 0.0)")
-L.append("      anPts[sbase + 29.0] = if 29.0 < lim then shapePoints[29] else (if n < 1.0 then anPts[sbase + 29.0] else 0.0)")
-L.append("      anPts[sbase + 30.0] = if 30.0 < lim then shapePoints[30] else (if n < 1.0 then anPts[sbase + 30.0] else 0.0)")
-L.append("      anPts[sbase + 31.0] = if 31.0 < lim then shapePoints[31] else (if n < 1.0 then anPts[sbase + 31.0] else 0.0)")
-L.append("      anCol[cbase + 0.0] = if shapeColors.length() > 0 then shapeColors[0] else (if n < 1.0 then anCol[cbase + 0.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 1.0] = if shapeColors.length() > 1 then shapeColors[1] else (if n < 1.0 then anCol[cbase + 1.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 2.0] = if shapeColors.length() > 2 then shapeColors[2] else (if n < 1.0 then anCol[cbase + 2.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 3.0] = if shapeColors.length() > 3 then shapeColors[3] else (if n < 1.0 then anCol[cbase + 3.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 4.0] = if shapeColors.length() > 4 then shapeColors[4] else (if n < 1.0 then anCol[cbase + 4.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 5.0] = if shapeColors.length() > 5 then shapeColors[5] else (if n < 1.0 then anCol[cbase + 5.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 6.0] = if shapeColors.length() > 6 then shapeColors[6] else (if n < 1.0 then anCol[cbase + 6.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 7.0] = if shapeColors.length() > 7 then shapeColors[7] else (if n < 1.0 then anCol[cbase + 7.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 8.0] = if shapeColors.length() > 8 then shapeColors[8] else (if n < 1.0 then anCol[cbase + 8.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 9.0] = if shapeColors.length() > 9 then shapeColors[9] else (if n < 1.0 then anCol[cbase + 9.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 10.0] = if shapeColors.length() > 10 then shapeColors[10] else (if n < 1.0 then anCol[cbase + 10.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 11.0] = if shapeColors.length() > 11 then shapeColors[11] else (if n < 1.0 then anCol[cbase + 11.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 12.0] = if shapeColors.length() > 12 then shapeColors[12] else (if n < 1.0 then anCol[cbase + 12.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 13.0] = if shapeColors.length() > 13 then shapeColors[13] else (if n < 1.0 then anCol[cbase + 13.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 14.0] = if shapeColors.length() > 14 then shapeColors[14] else (if n < 1.0 then anCol[cbase + 14.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      anCol[cbase + 15.0] = if shapeColors.length() > 15 then shapeColors[15] else (if n < 1.0 then anCol[cbase + 15.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("      slMode[slot] = if pWire then 1.0 else 0.0")
-L.append("      slXF[xbase + 5.0] = pParent")
-L.append("      anXF[xbase + 0.0] = pPos.x")
-L.append("      anXF[xbase + 1.0] = pPos.y")
-L.append("      anXF[xbase + 2.0] = pRot.z")
-L.append("      anXF[xbase + 3.0] = pScl.x")
-L.append("      anXF[xbase + 4.0] = pScl.y")
-L.append("      anXF2[xbase2 + 0.0] = pPos.z")
-L.append("      anXF2[xbase2 + 1.0] = pRot.x")
-L.append("      anXF2[xbase2 + 2.0] = pRot.y")
-L.append("      anXF2[xbase2 + 3.0] = pScl.z")
-L.append("      anXF2[xbase2 + 0.0] = pPos.z")
-L.append("      anXF2[xbase2 + 1.0] = pRot.x")
-L.append("      anXF2[xbase2 + 2.0] = pRot.y")
-L.append("      anXF2[xbase2 + 3.0] = pScl.z")
 L.append("    } else {")
 for i in range(48):
     L.append("      slPts[sbase + %d.0] = shapePoints[%d]" % (i, i))

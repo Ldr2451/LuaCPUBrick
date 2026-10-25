@@ -485,6 +485,7 @@ def main():
         last_slid = [None, None]
         last_rc = [False]
         last_er = [False]
+        last_busy = [False]
         order_prev = [None]
         order_erase = [False]
         angs = []
@@ -541,10 +542,11 @@ def main():
                 })
             # snapshot the wall: a pass paints over MANY ticks, so a
             # tick-count sample catches a half-drawn wall.  Under --save
-            # take one frame each time a recomposite COMPLETES (rcOn
-            # falls): that is the moment the wall holds a whole picture,
+            # take one frame each time a pass SETTLES -- the fill/stroke
+            # walks and any erase walk have all finished and the chip is
+            # idle -- which is the moment the wall holds a whole picture,
             # and the forever-spin has advanced by one delta since the
-            # previous one -- one frame per turn step, which is exactly
+            # previous one: one frame per turn step, which is exactly
             # what a GIF of the rotation wants.
             base = reds[-1] if reds else 0
             wall = lambda: tuple(
@@ -552,14 +554,22 @@ def main():
                             s.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                 for i in range(SW * SW)) if gids else None
             if MAKE_SAVE and SAVE:
-                # Capture at the end of a recomposite pass (rcOn falls).  An
-                # erase walk is not a per-pass event for a redraw whose new
-                # coverage overlaps the old one, so keying the snapshot on
-                # `erasing` caught only the initial clear and left the moving
-                # bodies with a single frame.  rcOn falling fires once per
-                # pass and is the moment the wall holds the whole picture.
-                rc_now = s.vars.get(vids.get("rcOn"))
-                if last_rc[0] and not bool(rc_now) and len(snaps) < 24:
+                # rcOn falling is NOT the settled moment: the iterator
+                # finishes LOADING the slots, then the fill walk paints
+                # over the following ticks, so capturing there caught a
+                # wall that was blank.  Keying on `erasing` misses redraws
+                # whose new coverage overlaps the old one (no erase walk).
+                # The settled tick is where the paint/stroke/erase walks
+                # have all fallen and nothing else is running.
+                busy = (bool(s.vars.get(vids.get("polyOn"))) or
+                        bool(s.vars.get(vids.get("sOn"))) or
+                        bool(s.vars.get(vids.get("erasing"))))
+                idle = (not bool(s.vars.get(vids.get("rcOn"))) and
+                        not bool(s.vars.get(vids.get("arming"))) and
+                        not bool(s.vars.get(vids.get("armingS"))) and
+                        not bool(s.vars.get(vids.get("commitR"))) and
+                        not bool(s.vars.get(vids.get("commitQ"))))
+                if last_busy[0] and not busy and idle and len(snaps) < 24:
                     snaps[len(snaps)] = wall()
                     # the pivot's accumulated turn, so each frame has a
                     # number as well as a picture: a turn that reverses
@@ -572,7 +582,7 @@ def main():
                                  else None,
                                  round(float(xf2[2]), 3) if len(xf2) > 2
                                  else None))
-                last_rc[0] = bool(rc_now)
+                last_busy[0] = busy
             else:
                 k = tick - (base + 2 + 40)
                 if k >= 0 and k % 80 == 0:
