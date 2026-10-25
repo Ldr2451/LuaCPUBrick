@@ -1,28 +1,25 @@
--- A mesh whose POINTS breathe.
+-- A cube whose points are rewritten every frame: the outline breathes
+-- along one axis.
 --
--- The cube's eight vertices move on their own.  Each frame the CPU sends
--- the vertices again, each pushed out or pulled in along its own line
--- from the centre, with a phase of its own: the solid swells at one
--- corner while it dips at another instead of scaling as a whole, so the
--- edges stay straight and the faces stay flat while the body works.
---
--- The move is in the POINTS, not in a transform: a vertex that moves
--- drags every face that shares it, because the faces name the same
--- points -- the very property that keeps a shared edge one colour keeps
--- it in one place.  The pivot only tilts here: a forever spin under a
--- re-pushed mesh tips the near corners toward the eye plane, and the
--- perspective divide then blows the stroke across the whole wall.
+-- Nothing is scaled.  Each frame sends its OWN eight vertices -- the same
+-- x and z, a y that grows and shrinks -- so this is the sample for editing
+-- a shape's points while it is on screen: pushMesh stages a face and pushes
+-- it, draw() commits the six faces and the wall is recomposited from the
+-- stored slots.  The chip transforms, projects and paints; the program
+-- never computes a pixel.
 clearScreen()
--- The half-size, as the cube demo: 10 is what fits a turning cube whose
--- diagonal is the widest thing it shows.
-local h = 10.0
--- The eight vertices, 1..4 near (z = +h), 5..8 far, in the order the
--- faces below name them.
-local rest = {
-  -h, -h, h,   h, -h, h,   h, h, h,   -h, h, h,
+-- Half-size of the cube.  13 fills this pose without touching the wall's
+-- edge; the breathing adds at most a sixth of it again.
+local h = 13.0
+-- The eight vertices, in the order the faces name them: 1..4 near face,
+-- 5..8 far one.
+local base = {
+  -h, -h, h,  h, -h, h,  h, h, h,  -h, h, h,
   -h, -h, -h,  h, -h, -h,  h, h, -h,  -h, h, -h,
 }
--- One colour per vertex: the near four bright, the far four dark.
+-- One colour per vertex: four bright near corners, four dark far ones, so
+-- the cube reads as one solid rather than six separate squares.  Because a
+-- vertex is shared, an edge between two faces is drawn in one colour.
 local cols = {
   0.95, 0.95, 1.00, 1.00,
   0.95, 0.90, 0.85, 1.00,
@@ -33,6 +30,7 @@ local cols = {
   0.45, 0.40, 0.45, 1.00,
   0.40, 0.35, 0.40, 1.00,
 }
+-- The six faces, each a closed outline of four vertices.
 local faces = {
   {1, 2, 3, 4},
   {5, 8, 7, 6},
@@ -41,45 +39,34 @@ local faces = {
   {1, 4, 8, 5},
   {2, 6, 7, 3},
 }
--- The pivot: a live slot with one point, which no fill can draw, so it
--- carries the transform and puts nothing on the wall.  Wireframe mode is
--- the program's to set: off here, or the one point would be a blob if a
--- later burst left the port on.
+-- The cube sits centred and still: the pivot is a plain shape carrying the
+-- pose, with no animation -- the picture changes by its POINTS, not by a
+-- transform.  An empty push to a slot is the delete, so the pivot carries
+-- one point; wireframe mode stays off here or that point paints a dot.
+pushMesh(base, cols, faces, nil, "1", nil, 1.0, 2)
 setWire(0)
 editShape("1", {0.0, 0.0, 0.0}, nil,
-          {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
--- No forever spin here: re-pushing the faces under a spinning pivot tips
--- the near corners toward the eye plane and the stroke blows across the
--- whole wall (measured).  The tilt stays; the turn is the cube demo's job.
-push()
--- A frame of the breath: every vertex moves along its OWN axes, not along
--- its own ray.  x stretches hard while y and z barely move, so the body
--- elongates longitudinally -- long and thin at one phase, back toward the
--- cube at the next -- instead of growing as a whole.  Vertex k's phase
--- differs from its neighbours', so the stretch is uneven and the solid
--- reads as a body, not as a scaled cube.
+          {30.5, 33.0, 0.0, 0.45, 0.0, 0.85, 1.0, 1.0, 1.0}, "0")
+
+-- Six frames, one breath: y goes from rest to stretched and back.  The
+-- chip's own tick budget is what sets how long a body may run, so a breath
+-- is kept short.
 local f = 0
-while f < 8 do
-  local ph = f * 0.75
+while f < 6 do
+  local sy = 1.0 + 0.22 * math.sin(f * 0.62)
   local pts = {}
   local k = 0
   while k < 8 do
-    -- One phase for the whole body, plus a small per-vertex ripple:
-    -- x stretches longitudinally and y/z pinch gently, so the cube
-    -- elongates and flattens as a solid instead of tearing apart.  The
-    -- pinch is shallow on purpose: the tilted pivot tips z toward the
-    -- eye plane, and past about z 12 the perspective divide inflates a
-    -- vertex across the whole wall -- the cube demo keeps z' near 11.5,
-    -- so this stays at x 12 and y/z 9, inside the same envelope.
-    local w = math.sin(ph)
-    local r = 0.03 * math.sin(ph + k * 1.9)
-    pts[#pts + 1] = rest[k * 3 + 1] * (1.0 + 0.20 * w + r)
-    pts[#pts + 2] = rest[k * 3 + 2] * (1.0 - 0.10 * w - r)
-    pts[#pts + 3] = rest[k * 3 + 3] * (1.0 - 0.10 * w - r)
+    pts[k * 3 + 1] = base[k * 3 + 1]
+    pts[k * 3 + 2] = base[k * 3 + 2] * sy
+    pts[k * 3 + 3] = base[k * 3 + 3]
     k = k + 1
   end
   pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
   draw()
-  nap(420.0)
+  -- Hold the frame on screen for about a pass.  cubetest replays bodies at
+  -- its own pacing (CUBE_NAP), so the number here is the game's pace, not
+  -- the test's.
+  nap(220.0)
   f = f + 1
 end

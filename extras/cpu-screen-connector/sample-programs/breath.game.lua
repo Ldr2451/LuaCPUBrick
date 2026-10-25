@@ -179,9 +179,9 @@ if after > 0.0 then nap(after) end
 end
 end
 clearScreen()
-local h = 10.0
-local rest = {
-  -h, -h, h,   h, -h, h,   h, h, h,   -h, h, h,
+local h = 13.0
+local base = {
+  -h, -h, h,  h, -h, h,  h, h, h,  -h, h, h,
   -h, -h, -h,  h, -h, -h,  h, h, -h,  -h, h, -h,
 }
 local cols = {
@@ -202,36 +202,23 @@ local faces = {
   {1, 4, 8, 5},
   {2, 6, 7, 3},
 }
+pushMesh(base, cols, faces, nil, "1", nil, 1.0, 2)
 setWire(0)
 editShape("1", {0.0, 0.0, 0.0}, nil,
-          {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
--- No forever spin here: re-pushing the faces under a spinning pivot
--- tips the near corners toward the eye plane and the perspective
--- divide blows the stroke across the whole wall (measured).  The tilt
--- stays; the turn is the cube demo's job.
-push()
+          {30.5, 33.0, 0.0, 0.45, 0.0, 0.85, 1.0, 1.0, 1.0}, "0")
 local f = 0
-while f < 8 do
-  local ph = f * 0.75
+while f < 6 do
+  local sy = 1.0 + 0.22 * math.sin(f * 0.62)
   local pts = {}
   local k = 0
   while k < 8 do
-    -- One phase for the whole body, plus a small per-vertex ripple:
-    -- x stretches longitudinally and y/z pinch gently, so the cube
-    -- elongates and flattens as a solid instead of tearing apart.  The
-    -- pinch is shallow on purpose: the tilted pivot tips z toward the
-    -- eye plane, and past about z 12 the perspective divide inflates a
-    -- vertex across the whole wall -- the cube demo keeps z' near 11.5,
-    -- so this stays at x 12 and y/z 9, inside the same envelope.
-    local w = math.sin(ph)
-    local r = 0.03 * math.sin(ph + k * 1.9)
-    pts[#pts + 1] = rest[k * 3 + 1] * (1.0 + 0.20 * w + r)
-    pts[#pts + 2] = rest[k * 3 + 2] * (1.0 - 0.10 * w - r)
-    pts[#pts + 3] = rest[k * 3 + 3] * (1.0 - 0.10 * w - r)
+    pts[k * 3 + 1] = base[k * 3 + 1]
+    pts[k * 3 + 2] = base[k * 3 + 2] * sy
+    pts[k * 3 + 3] = base[k * 3 + 3]
     k = k + 1
   end
   pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
   draw()
-  nap(420.0)
+  nap(220.0)
   f = f + 1
 end
