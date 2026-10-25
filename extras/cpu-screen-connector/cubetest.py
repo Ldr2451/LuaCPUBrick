@@ -39,6 +39,13 @@ ORDER = os.environ.get("CUBE_ORDER") == "1"
 # one line per completed pass: the pivot's angle, so a turn that rocks
 # instead of turning reads as a number sequence, not a guess from a GIF
 PASS = os.environ.get("CUBE_PASS") == "1"
+# CUBE_SETTLE=1 measures the handshake wait: ticks from a draw edge to the
+# tick the chip goes idle again.  The worst value over a run is how long a
+# program must nap after draw(); see README and screenchecks.py.
+CUBE_SETTLE = os.environ.get("CUBE_SETTLE") == "1"
+# CUBE_FLAGS=1 prints the walk/arm flags every tick: a paint that never
+# starts is traced here rather than guessed at.
+CUBE_FLAGS = os.environ.get("CUBE_FLAGS") == "1"
 BUDGET = int(_args[0]) if _args else 1800
 TICKS = int(_args[0]) if _args else (12000 if USE_CHIP else 0) or BUDGET
 # second numeric arg: ticks of forever-animation tail observed past the
@@ -347,6 +354,16 @@ def main():
     maxpts = max((len(r["shapePoints"]) for r in cstream), default=0)
     print("connector: maxPts=%d pushes=%d redraws=%d clears=%d"
           % (maxpts, len(pushE), len(reds), len(clrE)))
+    if CUBE_FLAGS:
+        print("  connector push ticks:", pushE[:10], "draw ticks:", reds[:10])
+    if os.environ.get("CUBE_CSTREAM") == "1":
+        # What the connector passes at each push edge: if every push carries
+        # the same numbers, the connector's slice never refreshed.
+        for k in pushE[:30]:
+            r = cstream[k]
+            print("  push t%-4d id=%.0f pts=%s" % (
+                k, r["shapeId"] or 0.0,
+                [round(float(x), 2) for x in (r["shapePoints"] or [])[:9]]))
     shown = False
     for r in cstream:
         nz = [v for v in r["shapePoints"] if v != 0.0]
@@ -500,6 +517,14 @@ def main():
         last_rc = [False]
         last_er = [False]
         last_busy = [False]
+        # CUBE_SETTLE=1 measures the handshake wait: ticks from a draw edge
+        # to the tick the chip goes idle again (the paint/stroke/erase walks
+        # have all fallen).  The worst measured value is what a program must
+        # nap for after draw(); see README and screenchecks.py.
+        draw_prev = [False]
+        draw_tick = [-1]
+        settle_max = [0]
+        last_busy2 = [False]
         order_prev = [None]
         order_erase = [False]
         angs = []
@@ -511,10 +536,32 @@ def main():
                     "polyOn", "commitR", "commitQ", "sSegs", "qCount",
                     "rcOn", "fromSlot", "rcSlot", "animDirty", "erasing",
                     "wasPaint", "brightRC", "pTicks", "eraseOK",
-                    "erRow", "covLo", "covHi", "oldLo", "oldHi"):
+                    "erRow", "covLo", "covHi", "oldLo", "oldHi", "needRC"):
                 vids[lb] = nid
 
         def hook2(s, tick):
+            if CUBE_FLAGS:
+                f = [n for n in ("polyOn", "sOn", "rcOn", "arming", "armingS",
+                                 "pending", "commitR", "commitQ", "animDirty",
+                                 "erasing", "qCount", "pWire", "wasPaint",
+                                 "rcSlot", "needRC")]
+                qnv = [round(float(x), 1) for x in (s.chip_array("qN") or [])[:8]]
+                slv = [round(float(x), 1) for x in (s.chip_array("slLive") or [])[:8]]
+                line = "t%-4d " % tick + " ".join(
+                    "%s=%d" % (n, int(bool(s.vars.get(vids.get(n))))) for n in f)
+                line += " wire=%d sid=%.0f pT=%.0f add=%.0f" % (
+                    int(bool(s.inputs.get("shapeWireMode"))),
+                    float(s.inputs.get("shapeId") or 0.0),
+                    float(s.vars.get(vids.get("pTicks")) or 0.0),
+                    float(s.inputs.get("addToShapeInTicks") or 0.0))
+                line += " push=%d draw=%d clr=%d par=%.0f pts=%d" % (
+                    int(bool(s.inputs.get("pushShape"))),
+                    int(bool(s.inputs.get("drawAllShapes"))),
+                    int(bool(s.inputs.get("clearAllShapes"))),
+                    float(s.inputs.get("parentShapeId") or 0.0),
+                    len(s.inputs.get("shapePoints") or []))
+                line += " qN=%s slLive=%s" % (qnv, slv)
+                print(line)
             if tick < len(cstream):
                 c = cstream[tick]
                 # The connector has no clock: it slices the CPU's array on
@@ -601,6 +648,29 @@ def main():
                 k = tick - (base + 2 + 40)
                 if k >= 0 and k % 80 == 0:
                     snaps[k // 80] = wall()
+            if CUBE_SETTLE:
+                # A draw edge starts the timer; the timer stops at the tick
+                # every walk has fallen and nothing is armed or queued.  That
+                # gap is exactly the nap a program must take after draw() to
+                # know the wall holds the whole picture.
+                now = bool(s.inputs.get("drawAllShapes"))
+                if now and not draw_prev[0]:
+                    draw_tick[0] = tick
+                draw_prev[0] = now
+                busy2 = (bool(s.vars.get(vids.get("polyOn"))) or
+                         bool(s.vars.get(vids.get("sOn"))) or
+                         bool(s.vars.get(vids.get("erasing"))) or
+                         bool(s.vars.get(vids.get("rcOn"))))
+                idle2 = (not bool(s.vars.get(vids.get("arming"))) and
+                         not bool(s.vars.get(vids.get("armingS"))))
+                if last_busy2[0] and not busy2 and idle2 and draw_tick[0] >= 0:
+                    wait = tick - draw_tick[0]
+                    if wait > settle_max[0]:
+                        settle_max[0] = wait
+                    print("  settle t%-6d wait=%d (draw t%d)"
+                          % (tick, wait, draw_tick[0]))
+                    draw_tick[0] = -1
+                last_busy2[0] = busy2
             if ORDER or PASS:
                 # the erase walk's order against the pass it runs in:
                 # one line per state change, so the ticks between the
@@ -681,6 +751,8 @@ def main():
         cap = (reds[-1] + 2 + 40 + TAIL) if reds else (len(cstream) + 150)
         cap = min(cap, len(cstream) + 150 + TAIL)
         ssim.run(cap, on_tick=hook2)
+        if CUBE_SETTLE:
+            print("  max settle wait=%d ticks" % settle_max[0])
         # The pivot's slot must be a FILL.  Its one point carries the
         # transform and draws nothing in fill mode, but one point in
         # STROKE mode is a two-pixel blob -- the white dot that used to
@@ -697,6 +769,22 @@ def main():
                 a = ssim.chip_array(nm)
                 print("  %-7s" % nm,
                       None if a is None else [round(float(x), 3) for x in a])
+        if os.environ.get("CUBE_SHPTS") == "1":
+            # The last painted shape's PROJECTED pairs, and the slot's raw
+            # triples plus its transform: enough to re-derive the projection
+            # in painttest.py and see where the chip's own math differs.
+            for nm in ("shPts", "slPts", "slXF", "slXF2", "slCount"):
+                a = ssim.chip_array(nm)
+                print("  %-6s" % nm,
+                      None if a is None else [round(float(x), 2) for x in a[:16]])
+            sp = ssim.chip_array("slPts") or []
+            if len(sp) > 64:
+                print("  slPts slot2", [round(float(x), 2) for x in sp[48:64]])
+            # The ports as they sit at the end: if the staged ports hold the
+            # NEW points while slPts holds the OLD ones, the commit copied a
+            # snapshot taken before the CPU's array write settled.
+            print("  ports", None if (a := ssim.chip_array("shapePoints")) is None
+                  else [round(float(x), 2) for x in a[:16]])
         report("first painted pass", snaps.get(0))
         if angs:
             print("  angle %s (rot.z, rot.x, rot.y) at the first painted pass"
