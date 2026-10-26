@@ -13,7 +13,7 @@ outNum3            -> outNum3         -> clearAllShapes   -> clearAllShapes
 outNum4            -> outNum4         -> shapeWireMode    -> shapeWireMode
 outStr1            -> outStr1         -> shapeId          -> shapeId
 outNumArr          -> outNumArr       -> shapeColors      -> shapeColors
-outStr2            -> outStr2         -> shapePoints      -> shapePoints
+outStr2            -> outStr2         -> parentShapeId    -> parentShapeId
 outStrArr          -> outStrArr       -> shapePosition    -> shapePosition
                                          shapeRotation      -> shapeRotation
                                          shapeScale         -> shapeScale
@@ -33,7 +33,9 @@ bright).
 
 `outNum1`/`outNum2`/`outNum3` pulse push/draw/clear straight through
 (nonzero reads true); `outNum4` holds wire mode (nonzero = stroke) and
-`outStr1` the slot id as text (`"0"`..`"8"`, empty = immediate), parsed
+`outStr1` the slot id as text (`"0"`..`"32"`, `"-1"` the camera, empty =
+immediate), and `outStr2` the parent the same way (`"-1"` hangs the shape
+off the camera, in view space), parsed
 here -- the parse is pure, costs ~2 nodes, and keeps strings out of the
 screen's hot path.  All three default to off, so drivers that never
 touch them -- like `anim.lua` -- behave exactly as before.

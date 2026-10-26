@@ -46,10 +46,11 @@ end
 -- this library only moves numbers to the outputs.
 -- cols is optional and per-point (four numbers each): one colour per
 -- point, white where absent.  xf is the nine-number transform
--- (pos.xyz, rot.xyz, scl.xyz), parent the slot id as text, ticks the
--- animation length (0 instant, n repaints, -1 forever), wire true for
--- wireframe (edges only) and false for a filled shape, id the slot to
--- store ("0".."8", "" = immediate).
+-- (pos.xyz, rot.xyz, scl.xyz), parent the slot id as text ("0" none,
+-- "1".."32" a shape, "-1" the camera so the shape is placed in view
+-- space), ticks the animation length (0 instant, n repaints, -1 forever),
+-- wire true for wireframe (edges only) and false for a filled shape, id
+-- the slot to store ("0".."32", "-1" the camera, "" = immediate).
 -- stage2d(pts, cols, xf, parent, ticks, wire, id): a FLAT shape, written
 -- as (x, y) pairs, sent as the (x, y, 0) triples the screen takes.  The
 -- screen's port takes triples and only triples, so a flat shape is the
@@ -154,8 +155,8 @@ end
 -- outline per shape -- and all the faces share one parent, so one
 -- transform moves the whole solid.  firstId is the slot of the first
 -- face and the next faces take the next slots: a six-face cube under a
--- pivot in slot 1 is slots 2 to 7.  The screen remembers eight slots,
--- so a mesh has room for eight faces at the most, and one less if the
+-- pivot in slot 1 is slots 2 to 7.  The screen remembers thirty-two slots,
+-- so a mesh has room for plenty of faces, and one less if the
 -- mesh needs a slot of its own for the parent.
 --
 -- A face's outline is closed here (its first vertex repeated at the

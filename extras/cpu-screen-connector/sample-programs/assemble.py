@@ -13,8 +13,8 @@ truncated program fails parsing loudly)
   python -u extras/cpu-screen-connector/sample-programs/assemble.py
 
 Writes anim.game.lua, cube.game.lua, curve.game.lua, mover.game.lua,
-scale.game.lua, breath.game.lua and parent.game.lua next to their bodies,
-and prints
+scale.game.lua, breath.game.lua, parent.game.lua and camera.game.lua next
+to their bodies, and prints
 every size.  Bodies stay readable (comments and all); the stripping
 happens here, at assembly time.  strip() runs on the library too, so the game files stay under the cap.
 """
@@ -24,7 +24,7 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 GFX = os.path.join(os.path.dirname(HERE), "gfx.lua")
 BODIES = ("anim.lua", "cube.lua", "curve.lua", "mover.lua", "scale.lua",
-          "breath.lua", "parent.lua")
+          "breath.lua", "parent.lua", "camera.lua")
 
 
 def strip(src):

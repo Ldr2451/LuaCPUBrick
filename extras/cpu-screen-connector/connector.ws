@@ -74,19 +74,23 @@
 //
 // Control: outNum1 pulses push, outNum2 pulses draw, outNum3 pulses
 // clear, outNum4 holds wire mode (nonzero = stroke), outStr1 holds the
-// slot id as text ("0".."8", empty means immediate).  Numbers stay
+// slot id as text ("0".."32", "-1" the camera, empty means immediate).
+// Numbers stay
 // geometric; the id rides the otherwise-idle string channel and is
 // parsed here (ParseNumber is pure and costs ~2 nodes; keeping the
 // screen's id numeric keeps strings out of its hot exec path, and an
 // empty/garbage string parses to 0.0 = immediate, so old drivers that
 // never touch outStr1 keep working, as do untouched outNum3/4).
-// outStr2 carries the parent slot the same way ("0".."8", empty means
+// outStr2 carries the parent slot the same way ("0".."32", "-1" the
+// camera, empty means
 // no parent): pushing a shape with a parent attaches it, pushing with
-// an empty outStr2 detaches it again.
+// an empty outStr2 detaches it again.  A shape attached to the camera is
+// placed in view space, so it holds its place on screen while the camera
+// moves.
 // The transform rides the CPU's output string array, 1-based slots:
-//   1..3   shapePosition x, y, z (only x and y are used)
-//   4..6   shapeRotation x, y, z (only z, radians about the origin)
-//   7..9   shapeScale x, y, z (only x and y; zeroes mean identity)
+//   1..3   shapePosition x, y, z
+//   4..6   shapeRotation x, y, z (radians, each axis the same rule)
+//   7..9   shapeScale x, y, z (zeroes mean identity)
 // Missing or garbage slots parse to 0.0, and the screen defaults
 // those (shapeScale zeroes mean identity there too), so a driver that
 // never touches outStrArr behaves exactly as before -- and a driver
