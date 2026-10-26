@@ -1392,6 +1392,107 @@ def main():
                          "%d of 4096 differ, first at %d"
                          % (len(badx), badx[0] if badx else 0))
 
+        # ---- camera: the view moves the world; a child of it does not -----
+        # A shape with parent 0 sits in world space, so pushing id -1 with a
+        # transform moves it on screen.  A shape whose chain reaches -1 is
+        # placed in view space, so it holds its pixels while the camera
+        # moves.  The camera pans on x with identity rotation and scale, so
+        # the model composes it like a parent of the whole world -- which is
+        # exactly what the view matrix is -- and the perspective divide stays
+        # at d = EYE, so pixels pin exactly.
+        kcommits = [
+            (rect_pts(4.0, 4.0, 12.0, 12.0), [RED] * 4, 1.0,
+             (0.0, 0.0), 0.0, (1.0, 1.0), 0.0),
+            ([0.0, 0.0, 0.0], None, -1.0, (-8.0, 0.0), 0.0, (1.0, 1.0), 0.0),
+            (rect_pts(20.0, 20.0, 28.0, 28.0), [green] * 4, 2.0,
+             (0.0, 0.0), 0.0, (1.0, 1.0), -1.0),
+            ([0.0, 0.0, 0.0], None, -1.0, (6.0, 0.0), 0.0, (1.0, 1.0), 0.0),
+            ([], [], -1.0, (0.0, 0.0), 0.0, (1.0, 1.0), 0.0),
+        ]
+        kplan = {}
+        t = 10
+        kends = []
+        for pts, cols, sid, pos, ang, scl, par in kcommits:
+            kplan[t] = {"shapePoints": list(pts),
+                        "shapeColors": list(cols or []),
+                        "shapeWireMode": False, "shapeId": sid,
+                        "shapePosition": (pos[0], pos[1], 0.0),
+                        "shapeRotation": (0.0, 0.0, ang),
+                        "shapeScale": (scl[0], scl[1], 1.0),
+                        "parentShapeId": par}
+            kplan[t + 2] = {"pushShape": True}
+            kplan[t + 4] = {"pushShape": False}
+            kplan[t + 6] = {"drawAllShapes": True}
+            kplan[t + 8] = {"drawAllShapes": False}
+            # A camera commit recomposites the whole scene, like a parent
+            # move: same margin the transforms section allows.
+            t += 64 + 110
+            kends.append(t)
+
+        sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
+        sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
+                      "pushShape": False, "shapeWireMode": False,
+                      "shapeId": 0.0, "drawAllShapes": False,
+                      "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0),
+                      "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0),
+                      "parentShapeId": 0.0, "brightness": 100.0}
+        sim.run(1)
+        sim.inputs = {k: v for k, v in sim.inputs.items()
+                      if k != "shapePoints"}
+        ksnaps = {}
+
+        def watchk(sn, tick):
+            if tick in kplan:
+                step = kplan[tick]
+                if "shapePoints" in step:
+                    slide(sn, pts_aid, cols_aid, step["shapePoints"],
+                          step.get("shapeColors") or None)
+                    step = {k: v for k, v in step.items()
+                            if k != "shapePoints" and k != "shapeColors"}
+                sn.inputs = dict(sn.inputs, **step)
+            if tick in kends:
+                ksnaps[tick] = {i: col(sn, gids, i)
+                                for i in range(SW * SW)}
+
+        sim.run(t + 20, on_tick=watchk)
+
+        kslots = {}
+        kcam = None
+        klabels = ["world square paints",
+                   "camera pan moves the world square",
+                   "camera child paints in view space",
+                   "camera pan moves the world square, child holds",
+                   "forgetting the camera restores world place"]
+        for ci, end in enumerate(kends):
+            pts, cols, sid, pos, ang, scl, par = kcommits[ci]
+            if sid < 0.0:
+                # One point stores the view; no points forgets it.
+                kcam = (pos[0], pos[1]) if pts else None
+            elif not pts:
+                kslots.pop(int(sid), None)
+            else:
+                kslots[int(sid)] = (pts, cols, pos, ang, scl, par)
+            wantk = {}
+            for kk in sorted(kslots):
+                spts, scols, spos, sang, sscl, spar = kslots[kk]
+                local = ((spos[0], spos[1]), sang,
+                         (sscl[0] or 1.0, sscl[1] or 1.0))
+                if spar == -1.0:
+                    wpos, wang, wscl = local
+                elif kcam:
+                    wpos, wang, wscl = xf_compose(((kcam[0], kcam[1]), 0.0,
+                                                   (1.0, 1.0)), local)
+                else:
+                    wpos, wang, wscl = local
+                for q, c in poly_colors(
+                        xf_points(spts, wpos, wang, wscl), scols).items():
+                    wantk[q] = over(wantk.get(q, BLACK), c)
+            badk = [i for i in range(SW * SW)
+                    if not close(ksnaps[end][i], wantk.get(i, BLACK))]
+            ok &= expect(not badk, klabels[ci],
+                         "%d of 4096 differ, first at %d"
+                         % (len(badk), badk[0] if badk else 0))
+
         # ---- depth: z-order, tilt, tilted parents -------------------------
         # The vec inputs' third fields are live: shapePosition.z places a
         # shape forwards/backwards (bigger z paints in front, ties
@@ -2084,10 +2185,11 @@ def main():
                 fwalls[tick] = tuple(col(sn, gids, i)
                                      for i in range(SW * SW))
                 arr = sn.arrays.get(fant) or []
-                fticks[tick] = list(arr[:2]) if len(arr) >= 2 else []
+                # Slot ids index by id: id 1 lives at index 1.
+                fticks[tick] = [arr[1]] if len(arr) > 1 else []
 
         sim.run(520, on_tick=watchf)
-        ok &= expect(all(fticks[t] == [-1.0, 0.0]
+        ok &= expect(all(fticks[t] == [-1.0]
                          for t in (120, 200, 280)),
                      "forever animation holds its ticks",
                      str({t: fticks.get(t) for t in (120, 200, 280)}))

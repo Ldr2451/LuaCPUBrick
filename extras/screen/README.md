@@ -53,10 +53,11 @@ painted without a draw, so a frame is a push followed by a draw.
   outline. A single point strokes as a small dot.
 - `shapeId` -- names the shape, so you can change it or delete it later,
   or make other shapes follow it. 0 means "paint this once and forget
-  it"; 1 to 8 are the shapes the panel remembers. Pushing new points to
+  it"; 1 to 32 are the shapes the panel remembers. Pushing new points to
   the same id edits that shape where it stands, and pushing no points
   at all deletes it. A remembered shape means its geometry is sent once
-  and afterwards only moved.
+  and afterwards only moved. `-1` is the camera: it takes a transform,
+  not geometry (see `parentShapeId`).
 - `clearAllShapes` -- forgets every remembered shape. The panel keeps
   showing the scene until the next draw, which blacks it.
 - `shapePosition`, `shapeRotation`, `shapeScale` -- optional, and each
@@ -67,7 +68,19 @@ painted without a draw, so a frame is a push followed by a draw.
   squashed in depth, and a shape further away is drawn smaller.
 - `parentShapeId` -- optional. A shape pushed with the id of another
   shape follows it, so one push to a parent moves its children with it.
-  Leave it unwired for no parent.
+  Leave it unwired for no parent. `-1` is the camera as a parent: a shape
+  hung off the camera is placed relative to the view, so it keeps its
+  place on screen while the camera moves -- a HUD element, not a world
+  object.
+- The camera (`shapeId -1`) is the view. Pushing it with a transform moves
+  or turns the whole scene: every shape with no parent, or a parent chain
+  that never reaches `-1`, shifts on screen, changes apparent size with its
+  distance from the eye, and re-orders by depth. Shapes whose chain does
+  reach `-1` are already in view space and stay put. The push carries one
+  point, which paints nothing; its commit recomposites the scene, so no
+  `drawAllShapes` is needed to see the move. `addToShapeInTicks` animates
+  the camera like any other shape, and pushing no points to `-1` forgets
+  it, which puts the view back to identity.
 - `brightness` -- 1 to 100, a dimmer for the whole panel. 100 is what
   the panel did before the port existed, so nothing can be asked for
   that is brighter than the screen already was. Unwired reads as 100, so

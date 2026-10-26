@@ -4,12 +4,14 @@ One color output per pixel (px0..pxN-1), each wired in the save to one
 brick's property changer.  Two primitives share one point array: fills
 take convex polygons, strokes take open or closed polylines at a fixed
 2px width.  Shapes carry an id: id 0 paints immediately and is
-forgotten (unbounded accumulation, the animation's medium), ids 1..8
+forgotten (unbounded accumulation, the animation's medium), ids 1..NSLOT
 are retained -- stored, then the wall is recomposited from all live
 slots in order -- so a later push can edit a shape, and pushing zero
-points deletes it.
+points deletes it.  Id -1 is the camera: a retained shape like any other
+whose push edits it, and a parent like any other whose children compose
+through it.
 
-  python -u extras/screen/gen.py [lanes]     (default 64; writes screen.ws)
+  python -u extras/screen/gen.py [lanes] [slots]   (default 64 32)
 
 Measured shape (audit.py): ~4 nodes per pixel (port + global + scanout
 copy), so 64x64 lands ~16.5k nodes before the painters.
@@ -29,6 +31,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SW, SH = 64, 64
 NP = SW * SH
 K = int(sys.argv[1]) if len(sys.argv) > 1 else 64
+# Slot indices.  Retained id k lives at index k (index 0 is never addressed
+# by an id).  SCR is the paint-once staging slot for a queued id-0 push, and
+# it paints last, over the scene.  CAM is not a painted slot: it holds the
+# VIEW transform -- the camera -- which composes outside every shape's parent
+# chain and applies to every shape the wall draws.  The painted indices are
+# 0..SCR; CAM is stored, animated and forgotten by the same paths, but the
+# recomposite never scans it.
+NSLOT = int(sys.argv[2]) if len(sys.argv) > 2 else 32
+SCR = NSLOT
+CAM = NSLOT + 1
+TOT = NSLOT + 2
+# Steps the ancestor walk unrolls.  A chain longer than WALK paints a
+# partial composition (defined, degraded -- the wall never blanks), and
+# every step costs ~290 nodes in the two walks.  The default covers any
+# chain a 16-deep scene can build; pass a third argument to go deeper.
+WALK = int(sys.argv[3]) if len(sys.argv) > 3 else min(NSLOT, 16)
 MAXP = 16                                   # max vertices per polygon
 MAXP3 = 16                                  # max vertices per polygon (each point is an x,y,z triple)
 EYE = 48.0                                  # perspective eye distance (eye at z=-EYE)
@@ -283,10 +301,11 @@ L.append("var shPts: float[]")
 # off-axis tilt).  The fill interpolates it across each span exactly
 # like a colour channel and depth-tests every lane.
 L.append("var shPz: float[]")
-# Eight retained slots: points, colour, mode, live flag, point count.
-# Arrays are sized memory, not gates, so eight slots cost no nodes --
-# only the single load/store paths do.  Slot k (1..8) lives at points
-# base (k-1)*32 and scalar index k-1.
+# Retained slots: points, colour, mode, live flag, point count.  Id k
+# lives at index k-1, the camera (-1) at CAM, paint-once (0) at SCR -- the
+# same index everywhere, so no slot is special.  Arrays are sized memory;
+# what costs nodes is the per-slot animation advance and the recomposite
+# scan, measured at ~220 nodes per slot.
 L.append("var slPts: float[]")
 L.append("var slPC: color[]")
 L.append("var slMode: float[]")
@@ -336,6 +355,18 @@ for _m in ("m00", "m01", "m02", "m03", "m10", "m11", "m12", "m13",
            "m20", "m21", "m22", "m23"):
     L.append("var %s: float = 0.0" % _m)
 L.append("var cur: float = 0.0")
+# The camera: the VIEW matrix, built once whenever the camera channel
+# changes (camDirty), and composed onto every shape whose chain does not
+# reach -1 (camAttach says it does, so a child of the camera is already in
+# view space and stays fixed while the camera moves).  Identity until the
+# first camera push, so a scene without one renders exactly as before.
+L.append("var camDirty: bool = false")
+L.append("var camAttach: float = 0.0")
+for _cm in ("camM00", "camM01", "camM02", "camM03", "camM10", "camM11",
+            "camM12", "camM13", "camM20", "camM21", "camM22", "camM23"):
+    L.append("var %s: float = %s" % (_cm, "1.0" if _cm in
+                                     ("camM00", "camM11", "camM22")
+                                     else "0.0"))
 # Compose-step snapshots: nwx/nwy read the pre-step offset, but the
 # step writes wpx before nwy is assigned -- a pure let re-evaluates
 # per use, so without these the second write captures the first
@@ -603,11 +634,18 @@ L.append("// starts fresh from the new stage.  (A load-time edge on an unwired")
 L.append("// port stages zeroes: an empty immediate shape, which paints nothing.)")
 L.append("mod pushEdge() {")
 L.append("    pWire = shapeWireMode")
-L.append("    pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)")
+# shapeId: 0 paints once and forgets; 1..%d are remembered shapes; -1 is the
+# camera -- a shape like any other, and a parent like any other, whose push
+# moves/rotates it and takes its children with it.  parentShapeId takes the
+# same ids, and -1 means "follow the camera".
+L.append("    pId = if shapeId < -0.5 then -1.0"
+         " else if shapeId > %d.0 then %d.0 else (shapeId | 0)" % (NSLOT, NSLOT))
 L.append("    pPos = shapePosition")
 L.append("    pRot = shapeRotation")
 L.append("    pScl = shapeScale")
-L.append("    pParent = if parentShapeId < 0.0 then 0.0 else if parentShapeId > 8.0 then 8.0 else (parentShapeId | 0)")
+L.append("    pParent = if parentShapeId < -0.5 then -1.0"
+         " else if parentShapeId > %d.0 then %d.0 else (parentShapeId | 0)"
+         % (NSLOT, NSLOT))
 L.append("    pTicks = if addToShapeInTicks < -0.5 then -1.0 else if addToShapeInTicks < 1.0 then 0.0 else (addToShapeInTicks | 0)")
 # A shape's points are (x,y) pairs, or (x,y,z) triples when the staged
 # array's length is odd -- the one bit of shape kind the protocol adds,
@@ -663,7 +701,7 @@ L.append("    } else if pending {")
 L.append("      pending = false")
 L.append("      if qCount > 1.5 {")
 L.append("        commitQ = true")
-L.append("      } else if pId >= 1.0 {")
+L.append("      } else if pId >= 1.0 || pId < 0.0 {")
 L.append("        commitR = true")
 L.append("        qCount = 0.0")
 L.append("      } else {")
@@ -747,23 +785,13 @@ L.append("    sOn = false")
 L.append("    sLive = false")
 L.append("    rcOn = false")
 L.append("    brightRC = false")
-L.append("    slLive[0] = 0.0")
-L.append("    slLive[1] = 0.0")
-L.append("    slLive[2] = 0.0")
-L.append("    slLive[3] = 0.0")
-L.append("    slLive[4] = 0.0")
-L.append("    slLive[5] = 0.0")
-L.append("    slLive[6] = 0.0")
-L.append("    slLive[7] = 0.0")
-L.append("    slLive[8] = 0.0")
-L.append("    anTicks[0] = 0.0")
-L.append("    anTicks[1] = 0.0")
-L.append("    anTicks[2] = 0.0")
-L.append("    anTicks[3] = 0.0")
-L.append("    anTicks[4] = 0.0")
-L.append("    anTicks[5] = 0.0")
-L.append("    anTicks[6] = 0.0")
-L.append("    anTicks[7] = 0.0")
+for _i in range(TOT):
+    L.append("    slLive[%d] = 0.0" % _i)
+for _i in range(TOT):
+    L.append("    anTicks[%d] = 0.0" % _i)
+# The camera is forgotten too: the view returns to identity, so the next
+# scene is placed in world coordinates again.
+L.append("    camDirty = true")
 L.append("    qCount = 0.0")
 L.append("    blackPending = true")
 L.append("    justCleared = false")
@@ -797,32 +825,25 @@ L.append("    fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))")
 L.append("    fbZ.resize(NP, ZBACK)")
 L.append("    shPts.resize(48, 0.0)")
 L.append("    shPz.resize(16, 0.0)")
-L.append("    slPts.resize(384, 0.0)")
-L.append("    slPC.resize(128, Color(1.0, 1.0, 1.0, 1.0))")
-L.append("    slXF.resize(48, 0.0)")
-L.append("    slMode.resize(8, 0.0)")
-L.append("    slLive.resize(8, 0.0)")
-L.append("    slCount.resize(8, 0.0)")
-L.append("    slIs3.resize(8, 0.0)")
-L.append("    slPts.resize(432, 0.0)")
-L.append("    slPC.resize(144, Color(1.0, 1.0, 1.0, 1.0))")
-L.append("    slXF.resize(54, 0.0)")
-L.append("    slXF2.resize(36, 0.0)")
+L.append("    slPts.resize(%d, 0.0)" % (TOT * 48))
+L.append("    slPC.resize(%d, Color(1.0, 1.0, 1.0, 1.0))" % (TOT * 16))
+L.append("    slXF.resize(%d, 0.0)" % (TOT * 6))
+L.append("    slXF2.resize(%d, 0.0)" % (TOT * 4))
 L.append("    covMin.resize(64, 200.0)")
 L.append("    covMax.resize(64, -200.0)")
 L.append("    oldMin.resize(64, 200.0)")
 L.append("    oldMax.resize(64, -200.0)")
-L.append("    anPts.resize(432, 0.0)")
-L.append("    anCol.resize(144, Color(0.0, 0.0, 0.0, 0.0))")
-L.append("    anXF.resize(54, 0.0)")
-L.append("    anXF2.resize(36, 0.0)")
-L.append("    anTicks.resize(9, 0.0)")
+L.append("    anPts.resize(%d, 0.0)" % (TOT * 48))
+L.append("    anCol.resize(%d, Color(0.0, 0.0, 0.0, 0.0))" % (TOT * 16))
+L.append("    anXF.resize(%d, 0.0)" % (TOT * 6))
+L.append("    anXF2.resize(%d, 0.0)" % (TOT * 4))
+L.append("    anTicks.resize(%d, 0.0)" % TOT)
+L.append("    slMode.resize(%d, 0.0)" % TOT)
+L.append("    slLive.resize(%d, 0.0)" % TOT)
+L.append("    slCount.resize(%d, 0.0)" % TOT)
+L.append("    slIs3.resize(%d, 0.0)" % TOT)
 L.append("    qTicks.resize(8, 0.0)")
 L.append("    qCN.resize(8, 0.0)")
-L.append("    slMode.resize(9, 0.0)")
-L.append("    slLive.resize(9, 0.0)")
-L.append("    slCount.resize(9, 0.0)")
-L.append("    slIs3.resize(9, 0.0)")
 L.append("    qN.resize(8, 0.0)")
 L.append("    qIs3.resize(8, 0.0)")
 L.append("    qPts.resize(384, 0.0)")
@@ -851,7 +872,8 @@ L.append("  bf = if brightness <= 0.0 then DEF_BRIGHT")
 L.append("    else bclamp * FULL_BRIGHT / 100.0")
 
 # ---- retained commit: store the staged shape, start recomposite ------------
-# A retained push (id 1..8) lands here on drawAllShapes: the pushed points
+# A retained push (id 1..NSLOT, or -1 for the camera) lands here on
+# drawAllShapes: the pushed points
 # and colours go to the slot (an empty array clears it -- that is
 # the delete), then the wall is recomposited from every live slot in
 # order, starting with a black clear through the normal fill walk --
@@ -887,31 +909,31 @@ L.append("  if pending && (pTicks > 0.5 || pTicks < -0.5) && !clearing {")
 # point deltas, the nine transform channels).  animDirty is what the
 # self-refresh arm turns into a repaint on the next tick's advance.
 L.append("    pending = false")
-L.append("    let slot = (pId - 1.0) | 0")
-L.append("    for aslot in 0..8 {")
-L.append("      if aslot == slot {")
-L.append("        anTicks[aslot] = pTicks")
-L.append("        let ab = aslot * 48.0")
+L.append("    let slot = if pId < 0.0 then %d.0"
+         " else if pId < 1.0 then %d.0 else (pId | 0)" % (CAM, SCR))
+L.append("    let ab = slot * 48.0")
+L.append("    let ax = slot * 6.0")
+L.append("    let ax2 = slot * 4.0")
+L.append("    anTicks[slot] = pTicks")
 # The delta moves the transform only; point deltas are zeroed.  Reading
 # shapePoints/shapeColors here would put extra reader gates on the same
 # arrays the paint path consumes and corrupt that path, so a delta never
 # touches point/colour data -- geometry changes belong to a shape push.
+# The bases are computed, not a ladder over every slot: this path runs
+# once per animated push, so it pays gates when it runs and costs no
+# nodes per slot.
 for _i in range(48):
-    L.append("        anPts[ab + %d.0] = 0.0" % _i)
-L.append("        let ax = aslot * 6.0")
-L.append("        let ax2 = aslot * 4.0")
-L.append("        anXF[ax + 0.0] = pPos.x")
-L.append("        anXF[ax + 1.0] = pPos.y")
-L.append("        anXF[ax + 2.0] = pRot.z")
-L.append("        anXF[ax + 3.0] = pScl.x")
-L.append("        anXF[ax + 4.0] = pScl.y")
-L.append("        anXF2[ax2 + 0.0] = pPos.z")
-L.append("        anXF2[ax2 + 1.0] = pRot.x")
-L.append("        anXF2[ax2 + 2.0] = pRot.y")
-L.append("        anXF2[ax2 + 3.0] = pScl.z")
-L.append("        animDirty = true")
-L.append("      }")
-L.append("    }")
+    L.append("    anPts[ab + %d.0] = 0.0" % _i)
+L.append("    anXF[ax + 0.0] = pPos.x")
+L.append("    anXF[ax + 1.0] = pPos.y")
+L.append("    anXF[ax + 2.0] = pRot.z")
+L.append("    anXF[ax + 3.0] = pScl.x")
+L.append("    anXF[ax + 4.0] = pScl.y")
+L.append("    anXF2[ax2 + 0.0] = pPos.z")
+L.append("    anXF2[ax2 + 1.0] = pRot.x")
+L.append("    anXF2[ax2 + 2.0] = pRot.y")
+L.append("    anXF2[ax2 + 3.0] = pScl.z")
+L.append("    animDirty = true")
 L.append("  }")
 L.append("")
 # ---- per-pass animation: advance every live slot ----------------------
@@ -928,495 +950,32 @@ L.append("")
 # into a property of how long the wall took to clean itself -- the cube
 # moved 6 deltas one frame and 41 the next, and read as a turn that
 # reverses.
-L.append("  if (anTicks[0.0] > 0.5 || anTicks[0.0] < -0.5) && rcFell {")
-L.append("    if anTicks[0.0] > 0.5 { anTicks[0.0] = anTicks[0.0] - 1.0 }")
-L.append("    animDirty = true")
-L.append("    slPts[0] = slPts[0] + anPts[0]")
-L.append("    slPts[1] = slPts[1] + anPts[1]")
-L.append("    slPts[2] = slPts[2] + anPts[2]")
-L.append("    slPts[3] = slPts[3] + anPts[3]")
-L.append("    slPts[4] = slPts[4] + anPts[4]")
-L.append("    slPts[5] = slPts[5] + anPts[5]")
-L.append("    slPts[6] = slPts[6] + anPts[6]")
-L.append("    slPts[7] = slPts[7] + anPts[7]")
-L.append("    slPts[8] = slPts[8] + anPts[8]")
-L.append("    slPts[9] = slPts[9] + anPts[9]")
-L.append("    slPts[10] = slPts[10] + anPts[10]")
-L.append("    slPts[11] = slPts[11] + anPts[11]")
-L.append("    slPts[12] = slPts[12] + anPts[12]")
-L.append("    slPts[13] = slPts[13] + anPts[13]")
-L.append("    slPts[14] = slPts[14] + anPts[14]")
-L.append("    slPts[15] = slPts[15] + anPts[15]")
-L.append("    slPts[16] = slPts[16] + anPts[16]")
-L.append("    slPts[17] = slPts[17] + anPts[17]")
-L.append("    slPts[18] = slPts[18] + anPts[18]")
-L.append("    slPts[19] = slPts[19] + anPts[19]")
-L.append("    slPts[20] = slPts[20] + anPts[20]")
-L.append("    slPts[21] = slPts[21] + anPts[21]")
-L.append("    slPts[22] = slPts[22] + anPts[22]")
-L.append("    slPts[23] = slPts[23] + anPts[23]")
-L.append("    slPts[24] = slPts[24] + anPts[24]")
-L.append("    slPts[25] = slPts[25] + anPts[25]")
-L.append("    slPts[26] = slPts[26] + anPts[26]")
-L.append("    slPts[27] = slPts[27] + anPts[27]")
-L.append("    slPts[28] = slPts[28] + anPts[28]")
-L.append("    slPts[29] = slPts[29] + anPts[29]")
-L.append("    slPts[30] = slPts[30] + anPts[30]")
-L.append("    slPts[31] = slPts[31] + anPts[31]")
-L.append("    slPC[0] = slPC[0] + anCol[0]")
-L.append("    slPC[1] = slPC[1] + anCol[1]")
-L.append("    slPC[2] = slPC[2] + anCol[2]")
-L.append("    slPC[3] = slPC[3] + anCol[3]")
-L.append("    slPC[4] = slPC[4] + anCol[4]")
-L.append("    slPC[5] = slPC[5] + anCol[5]")
-L.append("    slPC[6] = slPC[6] + anCol[6]")
-L.append("    slPC[7] = slPC[7] + anCol[7]")
-L.append("    slPC[8] = slPC[8] + anCol[8]")
-L.append("    slPC[9] = slPC[9] + anCol[9]")
-L.append("    slPC[10] = slPC[10] + anCol[10]")
-L.append("    slPC[11] = slPC[11] + anCol[11]")
-L.append("    slPC[12] = slPC[12] + anCol[12]")
-L.append("    slPC[13] = slPC[13] + anCol[13]")
-L.append("    slPC[14] = slPC[14] + anCol[14]")
-L.append("    slPC[15] = slPC[15] + anCol[15]")
-L.append("    slXF[0] = slXF[0] + anXF[0]")
-L.append("    slXF[1] = slXF[1] + anXF[1]")
-L.append("    slXF[2] = slXF[2] + anXF[2]")
-L.append("    slXF[3] = slXF[3] + anXF[3]")
-L.append("    slXF[4] = slXF[4] + anXF[4]")
-L.append("    slXF2[0] = slXF2[0] + anXF2[0]")
-L.append("    slXF2[1] = slXF2[1] + anXF2[1]")
-L.append("    slXF2[2] = slXF2[2] + anXF2[2]")
-L.append("    slXF2[3] = slXF2[3] + anXF2[3]")
-L.append("  }")
-L.append("  if (anTicks[1.0] > 0.5 || anTicks[1.0] < -0.5) && rcFell {")
-L.append("    if anTicks[1.0] > 0.5 { anTicks[1.0] = anTicks[1.0] - 1.0 }")
-L.append("    animDirty = true")
-L.append("    slPts[48] = slPts[48] + anPts[48]")
-L.append("    slPts[49] = slPts[49] + anPts[49]")
-L.append("    slPts[50] = slPts[50] + anPts[50]")
-L.append("    slPts[51] = slPts[51] + anPts[51]")
-L.append("    slPts[52] = slPts[52] + anPts[52]")
-L.append("    slPts[53] = slPts[53] + anPts[53]")
-L.append("    slPts[54] = slPts[54] + anPts[54]")
-L.append("    slPts[55] = slPts[55] + anPts[55]")
-L.append("    slPts[56] = slPts[56] + anPts[56]")
-L.append("    slPts[57] = slPts[57] + anPts[57]")
-L.append("    slPts[58] = slPts[58] + anPts[58]")
-L.append("    slPts[59] = slPts[59] + anPts[59]")
-L.append("    slPts[60] = slPts[60] + anPts[60]")
-L.append("    slPts[61] = slPts[61] + anPts[61]")
-L.append("    slPts[62] = slPts[62] + anPts[62]")
-L.append("    slPts[63] = slPts[63] + anPts[63]")
-L.append("    slPts[64] = slPts[64] + anPts[64]")
-L.append("    slPts[65] = slPts[65] + anPts[65]")
-L.append("    slPts[66] = slPts[66] + anPts[66]")
-L.append("    slPts[67] = slPts[67] + anPts[67]")
-L.append("    slPts[68] = slPts[68] + anPts[68]")
-L.append("    slPts[69] = slPts[69] + anPts[69]")
-L.append("    slPts[70] = slPts[70] + anPts[70]")
-L.append("    slPts[71] = slPts[71] + anPts[71]")
-L.append("    slPts[72] = slPts[72] + anPts[72]")
-L.append("    slPts[73] = slPts[73] + anPts[73]")
-L.append("    slPts[74] = slPts[74] + anPts[74]")
-L.append("    slPts[75] = slPts[75] + anPts[75]")
-L.append("    slPts[76] = slPts[76] + anPts[76]")
-L.append("    slPts[77] = slPts[77] + anPts[77]")
-L.append("    slPts[78] = slPts[78] + anPts[78]")
-L.append("    slPts[79] = slPts[79] + anPts[79]")
-L.append("    slPC[16] = slPC[16] + anCol[16]")
-L.append("    slPC[17] = slPC[17] + anCol[17]")
-L.append("    slPC[18] = slPC[18] + anCol[18]")
-L.append("    slPC[19] = slPC[19] + anCol[19]")
-L.append("    slPC[20] = slPC[20] + anCol[20]")
-L.append("    slPC[21] = slPC[21] + anCol[21]")
-L.append("    slPC[22] = slPC[22] + anCol[22]")
-L.append("    slPC[23] = slPC[23] + anCol[23]")
-L.append("    slPC[24] = slPC[24] + anCol[24]")
-L.append("    slPC[25] = slPC[25] + anCol[25]")
-L.append("    slPC[26] = slPC[26] + anCol[26]")
-L.append("    slPC[27] = slPC[27] + anCol[27]")
-L.append("    slPC[28] = slPC[28] + anCol[28]")
-L.append("    slPC[29] = slPC[29] + anCol[29]")
-L.append("    slPC[30] = slPC[30] + anCol[30]")
-L.append("    slPC[31] = slPC[31] + anCol[31]")
-L.append("    slXF[6] = slXF[6] + anXF[6]")
-L.append("    slXF[7] = slXF[7] + anXF[7]")
-L.append("    slXF[8] = slXF[8] + anXF[8]")
-L.append("    slXF[9] = slXF[9] + anXF[9]")
-L.append("    slXF[10] = slXF[10] + anXF[10]")
-L.append("    slXF2[4] = slXF2[4] + anXF2[4]")
-L.append("    slXF2[5] = slXF2[5] + anXF2[5]")
-L.append("    slXF2[6] = slXF2[6] + anXF2[6]")
-L.append("    slXF2[7] = slXF2[7] + anXF2[7]")
-L.append("  }")
-L.append("  if (anTicks[2.0] > 0.5 || anTicks[2.0] < -0.5) && rcFell {")
-L.append("    if anTicks[2.0] > 0.5 { anTicks[2.0] = anTicks[2.0] - 1.0 }")
-L.append("    animDirty = true")
-L.append("    slPts[96] = slPts[96] + anPts[96]")
-L.append("    slPts[97] = slPts[97] + anPts[97]")
-L.append("    slPts[98] = slPts[98] + anPts[98]")
-L.append("    slPts[99] = slPts[99] + anPts[99]")
-L.append("    slPts[100] = slPts[100] + anPts[100]")
-L.append("    slPts[101] = slPts[101] + anPts[101]")
-L.append("    slPts[102] = slPts[102] + anPts[102]")
-L.append("    slPts[103] = slPts[103] + anPts[103]")
-L.append("    slPts[104] = slPts[104] + anPts[104]")
-L.append("    slPts[105] = slPts[105] + anPts[105]")
-L.append("    slPts[106] = slPts[106] + anPts[106]")
-L.append("    slPts[107] = slPts[107] + anPts[107]")
-L.append("    slPts[108] = slPts[108] + anPts[108]")
-L.append("    slPts[109] = slPts[109] + anPts[109]")
-L.append("    slPts[110] = slPts[110] + anPts[110]")
-L.append("    slPts[111] = slPts[111] + anPts[111]")
-L.append("    slPts[112] = slPts[112] + anPts[112]")
-L.append("    slPts[113] = slPts[113] + anPts[113]")
-L.append("    slPts[114] = slPts[114] + anPts[114]")
-L.append("    slPts[115] = slPts[115] + anPts[115]")
-L.append("    slPts[116] = slPts[116] + anPts[116]")
-L.append("    slPts[117] = slPts[117] + anPts[117]")
-L.append("    slPts[118] = slPts[118] + anPts[118]")
-L.append("    slPts[119] = slPts[119] + anPts[119]")
-L.append("    slPts[120] = slPts[120] + anPts[120]")
-L.append("    slPts[121] = slPts[121] + anPts[121]")
-L.append("    slPts[122] = slPts[122] + anPts[122]")
-L.append("    slPts[123] = slPts[123] + anPts[123]")
-L.append("    slPts[124] = slPts[124] + anPts[124]")
-L.append("    slPts[125] = slPts[125] + anPts[125]")
-L.append("    slPts[126] = slPts[126] + anPts[126]")
-L.append("    slPts[127] = slPts[127] + anPts[127]")
-L.append("    slPC[32] = slPC[32] + anCol[32]")
-L.append("    slPC[33] = slPC[33] + anCol[33]")
-L.append("    slPC[34] = slPC[34] + anCol[34]")
-L.append("    slPC[35] = slPC[35] + anCol[35]")
-L.append("    slPC[36] = slPC[36] + anCol[36]")
-L.append("    slPC[37] = slPC[37] + anCol[37]")
-L.append("    slPC[38] = slPC[38] + anCol[38]")
-L.append("    slPC[39] = slPC[39] + anCol[39]")
-L.append("    slPC[40] = slPC[40] + anCol[40]")
-L.append("    slPC[41] = slPC[41] + anCol[41]")
-L.append("    slPC[42] = slPC[42] + anCol[42]")
-L.append("    slPC[43] = slPC[43] + anCol[43]")
-L.append("    slPC[44] = slPC[44] + anCol[44]")
-L.append("    slPC[45] = slPC[45] + anCol[45]")
-L.append("    slPC[46] = slPC[46] + anCol[46]")
-L.append("    slPC[47] = slPC[47] + anCol[47]")
-L.append("    slXF[12] = slXF[12] + anXF[12]")
-L.append("    slXF[13] = slXF[13] + anXF[13]")
-L.append("    slXF[14] = slXF[14] + anXF[14]")
-L.append("    slXF[15] = slXF[15] + anXF[15]")
-L.append("    slXF[16] = slXF[16] + anXF[16]")
-L.append("    slXF2[8] = slXF2[8] + anXF2[8]")
-L.append("    slXF2[9] = slXF2[9] + anXF2[9]")
-L.append("    slXF2[10] = slXF2[10] + anXF2[10]")
-L.append("    slXF2[11] = slXF2[11] + anXF2[11]")
-L.append("  }")
-L.append("  if (anTicks[3.0] > 0.5 || anTicks[3.0] < -0.5) && rcFell {")
-L.append("    if anTicks[3.0] > 0.5 { anTicks[3.0] = anTicks[3.0] - 1.0 }")
-L.append("    animDirty = true")
-L.append("    slPts[144] = slPts[144] + anPts[144]")
-L.append("    slPts[145] = slPts[145] + anPts[145]")
-L.append("    slPts[146] = slPts[146] + anPts[146]")
-L.append("    slPts[147] = slPts[147] + anPts[147]")
-L.append("    slPts[148] = slPts[148] + anPts[148]")
-L.append("    slPts[149] = slPts[149] + anPts[149]")
-L.append("    slPts[150] = slPts[150] + anPts[150]")
-L.append("    slPts[151] = slPts[151] + anPts[151]")
-L.append("    slPts[152] = slPts[152] + anPts[152]")
-L.append("    slPts[153] = slPts[153] + anPts[153]")
-L.append("    slPts[154] = slPts[154] + anPts[154]")
-L.append("    slPts[155] = slPts[155] + anPts[155]")
-L.append("    slPts[156] = slPts[156] + anPts[156]")
-L.append("    slPts[157] = slPts[157] + anPts[157]")
-L.append("    slPts[158] = slPts[158] + anPts[158]")
-L.append("    slPts[159] = slPts[159] + anPts[159]")
-L.append("    slPts[160] = slPts[160] + anPts[160]")
-L.append("    slPts[161] = slPts[161] + anPts[161]")
-L.append("    slPts[162] = slPts[162] + anPts[162]")
-L.append("    slPts[163] = slPts[163] + anPts[163]")
-L.append("    slPts[164] = slPts[164] + anPts[164]")
-L.append("    slPts[165] = slPts[165] + anPts[165]")
-L.append("    slPts[166] = slPts[166] + anPts[166]")
-L.append("    slPts[167] = slPts[167] + anPts[167]")
-L.append("    slPts[168] = slPts[168] + anPts[168]")
-L.append("    slPts[169] = slPts[169] + anPts[169]")
-L.append("    slPts[170] = slPts[170] + anPts[170]")
-L.append("    slPts[171] = slPts[171] + anPts[171]")
-L.append("    slPts[172] = slPts[172] + anPts[172]")
-L.append("    slPts[173] = slPts[173] + anPts[173]")
-L.append("    slPts[174] = slPts[174] + anPts[174]")
-L.append("    slPts[175] = slPts[175] + anPts[175]")
-L.append("    slPC[48] = slPC[48] + anCol[48]")
-L.append("    slPC[49] = slPC[49] + anCol[49]")
-L.append("    slPC[50] = slPC[50] + anCol[50]")
-L.append("    slPC[51] = slPC[51] + anCol[51]")
-L.append("    slPC[52] = slPC[52] + anCol[52]")
-L.append("    slPC[53] = slPC[53] + anCol[53]")
-L.append("    slPC[54] = slPC[54] + anCol[54]")
-L.append("    slPC[55] = slPC[55] + anCol[55]")
-L.append("    slPC[56] = slPC[56] + anCol[56]")
-L.append("    slPC[57] = slPC[57] + anCol[57]")
-L.append("    slPC[58] = slPC[58] + anCol[58]")
-L.append("    slPC[59] = slPC[59] + anCol[59]")
-L.append("    slPC[60] = slPC[60] + anCol[60]")
-L.append("    slPC[61] = slPC[61] + anCol[61]")
-L.append("    slPC[62] = slPC[62] + anCol[62]")
-L.append("    slPC[63] = slPC[63] + anCol[63]")
-L.append("    slXF[18] = slXF[18] + anXF[18]")
-L.append("    slXF[19] = slXF[19] + anXF[19]")
-L.append("    slXF[20] = slXF[20] + anXF[20]")
-L.append("    slXF[21] = slXF[21] + anXF[21]")
-L.append("    slXF[22] = slXF[22] + anXF[22]")
-L.append("    slXF2[12] = slXF2[12] + anXF2[12]")
-L.append("    slXF2[13] = slXF2[13] + anXF2[13]")
-L.append("    slXF2[14] = slXF2[14] + anXF2[14]")
-L.append("    slXF2[15] = slXF2[15] + anXF2[15]")
-L.append("  }")
-L.append("  if (anTicks[4.0] > 0.5 || anTicks[4.0] < -0.5) && rcFell {")
-L.append("    if anTicks[4.0] > 0.5 { anTicks[4.0] = anTicks[4.0] - 1.0 }")
-L.append("    animDirty = true")
-L.append("    slPts[192] = slPts[192] + anPts[192]")
-L.append("    slPts[193] = slPts[193] + anPts[193]")
-L.append("    slPts[194] = slPts[194] + anPts[194]")
-L.append("    slPts[195] = slPts[195] + anPts[195]")
-L.append("    slPts[196] = slPts[196] + anPts[196]")
-L.append("    slPts[197] = slPts[197] + anPts[197]")
-L.append("    slPts[198] = slPts[198] + anPts[198]")
-L.append("    slPts[199] = slPts[199] + anPts[199]")
-L.append("    slPts[200] = slPts[200] + anPts[200]")
-L.append("    slPts[201] = slPts[201] + anPts[201]")
-L.append("    slPts[202] = slPts[202] + anPts[202]")
-L.append("    slPts[203] = slPts[203] + anPts[203]")
-L.append("    slPts[204] = slPts[204] + anPts[204]")
-L.append("    slPts[205] = slPts[205] + anPts[205]")
-L.append("    slPts[206] = slPts[206] + anPts[206]")
-L.append("    slPts[207] = slPts[207] + anPts[207]")
-L.append("    slPts[208] = slPts[208] + anPts[208]")
-L.append("    slPts[209] = slPts[209] + anPts[209]")
-L.append("    slPts[210] = slPts[210] + anPts[210]")
-L.append("    slPts[211] = slPts[211] + anPts[211]")
-L.append("    slPts[212] = slPts[212] + anPts[212]")
-L.append("    slPts[213] = slPts[213] + anPts[213]")
-L.append("    slPts[214] = slPts[214] + anPts[214]")
-L.append("    slPts[215] = slPts[215] + anPts[215]")
-L.append("    slPts[216] = slPts[216] + anPts[216]")
-L.append("    slPts[217] = slPts[217] + anPts[217]")
-L.append("    slPts[218] = slPts[218] + anPts[218]")
-L.append("    slPts[219] = slPts[219] + anPts[219]")
-L.append("    slPts[220] = slPts[220] + anPts[220]")
-L.append("    slPts[221] = slPts[221] + anPts[221]")
-L.append("    slPts[222] = slPts[222] + anPts[222]")
-L.append("    slPts[223] = slPts[223] + anPts[223]")
-L.append("    slPC[64] = slPC[64] + anCol[64]")
-L.append("    slPC[65] = slPC[65] + anCol[65]")
-L.append("    slPC[66] = slPC[66] + anCol[66]")
-L.append("    slPC[67] = slPC[67] + anCol[67]")
-L.append("    slPC[68] = slPC[68] + anCol[68]")
-L.append("    slPC[69] = slPC[69] + anCol[69]")
-L.append("    slPC[70] = slPC[70] + anCol[70]")
-L.append("    slPC[71] = slPC[71] + anCol[71]")
-L.append("    slPC[72] = slPC[72] + anCol[72]")
-L.append("    slPC[73] = slPC[73] + anCol[73]")
-L.append("    slPC[74] = slPC[74] + anCol[74]")
-L.append("    slPC[75] = slPC[75] + anCol[75]")
-L.append("    slPC[76] = slPC[76] + anCol[76]")
-L.append("    slPC[77] = slPC[77] + anCol[77]")
-L.append("    slPC[78] = slPC[78] + anCol[78]")
-L.append("    slPC[79] = slPC[79] + anCol[79]")
-L.append("    slXF[24] = slXF[24] + anXF[24]")
-L.append("    slXF[25] = slXF[25] + anXF[25]")
-L.append("    slXF[26] = slXF[26] + anXF[26]")
-L.append("    slXF[27] = slXF[27] + anXF[27]")
-L.append("    slXF[28] = slXF[28] + anXF[28]")
-L.append("    slXF2[16] = slXF2[16] + anXF2[16]")
-L.append("    slXF2[17] = slXF2[17] + anXF2[17]")
-L.append("    slXF2[18] = slXF2[18] + anXF2[18]")
-L.append("    slXF2[19] = slXF2[19] + anXF2[19]")
-L.append("  }")
-L.append("  if (anTicks[5.0] > 0.5 || anTicks[5.0] < -0.5) && rcFell {")
-L.append("    if anTicks[5.0] > 0.5 { anTicks[5.0] = anTicks[5.0] - 1.0 }")
-L.append("    animDirty = true")
-L.append("    slPts[240] = slPts[240] + anPts[240]")
-L.append("    slPts[241] = slPts[241] + anPts[241]")
-L.append("    slPts[242] = slPts[242] + anPts[242]")
-L.append("    slPts[243] = slPts[243] + anPts[243]")
-L.append("    slPts[244] = slPts[244] + anPts[244]")
-L.append("    slPts[245] = slPts[245] + anPts[245]")
-L.append("    slPts[246] = slPts[246] + anPts[246]")
-L.append("    slPts[247] = slPts[247] + anPts[247]")
-L.append("    slPts[248] = slPts[248] + anPts[248]")
-L.append("    slPts[249] = slPts[249] + anPts[249]")
-L.append("    slPts[250] = slPts[250] + anPts[250]")
-L.append("    slPts[251] = slPts[251] + anPts[251]")
-L.append("    slPts[252] = slPts[252] + anPts[252]")
-L.append("    slPts[253] = slPts[253] + anPts[253]")
-L.append("    slPts[254] = slPts[254] + anPts[254]")
-L.append("    slPts[255] = slPts[255] + anPts[255]")
-L.append("    slPts[256] = slPts[256] + anPts[256]")
-L.append("    slPts[257] = slPts[257] + anPts[257]")
-L.append("    slPts[258] = slPts[258] + anPts[258]")
-L.append("    slPts[259] = slPts[259] + anPts[259]")
-L.append("    slPts[260] = slPts[260] + anPts[260]")
-L.append("    slPts[261] = slPts[261] + anPts[261]")
-L.append("    slPts[262] = slPts[262] + anPts[262]")
-L.append("    slPts[263] = slPts[263] + anPts[263]")
-L.append("    slPts[264] = slPts[264] + anPts[264]")
-L.append("    slPts[265] = slPts[265] + anPts[265]")
-L.append("    slPts[266] = slPts[266] + anPts[266]")
-L.append("    slPts[267] = slPts[267] + anPts[267]")
-L.append("    slPts[268] = slPts[268] + anPts[268]")
-L.append("    slPts[269] = slPts[269] + anPts[269]")
-L.append("    slPts[270] = slPts[270] + anPts[270]")
-L.append("    slPts[271] = slPts[271] + anPts[271]")
-L.append("    slPC[80] = slPC[80] + anCol[80]")
-L.append("    slPC[81] = slPC[81] + anCol[81]")
-L.append("    slPC[82] = slPC[82] + anCol[82]")
-L.append("    slPC[83] = slPC[83] + anCol[83]")
-L.append("    slPC[84] = slPC[84] + anCol[84]")
-L.append("    slPC[85] = slPC[85] + anCol[85]")
-L.append("    slPC[86] = slPC[86] + anCol[86]")
-L.append("    slPC[87] = slPC[87] + anCol[87]")
-L.append("    slPC[88] = slPC[88] + anCol[88]")
-L.append("    slPC[89] = slPC[89] + anCol[89]")
-L.append("    slPC[90] = slPC[90] + anCol[90]")
-L.append("    slPC[91] = slPC[91] + anCol[91]")
-L.append("    slPC[92] = slPC[92] + anCol[92]")
-L.append("    slPC[93] = slPC[93] + anCol[93]")
-L.append("    slPC[94] = slPC[94] + anCol[94]")
-L.append("    slPC[95] = slPC[95] + anCol[95]")
-L.append("    slXF[30] = slXF[30] + anXF[30]")
-L.append("    slXF[31] = slXF[31] + anXF[31]")
-L.append("    slXF[32] = slXF[32] + anXF[32]")
-L.append("    slXF[33] = slXF[33] + anXF[33]")
-L.append("    slXF[34] = slXF[34] + anXF[34]")
-L.append("    slXF2[20] = slXF2[20] + anXF2[20]")
-L.append("    slXF2[21] = slXF2[21] + anXF2[21]")
-L.append("    slXF2[22] = slXF2[22] + anXF2[22]")
-L.append("    slXF2[23] = slXF2[23] + anXF2[23]")
-L.append("  }")
-L.append("  if (anTicks[6.0] > 0.5 || anTicks[6.0] < -0.5) && rcFell {")
-L.append("    if anTicks[6.0] > 0.5 { anTicks[6.0] = anTicks[6.0] - 1.0 }")
-L.append("    animDirty = true")
-L.append("    slPts[288] = slPts[288] + anPts[288]")
-L.append("    slPts[289] = slPts[289] + anPts[289]")
-L.append("    slPts[290] = slPts[290] + anPts[290]")
-L.append("    slPts[291] = slPts[291] + anPts[291]")
-L.append("    slPts[292] = slPts[292] + anPts[292]")
-L.append("    slPts[293] = slPts[293] + anPts[293]")
-L.append("    slPts[294] = slPts[294] + anPts[294]")
-L.append("    slPts[295] = slPts[295] + anPts[295]")
-L.append("    slPts[296] = slPts[296] + anPts[296]")
-L.append("    slPts[297] = slPts[297] + anPts[297]")
-L.append("    slPts[298] = slPts[298] + anPts[298]")
-L.append("    slPts[299] = slPts[299] + anPts[299]")
-L.append("    slPts[300] = slPts[300] + anPts[300]")
-L.append("    slPts[301] = slPts[301] + anPts[301]")
-L.append("    slPts[302] = slPts[302] + anPts[302]")
-L.append("    slPts[303] = slPts[303] + anPts[303]")
-L.append("    slPts[304] = slPts[304] + anPts[304]")
-L.append("    slPts[305] = slPts[305] + anPts[305]")
-L.append("    slPts[306] = slPts[306] + anPts[306]")
-L.append("    slPts[307] = slPts[307] + anPts[307]")
-L.append("    slPts[308] = slPts[308] + anPts[308]")
-L.append("    slPts[309] = slPts[309] + anPts[309]")
-L.append("    slPts[310] = slPts[310] + anPts[310]")
-L.append("    slPts[311] = slPts[311] + anPts[311]")
-L.append("    slPts[312] = slPts[312] + anPts[312]")
-L.append("    slPts[313] = slPts[313] + anPts[313]")
-L.append("    slPts[314] = slPts[314] + anPts[314]")
-L.append("    slPts[315] = slPts[315] + anPts[315]")
-L.append("    slPts[316] = slPts[316] + anPts[316]")
-L.append("    slPts[317] = slPts[317] + anPts[317]")
-L.append("    slPts[318] = slPts[318] + anPts[318]")
-L.append("    slPts[319] = slPts[319] + anPts[319]")
-L.append("    slPC[96] = slPC[96] + anCol[96]")
-L.append("    slPC[97] = slPC[97] + anCol[97]")
-L.append("    slPC[98] = slPC[98] + anCol[98]")
-L.append("    slPC[99] = slPC[99] + anCol[99]")
-L.append("    slPC[100] = slPC[100] + anCol[100]")
-L.append("    slPC[101] = slPC[101] + anCol[101]")
-L.append("    slPC[102] = slPC[102] + anCol[102]")
-L.append("    slPC[103] = slPC[103] + anCol[103]")
-L.append("    slPC[104] = slPC[104] + anCol[104]")
-L.append("    slPC[105] = slPC[105] + anCol[105]")
-L.append("    slPC[106] = slPC[106] + anCol[106]")
-L.append("    slPC[107] = slPC[107] + anCol[107]")
-L.append("    slPC[108] = slPC[108] + anCol[108]")
-L.append("    slPC[109] = slPC[109] + anCol[109]")
-L.append("    slPC[110] = slPC[110] + anCol[110]")
-L.append("    slPC[111] = slPC[111] + anCol[111]")
-L.append("    slXF[36] = slXF[36] + anXF[36]")
-L.append("    slXF[37] = slXF[37] + anXF[37]")
-L.append("    slXF[38] = slXF[38] + anXF[38]")
-L.append("    slXF[39] = slXF[39] + anXF[39]")
-L.append("    slXF[40] = slXF[40] + anXF[40]")
-L.append("    slXF2[24] = slXF2[24] + anXF2[24]")
-L.append("    slXF2[25] = slXF2[25] + anXF2[25]")
-L.append("    slXF2[26] = slXF2[26] + anXF2[26]")
-L.append("    slXF2[27] = slXF2[27] + anXF2[27]")
-L.append("  }")
-L.append("  if (anTicks[7.0] > 0.5 || anTicks[7.0] < -0.5) && rcFell {")
-L.append("    if anTicks[7.0] > 0.5 { anTicks[7.0] = anTicks[7.0] - 1.0 }")
-L.append("    animDirty = true")
-L.append("    slPts[336] = slPts[336] + anPts[336]")
-L.append("    slPts[337] = slPts[337] + anPts[337]")
-L.append("    slPts[338] = slPts[338] + anPts[338]")
-L.append("    slPts[339] = slPts[339] + anPts[339]")
-L.append("    slPts[340] = slPts[340] + anPts[340]")
-L.append("    slPts[341] = slPts[341] + anPts[341]")
-L.append("    slPts[342] = slPts[342] + anPts[342]")
-L.append("    slPts[343] = slPts[343] + anPts[343]")
-L.append("    slPts[344] = slPts[344] + anPts[344]")
-L.append("    slPts[345] = slPts[345] + anPts[345]")
-L.append("    slPts[346] = slPts[346] + anPts[346]")
-L.append("    slPts[347] = slPts[347] + anPts[347]")
-L.append("    slPts[348] = slPts[348] + anPts[348]")
-L.append("    slPts[349] = slPts[349] + anPts[349]")
-L.append("    slPts[350] = slPts[350] + anPts[350]")
-L.append("    slPts[351] = slPts[351] + anPts[351]")
-L.append("    slPts[352] = slPts[352] + anPts[352]")
-L.append("    slPts[353] = slPts[353] + anPts[353]")
-L.append("    slPts[354] = slPts[354] + anPts[354]")
-L.append("    slPts[355] = slPts[355] + anPts[355]")
-L.append("    slPts[356] = slPts[356] + anPts[356]")
-L.append("    slPts[357] = slPts[357] + anPts[357]")
-L.append("    slPts[358] = slPts[358] + anPts[358]")
-L.append("    slPts[359] = slPts[359] + anPts[359]")
-L.append("    slPts[360] = slPts[360] + anPts[360]")
-L.append("    slPts[361] = slPts[361] + anPts[361]")
-L.append("    slPts[362] = slPts[362] + anPts[362]")
-L.append("    slPts[363] = slPts[363] + anPts[363]")
-L.append("    slPts[364] = slPts[364] + anPts[364]")
-L.append("    slPts[365] = slPts[365] + anPts[365]")
-L.append("    slPts[366] = slPts[366] + anPts[366]")
-L.append("    slPts[367] = slPts[367] + anPts[367]")
-L.append("    slPC[112] = slPC[112] + anCol[112]")
-L.append("    slPC[113] = slPC[113] + anCol[113]")
-L.append("    slPC[114] = slPC[114] + anCol[114]")
-L.append("    slPC[115] = slPC[115] + anCol[115]")
-L.append("    slPC[116] = slPC[116] + anCol[116]")
-L.append("    slPC[117] = slPC[117] + anCol[117]")
-L.append("    slPC[118] = slPC[118] + anCol[118]")
-L.append("    slPC[119] = slPC[119] + anCol[119]")
-L.append("    slPC[120] = slPC[120] + anCol[120]")
-L.append("    slPC[121] = slPC[121] + anCol[121]")
-L.append("    slPC[122] = slPC[122] + anCol[122]")
-L.append("    slPC[123] = slPC[123] + anCol[123]")
-L.append("    slPC[124] = slPC[124] + anCol[124]")
-L.append("    slPC[125] = slPC[125] + anCol[125]")
-L.append("    slPC[126] = slPC[126] + anCol[126]")
-L.append("    slPC[127] = slPC[127] + anCol[127]")
-L.append("    slXF[42] = slXF[42] + anXF[42]")
-L.append("    slXF[43] = slXF[43] + anXF[43]")
-L.append("    slXF[44] = slXF[44] + anXF[44]")
-L.append("    slXF[45] = slXF[45] + anXF[45]")
-L.append("    slXF[46] = slXF[46] + anXF[46]")
-L.append("    slXF2[28] = slXF2[28] + anXF2[28]")
-L.append("    slXF2[29] = slXF2[29] + anXF2[29]")
-L.append("    slXF2[30] = slXF2[30] + anXF2[30]")
-L.append("    slXF2[31] = slXF2[31] + anXF2[31]")
-L.append("  }")
-L.append("")
+def _advance_block(k):
+    # One slot's advance: the guard is a literal read (idle slots cost one
+    # gate), and the adds are literal-index writes -- computed reads are slow
+    # in the runner, so the walk stays unrolled per slot.
+    b, c, x, x2 = k * 48, k * 16, k * 6, k * 4
+    L.append("  if (anTicks[%d.0] > 0.5 || anTicks[%d.0] < -0.5) && rcFell {" % (k, k))
+    L.append("    if anTicks[%d.0] > 0.5"
+             " { anTicks[%d.0] = anTicks[%d.0] - 1.0 }" % (k, k, k))
+    L.append("    animDirty = true")
+    if k == CAM:
+        # The camera's deltas move the view, so the matrix is rebuilt.
+        L.append("    camDirty = true")
+    for _i in range(32):
+        L.append("    slPts[%d] = slPts[%d] + anPts[%d]" % (b + _i, b + _i, b + _i))
+    for _i in range(16):
+        L.append("    slPC[%d] = slPC[%d] + anCol[%d]" % (c + _i, c + _i, c + _i))
+    for _i in range(5):
+        L.append("    slXF[%d] = slXF[%d] + anXF[%d]" % (x + _i, x + _i, x + _i))
+    for _i in range(4):
+        L.append("    slXF2[%d] = slXF2[%d] + anXF2[%d]" % (x2 + _i, x2 + _i, x2 + _i))
+    L.append("  }")
+
+
+for _k in range(TOT):
+    _advance_block(_k)
+
 # ---- animation self-refresh: motion without a draw -------------------
 # A slot whose deltas advanced this tick (animDirty) repaints itself as
 # soon as the chip is idle -- the CPU only stages the animation, never
@@ -1517,7 +1076,8 @@ L.append("    qCount = e + 1.0")
 L.append("  }")
 L.append("  if commitQ {")
 L.append("    commitQ = false")
-L.append("    slLive[8] = 0.0")
+L.append("    slLive[%d] = 0.0" % SCR)
+L.append("    camDirty = true")
 L.append("    needRC = false")
 L.append("    needRC = false")
 # The queue holds eight entries and every one of them is the
@@ -1529,7 +1089,10 @@ L.append("    needRC = false")
 L.append("    for qe in 0..8 {")
 L.append("      if qe < qCount {")
 L.append("        let ne = qN[qe]")
-L.append("        let nslot = if qId[qe] < 0.5 then 8.0 else qId[qe] - 1.0")
+# The same id -> index rule commitR uses: -1 the camera, 0 the frame slot,
+# k the k-th retained shape.
+L.append("        let nslot = if qId[qe] < 0.0 then %d.0"
+         " else if qId[qe] < 1.0 then %d.0 else (qId[qe] | 0)" % (CAM, SCR))
 L.append("        let nsb = nslot * 48.0")
 L.append("        let ncb = nslot * 16.0")
 L.append("        let nxb = nslot * 6.0")
@@ -1709,10 +1272,18 @@ L.append("    }")
 L.append("  }")
 L.append("  if commitR {")
 L.append("    commitR = false")
-L.append("    slLive[8] = 0.0")
+L.append("    slLive[%d] = 0.0" % SCR)
+# The camera matrix is rebuilt on every commit: cheap when the camera did
+# not change, and it keeps a camera push -- which stores no geometry -- from
+# needing a second path.
+L.append("    camDirty = true")
 L.append("    n = (shapePoints.length() / 3.0) | 0")
 L.append("      if n > 16.0 { n = 16.0 }")
-L.append("    let slot = (pId - 1.0) | 0")
+# id -> index: -1 is the camera, 0 the paint-once frame slot, k the k-th
+# retained shape.  Same expression in every commit path, so an id is only a
+# choice of index -- the storage, animation and parent walk are identical.
+L.append("    let slot = if pId < 0.0 then %d.0"
+         " else if pId < 1.0 then %d.0 else (pId | 0)" % (CAM, SCR))
 L.append("    let sbase = slot * 48.0")
 L.append("    let cbase = slot * 16.0")
 L.append("    let xbase = slot * 6.0")
@@ -1797,23 +1368,97 @@ L.append("        erDone = true")
 L.append("      }")
 L.append("    }")
 L.append("  }")
+L.append("")
+# ---- the view matrix: rebuild only when the camera changed -------------
+# The camera channel (index CAM) is stored like any other slot -- transform,
+# animation ticks, forget-on-empty-points -- but the recomposite never scans
+# it and no chain composes it: it IS the view.  Rebuilding here, after the
+# commit paths and before any paint, means every shape this tick renders
+# reads the matrix the commit just wrote (program order).  A camera push
+# carries no geometry to paint: the recomposite its commit starts is what
+# puts the scene in the new place.
+CAMB = CAM * 6
+CAMB2 = CAM * 4
+L.append("  if camDirty {")
+L.append("    camDirty = false")
+L.append("    if slLive[%d] > 0.5 {" % CAM)
+L.append("      let cpx = slXF[%d + 0.0]" % CAMB)
+L.append("      let cpy = slXF[%d + 1.0]" % CAMB)
+L.append("      let crz = slXF[%d + 2.0]" % CAMB)
+L.append("      let csx = slXF[%d + 3.0]" % CAMB)
+L.append("      let csy = slXF[%d + 4.0]" % CAMB)
+L.append("      let cpz = slXF2[%d + 0.0]" % CAMB2)
+L.append("      let crx = slXF2[%d + 1.0]" % CAMB2)
+L.append("      let cry = slXF2[%d + 2.0]" % CAMB2)
+L.append("      let csz = slXF2[%d + 3.0]" % CAMB2)
+L.append("      let ccx = cos(crx)")
+L.append("      let csx2 = sin(crx)")
+L.append("      let ccy = cos(cry)")
+L.append("      let csy2 = sin(cry)")
+L.append("      let ccz = cos(crz)")
+L.append("      let csz2 = sin(crz)")
+L.append("      let cr00 = ccz * ccy")
+L.append("      let cr01 = ccz * csy2 * csx2 - csz2 * ccx")
+L.append("      let cr02 = ccz * csy2 * ccx + csz2 * csx2")
+L.append("      let cr10 = csz2 * ccy")
+L.append("      let cr11 = csz2 * csy2 * csx2 + ccz * ccx")
+L.append("      let cr12 = csz2 * csy2 * ccx - ccz * csx2")
+L.append("      let cr20 = 0.0 - csy2")
+L.append("      let cr21 = ccy * csx2")
+L.append("      let cr22 = ccy * ccx")
+L.append("      let cq00 = cr00 * csx")
+L.append("      let cq01 = cr01 * csy")
+L.append("      let cq02 = cr02 * csz")
+L.append("      let cq10 = cr10 * csx")
+L.append("      let cq11 = cr11 * csy")
+L.append("      let cq12 = cr12 * csz")
+L.append("      let cq20 = cr20 * csx")
+L.append("      let cq21 = cr21 * csy")
+L.append("      let cq22 = cr22 * csz")
+L.append("      camM00 = cq00")
+L.append("      camM01 = cq01")
+L.append("      camM02 = cq02")
+L.append("      camM03 = cpx")
+L.append("      camM10 = cq10")
+L.append("      camM11 = cq11")
+L.append("      camM12 = cq12")
+L.append("      camM13 = cpy")
+L.append("      camM20 = cq20")
+L.append("      camM21 = cq21")
+L.append("      camM22 = cq22")
+L.append("      camM23 = cpz")
+L.append("    } else {")
+L.append("      camM00 = 1.0")
+L.append("      camM01 = 0.0")
+L.append("      camM02 = 0.0")
+L.append("      camM03 = 0.0")
+L.append("      camM10 = 0.0")
+L.append("      camM11 = 1.0")
+L.append("      camM12 = 0.0")
+L.append("      camM13 = 0.0")
+L.append("      camM20 = 0.0")
+L.append("      camM21 = 0.0")
+L.append("      camM22 = 1.0")
+L.append("      camM23 = 0.0")
+L.append("    }")
+L.append("  }")
 
 # ---- recomposite iterator: next live slot -> shadow -> arm -----------------
 # Runs when the walks are idle mid-recomposite.  The live slot at or after
 # rcSlot is loaded into the shadow with its stored count, colour and mode,
-# and its walk is armed; past slot 8 the wall is whole and the chip goes
-# silent, refreshing the last immediate shape on the way out -- unless a
+# and its walk is armed; past the last index the wall is whole and the chip
+# goes silent, refreshing the last immediate shape on the way out -- unless a
 # push is already staged, whose drawAllShapes supersedes the refresh (starting
 # it now would only tear against the abort; retained commits never have
 # pending set here).  Dead slots cost one scan, never a tick: the priority scan
-# jumps to the next live slot (or past 8) on the same tick.  rcSlot advances only after
+# jumps to the next live slot (or past the end) on the same tick.  rcSlot advances only after
 # every read that depends on it is done: pure lets re-evaluate per use in
 # this toolchain, so writing rcSlot before the loads would re-resolve the
 # base mid-tick (loaded garbage once -- right-shifted points -- from a
 # base of -1 through write-skipped slot -1).
 L.append("  if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR"
          " && (!erasing || !erDone) {")
-L.append("    if rcSlot > 9.0 {")
+L.append("    if rcSlot > %d.0 {" % (SCR + 1))
 L.append("      rcOn = false")
 L.append("      if brightRC {")
 L.append("        brightRC = false")
@@ -1873,17 +1518,18 @@ L.append("        bPF = pfirst")
 L.append("        bPL = plast")
 L.append("        bSEGS = sSegs")
 L.append("      }")
-L.append("      // first live slot at/after li, else 8 = pass done: dead")
-L.append("      // slots cost one scan, never a tick (sequential writes,")
-L.append("      // descending, so the lowest live slot wins).")
+L.append("      // first live slot at/after li, else the sentinel = pass done:")
+L.append("      // dead slots cost one scan, never a tick (sequential writes,")
+L.append("      // descending, so the lowest live slot wins).  The camera")
+L.append("      // channel is not scanned: it paints nothing, it is the view.")
 L.append("      let li = (rcSlot - 1.0) | 0")
-L.append("      ff = 9.0")
-for j in range(8, -1, -1):
+L.append("      ff = %d.0" % (SCR + 1))
+for j in range(SCR, -1, -1):
     L.append("      if slLive[%d] > 0.5 && li <= %d.0 {" % (j, j))
     L.append("        ff = %d.0" % j)
     L.append("      }")
-L.append("      if ff > 8.0 {")
-L.append("        rcSlot = 10.0")
+L.append("      if ff > %d.0 {" % SCR)
+L.append("        rcSlot = %d.0" % (SCR + 2))
 L.append("      } else {")
 for i in range(48):
     L.append("        shPts[%d] = slPts[ff * 48 + %d.0]" % (i, i))
@@ -1941,10 +1587,9 @@ L.append("  }")
 # AFTER the whole ancestor chain, so a parent's rotation is part of the
 # point before the divide.  World z (not the projected depth) is what the
 # fill's depth buffer tests, so faces keep ordering by how far they are.
-# The ancestor walk is straight-line and capped at 8 steps (the slot
-# count, so the deepest acyclic chain): a dead, missing or out-of-range
-# parent resolves to identity above it; a cycle revisits and paints its
-# 8-fold composition.  With no tilt anywhere in the chain and a 2D shape
+# The ancestor walk is straight-line and capped at WALK steps (every slot
+# index, so the deepest acyclic chain): a dead parent resolves to identity
+# above it; a cycle revisits and paints its WALK-fold composition.  With no tilt anywhere in the chain and a 2D shape
 # the legacy planar path runs bit-identically to before (same op order)
 # and depth is one translated scalar; tilted chains and every 3D shape
 # take the matrix path.  An unparented shape skips the walk entirely (its
@@ -1967,18 +1612,20 @@ L.append("      wsx = lsx")
 L.append("      wsy = lsy")
 L.append("      tilt3d = if pRot.x == 0.0 && pRot.y == 0.0 then 0.0 else 1.0")
 L.append("      cur = pParent")
-for _s in range(8):
-    # cur is always an integer in 0..8 (staging clamps it, the store
-    # keeps the clamped value), so >= 1.0 alone means "has a parent".
+for _s in range(WALK):
+    # cur is an id the staging clamped: 1..NSLOT, or -1 for the camera.
+    # An id >= 1 names a slot (index = id); -1 ends the chain -- a shape
+    # attached to the camera is already in view space, so nothing composes
+    # above it and the view is not applied to it a second time.
     #
     # This walk builds the PLANAR state (wpx/wpy/wpz/wr/wsx/wsy); the
     # matrix block below builds its own from pPos/pRot/pScl and the same
     # slXF/slXF2. A 3D shape takes only the matrix path (the gate is
     # `tilt3d < 0.5 && shIs3 < 0.5`), so this accumulation is dead work
     # for it -- verified bit-identical either way, and skipped rather
-    # than paid for, since the count here is 8 steps of it.
+    # than paid for, since the count here is WALK steps of it.
     L.append("      if cur >= 1.0 {")
-    L.append("        let pli = (cur - 1.0) | 0")
+    L.append("        let pli = cur | 0")
     L.append("        if slLive[pli] > 0.5 {")
     L.append("          let ppx = slXF[pli * 6 + 0.0]")
     L.append("          let ppy = slXF[pli * 6 + 1.0]")
@@ -2012,7 +1659,7 @@ for _s in range(8):
     L.append("      } else {")
     L.append("        cur = 0.0")
     L.append("      }")
-# A cycle revisits for all 8 steps and paints its 8-fold composition
+# A cycle revisits for all WALK steps and paints its WALK-fold composition
 # (defined, degraded -- the wall never blanks on a bad parent).
 #
 # There is ONE path now: the 3x4 matrix, composed through every parent,
@@ -2058,10 +1705,15 @@ L.append("        m20 = mm20")
 L.append("        m21 = mm21")
 L.append("        m22 = mm22")
 L.append("        m23 = pPos.z")
+L.append("        camAttach = 0.0")
 L.append("        cur = pParent")
-for _s in range(8):
+for _s in range(WALK):
+    # The same id -> index rule as the planar walk above: index = id, and
+    # -1 ends the chain.  Reaching -1 marks the shape as attached to the
+    # camera (camAttach), which is what keeps a view-space child still
+    # while the camera moves.
     L.append("        if cur >= 1.0 {")
-    L.append("          let qli = (cur - 1.0) | 0")
+    L.append("          let qli = cur | 0")
     L.append("          if slLive[qli] > 0.5 {")
     # The pre-step matrix, snapshotted before any cell is written.
     for _r in range(3):
@@ -2129,8 +1781,30 @@ for _s in range(8):
     L.append("            cur = 0.0")
     L.append("          }")
     L.append("        } else {")
+    L.append("          if cur < 0.0 { camAttach = 1.0 }")
     L.append("          cur = 0.0")
     L.append("        }")
+# The view: compose the camera onto the shape's world matrix, then project.
+# Shapes whose chain reached -1 (camAttach) are already in view space, so
+# they are left alone and hold their screen position while the camera moves;
+# everything else -- unparented, parented to a shape, immediate -- rides with
+# the camera.  Depth is read after this compose, so the camera also decides
+# what is nearer.
+L.append("        if slLive[%d] > 0.5 && camAttach < 0.5 {" % CAM)
+for _r in range(3):
+    for _c in range(4):
+        L.append("          s%d%d = m%d%d" % (_r, _c, _r, _c))
+for _r in range(3):
+    for _c in range(3):
+        L.append("          let vc%d%d = camM%d0 * s0%d + camM%d1 * s1%d"
+                 " + camM%d2 * s2%d" % (_r, _c, _r, _c, _r, _c, _r, _c))
+    L.append("          let vc%d3 = camM%d0 * s03 + camM%d1 * s13"
+             " + camM%d2 * s23 + camM%d3" % (_r, _r, _r, _r, _r))
+for _r in range(3):
+    for _c in range(3):
+        L.append("          m%d%d = vc%d%d" % (_r, _c, _r, _c))
+    L.append("          m%d3 = vc%d3" % (_r, _r))
+L.append("        }")
 # The per-point step: the matrix is applied to a full (x,y,z) vector
 # (x' = m00*x + m01*y + m02*z + m03) and the result is then PROJECTED --
 # divided by its distance from the eye, which is what turns a set of

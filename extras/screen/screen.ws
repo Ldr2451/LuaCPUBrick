@@ -229,6 +229,20 @@ var m21: float = 0.0
 var m22: float = 0.0
 var m23: float = 0.0
 var cur: float = 0.0
+var camDirty: bool = false
+var camAttach: float = 0.0
+var camM00: float = 1.0
+var camM01: float = 0.0
+var camM02: float = 0.0
+var camM03: float = 0.0
+var camM10: float = 0.0
+var camM11: float = 1.0
+var camM12: float = 0.0
+var camM13: float = 0.0
+var camM20: float = 0.0
+var camM21: float = 0.0
+var camM22: float = 1.0
+var camM23: float = 0.0
 var swx: float = 0.0
 var swy: float = 0.0
 var s00: float = 0.0
@@ -8958,11 +8972,11 @@ out px4095: color = g4095
 // port stages zeroes: an empty immediate shape, which paints nothing.)
 mod pushEdge() {
     pWire = shapeWireMode
-    pId = if shapeId < 0.0 then 0.0 else if shapeId > 8.0 then 8.0 else (shapeId | 0)
+    pId = if shapeId < -0.5 then -1.0 else if shapeId > 32.0 then 32.0 else (shapeId | 0)
     pPos = shapePosition
     pRot = shapeRotation
     pScl = shapeScale
-    pParent = if parentShapeId < 0.0 then 0.0 else if parentShapeId > 8.0 then 8.0 else (parentShapeId | 0)
+    pParent = if parentShapeId < -0.5 then -1.0 else if parentShapeId > 32.0 then 32.0 else (parentShapeId | 0)
     pTicks = if addToShapeInTicks < -0.5 then -1.0 else if addToShapeInTicks < 1.0 then 0.0 else (addToShapeInTicks | 0)
     pIs3 = 0.0
     pending = true
@@ -9008,7 +9022,7 @@ mod drawEdge() {
       pending = false
       if qCount > 1.5 {
         commitQ = true
-      } else if pId >= 1.0 {
+      } else if pId >= 1.0 || pId < 0.0 {
         commitR = true
         qCount = 0.0
       } else {
@@ -9160,6 +9174,31 @@ on Change(clearAllShapes) {
     slLive[6] = 0.0
     slLive[7] = 0.0
     slLive[8] = 0.0
+    slLive[9] = 0.0
+    slLive[10] = 0.0
+    slLive[11] = 0.0
+    slLive[12] = 0.0
+    slLive[13] = 0.0
+    slLive[14] = 0.0
+    slLive[15] = 0.0
+    slLive[16] = 0.0
+    slLive[17] = 0.0
+    slLive[18] = 0.0
+    slLive[19] = 0.0
+    slLive[20] = 0.0
+    slLive[21] = 0.0
+    slLive[22] = 0.0
+    slLive[23] = 0.0
+    slLive[24] = 0.0
+    slLive[25] = 0.0
+    slLive[26] = 0.0
+    slLive[27] = 0.0
+    slLive[28] = 0.0
+    slLive[29] = 0.0
+    slLive[30] = 0.0
+    slLive[31] = 0.0
+    slLive[32] = 0.0
+    slLive[33] = 0.0
     anTicks[0] = 0.0
     anTicks[1] = 0.0
     anTicks[2] = 0.0
@@ -9168,6 +9207,33 @@ on Change(clearAllShapes) {
     anTicks[5] = 0.0
     anTicks[6] = 0.0
     anTicks[7] = 0.0
+    anTicks[8] = 0.0
+    anTicks[9] = 0.0
+    anTicks[10] = 0.0
+    anTicks[11] = 0.0
+    anTicks[12] = 0.0
+    anTicks[13] = 0.0
+    anTicks[14] = 0.0
+    anTicks[15] = 0.0
+    anTicks[16] = 0.0
+    anTicks[17] = 0.0
+    anTicks[18] = 0.0
+    anTicks[19] = 0.0
+    anTicks[20] = 0.0
+    anTicks[21] = 0.0
+    anTicks[22] = 0.0
+    anTicks[23] = 0.0
+    anTicks[24] = 0.0
+    anTicks[25] = 0.0
+    anTicks[26] = 0.0
+    anTicks[27] = 0.0
+    anTicks[28] = 0.0
+    anTicks[29] = 0.0
+    anTicks[30] = 0.0
+    anTicks[31] = 0.0
+    anTicks[32] = 0.0
+    anTicks[33] = 0.0
+    camDirty = true
     qCount = 0.0
     blackPending = true
     justCleared = false
@@ -9194,32 +9260,25 @@ mod paintTick() {
     fbZ.resize(NP, ZBACK)
     shPts.resize(48, 0.0)
     shPz.resize(16, 0.0)
-    slPts.resize(384, 0.0)
-    slPC.resize(128, Color(1.0, 1.0, 1.0, 1.0))
-    slXF.resize(48, 0.0)
-    slMode.resize(8, 0.0)
-    slLive.resize(8, 0.0)
-    slCount.resize(8, 0.0)
-    slIs3.resize(8, 0.0)
-    slPts.resize(432, 0.0)
-    slPC.resize(144, Color(1.0, 1.0, 1.0, 1.0))
-    slXF.resize(54, 0.0)
-    slXF2.resize(36, 0.0)
+    slPts.resize(1632, 0.0)
+    slPC.resize(544, Color(1.0, 1.0, 1.0, 1.0))
+    slXF.resize(204, 0.0)
+    slXF2.resize(136, 0.0)
     covMin.resize(64, 200.0)
     covMax.resize(64, -200.0)
     oldMin.resize(64, 200.0)
     oldMax.resize(64, -200.0)
-    anPts.resize(432, 0.0)
-    anCol.resize(144, Color(0.0, 0.0, 0.0, 0.0))
-    anXF.resize(54, 0.0)
-    anXF2.resize(36, 0.0)
-    anTicks.resize(9, 0.0)
+    anPts.resize(1632, 0.0)
+    anCol.resize(544, Color(0.0, 0.0, 0.0, 0.0))
+    anXF.resize(204, 0.0)
+    anXF2.resize(136, 0.0)
+    anTicks.resize(34, 0.0)
+    slMode.resize(34, 0.0)
+    slLive.resize(34, 0.0)
+    slCount.resize(34, 0.0)
+    slIs3.resize(34, 0.0)
     qTicks.resize(8, 0.0)
     qCN.resize(8, 0.0)
-    slMode.resize(9, 0.0)
-    slLive.resize(9, 0.0)
-    slCount.resize(9, 0.0)
-    slIs3.resize(9, 0.0)
     qN.resize(8, 0.0)
     qIs3.resize(8, 0.0)
     qPts.resize(384, 0.0)
@@ -9236,73 +9295,69 @@ mod paintTick() {
     else bclamp * FULL_BRIGHT / 100.0
   if pending && (pTicks > 0.5 || pTicks < -0.5) && !clearing {
     pending = false
-    let slot = (pId - 1.0) | 0
-    for aslot in 0..8 {
-      if aslot == slot {
-        anTicks[aslot] = pTicks
-        let ab = aslot * 48.0
-        anPts[ab + 0.0] = 0.0
-        anPts[ab + 1.0] = 0.0
-        anPts[ab + 2.0] = 0.0
-        anPts[ab + 3.0] = 0.0
-        anPts[ab + 4.0] = 0.0
-        anPts[ab + 5.0] = 0.0
-        anPts[ab + 6.0] = 0.0
-        anPts[ab + 7.0] = 0.0
-        anPts[ab + 8.0] = 0.0
-        anPts[ab + 9.0] = 0.0
-        anPts[ab + 10.0] = 0.0
-        anPts[ab + 11.0] = 0.0
-        anPts[ab + 12.0] = 0.0
-        anPts[ab + 13.0] = 0.0
-        anPts[ab + 14.0] = 0.0
-        anPts[ab + 15.0] = 0.0
-        anPts[ab + 16.0] = 0.0
-        anPts[ab + 17.0] = 0.0
-        anPts[ab + 18.0] = 0.0
-        anPts[ab + 19.0] = 0.0
-        anPts[ab + 20.0] = 0.0
-        anPts[ab + 21.0] = 0.0
-        anPts[ab + 22.0] = 0.0
-        anPts[ab + 23.0] = 0.0
-        anPts[ab + 24.0] = 0.0
-        anPts[ab + 25.0] = 0.0
-        anPts[ab + 26.0] = 0.0
-        anPts[ab + 27.0] = 0.0
-        anPts[ab + 28.0] = 0.0
-        anPts[ab + 29.0] = 0.0
-        anPts[ab + 30.0] = 0.0
-        anPts[ab + 31.0] = 0.0
-        anPts[ab + 32.0] = 0.0
-        anPts[ab + 33.0] = 0.0
-        anPts[ab + 34.0] = 0.0
-        anPts[ab + 35.0] = 0.0
-        anPts[ab + 36.0] = 0.0
-        anPts[ab + 37.0] = 0.0
-        anPts[ab + 38.0] = 0.0
-        anPts[ab + 39.0] = 0.0
-        anPts[ab + 40.0] = 0.0
-        anPts[ab + 41.0] = 0.0
-        anPts[ab + 42.0] = 0.0
-        anPts[ab + 43.0] = 0.0
-        anPts[ab + 44.0] = 0.0
-        anPts[ab + 45.0] = 0.0
-        anPts[ab + 46.0] = 0.0
-        anPts[ab + 47.0] = 0.0
-        let ax = aslot * 6.0
-        let ax2 = aslot * 4.0
-        anXF[ax + 0.0] = pPos.x
-        anXF[ax + 1.0] = pPos.y
-        anXF[ax + 2.0] = pRot.z
-        anXF[ax + 3.0] = pScl.x
-        anXF[ax + 4.0] = pScl.y
-        anXF2[ax2 + 0.0] = pPos.z
-        anXF2[ax2 + 1.0] = pRot.x
-        anXF2[ax2 + 2.0] = pRot.y
-        anXF2[ax2 + 3.0] = pScl.z
-        animDirty = true
-      }
-    }
+    let slot = if pId < 0.0 then 33.0 else if pId < 1.0 then 32.0 else (pId | 0)
+    let ab = slot * 48.0
+    let ax = slot * 6.0
+    let ax2 = slot * 4.0
+    anTicks[slot] = pTicks
+    anPts[ab + 0.0] = 0.0
+    anPts[ab + 1.0] = 0.0
+    anPts[ab + 2.0] = 0.0
+    anPts[ab + 3.0] = 0.0
+    anPts[ab + 4.0] = 0.0
+    anPts[ab + 5.0] = 0.0
+    anPts[ab + 6.0] = 0.0
+    anPts[ab + 7.0] = 0.0
+    anPts[ab + 8.0] = 0.0
+    anPts[ab + 9.0] = 0.0
+    anPts[ab + 10.0] = 0.0
+    anPts[ab + 11.0] = 0.0
+    anPts[ab + 12.0] = 0.0
+    anPts[ab + 13.0] = 0.0
+    anPts[ab + 14.0] = 0.0
+    anPts[ab + 15.0] = 0.0
+    anPts[ab + 16.0] = 0.0
+    anPts[ab + 17.0] = 0.0
+    anPts[ab + 18.0] = 0.0
+    anPts[ab + 19.0] = 0.0
+    anPts[ab + 20.0] = 0.0
+    anPts[ab + 21.0] = 0.0
+    anPts[ab + 22.0] = 0.0
+    anPts[ab + 23.0] = 0.0
+    anPts[ab + 24.0] = 0.0
+    anPts[ab + 25.0] = 0.0
+    anPts[ab + 26.0] = 0.0
+    anPts[ab + 27.0] = 0.0
+    anPts[ab + 28.0] = 0.0
+    anPts[ab + 29.0] = 0.0
+    anPts[ab + 30.0] = 0.0
+    anPts[ab + 31.0] = 0.0
+    anPts[ab + 32.0] = 0.0
+    anPts[ab + 33.0] = 0.0
+    anPts[ab + 34.0] = 0.0
+    anPts[ab + 35.0] = 0.0
+    anPts[ab + 36.0] = 0.0
+    anPts[ab + 37.0] = 0.0
+    anPts[ab + 38.0] = 0.0
+    anPts[ab + 39.0] = 0.0
+    anPts[ab + 40.0] = 0.0
+    anPts[ab + 41.0] = 0.0
+    anPts[ab + 42.0] = 0.0
+    anPts[ab + 43.0] = 0.0
+    anPts[ab + 44.0] = 0.0
+    anPts[ab + 45.0] = 0.0
+    anPts[ab + 46.0] = 0.0
+    anPts[ab + 47.0] = 0.0
+    anXF[ax + 0.0] = pPos.x
+    anXF[ax + 1.0] = pPos.y
+    anXF[ax + 2.0] = pRot.z
+    anXF[ax + 3.0] = pScl.x
+    anXF[ax + 4.0] = pScl.y
+    anXF2[ax2 + 0.0] = pPos.z
+    anXF2[ax2 + 1.0] = pRot.x
+    anXF2[ax2 + 2.0] = pRot.y
+    anXF2[ax2 + 3.0] = pScl.z
+    animDirty = true
   }
 
   if (anTicks[0.0] > 0.5 || anTicks[0.0] < -0.5) && rcFell {
@@ -9793,7 +9848,1593 @@ mod paintTick() {
     slXF2[30] = slXF2[30] + anXF2[30]
     slXF2[31] = slXF2[31] + anXF2[31]
   }
-
+  if (anTicks[8.0] > 0.5 || anTicks[8.0] < -0.5) && rcFell {
+    if anTicks[8.0] > 0.5 { anTicks[8.0] = anTicks[8.0] - 1.0 }
+    animDirty = true
+    slPts[384] = slPts[384] + anPts[384]
+    slPts[385] = slPts[385] + anPts[385]
+    slPts[386] = slPts[386] + anPts[386]
+    slPts[387] = slPts[387] + anPts[387]
+    slPts[388] = slPts[388] + anPts[388]
+    slPts[389] = slPts[389] + anPts[389]
+    slPts[390] = slPts[390] + anPts[390]
+    slPts[391] = slPts[391] + anPts[391]
+    slPts[392] = slPts[392] + anPts[392]
+    slPts[393] = slPts[393] + anPts[393]
+    slPts[394] = slPts[394] + anPts[394]
+    slPts[395] = slPts[395] + anPts[395]
+    slPts[396] = slPts[396] + anPts[396]
+    slPts[397] = slPts[397] + anPts[397]
+    slPts[398] = slPts[398] + anPts[398]
+    slPts[399] = slPts[399] + anPts[399]
+    slPts[400] = slPts[400] + anPts[400]
+    slPts[401] = slPts[401] + anPts[401]
+    slPts[402] = slPts[402] + anPts[402]
+    slPts[403] = slPts[403] + anPts[403]
+    slPts[404] = slPts[404] + anPts[404]
+    slPts[405] = slPts[405] + anPts[405]
+    slPts[406] = slPts[406] + anPts[406]
+    slPts[407] = slPts[407] + anPts[407]
+    slPts[408] = slPts[408] + anPts[408]
+    slPts[409] = slPts[409] + anPts[409]
+    slPts[410] = slPts[410] + anPts[410]
+    slPts[411] = slPts[411] + anPts[411]
+    slPts[412] = slPts[412] + anPts[412]
+    slPts[413] = slPts[413] + anPts[413]
+    slPts[414] = slPts[414] + anPts[414]
+    slPts[415] = slPts[415] + anPts[415]
+    slPC[128] = slPC[128] + anCol[128]
+    slPC[129] = slPC[129] + anCol[129]
+    slPC[130] = slPC[130] + anCol[130]
+    slPC[131] = slPC[131] + anCol[131]
+    slPC[132] = slPC[132] + anCol[132]
+    slPC[133] = slPC[133] + anCol[133]
+    slPC[134] = slPC[134] + anCol[134]
+    slPC[135] = slPC[135] + anCol[135]
+    slPC[136] = slPC[136] + anCol[136]
+    slPC[137] = slPC[137] + anCol[137]
+    slPC[138] = slPC[138] + anCol[138]
+    slPC[139] = slPC[139] + anCol[139]
+    slPC[140] = slPC[140] + anCol[140]
+    slPC[141] = slPC[141] + anCol[141]
+    slPC[142] = slPC[142] + anCol[142]
+    slPC[143] = slPC[143] + anCol[143]
+    slXF[48] = slXF[48] + anXF[48]
+    slXF[49] = slXF[49] + anXF[49]
+    slXF[50] = slXF[50] + anXF[50]
+    slXF[51] = slXF[51] + anXF[51]
+    slXF[52] = slXF[52] + anXF[52]
+    slXF2[32] = slXF2[32] + anXF2[32]
+    slXF2[33] = slXF2[33] + anXF2[33]
+    slXF2[34] = slXF2[34] + anXF2[34]
+    slXF2[35] = slXF2[35] + anXF2[35]
+  }
+  if (anTicks[9.0] > 0.5 || anTicks[9.0] < -0.5) && rcFell {
+    if anTicks[9.0] > 0.5 { anTicks[9.0] = anTicks[9.0] - 1.0 }
+    animDirty = true
+    slPts[432] = slPts[432] + anPts[432]
+    slPts[433] = slPts[433] + anPts[433]
+    slPts[434] = slPts[434] + anPts[434]
+    slPts[435] = slPts[435] + anPts[435]
+    slPts[436] = slPts[436] + anPts[436]
+    slPts[437] = slPts[437] + anPts[437]
+    slPts[438] = slPts[438] + anPts[438]
+    slPts[439] = slPts[439] + anPts[439]
+    slPts[440] = slPts[440] + anPts[440]
+    slPts[441] = slPts[441] + anPts[441]
+    slPts[442] = slPts[442] + anPts[442]
+    slPts[443] = slPts[443] + anPts[443]
+    slPts[444] = slPts[444] + anPts[444]
+    slPts[445] = slPts[445] + anPts[445]
+    slPts[446] = slPts[446] + anPts[446]
+    slPts[447] = slPts[447] + anPts[447]
+    slPts[448] = slPts[448] + anPts[448]
+    slPts[449] = slPts[449] + anPts[449]
+    slPts[450] = slPts[450] + anPts[450]
+    slPts[451] = slPts[451] + anPts[451]
+    slPts[452] = slPts[452] + anPts[452]
+    slPts[453] = slPts[453] + anPts[453]
+    slPts[454] = slPts[454] + anPts[454]
+    slPts[455] = slPts[455] + anPts[455]
+    slPts[456] = slPts[456] + anPts[456]
+    slPts[457] = slPts[457] + anPts[457]
+    slPts[458] = slPts[458] + anPts[458]
+    slPts[459] = slPts[459] + anPts[459]
+    slPts[460] = slPts[460] + anPts[460]
+    slPts[461] = slPts[461] + anPts[461]
+    slPts[462] = slPts[462] + anPts[462]
+    slPts[463] = slPts[463] + anPts[463]
+    slPC[144] = slPC[144] + anCol[144]
+    slPC[145] = slPC[145] + anCol[145]
+    slPC[146] = slPC[146] + anCol[146]
+    slPC[147] = slPC[147] + anCol[147]
+    slPC[148] = slPC[148] + anCol[148]
+    slPC[149] = slPC[149] + anCol[149]
+    slPC[150] = slPC[150] + anCol[150]
+    slPC[151] = slPC[151] + anCol[151]
+    slPC[152] = slPC[152] + anCol[152]
+    slPC[153] = slPC[153] + anCol[153]
+    slPC[154] = slPC[154] + anCol[154]
+    slPC[155] = slPC[155] + anCol[155]
+    slPC[156] = slPC[156] + anCol[156]
+    slPC[157] = slPC[157] + anCol[157]
+    slPC[158] = slPC[158] + anCol[158]
+    slPC[159] = slPC[159] + anCol[159]
+    slXF[54] = slXF[54] + anXF[54]
+    slXF[55] = slXF[55] + anXF[55]
+    slXF[56] = slXF[56] + anXF[56]
+    slXF[57] = slXF[57] + anXF[57]
+    slXF[58] = slXF[58] + anXF[58]
+    slXF2[36] = slXF2[36] + anXF2[36]
+    slXF2[37] = slXF2[37] + anXF2[37]
+    slXF2[38] = slXF2[38] + anXF2[38]
+    slXF2[39] = slXF2[39] + anXF2[39]
+  }
+  if (anTicks[10.0] > 0.5 || anTicks[10.0] < -0.5) && rcFell {
+    if anTicks[10.0] > 0.5 { anTicks[10.0] = anTicks[10.0] - 1.0 }
+    animDirty = true
+    slPts[480] = slPts[480] + anPts[480]
+    slPts[481] = slPts[481] + anPts[481]
+    slPts[482] = slPts[482] + anPts[482]
+    slPts[483] = slPts[483] + anPts[483]
+    slPts[484] = slPts[484] + anPts[484]
+    slPts[485] = slPts[485] + anPts[485]
+    slPts[486] = slPts[486] + anPts[486]
+    slPts[487] = slPts[487] + anPts[487]
+    slPts[488] = slPts[488] + anPts[488]
+    slPts[489] = slPts[489] + anPts[489]
+    slPts[490] = slPts[490] + anPts[490]
+    slPts[491] = slPts[491] + anPts[491]
+    slPts[492] = slPts[492] + anPts[492]
+    slPts[493] = slPts[493] + anPts[493]
+    slPts[494] = slPts[494] + anPts[494]
+    slPts[495] = slPts[495] + anPts[495]
+    slPts[496] = slPts[496] + anPts[496]
+    slPts[497] = slPts[497] + anPts[497]
+    slPts[498] = slPts[498] + anPts[498]
+    slPts[499] = slPts[499] + anPts[499]
+    slPts[500] = slPts[500] + anPts[500]
+    slPts[501] = slPts[501] + anPts[501]
+    slPts[502] = slPts[502] + anPts[502]
+    slPts[503] = slPts[503] + anPts[503]
+    slPts[504] = slPts[504] + anPts[504]
+    slPts[505] = slPts[505] + anPts[505]
+    slPts[506] = slPts[506] + anPts[506]
+    slPts[507] = slPts[507] + anPts[507]
+    slPts[508] = slPts[508] + anPts[508]
+    slPts[509] = slPts[509] + anPts[509]
+    slPts[510] = slPts[510] + anPts[510]
+    slPts[511] = slPts[511] + anPts[511]
+    slPC[160] = slPC[160] + anCol[160]
+    slPC[161] = slPC[161] + anCol[161]
+    slPC[162] = slPC[162] + anCol[162]
+    slPC[163] = slPC[163] + anCol[163]
+    slPC[164] = slPC[164] + anCol[164]
+    slPC[165] = slPC[165] + anCol[165]
+    slPC[166] = slPC[166] + anCol[166]
+    slPC[167] = slPC[167] + anCol[167]
+    slPC[168] = slPC[168] + anCol[168]
+    slPC[169] = slPC[169] + anCol[169]
+    slPC[170] = slPC[170] + anCol[170]
+    slPC[171] = slPC[171] + anCol[171]
+    slPC[172] = slPC[172] + anCol[172]
+    slPC[173] = slPC[173] + anCol[173]
+    slPC[174] = slPC[174] + anCol[174]
+    slPC[175] = slPC[175] + anCol[175]
+    slXF[60] = slXF[60] + anXF[60]
+    slXF[61] = slXF[61] + anXF[61]
+    slXF[62] = slXF[62] + anXF[62]
+    slXF[63] = slXF[63] + anXF[63]
+    slXF[64] = slXF[64] + anXF[64]
+    slXF2[40] = slXF2[40] + anXF2[40]
+    slXF2[41] = slXF2[41] + anXF2[41]
+    slXF2[42] = slXF2[42] + anXF2[42]
+    slXF2[43] = slXF2[43] + anXF2[43]
+  }
+  if (anTicks[11.0] > 0.5 || anTicks[11.0] < -0.5) && rcFell {
+    if anTicks[11.0] > 0.5 { anTicks[11.0] = anTicks[11.0] - 1.0 }
+    animDirty = true
+    slPts[528] = slPts[528] + anPts[528]
+    slPts[529] = slPts[529] + anPts[529]
+    slPts[530] = slPts[530] + anPts[530]
+    slPts[531] = slPts[531] + anPts[531]
+    slPts[532] = slPts[532] + anPts[532]
+    slPts[533] = slPts[533] + anPts[533]
+    slPts[534] = slPts[534] + anPts[534]
+    slPts[535] = slPts[535] + anPts[535]
+    slPts[536] = slPts[536] + anPts[536]
+    slPts[537] = slPts[537] + anPts[537]
+    slPts[538] = slPts[538] + anPts[538]
+    slPts[539] = slPts[539] + anPts[539]
+    slPts[540] = slPts[540] + anPts[540]
+    slPts[541] = slPts[541] + anPts[541]
+    slPts[542] = slPts[542] + anPts[542]
+    slPts[543] = slPts[543] + anPts[543]
+    slPts[544] = slPts[544] + anPts[544]
+    slPts[545] = slPts[545] + anPts[545]
+    slPts[546] = slPts[546] + anPts[546]
+    slPts[547] = slPts[547] + anPts[547]
+    slPts[548] = slPts[548] + anPts[548]
+    slPts[549] = slPts[549] + anPts[549]
+    slPts[550] = slPts[550] + anPts[550]
+    slPts[551] = slPts[551] + anPts[551]
+    slPts[552] = slPts[552] + anPts[552]
+    slPts[553] = slPts[553] + anPts[553]
+    slPts[554] = slPts[554] + anPts[554]
+    slPts[555] = slPts[555] + anPts[555]
+    slPts[556] = slPts[556] + anPts[556]
+    slPts[557] = slPts[557] + anPts[557]
+    slPts[558] = slPts[558] + anPts[558]
+    slPts[559] = slPts[559] + anPts[559]
+    slPC[176] = slPC[176] + anCol[176]
+    slPC[177] = slPC[177] + anCol[177]
+    slPC[178] = slPC[178] + anCol[178]
+    slPC[179] = slPC[179] + anCol[179]
+    slPC[180] = slPC[180] + anCol[180]
+    slPC[181] = slPC[181] + anCol[181]
+    slPC[182] = slPC[182] + anCol[182]
+    slPC[183] = slPC[183] + anCol[183]
+    slPC[184] = slPC[184] + anCol[184]
+    slPC[185] = slPC[185] + anCol[185]
+    slPC[186] = slPC[186] + anCol[186]
+    slPC[187] = slPC[187] + anCol[187]
+    slPC[188] = slPC[188] + anCol[188]
+    slPC[189] = slPC[189] + anCol[189]
+    slPC[190] = slPC[190] + anCol[190]
+    slPC[191] = slPC[191] + anCol[191]
+    slXF[66] = slXF[66] + anXF[66]
+    slXF[67] = slXF[67] + anXF[67]
+    slXF[68] = slXF[68] + anXF[68]
+    slXF[69] = slXF[69] + anXF[69]
+    slXF[70] = slXF[70] + anXF[70]
+    slXF2[44] = slXF2[44] + anXF2[44]
+    slXF2[45] = slXF2[45] + anXF2[45]
+    slXF2[46] = slXF2[46] + anXF2[46]
+    slXF2[47] = slXF2[47] + anXF2[47]
+  }
+  if (anTicks[12.0] > 0.5 || anTicks[12.0] < -0.5) && rcFell {
+    if anTicks[12.0] > 0.5 { anTicks[12.0] = anTicks[12.0] - 1.0 }
+    animDirty = true
+    slPts[576] = slPts[576] + anPts[576]
+    slPts[577] = slPts[577] + anPts[577]
+    slPts[578] = slPts[578] + anPts[578]
+    slPts[579] = slPts[579] + anPts[579]
+    slPts[580] = slPts[580] + anPts[580]
+    slPts[581] = slPts[581] + anPts[581]
+    slPts[582] = slPts[582] + anPts[582]
+    slPts[583] = slPts[583] + anPts[583]
+    slPts[584] = slPts[584] + anPts[584]
+    slPts[585] = slPts[585] + anPts[585]
+    slPts[586] = slPts[586] + anPts[586]
+    slPts[587] = slPts[587] + anPts[587]
+    slPts[588] = slPts[588] + anPts[588]
+    slPts[589] = slPts[589] + anPts[589]
+    slPts[590] = slPts[590] + anPts[590]
+    slPts[591] = slPts[591] + anPts[591]
+    slPts[592] = slPts[592] + anPts[592]
+    slPts[593] = slPts[593] + anPts[593]
+    slPts[594] = slPts[594] + anPts[594]
+    slPts[595] = slPts[595] + anPts[595]
+    slPts[596] = slPts[596] + anPts[596]
+    slPts[597] = slPts[597] + anPts[597]
+    slPts[598] = slPts[598] + anPts[598]
+    slPts[599] = slPts[599] + anPts[599]
+    slPts[600] = slPts[600] + anPts[600]
+    slPts[601] = slPts[601] + anPts[601]
+    slPts[602] = slPts[602] + anPts[602]
+    slPts[603] = slPts[603] + anPts[603]
+    slPts[604] = slPts[604] + anPts[604]
+    slPts[605] = slPts[605] + anPts[605]
+    slPts[606] = slPts[606] + anPts[606]
+    slPts[607] = slPts[607] + anPts[607]
+    slPC[192] = slPC[192] + anCol[192]
+    slPC[193] = slPC[193] + anCol[193]
+    slPC[194] = slPC[194] + anCol[194]
+    slPC[195] = slPC[195] + anCol[195]
+    slPC[196] = slPC[196] + anCol[196]
+    slPC[197] = slPC[197] + anCol[197]
+    slPC[198] = slPC[198] + anCol[198]
+    slPC[199] = slPC[199] + anCol[199]
+    slPC[200] = slPC[200] + anCol[200]
+    slPC[201] = slPC[201] + anCol[201]
+    slPC[202] = slPC[202] + anCol[202]
+    slPC[203] = slPC[203] + anCol[203]
+    slPC[204] = slPC[204] + anCol[204]
+    slPC[205] = slPC[205] + anCol[205]
+    slPC[206] = slPC[206] + anCol[206]
+    slPC[207] = slPC[207] + anCol[207]
+    slXF[72] = slXF[72] + anXF[72]
+    slXF[73] = slXF[73] + anXF[73]
+    slXF[74] = slXF[74] + anXF[74]
+    slXF[75] = slXF[75] + anXF[75]
+    slXF[76] = slXF[76] + anXF[76]
+    slXF2[48] = slXF2[48] + anXF2[48]
+    slXF2[49] = slXF2[49] + anXF2[49]
+    slXF2[50] = slXF2[50] + anXF2[50]
+    slXF2[51] = slXF2[51] + anXF2[51]
+  }
+  if (anTicks[13.0] > 0.5 || anTicks[13.0] < -0.5) && rcFell {
+    if anTicks[13.0] > 0.5 { anTicks[13.0] = anTicks[13.0] - 1.0 }
+    animDirty = true
+    slPts[624] = slPts[624] + anPts[624]
+    slPts[625] = slPts[625] + anPts[625]
+    slPts[626] = slPts[626] + anPts[626]
+    slPts[627] = slPts[627] + anPts[627]
+    slPts[628] = slPts[628] + anPts[628]
+    slPts[629] = slPts[629] + anPts[629]
+    slPts[630] = slPts[630] + anPts[630]
+    slPts[631] = slPts[631] + anPts[631]
+    slPts[632] = slPts[632] + anPts[632]
+    slPts[633] = slPts[633] + anPts[633]
+    slPts[634] = slPts[634] + anPts[634]
+    slPts[635] = slPts[635] + anPts[635]
+    slPts[636] = slPts[636] + anPts[636]
+    slPts[637] = slPts[637] + anPts[637]
+    slPts[638] = slPts[638] + anPts[638]
+    slPts[639] = slPts[639] + anPts[639]
+    slPts[640] = slPts[640] + anPts[640]
+    slPts[641] = slPts[641] + anPts[641]
+    slPts[642] = slPts[642] + anPts[642]
+    slPts[643] = slPts[643] + anPts[643]
+    slPts[644] = slPts[644] + anPts[644]
+    slPts[645] = slPts[645] + anPts[645]
+    slPts[646] = slPts[646] + anPts[646]
+    slPts[647] = slPts[647] + anPts[647]
+    slPts[648] = slPts[648] + anPts[648]
+    slPts[649] = slPts[649] + anPts[649]
+    slPts[650] = slPts[650] + anPts[650]
+    slPts[651] = slPts[651] + anPts[651]
+    slPts[652] = slPts[652] + anPts[652]
+    slPts[653] = slPts[653] + anPts[653]
+    slPts[654] = slPts[654] + anPts[654]
+    slPts[655] = slPts[655] + anPts[655]
+    slPC[208] = slPC[208] + anCol[208]
+    slPC[209] = slPC[209] + anCol[209]
+    slPC[210] = slPC[210] + anCol[210]
+    slPC[211] = slPC[211] + anCol[211]
+    slPC[212] = slPC[212] + anCol[212]
+    slPC[213] = slPC[213] + anCol[213]
+    slPC[214] = slPC[214] + anCol[214]
+    slPC[215] = slPC[215] + anCol[215]
+    slPC[216] = slPC[216] + anCol[216]
+    slPC[217] = slPC[217] + anCol[217]
+    slPC[218] = slPC[218] + anCol[218]
+    slPC[219] = slPC[219] + anCol[219]
+    slPC[220] = slPC[220] + anCol[220]
+    slPC[221] = slPC[221] + anCol[221]
+    slPC[222] = slPC[222] + anCol[222]
+    slPC[223] = slPC[223] + anCol[223]
+    slXF[78] = slXF[78] + anXF[78]
+    slXF[79] = slXF[79] + anXF[79]
+    slXF[80] = slXF[80] + anXF[80]
+    slXF[81] = slXF[81] + anXF[81]
+    slXF[82] = slXF[82] + anXF[82]
+    slXF2[52] = slXF2[52] + anXF2[52]
+    slXF2[53] = slXF2[53] + anXF2[53]
+    slXF2[54] = slXF2[54] + anXF2[54]
+    slXF2[55] = slXF2[55] + anXF2[55]
+  }
+  if (anTicks[14.0] > 0.5 || anTicks[14.0] < -0.5) && rcFell {
+    if anTicks[14.0] > 0.5 { anTicks[14.0] = anTicks[14.0] - 1.0 }
+    animDirty = true
+    slPts[672] = slPts[672] + anPts[672]
+    slPts[673] = slPts[673] + anPts[673]
+    slPts[674] = slPts[674] + anPts[674]
+    slPts[675] = slPts[675] + anPts[675]
+    slPts[676] = slPts[676] + anPts[676]
+    slPts[677] = slPts[677] + anPts[677]
+    slPts[678] = slPts[678] + anPts[678]
+    slPts[679] = slPts[679] + anPts[679]
+    slPts[680] = slPts[680] + anPts[680]
+    slPts[681] = slPts[681] + anPts[681]
+    slPts[682] = slPts[682] + anPts[682]
+    slPts[683] = slPts[683] + anPts[683]
+    slPts[684] = slPts[684] + anPts[684]
+    slPts[685] = slPts[685] + anPts[685]
+    slPts[686] = slPts[686] + anPts[686]
+    slPts[687] = slPts[687] + anPts[687]
+    slPts[688] = slPts[688] + anPts[688]
+    slPts[689] = slPts[689] + anPts[689]
+    slPts[690] = slPts[690] + anPts[690]
+    slPts[691] = slPts[691] + anPts[691]
+    slPts[692] = slPts[692] + anPts[692]
+    slPts[693] = slPts[693] + anPts[693]
+    slPts[694] = slPts[694] + anPts[694]
+    slPts[695] = slPts[695] + anPts[695]
+    slPts[696] = slPts[696] + anPts[696]
+    slPts[697] = slPts[697] + anPts[697]
+    slPts[698] = slPts[698] + anPts[698]
+    slPts[699] = slPts[699] + anPts[699]
+    slPts[700] = slPts[700] + anPts[700]
+    slPts[701] = slPts[701] + anPts[701]
+    slPts[702] = slPts[702] + anPts[702]
+    slPts[703] = slPts[703] + anPts[703]
+    slPC[224] = slPC[224] + anCol[224]
+    slPC[225] = slPC[225] + anCol[225]
+    slPC[226] = slPC[226] + anCol[226]
+    slPC[227] = slPC[227] + anCol[227]
+    slPC[228] = slPC[228] + anCol[228]
+    slPC[229] = slPC[229] + anCol[229]
+    slPC[230] = slPC[230] + anCol[230]
+    slPC[231] = slPC[231] + anCol[231]
+    slPC[232] = slPC[232] + anCol[232]
+    slPC[233] = slPC[233] + anCol[233]
+    slPC[234] = slPC[234] + anCol[234]
+    slPC[235] = slPC[235] + anCol[235]
+    slPC[236] = slPC[236] + anCol[236]
+    slPC[237] = slPC[237] + anCol[237]
+    slPC[238] = slPC[238] + anCol[238]
+    slPC[239] = slPC[239] + anCol[239]
+    slXF[84] = slXF[84] + anXF[84]
+    slXF[85] = slXF[85] + anXF[85]
+    slXF[86] = slXF[86] + anXF[86]
+    slXF[87] = slXF[87] + anXF[87]
+    slXF[88] = slXF[88] + anXF[88]
+    slXF2[56] = slXF2[56] + anXF2[56]
+    slXF2[57] = slXF2[57] + anXF2[57]
+    slXF2[58] = slXF2[58] + anXF2[58]
+    slXF2[59] = slXF2[59] + anXF2[59]
+  }
+  if (anTicks[15.0] > 0.5 || anTicks[15.0] < -0.5) && rcFell {
+    if anTicks[15.0] > 0.5 { anTicks[15.0] = anTicks[15.0] - 1.0 }
+    animDirty = true
+    slPts[720] = slPts[720] + anPts[720]
+    slPts[721] = slPts[721] + anPts[721]
+    slPts[722] = slPts[722] + anPts[722]
+    slPts[723] = slPts[723] + anPts[723]
+    slPts[724] = slPts[724] + anPts[724]
+    slPts[725] = slPts[725] + anPts[725]
+    slPts[726] = slPts[726] + anPts[726]
+    slPts[727] = slPts[727] + anPts[727]
+    slPts[728] = slPts[728] + anPts[728]
+    slPts[729] = slPts[729] + anPts[729]
+    slPts[730] = slPts[730] + anPts[730]
+    slPts[731] = slPts[731] + anPts[731]
+    slPts[732] = slPts[732] + anPts[732]
+    slPts[733] = slPts[733] + anPts[733]
+    slPts[734] = slPts[734] + anPts[734]
+    slPts[735] = slPts[735] + anPts[735]
+    slPts[736] = slPts[736] + anPts[736]
+    slPts[737] = slPts[737] + anPts[737]
+    slPts[738] = slPts[738] + anPts[738]
+    slPts[739] = slPts[739] + anPts[739]
+    slPts[740] = slPts[740] + anPts[740]
+    slPts[741] = slPts[741] + anPts[741]
+    slPts[742] = slPts[742] + anPts[742]
+    slPts[743] = slPts[743] + anPts[743]
+    slPts[744] = slPts[744] + anPts[744]
+    slPts[745] = slPts[745] + anPts[745]
+    slPts[746] = slPts[746] + anPts[746]
+    slPts[747] = slPts[747] + anPts[747]
+    slPts[748] = slPts[748] + anPts[748]
+    slPts[749] = slPts[749] + anPts[749]
+    slPts[750] = slPts[750] + anPts[750]
+    slPts[751] = slPts[751] + anPts[751]
+    slPC[240] = slPC[240] + anCol[240]
+    slPC[241] = slPC[241] + anCol[241]
+    slPC[242] = slPC[242] + anCol[242]
+    slPC[243] = slPC[243] + anCol[243]
+    slPC[244] = slPC[244] + anCol[244]
+    slPC[245] = slPC[245] + anCol[245]
+    slPC[246] = slPC[246] + anCol[246]
+    slPC[247] = slPC[247] + anCol[247]
+    slPC[248] = slPC[248] + anCol[248]
+    slPC[249] = slPC[249] + anCol[249]
+    slPC[250] = slPC[250] + anCol[250]
+    slPC[251] = slPC[251] + anCol[251]
+    slPC[252] = slPC[252] + anCol[252]
+    slPC[253] = slPC[253] + anCol[253]
+    slPC[254] = slPC[254] + anCol[254]
+    slPC[255] = slPC[255] + anCol[255]
+    slXF[90] = slXF[90] + anXF[90]
+    slXF[91] = slXF[91] + anXF[91]
+    slXF[92] = slXF[92] + anXF[92]
+    slXF[93] = slXF[93] + anXF[93]
+    slXF[94] = slXF[94] + anXF[94]
+    slXF2[60] = slXF2[60] + anXF2[60]
+    slXF2[61] = slXF2[61] + anXF2[61]
+    slXF2[62] = slXF2[62] + anXF2[62]
+    slXF2[63] = slXF2[63] + anXF2[63]
+  }
+  if (anTicks[16.0] > 0.5 || anTicks[16.0] < -0.5) && rcFell {
+    if anTicks[16.0] > 0.5 { anTicks[16.0] = anTicks[16.0] - 1.0 }
+    animDirty = true
+    slPts[768] = slPts[768] + anPts[768]
+    slPts[769] = slPts[769] + anPts[769]
+    slPts[770] = slPts[770] + anPts[770]
+    slPts[771] = slPts[771] + anPts[771]
+    slPts[772] = slPts[772] + anPts[772]
+    slPts[773] = slPts[773] + anPts[773]
+    slPts[774] = slPts[774] + anPts[774]
+    slPts[775] = slPts[775] + anPts[775]
+    slPts[776] = slPts[776] + anPts[776]
+    slPts[777] = slPts[777] + anPts[777]
+    slPts[778] = slPts[778] + anPts[778]
+    slPts[779] = slPts[779] + anPts[779]
+    slPts[780] = slPts[780] + anPts[780]
+    slPts[781] = slPts[781] + anPts[781]
+    slPts[782] = slPts[782] + anPts[782]
+    slPts[783] = slPts[783] + anPts[783]
+    slPts[784] = slPts[784] + anPts[784]
+    slPts[785] = slPts[785] + anPts[785]
+    slPts[786] = slPts[786] + anPts[786]
+    slPts[787] = slPts[787] + anPts[787]
+    slPts[788] = slPts[788] + anPts[788]
+    slPts[789] = slPts[789] + anPts[789]
+    slPts[790] = slPts[790] + anPts[790]
+    slPts[791] = slPts[791] + anPts[791]
+    slPts[792] = slPts[792] + anPts[792]
+    slPts[793] = slPts[793] + anPts[793]
+    slPts[794] = slPts[794] + anPts[794]
+    slPts[795] = slPts[795] + anPts[795]
+    slPts[796] = slPts[796] + anPts[796]
+    slPts[797] = slPts[797] + anPts[797]
+    slPts[798] = slPts[798] + anPts[798]
+    slPts[799] = slPts[799] + anPts[799]
+    slPC[256] = slPC[256] + anCol[256]
+    slPC[257] = slPC[257] + anCol[257]
+    slPC[258] = slPC[258] + anCol[258]
+    slPC[259] = slPC[259] + anCol[259]
+    slPC[260] = slPC[260] + anCol[260]
+    slPC[261] = slPC[261] + anCol[261]
+    slPC[262] = slPC[262] + anCol[262]
+    slPC[263] = slPC[263] + anCol[263]
+    slPC[264] = slPC[264] + anCol[264]
+    slPC[265] = slPC[265] + anCol[265]
+    slPC[266] = slPC[266] + anCol[266]
+    slPC[267] = slPC[267] + anCol[267]
+    slPC[268] = slPC[268] + anCol[268]
+    slPC[269] = slPC[269] + anCol[269]
+    slPC[270] = slPC[270] + anCol[270]
+    slPC[271] = slPC[271] + anCol[271]
+    slXF[96] = slXF[96] + anXF[96]
+    slXF[97] = slXF[97] + anXF[97]
+    slXF[98] = slXF[98] + anXF[98]
+    slXF[99] = slXF[99] + anXF[99]
+    slXF[100] = slXF[100] + anXF[100]
+    slXF2[64] = slXF2[64] + anXF2[64]
+    slXF2[65] = slXF2[65] + anXF2[65]
+    slXF2[66] = slXF2[66] + anXF2[66]
+    slXF2[67] = slXF2[67] + anXF2[67]
+  }
+  if (anTicks[17.0] > 0.5 || anTicks[17.0] < -0.5) && rcFell {
+    if anTicks[17.0] > 0.5 { anTicks[17.0] = anTicks[17.0] - 1.0 }
+    animDirty = true
+    slPts[816] = slPts[816] + anPts[816]
+    slPts[817] = slPts[817] + anPts[817]
+    slPts[818] = slPts[818] + anPts[818]
+    slPts[819] = slPts[819] + anPts[819]
+    slPts[820] = slPts[820] + anPts[820]
+    slPts[821] = slPts[821] + anPts[821]
+    slPts[822] = slPts[822] + anPts[822]
+    slPts[823] = slPts[823] + anPts[823]
+    slPts[824] = slPts[824] + anPts[824]
+    slPts[825] = slPts[825] + anPts[825]
+    slPts[826] = slPts[826] + anPts[826]
+    slPts[827] = slPts[827] + anPts[827]
+    slPts[828] = slPts[828] + anPts[828]
+    slPts[829] = slPts[829] + anPts[829]
+    slPts[830] = slPts[830] + anPts[830]
+    slPts[831] = slPts[831] + anPts[831]
+    slPts[832] = slPts[832] + anPts[832]
+    slPts[833] = slPts[833] + anPts[833]
+    slPts[834] = slPts[834] + anPts[834]
+    slPts[835] = slPts[835] + anPts[835]
+    slPts[836] = slPts[836] + anPts[836]
+    slPts[837] = slPts[837] + anPts[837]
+    slPts[838] = slPts[838] + anPts[838]
+    slPts[839] = slPts[839] + anPts[839]
+    slPts[840] = slPts[840] + anPts[840]
+    slPts[841] = slPts[841] + anPts[841]
+    slPts[842] = slPts[842] + anPts[842]
+    slPts[843] = slPts[843] + anPts[843]
+    slPts[844] = slPts[844] + anPts[844]
+    slPts[845] = slPts[845] + anPts[845]
+    slPts[846] = slPts[846] + anPts[846]
+    slPts[847] = slPts[847] + anPts[847]
+    slPC[272] = slPC[272] + anCol[272]
+    slPC[273] = slPC[273] + anCol[273]
+    slPC[274] = slPC[274] + anCol[274]
+    slPC[275] = slPC[275] + anCol[275]
+    slPC[276] = slPC[276] + anCol[276]
+    slPC[277] = slPC[277] + anCol[277]
+    slPC[278] = slPC[278] + anCol[278]
+    slPC[279] = slPC[279] + anCol[279]
+    slPC[280] = slPC[280] + anCol[280]
+    slPC[281] = slPC[281] + anCol[281]
+    slPC[282] = slPC[282] + anCol[282]
+    slPC[283] = slPC[283] + anCol[283]
+    slPC[284] = slPC[284] + anCol[284]
+    slPC[285] = slPC[285] + anCol[285]
+    slPC[286] = slPC[286] + anCol[286]
+    slPC[287] = slPC[287] + anCol[287]
+    slXF[102] = slXF[102] + anXF[102]
+    slXF[103] = slXF[103] + anXF[103]
+    slXF[104] = slXF[104] + anXF[104]
+    slXF[105] = slXF[105] + anXF[105]
+    slXF[106] = slXF[106] + anXF[106]
+    slXF2[68] = slXF2[68] + anXF2[68]
+    slXF2[69] = slXF2[69] + anXF2[69]
+    slXF2[70] = slXF2[70] + anXF2[70]
+    slXF2[71] = slXF2[71] + anXF2[71]
+  }
+  if (anTicks[18.0] > 0.5 || anTicks[18.0] < -0.5) && rcFell {
+    if anTicks[18.0] > 0.5 { anTicks[18.0] = anTicks[18.0] - 1.0 }
+    animDirty = true
+    slPts[864] = slPts[864] + anPts[864]
+    slPts[865] = slPts[865] + anPts[865]
+    slPts[866] = slPts[866] + anPts[866]
+    slPts[867] = slPts[867] + anPts[867]
+    slPts[868] = slPts[868] + anPts[868]
+    slPts[869] = slPts[869] + anPts[869]
+    slPts[870] = slPts[870] + anPts[870]
+    slPts[871] = slPts[871] + anPts[871]
+    slPts[872] = slPts[872] + anPts[872]
+    slPts[873] = slPts[873] + anPts[873]
+    slPts[874] = slPts[874] + anPts[874]
+    slPts[875] = slPts[875] + anPts[875]
+    slPts[876] = slPts[876] + anPts[876]
+    slPts[877] = slPts[877] + anPts[877]
+    slPts[878] = slPts[878] + anPts[878]
+    slPts[879] = slPts[879] + anPts[879]
+    slPts[880] = slPts[880] + anPts[880]
+    slPts[881] = slPts[881] + anPts[881]
+    slPts[882] = slPts[882] + anPts[882]
+    slPts[883] = slPts[883] + anPts[883]
+    slPts[884] = slPts[884] + anPts[884]
+    slPts[885] = slPts[885] + anPts[885]
+    slPts[886] = slPts[886] + anPts[886]
+    slPts[887] = slPts[887] + anPts[887]
+    slPts[888] = slPts[888] + anPts[888]
+    slPts[889] = slPts[889] + anPts[889]
+    slPts[890] = slPts[890] + anPts[890]
+    slPts[891] = slPts[891] + anPts[891]
+    slPts[892] = slPts[892] + anPts[892]
+    slPts[893] = slPts[893] + anPts[893]
+    slPts[894] = slPts[894] + anPts[894]
+    slPts[895] = slPts[895] + anPts[895]
+    slPC[288] = slPC[288] + anCol[288]
+    slPC[289] = slPC[289] + anCol[289]
+    slPC[290] = slPC[290] + anCol[290]
+    slPC[291] = slPC[291] + anCol[291]
+    slPC[292] = slPC[292] + anCol[292]
+    slPC[293] = slPC[293] + anCol[293]
+    slPC[294] = slPC[294] + anCol[294]
+    slPC[295] = slPC[295] + anCol[295]
+    slPC[296] = slPC[296] + anCol[296]
+    slPC[297] = slPC[297] + anCol[297]
+    slPC[298] = slPC[298] + anCol[298]
+    slPC[299] = slPC[299] + anCol[299]
+    slPC[300] = slPC[300] + anCol[300]
+    slPC[301] = slPC[301] + anCol[301]
+    slPC[302] = slPC[302] + anCol[302]
+    slPC[303] = slPC[303] + anCol[303]
+    slXF[108] = slXF[108] + anXF[108]
+    slXF[109] = slXF[109] + anXF[109]
+    slXF[110] = slXF[110] + anXF[110]
+    slXF[111] = slXF[111] + anXF[111]
+    slXF[112] = slXF[112] + anXF[112]
+    slXF2[72] = slXF2[72] + anXF2[72]
+    slXF2[73] = slXF2[73] + anXF2[73]
+    slXF2[74] = slXF2[74] + anXF2[74]
+    slXF2[75] = slXF2[75] + anXF2[75]
+  }
+  if (anTicks[19.0] > 0.5 || anTicks[19.0] < -0.5) && rcFell {
+    if anTicks[19.0] > 0.5 { anTicks[19.0] = anTicks[19.0] - 1.0 }
+    animDirty = true
+    slPts[912] = slPts[912] + anPts[912]
+    slPts[913] = slPts[913] + anPts[913]
+    slPts[914] = slPts[914] + anPts[914]
+    slPts[915] = slPts[915] + anPts[915]
+    slPts[916] = slPts[916] + anPts[916]
+    slPts[917] = slPts[917] + anPts[917]
+    slPts[918] = slPts[918] + anPts[918]
+    slPts[919] = slPts[919] + anPts[919]
+    slPts[920] = slPts[920] + anPts[920]
+    slPts[921] = slPts[921] + anPts[921]
+    slPts[922] = slPts[922] + anPts[922]
+    slPts[923] = slPts[923] + anPts[923]
+    slPts[924] = slPts[924] + anPts[924]
+    slPts[925] = slPts[925] + anPts[925]
+    slPts[926] = slPts[926] + anPts[926]
+    slPts[927] = slPts[927] + anPts[927]
+    slPts[928] = slPts[928] + anPts[928]
+    slPts[929] = slPts[929] + anPts[929]
+    slPts[930] = slPts[930] + anPts[930]
+    slPts[931] = slPts[931] + anPts[931]
+    slPts[932] = slPts[932] + anPts[932]
+    slPts[933] = slPts[933] + anPts[933]
+    slPts[934] = slPts[934] + anPts[934]
+    slPts[935] = slPts[935] + anPts[935]
+    slPts[936] = slPts[936] + anPts[936]
+    slPts[937] = slPts[937] + anPts[937]
+    slPts[938] = slPts[938] + anPts[938]
+    slPts[939] = slPts[939] + anPts[939]
+    slPts[940] = slPts[940] + anPts[940]
+    slPts[941] = slPts[941] + anPts[941]
+    slPts[942] = slPts[942] + anPts[942]
+    slPts[943] = slPts[943] + anPts[943]
+    slPC[304] = slPC[304] + anCol[304]
+    slPC[305] = slPC[305] + anCol[305]
+    slPC[306] = slPC[306] + anCol[306]
+    slPC[307] = slPC[307] + anCol[307]
+    slPC[308] = slPC[308] + anCol[308]
+    slPC[309] = slPC[309] + anCol[309]
+    slPC[310] = slPC[310] + anCol[310]
+    slPC[311] = slPC[311] + anCol[311]
+    slPC[312] = slPC[312] + anCol[312]
+    slPC[313] = slPC[313] + anCol[313]
+    slPC[314] = slPC[314] + anCol[314]
+    slPC[315] = slPC[315] + anCol[315]
+    slPC[316] = slPC[316] + anCol[316]
+    slPC[317] = slPC[317] + anCol[317]
+    slPC[318] = slPC[318] + anCol[318]
+    slPC[319] = slPC[319] + anCol[319]
+    slXF[114] = slXF[114] + anXF[114]
+    slXF[115] = slXF[115] + anXF[115]
+    slXF[116] = slXF[116] + anXF[116]
+    slXF[117] = slXF[117] + anXF[117]
+    slXF[118] = slXF[118] + anXF[118]
+    slXF2[76] = slXF2[76] + anXF2[76]
+    slXF2[77] = slXF2[77] + anXF2[77]
+    slXF2[78] = slXF2[78] + anXF2[78]
+    slXF2[79] = slXF2[79] + anXF2[79]
+  }
+  if (anTicks[20.0] > 0.5 || anTicks[20.0] < -0.5) && rcFell {
+    if anTicks[20.0] > 0.5 { anTicks[20.0] = anTicks[20.0] - 1.0 }
+    animDirty = true
+    slPts[960] = slPts[960] + anPts[960]
+    slPts[961] = slPts[961] + anPts[961]
+    slPts[962] = slPts[962] + anPts[962]
+    slPts[963] = slPts[963] + anPts[963]
+    slPts[964] = slPts[964] + anPts[964]
+    slPts[965] = slPts[965] + anPts[965]
+    slPts[966] = slPts[966] + anPts[966]
+    slPts[967] = slPts[967] + anPts[967]
+    slPts[968] = slPts[968] + anPts[968]
+    slPts[969] = slPts[969] + anPts[969]
+    slPts[970] = slPts[970] + anPts[970]
+    slPts[971] = slPts[971] + anPts[971]
+    slPts[972] = slPts[972] + anPts[972]
+    slPts[973] = slPts[973] + anPts[973]
+    slPts[974] = slPts[974] + anPts[974]
+    slPts[975] = slPts[975] + anPts[975]
+    slPts[976] = slPts[976] + anPts[976]
+    slPts[977] = slPts[977] + anPts[977]
+    slPts[978] = slPts[978] + anPts[978]
+    slPts[979] = slPts[979] + anPts[979]
+    slPts[980] = slPts[980] + anPts[980]
+    slPts[981] = slPts[981] + anPts[981]
+    slPts[982] = slPts[982] + anPts[982]
+    slPts[983] = slPts[983] + anPts[983]
+    slPts[984] = slPts[984] + anPts[984]
+    slPts[985] = slPts[985] + anPts[985]
+    slPts[986] = slPts[986] + anPts[986]
+    slPts[987] = slPts[987] + anPts[987]
+    slPts[988] = slPts[988] + anPts[988]
+    slPts[989] = slPts[989] + anPts[989]
+    slPts[990] = slPts[990] + anPts[990]
+    slPts[991] = slPts[991] + anPts[991]
+    slPC[320] = slPC[320] + anCol[320]
+    slPC[321] = slPC[321] + anCol[321]
+    slPC[322] = slPC[322] + anCol[322]
+    slPC[323] = slPC[323] + anCol[323]
+    slPC[324] = slPC[324] + anCol[324]
+    slPC[325] = slPC[325] + anCol[325]
+    slPC[326] = slPC[326] + anCol[326]
+    slPC[327] = slPC[327] + anCol[327]
+    slPC[328] = slPC[328] + anCol[328]
+    slPC[329] = slPC[329] + anCol[329]
+    slPC[330] = slPC[330] + anCol[330]
+    slPC[331] = slPC[331] + anCol[331]
+    slPC[332] = slPC[332] + anCol[332]
+    slPC[333] = slPC[333] + anCol[333]
+    slPC[334] = slPC[334] + anCol[334]
+    slPC[335] = slPC[335] + anCol[335]
+    slXF[120] = slXF[120] + anXF[120]
+    slXF[121] = slXF[121] + anXF[121]
+    slXF[122] = slXF[122] + anXF[122]
+    slXF[123] = slXF[123] + anXF[123]
+    slXF[124] = slXF[124] + anXF[124]
+    slXF2[80] = slXF2[80] + anXF2[80]
+    slXF2[81] = slXF2[81] + anXF2[81]
+    slXF2[82] = slXF2[82] + anXF2[82]
+    slXF2[83] = slXF2[83] + anXF2[83]
+  }
+  if (anTicks[21.0] > 0.5 || anTicks[21.0] < -0.5) && rcFell {
+    if anTicks[21.0] > 0.5 { anTicks[21.0] = anTicks[21.0] - 1.0 }
+    animDirty = true
+    slPts[1008] = slPts[1008] + anPts[1008]
+    slPts[1009] = slPts[1009] + anPts[1009]
+    slPts[1010] = slPts[1010] + anPts[1010]
+    slPts[1011] = slPts[1011] + anPts[1011]
+    slPts[1012] = slPts[1012] + anPts[1012]
+    slPts[1013] = slPts[1013] + anPts[1013]
+    slPts[1014] = slPts[1014] + anPts[1014]
+    slPts[1015] = slPts[1015] + anPts[1015]
+    slPts[1016] = slPts[1016] + anPts[1016]
+    slPts[1017] = slPts[1017] + anPts[1017]
+    slPts[1018] = slPts[1018] + anPts[1018]
+    slPts[1019] = slPts[1019] + anPts[1019]
+    slPts[1020] = slPts[1020] + anPts[1020]
+    slPts[1021] = slPts[1021] + anPts[1021]
+    slPts[1022] = slPts[1022] + anPts[1022]
+    slPts[1023] = slPts[1023] + anPts[1023]
+    slPts[1024] = slPts[1024] + anPts[1024]
+    slPts[1025] = slPts[1025] + anPts[1025]
+    slPts[1026] = slPts[1026] + anPts[1026]
+    slPts[1027] = slPts[1027] + anPts[1027]
+    slPts[1028] = slPts[1028] + anPts[1028]
+    slPts[1029] = slPts[1029] + anPts[1029]
+    slPts[1030] = slPts[1030] + anPts[1030]
+    slPts[1031] = slPts[1031] + anPts[1031]
+    slPts[1032] = slPts[1032] + anPts[1032]
+    slPts[1033] = slPts[1033] + anPts[1033]
+    slPts[1034] = slPts[1034] + anPts[1034]
+    slPts[1035] = slPts[1035] + anPts[1035]
+    slPts[1036] = slPts[1036] + anPts[1036]
+    slPts[1037] = slPts[1037] + anPts[1037]
+    slPts[1038] = slPts[1038] + anPts[1038]
+    slPts[1039] = slPts[1039] + anPts[1039]
+    slPC[336] = slPC[336] + anCol[336]
+    slPC[337] = slPC[337] + anCol[337]
+    slPC[338] = slPC[338] + anCol[338]
+    slPC[339] = slPC[339] + anCol[339]
+    slPC[340] = slPC[340] + anCol[340]
+    slPC[341] = slPC[341] + anCol[341]
+    slPC[342] = slPC[342] + anCol[342]
+    slPC[343] = slPC[343] + anCol[343]
+    slPC[344] = slPC[344] + anCol[344]
+    slPC[345] = slPC[345] + anCol[345]
+    slPC[346] = slPC[346] + anCol[346]
+    slPC[347] = slPC[347] + anCol[347]
+    slPC[348] = slPC[348] + anCol[348]
+    slPC[349] = slPC[349] + anCol[349]
+    slPC[350] = slPC[350] + anCol[350]
+    slPC[351] = slPC[351] + anCol[351]
+    slXF[126] = slXF[126] + anXF[126]
+    slXF[127] = slXF[127] + anXF[127]
+    slXF[128] = slXF[128] + anXF[128]
+    slXF[129] = slXF[129] + anXF[129]
+    slXF[130] = slXF[130] + anXF[130]
+    slXF2[84] = slXF2[84] + anXF2[84]
+    slXF2[85] = slXF2[85] + anXF2[85]
+    slXF2[86] = slXF2[86] + anXF2[86]
+    slXF2[87] = slXF2[87] + anXF2[87]
+  }
+  if (anTicks[22.0] > 0.5 || anTicks[22.0] < -0.5) && rcFell {
+    if anTicks[22.0] > 0.5 { anTicks[22.0] = anTicks[22.0] - 1.0 }
+    animDirty = true
+    slPts[1056] = slPts[1056] + anPts[1056]
+    slPts[1057] = slPts[1057] + anPts[1057]
+    slPts[1058] = slPts[1058] + anPts[1058]
+    slPts[1059] = slPts[1059] + anPts[1059]
+    slPts[1060] = slPts[1060] + anPts[1060]
+    slPts[1061] = slPts[1061] + anPts[1061]
+    slPts[1062] = slPts[1062] + anPts[1062]
+    slPts[1063] = slPts[1063] + anPts[1063]
+    slPts[1064] = slPts[1064] + anPts[1064]
+    slPts[1065] = slPts[1065] + anPts[1065]
+    slPts[1066] = slPts[1066] + anPts[1066]
+    slPts[1067] = slPts[1067] + anPts[1067]
+    slPts[1068] = slPts[1068] + anPts[1068]
+    slPts[1069] = slPts[1069] + anPts[1069]
+    slPts[1070] = slPts[1070] + anPts[1070]
+    slPts[1071] = slPts[1071] + anPts[1071]
+    slPts[1072] = slPts[1072] + anPts[1072]
+    slPts[1073] = slPts[1073] + anPts[1073]
+    slPts[1074] = slPts[1074] + anPts[1074]
+    slPts[1075] = slPts[1075] + anPts[1075]
+    slPts[1076] = slPts[1076] + anPts[1076]
+    slPts[1077] = slPts[1077] + anPts[1077]
+    slPts[1078] = slPts[1078] + anPts[1078]
+    slPts[1079] = slPts[1079] + anPts[1079]
+    slPts[1080] = slPts[1080] + anPts[1080]
+    slPts[1081] = slPts[1081] + anPts[1081]
+    slPts[1082] = slPts[1082] + anPts[1082]
+    slPts[1083] = slPts[1083] + anPts[1083]
+    slPts[1084] = slPts[1084] + anPts[1084]
+    slPts[1085] = slPts[1085] + anPts[1085]
+    slPts[1086] = slPts[1086] + anPts[1086]
+    slPts[1087] = slPts[1087] + anPts[1087]
+    slPC[352] = slPC[352] + anCol[352]
+    slPC[353] = slPC[353] + anCol[353]
+    slPC[354] = slPC[354] + anCol[354]
+    slPC[355] = slPC[355] + anCol[355]
+    slPC[356] = slPC[356] + anCol[356]
+    slPC[357] = slPC[357] + anCol[357]
+    slPC[358] = slPC[358] + anCol[358]
+    slPC[359] = slPC[359] + anCol[359]
+    slPC[360] = slPC[360] + anCol[360]
+    slPC[361] = slPC[361] + anCol[361]
+    slPC[362] = slPC[362] + anCol[362]
+    slPC[363] = slPC[363] + anCol[363]
+    slPC[364] = slPC[364] + anCol[364]
+    slPC[365] = slPC[365] + anCol[365]
+    slPC[366] = slPC[366] + anCol[366]
+    slPC[367] = slPC[367] + anCol[367]
+    slXF[132] = slXF[132] + anXF[132]
+    slXF[133] = slXF[133] + anXF[133]
+    slXF[134] = slXF[134] + anXF[134]
+    slXF[135] = slXF[135] + anXF[135]
+    slXF[136] = slXF[136] + anXF[136]
+    slXF2[88] = slXF2[88] + anXF2[88]
+    slXF2[89] = slXF2[89] + anXF2[89]
+    slXF2[90] = slXF2[90] + anXF2[90]
+    slXF2[91] = slXF2[91] + anXF2[91]
+  }
+  if (anTicks[23.0] > 0.5 || anTicks[23.0] < -0.5) && rcFell {
+    if anTicks[23.0] > 0.5 { anTicks[23.0] = anTicks[23.0] - 1.0 }
+    animDirty = true
+    slPts[1104] = slPts[1104] + anPts[1104]
+    slPts[1105] = slPts[1105] + anPts[1105]
+    slPts[1106] = slPts[1106] + anPts[1106]
+    slPts[1107] = slPts[1107] + anPts[1107]
+    slPts[1108] = slPts[1108] + anPts[1108]
+    slPts[1109] = slPts[1109] + anPts[1109]
+    slPts[1110] = slPts[1110] + anPts[1110]
+    slPts[1111] = slPts[1111] + anPts[1111]
+    slPts[1112] = slPts[1112] + anPts[1112]
+    slPts[1113] = slPts[1113] + anPts[1113]
+    slPts[1114] = slPts[1114] + anPts[1114]
+    slPts[1115] = slPts[1115] + anPts[1115]
+    slPts[1116] = slPts[1116] + anPts[1116]
+    slPts[1117] = slPts[1117] + anPts[1117]
+    slPts[1118] = slPts[1118] + anPts[1118]
+    slPts[1119] = slPts[1119] + anPts[1119]
+    slPts[1120] = slPts[1120] + anPts[1120]
+    slPts[1121] = slPts[1121] + anPts[1121]
+    slPts[1122] = slPts[1122] + anPts[1122]
+    slPts[1123] = slPts[1123] + anPts[1123]
+    slPts[1124] = slPts[1124] + anPts[1124]
+    slPts[1125] = slPts[1125] + anPts[1125]
+    slPts[1126] = slPts[1126] + anPts[1126]
+    slPts[1127] = slPts[1127] + anPts[1127]
+    slPts[1128] = slPts[1128] + anPts[1128]
+    slPts[1129] = slPts[1129] + anPts[1129]
+    slPts[1130] = slPts[1130] + anPts[1130]
+    slPts[1131] = slPts[1131] + anPts[1131]
+    slPts[1132] = slPts[1132] + anPts[1132]
+    slPts[1133] = slPts[1133] + anPts[1133]
+    slPts[1134] = slPts[1134] + anPts[1134]
+    slPts[1135] = slPts[1135] + anPts[1135]
+    slPC[368] = slPC[368] + anCol[368]
+    slPC[369] = slPC[369] + anCol[369]
+    slPC[370] = slPC[370] + anCol[370]
+    slPC[371] = slPC[371] + anCol[371]
+    slPC[372] = slPC[372] + anCol[372]
+    slPC[373] = slPC[373] + anCol[373]
+    slPC[374] = slPC[374] + anCol[374]
+    slPC[375] = slPC[375] + anCol[375]
+    slPC[376] = slPC[376] + anCol[376]
+    slPC[377] = slPC[377] + anCol[377]
+    slPC[378] = slPC[378] + anCol[378]
+    slPC[379] = slPC[379] + anCol[379]
+    slPC[380] = slPC[380] + anCol[380]
+    slPC[381] = slPC[381] + anCol[381]
+    slPC[382] = slPC[382] + anCol[382]
+    slPC[383] = slPC[383] + anCol[383]
+    slXF[138] = slXF[138] + anXF[138]
+    slXF[139] = slXF[139] + anXF[139]
+    slXF[140] = slXF[140] + anXF[140]
+    slXF[141] = slXF[141] + anXF[141]
+    slXF[142] = slXF[142] + anXF[142]
+    slXF2[92] = slXF2[92] + anXF2[92]
+    slXF2[93] = slXF2[93] + anXF2[93]
+    slXF2[94] = slXF2[94] + anXF2[94]
+    slXF2[95] = slXF2[95] + anXF2[95]
+  }
+  if (anTicks[24.0] > 0.5 || anTicks[24.0] < -0.5) && rcFell {
+    if anTicks[24.0] > 0.5 { anTicks[24.0] = anTicks[24.0] - 1.0 }
+    animDirty = true
+    slPts[1152] = slPts[1152] + anPts[1152]
+    slPts[1153] = slPts[1153] + anPts[1153]
+    slPts[1154] = slPts[1154] + anPts[1154]
+    slPts[1155] = slPts[1155] + anPts[1155]
+    slPts[1156] = slPts[1156] + anPts[1156]
+    slPts[1157] = slPts[1157] + anPts[1157]
+    slPts[1158] = slPts[1158] + anPts[1158]
+    slPts[1159] = slPts[1159] + anPts[1159]
+    slPts[1160] = slPts[1160] + anPts[1160]
+    slPts[1161] = slPts[1161] + anPts[1161]
+    slPts[1162] = slPts[1162] + anPts[1162]
+    slPts[1163] = slPts[1163] + anPts[1163]
+    slPts[1164] = slPts[1164] + anPts[1164]
+    slPts[1165] = slPts[1165] + anPts[1165]
+    slPts[1166] = slPts[1166] + anPts[1166]
+    slPts[1167] = slPts[1167] + anPts[1167]
+    slPts[1168] = slPts[1168] + anPts[1168]
+    slPts[1169] = slPts[1169] + anPts[1169]
+    slPts[1170] = slPts[1170] + anPts[1170]
+    slPts[1171] = slPts[1171] + anPts[1171]
+    slPts[1172] = slPts[1172] + anPts[1172]
+    slPts[1173] = slPts[1173] + anPts[1173]
+    slPts[1174] = slPts[1174] + anPts[1174]
+    slPts[1175] = slPts[1175] + anPts[1175]
+    slPts[1176] = slPts[1176] + anPts[1176]
+    slPts[1177] = slPts[1177] + anPts[1177]
+    slPts[1178] = slPts[1178] + anPts[1178]
+    slPts[1179] = slPts[1179] + anPts[1179]
+    slPts[1180] = slPts[1180] + anPts[1180]
+    slPts[1181] = slPts[1181] + anPts[1181]
+    slPts[1182] = slPts[1182] + anPts[1182]
+    slPts[1183] = slPts[1183] + anPts[1183]
+    slPC[384] = slPC[384] + anCol[384]
+    slPC[385] = slPC[385] + anCol[385]
+    slPC[386] = slPC[386] + anCol[386]
+    slPC[387] = slPC[387] + anCol[387]
+    slPC[388] = slPC[388] + anCol[388]
+    slPC[389] = slPC[389] + anCol[389]
+    slPC[390] = slPC[390] + anCol[390]
+    slPC[391] = slPC[391] + anCol[391]
+    slPC[392] = slPC[392] + anCol[392]
+    slPC[393] = slPC[393] + anCol[393]
+    slPC[394] = slPC[394] + anCol[394]
+    slPC[395] = slPC[395] + anCol[395]
+    slPC[396] = slPC[396] + anCol[396]
+    slPC[397] = slPC[397] + anCol[397]
+    slPC[398] = slPC[398] + anCol[398]
+    slPC[399] = slPC[399] + anCol[399]
+    slXF[144] = slXF[144] + anXF[144]
+    slXF[145] = slXF[145] + anXF[145]
+    slXF[146] = slXF[146] + anXF[146]
+    slXF[147] = slXF[147] + anXF[147]
+    slXF[148] = slXF[148] + anXF[148]
+    slXF2[96] = slXF2[96] + anXF2[96]
+    slXF2[97] = slXF2[97] + anXF2[97]
+    slXF2[98] = slXF2[98] + anXF2[98]
+    slXF2[99] = slXF2[99] + anXF2[99]
+  }
+  if (anTicks[25.0] > 0.5 || anTicks[25.0] < -0.5) && rcFell {
+    if anTicks[25.0] > 0.5 { anTicks[25.0] = anTicks[25.0] - 1.0 }
+    animDirty = true
+    slPts[1200] = slPts[1200] + anPts[1200]
+    slPts[1201] = slPts[1201] + anPts[1201]
+    slPts[1202] = slPts[1202] + anPts[1202]
+    slPts[1203] = slPts[1203] + anPts[1203]
+    slPts[1204] = slPts[1204] + anPts[1204]
+    slPts[1205] = slPts[1205] + anPts[1205]
+    slPts[1206] = slPts[1206] + anPts[1206]
+    slPts[1207] = slPts[1207] + anPts[1207]
+    slPts[1208] = slPts[1208] + anPts[1208]
+    slPts[1209] = slPts[1209] + anPts[1209]
+    slPts[1210] = slPts[1210] + anPts[1210]
+    slPts[1211] = slPts[1211] + anPts[1211]
+    slPts[1212] = slPts[1212] + anPts[1212]
+    slPts[1213] = slPts[1213] + anPts[1213]
+    slPts[1214] = slPts[1214] + anPts[1214]
+    slPts[1215] = slPts[1215] + anPts[1215]
+    slPts[1216] = slPts[1216] + anPts[1216]
+    slPts[1217] = slPts[1217] + anPts[1217]
+    slPts[1218] = slPts[1218] + anPts[1218]
+    slPts[1219] = slPts[1219] + anPts[1219]
+    slPts[1220] = slPts[1220] + anPts[1220]
+    slPts[1221] = slPts[1221] + anPts[1221]
+    slPts[1222] = slPts[1222] + anPts[1222]
+    slPts[1223] = slPts[1223] + anPts[1223]
+    slPts[1224] = slPts[1224] + anPts[1224]
+    slPts[1225] = slPts[1225] + anPts[1225]
+    slPts[1226] = slPts[1226] + anPts[1226]
+    slPts[1227] = slPts[1227] + anPts[1227]
+    slPts[1228] = slPts[1228] + anPts[1228]
+    slPts[1229] = slPts[1229] + anPts[1229]
+    slPts[1230] = slPts[1230] + anPts[1230]
+    slPts[1231] = slPts[1231] + anPts[1231]
+    slPC[400] = slPC[400] + anCol[400]
+    slPC[401] = slPC[401] + anCol[401]
+    slPC[402] = slPC[402] + anCol[402]
+    slPC[403] = slPC[403] + anCol[403]
+    slPC[404] = slPC[404] + anCol[404]
+    slPC[405] = slPC[405] + anCol[405]
+    slPC[406] = slPC[406] + anCol[406]
+    slPC[407] = slPC[407] + anCol[407]
+    slPC[408] = slPC[408] + anCol[408]
+    slPC[409] = slPC[409] + anCol[409]
+    slPC[410] = slPC[410] + anCol[410]
+    slPC[411] = slPC[411] + anCol[411]
+    slPC[412] = slPC[412] + anCol[412]
+    slPC[413] = slPC[413] + anCol[413]
+    slPC[414] = slPC[414] + anCol[414]
+    slPC[415] = slPC[415] + anCol[415]
+    slXF[150] = slXF[150] + anXF[150]
+    slXF[151] = slXF[151] + anXF[151]
+    slXF[152] = slXF[152] + anXF[152]
+    slXF[153] = slXF[153] + anXF[153]
+    slXF[154] = slXF[154] + anXF[154]
+    slXF2[100] = slXF2[100] + anXF2[100]
+    slXF2[101] = slXF2[101] + anXF2[101]
+    slXF2[102] = slXF2[102] + anXF2[102]
+    slXF2[103] = slXF2[103] + anXF2[103]
+  }
+  if (anTicks[26.0] > 0.5 || anTicks[26.0] < -0.5) && rcFell {
+    if anTicks[26.0] > 0.5 { anTicks[26.0] = anTicks[26.0] - 1.0 }
+    animDirty = true
+    slPts[1248] = slPts[1248] + anPts[1248]
+    slPts[1249] = slPts[1249] + anPts[1249]
+    slPts[1250] = slPts[1250] + anPts[1250]
+    slPts[1251] = slPts[1251] + anPts[1251]
+    slPts[1252] = slPts[1252] + anPts[1252]
+    slPts[1253] = slPts[1253] + anPts[1253]
+    slPts[1254] = slPts[1254] + anPts[1254]
+    slPts[1255] = slPts[1255] + anPts[1255]
+    slPts[1256] = slPts[1256] + anPts[1256]
+    slPts[1257] = slPts[1257] + anPts[1257]
+    slPts[1258] = slPts[1258] + anPts[1258]
+    slPts[1259] = slPts[1259] + anPts[1259]
+    slPts[1260] = slPts[1260] + anPts[1260]
+    slPts[1261] = slPts[1261] + anPts[1261]
+    slPts[1262] = slPts[1262] + anPts[1262]
+    slPts[1263] = slPts[1263] + anPts[1263]
+    slPts[1264] = slPts[1264] + anPts[1264]
+    slPts[1265] = slPts[1265] + anPts[1265]
+    slPts[1266] = slPts[1266] + anPts[1266]
+    slPts[1267] = slPts[1267] + anPts[1267]
+    slPts[1268] = slPts[1268] + anPts[1268]
+    slPts[1269] = slPts[1269] + anPts[1269]
+    slPts[1270] = slPts[1270] + anPts[1270]
+    slPts[1271] = slPts[1271] + anPts[1271]
+    slPts[1272] = slPts[1272] + anPts[1272]
+    slPts[1273] = slPts[1273] + anPts[1273]
+    slPts[1274] = slPts[1274] + anPts[1274]
+    slPts[1275] = slPts[1275] + anPts[1275]
+    slPts[1276] = slPts[1276] + anPts[1276]
+    slPts[1277] = slPts[1277] + anPts[1277]
+    slPts[1278] = slPts[1278] + anPts[1278]
+    slPts[1279] = slPts[1279] + anPts[1279]
+    slPC[416] = slPC[416] + anCol[416]
+    slPC[417] = slPC[417] + anCol[417]
+    slPC[418] = slPC[418] + anCol[418]
+    slPC[419] = slPC[419] + anCol[419]
+    slPC[420] = slPC[420] + anCol[420]
+    slPC[421] = slPC[421] + anCol[421]
+    slPC[422] = slPC[422] + anCol[422]
+    slPC[423] = slPC[423] + anCol[423]
+    slPC[424] = slPC[424] + anCol[424]
+    slPC[425] = slPC[425] + anCol[425]
+    slPC[426] = slPC[426] + anCol[426]
+    slPC[427] = slPC[427] + anCol[427]
+    slPC[428] = slPC[428] + anCol[428]
+    slPC[429] = slPC[429] + anCol[429]
+    slPC[430] = slPC[430] + anCol[430]
+    slPC[431] = slPC[431] + anCol[431]
+    slXF[156] = slXF[156] + anXF[156]
+    slXF[157] = slXF[157] + anXF[157]
+    slXF[158] = slXF[158] + anXF[158]
+    slXF[159] = slXF[159] + anXF[159]
+    slXF[160] = slXF[160] + anXF[160]
+    slXF2[104] = slXF2[104] + anXF2[104]
+    slXF2[105] = slXF2[105] + anXF2[105]
+    slXF2[106] = slXF2[106] + anXF2[106]
+    slXF2[107] = slXF2[107] + anXF2[107]
+  }
+  if (anTicks[27.0] > 0.5 || anTicks[27.0] < -0.5) && rcFell {
+    if anTicks[27.0] > 0.5 { anTicks[27.0] = anTicks[27.0] - 1.0 }
+    animDirty = true
+    slPts[1296] = slPts[1296] + anPts[1296]
+    slPts[1297] = slPts[1297] + anPts[1297]
+    slPts[1298] = slPts[1298] + anPts[1298]
+    slPts[1299] = slPts[1299] + anPts[1299]
+    slPts[1300] = slPts[1300] + anPts[1300]
+    slPts[1301] = slPts[1301] + anPts[1301]
+    slPts[1302] = slPts[1302] + anPts[1302]
+    slPts[1303] = slPts[1303] + anPts[1303]
+    slPts[1304] = slPts[1304] + anPts[1304]
+    slPts[1305] = slPts[1305] + anPts[1305]
+    slPts[1306] = slPts[1306] + anPts[1306]
+    slPts[1307] = slPts[1307] + anPts[1307]
+    slPts[1308] = slPts[1308] + anPts[1308]
+    slPts[1309] = slPts[1309] + anPts[1309]
+    slPts[1310] = slPts[1310] + anPts[1310]
+    slPts[1311] = slPts[1311] + anPts[1311]
+    slPts[1312] = slPts[1312] + anPts[1312]
+    slPts[1313] = slPts[1313] + anPts[1313]
+    slPts[1314] = slPts[1314] + anPts[1314]
+    slPts[1315] = slPts[1315] + anPts[1315]
+    slPts[1316] = slPts[1316] + anPts[1316]
+    slPts[1317] = slPts[1317] + anPts[1317]
+    slPts[1318] = slPts[1318] + anPts[1318]
+    slPts[1319] = slPts[1319] + anPts[1319]
+    slPts[1320] = slPts[1320] + anPts[1320]
+    slPts[1321] = slPts[1321] + anPts[1321]
+    slPts[1322] = slPts[1322] + anPts[1322]
+    slPts[1323] = slPts[1323] + anPts[1323]
+    slPts[1324] = slPts[1324] + anPts[1324]
+    slPts[1325] = slPts[1325] + anPts[1325]
+    slPts[1326] = slPts[1326] + anPts[1326]
+    slPts[1327] = slPts[1327] + anPts[1327]
+    slPC[432] = slPC[432] + anCol[432]
+    slPC[433] = slPC[433] + anCol[433]
+    slPC[434] = slPC[434] + anCol[434]
+    slPC[435] = slPC[435] + anCol[435]
+    slPC[436] = slPC[436] + anCol[436]
+    slPC[437] = slPC[437] + anCol[437]
+    slPC[438] = slPC[438] + anCol[438]
+    slPC[439] = slPC[439] + anCol[439]
+    slPC[440] = slPC[440] + anCol[440]
+    slPC[441] = slPC[441] + anCol[441]
+    slPC[442] = slPC[442] + anCol[442]
+    slPC[443] = slPC[443] + anCol[443]
+    slPC[444] = slPC[444] + anCol[444]
+    slPC[445] = slPC[445] + anCol[445]
+    slPC[446] = slPC[446] + anCol[446]
+    slPC[447] = slPC[447] + anCol[447]
+    slXF[162] = slXF[162] + anXF[162]
+    slXF[163] = slXF[163] + anXF[163]
+    slXF[164] = slXF[164] + anXF[164]
+    slXF[165] = slXF[165] + anXF[165]
+    slXF[166] = slXF[166] + anXF[166]
+    slXF2[108] = slXF2[108] + anXF2[108]
+    slXF2[109] = slXF2[109] + anXF2[109]
+    slXF2[110] = slXF2[110] + anXF2[110]
+    slXF2[111] = slXF2[111] + anXF2[111]
+  }
+  if (anTicks[28.0] > 0.5 || anTicks[28.0] < -0.5) && rcFell {
+    if anTicks[28.0] > 0.5 { anTicks[28.0] = anTicks[28.0] - 1.0 }
+    animDirty = true
+    slPts[1344] = slPts[1344] + anPts[1344]
+    slPts[1345] = slPts[1345] + anPts[1345]
+    slPts[1346] = slPts[1346] + anPts[1346]
+    slPts[1347] = slPts[1347] + anPts[1347]
+    slPts[1348] = slPts[1348] + anPts[1348]
+    slPts[1349] = slPts[1349] + anPts[1349]
+    slPts[1350] = slPts[1350] + anPts[1350]
+    slPts[1351] = slPts[1351] + anPts[1351]
+    slPts[1352] = slPts[1352] + anPts[1352]
+    slPts[1353] = slPts[1353] + anPts[1353]
+    slPts[1354] = slPts[1354] + anPts[1354]
+    slPts[1355] = slPts[1355] + anPts[1355]
+    slPts[1356] = slPts[1356] + anPts[1356]
+    slPts[1357] = slPts[1357] + anPts[1357]
+    slPts[1358] = slPts[1358] + anPts[1358]
+    slPts[1359] = slPts[1359] + anPts[1359]
+    slPts[1360] = slPts[1360] + anPts[1360]
+    slPts[1361] = slPts[1361] + anPts[1361]
+    slPts[1362] = slPts[1362] + anPts[1362]
+    slPts[1363] = slPts[1363] + anPts[1363]
+    slPts[1364] = slPts[1364] + anPts[1364]
+    slPts[1365] = slPts[1365] + anPts[1365]
+    slPts[1366] = slPts[1366] + anPts[1366]
+    slPts[1367] = slPts[1367] + anPts[1367]
+    slPts[1368] = slPts[1368] + anPts[1368]
+    slPts[1369] = slPts[1369] + anPts[1369]
+    slPts[1370] = slPts[1370] + anPts[1370]
+    slPts[1371] = slPts[1371] + anPts[1371]
+    slPts[1372] = slPts[1372] + anPts[1372]
+    slPts[1373] = slPts[1373] + anPts[1373]
+    slPts[1374] = slPts[1374] + anPts[1374]
+    slPts[1375] = slPts[1375] + anPts[1375]
+    slPC[448] = slPC[448] + anCol[448]
+    slPC[449] = slPC[449] + anCol[449]
+    slPC[450] = slPC[450] + anCol[450]
+    slPC[451] = slPC[451] + anCol[451]
+    slPC[452] = slPC[452] + anCol[452]
+    slPC[453] = slPC[453] + anCol[453]
+    slPC[454] = slPC[454] + anCol[454]
+    slPC[455] = slPC[455] + anCol[455]
+    slPC[456] = slPC[456] + anCol[456]
+    slPC[457] = slPC[457] + anCol[457]
+    slPC[458] = slPC[458] + anCol[458]
+    slPC[459] = slPC[459] + anCol[459]
+    slPC[460] = slPC[460] + anCol[460]
+    slPC[461] = slPC[461] + anCol[461]
+    slPC[462] = slPC[462] + anCol[462]
+    slPC[463] = slPC[463] + anCol[463]
+    slXF[168] = slXF[168] + anXF[168]
+    slXF[169] = slXF[169] + anXF[169]
+    slXF[170] = slXF[170] + anXF[170]
+    slXF[171] = slXF[171] + anXF[171]
+    slXF[172] = slXF[172] + anXF[172]
+    slXF2[112] = slXF2[112] + anXF2[112]
+    slXF2[113] = slXF2[113] + anXF2[113]
+    slXF2[114] = slXF2[114] + anXF2[114]
+    slXF2[115] = slXF2[115] + anXF2[115]
+  }
+  if (anTicks[29.0] > 0.5 || anTicks[29.0] < -0.5) && rcFell {
+    if anTicks[29.0] > 0.5 { anTicks[29.0] = anTicks[29.0] - 1.0 }
+    animDirty = true
+    slPts[1392] = slPts[1392] + anPts[1392]
+    slPts[1393] = slPts[1393] + anPts[1393]
+    slPts[1394] = slPts[1394] + anPts[1394]
+    slPts[1395] = slPts[1395] + anPts[1395]
+    slPts[1396] = slPts[1396] + anPts[1396]
+    slPts[1397] = slPts[1397] + anPts[1397]
+    slPts[1398] = slPts[1398] + anPts[1398]
+    slPts[1399] = slPts[1399] + anPts[1399]
+    slPts[1400] = slPts[1400] + anPts[1400]
+    slPts[1401] = slPts[1401] + anPts[1401]
+    slPts[1402] = slPts[1402] + anPts[1402]
+    slPts[1403] = slPts[1403] + anPts[1403]
+    slPts[1404] = slPts[1404] + anPts[1404]
+    slPts[1405] = slPts[1405] + anPts[1405]
+    slPts[1406] = slPts[1406] + anPts[1406]
+    slPts[1407] = slPts[1407] + anPts[1407]
+    slPts[1408] = slPts[1408] + anPts[1408]
+    slPts[1409] = slPts[1409] + anPts[1409]
+    slPts[1410] = slPts[1410] + anPts[1410]
+    slPts[1411] = slPts[1411] + anPts[1411]
+    slPts[1412] = slPts[1412] + anPts[1412]
+    slPts[1413] = slPts[1413] + anPts[1413]
+    slPts[1414] = slPts[1414] + anPts[1414]
+    slPts[1415] = slPts[1415] + anPts[1415]
+    slPts[1416] = slPts[1416] + anPts[1416]
+    slPts[1417] = slPts[1417] + anPts[1417]
+    slPts[1418] = slPts[1418] + anPts[1418]
+    slPts[1419] = slPts[1419] + anPts[1419]
+    slPts[1420] = slPts[1420] + anPts[1420]
+    slPts[1421] = slPts[1421] + anPts[1421]
+    slPts[1422] = slPts[1422] + anPts[1422]
+    slPts[1423] = slPts[1423] + anPts[1423]
+    slPC[464] = slPC[464] + anCol[464]
+    slPC[465] = slPC[465] + anCol[465]
+    slPC[466] = slPC[466] + anCol[466]
+    slPC[467] = slPC[467] + anCol[467]
+    slPC[468] = slPC[468] + anCol[468]
+    slPC[469] = slPC[469] + anCol[469]
+    slPC[470] = slPC[470] + anCol[470]
+    slPC[471] = slPC[471] + anCol[471]
+    slPC[472] = slPC[472] + anCol[472]
+    slPC[473] = slPC[473] + anCol[473]
+    slPC[474] = slPC[474] + anCol[474]
+    slPC[475] = slPC[475] + anCol[475]
+    slPC[476] = slPC[476] + anCol[476]
+    slPC[477] = slPC[477] + anCol[477]
+    slPC[478] = slPC[478] + anCol[478]
+    slPC[479] = slPC[479] + anCol[479]
+    slXF[174] = slXF[174] + anXF[174]
+    slXF[175] = slXF[175] + anXF[175]
+    slXF[176] = slXF[176] + anXF[176]
+    slXF[177] = slXF[177] + anXF[177]
+    slXF[178] = slXF[178] + anXF[178]
+    slXF2[116] = slXF2[116] + anXF2[116]
+    slXF2[117] = slXF2[117] + anXF2[117]
+    slXF2[118] = slXF2[118] + anXF2[118]
+    slXF2[119] = slXF2[119] + anXF2[119]
+  }
+  if (anTicks[30.0] > 0.5 || anTicks[30.0] < -0.5) && rcFell {
+    if anTicks[30.0] > 0.5 { anTicks[30.0] = anTicks[30.0] - 1.0 }
+    animDirty = true
+    slPts[1440] = slPts[1440] + anPts[1440]
+    slPts[1441] = slPts[1441] + anPts[1441]
+    slPts[1442] = slPts[1442] + anPts[1442]
+    slPts[1443] = slPts[1443] + anPts[1443]
+    slPts[1444] = slPts[1444] + anPts[1444]
+    slPts[1445] = slPts[1445] + anPts[1445]
+    slPts[1446] = slPts[1446] + anPts[1446]
+    slPts[1447] = slPts[1447] + anPts[1447]
+    slPts[1448] = slPts[1448] + anPts[1448]
+    slPts[1449] = slPts[1449] + anPts[1449]
+    slPts[1450] = slPts[1450] + anPts[1450]
+    slPts[1451] = slPts[1451] + anPts[1451]
+    slPts[1452] = slPts[1452] + anPts[1452]
+    slPts[1453] = slPts[1453] + anPts[1453]
+    slPts[1454] = slPts[1454] + anPts[1454]
+    slPts[1455] = slPts[1455] + anPts[1455]
+    slPts[1456] = slPts[1456] + anPts[1456]
+    slPts[1457] = slPts[1457] + anPts[1457]
+    slPts[1458] = slPts[1458] + anPts[1458]
+    slPts[1459] = slPts[1459] + anPts[1459]
+    slPts[1460] = slPts[1460] + anPts[1460]
+    slPts[1461] = slPts[1461] + anPts[1461]
+    slPts[1462] = slPts[1462] + anPts[1462]
+    slPts[1463] = slPts[1463] + anPts[1463]
+    slPts[1464] = slPts[1464] + anPts[1464]
+    slPts[1465] = slPts[1465] + anPts[1465]
+    slPts[1466] = slPts[1466] + anPts[1466]
+    slPts[1467] = slPts[1467] + anPts[1467]
+    slPts[1468] = slPts[1468] + anPts[1468]
+    slPts[1469] = slPts[1469] + anPts[1469]
+    slPts[1470] = slPts[1470] + anPts[1470]
+    slPts[1471] = slPts[1471] + anPts[1471]
+    slPC[480] = slPC[480] + anCol[480]
+    slPC[481] = slPC[481] + anCol[481]
+    slPC[482] = slPC[482] + anCol[482]
+    slPC[483] = slPC[483] + anCol[483]
+    slPC[484] = slPC[484] + anCol[484]
+    slPC[485] = slPC[485] + anCol[485]
+    slPC[486] = slPC[486] + anCol[486]
+    slPC[487] = slPC[487] + anCol[487]
+    slPC[488] = slPC[488] + anCol[488]
+    slPC[489] = slPC[489] + anCol[489]
+    slPC[490] = slPC[490] + anCol[490]
+    slPC[491] = slPC[491] + anCol[491]
+    slPC[492] = slPC[492] + anCol[492]
+    slPC[493] = slPC[493] + anCol[493]
+    slPC[494] = slPC[494] + anCol[494]
+    slPC[495] = slPC[495] + anCol[495]
+    slXF[180] = slXF[180] + anXF[180]
+    slXF[181] = slXF[181] + anXF[181]
+    slXF[182] = slXF[182] + anXF[182]
+    slXF[183] = slXF[183] + anXF[183]
+    slXF[184] = slXF[184] + anXF[184]
+    slXF2[120] = slXF2[120] + anXF2[120]
+    slXF2[121] = slXF2[121] + anXF2[121]
+    slXF2[122] = slXF2[122] + anXF2[122]
+    slXF2[123] = slXF2[123] + anXF2[123]
+  }
+  if (anTicks[31.0] > 0.5 || anTicks[31.0] < -0.5) && rcFell {
+    if anTicks[31.0] > 0.5 { anTicks[31.0] = anTicks[31.0] - 1.0 }
+    animDirty = true
+    slPts[1488] = slPts[1488] + anPts[1488]
+    slPts[1489] = slPts[1489] + anPts[1489]
+    slPts[1490] = slPts[1490] + anPts[1490]
+    slPts[1491] = slPts[1491] + anPts[1491]
+    slPts[1492] = slPts[1492] + anPts[1492]
+    slPts[1493] = slPts[1493] + anPts[1493]
+    slPts[1494] = slPts[1494] + anPts[1494]
+    slPts[1495] = slPts[1495] + anPts[1495]
+    slPts[1496] = slPts[1496] + anPts[1496]
+    slPts[1497] = slPts[1497] + anPts[1497]
+    slPts[1498] = slPts[1498] + anPts[1498]
+    slPts[1499] = slPts[1499] + anPts[1499]
+    slPts[1500] = slPts[1500] + anPts[1500]
+    slPts[1501] = slPts[1501] + anPts[1501]
+    slPts[1502] = slPts[1502] + anPts[1502]
+    slPts[1503] = slPts[1503] + anPts[1503]
+    slPts[1504] = slPts[1504] + anPts[1504]
+    slPts[1505] = slPts[1505] + anPts[1505]
+    slPts[1506] = slPts[1506] + anPts[1506]
+    slPts[1507] = slPts[1507] + anPts[1507]
+    slPts[1508] = slPts[1508] + anPts[1508]
+    slPts[1509] = slPts[1509] + anPts[1509]
+    slPts[1510] = slPts[1510] + anPts[1510]
+    slPts[1511] = slPts[1511] + anPts[1511]
+    slPts[1512] = slPts[1512] + anPts[1512]
+    slPts[1513] = slPts[1513] + anPts[1513]
+    slPts[1514] = slPts[1514] + anPts[1514]
+    slPts[1515] = slPts[1515] + anPts[1515]
+    slPts[1516] = slPts[1516] + anPts[1516]
+    slPts[1517] = slPts[1517] + anPts[1517]
+    slPts[1518] = slPts[1518] + anPts[1518]
+    slPts[1519] = slPts[1519] + anPts[1519]
+    slPC[496] = slPC[496] + anCol[496]
+    slPC[497] = slPC[497] + anCol[497]
+    slPC[498] = slPC[498] + anCol[498]
+    slPC[499] = slPC[499] + anCol[499]
+    slPC[500] = slPC[500] + anCol[500]
+    slPC[501] = slPC[501] + anCol[501]
+    slPC[502] = slPC[502] + anCol[502]
+    slPC[503] = slPC[503] + anCol[503]
+    slPC[504] = slPC[504] + anCol[504]
+    slPC[505] = slPC[505] + anCol[505]
+    slPC[506] = slPC[506] + anCol[506]
+    slPC[507] = slPC[507] + anCol[507]
+    slPC[508] = slPC[508] + anCol[508]
+    slPC[509] = slPC[509] + anCol[509]
+    slPC[510] = slPC[510] + anCol[510]
+    slPC[511] = slPC[511] + anCol[511]
+    slXF[186] = slXF[186] + anXF[186]
+    slXF[187] = slXF[187] + anXF[187]
+    slXF[188] = slXF[188] + anXF[188]
+    slXF[189] = slXF[189] + anXF[189]
+    slXF[190] = slXF[190] + anXF[190]
+    slXF2[124] = slXF2[124] + anXF2[124]
+    slXF2[125] = slXF2[125] + anXF2[125]
+    slXF2[126] = slXF2[126] + anXF2[126]
+    slXF2[127] = slXF2[127] + anXF2[127]
+  }
+  if (anTicks[32.0] > 0.5 || anTicks[32.0] < -0.5) && rcFell {
+    if anTicks[32.0] > 0.5 { anTicks[32.0] = anTicks[32.0] - 1.0 }
+    animDirty = true
+    slPts[1536] = slPts[1536] + anPts[1536]
+    slPts[1537] = slPts[1537] + anPts[1537]
+    slPts[1538] = slPts[1538] + anPts[1538]
+    slPts[1539] = slPts[1539] + anPts[1539]
+    slPts[1540] = slPts[1540] + anPts[1540]
+    slPts[1541] = slPts[1541] + anPts[1541]
+    slPts[1542] = slPts[1542] + anPts[1542]
+    slPts[1543] = slPts[1543] + anPts[1543]
+    slPts[1544] = slPts[1544] + anPts[1544]
+    slPts[1545] = slPts[1545] + anPts[1545]
+    slPts[1546] = slPts[1546] + anPts[1546]
+    slPts[1547] = slPts[1547] + anPts[1547]
+    slPts[1548] = slPts[1548] + anPts[1548]
+    slPts[1549] = slPts[1549] + anPts[1549]
+    slPts[1550] = slPts[1550] + anPts[1550]
+    slPts[1551] = slPts[1551] + anPts[1551]
+    slPts[1552] = slPts[1552] + anPts[1552]
+    slPts[1553] = slPts[1553] + anPts[1553]
+    slPts[1554] = slPts[1554] + anPts[1554]
+    slPts[1555] = slPts[1555] + anPts[1555]
+    slPts[1556] = slPts[1556] + anPts[1556]
+    slPts[1557] = slPts[1557] + anPts[1557]
+    slPts[1558] = slPts[1558] + anPts[1558]
+    slPts[1559] = slPts[1559] + anPts[1559]
+    slPts[1560] = slPts[1560] + anPts[1560]
+    slPts[1561] = slPts[1561] + anPts[1561]
+    slPts[1562] = slPts[1562] + anPts[1562]
+    slPts[1563] = slPts[1563] + anPts[1563]
+    slPts[1564] = slPts[1564] + anPts[1564]
+    slPts[1565] = slPts[1565] + anPts[1565]
+    slPts[1566] = slPts[1566] + anPts[1566]
+    slPts[1567] = slPts[1567] + anPts[1567]
+    slPC[512] = slPC[512] + anCol[512]
+    slPC[513] = slPC[513] + anCol[513]
+    slPC[514] = slPC[514] + anCol[514]
+    slPC[515] = slPC[515] + anCol[515]
+    slPC[516] = slPC[516] + anCol[516]
+    slPC[517] = slPC[517] + anCol[517]
+    slPC[518] = slPC[518] + anCol[518]
+    slPC[519] = slPC[519] + anCol[519]
+    slPC[520] = slPC[520] + anCol[520]
+    slPC[521] = slPC[521] + anCol[521]
+    slPC[522] = slPC[522] + anCol[522]
+    slPC[523] = slPC[523] + anCol[523]
+    slPC[524] = slPC[524] + anCol[524]
+    slPC[525] = slPC[525] + anCol[525]
+    slPC[526] = slPC[526] + anCol[526]
+    slPC[527] = slPC[527] + anCol[527]
+    slXF[192] = slXF[192] + anXF[192]
+    slXF[193] = slXF[193] + anXF[193]
+    slXF[194] = slXF[194] + anXF[194]
+    slXF[195] = slXF[195] + anXF[195]
+    slXF[196] = slXF[196] + anXF[196]
+    slXF2[128] = slXF2[128] + anXF2[128]
+    slXF2[129] = slXF2[129] + anXF2[129]
+    slXF2[130] = slXF2[130] + anXF2[130]
+    slXF2[131] = slXF2[131] + anXF2[131]
+  }
+  if (anTicks[33.0] > 0.5 || anTicks[33.0] < -0.5) && rcFell {
+    if anTicks[33.0] > 0.5 { anTicks[33.0] = anTicks[33.0] - 1.0 }
+    animDirty = true
+    camDirty = true
+    slPts[1584] = slPts[1584] + anPts[1584]
+    slPts[1585] = slPts[1585] + anPts[1585]
+    slPts[1586] = slPts[1586] + anPts[1586]
+    slPts[1587] = slPts[1587] + anPts[1587]
+    slPts[1588] = slPts[1588] + anPts[1588]
+    slPts[1589] = slPts[1589] + anPts[1589]
+    slPts[1590] = slPts[1590] + anPts[1590]
+    slPts[1591] = slPts[1591] + anPts[1591]
+    slPts[1592] = slPts[1592] + anPts[1592]
+    slPts[1593] = slPts[1593] + anPts[1593]
+    slPts[1594] = slPts[1594] + anPts[1594]
+    slPts[1595] = slPts[1595] + anPts[1595]
+    slPts[1596] = slPts[1596] + anPts[1596]
+    slPts[1597] = slPts[1597] + anPts[1597]
+    slPts[1598] = slPts[1598] + anPts[1598]
+    slPts[1599] = slPts[1599] + anPts[1599]
+    slPts[1600] = slPts[1600] + anPts[1600]
+    slPts[1601] = slPts[1601] + anPts[1601]
+    slPts[1602] = slPts[1602] + anPts[1602]
+    slPts[1603] = slPts[1603] + anPts[1603]
+    slPts[1604] = slPts[1604] + anPts[1604]
+    slPts[1605] = slPts[1605] + anPts[1605]
+    slPts[1606] = slPts[1606] + anPts[1606]
+    slPts[1607] = slPts[1607] + anPts[1607]
+    slPts[1608] = slPts[1608] + anPts[1608]
+    slPts[1609] = slPts[1609] + anPts[1609]
+    slPts[1610] = slPts[1610] + anPts[1610]
+    slPts[1611] = slPts[1611] + anPts[1611]
+    slPts[1612] = slPts[1612] + anPts[1612]
+    slPts[1613] = slPts[1613] + anPts[1613]
+    slPts[1614] = slPts[1614] + anPts[1614]
+    slPts[1615] = slPts[1615] + anPts[1615]
+    slPC[528] = slPC[528] + anCol[528]
+    slPC[529] = slPC[529] + anCol[529]
+    slPC[530] = slPC[530] + anCol[530]
+    slPC[531] = slPC[531] + anCol[531]
+    slPC[532] = slPC[532] + anCol[532]
+    slPC[533] = slPC[533] + anCol[533]
+    slPC[534] = slPC[534] + anCol[534]
+    slPC[535] = slPC[535] + anCol[535]
+    slPC[536] = slPC[536] + anCol[536]
+    slPC[537] = slPC[537] + anCol[537]
+    slPC[538] = slPC[538] + anCol[538]
+    slPC[539] = slPC[539] + anCol[539]
+    slPC[540] = slPC[540] + anCol[540]
+    slPC[541] = slPC[541] + anCol[541]
+    slPC[542] = slPC[542] + anCol[542]
+    slPC[543] = slPC[543] + anCol[543]
+    slXF[198] = slXF[198] + anXF[198]
+    slXF[199] = slXF[199] + anXF[199]
+    slXF[200] = slXF[200] + anXF[200]
+    slXF[201] = slXF[201] + anXF[201]
+    slXF[202] = slXF[202] + anXF[202]
+    slXF2[132] = slXF2[132] + anXF2[132]
+    slXF2[133] = slXF2[133] + anXF2[133]
+    slXF2[134] = slXF2[134] + anXF2[134]
+    slXF2[135] = slXF2[135] + anXF2[135]
+  }
   if animDirty {
     if !rcOn && !polyOn && !sOn && !arming && !armingS {
     if !erasing && !wasPaint && !pending && !commitR {
@@ -10145,13 +11786,14 @@ mod paintTick() {
   }
   if commitQ {
     commitQ = false
-    slLive[8] = 0.0
+    slLive[32] = 0.0
+    camDirty = true
     needRC = false
     needRC = false
     for qe in 0..8 {
       if qe < qCount {
         let ne = qN[qe]
-        let nslot = if qId[qe] < 0.5 then 8.0 else qId[qe] - 1.0
+        let nslot = if qId[qe] < 0.0 then 33.0 else if qId[qe] < 1.0 then 32.0 else (qId[qe] | 0)
         let nsb = nslot * 48.0
         let ncb = nslot * 16.0
         let nxb = nslot * 6.0
@@ -10840,10 +12482,11 @@ mod paintTick() {
   }
   if commitR {
     commitR = false
-    slLive[8] = 0.0
+    slLive[32] = 0.0
+    camDirty = true
     n = (shapePoints.length() / 3.0) | 0
       if n > 16.0 { n = 16.0 }
-    let slot = (pId - 1.0) | 0
+    let slot = if pId < 0.0 then 33.0 else if pId < 1.0 then 32.0 else (pId | 0)
     let sbase = slot * 48.0
     let cbase = slot * 16.0
     let xbase = slot * 6.0
@@ -11486,8 +13129,72 @@ mod paintTick() {
       }
     }
   }
+
+  if camDirty {
+    camDirty = false
+    if slLive[33] > 0.5 {
+      let cpx = slXF[198 + 0.0]
+      let cpy = slXF[198 + 1.0]
+      let crz = slXF[198 + 2.0]
+      let csx = slXF[198 + 3.0]
+      let csy = slXF[198 + 4.0]
+      let cpz = slXF2[132 + 0.0]
+      let crx = slXF2[132 + 1.0]
+      let cry = slXF2[132 + 2.0]
+      let csz = slXF2[132 + 3.0]
+      let ccx = cos(crx)
+      let csx2 = sin(crx)
+      let ccy = cos(cry)
+      let csy2 = sin(cry)
+      let ccz = cos(crz)
+      let csz2 = sin(crz)
+      let cr00 = ccz * ccy
+      let cr01 = ccz * csy2 * csx2 - csz2 * ccx
+      let cr02 = ccz * csy2 * ccx + csz2 * csx2
+      let cr10 = csz2 * ccy
+      let cr11 = csz2 * csy2 * csx2 + ccz * ccx
+      let cr12 = csz2 * csy2 * ccx - ccz * csx2
+      let cr20 = 0.0 - csy2
+      let cr21 = ccy * csx2
+      let cr22 = ccy * ccx
+      let cq00 = cr00 * csx
+      let cq01 = cr01 * csy
+      let cq02 = cr02 * csz
+      let cq10 = cr10 * csx
+      let cq11 = cr11 * csy
+      let cq12 = cr12 * csz
+      let cq20 = cr20 * csx
+      let cq21 = cr21 * csy
+      let cq22 = cr22 * csz
+      camM00 = cq00
+      camM01 = cq01
+      camM02 = cq02
+      camM03 = cpx
+      camM10 = cq10
+      camM11 = cq11
+      camM12 = cq12
+      camM13 = cpy
+      camM20 = cq20
+      camM21 = cq21
+      camM22 = cq22
+      camM23 = cpz
+    } else {
+      camM00 = 1.0
+      camM01 = 0.0
+      camM02 = 0.0
+      camM03 = 0.0
+      camM10 = 0.0
+      camM11 = 1.0
+      camM12 = 0.0
+      camM13 = 0.0
+      camM20 = 0.0
+      camM21 = 0.0
+      camM22 = 1.0
+      camM23 = 0.0
+    }
+  }
   if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR && (!erasing || !erDone) {
-    if rcSlot > 9.0 {
+    if rcSlot > 33.0 {
       rcOn = false
       if brightRC {
         brightRC = false
@@ -11904,11 +13611,84 @@ mod paintTick() {
         bPL = plast
         bSEGS = sSegs
       }
-      // first live slot at/after li, else 8 = pass done: dead
-      // slots cost one scan, never a tick (sequential writes,
-      // descending, so the lowest live slot wins).
+      // first live slot at/after li, else the sentinel = pass done:
+      // dead slots cost one scan, never a tick (sequential writes,
+      // descending, so the lowest live slot wins).  The camera
+      // channel is not scanned: it paints nothing, it is the view.
       let li = (rcSlot - 1.0) | 0
-      ff = 9.0
+      ff = 33.0
+      if slLive[32] > 0.5 && li <= 32.0 {
+        ff = 32.0
+      }
+      if slLive[31] > 0.5 && li <= 31.0 {
+        ff = 31.0
+      }
+      if slLive[30] > 0.5 && li <= 30.0 {
+        ff = 30.0
+      }
+      if slLive[29] > 0.5 && li <= 29.0 {
+        ff = 29.0
+      }
+      if slLive[28] > 0.5 && li <= 28.0 {
+        ff = 28.0
+      }
+      if slLive[27] > 0.5 && li <= 27.0 {
+        ff = 27.0
+      }
+      if slLive[26] > 0.5 && li <= 26.0 {
+        ff = 26.0
+      }
+      if slLive[25] > 0.5 && li <= 25.0 {
+        ff = 25.0
+      }
+      if slLive[24] > 0.5 && li <= 24.0 {
+        ff = 24.0
+      }
+      if slLive[23] > 0.5 && li <= 23.0 {
+        ff = 23.0
+      }
+      if slLive[22] > 0.5 && li <= 22.0 {
+        ff = 22.0
+      }
+      if slLive[21] > 0.5 && li <= 21.0 {
+        ff = 21.0
+      }
+      if slLive[20] > 0.5 && li <= 20.0 {
+        ff = 20.0
+      }
+      if slLive[19] > 0.5 && li <= 19.0 {
+        ff = 19.0
+      }
+      if slLive[18] > 0.5 && li <= 18.0 {
+        ff = 18.0
+      }
+      if slLive[17] > 0.5 && li <= 17.0 {
+        ff = 17.0
+      }
+      if slLive[16] > 0.5 && li <= 16.0 {
+        ff = 16.0
+      }
+      if slLive[15] > 0.5 && li <= 15.0 {
+        ff = 15.0
+      }
+      if slLive[14] > 0.5 && li <= 14.0 {
+        ff = 14.0
+      }
+      if slLive[13] > 0.5 && li <= 13.0 {
+        ff = 13.0
+      }
+      if slLive[12] > 0.5 && li <= 12.0 {
+        ff = 12.0
+      }
+      if slLive[11] > 0.5 && li <= 11.0 {
+        ff = 11.0
+      }
+      if slLive[10] > 0.5 && li <= 10.0 {
+        ff = 10.0
+      }
+      if slLive[9] > 0.5 && li <= 9.0 {
+        ff = 9.0
+      }
       if slLive[8] > 0.5 && li <= 8.0 {
         ff = 8.0
       }
@@ -11936,8 +13716,8 @@ mod paintTick() {
       if slLive[0] > 0.5 && li <= 0.0 {
         ff = 0.0
       }
-      if ff > 8.0 {
-        rcSlot = 10.0
+      if ff > 32.0 {
+        rcSlot = 34.0
       } else {
         shPts[0] = slPts[ff * 48 + 0.0]
         shPts[1] = slPts[ff * 48 + 1.0]
@@ -12109,7 +13889,7 @@ mod paintTick() {
       tilt3d = if pRot.x == 0.0 && pRot.y == 0.0 then 0.0 else 1.0
       cur = pParent
       if cur >= 1.0 {
-        let pli = (cur - 1.0) | 0
+        let pli = cur | 0
         if slLive[pli] > 0.5 {
           let ppx = slXF[pli * 6 + 0.0]
           let ppy = slXF[pli * 6 + 1.0]
@@ -12142,7 +13922,7 @@ mod paintTick() {
         cur = 0.0
       }
       if cur >= 1.0 {
-        let pli = (cur - 1.0) | 0
+        let pli = cur | 0
         if slLive[pli] > 0.5 {
           let ppx = slXF[pli * 6 + 0.0]
           let ppy = slXF[pli * 6 + 1.0]
@@ -12175,7 +13955,7 @@ mod paintTick() {
         cur = 0.0
       }
       if cur >= 1.0 {
-        let pli = (cur - 1.0) | 0
+        let pli = cur | 0
         if slLive[pli] > 0.5 {
           let ppx = slXF[pli * 6 + 0.0]
           let ppy = slXF[pli * 6 + 1.0]
@@ -12208,7 +13988,7 @@ mod paintTick() {
         cur = 0.0
       }
       if cur >= 1.0 {
-        let pli = (cur - 1.0) | 0
+        let pli = cur | 0
         if slLive[pli] > 0.5 {
           let ppx = slXF[pli * 6 + 0.0]
           let ppy = slXF[pli * 6 + 1.0]
@@ -12241,7 +14021,7 @@ mod paintTick() {
         cur = 0.0
       }
       if cur >= 1.0 {
-        let pli = (cur - 1.0) | 0
+        let pli = cur | 0
         if slLive[pli] > 0.5 {
           let ppx = slXF[pli * 6 + 0.0]
           let ppy = slXF[pli * 6 + 1.0]
@@ -12274,7 +14054,7 @@ mod paintTick() {
         cur = 0.0
       }
       if cur >= 1.0 {
-        let pli = (cur - 1.0) | 0
+        let pli = cur | 0
         if slLive[pli] > 0.5 {
           let ppx = slXF[pli * 6 + 0.0]
           let ppy = slXF[pli * 6 + 1.0]
@@ -12307,7 +14087,7 @@ mod paintTick() {
         cur = 0.0
       }
       if cur >= 1.0 {
-        let pli = (cur - 1.0) | 0
+        let pli = cur | 0
         if slLive[pli] > 0.5 {
           let ppx = slXF[pli * 6 + 0.0]
           let ppy = slXF[pli * 6 + 1.0]
@@ -12340,7 +14120,271 @@ mod paintTick() {
         cur = 0.0
       }
       if cur >= 1.0 {
-        let pli = (cur - 1.0) | 0
+        let pli = cur | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wpz = psz * wpz + ppz
+          wsx = psx * wsx
+          wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = cur | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wpz = psz * wpz + ppz
+          wsx = psx * wsx
+          wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = cur | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wpz = psz * wpz + ppz
+          wsx = psx * wsx
+          wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = cur | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wpz = psz * wpz + ppz
+          wsx = psx * wsx
+          wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = cur | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wpz = psz * wpz + ppz
+          wsx = psx * wsx
+          wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = cur | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wpz = psz * wpz + ppz
+          wsx = psx * wsx
+          wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = cur | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wpz = psz * wpz + ppz
+          wsx = psx * wsx
+          wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = cur | 0
+        if slLive[pli] > 0.5 {
+          let ppx = slXF[pli * 6 + 0.0]
+          let ppy = slXF[pli * 6 + 1.0]
+          let pra = slXF[pli * 6 + 2.0]
+          let psx = slXF[pli * 6 + 3.0]
+          let psy = slXF[pli * 6 + 4.0]
+          let ppar = slXF[pli * 6 + 5.0]
+          let ppz = slXF2[pli * 4 + 0.0]
+          let prx = slXF2[pli * 4 + 1.0]
+          let pry = slXF2[pli * 4 + 2.0]
+          let psz = slXF2[pli * 4 + 3.0]
+          let cosp = cos(pra)
+          let sinp = sin(pra)
+          wr = pra + wr
+          swx = wpx
+          swy = wpy
+          let nwx = ppx + ((psx * swx) * cosp) - ((psy * swy) * sinp)
+          let nwy = ppy + ((psx * swx) * sinp) + ((psy * swy) * cosp)
+          wpx = nwx
+          wpy = nwy
+          wpz = psz * wpz + ppz
+          wsx = psx * wsx
+          wsy = psy * wsy
+          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }
+          cur = ppar
+        } else {
+          cur = 0.0
+        }
+      } else {
+        cur = 0.0
+      }
+      if cur >= 1.0 {
+        let pli = cur | 0
         if slLive[pli] > 0.5 {
           let ppx = slXF[pli * 6 + 0.0]
           let ppy = slXF[pli * 6 + 1.0]
@@ -12408,9 +14452,10 @@ mod paintTick() {
         m21 = mm21
         m22 = mm22
         m23 = pPos.z
+        camAttach = 0.0
         cur = pParent
         if cur >= 1.0 {
-          let qli = (cur - 1.0) | 0
+          let qli = cur | 0
           if slLive[qli] > 0.5 {
             s00 = m00
             s01 = m01
@@ -12486,10 +14531,11 @@ mod paintTick() {
             cur = 0.0
           }
         } else {
+          if cur < 0.0 { camAttach = 1.0 }
           cur = 0.0
         }
         if cur >= 1.0 {
-          let qli = (cur - 1.0) | 0
+          let qli = cur | 0
           if slLive[qli] > 0.5 {
             s00 = m00
             s01 = m01
@@ -12565,10 +14611,11 @@ mod paintTick() {
             cur = 0.0
           }
         } else {
+          if cur < 0.0 { camAttach = 1.0 }
           cur = 0.0
         }
         if cur >= 1.0 {
-          let qli = (cur - 1.0) | 0
+          let qli = cur | 0
           if slLive[qli] > 0.5 {
             s00 = m00
             s01 = m01
@@ -12644,10 +14691,11 @@ mod paintTick() {
             cur = 0.0
           }
         } else {
+          if cur < 0.0 { camAttach = 1.0 }
           cur = 0.0
         }
         if cur >= 1.0 {
-          let qli = (cur - 1.0) | 0
+          let qli = cur | 0
           if slLive[qli] > 0.5 {
             s00 = m00
             s01 = m01
@@ -12723,10 +14771,11 @@ mod paintTick() {
             cur = 0.0
           }
         } else {
+          if cur < 0.0 { camAttach = 1.0 }
           cur = 0.0
         }
         if cur >= 1.0 {
-          let qli = (cur - 1.0) | 0
+          let qli = cur | 0
           if slLive[qli] > 0.5 {
             s00 = m00
             s01 = m01
@@ -12802,10 +14851,11 @@ mod paintTick() {
             cur = 0.0
           }
         } else {
+          if cur < 0.0 { camAttach = 1.0 }
           cur = 0.0
         }
         if cur >= 1.0 {
-          let qli = (cur - 1.0) | 0
+          let qli = cur | 0
           if slLive[qli] > 0.5 {
             s00 = m00
             s01 = m01
@@ -12881,10 +14931,11 @@ mod paintTick() {
             cur = 0.0
           }
         } else {
+          if cur < 0.0 { camAttach = 1.0 }
           cur = 0.0
         }
         if cur >= 1.0 {
-          let qli = (cur - 1.0) | 0
+          let qli = cur | 0
           if slLive[qli] > 0.5 {
             s00 = m00
             s01 = m01
@@ -12960,10 +15011,11 @@ mod paintTick() {
             cur = 0.0
           }
         } else {
+          if cur < 0.0 { camAttach = 1.0 }
           cur = 0.0
         }
         if cur >= 1.0 {
-          let qli = (cur - 1.0) | 0
+          let qli = cur | 0
           if slLive[qli] > 0.5 {
             s00 = m00
             s01 = m01
@@ -13039,7 +15091,686 @@ mod paintTick() {
             cur = 0.0
           }
         } else {
+          if cur < 0.0 { camAttach = 1.0 }
           cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = cur | 0
+          if slLive[qli] > 0.5 {
+            s00 = m00
+            s01 = m01
+            s02 = m02
+            s03 = m03
+            s10 = m10
+            s11 = m11
+            s12 = m12
+            s13 = m13
+            s20 = m20
+            s21 = m21
+            s22 = m22
+            s23 = m23
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20
+            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21
+            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22
+            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx
+            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20
+            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21
+            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22
+            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy
+            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20
+            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21
+            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22
+            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          if cur < 0.0 { camAttach = 1.0 }
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = cur | 0
+          if slLive[qli] > 0.5 {
+            s00 = m00
+            s01 = m01
+            s02 = m02
+            s03 = m03
+            s10 = m10
+            s11 = m11
+            s12 = m12
+            s13 = m13
+            s20 = m20
+            s21 = m21
+            s22 = m22
+            s23 = m23
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20
+            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21
+            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22
+            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx
+            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20
+            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21
+            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22
+            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy
+            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20
+            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21
+            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22
+            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          if cur < 0.0 { camAttach = 1.0 }
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = cur | 0
+          if slLive[qli] > 0.5 {
+            s00 = m00
+            s01 = m01
+            s02 = m02
+            s03 = m03
+            s10 = m10
+            s11 = m11
+            s12 = m12
+            s13 = m13
+            s20 = m20
+            s21 = m21
+            s22 = m22
+            s23 = m23
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20
+            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21
+            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22
+            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx
+            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20
+            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21
+            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22
+            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy
+            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20
+            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21
+            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22
+            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          if cur < 0.0 { camAttach = 1.0 }
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = cur | 0
+          if slLive[qli] > 0.5 {
+            s00 = m00
+            s01 = m01
+            s02 = m02
+            s03 = m03
+            s10 = m10
+            s11 = m11
+            s12 = m12
+            s13 = m13
+            s20 = m20
+            s21 = m21
+            s22 = m22
+            s23 = m23
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20
+            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21
+            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22
+            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx
+            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20
+            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21
+            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22
+            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy
+            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20
+            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21
+            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22
+            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          if cur < 0.0 { camAttach = 1.0 }
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = cur | 0
+          if slLive[qli] > 0.5 {
+            s00 = m00
+            s01 = m01
+            s02 = m02
+            s03 = m03
+            s10 = m10
+            s11 = m11
+            s12 = m12
+            s13 = m13
+            s20 = m20
+            s21 = m21
+            s22 = m22
+            s23 = m23
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20
+            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21
+            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22
+            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx
+            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20
+            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21
+            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22
+            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy
+            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20
+            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21
+            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22
+            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          if cur < 0.0 { camAttach = 1.0 }
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = cur | 0
+          if slLive[qli] > 0.5 {
+            s00 = m00
+            s01 = m01
+            s02 = m02
+            s03 = m03
+            s10 = m10
+            s11 = m11
+            s12 = m12
+            s13 = m13
+            s20 = m20
+            s21 = m21
+            s22 = m22
+            s23 = m23
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20
+            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21
+            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22
+            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx
+            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20
+            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21
+            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22
+            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy
+            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20
+            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21
+            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22
+            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          if cur < 0.0 { camAttach = 1.0 }
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = cur | 0
+          if slLive[qli] > 0.5 {
+            s00 = m00
+            s01 = m01
+            s02 = m02
+            s03 = m03
+            s10 = m10
+            s11 = m11
+            s12 = m12
+            s13 = m13
+            s20 = m20
+            s21 = m21
+            s22 = m22
+            s23 = m23
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20
+            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21
+            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22
+            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx
+            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20
+            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21
+            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22
+            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy
+            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20
+            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21
+            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22
+            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          if cur < 0.0 { camAttach = 1.0 }
+          cur = 0.0
+        }
+        if cur >= 1.0 {
+          let qli = cur | 0
+          if slLive[qli] > 0.5 {
+            s00 = m00
+            s01 = m01
+            s02 = m02
+            s03 = m03
+            s10 = m10
+            s11 = m11
+            s12 = m12
+            s13 = m13
+            s20 = m20
+            s21 = m21
+            s22 = m22
+            s23 = m23
+            let qpx = slXF[qli * 6 + 0.0]
+            let qpy = slXF[qli * 6 + 1.0]
+            let qrz = slXF[qli * 6 + 2.0]
+            let qsx = slXF[qli * 6 + 3.0]
+            let qsy = slXF[qli * 6 + 4.0]
+            let qqz = slXF2[qli * 4 + 0.0]
+            let qrx = slXF2[qli * 4 + 1.0]
+            let qry = slXF2[qli * 4 + 2.0]
+            let qsz = slXF2[qli * 4 + 3.0]
+            let qcx = cos(qrx)
+            let qsx2 = sin(qrx)
+            let qcy = cos(qry)
+            let qsy2 = sin(qry)
+            let qcz = cos(qrz)
+            let qsz2 = sin(qrz)
+            let qr00 = qcz * qcy
+            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx
+            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2
+            let qr10 = qsz2 * qcy
+            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx
+            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2
+            let qr20 = 0.0 - qsy2
+            let qr21 = qcy * qsx2
+            let qr22 = qcy * qcx
+            let qp00 = qr00 * qsx
+            let qp01 = qr01 * qsy
+            let qp02 = qr02 * qsz
+            let qp10 = qr10 * qsx
+            let qp11 = qr11 * qsy
+            let qp12 = qr12 * qsz
+            let qp20 = qr20 * qsx
+            let qp21 = qr21 * qsy
+            let qp22 = qr22 * qsz
+            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20
+            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21
+            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22
+            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx
+            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20
+            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21
+            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22
+            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy
+            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20
+            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21
+            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22
+            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz
+            m00 = n00
+            m01 = n01
+            m02 = n02
+            m03 = n03
+            m10 = n10
+            m11 = n11
+            m12 = n12
+            m13 = n13
+            m20 = n20
+            m21 = n21
+            m22 = n22
+            m23 = n23
+            cur = slXF[qli * 6 + 5.0]
+          } else {
+            cur = 0.0
+          }
+        } else {
+          if cur < 0.0 { camAttach = 1.0 }
+          cur = 0.0
+        }
+        if slLive[33] > 0.5 && camAttach < 0.5 {
+          s00 = m00
+          s01 = m01
+          s02 = m02
+          s03 = m03
+          s10 = m10
+          s11 = m11
+          s12 = m12
+          s13 = m13
+          s20 = m20
+          s21 = m21
+          s22 = m22
+          s23 = m23
+          let vc00 = camM00 * s00 + camM01 * s10 + camM02 * s20
+          let vc01 = camM00 * s01 + camM01 * s11 + camM02 * s21
+          let vc02 = camM00 * s02 + camM01 * s12 + camM02 * s22
+          let vc03 = camM00 * s03 + camM01 * s13 + camM02 * s23 + camM03
+          let vc10 = camM10 * s00 + camM11 * s10 + camM12 * s20
+          let vc11 = camM10 * s01 + camM11 * s11 + camM12 * s21
+          let vc12 = camM10 * s02 + camM11 * s12 + camM12 * s22
+          let vc13 = camM10 * s03 + camM11 * s13 + camM12 * s23 + camM13
+          let vc20 = camM20 * s00 + camM21 * s10 + camM22 * s20
+          let vc21 = camM20 * s01 + camM21 * s11 + camM22 * s21
+          let vc22 = camM20 * s02 + camM21 * s12 + camM22 * s22
+          let vc23 = camM20 * s03 + camM21 * s13 + camM22 * s23 + camM23
+          m00 = vc00
+          m01 = vc01
+          m02 = vc02
+          m03 = vc03
+          m10 = vc10
+          m11 = vc11
+          m12 = vc12
+          m13 = vc13
+          m20 = vc20
+          m21 = vc21
+          m22 = vc22
+          m23 = vc23
         }
           let ux0 = shPts[0]
           let uy0 = shPts[1]
