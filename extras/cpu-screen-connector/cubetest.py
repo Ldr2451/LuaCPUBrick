@@ -74,6 +74,13 @@ BODY = os.path.join(HERE, "sample-programs", BODY_NAME)
 # their game pacing.  A repaint settles in ~20..160 ticks, so nap(2) is
 # enough headroom in replay.
 CUBE_NAP = os.environ.get("CUBE_NAP")
+# CUBE_SAMPLE=<ticks> picks GIF frames on a fixed cadence instead of at
+# settle moments.  A paced program (real naps between pushes) has no quiet
+# stretch to key on -- the next push lands while the chip is still arming,
+# so the settle test never sees it idle and a GIF would get three frames.
+# A cadence longer than the settle wait (428 ticks) lands every sample on a
+# whole picture.
+CUBE_SAMPLE = int(os.environ.get("CUBE_SAMPLE") or 0)
 
 
 def pace(src):
@@ -614,7 +621,11 @@ def main():
                 undim(tuple(float(x) for x in
                             s.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                 for i in range(SW * SW)) if gids else None
-            if MAKE_SAVE and SAVE:
+            if CUBE_SAMPLE and tick % CUBE_SAMPLE == 0 and len(snaps) < 60:
+                # CUBE_SAMPLE: the paced-program frame picker (see the env
+                # knob); every sample lands on a settled wall.
+                snaps[len(snaps)] = wall()
+            elif MAKE_SAVE and SAVE:
                 # rcOn falling is NOT the settled moment: the iterator
                 # finishes LOADING the slots, then the fill walk paints
                 # over the following ticks, so capturing there caught a
