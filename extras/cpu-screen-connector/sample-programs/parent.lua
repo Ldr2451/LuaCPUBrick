@@ -97,20 +97,13 @@ while step < 3 do
   step = step + 1
 end
 
--- Unlink the disc.  With no parent its own transform must carry the pose it
--- had, so its points go out already in world space -- the same place the
--- pivot was putting them.
-local tx = pose[1] + 2 * 6.0
-local world = {}
-k = 0
-while k < 12 do
-  world[k * 3 + 1] = tx + disc[k * 3 + 1] * pose[4]
-  world[k * 3 + 2] = pose[2] + disc[k * 3 + 2] * pose[5]
-  world[k * 3 + 3] = disc[k * 3 + 3] * pose[6]
-  k = k + 1
-end
+-- Unlink the disc.  With no parent its own transform must carry the pose the
+-- pivot was giving it, so the same xf goes out with parent "0" while the
+-- points stay local: the disc keeps its exact pixels, tilt and all.
+local xf = {pose[1] + 2 * 6.0, pose[2], pose[3], pose[4], pose[5], pose[6],
+            pose[7], pose[8], pose[9]}
 setWire(0)
-editShape("8", world, dcol, nil, "0")
+editShape("8", disc, dcol, xf, "0")
 nap(460.0)
 
 -- Move the pivot again: the cylinder slides, the disc stays.
