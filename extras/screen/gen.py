@@ -543,6 +543,17 @@ L.append("var erY: float = 0.0")
 # 1 = the rect extends one pixel right, 0 = one pixel left
 L.append("var erExt: float = 1.0")
 L.append("var erArm: bool = false")
+# Whether the current frame retired its predecessor up front.  A retained
+# commit erases the previous frame's band BEFORE painting the composite, so
+# the shapes land on a clean band and cannot be held back by the depth
+# buffer's stale pixels.  The erase pass that normally runs after a paint is
+# then unnecessary, and this flag suppresses it.  An animation refresh (no
+# geometry change) clears it, so those frames keep the after-paint erase and
+# never show a blanked band.
+L.append("var erDone: bool = false")
+# Whether the frame being armed came from an animation refresh rather than a
+# geometry change (see the erase trigger in the commit block).
+L.append("var recompFrame: bool = false")
 # the second stale span of a row waits here while the first is armed
 L.append("var erL2: float = 0.0")
 L.append("var erR2: float = 0.0")
@@ -667,13 +678,13 @@ L.append("    } else if animDirty {")
 L.append("      commitR = true")
 L.append("      recompOnly = true")
 L.append("    }")
-L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ {")
+L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ && (!erasing || !erDone) {")
 L.append("      repaint = true")
 L.append("      prow = pfirst - 4.0")
 L.append("      pcol = 200.0")
 L.append("      polyOn = true")
 L.append("    }")
-L.append("    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ {")
+L.append("    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ && (!erasing || !erDone) {")
 L.append("      repaint = true")
 for i in range(MAXP):
     L.append("      rX%d = sPx%d" % (i, i))
@@ -1679,6 +1690,21 @@ L.append("      rcSlot = 1.0")
 L.append("      fromSlot = true")
 for _l in frameRC_lines:
     L.append("      " + _l)
+# Retire the previous frame before this one paints: the erase walk blacks
+# the band the last frame covered and resets those depths, so the composite
+# lands on a clean band and a shape that moved cannot hold its old pixels
+# through the depth test against pixels it no longer covers.  Waiting for
+# the walk is the iterator's and the phantom arms' `!erasing` guard.  A
+# refresh repaint (animation deltas, no geometry change) skips it -- the
+# wall already shows those values, and blanking the band would flicker.
+L.append("      if recompFrame {")
+L.append("        recompFrame = false")
+L.append("        erDone = false")
+L.append("      } else {")
+L.append("        erasing = true")
+L.append("        erRow = oldLo")
+L.append("        erDone = true")
+L.append("      }")
 L.append("    }")
 L.append("  }")
 L.append("  if commitR {")
@@ -1699,10 +1725,12 @@ L.append("    needRC = false")
 L.append("    if recompOnly {")
 L.append("      recompOnly = false")
 L.append("      needRC = true")
+L.append("      recompFrame = true")
 L.append("    } else if n < 1.0 && !(pTicks > 0.5 || pTicks < -0.5) {")
 L.append("      slLive[slot] = 0.0")
 L.append("      anTicks[slot] = 0.0")
 L.append("      needRC = true")
+L.append("      recompFrame = false")
 L.append("    } else {")
 for i in range(48):
     L.append("      slPts[sbase + %d.0] = shapePoints[%d]" % (i, i))
@@ -1728,6 +1756,10 @@ L.append("      slXF[xbase + 5.0] = pParent")
 L.append("      slXF2[xbase2 + 3.0] = if pScl.z == 0.0 then 1.0 else pScl.z")
 L.append("      anTicks[slot] = 0.0")
 L.append("      needRC = true")
+# An animated push (ticks nonzero) is a refresh of the wall the shape is
+# already on, not a new picture: it must not retire the previous frame, or
+# every tick of the animation would blank the band it is repainting.
+L.append("      recompFrame = if pTicks > 0.5 || pTicks < -0.5 then true else false")
 L.append("    }")
 L.append("    animDirty = false")
 L.append("    if justCleared {")
@@ -1748,6 +1780,21 @@ L.append("      rcSlot = 1.0")
 L.append("      fromSlot = true")
 for _l in frameRC_lines:
     L.append("      " + _l)
+# Retire the previous frame before this one paints: the erase walk blacks
+# the band the last frame covered and resets those depths, so the composite
+# lands on a clean band and a shape that moved cannot hold its old pixels
+# through the depth test against pixels it no longer covers.  Waiting for
+# the walk is the iterator's and the phantom arms' `!erasing` guard.  A
+# refresh repaint (animation deltas, no geometry change) skips it -- the
+# wall already shows those values, and blanking the band would flicker.
+L.append("      if recompFrame {")
+L.append("        recompFrame = false")
+L.append("        erDone = false")
+L.append("      } else {")
+L.append("        erasing = true")
+L.append("        erRow = oldLo")
+L.append("        erDone = true")
+L.append("      }")
 L.append("    }")
 L.append("  }")
 
@@ -1764,7 +1811,8 @@ L.append("  }")
 # this toolchain, so writing rcSlot before the loads would re-resolve the
 # base mid-tick (loaded garbage once -- right-shifted points -- from a
 # base of -1 through write-skipped slot -1).
-L.append("  if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR {")
+L.append("  if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR"
+         " && (!erasing || !erDone) {")
 L.append("    if rcSlot > 9.0 {")
 L.append("      rcOn = false")
 L.append("      if brightRC {")
@@ -1784,13 +1832,13 @@ L.append("        pfirst = bPF")
 L.append("        plast = bPL")
 L.append("        sSegs = bSEGS")
 L.append("      }")
-L.append("      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending && !clearing {")
+L.append("      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending && !clearing && (!erasing || !erDone) {")
 L.append("        repaint = true")
 L.append("        prow = pfirst - 4.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("      }")
-L.append("      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending && !clearing {")
+L.append("      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending && !clearing && (!erasing || !erDone) {")
 L.append("        repaint = true")
 for i in range(MAXP):
     L.append("        rX%d = sPx%d" % (i, i))
@@ -2296,15 +2344,6 @@ for i in range(MAXP):
     L.append("      } else {")
     L.append("        eLo%d = 200.0" % i)
     L.append("        eHi%d = -200.0" % i)
-    L.append("      }")
-    # A shape that covers the whole wall is a background: it must paint
-    # every pixel and reset every depth, exactly like the clearing fill.
-    # Without this its far pixels lose the depth test against what an
-    # earlier frame painted, so a shape that moves leaves a trail of its
-    # old position behind -- the background cannot overwrite it.
-    L.append("      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0"
-             " && gxMax >= SWF - 1.0 {")
-    L.append("        noDepth = true")
     L.append("      }")
 L.append("      if gyMax < 0.0 || gyMin >= SWF || gxMax < 0.0"
          " || gxMin >= SWF {")
@@ -3399,17 +3438,23 @@ L.append("  }")
 # times anything is black).  A row is examined exactly once: its
 # extents roll into the previous frame's whether stale or not.
 L.append("  let painting = polyOn || sOn")
-L.append("  if wasPaint && !painting && !rcOn && eraseOK {")
+L.append("  if wasPaint && !painting && !rcOn {")
 L.append("    wasPaint = false")
-L.append("    erasing = true")
-L.append("    erRow = if oldLo < covLo then oldLo else covLo")
+# A frame that retired its predecessor up front needs no second erase pass;
+# the flag falls with the burst, so the next frame (an animation refresh,
+# which erases as usual) is not suppressed by it.
+L.append("    if eraseOK && !erDone {")
+L.append("      erasing = true")
+L.append("      erRow = if oldLo < covLo then oldLo else covLo")
+L.append("    }")
+L.append("    erDone = false")
 L.append("  } else if painting && !erasing && eraseOK {")
 # not while erasing: direct fb writes are not a fill burst, so they
 # never set polyOn/sOn and can never re-stage the erase anyway; this
 # just keeps the burst detector from seeing the walk as paint.
 L.append("    wasPaint = true")
 L.append("  }")
-L.append("  if erasing && !painting && !rcOn && !arming {")
+L.append("  if erasing && !painting && !arming && (!rcOn || erDone) {")
 L.append("    let erHi = if oldHi > covHi then oldHi else covHi")
 L.append("    let erLo = if oldLo < covLo then oldLo else covLo")
 # The visit only READS coverage: the roll into the previous frame

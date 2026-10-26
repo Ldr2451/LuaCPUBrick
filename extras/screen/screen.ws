@@ -614,6 +614,8 @@ var erR: float = 0.0
 var erY: float = 0.0
 var erExt: float = 1.0
 var erArm: bool = false
+var erDone: bool = false
+var recompFrame: bool = false
 var erL2: float = 0.0
 var erR2: float = 0.0
 var erTwo: bool = false
@@ -9021,13 +9023,13 @@ mod drawEdge() {
       commitR = true
       recompOnly = true
     }
-    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ {
+    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ && (!erasing || !erDone) {
       repaint = true
       prow = pfirst - 4.0
       pcol = 200.0
       polyOn = true
     }
-    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ {
+    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ && (!erasing || !erDone) {
       repaint = true
       rX0 = sPx0
       rY0 = sPy0
@@ -10826,6 +10828,14 @@ mod paintTick() {
       covLo = 200.0
       covHi = -200.0
       cDirty = false
+      if recompFrame {
+        recompFrame = false
+        erDone = false
+      } else {
+        erasing = true
+        erRow = oldLo
+        erDone = true
+      }
     }
   }
   if commitR {
@@ -10842,10 +10852,12 @@ mod paintTick() {
     if recompOnly {
       recompOnly = false
       needRC = true
+      recompFrame = true
     } else if n < 1.0 && !(pTicks > 0.5 || pTicks < -0.5) {
       slLive[slot] = 0.0
       anTicks[slot] = 0.0
       needRC = true
+      recompFrame = false
     } else {
       slPts[sbase + 0.0] = shapePoints[0]
       slPts[sbase + 1.0] = shapePoints[1]
@@ -10927,6 +10939,7 @@ mod paintTick() {
       slXF2[xbase2 + 3.0] = if pScl.z == 0.0 then 1.0 else pScl.z
       anTicks[slot] = 0.0
       needRC = true
+      recompFrame = if pTicks > 0.5 || pTicks < -0.5 then true else false
     }
     animDirty = false
     if justCleared {
@@ -11463,9 +11476,17 @@ mod paintTick() {
       covLo = 200.0
       covHi = -200.0
       cDirty = false
+      if recompFrame {
+        recompFrame = false
+        erDone = false
+      } else {
+        erasing = true
+        erRow = oldLo
+        erDone = true
+      }
     }
   }
-  if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR {
+  if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR && (!erasing || !erDone) {
     if rcSlot > 9.0 {
       rcOn = false
       if brightRC {
@@ -11634,13 +11655,13 @@ mod paintTick() {
         plast = bPL
         sSegs = bSEGS
       }
-      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending && !clearing {
+      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending && !clearing && (!erasing || !erDone) {
         repaint = true
         prow = pfirst - 4.0
         pcol = 200.0
         polyOn = true
       }
-      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending && !clearing {
+      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending && !clearing && (!erasing || !erDone) {
         repaint = true
         rX0 = sPx0
         rY0 = sPy0
@@ -13578,9 +13599,6 @@ mod paintTick() {
         eLo0 = 200.0
         eHi0 = -200.0
       }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
-      }
       let qx1 = if 2.0 < n then px2 else px0
       let qy1 = if 2.0 < n then py2 else py0
       if 1.0 < n {
@@ -13602,9 +13620,6 @@ mod paintTick() {
       } else {
         eLo1 = 200.0
         eHi1 = -200.0
-      }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
       }
       let qx2 = if 3.0 < n then px3 else px0
       let qy2 = if 3.0 < n then py3 else py0
@@ -13628,9 +13643,6 @@ mod paintTick() {
         eLo2 = 200.0
         eHi2 = -200.0
       }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
-      }
       let qx3 = if 4.0 < n then px4 else px0
       let qy3 = if 4.0 < n then py4 else py0
       if 3.0 < n {
@@ -13652,9 +13664,6 @@ mod paintTick() {
       } else {
         eLo3 = 200.0
         eHi3 = -200.0
-      }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
       }
       let qx4 = if 5.0 < n then px5 else px0
       let qy4 = if 5.0 < n then py5 else py0
@@ -13678,9 +13687,6 @@ mod paintTick() {
         eLo4 = 200.0
         eHi4 = -200.0
       }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
-      }
       let qx5 = if 6.0 < n then px6 else px0
       let qy5 = if 6.0 < n then py6 else py0
       if 5.0 < n {
@@ -13702,9 +13708,6 @@ mod paintTick() {
       } else {
         eLo5 = 200.0
         eHi5 = -200.0
-      }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
       }
       let qx6 = if 7.0 < n then px7 else px0
       let qy6 = if 7.0 < n then py7 else py0
@@ -13728,9 +13731,6 @@ mod paintTick() {
         eLo6 = 200.0
         eHi6 = -200.0
       }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
-      }
       let qx7 = if 8.0 < n then px8 else px0
       let qy7 = if 8.0 < n then py8 else py0
       if 7.0 < n {
@@ -13752,9 +13752,6 @@ mod paintTick() {
       } else {
         eLo7 = 200.0
         eHi7 = -200.0
-      }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
       }
       let qx8 = if 9.0 < n then px9 else px0
       let qy8 = if 9.0 < n then py9 else py0
@@ -13778,9 +13775,6 @@ mod paintTick() {
         eLo8 = 200.0
         eHi8 = -200.0
       }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
-      }
       let qx9 = if 10.0 < n then px10 else px0
       let qy9 = if 10.0 < n then py10 else py0
       if 9.0 < n {
@@ -13802,9 +13796,6 @@ mod paintTick() {
       } else {
         eLo9 = 200.0
         eHi9 = -200.0
-      }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
       }
       let qx10 = if 11.0 < n then px11 else px0
       let qy10 = if 11.0 < n then py11 else py0
@@ -13828,9 +13819,6 @@ mod paintTick() {
         eLo10 = 200.0
         eHi10 = -200.0
       }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
-      }
       let qx11 = if 12.0 < n then px12 else px0
       let qy11 = if 12.0 < n then py12 else py0
       if 11.0 < n {
@@ -13852,9 +13840,6 @@ mod paintTick() {
       } else {
         eLo11 = 200.0
         eHi11 = -200.0
-      }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
       }
       let qx12 = if 13.0 < n then px13 else px0
       let qy12 = if 13.0 < n then py13 else py0
@@ -13878,9 +13863,6 @@ mod paintTick() {
         eLo12 = 200.0
         eHi12 = -200.0
       }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
-      }
       let qx13 = if 14.0 < n then px14 else px0
       let qy13 = if 14.0 < n then py14 else py0
       if 13.0 < n {
@@ -13902,9 +13884,6 @@ mod paintTick() {
       } else {
         eLo13 = 200.0
         eHi13 = -200.0
-      }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
       }
       let qx14 = if 15.0 < n then px15 else px0
       let qy14 = if 15.0 < n then py15 else py0
@@ -13928,9 +13907,6 @@ mod paintTick() {
         eLo14 = 200.0
         eHi14 = -200.0
       }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
-      }
       let qx15 = px0
       let qy15 = py0
       if 15.0 < n {
@@ -13952,9 +13928,6 @@ mod paintTick() {
       } else {
         eLo15 = 200.0
         eHi15 = -200.0
-      }
-      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
-        noDepth = true
       }
       if gyMax < 0.0 || gyMin >= SWF || gxMax < 0.0 || gxMin >= SWF {
         polyOn = false
@@ -21003,14 +20976,17 @@ mod paintTick() {
       pcol4 = pcol4 + 64.0
   }
   let painting = polyOn || sOn
-  if wasPaint && !painting && !rcOn && eraseOK {
+  if wasPaint && !painting && !rcOn {
     wasPaint = false
-    erasing = true
-    erRow = if oldLo < covLo then oldLo else covLo
+    if eraseOK && !erDone {
+      erasing = true
+      erRow = if oldLo < covLo then oldLo else covLo
+    }
+    erDone = false
   } else if painting && !erasing && eraseOK {
     wasPaint = true
   }
-  if erasing && !painting && !rcOn && !arming {
+  if erasing && !painting && !arming && (!rcOn || erDone) {
     let erHi = if oldHi > covHi then oldHi else covHi
     let erLo = if oldLo < covLo then oldLo else covLo
     if erRow <= erHi && erRow <= 63.0 {
