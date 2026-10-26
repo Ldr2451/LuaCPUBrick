@@ -49,6 +49,25 @@ RED = (1.0, 0.0, 0.0, 1.0)
 PAD = 32          # the arm reads shapePoints[0..31] whatever the count is
 
 
+def over(dst, src):
+    """The chip's composite for one pixel: what `src` leaves on `dst`.
+
+    A colour with alpha >= 1 writes straight.  Anything below blends: RGB
+    is the weighted mix, alpha is the src's plus what the destination keeps
+    (`src.a + dst.a * (1 - src.a)`), so a transparent shape over an opaque
+    wall reads opaque.  The dimmer scales RGB on both sides of the blend by
+    the same factor, so the mix is unchanged by brightness and this model
+    works on undimmed colours.
+    """
+    if src[3] >= 1.0:
+        return src
+    ia = 1.0 - src[3]
+    return (src[0] * src[3] + dst[0] * ia,
+            src[1] * src[3] + dst[1] * ia,
+            src[2] * src[3] + dst[2] * ia,
+            src[3] + dst[3] * ia)
+
+
 def fresh_sim(dump_path):
     sim = sim_from_dump(dump_path)
     sim.reset()
@@ -773,7 +792,7 @@ def main():
         model = {}
         for pts, color in shapes:
             for p in poly_pixels(pts):
-                model[p] = color
+                model[p] = over(model.get(p, BLACK), color)
         bad = [i for i in range(SW * SW)
                if col(sim, gids, i) != model.get(i, BLACK)]
         ok &= expect(not bad, "nine shapes compose one frame",
@@ -1034,12 +1053,12 @@ def main():
         for p in poly_pixels(tri2):
             want2[p] = blue
         ok &= expect_wall(snaps[ends[1]], want2, "second slot composes")
-        want3 = {p: green for p in poly_pixels(sq1b)}
+        want3 = {p: over(BLACK, green) for p in poly_pixels(sq1b)}
         for p in poly_pixels(tri2):
             want3[p] = blue
         ok &= expect_wall(snaps[ends[2]], want3,
                           "edit replaces in place (old square gone)")
-        want4 = {p: green for p in poly_pixels(sq1b)}
+        want4 = {p: over(BLACK, green) for p in poly_pixels(sq1b)}
         ok &= expect_wall(snaps[ends[3]], want4,
                           "delete removes (triangle gone)")
 
@@ -1366,7 +1385,7 @@ def main():
                 for q, c in poly_colors(
                         xf_points(spts, wpos, wang, wscl),
                         scols).items():
-                    wantx[q] = c
+                    wantx[q] = over(wantx.get(q, BLACK), c)
             badx = [i for i in range(SW * SW)
                     if not close(xsnaps[end][i], wantx.get(i, BLACK))]
             ok &= expect(not badx, xlabels[ci],
@@ -1426,7 +1445,7 @@ def main():
                 for i, (c, z) in got.items():
                     if z >= fbz.get(i, ZBACK):
                         fbz[i] = z
-                        want[i] = c
+                        want[i] = over(want.get(i, BLACK), c)
             return want
 
         def run3(commits, step=64, points3d=False):
@@ -1763,7 +1782,8 @@ def main():
         def qwant(*shapes):
             want = {}
             for pts, c in shapes:
-                want.update(poly_colors(pts, [c] * (len(pts) // 2)))
+                for p in poly_pixels(pts):
+                    want[p] = over(want.get(p, BLACK), c)
             return want
 
         qwants = [

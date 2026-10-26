@@ -115,6 +115,7 @@ const DEF_BRIGHT = 0.350000
 var fb: color[]
 const ZBACK = -1000000000000000.0
 var fbZ: float[]
+var repaint: bool = false
 var noDepth: bool = false
 var fbInit: bool = false
 var pC0: color = Color(1.0, 1.0, 1.0, 1.0)
@@ -8992,6 +8993,7 @@ on Change(pushShape) {
 // and the shape re-arms when it ends (pending is left set on purpose);
 // with nothing staged, the wall simply goes black.
 mod drawEdge() {
+    repaint = false
     if blackPending {
       blackPending = false
       clearing = true
@@ -9020,11 +9022,13 @@ mod drawEdge() {
       recompOnly = true
     }
     if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ {
+      repaint = true
       prow = pfirst - 4.0
       pcol = 200.0
       polyOn = true
     }
     if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ {
+      repaint = true
       rX0 = sPx0
       rY0 = sPy0
       rZ0 = sPz0
@@ -11630,12 +11634,14 @@ mod paintTick() {
         plast = bPL
         sSegs = bSEGS
       }
-      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending {
+      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending && !clearing {
+        repaint = true
         prow = pfirst - 4.0
         pcol = 200.0
         polyOn = true
       }
-      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending {
+      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending && !clearing {
+        repaint = true
         rX0 = sPx0
         rY0 = sPy0
         rZ0 = sPz0
@@ -13572,6 +13578,9 @@ mod paintTick() {
         eLo0 = 200.0
         eHi0 = -200.0
       }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
+      }
       let qx1 = if 2.0 < n then px2 else px0
       let qy1 = if 2.0 < n then py2 else py0
       if 1.0 < n {
@@ -13593,6 +13602,9 @@ mod paintTick() {
       } else {
         eLo1 = 200.0
         eHi1 = -200.0
+      }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
       }
       let qx2 = if 3.0 < n then px3 else px0
       let qy2 = if 3.0 < n then py3 else py0
@@ -13616,6 +13628,9 @@ mod paintTick() {
         eLo2 = 200.0
         eHi2 = -200.0
       }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
+      }
       let qx3 = if 4.0 < n then px4 else px0
       let qy3 = if 4.0 < n then py4 else py0
       if 3.0 < n {
@@ -13637,6 +13652,9 @@ mod paintTick() {
       } else {
         eLo3 = 200.0
         eHi3 = -200.0
+      }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
       }
       let qx4 = if 5.0 < n then px5 else px0
       let qy4 = if 5.0 < n then py5 else py0
@@ -13660,6 +13678,9 @@ mod paintTick() {
         eLo4 = 200.0
         eHi4 = -200.0
       }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
+      }
       let qx5 = if 6.0 < n then px6 else px0
       let qy5 = if 6.0 < n then py6 else py0
       if 5.0 < n {
@@ -13681,6 +13702,9 @@ mod paintTick() {
       } else {
         eLo5 = 200.0
         eHi5 = -200.0
+      }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
       }
       let qx6 = if 7.0 < n then px7 else px0
       let qy6 = if 7.0 < n then py7 else py0
@@ -13704,6 +13728,9 @@ mod paintTick() {
         eLo6 = 200.0
         eHi6 = -200.0
       }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
+      }
       let qx7 = if 8.0 < n then px8 else px0
       let qy7 = if 8.0 < n then py8 else py0
       if 7.0 < n {
@@ -13725,6 +13752,9 @@ mod paintTick() {
       } else {
         eLo7 = 200.0
         eHi7 = -200.0
+      }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
       }
       let qx8 = if 9.0 < n then px9 else px0
       let qy8 = if 9.0 < n then py9 else py0
@@ -13748,6 +13778,9 @@ mod paintTick() {
         eLo8 = 200.0
         eHi8 = -200.0
       }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
+      }
       let qx9 = if 10.0 < n then px10 else px0
       let qy9 = if 10.0 < n then py10 else py0
       if 9.0 < n {
@@ -13769,6 +13802,9 @@ mod paintTick() {
       } else {
         eLo9 = 200.0
         eHi9 = -200.0
+      }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
       }
       let qx10 = if 11.0 < n then px11 else px0
       let qy10 = if 11.0 < n then py11 else py0
@@ -13792,6 +13828,9 @@ mod paintTick() {
         eLo10 = 200.0
         eHi10 = -200.0
       }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
+      }
       let qx11 = if 12.0 < n then px12 else px0
       let qy11 = if 12.0 < n then py12 else py0
       if 11.0 < n {
@@ -13813,6 +13852,9 @@ mod paintTick() {
       } else {
         eLo11 = 200.0
         eHi11 = -200.0
+      }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
       }
       let qx12 = if 13.0 < n then px13 else px0
       let qy12 = if 13.0 < n then py13 else py0
@@ -13836,6 +13878,9 @@ mod paintTick() {
         eLo12 = 200.0
         eHi12 = -200.0
       }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
+      }
       let qx13 = if 14.0 < n then px14 else px0
       let qy13 = if 14.0 < n then py14 else py0
       if 13.0 < n {
@@ -13857,6 +13902,9 @@ mod paintTick() {
       } else {
         eLo13 = 200.0
         eHi13 = -200.0
+      }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
       }
       let qx14 = if 15.0 < n then px15 else px0
       let qy14 = if 15.0 < n then py15 else py0
@@ -13880,6 +13928,9 @@ mod paintTick() {
         eLo14 = 200.0
         eHi14 = -200.0
       }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
+      }
       let qx15 = px0
       let qy15 = py0
       if 15.0 < n {
@@ -13901,6 +13952,9 @@ mod paintTick() {
       } else {
         eLo15 = 200.0
         eHi15 = -200.0
+      }
+      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0 && gxMax >= SWF - 1.0 {
+        noDepth = true
       }
       if gyMax < 0.0 || gyMin >= SWF || gxMax < 0.0 || gxMin >= SWF {
         polyOn = false
@@ -15802,7 +15856,14 @@ mod paintTick() {
         let dt0 = tj0 - xL
         let pdz0 = zLo + zSlope * dt0
         if noDepth || pdz0 >= fbZ[ridx0] {
-          fb[ridx0] = cLo + rowSlope * dt0
+          let srcA0 = cLo + rowSlope * dt0
+          if noDepth || srcA0.a >= 1.0 {
+            fb[ridx0] = srcA0
+          } else if repaint < 0.5 {
+            let dA0 = fb[ridx0]
+            let iaA0 = 1.0 - srcA0.a
+            fb[ridx0] = Color(srcA0.r * srcA0.a + dA0.r * iaA0, srcA0.g * srcA0.a + dA0.g * iaA0, srcA0.b * srcA0.a + dA0.b * iaA0, srcA0.a + dA0.a * iaA0)
+          }
           fbZ[ridx0] = if noDepth then ZBACK else pdz0
         }
       }
@@ -15812,7 +15873,14 @@ mod paintTick() {
         let dt1 = tj1 - xL
         let pdz1 = zLo + zSlope * dt1
         if noDepth || pdz1 >= fbZ[ridx1] {
-          fb[ridx1] = cLo + rowSlope * dt1
+          let srcA1 = cLo + rowSlope * dt1
+          if noDepth || srcA1.a >= 1.0 {
+            fb[ridx1] = srcA1
+          } else if repaint < 0.5 {
+            let dA1 = fb[ridx1]
+            let iaA1 = 1.0 - srcA1.a
+            fb[ridx1] = Color(srcA1.r * srcA1.a + dA1.r * iaA1, srcA1.g * srcA1.a + dA1.g * iaA1, srcA1.b * srcA1.a + dA1.b * iaA1, srcA1.a + dA1.a * iaA1)
+          }
           fbZ[ridx1] = if noDepth then ZBACK else pdz1
         }
       }
@@ -15822,7 +15890,14 @@ mod paintTick() {
         let dt2 = tj2 - xL
         let pdz2 = zLo + zSlope * dt2
         if noDepth || pdz2 >= fbZ[ridx2] {
-          fb[ridx2] = cLo + rowSlope * dt2
+          let srcA2 = cLo + rowSlope * dt2
+          if noDepth || srcA2.a >= 1.0 {
+            fb[ridx2] = srcA2
+          } else if repaint < 0.5 {
+            let dA2 = fb[ridx2]
+            let iaA2 = 1.0 - srcA2.a
+            fb[ridx2] = Color(srcA2.r * srcA2.a + dA2.r * iaA2, srcA2.g * srcA2.a + dA2.g * iaA2, srcA2.b * srcA2.a + dA2.b * iaA2, srcA2.a + dA2.a * iaA2)
+          }
           fbZ[ridx2] = if noDepth then ZBACK else pdz2
         }
       }
@@ -15832,7 +15907,14 @@ mod paintTick() {
         let dt3 = tj3 - xL
         let pdz3 = zLo + zSlope * dt3
         if noDepth || pdz3 >= fbZ[ridx3] {
-          fb[ridx3] = cLo + rowSlope * dt3
+          let srcA3 = cLo + rowSlope * dt3
+          if noDepth || srcA3.a >= 1.0 {
+            fb[ridx3] = srcA3
+          } else if repaint < 0.5 {
+            let dA3 = fb[ridx3]
+            let iaA3 = 1.0 - srcA3.a
+            fb[ridx3] = Color(srcA3.r * srcA3.a + dA3.r * iaA3, srcA3.g * srcA3.a + dA3.g * iaA3, srcA3.b * srcA3.a + dA3.b * iaA3, srcA3.a + dA3.a * iaA3)
+          }
           fbZ[ridx3] = if noDepth then ZBACK else pdz3
         }
       }
@@ -15842,7 +15924,14 @@ mod paintTick() {
         let dt4 = tj4 - xL
         let pdz4 = zLo + zSlope * dt4
         if noDepth || pdz4 >= fbZ[ridx4] {
-          fb[ridx4] = cLo + rowSlope * dt4
+          let srcA4 = cLo + rowSlope * dt4
+          if noDepth || srcA4.a >= 1.0 {
+            fb[ridx4] = srcA4
+          } else if repaint < 0.5 {
+            let dA4 = fb[ridx4]
+            let iaA4 = 1.0 - srcA4.a
+            fb[ridx4] = Color(srcA4.r * srcA4.a + dA4.r * iaA4, srcA4.g * srcA4.a + dA4.g * iaA4, srcA4.b * srcA4.a + dA4.b * iaA4, srcA4.a + dA4.a * iaA4)
+          }
           fbZ[ridx4] = if noDepth then ZBACK else pdz4
         }
       }
@@ -15852,7 +15941,14 @@ mod paintTick() {
         let dt5 = tj5 - xL
         let pdz5 = zLo + zSlope * dt5
         if noDepth || pdz5 >= fbZ[ridx5] {
-          fb[ridx5] = cLo + rowSlope * dt5
+          let srcA5 = cLo + rowSlope * dt5
+          if noDepth || srcA5.a >= 1.0 {
+            fb[ridx5] = srcA5
+          } else if repaint < 0.5 {
+            let dA5 = fb[ridx5]
+            let iaA5 = 1.0 - srcA5.a
+            fb[ridx5] = Color(srcA5.r * srcA5.a + dA5.r * iaA5, srcA5.g * srcA5.a + dA5.g * iaA5, srcA5.b * srcA5.a + dA5.b * iaA5, srcA5.a + dA5.a * iaA5)
+          }
           fbZ[ridx5] = if noDepth then ZBACK else pdz5
         }
       }
@@ -15862,7 +15958,14 @@ mod paintTick() {
         let dt6 = tj6 - xL
         let pdz6 = zLo + zSlope * dt6
         if noDepth || pdz6 >= fbZ[ridx6] {
-          fb[ridx6] = cLo + rowSlope * dt6
+          let srcA6 = cLo + rowSlope * dt6
+          if noDepth || srcA6.a >= 1.0 {
+            fb[ridx6] = srcA6
+          } else if repaint < 0.5 {
+            let dA6 = fb[ridx6]
+            let iaA6 = 1.0 - srcA6.a
+            fb[ridx6] = Color(srcA6.r * srcA6.a + dA6.r * iaA6, srcA6.g * srcA6.a + dA6.g * iaA6, srcA6.b * srcA6.a + dA6.b * iaA6, srcA6.a + dA6.a * iaA6)
+          }
           fbZ[ridx6] = if noDepth then ZBACK else pdz6
         }
       }
@@ -15872,7 +15975,14 @@ mod paintTick() {
         let dt7 = tj7 - xL
         let pdz7 = zLo + zSlope * dt7
         if noDepth || pdz7 >= fbZ[ridx7] {
-          fb[ridx7] = cLo + rowSlope * dt7
+          let srcA7 = cLo + rowSlope * dt7
+          if noDepth || srcA7.a >= 1.0 {
+            fb[ridx7] = srcA7
+          } else if repaint < 0.5 {
+            let dA7 = fb[ridx7]
+            let iaA7 = 1.0 - srcA7.a
+            fb[ridx7] = Color(srcA7.r * srcA7.a + dA7.r * iaA7, srcA7.g * srcA7.a + dA7.g * iaA7, srcA7.b * srcA7.a + dA7.b * iaA7, srcA7.a + dA7.a * iaA7)
+          }
           fbZ[ridx7] = if noDepth then ZBACK else pdz7
         }
       }
@@ -15882,7 +15992,14 @@ mod paintTick() {
         let dt8 = tj8 - xL
         let pdz8 = zLo + zSlope * dt8
         if noDepth || pdz8 >= fbZ[ridx8] {
-          fb[ridx8] = cLo + rowSlope * dt8
+          let srcA8 = cLo + rowSlope * dt8
+          if noDepth || srcA8.a >= 1.0 {
+            fb[ridx8] = srcA8
+          } else if repaint < 0.5 {
+            let dA8 = fb[ridx8]
+            let iaA8 = 1.0 - srcA8.a
+            fb[ridx8] = Color(srcA8.r * srcA8.a + dA8.r * iaA8, srcA8.g * srcA8.a + dA8.g * iaA8, srcA8.b * srcA8.a + dA8.b * iaA8, srcA8.a + dA8.a * iaA8)
+          }
           fbZ[ridx8] = if noDepth then ZBACK else pdz8
         }
       }
@@ -15892,7 +16009,14 @@ mod paintTick() {
         let dt9 = tj9 - xL
         let pdz9 = zLo + zSlope * dt9
         if noDepth || pdz9 >= fbZ[ridx9] {
-          fb[ridx9] = cLo + rowSlope * dt9
+          let srcA9 = cLo + rowSlope * dt9
+          if noDepth || srcA9.a >= 1.0 {
+            fb[ridx9] = srcA9
+          } else if repaint < 0.5 {
+            let dA9 = fb[ridx9]
+            let iaA9 = 1.0 - srcA9.a
+            fb[ridx9] = Color(srcA9.r * srcA9.a + dA9.r * iaA9, srcA9.g * srcA9.a + dA9.g * iaA9, srcA9.b * srcA9.a + dA9.b * iaA9, srcA9.a + dA9.a * iaA9)
+          }
           fbZ[ridx9] = if noDepth then ZBACK else pdz9
         }
       }
@@ -15902,7 +16026,14 @@ mod paintTick() {
         let dt10 = tj10 - xL
         let pdz10 = zLo + zSlope * dt10
         if noDepth || pdz10 >= fbZ[ridx10] {
-          fb[ridx10] = cLo + rowSlope * dt10
+          let srcA10 = cLo + rowSlope * dt10
+          if noDepth || srcA10.a >= 1.0 {
+            fb[ridx10] = srcA10
+          } else if repaint < 0.5 {
+            let dA10 = fb[ridx10]
+            let iaA10 = 1.0 - srcA10.a
+            fb[ridx10] = Color(srcA10.r * srcA10.a + dA10.r * iaA10, srcA10.g * srcA10.a + dA10.g * iaA10, srcA10.b * srcA10.a + dA10.b * iaA10, srcA10.a + dA10.a * iaA10)
+          }
           fbZ[ridx10] = if noDepth then ZBACK else pdz10
         }
       }
@@ -15912,7 +16043,14 @@ mod paintTick() {
         let dt11 = tj11 - xL
         let pdz11 = zLo + zSlope * dt11
         if noDepth || pdz11 >= fbZ[ridx11] {
-          fb[ridx11] = cLo + rowSlope * dt11
+          let srcA11 = cLo + rowSlope * dt11
+          if noDepth || srcA11.a >= 1.0 {
+            fb[ridx11] = srcA11
+          } else if repaint < 0.5 {
+            let dA11 = fb[ridx11]
+            let iaA11 = 1.0 - srcA11.a
+            fb[ridx11] = Color(srcA11.r * srcA11.a + dA11.r * iaA11, srcA11.g * srcA11.a + dA11.g * iaA11, srcA11.b * srcA11.a + dA11.b * iaA11, srcA11.a + dA11.a * iaA11)
+          }
           fbZ[ridx11] = if noDepth then ZBACK else pdz11
         }
       }
@@ -15922,7 +16060,14 @@ mod paintTick() {
         let dt12 = tj12 - xL
         let pdz12 = zLo + zSlope * dt12
         if noDepth || pdz12 >= fbZ[ridx12] {
-          fb[ridx12] = cLo + rowSlope * dt12
+          let srcA12 = cLo + rowSlope * dt12
+          if noDepth || srcA12.a >= 1.0 {
+            fb[ridx12] = srcA12
+          } else if repaint < 0.5 {
+            let dA12 = fb[ridx12]
+            let iaA12 = 1.0 - srcA12.a
+            fb[ridx12] = Color(srcA12.r * srcA12.a + dA12.r * iaA12, srcA12.g * srcA12.a + dA12.g * iaA12, srcA12.b * srcA12.a + dA12.b * iaA12, srcA12.a + dA12.a * iaA12)
+          }
           fbZ[ridx12] = if noDepth then ZBACK else pdz12
         }
       }
@@ -15932,7 +16077,14 @@ mod paintTick() {
         let dt13 = tj13 - xL
         let pdz13 = zLo + zSlope * dt13
         if noDepth || pdz13 >= fbZ[ridx13] {
-          fb[ridx13] = cLo + rowSlope * dt13
+          let srcA13 = cLo + rowSlope * dt13
+          if noDepth || srcA13.a >= 1.0 {
+            fb[ridx13] = srcA13
+          } else if repaint < 0.5 {
+            let dA13 = fb[ridx13]
+            let iaA13 = 1.0 - srcA13.a
+            fb[ridx13] = Color(srcA13.r * srcA13.a + dA13.r * iaA13, srcA13.g * srcA13.a + dA13.g * iaA13, srcA13.b * srcA13.a + dA13.b * iaA13, srcA13.a + dA13.a * iaA13)
+          }
           fbZ[ridx13] = if noDepth then ZBACK else pdz13
         }
       }
@@ -15942,7 +16094,14 @@ mod paintTick() {
         let dt14 = tj14 - xL
         let pdz14 = zLo + zSlope * dt14
         if noDepth || pdz14 >= fbZ[ridx14] {
-          fb[ridx14] = cLo + rowSlope * dt14
+          let srcA14 = cLo + rowSlope * dt14
+          if noDepth || srcA14.a >= 1.0 {
+            fb[ridx14] = srcA14
+          } else if repaint < 0.5 {
+            let dA14 = fb[ridx14]
+            let iaA14 = 1.0 - srcA14.a
+            fb[ridx14] = Color(srcA14.r * srcA14.a + dA14.r * iaA14, srcA14.g * srcA14.a + dA14.g * iaA14, srcA14.b * srcA14.a + dA14.b * iaA14, srcA14.a + dA14.a * iaA14)
+          }
           fbZ[ridx14] = if noDepth then ZBACK else pdz14
         }
       }
@@ -15952,7 +16111,14 @@ mod paintTick() {
         let dt15 = tj15 - xL
         let pdz15 = zLo + zSlope * dt15
         if noDepth || pdz15 >= fbZ[ridx15] {
-          fb[ridx15] = cLo + rowSlope * dt15
+          let srcA15 = cLo + rowSlope * dt15
+          if noDepth || srcA15.a >= 1.0 {
+            fb[ridx15] = srcA15
+          } else if repaint < 0.5 {
+            let dA15 = fb[ridx15]
+            let iaA15 = 1.0 - srcA15.a
+            fb[ridx15] = Color(srcA15.r * srcA15.a + dA15.r * iaA15, srcA15.g * srcA15.a + dA15.g * iaA15, srcA15.b * srcA15.a + dA15.b * iaA15, srcA15.a + dA15.a * iaA15)
+          }
           fbZ[ridx15] = if noDepth then ZBACK else pdz15
         }
       }
@@ -15962,7 +16128,14 @@ mod paintTick() {
         let dt16 = tj16 - xL
         let pdz16 = zLo + zSlope * dt16
         if noDepth || pdz16 >= fbZ[ridx16] {
-          fb[ridx16] = cLo + rowSlope * dt16
+          let srcA16 = cLo + rowSlope * dt16
+          if noDepth || srcA16.a >= 1.0 {
+            fb[ridx16] = srcA16
+          } else if repaint < 0.5 {
+            let dA16 = fb[ridx16]
+            let iaA16 = 1.0 - srcA16.a
+            fb[ridx16] = Color(srcA16.r * srcA16.a + dA16.r * iaA16, srcA16.g * srcA16.a + dA16.g * iaA16, srcA16.b * srcA16.a + dA16.b * iaA16, srcA16.a + dA16.a * iaA16)
+          }
           fbZ[ridx16] = if noDepth then ZBACK else pdz16
         }
       }
@@ -15972,7 +16145,14 @@ mod paintTick() {
         let dt17 = tj17 - xL
         let pdz17 = zLo + zSlope * dt17
         if noDepth || pdz17 >= fbZ[ridx17] {
-          fb[ridx17] = cLo + rowSlope * dt17
+          let srcA17 = cLo + rowSlope * dt17
+          if noDepth || srcA17.a >= 1.0 {
+            fb[ridx17] = srcA17
+          } else if repaint < 0.5 {
+            let dA17 = fb[ridx17]
+            let iaA17 = 1.0 - srcA17.a
+            fb[ridx17] = Color(srcA17.r * srcA17.a + dA17.r * iaA17, srcA17.g * srcA17.a + dA17.g * iaA17, srcA17.b * srcA17.a + dA17.b * iaA17, srcA17.a + dA17.a * iaA17)
+          }
           fbZ[ridx17] = if noDepth then ZBACK else pdz17
         }
       }
@@ -15982,7 +16162,14 @@ mod paintTick() {
         let dt18 = tj18 - xL
         let pdz18 = zLo + zSlope * dt18
         if noDepth || pdz18 >= fbZ[ridx18] {
-          fb[ridx18] = cLo + rowSlope * dt18
+          let srcA18 = cLo + rowSlope * dt18
+          if noDepth || srcA18.a >= 1.0 {
+            fb[ridx18] = srcA18
+          } else if repaint < 0.5 {
+            let dA18 = fb[ridx18]
+            let iaA18 = 1.0 - srcA18.a
+            fb[ridx18] = Color(srcA18.r * srcA18.a + dA18.r * iaA18, srcA18.g * srcA18.a + dA18.g * iaA18, srcA18.b * srcA18.a + dA18.b * iaA18, srcA18.a + dA18.a * iaA18)
+          }
           fbZ[ridx18] = if noDepth then ZBACK else pdz18
         }
       }
@@ -15992,7 +16179,14 @@ mod paintTick() {
         let dt19 = tj19 - xL
         let pdz19 = zLo + zSlope * dt19
         if noDepth || pdz19 >= fbZ[ridx19] {
-          fb[ridx19] = cLo + rowSlope * dt19
+          let srcA19 = cLo + rowSlope * dt19
+          if noDepth || srcA19.a >= 1.0 {
+            fb[ridx19] = srcA19
+          } else if repaint < 0.5 {
+            let dA19 = fb[ridx19]
+            let iaA19 = 1.0 - srcA19.a
+            fb[ridx19] = Color(srcA19.r * srcA19.a + dA19.r * iaA19, srcA19.g * srcA19.a + dA19.g * iaA19, srcA19.b * srcA19.a + dA19.b * iaA19, srcA19.a + dA19.a * iaA19)
+          }
           fbZ[ridx19] = if noDepth then ZBACK else pdz19
         }
       }
@@ -16002,7 +16196,14 @@ mod paintTick() {
         let dt20 = tj20 - xL
         let pdz20 = zLo + zSlope * dt20
         if noDepth || pdz20 >= fbZ[ridx20] {
-          fb[ridx20] = cLo + rowSlope * dt20
+          let srcA20 = cLo + rowSlope * dt20
+          if noDepth || srcA20.a >= 1.0 {
+            fb[ridx20] = srcA20
+          } else if repaint < 0.5 {
+            let dA20 = fb[ridx20]
+            let iaA20 = 1.0 - srcA20.a
+            fb[ridx20] = Color(srcA20.r * srcA20.a + dA20.r * iaA20, srcA20.g * srcA20.a + dA20.g * iaA20, srcA20.b * srcA20.a + dA20.b * iaA20, srcA20.a + dA20.a * iaA20)
+          }
           fbZ[ridx20] = if noDepth then ZBACK else pdz20
         }
       }
@@ -16012,7 +16213,14 @@ mod paintTick() {
         let dt21 = tj21 - xL
         let pdz21 = zLo + zSlope * dt21
         if noDepth || pdz21 >= fbZ[ridx21] {
-          fb[ridx21] = cLo + rowSlope * dt21
+          let srcA21 = cLo + rowSlope * dt21
+          if noDepth || srcA21.a >= 1.0 {
+            fb[ridx21] = srcA21
+          } else if repaint < 0.5 {
+            let dA21 = fb[ridx21]
+            let iaA21 = 1.0 - srcA21.a
+            fb[ridx21] = Color(srcA21.r * srcA21.a + dA21.r * iaA21, srcA21.g * srcA21.a + dA21.g * iaA21, srcA21.b * srcA21.a + dA21.b * iaA21, srcA21.a + dA21.a * iaA21)
+          }
           fbZ[ridx21] = if noDepth then ZBACK else pdz21
         }
       }
@@ -16022,7 +16230,14 @@ mod paintTick() {
         let dt22 = tj22 - xL
         let pdz22 = zLo + zSlope * dt22
         if noDepth || pdz22 >= fbZ[ridx22] {
-          fb[ridx22] = cLo + rowSlope * dt22
+          let srcA22 = cLo + rowSlope * dt22
+          if noDepth || srcA22.a >= 1.0 {
+            fb[ridx22] = srcA22
+          } else if repaint < 0.5 {
+            let dA22 = fb[ridx22]
+            let iaA22 = 1.0 - srcA22.a
+            fb[ridx22] = Color(srcA22.r * srcA22.a + dA22.r * iaA22, srcA22.g * srcA22.a + dA22.g * iaA22, srcA22.b * srcA22.a + dA22.b * iaA22, srcA22.a + dA22.a * iaA22)
+          }
           fbZ[ridx22] = if noDepth then ZBACK else pdz22
         }
       }
@@ -16032,7 +16247,14 @@ mod paintTick() {
         let dt23 = tj23 - xL
         let pdz23 = zLo + zSlope * dt23
         if noDepth || pdz23 >= fbZ[ridx23] {
-          fb[ridx23] = cLo + rowSlope * dt23
+          let srcA23 = cLo + rowSlope * dt23
+          if noDepth || srcA23.a >= 1.0 {
+            fb[ridx23] = srcA23
+          } else if repaint < 0.5 {
+            let dA23 = fb[ridx23]
+            let iaA23 = 1.0 - srcA23.a
+            fb[ridx23] = Color(srcA23.r * srcA23.a + dA23.r * iaA23, srcA23.g * srcA23.a + dA23.g * iaA23, srcA23.b * srcA23.a + dA23.b * iaA23, srcA23.a + dA23.a * iaA23)
+          }
           fbZ[ridx23] = if noDepth then ZBACK else pdz23
         }
       }
@@ -16042,7 +16264,14 @@ mod paintTick() {
         let dt24 = tj24 - xL
         let pdz24 = zLo + zSlope * dt24
         if noDepth || pdz24 >= fbZ[ridx24] {
-          fb[ridx24] = cLo + rowSlope * dt24
+          let srcA24 = cLo + rowSlope * dt24
+          if noDepth || srcA24.a >= 1.0 {
+            fb[ridx24] = srcA24
+          } else if repaint < 0.5 {
+            let dA24 = fb[ridx24]
+            let iaA24 = 1.0 - srcA24.a
+            fb[ridx24] = Color(srcA24.r * srcA24.a + dA24.r * iaA24, srcA24.g * srcA24.a + dA24.g * iaA24, srcA24.b * srcA24.a + dA24.b * iaA24, srcA24.a + dA24.a * iaA24)
+          }
           fbZ[ridx24] = if noDepth then ZBACK else pdz24
         }
       }
@@ -16052,7 +16281,14 @@ mod paintTick() {
         let dt25 = tj25 - xL
         let pdz25 = zLo + zSlope * dt25
         if noDepth || pdz25 >= fbZ[ridx25] {
-          fb[ridx25] = cLo + rowSlope * dt25
+          let srcA25 = cLo + rowSlope * dt25
+          if noDepth || srcA25.a >= 1.0 {
+            fb[ridx25] = srcA25
+          } else if repaint < 0.5 {
+            let dA25 = fb[ridx25]
+            let iaA25 = 1.0 - srcA25.a
+            fb[ridx25] = Color(srcA25.r * srcA25.a + dA25.r * iaA25, srcA25.g * srcA25.a + dA25.g * iaA25, srcA25.b * srcA25.a + dA25.b * iaA25, srcA25.a + dA25.a * iaA25)
+          }
           fbZ[ridx25] = if noDepth then ZBACK else pdz25
         }
       }
@@ -16062,7 +16298,14 @@ mod paintTick() {
         let dt26 = tj26 - xL
         let pdz26 = zLo + zSlope * dt26
         if noDepth || pdz26 >= fbZ[ridx26] {
-          fb[ridx26] = cLo + rowSlope * dt26
+          let srcA26 = cLo + rowSlope * dt26
+          if noDepth || srcA26.a >= 1.0 {
+            fb[ridx26] = srcA26
+          } else if repaint < 0.5 {
+            let dA26 = fb[ridx26]
+            let iaA26 = 1.0 - srcA26.a
+            fb[ridx26] = Color(srcA26.r * srcA26.a + dA26.r * iaA26, srcA26.g * srcA26.a + dA26.g * iaA26, srcA26.b * srcA26.a + dA26.b * iaA26, srcA26.a + dA26.a * iaA26)
+          }
           fbZ[ridx26] = if noDepth then ZBACK else pdz26
         }
       }
@@ -16072,7 +16315,14 @@ mod paintTick() {
         let dt27 = tj27 - xL
         let pdz27 = zLo + zSlope * dt27
         if noDepth || pdz27 >= fbZ[ridx27] {
-          fb[ridx27] = cLo + rowSlope * dt27
+          let srcA27 = cLo + rowSlope * dt27
+          if noDepth || srcA27.a >= 1.0 {
+            fb[ridx27] = srcA27
+          } else if repaint < 0.5 {
+            let dA27 = fb[ridx27]
+            let iaA27 = 1.0 - srcA27.a
+            fb[ridx27] = Color(srcA27.r * srcA27.a + dA27.r * iaA27, srcA27.g * srcA27.a + dA27.g * iaA27, srcA27.b * srcA27.a + dA27.b * iaA27, srcA27.a + dA27.a * iaA27)
+          }
           fbZ[ridx27] = if noDepth then ZBACK else pdz27
         }
       }
@@ -16082,7 +16332,14 @@ mod paintTick() {
         let dt28 = tj28 - xL
         let pdz28 = zLo + zSlope * dt28
         if noDepth || pdz28 >= fbZ[ridx28] {
-          fb[ridx28] = cLo + rowSlope * dt28
+          let srcA28 = cLo + rowSlope * dt28
+          if noDepth || srcA28.a >= 1.0 {
+            fb[ridx28] = srcA28
+          } else if repaint < 0.5 {
+            let dA28 = fb[ridx28]
+            let iaA28 = 1.0 - srcA28.a
+            fb[ridx28] = Color(srcA28.r * srcA28.a + dA28.r * iaA28, srcA28.g * srcA28.a + dA28.g * iaA28, srcA28.b * srcA28.a + dA28.b * iaA28, srcA28.a + dA28.a * iaA28)
+          }
           fbZ[ridx28] = if noDepth then ZBACK else pdz28
         }
       }
@@ -16092,7 +16349,14 @@ mod paintTick() {
         let dt29 = tj29 - xL
         let pdz29 = zLo + zSlope * dt29
         if noDepth || pdz29 >= fbZ[ridx29] {
-          fb[ridx29] = cLo + rowSlope * dt29
+          let srcA29 = cLo + rowSlope * dt29
+          if noDepth || srcA29.a >= 1.0 {
+            fb[ridx29] = srcA29
+          } else if repaint < 0.5 {
+            let dA29 = fb[ridx29]
+            let iaA29 = 1.0 - srcA29.a
+            fb[ridx29] = Color(srcA29.r * srcA29.a + dA29.r * iaA29, srcA29.g * srcA29.a + dA29.g * iaA29, srcA29.b * srcA29.a + dA29.b * iaA29, srcA29.a + dA29.a * iaA29)
+          }
           fbZ[ridx29] = if noDepth then ZBACK else pdz29
         }
       }
@@ -16102,7 +16366,14 @@ mod paintTick() {
         let dt30 = tj30 - xL
         let pdz30 = zLo + zSlope * dt30
         if noDepth || pdz30 >= fbZ[ridx30] {
-          fb[ridx30] = cLo + rowSlope * dt30
+          let srcA30 = cLo + rowSlope * dt30
+          if noDepth || srcA30.a >= 1.0 {
+            fb[ridx30] = srcA30
+          } else if repaint < 0.5 {
+            let dA30 = fb[ridx30]
+            let iaA30 = 1.0 - srcA30.a
+            fb[ridx30] = Color(srcA30.r * srcA30.a + dA30.r * iaA30, srcA30.g * srcA30.a + dA30.g * iaA30, srcA30.b * srcA30.a + dA30.b * iaA30, srcA30.a + dA30.a * iaA30)
+          }
           fbZ[ridx30] = if noDepth then ZBACK else pdz30
         }
       }
@@ -16112,7 +16383,14 @@ mod paintTick() {
         let dt31 = tj31 - xL
         let pdz31 = zLo + zSlope * dt31
         if noDepth || pdz31 >= fbZ[ridx31] {
-          fb[ridx31] = cLo + rowSlope * dt31
+          let srcA31 = cLo + rowSlope * dt31
+          if noDepth || srcA31.a >= 1.0 {
+            fb[ridx31] = srcA31
+          } else if repaint < 0.5 {
+            let dA31 = fb[ridx31]
+            let iaA31 = 1.0 - srcA31.a
+            fb[ridx31] = Color(srcA31.r * srcA31.a + dA31.r * iaA31, srcA31.g * srcA31.a + dA31.g * iaA31, srcA31.b * srcA31.a + dA31.b * iaA31, srcA31.a + dA31.a * iaA31)
+          }
           fbZ[ridx31] = if noDepth then ZBACK else pdz31
         }
       }
@@ -16122,7 +16400,14 @@ mod paintTick() {
         let dt32 = tj32 - xL
         let pdz32 = zLo + zSlope * dt32
         if noDepth || pdz32 >= fbZ[ridx32] {
-          fb[ridx32] = cLo + rowSlope * dt32
+          let srcA32 = cLo + rowSlope * dt32
+          if noDepth || srcA32.a >= 1.0 {
+            fb[ridx32] = srcA32
+          } else if repaint < 0.5 {
+            let dA32 = fb[ridx32]
+            let iaA32 = 1.0 - srcA32.a
+            fb[ridx32] = Color(srcA32.r * srcA32.a + dA32.r * iaA32, srcA32.g * srcA32.a + dA32.g * iaA32, srcA32.b * srcA32.a + dA32.b * iaA32, srcA32.a + dA32.a * iaA32)
+          }
           fbZ[ridx32] = if noDepth then ZBACK else pdz32
         }
       }
@@ -16132,7 +16417,14 @@ mod paintTick() {
         let dt33 = tj33 - xL
         let pdz33 = zLo + zSlope * dt33
         if noDepth || pdz33 >= fbZ[ridx33] {
-          fb[ridx33] = cLo + rowSlope * dt33
+          let srcA33 = cLo + rowSlope * dt33
+          if noDepth || srcA33.a >= 1.0 {
+            fb[ridx33] = srcA33
+          } else if repaint < 0.5 {
+            let dA33 = fb[ridx33]
+            let iaA33 = 1.0 - srcA33.a
+            fb[ridx33] = Color(srcA33.r * srcA33.a + dA33.r * iaA33, srcA33.g * srcA33.a + dA33.g * iaA33, srcA33.b * srcA33.a + dA33.b * iaA33, srcA33.a + dA33.a * iaA33)
+          }
           fbZ[ridx33] = if noDepth then ZBACK else pdz33
         }
       }
@@ -16142,7 +16434,14 @@ mod paintTick() {
         let dt34 = tj34 - xL
         let pdz34 = zLo + zSlope * dt34
         if noDepth || pdz34 >= fbZ[ridx34] {
-          fb[ridx34] = cLo + rowSlope * dt34
+          let srcA34 = cLo + rowSlope * dt34
+          if noDepth || srcA34.a >= 1.0 {
+            fb[ridx34] = srcA34
+          } else if repaint < 0.5 {
+            let dA34 = fb[ridx34]
+            let iaA34 = 1.0 - srcA34.a
+            fb[ridx34] = Color(srcA34.r * srcA34.a + dA34.r * iaA34, srcA34.g * srcA34.a + dA34.g * iaA34, srcA34.b * srcA34.a + dA34.b * iaA34, srcA34.a + dA34.a * iaA34)
+          }
           fbZ[ridx34] = if noDepth then ZBACK else pdz34
         }
       }
@@ -16152,7 +16451,14 @@ mod paintTick() {
         let dt35 = tj35 - xL
         let pdz35 = zLo + zSlope * dt35
         if noDepth || pdz35 >= fbZ[ridx35] {
-          fb[ridx35] = cLo + rowSlope * dt35
+          let srcA35 = cLo + rowSlope * dt35
+          if noDepth || srcA35.a >= 1.0 {
+            fb[ridx35] = srcA35
+          } else if repaint < 0.5 {
+            let dA35 = fb[ridx35]
+            let iaA35 = 1.0 - srcA35.a
+            fb[ridx35] = Color(srcA35.r * srcA35.a + dA35.r * iaA35, srcA35.g * srcA35.a + dA35.g * iaA35, srcA35.b * srcA35.a + dA35.b * iaA35, srcA35.a + dA35.a * iaA35)
+          }
           fbZ[ridx35] = if noDepth then ZBACK else pdz35
         }
       }
@@ -16162,7 +16468,14 @@ mod paintTick() {
         let dt36 = tj36 - xL
         let pdz36 = zLo + zSlope * dt36
         if noDepth || pdz36 >= fbZ[ridx36] {
-          fb[ridx36] = cLo + rowSlope * dt36
+          let srcA36 = cLo + rowSlope * dt36
+          if noDepth || srcA36.a >= 1.0 {
+            fb[ridx36] = srcA36
+          } else if repaint < 0.5 {
+            let dA36 = fb[ridx36]
+            let iaA36 = 1.0 - srcA36.a
+            fb[ridx36] = Color(srcA36.r * srcA36.a + dA36.r * iaA36, srcA36.g * srcA36.a + dA36.g * iaA36, srcA36.b * srcA36.a + dA36.b * iaA36, srcA36.a + dA36.a * iaA36)
+          }
           fbZ[ridx36] = if noDepth then ZBACK else pdz36
         }
       }
@@ -16172,7 +16485,14 @@ mod paintTick() {
         let dt37 = tj37 - xL
         let pdz37 = zLo + zSlope * dt37
         if noDepth || pdz37 >= fbZ[ridx37] {
-          fb[ridx37] = cLo + rowSlope * dt37
+          let srcA37 = cLo + rowSlope * dt37
+          if noDepth || srcA37.a >= 1.0 {
+            fb[ridx37] = srcA37
+          } else if repaint < 0.5 {
+            let dA37 = fb[ridx37]
+            let iaA37 = 1.0 - srcA37.a
+            fb[ridx37] = Color(srcA37.r * srcA37.a + dA37.r * iaA37, srcA37.g * srcA37.a + dA37.g * iaA37, srcA37.b * srcA37.a + dA37.b * iaA37, srcA37.a + dA37.a * iaA37)
+          }
           fbZ[ridx37] = if noDepth then ZBACK else pdz37
         }
       }
@@ -16182,7 +16502,14 @@ mod paintTick() {
         let dt38 = tj38 - xL
         let pdz38 = zLo + zSlope * dt38
         if noDepth || pdz38 >= fbZ[ridx38] {
-          fb[ridx38] = cLo + rowSlope * dt38
+          let srcA38 = cLo + rowSlope * dt38
+          if noDepth || srcA38.a >= 1.0 {
+            fb[ridx38] = srcA38
+          } else if repaint < 0.5 {
+            let dA38 = fb[ridx38]
+            let iaA38 = 1.0 - srcA38.a
+            fb[ridx38] = Color(srcA38.r * srcA38.a + dA38.r * iaA38, srcA38.g * srcA38.a + dA38.g * iaA38, srcA38.b * srcA38.a + dA38.b * iaA38, srcA38.a + dA38.a * iaA38)
+          }
           fbZ[ridx38] = if noDepth then ZBACK else pdz38
         }
       }
@@ -16192,7 +16519,14 @@ mod paintTick() {
         let dt39 = tj39 - xL
         let pdz39 = zLo + zSlope * dt39
         if noDepth || pdz39 >= fbZ[ridx39] {
-          fb[ridx39] = cLo + rowSlope * dt39
+          let srcA39 = cLo + rowSlope * dt39
+          if noDepth || srcA39.a >= 1.0 {
+            fb[ridx39] = srcA39
+          } else if repaint < 0.5 {
+            let dA39 = fb[ridx39]
+            let iaA39 = 1.0 - srcA39.a
+            fb[ridx39] = Color(srcA39.r * srcA39.a + dA39.r * iaA39, srcA39.g * srcA39.a + dA39.g * iaA39, srcA39.b * srcA39.a + dA39.b * iaA39, srcA39.a + dA39.a * iaA39)
+          }
           fbZ[ridx39] = if noDepth then ZBACK else pdz39
         }
       }
@@ -16202,7 +16536,14 @@ mod paintTick() {
         let dt40 = tj40 - xL
         let pdz40 = zLo + zSlope * dt40
         if noDepth || pdz40 >= fbZ[ridx40] {
-          fb[ridx40] = cLo + rowSlope * dt40
+          let srcA40 = cLo + rowSlope * dt40
+          if noDepth || srcA40.a >= 1.0 {
+            fb[ridx40] = srcA40
+          } else if repaint < 0.5 {
+            let dA40 = fb[ridx40]
+            let iaA40 = 1.0 - srcA40.a
+            fb[ridx40] = Color(srcA40.r * srcA40.a + dA40.r * iaA40, srcA40.g * srcA40.a + dA40.g * iaA40, srcA40.b * srcA40.a + dA40.b * iaA40, srcA40.a + dA40.a * iaA40)
+          }
           fbZ[ridx40] = if noDepth then ZBACK else pdz40
         }
       }
@@ -16212,7 +16553,14 @@ mod paintTick() {
         let dt41 = tj41 - xL
         let pdz41 = zLo + zSlope * dt41
         if noDepth || pdz41 >= fbZ[ridx41] {
-          fb[ridx41] = cLo + rowSlope * dt41
+          let srcA41 = cLo + rowSlope * dt41
+          if noDepth || srcA41.a >= 1.0 {
+            fb[ridx41] = srcA41
+          } else if repaint < 0.5 {
+            let dA41 = fb[ridx41]
+            let iaA41 = 1.0 - srcA41.a
+            fb[ridx41] = Color(srcA41.r * srcA41.a + dA41.r * iaA41, srcA41.g * srcA41.a + dA41.g * iaA41, srcA41.b * srcA41.a + dA41.b * iaA41, srcA41.a + dA41.a * iaA41)
+          }
           fbZ[ridx41] = if noDepth then ZBACK else pdz41
         }
       }
@@ -16222,7 +16570,14 @@ mod paintTick() {
         let dt42 = tj42 - xL
         let pdz42 = zLo + zSlope * dt42
         if noDepth || pdz42 >= fbZ[ridx42] {
-          fb[ridx42] = cLo + rowSlope * dt42
+          let srcA42 = cLo + rowSlope * dt42
+          if noDepth || srcA42.a >= 1.0 {
+            fb[ridx42] = srcA42
+          } else if repaint < 0.5 {
+            let dA42 = fb[ridx42]
+            let iaA42 = 1.0 - srcA42.a
+            fb[ridx42] = Color(srcA42.r * srcA42.a + dA42.r * iaA42, srcA42.g * srcA42.a + dA42.g * iaA42, srcA42.b * srcA42.a + dA42.b * iaA42, srcA42.a + dA42.a * iaA42)
+          }
           fbZ[ridx42] = if noDepth then ZBACK else pdz42
         }
       }
@@ -16232,7 +16587,14 @@ mod paintTick() {
         let dt43 = tj43 - xL
         let pdz43 = zLo + zSlope * dt43
         if noDepth || pdz43 >= fbZ[ridx43] {
-          fb[ridx43] = cLo + rowSlope * dt43
+          let srcA43 = cLo + rowSlope * dt43
+          if noDepth || srcA43.a >= 1.0 {
+            fb[ridx43] = srcA43
+          } else if repaint < 0.5 {
+            let dA43 = fb[ridx43]
+            let iaA43 = 1.0 - srcA43.a
+            fb[ridx43] = Color(srcA43.r * srcA43.a + dA43.r * iaA43, srcA43.g * srcA43.a + dA43.g * iaA43, srcA43.b * srcA43.a + dA43.b * iaA43, srcA43.a + dA43.a * iaA43)
+          }
           fbZ[ridx43] = if noDepth then ZBACK else pdz43
         }
       }
@@ -16242,7 +16604,14 @@ mod paintTick() {
         let dt44 = tj44 - xL
         let pdz44 = zLo + zSlope * dt44
         if noDepth || pdz44 >= fbZ[ridx44] {
-          fb[ridx44] = cLo + rowSlope * dt44
+          let srcA44 = cLo + rowSlope * dt44
+          if noDepth || srcA44.a >= 1.0 {
+            fb[ridx44] = srcA44
+          } else if repaint < 0.5 {
+            let dA44 = fb[ridx44]
+            let iaA44 = 1.0 - srcA44.a
+            fb[ridx44] = Color(srcA44.r * srcA44.a + dA44.r * iaA44, srcA44.g * srcA44.a + dA44.g * iaA44, srcA44.b * srcA44.a + dA44.b * iaA44, srcA44.a + dA44.a * iaA44)
+          }
           fbZ[ridx44] = if noDepth then ZBACK else pdz44
         }
       }
@@ -16252,7 +16621,14 @@ mod paintTick() {
         let dt45 = tj45 - xL
         let pdz45 = zLo + zSlope * dt45
         if noDepth || pdz45 >= fbZ[ridx45] {
-          fb[ridx45] = cLo + rowSlope * dt45
+          let srcA45 = cLo + rowSlope * dt45
+          if noDepth || srcA45.a >= 1.0 {
+            fb[ridx45] = srcA45
+          } else if repaint < 0.5 {
+            let dA45 = fb[ridx45]
+            let iaA45 = 1.0 - srcA45.a
+            fb[ridx45] = Color(srcA45.r * srcA45.a + dA45.r * iaA45, srcA45.g * srcA45.a + dA45.g * iaA45, srcA45.b * srcA45.a + dA45.b * iaA45, srcA45.a + dA45.a * iaA45)
+          }
           fbZ[ridx45] = if noDepth then ZBACK else pdz45
         }
       }
@@ -16262,7 +16638,14 @@ mod paintTick() {
         let dt46 = tj46 - xL
         let pdz46 = zLo + zSlope * dt46
         if noDepth || pdz46 >= fbZ[ridx46] {
-          fb[ridx46] = cLo + rowSlope * dt46
+          let srcA46 = cLo + rowSlope * dt46
+          if noDepth || srcA46.a >= 1.0 {
+            fb[ridx46] = srcA46
+          } else if repaint < 0.5 {
+            let dA46 = fb[ridx46]
+            let iaA46 = 1.0 - srcA46.a
+            fb[ridx46] = Color(srcA46.r * srcA46.a + dA46.r * iaA46, srcA46.g * srcA46.a + dA46.g * iaA46, srcA46.b * srcA46.a + dA46.b * iaA46, srcA46.a + dA46.a * iaA46)
+          }
           fbZ[ridx46] = if noDepth then ZBACK else pdz46
         }
       }
@@ -16272,7 +16655,14 @@ mod paintTick() {
         let dt47 = tj47 - xL
         let pdz47 = zLo + zSlope * dt47
         if noDepth || pdz47 >= fbZ[ridx47] {
-          fb[ridx47] = cLo + rowSlope * dt47
+          let srcA47 = cLo + rowSlope * dt47
+          if noDepth || srcA47.a >= 1.0 {
+            fb[ridx47] = srcA47
+          } else if repaint < 0.5 {
+            let dA47 = fb[ridx47]
+            let iaA47 = 1.0 - srcA47.a
+            fb[ridx47] = Color(srcA47.r * srcA47.a + dA47.r * iaA47, srcA47.g * srcA47.a + dA47.g * iaA47, srcA47.b * srcA47.a + dA47.b * iaA47, srcA47.a + dA47.a * iaA47)
+          }
           fbZ[ridx47] = if noDepth then ZBACK else pdz47
         }
       }
@@ -16282,7 +16672,14 @@ mod paintTick() {
         let dt48 = tj48 - xL
         let pdz48 = zLo + zSlope * dt48
         if noDepth || pdz48 >= fbZ[ridx48] {
-          fb[ridx48] = cLo + rowSlope * dt48
+          let srcA48 = cLo + rowSlope * dt48
+          if noDepth || srcA48.a >= 1.0 {
+            fb[ridx48] = srcA48
+          } else if repaint < 0.5 {
+            let dA48 = fb[ridx48]
+            let iaA48 = 1.0 - srcA48.a
+            fb[ridx48] = Color(srcA48.r * srcA48.a + dA48.r * iaA48, srcA48.g * srcA48.a + dA48.g * iaA48, srcA48.b * srcA48.a + dA48.b * iaA48, srcA48.a + dA48.a * iaA48)
+          }
           fbZ[ridx48] = if noDepth then ZBACK else pdz48
         }
       }
@@ -16292,7 +16689,14 @@ mod paintTick() {
         let dt49 = tj49 - xL
         let pdz49 = zLo + zSlope * dt49
         if noDepth || pdz49 >= fbZ[ridx49] {
-          fb[ridx49] = cLo + rowSlope * dt49
+          let srcA49 = cLo + rowSlope * dt49
+          if noDepth || srcA49.a >= 1.0 {
+            fb[ridx49] = srcA49
+          } else if repaint < 0.5 {
+            let dA49 = fb[ridx49]
+            let iaA49 = 1.0 - srcA49.a
+            fb[ridx49] = Color(srcA49.r * srcA49.a + dA49.r * iaA49, srcA49.g * srcA49.a + dA49.g * iaA49, srcA49.b * srcA49.a + dA49.b * iaA49, srcA49.a + dA49.a * iaA49)
+          }
           fbZ[ridx49] = if noDepth then ZBACK else pdz49
         }
       }
@@ -16302,7 +16706,14 @@ mod paintTick() {
         let dt50 = tj50 - xL
         let pdz50 = zLo + zSlope * dt50
         if noDepth || pdz50 >= fbZ[ridx50] {
-          fb[ridx50] = cLo + rowSlope * dt50
+          let srcA50 = cLo + rowSlope * dt50
+          if noDepth || srcA50.a >= 1.0 {
+            fb[ridx50] = srcA50
+          } else if repaint < 0.5 {
+            let dA50 = fb[ridx50]
+            let iaA50 = 1.0 - srcA50.a
+            fb[ridx50] = Color(srcA50.r * srcA50.a + dA50.r * iaA50, srcA50.g * srcA50.a + dA50.g * iaA50, srcA50.b * srcA50.a + dA50.b * iaA50, srcA50.a + dA50.a * iaA50)
+          }
           fbZ[ridx50] = if noDepth then ZBACK else pdz50
         }
       }
@@ -16312,7 +16723,14 @@ mod paintTick() {
         let dt51 = tj51 - xL
         let pdz51 = zLo + zSlope * dt51
         if noDepth || pdz51 >= fbZ[ridx51] {
-          fb[ridx51] = cLo + rowSlope * dt51
+          let srcA51 = cLo + rowSlope * dt51
+          if noDepth || srcA51.a >= 1.0 {
+            fb[ridx51] = srcA51
+          } else if repaint < 0.5 {
+            let dA51 = fb[ridx51]
+            let iaA51 = 1.0 - srcA51.a
+            fb[ridx51] = Color(srcA51.r * srcA51.a + dA51.r * iaA51, srcA51.g * srcA51.a + dA51.g * iaA51, srcA51.b * srcA51.a + dA51.b * iaA51, srcA51.a + dA51.a * iaA51)
+          }
           fbZ[ridx51] = if noDepth then ZBACK else pdz51
         }
       }
@@ -16322,7 +16740,14 @@ mod paintTick() {
         let dt52 = tj52 - xL
         let pdz52 = zLo + zSlope * dt52
         if noDepth || pdz52 >= fbZ[ridx52] {
-          fb[ridx52] = cLo + rowSlope * dt52
+          let srcA52 = cLo + rowSlope * dt52
+          if noDepth || srcA52.a >= 1.0 {
+            fb[ridx52] = srcA52
+          } else if repaint < 0.5 {
+            let dA52 = fb[ridx52]
+            let iaA52 = 1.0 - srcA52.a
+            fb[ridx52] = Color(srcA52.r * srcA52.a + dA52.r * iaA52, srcA52.g * srcA52.a + dA52.g * iaA52, srcA52.b * srcA52.a + dA52.b * iaA52, srcA52.a + dA52.a * iaA52)
+          }
           fbZ[ridx52] = if noDepth then ZBACK else pdz52
         }
       }
@@ -16332,7 +16757,14 @@ mod paintTick() {
         let dt53 = tj53 - xL
         let pdz53 = zLo + zSlope * dt53
         if noDepth || pdz53 >= fbZ[ridx53] {
-          fb[ridx53] = cLo + rowSlope * dt53
+          let srcA53 = cLo + rowSlope * dt53
+          if noDepth || srcA53.a >= 1.0 {
+            fb[ridx53] = srcA53
+          } else if repaint < 0.5 {
+            let dA53 = fb[ridx53]
+            let iaA53 = 1.0 - srcA53.a
+            fb[ridx53] = Color(srcA53.r * srcA53.a + dA53.r * iaA53, srcA53.g * srcA53.a + dA53.g * iaA53, srcA53.b * srcA53.a + dA53.b * iaA53, srcA53.a + dA53.a * iaA53)
+          }
           fbZ[ridx53] = if noDepth then ZBACK else pdz53
         }
       }
@@ -16342,7 +16774,14 @@ mod paintTick() {
         let dt54 = tj54 - xL
         let pdz54 = zLo + zSlope * dt54
         if noDepth || pdz54 >= fbZ[ridx54] {
-          fb[ridx54] = cLo + rowSlope * dt54
+          let srcA54 = cLo + rowSlope * dt54
+          if noDepth || srcA54.a >= 1.0 {
+            fb[ridx54] = srcA54
+          } else if repaint < 0.5 {
+            let dA54 = fb[ridx54]
+            let iaA54 = 1.0 - srcA54.a
+            fb[ridx54] = Color(srcA54.r * srcA54.a + dA54.r * iaA54, srcA54.g * srcA54.a + dA54.g * iaA54, srcA54.b * srcA54.a + dA54.b * iaA54, srcA54.a + dA54.a * iaA54)
+          }
           fbZ[ridx54] = if noDepth then ZBACK else pdz54
         }
       }
@@ -16352,7 +16791,14 @@ mod paintTick() {
         let dt55 = tj55 - xL
         let pdz55 = zLo + zSlope * dt55
         if noDepth || pdz55 >= fbZ[ridx55] {
-          fb[ridx55] = cLo + rowSlope * dt55
+          let srcA55 = cLo + rowSlope * dt55
+          if noDepth || srcA55.a >= 1.0 {
+            fb[ridx55] = srcA55
+          } else if repaint < 0.5 {
+            let dA55 = fb[ridx55]
+            let iaA55 = 1.0 - srcA55.a
+            fb[ridx55] = Color(srcA55.r * srcA55.a + dA55.r * iaA55, srcA55.g * srcA55.a + dA55.g * iaA55, srcA55.b * srcA55.a + dA55.b * iaA55, srcA55.a + dA55.a * iaA55)
+          }
           fbZ[ridx55] = if noDepth then ZBACK else pdz55
         }
       }
@@ -16362,7 +16808,14 @@ mod paintTick() {
         let dt56 = tj56 - xL
         let pdz56 = zLo + zSlope * dt56
         if noDepth || pdz56 >= fbZ[ridx56] {
-          fb[ridx56] = cLo + rowSlope * dt56
+          let srcA56 = cLo + rowSlope * dt56
+          if noDepth || srcA56.a >= 1.0 {
+            fb[ridx56] = srcA56
+          } else if repaint < 0.5 {
+            let dA56 = fb[ridx56]
+            let iaA56 = 1.0 - srcA56.a
+            fb[ridx56] = Color(srcA56.r * srcA56.a + dA56.r * iaA56, srcA56.g * srcA56.a + dA56.g * iaA56, srcA56.b * srcA56.a + dA56.b * iaA56, srcA56.a + dA56.a * iaA56)
+          }
           fbZ[ridx56] = if noDepth then ZBACK else pdz56
         }
       }
@@ -16372,7 +16825,14 @@ mod paintTick() {
         let dt57 = tj57 - xL
         let pdz57 = zLo + zSlope * dt57
         if noDepth || pdz57 >= fbZ[ridx57] {
-          fb[ridx57] = cLo + rowSlope * dt57
+          let srcA57 = cLo + rowSlope * dt57
+          if noDepth || srcA57.a >= 1.0 {
+            fb[ridx57] = srcA57
+          } else if repaint < 0.5 {
+            let dA57 = fb[ridx57]
+            let iaA57 = 1.0 - srcA57.a
+            fb[ridx57] = Color(srcA57.r * srcA57.a + dA57.r * iaA57, srcA57.g * srcA57.a + dA57.g * iaA57, srcA57.b * srcA57.a + dA57.b * iaA57, srcA57.a + dA57.a * iaA57)
+          }
           fbZ[ridx57] = if noDepth then ZBACK else pdz57
         }
       }
@@ -16382,7 +16842,14 @@ mod paintTick() {
         let dt58 = tj58 - xL
         let pdz58 = zLo + zSlope * dt58
         if noDepth || pdz58 >= fbZ[ridx58] {
-          fb[ridx58] = cLo + rowSlope * dt58
+          let srcA58 = cLo + rowSlope * dt58
+          if noDepth || srcA58.a >= 1.0 {
+            fb[ridx58] = srcA58
+          } else if repaint < 0.5 {
+            let dA58 = fb[ridx58]
+            let iaA58 = 1.0 - srcA58.a
+            fb[ridx58] = Color(srcA58.r * srcA58.a + dA58.r * iaA58, srcA58.g * srcA58.a + dA58.g * iaA58, srcA58.b * srcA58.a + dA58.b * iaA58, srcA58.a + dA58.a * iaA58)
+          }
           fbZ[ridx58] = if noDepth then ZBACK else pdz58
         }
       }
@@ -16392,7 +16859,14 @@ mod paintTick() {
         let dt59 = tj59 - xL
         let pdz59 = zLo + zSlope * dt59
         if noDepth || pdz59 >= fbZ[ridx59] {
-          fb[ridx59] = cLo + rowSlope * dt59
+          let srcA59 = cLo + rowSlope * dt59
+          if noDepth || srcA59.a >= 1.0 {
+            fb[ridx59] = srcA59
+          } else if repaint < 0.5 {
+            let dA59 = fb[ridx59]
+            let iaA59 = 1.0 - srcA59.a
+            fb[ridx59] = Color(srcA59.r * srcA59.a + dA59.r * iaA59, srcA59.g * srcA59.a + dA59.g * iaA59, srcA59.b * srcA59.a + dA59.b * iaA59, srcA59.a + dA59.a * iaA59)
+          }
           fbZ[ridx59] = if noDepth then ZBACK else pdz59
         }
       }
@@ -16402,7 +16876,14 @@ mod paintTick() {
         let dt60 = tj60 - xL
         let pdz60 = zLo + zSlope * dt60
         if noDepth || pdz60 >= fbZ[ridx60] {
-          fb[ridx60] = cLo + rowSlope * dt60
+          let srcA60 = cLo + rowSlope * dt60
+          if noDepth || srcA60.a >= 1.0 {
+            fb[ridx60] = srcA60
+          } else if repaint < 0.5 {
+            let dA60 = fb[ridx60]
+            let iaA60 = 1.0 - srcA60.a
+            fb[ridx60] = Color(srcA60.r * srcA60.a + dA60.r * iaA60, srcA60.g * srcA60.a + dA60.g * iaA60, srcA60.b * srcA60.a + dA60.b * iaA60, srcA60.a + dA60.a * iaA60)
+          }
           fbZ[ridx60] = if noDepth then ZBACK else pdz60
         }
       }
@@ -16412,7 +16893,14 @@ mod paintTick() {
         let dt61 = tj61 - xL
         let pdz61 = zLo + zSlope * dt61
         if noDepth || pdz61 >= fbZ[ridx61] {
-          fb[ridx61] = cLo + rowSlope * dt61
+          let srcA61 = cLo + rowSlope * dt61
+          if noDepth || srcA61.a >= 1.0 {
+            fb[ridx61] = srcA61
+          } else if repaint < 0.5 {
+            let dA61 = fb[ridx61]
+            let iaA61 = 1.0 - srcA61.a
+            fb[ridx61] = Color(srcA61.r * srcA61.a + dA61.r * iaA61, srcA61.g * srcA61.a + dA61.g * iaA61, srcA61.b * srcA61.a + dA61.b * iaA61, srcA61.a + dA61.a * iaA61)
+          }
           fbZ[ridx61] = if noDepth then ZBACK else pdz61
         }
       }
@@ -16422,7 +16910,14 @@ mod paintTick() {
         let dt62 = tj62 - xL
         let pdz62 = zLo + zSlope * dt62
         if noDepth || pdz62 >= fbZ[ridx62] {
-          fb[ridx62] = cLo + rowSlope * dt62
+          let srcA62 = cLo + rowSlope * dt62
+          if noDepth || srcA62.a >= 1.0 {
+            fb[ridx62] = srcA62
+          } else if repaint < 0.5 {
+            let dA62 = fb[ridx62]
+            let iaA62 = 1.0 - srcA62.a
+            fb[ridx62] = Color(srcA62.r * srcA62.a + dA62.r * iaA62, srcA62.g * srcA62.a + dA62.g * iaA62, srcA62.b * srcA62.a + dA62.b * iaA62, srcA62.a + dA62.a * iaA62)
+          }
           fbZ[ridx62] = if noDepth then ZBACK else pdz62
         }
       }
@@ -16432,7 +16927,14 @@ mod paintTick() {
         let dt63 = tj63 - xL
         let pdz63 = zLo + zSlope * dt63
         if noDepth || pdz63 >= fbZ[ridx63] {
-          fb[ridx63] = cLo + rowSlope * dt63
+          let srcA63 = cLo + rowSlope * dt63
+          if noDepth || srcA63.a >= 1.0 {
+            fb[ridx63] = srcA63
+          } else if repaint < 0.5 {
+            let dA63 = fb[ridx63]
+            let iaA63 = 1.0 - srcA63.a
+            fb[ridx63] = Color(srcA63.r * srcA63.a + dA63.r * iaA63, srcA63.g * srcA63.a + dA63.g * iaA63, srcA63.b * srcA63.a + dA63.b * iaA63, srcA63.a + dA63.a * iaA63)
+          }
           fbZ[ridx63] = if noDepth then ZBACK else pdz63
         }
       }
@@ -16708,7 +17210,14 @@ mod paintTick() {
         let dtB0 = tjB0 - xL2
         let pdzB0 = zLo2 + zSlope2 * dtB0
         if noDepth || pdzB0 >= fbZ[ridxB0] {
-          fb[ridxB0] = cLo2 + rowSlope2 * dtB0
+          let srcB0 = cLo2 + rowSlope2 * dtB0
+          if noDepth || srcB0.a >= 1.0 {
+            fb[ridxB0] = srcB0
+          } else if repaint < 0.5 {
+            let dB0 = fb[ridxB0]
+            let iaB0 = 1.0 - srcB0.a
+            fb[ridxB0] = Color(srcB0.r * srcB0.a + dB0.r * iaB0, srcB0.g * srcB0.a + dB0.g * iaB0, srcB0.b * srcB0.a + dB0.b * iaB0, srcB0.a + dB0.a * iaB0)
+          }
           fbZ[ridxB0] = if noDepth then ZBACK else pdzB0
         }
       }
@@ -16718,7 +17227,14 @@ mod paintTick() {
         let dtB1 = tjB1 - xL2
         let pdzB1 = zLo2 + zSlope2 * dtB1
         if noDepth || pdzB1 >= fbZ[ridxB1] {
-          fb[ridxB1] = cLo2 + rowSlope2 * dtB1
+          let srcB1 = cLo2 + rowSlope2 * dtB1
+          if noDepth || srcB1.a >= 1.0 {
+            fb[ridxB1] = srcB1
+          } else if repaint < 0.5 {
+            let dB1 = fb[ridxB1]
+            let iaB1 = 1.0 - srcB1.a
+            fb[ridxB1] = Color(srcB1.r * srcB1.a + dB1.r * iaB1, srcB1.g * srcB1.a + dB1.g * iaB1, srcB1.b * srcB1.a + dB1.b * iaB1, srcB1.a + dB1.a * iaB1)
+          }
           fbZ[ridxB1] = if noDepth then ZBACK else pdzB1
         }
       }
@@ -16728,7 +17244,14 @@ mod paintTick() {
         let dtB2 = tjB2 - xL2
         let pdzB2 = zLo2 + zSlope2 * dtB2
         if noDepth || pdzB2 >= fbZ[ridxB2] {
-          fb[ridxB2] = cLo2 + rowSlope2 * dtB2
+          let srcB2 = cLo2 + rowSlope2 * dtB2
+          if noDepth || srcB2.a >= 1.0 {
+            fb[ridxB2] = srcB2
+          } else if repaint < 0.5 {
+            let dB2 = fb[ridxB2]
+            let iaB2 = 1.0 - srcB2.a
+            fb[ridxB2] = Color(srcB2.r * srcB2.a + dB2.r * iaB2, srcB2.g * srcB2.a + dB2.g * iaB2, srcB2.b * srcB2.a + dB2.b * iaB2, srcB2.a + dB2.a * iaB2)
+          }
           fbZ[ridxB2] = if noDepth then ZBACK else pdzB2
         }
       }
@@ -16738,7 +17261,14 @@ mod paintTick() {
         let dtB3 = tjB3 - xL2
         let pdzB3 = zLo2 + zSlope2 * dtB3
         if noDepth || pdzB3 >= fbZ[ridxB3] {
-          fb[ridxB3] = cLo2 + rowSlope2 * dtB3
+          let srcB3 = cLo2 + rowSlope2 * dtB3
+          if noDepth || srcB3.a >= 1.0 {
+            fb[ridxB3] = srcB3
+          } else if repaint < 0.5 {
+            let dB3 = fb[ridxB3]
+            let iaB3 = 1.0 - srcB3.a
+            fb[ridxB3] = Color(srcB3.r * srcB3.a + dB3.r * iaB3, srcB3.g * srcB3.a + dB3.g * iaB3, srcB3.b * srcB3.a + dB3.b * iaB3, srcB3.a + dB3.a * iaB3)
+          }
           fbZ[ridxB3] = if noDepth then ZBACK else pdzB3
         }
       }
@@ -16748,7 +17278,14 @@ mod paintTick() {
         let dtB4 = tjB4 - xL2
         let pdzB4 = zLo2 + zSlope2 * dtB4
         if noDepth || pdzB4 >= fbZ[ridxB4] {
-          fb[ridxB4] = cLo2 + rowSlope2 * dtB4
+          let srcB4 = cLo2 + rowSlope2 * dtB4
+          if noDepth || srcB4.a >= 1.0 {
+            fb[ridxB4] = srcB4
+          } else if repaint < 0.5 {
+            let dB4 = fb[ridxB4]
+            let iaB4 = 1.0 - srcB4.a
+            fb[ridxB4] = Color(srcB4.r * srcB4.a + dB4.r * iaB4, srcB4.g * srcB4.a + dB4.g * iaB4, srcB4.b * srcB4.a + dB4.b * iaB4, srcB4.a + dB4.a * iaB4)
+          }
           fbZ[ridxB4] = if noDepth then ZBACK else pdzB4
         }
       }
@@ -16758,7 +17295,14 @@ mod paintTick() {
         let dtB5 = tjB5 - xL2
         let pdzB5 = zLo2 + zSlope2 * dtB5
         if noDepth || pdzB5 >= fbZ[ridxB5] {
-          fb[ridxB5] = cLo2 + rowSlope2 * dtB5
+          let srcB5 = cLo2 + rowSlope2 * dtB5
+          if noDepth || srcB5.a >= 1.0 {
+            fb[ridxB5] = srcB5
+          } else if repaint < 0.5 {
+            let dB5 = fb[ridxB5]
+            let iaB5 = 1.0 - srcB5.a
+            fb[ridxB5] = Color(srcB5.r * srcB5.a + dB5.r * iaB5, srcB5.g * srcB5.a + dB5.g * iaB5, srcB5.b * srcB5.a + dB5.b * iaB5, srcB5.a + dB5.a * iaB5)
+          }
           fbZ[ridxB5] = if noDepth then ZBACK else pdzB5
         }
       }
@@ -16768,7 +17312,14 @@ mod paintTick() {
         let dtB6 = tjB6 - xL2
         let pdzB6 = zLo2 + zSlope2 * dtB6
         if noDepth || pdzB6 >= fbZ[ridxB6] {
-          fb[ridxB6] = cLo2 + rowSlope2 * dtB6
+          let srcB6 = cLo2 + rowSlope2 * dtB6
+          if noDepth || srcB6.a >= 1.0 {
+            fb[ridxB6] = srcB6
+          } else if repaint < 0.5 {
+            let dB6 = fb[ridxB6]
+            let iaB6 = 1.0 - srcB6.a
+            fb[ridxB6] = Color(srcB6.r * srcB6.a + dB6.r * iaB6, srcB6.g * srcB6.a + dB6.g * iaB6, srcB6.b * srcB6.a + dB6.b * iaB6, srcB6.a + dB6.a * iaB6)
+          }
           fbZ[ridxB6] = if noDepth then ZBACK else pdzB6
         }
       }
@@ -16778,7 +17329,14 @@ mod paintTick() {
         let dtB7 = tjB7 - xL2
         let pdzB7 = zLo2 + zSlope2 * dtB7
         if noDepth || pdzB7 >= fbZ[ridxB7] {
-          fb[ridxB7] = cLo2 + rowSlope2 * dtB7
+          let srcB7 = cLo2 + rowSlope2 * dtB7
+          if noDepth || srcB7.a >= 1.0 {
+            fb[ridxB7] = srcB7
+          } else if repaint < 0.5 {
+            let dB7 = fb[ridxB7]
+            let iaB7 = 1.0 - srcB7.a
+            fb[ridxB7] = Color(srcB7.r * srcB7.a + dB7.r * iaB7, srcB7.g * srcB7.a + dB7.g * iaB7, srcB7.b * srcB7.a + dB7.b * iaB7, srcB7.a + dB7.a * iaB7)
+          }
           fbZ[ridxB7] = if noDepth then ZBACK else pdzB7
         }
       }
@@ -16788,7 +17346,14 @@ mod paintTick() {
         let dtB8 = tjB8 - xL2
         let pdzB8 = zLo2 + zSlope2 * dtB8
         if noDepth || pdzB8 >= fbZ[ridxB8] {
-          fb[ridxB8] = cLo2 + rowSlope2 * dtB8
+          let srcB8 = cLo2 + rowSlope2 * dtB8
+          if noDepth || srcB8.a >= 1.0 {
+            fb[ridxB8] = srcB8
+          } else if repaint < 0.5 {
+            let dB8 = fb[ridxB8]
+            let iaB8 = 1.0 - srcB8.a
+            fb[ridxB8] = Color(srcB8.r * srcB8.a + dB8.r * iaB8, srcB8.g * srcB8.a + dB8.g * iaB8, srcB8.b * srcB8.a + dB8.b * iaB8, srcB8.a + dB8.a * iaB8)
+          }
           fbZ[ridxB8] = if noDepth then ZBACK else pdzB8
         }
       }
@@ -16798,7 +17363,14 @@ mod paintTick() {
         let dtB9 = tjB9 - xL2
         let pdzB9 = zLo2 + zSlope2 * dtB9
         if noDepth || pdzB9 >= fbZ[ridxB9] {
-          fb[ridxB9] = cLo2 + rowSlope2 * dtB9
+          let srcB9 = cLo2 + rowSlope2 * dtB9
+          if noDepth || srcB9.a >= 1.0 {
+            fb[ridxB9] = srcB9
+          } else if repaint < 0.5 {
+            let dB9 = fb[ridxB9]
+            let iaB9 = 1.0 - srcB9.a
+            fb[ridxB9] = Color(srcB9.r * srcB9.a + dB9.r * iaB9, srcB9.g * srcB9.a + dB9.g * iaB9, srcB9.b * srcB9.a + dB9.b * iaB9, srcB9.a + dB9.a * iaB9)
+          }
           fbZ[ridxB9] = if noDepth then ZBACK else pdzB9
         }
       }
@@ -16808,7 +17380,14 @@ mod paintTick() {
         let dtB10 = tjB10 - xL2
         let pdzB10 = zLo2 + zSlope2 * dtB10
         if noDepth || pdzB10 >= fbZ[ridxB10] {
-          fb[ridxB10] = cLo2 + rowSlope2 * dtB10
+          let srcB10 = cLo2 + rowSlope2 * dtB10
+          if noDepth || srcB10.a >= 1.0 {
+            fb[ridxB10] = srcB10
+          } else if repaint < 0.5 {
+            let dB10 = fb[ridxB10]
+            let iaB10 = 1.0 - srcB10.a
+            fb[ridxB10] = Color(srcB10.r * srcB10.a + dB10.r * iaB10, srcB10.g * srcB10.a + dB10.g * iaB10, srcB10.b * srcB10.a + dB10.b * iaB10, srcB10.a + dB10.a * iaB10)
+          }
           fbZ[ridxB10] = if noDepth then ZBACK else pdzB10
         }
       }
@@ -16818,7 +17397,14 @@ mod paintTick() {
         let dtB11 = tjB11 - xL2
         let pdzB11 = zLo2 + zSlope2 * dtB11
         if noDepth || pdzB11 >= fbZ[ridxB11] {
-          fb[ridxB11] = cLo2 + rowSlope2 * dtB11
+          let srcB11 = cLo2 + rowSlope2 * dtB11
+          if noDepth || srcB11.a >= 1.0 {
+            fb[ridxB11] = srcB11
+          } else if repaint < 0.5 {
+            let dB11 = fb[ridxB11]
+            let iaB11 = 1.0 - srcB11.a
+            fb[ridxB11] = Color(srcB11.r * srcB11.a + dB11.r * iaB11, srcB11.g * srcB11.a + dB11.g * iaB11, srcB11.b * srcB11.a + dB11.b * iaB11, srcB11.a + dB11.a * iaB11)
+          }
           fbZ[ridxB11] = if noDepth then ZBACK else pdzB11
         }
       }
@@ -16828,7 +17414,14 @@ mod paintTick() {
         let dtB12 = tjB12 - xL2
         let pdzB12 = zLo2 + zSlope2 * dtB12
         if noDepth || pdzB12 >= fbZ[ridxB12] {
-          fb[ridxB12] = cLo2 + rowSlope2 * dtB12
+          let srcB12 = cLo2 + rowSlope2 * dtB12
+          if noDepth || srcB12.a >= 1.0 {
+            fb[ridxB12] = srcB12
+          } else if repaint < 0.5 {
+            let dB12 = fb[ridxB12]
+            let iaB12 = 1.0 - srcB12.a
+            fb[ridxB12] = Color(srcB12.r * srcB12.a + dB12.r * iaB12, srcB12.g * srcB12.a + dB12.g * iaB12, srcB12.b * srcB12.a + dB12.b * iaB12, srcB12.a + dB12.a * iaB12)
+          }
           fbZ[ridxB12] = if noDepth then ZBACK else pdzB12
         }
       }
@@ -16838,7 +17431,14 @@ mod paintTick() {
         let dtB13 = tjB13 - xL2
         let pdzB13 = zLo2 + zSlope2 * dtB13
         if noDepth || pdzB13 >= fbZ[ridxB13] {
-          fb[ridxB13] = cLo2 + rowSlope2 * dtB13
+          let srcB13 = cLo2 + rowSlope2 * dtB13
+          if noDepth || srcB13.a >= 1.0 {
+            fb[ridxB13] = srcB13
+          } else if repaint < 0.5 {
+            let dB13 = fb[ridxB13]
+            let iaB13 = 1.0 - srcB13.a
+            fb[ridxB13] = Color(srcB13.r * srcB13.a + dB13.r * iaB13, srcB13.g * srcB13.a + dB13.g * iaB13, srcB13.b * srcB13.a + dB13.b * iaB13, srcB13.a + dB13.a * iaB13)
+          }
           fbZ[ridxB13] = if noDepth then ZBACK else pdzB13
         }
       }
@@ -16848,7 +17448,14 @@ mod paintTick() {
         let dtB14 = tjB14 - xL2
         let pdzB14 = zLo2 + zSlope2 * dtB14
         if noDepth || pdzB14 >= fbZ[ridxB14] {
-          fb[ridxB14] = cLo2 + rowSlope2 * dtB14
+          let srcB14 = cLo2 + rowSlope2 * dtB14
+          if noDepth || srcB14.a >= 1.0 {
+            fb[ridxB14] = srcB14
+          } else if repaint < 0.5 {
+            let dB14 = fb[ridxB14]
+            let iaB14 = 1.0 - srcB14.a
+            fb[ridxB14] = Color(srcB14.r * srcB14.a + dB14.r * iaB14, srcB14.g * srcB14.a + dB14.g * iaB14, srcB14.b * srcB14.a + dB14.b * iaB14, srcB14.a + dB14.a * iaB14)
+          }
           fbZ[ridxB14] = if noDepth then ZBACK else pdzB14
         }
       }
@@ -16858,7 +17465,14 @@ mod paintTick() {
         let dtB15 = tjB15 - xL2
         let pdzB15 = zLo2 + zSlope2 * dtB15
         if noDepth || pdzB15 >= fbZ[ridxB15] {
-          fb[ridxB15] = cLo2 + rowSlope2 * dtB15
+          let srcB15 = cLo2 + rowSlope2 * dtB15
+          if noDepth || srcB15.a >= 1.0 {
+            fb[ridxB15] = srcB15
+          } else if repaint < 0.5 {
+            let dB15 = fb[ridxB15]
+            let iaB15 = 1.0 - srcB15.a
+            fb[ridxB15] = Color(srcB15.r * srcB15.a + dB15.r * iaB15, srcB15.g * srcB15.a + dB15.g * iaB15, srcB15.b * srcB15.a + dB15.b * iaB15, srcB15.a + dB15.a * iaB15)
+          }
           fbZ[ridxB15] = if noDepth then ZBACK else pdzB15
         }
       }
@@ -16868,7 +17482,14 @@ mod paintTick() {
         let dtB16 = tjB16 - xL2
         let pdzB16 = zLo2 + zSlope2 * dtB16
         if noDepth || pdzB16 >= fbZ[ridxB16] {
-          fb[ridxB16] = cLo2 + rowSlope2 * dtB16
+          let srcB16 = cLo2 + rowSlope2 * dtB16
+          if noDepth || srcB16.a >= 1.0 {
+            fb[ridxB16] = srcB16
+          } else if repaint < 0.5 {
+            let dB16 = fb[ridxB16]
+            let iaB16 = 1.0 - srcB16.a
+            fb[ridxB16] = Color(srcB16.r * srcB16.a + dB16.r * iaB16, srcB16.g * srcB16.a + dB16.g * iaB16, srcB16.b * srcB16.a + dB16.b * iaB16, srcB16.a + dB16.a * iaB16)
+          }
           fbZ[ridxB16] = if noDepth then ZBACK else pdzB16
         }
       }
@@ -16878,7 +17499,14 @@ mod paintTick() {
         let dtB17 = tjB17 - xL2
         let pdzB17 = zLo2 + zSlope2 * dtB17
         if noDepth || pdzB17 >= fbZ[ridxB17] {
-          fb[ridxB17] = cLo2 + rowSlope2 * dtB17
+          let srcB17 = cLo2 + rowSlope2 * dtB17
+          if noDepth || srcB17.a >= 1.0 {
+            fb[ridxB17] = srcB17
+          } else if repaint < 0.5 {
+            let dB17 = fb[ridxB17]
+            let iaB17 = 1.0 - srcB17.a
+            fb[ridxB17] = Color(srcB17.r * srcB17.a + dB17.r * iaB17, srcB17.g * srcB17.a + dB17.g * iaB17, srcB17.b * srcB17.a + dB17.b * iaB17, srcB17.a + dB17.a * iaB17)
+          }
           fbZ[ridxB17] = if noDepth then ZBACK else pdzB17
         }
       }
@@ -16888,7 +17516,14 @@ mod paintTick() {
         let dtB18 = tjB18 - xL2
         let pdzB18 = zLo2 + zSlope2 * dtB18
         if noDepth || pdzB18 >= fbZ[ridxB18] {
-          fb[ridxB18] = cLo2 + rowSlope2 * dtB18
+          let srcB18 = cLo2 + rowSlope2 * dtB18
+          if noDepth || srcB18.a >= 1.0 {
+            fb[ridxB18] = srcB18
+          } else if repaint < 0.5 {
+            let dB18 = fb[ridxB18]
+            let iaB18 = 1.0 - srcB18.a
+            fb[ridxB18] = Color(srcB18.r * srcB18.a + dB18.r * iaB18, srcB18.g * srcB18.a + dB18.g * iaB18, srcB18.b * srcB18.a + dB18.b * iaB18, srcB18.a + dB18.a * iaB18)
+          }
           fbZ[ridxB18] = if noDepth then ZBACK else pdzB18
         }
       }
@@ -16898,7 +17533,14 @@ mod paintTick() {
         let dtB19 = tjB19 - xL2
         let pdzB19 = zLo2 + zSlope2 * dtB19
         if noDepth || pdzB19 >= fbZ[ridxB19] {
-          fb[ridxB19] = cLo2 + rowSlope2 * dtB19
+          let srcB19 = cLo2 + rowSlope2 * dtB19
+          if noDepth || srcB19.a >= 1.0 {
+            fb[ridxB19] = srcB19
+          } else if repaint < 0.5 {
+            let dB19 = fb[ridxB19]
+            let iaB19 = 1.0 - srcB19.a
+            fb[ridxB19] = Color(srcB19.r * srcB19.a + dB19.r * iaB19, srcB19.g * srcB19.a + dB19.g * iaB19, srcB19.b * srcB19.a + dB19.b * iaB19, srcB19.a + dB19.a * iaB19)
+          }
           fbZ[ridxB19] = if noDepth then ZBACK else pdzB19
         }
       }
@@ -16908,7 +17550,14 @@ mod paintTick() {
         let dtB20 = tjB20 - xL2
         let pdzB20 = zLo2 + zSlope2 * dtB20
         if noDepth || pdzB20 >= fbZ[ridxB20] {
-          fb[ridxB20] = cLo2 + rowSlope2 * dtB20
+          let srcB20 = cLo2 + rowSlope2 * dtB20
+          if noDepth || srcB20.a >= 1.0 {
+            fb[ridxB20] = srcB20
+          } else if repaint < 0.5 {
+            let dB20 = fb[ridxB20]
+            let iaB20 = 1.0 - srcB20.a
+            fb[ridxB20] = Color(srcB20.r * srcB20.a + dB20.r * iaB20, srcB20.g * srcB20.a + dB20.g * iaB20, srcB20.b * srcB20.a + dB20.b * iaB20, srcB20.a + dB20.a * iaB20)
+          }
           fbZ[ridxB20] = if noDepth then ZBACK else pdzB20
         }
       }
@@ -16918,7 +17567,14 @@ mod paintTick() {
         let dtB21 = tjB21 - xL2
         let pdzB21 = zLo2 + zSlope2 * dtB21
         if noDepth || pdzB21 >= fbZ[ridxB21] {
-          fb[ridxB21] = cLo2 + rowSlope2 * dtB21
+          let srcB21 = cLo2 + rowSlope2 * dtB21
+          if noDepth || srcB21.a >= 1.0 {
+            fb[ridxB21] = srcB21
+          } else if repaint < 0.5 {
+            let dB21 = fb[ridxB21]
+            let iaB21 = 1.0 - srcB21.a
+            fb[ridxB21] = Color(srcB21.r * srcB21.a + dB21.r * iaB21, srcB21.g * srcB21.a + dB21.g * iaB21, srcB21.b * srcB21.a + dB21.b * iaB21, srcB21.a + dB21.a * iaB21)
+          }
           fbZ[ridxB21] = if noDepth then ZBACK else pdzB21
         }
       }
@@ -16928,7 +17584,14 @@ mod paintTick() {
         let dtB22 = tjB22 - xL2
         let pdzB22 = zLo2 + zSlope2 * dtB22
         if noDepth || pdzB22 >= fbZ[ridxB22] {
-          fb[ridxB22] = cLo2 + rowSlope2 * dtB22
+          let srcB22 = cLo2 + rowSlope2 * dtB22
+          if noDepth || srcB22.a >= 1.0 {
+            fb[ridxB22] = srcB22
+          } else if repaint < 0.5 {
+            let dB22 = fb[ridxB22]
+            let iaB22 = 1.0 - srcB22.a
+            fb[ridxB22] = Color(srcB22.r * srcB22.a + dB22.r * iaB22, srcB22.g * srcB22.a + dB22.g * iaB22, srcB22.b * srcB22.a + dB22.b * iaB22, srcB22.a + dB22.a * iaB22)
+          }
           fbZ[ridxB22] = if noDepth then ZBACK else pdzB22
         }
       }
@@ -16938,7 +17601,14 @@ mod paintTick() {
         let dtB23 = tjB23 - xL2
         let pdzB23 = zLo2 + zSlope2 * dtB23
         if noDepth || pdzB23 >= fbZ[ridxB23] {
-          fb[ridxB23] = cLo2 + rowSlope2 * dtB23
+          let srcB23 = cLo2 + rowSlope2 * dtB23
+          if noDepth || srcB23.a >= 1.0 {
+            fb[ridxB23] = srcB23
+          } else if repaint < 0.5 {
+            let dB23 = fb[ridxB23]
+            let iaB23 = 1.0 - srcB23.a
+            fb[ridxB23] = Color(srcB23.r * srcB23.a + dB23.r * iaB23, srcB23.g * srcB23.a + dB23.g * iaB23, srcB23.b * srcB23.a + dB23.b * iaB23, srcB23.a + dB23.a * iaB23)
+          }
           fbZ[ridxB23] = if noDepth then ZBACK else pdzB23
         }
       }
@@ -16948,7 +17618,14 @@ mod paintTick() {
         let dtB24 = tjB24 - xL2
         let pdzB24 = zLo2 + zSlope2 * dtB24
         if noDepth || pdzB24 >= fbZ[ridxB24] {
-          fb[ridxB24] = cLo2 + rowSlope2 * dtB24
+          let srcB24 = cLo2 + rowSlope2 * dtB24
+          if noDepth || srcB24.a >= 1.0 {
+            fb[ridxB24] = srcB24
+          } else if repaint < 0.5 {
+            let dB24 = fb[ridxB24]
+            let iaB24 = 1.0 - srcB24.a
+            fb[ridxB24] = Color(srcB24.r * srcB24.a + dB24.r * iaB24, srcB24.g * srcB24.a + dB24.g * iaB24, srcB24.b * srcB24.a + dB24.b * iaB24, srcB24.a + dB24.a * iaB24)
+          }
           fbZ[ridxB24] = if noDepth then ZBACK else pdzB24
         }
       }
@@ -16958,7 +17635,14 @@ mod paintTick() {
         let dtB25 = tjB25 - xL2
         let pdzB25 = zLo2 + zSlope2 * dtB25
         if noDepth || pdzB25 >= fbZ[ridxB25] {
-          fb[ridxB25] = cLo2 + rowSlope2 * dtB25
+          let srcB25 = cLo2 + rowSlope2 * dtB25
+          if noDepth || srcB25.a >= 1.0 {
+            fb[ridxB25] = srcB25
+          } else if repaint < 0.5 {
+            let dB25 = fb[ridxB25]
+            let iaB25 = 1.0 - srcB25.a
+            fb[ridxB25] = Color(srcB25.r * srcB25.a + dB25.r * iaB25, srcB25.g * srcB25.a + dB25.g * iaB25, srcB25.b * srcB25.a + dB25.b * iaB25, srcB25.a + dB25.a * iaB25)
+          }
           fbZ[ridxB25] = if noDepth then ZBACK else pdzB25
         }
       }
@@ -16968,7 +17652,14 @@ mod paintTick() {
         let dtB26 = tjB26 - xL2
         let pdzB26 = zLo2 + zSlope2 * dtB26
         if noDepth || pdzB26 >= fbZ[ridxB26] {
-          fb[ridxB26] = cLo2 + rowSlope2 * dtB26
+          let srcB26 = cLo2 + rowSlope2 * dtB26
+          if noDepth || srcB26.a >= 1.0 {
+            fb[ridxB26] = srcB26
+          } else if repaint < 0.5 {
+            let dB26 = fb[ridxB26]
+            let iaB26 = 1.0 - srcB26.a
+            fb[ridxB26] = Color(srcB26.r * srcB26.a + dB26.r * iaB26, srcB26.g * srcB26.a + dB26.g * iaB26, srcB26.b * srcB26.a + dB26.b * iaB26, srcB26.a + dB26.a * iaB26)
+          }
           fbZ[ridxB26] = if noDepth then ZBACK else pdzB26
         }
       }
@@ -16978,7 +17669,14 @@ mod paintTick() {
         let dtB27 = tjB27 - xL2
         let pdzB27 = zLo2 + zSlope2 * dtB27
         if noDepth || pdzB27 >= fbZ[ridxB27] {
-          fb[ridxB27] = cLo2 + rowSlope2 * dtB27
+          let srcB27 = cLo2 + rowSlope2 * dtB27
+          if noDepth || srcB27.a >= 1.0 {
+            fb[ridxB27] = srcB27
+          } else if repaint < 0.5 {
+            let dB27 = fb[ridxB27]
+            let iaB27 = 1.0 - srcB27.a
+            fb[ridxB27] = Color(srcB27.r * srcB27.a + dB27.r * iaB27, srcB27.g * srcB27.a + dB27.g * iaB27, srcB27.b * srcB27.a + dB27.b * iaB27, srcB27.a + dB27.a * iaB27)
+          }
           fbZ[ridxB27] = if noDepth then ZBACK else pdzB27
         }
       }
@@ -16988,7 +17686,14 @@ mod paintTick() {
         let dtB28 = tjB28 - xL2
         let pdzB28 = zLo2 + zSlope2 * dtB28
         if noDepth || pdzB28 >= fbZ[ridxB28] {
-          fb[ridxB28] = cLo2 + rowSlope2 * dtB28
+          let srcB28 = cLo2 + rowSlope2 * dtB28
+          if noDepth || srcB28.a >= 1.0 {
+            fb[ridxB28] = srcB28
+          } else if repaint < 0.5 {
+            let dB28 = fb[ridxB28]
+            let iaB28 = 1.0 - srcB28.a
+            fb[ridxB28] = Color(srcB28.r * srcB28.a + dB28.r * iaB28, srcB28.g * srcB28.a + dB28.g * iaB28, srcB28.b * srcB28.a + dB28.b * iaB28, srcB28.a + dB28.a * iaB28)
+          }
           fbZ[ridxB28] = if noDepth then ZBACK else pdzB28
         }
       }
@@ -16998,7 +17703,14 @@ mod paintTick() {
         let dtB29 = tjB29 - xL2
         let pdzB29 = zLo2 + zSlope2 * dtB29
         if noDepth || pdzB29 >= fbZ[ridxB29] {
-          fb[ridxB29] = cLo2 + rowSlope2 * dtB29
+          let srcB29 = cLo2 + rowSlope2 * dtB29
+          if noDepth || srcB29.a >= 1.0 {
+            fb[ridxB29] = srcB29
+          } else if repaint < 0.5 {
+            let dB29 = fb[ridxB29]
+            let iaB29 = 1.0 - srcB29.a
+            fb[ridxB29] = Color(srcB29.r * srcB29.a + dB29.r * iaB29, srcB29.g * srcB29.a + dB29.g * iaB29, srcB29.b * srcB29.a + dB29.b * iaB29, srcB29.a + dB29.a * iaB29)
+          }
           fbZ[ridxB29] = if noDepth then ZBACK else pdzB29
         }
       }
@@ -17008,7 +17720,14 @@ mod paintTick() {
         let dtB30 = tjB30 - xL2
         let pdzB30 = zLo2 + zSlope2 * dtB30
         if noDepth || pdzB30 >= fbZ[ridxB30] {
-          fb[ridxB30] = cLo2 + rowSlope2 * dtB30
+          let srcB30 = cLo2 + rowSlope2 * dtB30
+          if noDepth || srcB30.a >= 1.0 {
+            fb[ridxB30] = srcB30
+          } else if repaint < 0.5 {
+            let dB30 = fb[ridxB30]
+            let iaB30 = 1.0 - srcB30.a
+            fb[ridxB30] = Color(srcB30.r * srcB30.a + dB30.r * iaB30, srcB30.g * srcB30.a + dB30.g * iaB30, srcB30.b * srcB30.a + dB30.b * iaB30, srcB30.a + dB30.a * iaB30)
+          }
           fbZ[ridxB30] = if noDepth then ZBACK else pdzB30
         }
       }
@@ -17018,7 +17737,14 @@ mod paintTick() {
         let dtB31 = tjB31 - xL2
         let pdzB31 = zLo2 + zSlope2 * dtB31
         if noDepth || pdzB31 >= fbZ[ridxB31] {
-          fb[ridxB31] = cLo2 + rowSlope2 * dtB31
+          let srcB31 = cLo2 + rowSlope2 * dtB31
+          if noDepth || srcB31.a >= 1.0 {
+            fb[ridxB31] = srcB31
+          } else if repaint < 0.5 {
+            let dB31 = fb[ridxB31]
+            let iaB31 = 1.0 - srcB31.a
+            fb[ridxB31] = Color(srcB31.r * srcB31.a + dB31.r * iaB31, srcB31.g * srcB31.a + dB31.g * iaB31, srcB31.b * srcB31.a + dB31.b * iaB31, srcB31.a + dB31.a * iaB31)
+          }
           fbZ[ridxB31] = if noDepth then ZBACK else pdzB31
         }
       }
@@ -17028,7 +17754,14 @@ mod paintTick() {
         let dtB32 = tjB32 - xL2
         let pdzB32 = zLo2 + zSlope2 * dtB32
         if noDepth || pdzB32 >= fbZ[ridxB32] {
-          fb[ridxB32] = cLo2 + rowSlope2 * dtB32
+          let srcB32 = cLo2 + rowSlope2 * dtB32
+          if noDepth || srcB32.a >= 1.0 {
+            fb[ridxB32] = srcB32
+          } else if repaint < 0.5 {
+            let dB32 = fb[ridxB32]
+            let iaB32 = 1.0 - srcB32.a
+            fb[ridxB32] = Color(srcB32.r * srcB32.a + dB32.r * iaB32, srcB32.g * srcB32.a + dB32.g * iaB32, srcB32.b * srcB32.a + dB32.b * iaB32, srcB32.a + dB32.a * iaB32)
+          }
           fbZ[ridxB32] = if noDepth then ZBACK else pdzB32
         }
       }
@@ -17038,7 +17771,14 @@ mod paintTick() {
         let dtB33 = tjB33 - xL2
         let pdzB33 = zLo2 + zSlope2 * dtB33
         if noDepth || pdzB33 >= fbZ[ridxB33] {
-          fb[ridxB33] = cLo2 + rowSlope2 * dtB33
+          let srcB33 = cLo2 + rowSlope2 * dtB33
+          if noDepth || srcB33.a >= 1.0 {
+            fb[ridxB33] = srcB33
+          } else if repaint < 0.5 {
+            let dB33 = fb[ridxB33]
+            let iaB33 = 1.0 - srcB33.a
+            fb[ridxB33] = Color(srcB33.r * srcB33.a + dB33.r * iaB33, srcB33.g * srcB33.a + dB33.g * iaB33, srcB33.b * srcB33.a + dB33.b * iaB33, srcB33.a + dB33.a * iaB33)
+          }
           fbZ[ridxB33] = if noDepth then ZBACK else pdzB33
         }
       }
@@ -17048,7 +17788,14 @@ mod paintTick() {
         let dtB34 = tjB34 - xL2
         let pdzB34 = zLo2 + zSlope2 * dtB34
         if noDepth || pdzB34 >= fbZ[ridxB34] {
-          fb[ridxB34] = cLo2 + rowSlope2 * dtB34
+          let srcB34 = cLo2 + rowSlope2 * dtB34
+          if noDepth || srcB34.a >= 1.0 {
+            fb[ridxB34] = srcB34
+          } else if repaint < 0.5 {
+            let dB34 = fb[ridxB34]
+            let iaB34 = 1.0 - srcB34.a
+            fb[ridxB34] = Color(srcB34.r * srcB34.a + dB34.r * iaB34, srcB34.g * srcB34.a + dB34.g * iaB34, srcB34.b * srcB34.a + dB34.b * iaB34, srcB34.a + dB34.a * iaB34)
+          }
           fbZ[ridxB34] = if noDepth then ZBACK else pdzB34
         }
       }
@@ -17058,7 +17805,14 @@ mod paintTick() {
         let dtB35 = tjB35 - xL2
         let pdzB35 = zLo2 + zSlope2 * dtB35
         if noDepth || pdzB35 >= fbZ[ridxB35] {
-          fb[ridxB35] = cLo2 + rowSlope2 * dtB35
+          let srcB35 = cLo2 + rowSlope2 * dtB35
+          if noDepth || srcB35.a >= 1.0 {
+            fb[ridxB35] = srcB35
+          } else if repaint < 0.5 {
+            let dB35 = fb[ridxB35]
+            let iaB35 = 1.0 - srcB35.a
+            fb[ridxB35] = Color(srcB35.r * srcB35.a + dB35.r * iaB35, srcB35.g * srcB35.a + dB35.g * iaB35, srcB35.b * srcB35.a + dB35.b * iaB35, srcB35.a + dB35.a * iaB35)
+          }
           fbZ[ridxB35] = if noDepth then ZBACK else pdzB35
         }
       }
@@ -17068,7 +17822,14 @@ mod paintTick() {
         let dtB36 = tjB36 - xL2
         let pdzB36 = zLo2 + zSlope2 * dtB36
         if noDepth || pdzB36 >= fbZ[ridxB36] {
-          fb[ridxB36] = cLo2 + rowSlope2 * dtB36
+          let srcB36 = cLo2 + rowSlope2 * dtB36
+          if noDepth || srcB36.a >= 1.0 {
+            fb[ridxB36] = srcB36
+          } else if repaint < 0.5 {
+            let dB36 = fb[ridxB36]
+            let iaB36 = 1.0 - srcB36.a
+            fb[ridxB36] = Color(srcB36.r * srcB36.a + dB36.r * iaB36, srcB36.g * srcB36.a + dB36.g * iaB36, srcB36.b * srcB36.a + dB36.b * iaB36, srcB36.a + dB36.a * iaB36)
+          }
           fbZ[ridxB36] = if noDepth then ZBACK else pdzB36
         }
       }
@@ -17078,7 +17839,14 @@ mod paintTick() {
         let dtB37 = tjB37 - xL2
         let pdzB37 = zLo2 + zSlope2 * dtB37
         if noDepth || pdzB37 >= fbZ[ridxB37] {
-          fb[ridxB37] = cLo2 + rowSlope2 * dtB37
+          let srcB37 = cLo2 + rowSlope2 * dtB37
+          if noDepth || srcB37.a >= 1.0 {
+            fb[ridxB37] = srcB37
+          } else if repaint < 0.5 {
+            let dB37 = fb[ridxB37]
+            let iaB37 = 1.0 - srcB37.a
+            fb[ridxB37] = Color(srcB37.r * srcB37.a + dB37.r * iaB37, srcB37.g * srcB37.a + dB37.g * iaB37, srcB37.b * srcB37.a + dB37.b * iaB37, srcB37.a + dB37.a * iaB37)
+          }
           fbZ[ridxB37] = if noDepth then ZBACK else pdzB37
         }
       }
@@ -17088,7 +17856,14 @@ mod paintTick() {
         let dtB38 = tjB38 - xL2
         let pdzB38 = zLo2 + zSlope2 * dtB38
         if noDepth || pdzB38 >= fbZ[ridxB38] {
-          fb[ridxB38] = cLo2 + rowSlope2 * dtB38
+          let srcB38 = cLo2 + rowSlope2 * dtB38
+          if noDepth || srcB38.a >= 1.0 {
+            fb[ridxB38] = srcB38
+          } else if repaint < 0.5 {
+            let dB38 = fb[ridxB38]
+            let iaB38 = 1.0 - srcB38.a
+            fb[ridxB38] = Color(srcB38.r * srcB38.a + dB38.r * iaB38, srcB38.g * srcB38.a + dB38.g * iaB38, srcB38.b * srcB38.a + dB38.b * iaB38, srcB38.a + dB38.a * iaB38)
+          }
           fbZ[ridxB38] = if noDepth then ZBACK else pdzB38
         }
       }
@@ -17098,7 +17873,14 @@ mod paintTick() {
         let dtB39 = tjB39 - xL2
         let pdzB39 = zLo2 + zSlope2 * dtB39
         if noDepth || pdzB39 >= fbZ[ridxB39] {
-          fb[ridxB39] = cLo2 + rowSlope2 * dtB39
+          let srcB39 = cLo2 + rowSlope2 * dtB39
+          if noDepth || srcB39.a >= 1.0 {
+            fb[ridxB39] = srcB39
+          } else if repaint < 0.5 {
+            let dB39 = fb[ridxB39]
+            let iaB39 = 1.0 - srcB39.a
+            fb[ridxB39] = Color(srcB39.r * srcB39.a + dB39.r * iaB39, srcB39.g * srcB39.a + dB39.g * iaB39, srcB39.b * srcB39.a + dB39.b * iaB39, srcB39.a + dB39.a * iaB39)
+          }
           fbZ[ridxB39] = if noDepth then ZBACK else pdzB39
         }
       }
@@ -17108,7 +17890,14 @@ mod paintTick() {
         let dtB40 = tjB40 - xL2
         let pdzB40 = zLo2 + zSlope2 * dtB40
         if noDepth || pdzB40 >= fbZ[ridxB40] {
-          fb[ridxB40] = cLo2 + rowSlope2 * dtB40
+          let srcB40 = cLo2 + rowSlope2 * dtB40
+          if noDepth || srcB40.a >= 1.0 {
+            fb[ridxB40] = srcB40
+          } else if repaint < 0.5 {
+            let dB40 = fb[ridxB40]
+            let iaB40 = 1.0 - srcB40.a
+            fb[ridxB40] = Color(srcB40.r * srcB40.a + dB40.r * iaB40, srcB40.g * srcB40.a + dB40.g * iaB40, srcB40.b * srcB40.a + dB40.b * iaB40, srcB40.a + dB40.a * iaB40)
+          }
           fbZ[ridxB40] = if noDepth then ZBACK else pdzB40
         }
       }
@@ -17118,7 +17907,14 @@ mod paintTick() {
         let dtB41 = tjB41 - xL2
         let pdzB41 = zLo2 + zSlope2 * dtB41
         if noDepth || pdzB41 >= fbZ[ridxB41] {
-          fb[ridxB41] = cLo2 + rowSlope2 * dtB41
+          let srcB41 = cLo2 + rowSlope2 * dtB41
+          if noDepth || srcB41.a >= 1.0 {
+            fb[ridxB41] = srcB41
+          } else if repaint < 0.5 {
+            let dB41 = fb[ridxB41]
+            let iaB41 = 1.0 - srcB41.a
+            fb[ridxB41] = Color(srcB41.r * srcB41.a + dB41.r * iaB41, srcB41.g * srcB41.a + dB41.g * iaB41, srcB41.b * srcB41.a + dB41.b * iaB41, srcB41.a + dB41.a * iaB41)
+          }
           fbZ[ridxB41] = if noDepth then ZBACK else pdzB41
         }
       }
@@ -17128,7 +17924,14 @@ mod paintTick() {
         let dtB42 = tjB42 - xL2
         let pdzB42 = zLo2 + zSlope2 * dtB42
         if noDepth || pdzB42 >= fbZ[ridxB42] {
-          fb[ridxB42] = cLo2 + rowSlope2 * dtB42
+          let srcB42 = cLo2 + rowSlope2 * dtB42
+          if noDepth || srcB42.a >= 1.0 {
+            fb[ridxB42] = srcB42
+          } else if repaint < 0.5 {
+            let dB42 = fb[ridxB42]
+            let iaB42 = 1.0 - srcB42.a
+            fb[ridxB42] = Color(srcB42.r * srcB42.a + dB42.r * iaB42, srcB42.g * srcB42.a + dB42.g * iaB42, srcB42.b * srcB42.a + dB42.b * iaB42, srcB42.a + dB42.a * iaB42)
+          }
           fbZ[ridxB42] = if noDepth then ZBACK else pdzB42
         }
       }
@@ -17138,7 +17941,14 @@ mod paintTick() {
         let dtB43 = tjB43 - xL2
         let pdzB43 = zLo2 + zSlope2 * dtB43
         if noDepth || pdzB43 >= fbZ[ridxB43] {
-          fb[ridxB43] = cLo2 + rowSlope2 * dtB43
+          let srcB43 = cLo2 + rowSlope2 * dtB43
+          if noDepth || srcB43.a >= 1.0 {
+            fb[ridxB43] = srcB43
+          } else if repaint < 0.5 {
+            let dB43 = fb[ridxB43]
+            let iaB43 = 1.0 - srcB43.a
+            fb[ridxB43] = Color(srcB43.r * srcB43.a + dB43.r * iaB43, srcB43.g * srcB43.a + dB43.g * iaB43, srcB43.b * srcB43.a + dB43.b * iaB43, srcB43.a + dB43.a * iaB43)
+          }
           fbZ[ridxB43] = if noDepth then ZBACK else pdzB43
         }
       }
@@ -17148,7 +17958,14 @@ mod paintTick() {
         let dtB44 = tjB44 - xL2
         let pdzB44 = zLo2 + zSlope2 * dtB44
         if noDepth || pdzB44 >= fbZ[ridxB44] {
-          fb[ridxB44] = cLo2 + rowSlope2 * dtB44
+          let srcB44 = cLo2 + rowSlope2 * dtB44
+          if noDepth || srcB44.a >= 1.0 {
+            fb[ridxB44] = srcB44
+          } else if repaint < 0.5 {
+            let dB44 = fb[ridxB44]
+            let iaB44 = 1.0 - srcB44.a
+            fb[ridxB44] = Color(srcB44.r * srcB44.a + dB44.r * iaB44, srcB44.g * srcB44.a + dB44.g * iaB44, srcB44.b * srcB44.a + dB44.b * iaB44, srcB44.a + dB44.a * iaB44)
+          }
           fbZ[ridxB44] = if noDepth then ZBACK else pdzB44
         }
       }
@@ -17158,7 +17975,14 @@ mod paintTick() {
         let dtB45 = tjB45 - xL2
         let pdzB45 = zLo2 + zSlope2 * dtB45
         if noDepth || pdzB45 >= fbZ[ridxB45] {
-          fb[ridxB45] = cLo2 + rowSlope2 * dtB45
+          let srcB45 = cLo2 + rowSlope2 * dtB45
+          if noDepth || srcB45.a >= 1.0 {
+            fb[ridxB45] = srcB45
+          } else if repaint < 0.5 {
+            let dB45 = fb[ridxB45]
+            let iaB45 = 1.0 - srcB45.a
+            fb[ridxB45] = Color(srcB45.r * srcB45.a + dB45.r * iaB45, srcB45.g * srcB45.a + dB45.g * iaB45, srcB45.b * srcB45.a + dB45.b * iaB45, srcB45.a + dB45.a * iaB45)
+          }
           fbZ[ridxB45] = if noDepth then ZBACK else pdzB45
         }
       }
@@ -17168,7 +17992,14 @@ mod paintTick() {
         let dtB46 = tjB46 - xL2
         let pdzB46 = zLo2 + zSlope2 * dtB46
         if noDepth || pdzB46 >= fbZ[ridxB46] {
-          fb[ridxB46] = cLo2 + rowSlope2 * dtB46
+          let srcB46 = cLo2 + rowSlope2 * dtB46
+          if noDepth || srcB46.a >= 1.0 {
+            fb[ridxB46] = srcB46
+          } else if repaint < 0.5 {
+            let dB46 = fb[ridxB46]
+            let iaB46 = 1.0 - srcB46.a
+            fb[ridxB46] = Color(srcB46.r * srcB46.a + dB46.r * iaB46, srcB46.g * srcB46.a + dB46.g * iaB46, srcB46.b * srcB46.a + dB46.b * iaB46, srcB46.a + dB46.a * iaB46)
+          }
           fbZ[ridxB46] = if noDepth then ZBACK else pdzB46
         }
       }
@@ -17178,7 +18009,14 @@ mod paintTick() {
         let dtB47 = tjB47 - xL2
         let pdzB47 = zLo2 + zSlope2 * dtB47
         if noDepth || pdzB47 >= fbZ[ridxB47] {
-          fb[ridxB47] = cLo2 + rowSlope2 * dtB47
+          let srcB47 = cLo2 + rowSlope2 * dtB47
+          if noDepth || srcB47.a >= 1.0 {
+            fb[ridxB47] = srcB47
+          } else if repaint < 0.5 {
+            let dB47 = fb[ridxB47]
+            let iaB47 = 1.0 - srcB47.a
+            fb[ridxB47] = Color(srcB47.r * srcB47.a + dB47.r * iaB47, srcB47.g * srcB47.a + dB47.g * iaB47, srcB47.b * srcB47.a + dB47.b * iaB47, srcB47.a + dB47.a * iaB47)
+          }
           fbZ[ridxB47] = if noDepth then ZBACK else pdzB47
         }
       }
@@ -17188,7 +18026,14 @@ mod paintTick() {
         let dtB48 = tjB48 - xL2
         let pdzB48 = zLo2 + zSlope2 * dtB48
         if noDepth || pdzB48 >= fbZ[ridxB48] {
-          fb[ridxB48] = cLo2 + rowSlope2 * dtB48
+          let srcB48 = cLo2 + rowSlope2 * dtB48
+          if noDepth || srcB48.a >= 1.0 {
+            fb[ridxB48] = srcB48
+          } else if repaint < 0.5 {
+            let dB48 = fb[ridxB48]
+            let iaB48 = 1.0 - srcB48.a
+            fb[ridxB48] = Color(srcB48.r * srcB48.a + dB48.r * iaB48, srcB48.g * srcB48.a + dB48.g * iaB48, srcB48.b * srcB48.a + dB48.b * iaB48, srcB48.a + dB48.a * iaB48)
+          }
           fbZ[ridxB48] = if noDepth then ZBACK else pdzB48
         }
       }
@@ -17198,7 +18043,14 @@ mod paintTick() {
         let dtB49 = tjB49 - xL2
         let pdzB49 = zLo2 + zSlope2 * dtB49
         if noDepth || pdzB49 >= fbZ[ridxB49] {
-          fb[ridxB49] = cLo2 + rowSlope2 * dtB49
+          let srcB49 = cLo2 + rowSlope2 * dtB49
+          if noDepth || srcB49.a >= 1.0 {
+            fb[ridxB49] = srcB49
+          } else if repaint < 0.5 {
+            let dB49 = fb[ridxB49]
+            let iaB49 = 1.0 - srcB49.a
+            fb[ridxB49] = Color(srcB49.r * srcB49.a + dB49.r * iaB49, srcB49.g * srcB49.a + dB49.g * iaB49, srcB49.b * srcB49.a + dB49.b * iaB49, srcB49.a + dB49.a * iaB49)
+          }
           fbZ[ridxB49] = if noDepth then ZBACK else pdzB49
         }
       }
@@ -17208,7 +18060,14 @@ mod paintTick() {
         let dtB50 = tjB50 - xL2
         let pdzB50 = zLo2 + zSlope2 * dtB50
         if noDepth || pdzB50 >= fbZ[ridxB50] {
-          fb[ridxB50] = cLo2 + rowSlope2 * dtB50
+          let srcB50 = cLo2 + rowSlope2 * dtB50
+          if noDepth || srcB50.a >= 1.0 {
+            fb[ridxB50] = srcB50
+          } else if repaint < 0.5 {
+            let dB50 = fb[ridxB50]
+            let iaB50 = 1.0 - srcB50.a
+            fb[ridxB50] = Color(srcB50.r * srcB50.a + dB50.r * iaB50, srcB50.g * srcB50.a + dB50.g * iaB50, srcB50.b * srcB50.a + dB50.b * iaB50, srcB50.a + dB50.a * iaB50)
+          }
           fbZ[ridxB50] = if noDepth then ZBACK else pdzB50
         }
       }
@@ -17218,7 +18077,14 @@ mod paintTick() {
         let dtB51 = tjB51 - xL2
         let pdzB51 = zLo2 + zSlope2 * dtB51
         if noDepth || pdzB51 >= fbZ[ridxB51] {
-          fb[ridxB51] = cLo2 + rowSlope2 * dtB51
+          let srcB51 = cLo2 + rowSlope2 * dtB51
+          if noDepth || srcB51.a >= 1.0 {
+            fb[ridxB51] = srcB51
+          } else if repaint < 0.5 {
+            let dB51 = fb[ridxB51]
+            let iaB51 = 1.0 - srcB51.a
+            fb[ridxB51] = Color(srcB51.r * srcB51.a + dB51.r * iaB51, srcB51.g * srcB51.a + dB51.g * iaB51, srcB51.b * srcB51.a + dB51.b * iaB51, srcB51.a + dB51.a * iaB51)
+          }
           fbZ[ridxB51] = if noDepth then ZBACK else pdzB51
         }
       }
@@ -17228,7 +18094,14 @@ mod paintTick() {
         let dtB52 = tjB52 - xL2
         let pdzB52 = zLo2 + zSlope2 * dtB52
         if noDepth || pdzB52 >= fbZ[ridxB52] {
-          fb[ridxB52] = cLo2 + rowSlope2 * dtB52
+          let srcB52 = cLo2 + rowSlope2 * dtB52
+          if noDepth || srcB52.a >= 1.0 {
+            fb[ridxB52] = srcB52
+          } else if repaint < 0.5 {
+            let dB52 = fb[ridxB52]
+            let iaB52 = 1.0 - srcB52.a
+            fb[ridxB52] = Color(srcB52.r * srcB52.a + dB52.r * iaB52, srcB52.g * srcB52.a + dB52.g * iaB52, srcB52.b * srcB52.a + dB52.b * iaB52, srcB52.a + dB52.a * iaB52)
+          }
           fbZ[ridxB52] = if noDepth then ZBACK else pdzB52
         }
       }
@@ -17238,7 +18111,14 @@ mod paintTick() {
         let dtB53 = tjB53 - xL2
         let pdzB53 = zLo2 + zSlope2 * dtB53
         if noDepth || pdzB53 >= fbZ[ridxB53] {
-          fb[ridxB53] = cLo2 + rowSlope2 * dtB53
+          let srcB53 = cLo2 + rowSlope2 * dtB53
+          if noDepth || srcB53.a >= 1.0 {
+            fb[ridxB53] = srcB53
+          } else if repaint < 0.5 {
+            let dB53 = fb[ridxB53]
+            let iaB53 = 1.0 - srcB53.a
+            fb[ridxB53] = Color(srcB53.r * srcB53.a + dB53.r * iaB53, srcB53.g * srcB53.a + dB53.g * iaB53, srcB53.b * srcB53.a + dB53.b * iaB53, srcB53.a + dB53.a * iaB53)
+          }
           fbZ[ridxB53] = if noDepth then ZBACK else pdzB53
         }
       }
@@ -17248,7 +18128,14 @@ mod paintTick() {
         let dtB54 = tjB54 - xL2
         let pdzB54 = zLo2 + zSlope2 * dtB54
         if noDepth || pdzB54 >= fbZ[ridxB54] {
-          fb[ridxB54] = cLo2 + rowSlope2 * dtB54
+          let srcB54 = cLo2 + rowSlope2 * dtB54
+          if noDepth || srcB54.a >= 1.0 {
+            fb[ridxB54] = srcB54
+          } else if repaint < 0.5 {
+            let dB54 = fb[ridxB54]
+            let iaB54 = 1.0 - srcB54.a
+            fb[ridxB54] = Color(srcB54.r * srcB54.a + dB54.r * iaB54, srcB54.g * srcB54.a + dB54.g * iaB54, srcB54.b * srcB54.a + dB54.b * iaB54, srcB54.a + dB54.a * iaB54)
+          }
           fbZ[ridxB54] = if noDepth then ZBACK else pdzB54
         }
       }
@@ -17258,7 +18145,14 @@ mod paintTick() {
         let dtB55 = tjB55 - xL2
         let pdzB55 = zLo2 + zSlope2 * dtB55
         if noDepth || pdzB55 >= fbZ[ridxB55] {
-          fb[ridxB55] = cLo2 + rowSlope2 * dtB55
+          let srcB55 = cLo2 + rowSlope2 * dtB55
+          if noDepth || srcB55.a >= 1.0 {
+            fb[ridxB55] = srcB55
+          } else if repaint < 0.5 {
+            let dB55 = fb[ridxB55]
+            let iaB55 = 1.0 - srcB55.a
+            fb[ridxB55] = Color(srcB55.r * srcB55.a + dB55.r * iaB55, srcB55.g * srcB55.a + dB55.g * iaB55, srcB55.b * srcB55.a + dB55.b * iaB55, srcB55.a + dB55.a * iaB55)
+          }
           fbZ[ridxB55] = if noDepth then ZBACK else pdzB55
         }
       }
@@ -17268,7 +18162,14 @@ mod paintTick() {
         let dtB56 = tjB56 - xL2
         let pdzB56 = zLo2 + zSlope2 * dtB56
         if noDepth || pdzB56 >= fbZ[ridxB56] {
-          fb[ridxB56] = cLo2 + rowSlope2 * dtB56
+          let srcB56 = cLo2 + rowSlope2 * dtB56
+          if noDepth || srcB56.a >= 1.0 {
+            fb[ridxB56] = srcB56
+          } else if repaint < 0.5 {
+            let dB56 = fb[ridxB56]
+            let iaB56 = 1.0 - srcB56.a
+            fb[ridxB56] = Color(srcB56.r * srcB56.a + dB56.r * iaB56, srcB56.g * srcB56.a + dB56.g * iaB56, srcB56.b * srcB56.a + dB56.b * iaB56, srcB56.a + dB56.a * iaB56)
+          }
           fbZ[ridxB56] = if noDepth then ZBACK else pdzB56
         }
       }
@@ -17278,7 +18179,14 @@ mod paintTick() {
         let dtB57 = tjB57 - xL2
         let pdzB57 = zLo2 + zSlope2 * dtB57
         if noDepth || pdzB57 >= fbZ[ridxB57] {
-          fb[ridxB57] = cLo2 + rowSlope2 * dtB57
+          let srcB57 = cLo2 + rowSlope2 * dtB57
+          if noDepth || srcB57.a >= 1.0 {
+            fb[ridxB57] = srcB57
+          } else if repaint < 0.5 {
+            let dB57 = fb[ridxB57]
+            let iaB57 = 1.0 - srcB57.a
+            fb[ridxB57] = Color(srcB57.r * srcB57.a + dB57.r * iaB57, srcB57.g * srcB57.a + dB57.g * iaB57, srcB57.b * srcB57.a + dB57.b * iaB57, srcB57.a + dB57.a * iaB57)
+          }
           fbZ[ridxB57] = if noDepth then ZBACK else pdzB57
         }
       }
@@ -17288,7 +18196,14 @@ mod paintTick() {
         let dtB58 = tjB58 - xL2
         let pdzB58 = zLo2 + zSlope2 * dtB58
         if noDepth || pdzB58 >= fbZ[ridxB58] {
-          fb[ridxB58] = cLo2 + rowSlope2 * dtB58
+          let srcB58 = cLo2 + rowSlope2 * dtB58
+          if noDepth || srcB58.a >= 1.0 {
+            fb[ridxB58] = srcB58
+          } else if repaint < 0.5 {
+            let dB58 = fb[ridxB58]
+            let iaB58 = 1.0 - srcB58.a
+            fb[ridxB58] = Color(srcB58.r * srcB58.a + dB58.r * iaB58, srcB58.g * srcB58.a + dB58.g * iaB58, srcB58.b * srcB58.a + dB58.b * iaB58, srcB58.a + dB58.a * iaB58)
+          }
           fbZ[ridxB58] = if noDepth then ZBACK else pdzB58
         }
       }
@@ -17298,7 +18213,14 @@ mod paintTick() {
         let dtB59 = tjB59 - xL2
         let pdzB59 = zLo2 + zSlope2 * dtB59
         if noDepth || pdzB59 >= fbZ[ridxB59] {
-          fb[ridxB59] = cLo2 + rowSlope2 * dtB59
+          let srcB59 = cLo2 + rowSlope2 * dtB59
+          if noDepth || srcB59.a >= 1.0 {
+            fb[ridxB59] = srcB59
+          } else if repaint < 0.5 {
+            let dB59 = fb[ridxB59]
+            let iaB59 = 1.0 - srcB59.a
+            fb[ridxB59] = Color(srcB59.r * srcB59.a + dB59.r * iaB59, srcB59.g * srcB59.a + dB59.g * iaB59, srcB59.b * srcB59.a + dB59.b * iaB59, srcB59.a + dB59.a * iaB59)
+          }
           fbZ[ridxB59] = if noDepth then ZBACK else pdzB59
         }
       }
@@ -17308,7 +18230,14 @@ mod paintTick() {
         let dtB60 = tjB60 - xL2
         let pdzB60 = zLo2 + zSlope2 * dtB60
         if noDepth || pdzB60 >= fbZ[ridxB60] {
-          fb[ridxB60] = cLo2 + rowSlope2 * dtB60
+          let srcB60 = cLo2 + rowSlope2 * dtB60
+          if noDepth || srcB60.a >= 1.0 {
+            fb[ridxB60] = srcB60
+          } else if repaint < 0.5 {
+            let dB60 = fb[ridxB60]
+            let iaB60 = 1.0 - srcB60.a
+            fb[ridxB60] = Color(srcB60.r * srcB60.a + dB60.r * iaB60, srcB60.g * srcB60.a + dB60.g * iaB60, srcB60.b * srcB60.a + dB60.b * iaB60, srcB60.a + dB60.a * iaB60)
+          }
           fbZ[ridxB60] = if noDepth then ZBACK else pdzB60
         }
       }
@@ -17318,7 +18247,14 @@ mod paintTick() {
         let dtB61 = tjB61 - xL2
         let pdzB61 = zLo2 + zSlope2 * dtB61
         if noDepth || pdzB61 >= fbZ[ridxB61] {
-          fb[ridxB61] = cLo2 + rowSlope2 * dtB61
+          let srcB61 = cLo2 + rowSlope2 * dtB61
+          if noDepth || srcB61.a >= 1.0 {
+            fb[ridxB61] = srcB61
+          } else if repaint < 0.5 {
+            let dB61 = fb[ridxB61]
+            let iaB61 = 1.0 - srcB61.a
+            fb[ridxB61] = Color(srcB61.r * srcB61.a + dB61.r * iaB61, srcB61.g * srcB61.a + dB61.g * iaB61, srcB61.b * srcB61.a + dB61.b * iaB61, srcB61.a + dB61.a * iaB61)
+          }
           fbZ[ridxB61] = if noDepth then ZBACK else pdzB61
         }
       }
@@ -17328,7 +18264,14 @@ mod paintTick() {
         let dtB62 = tjB62 - xL2
         let pdzB62 = zLo2 + zSlope2 * dtB62
         if noDepth || pdzB62 >= fbZ[ridxB62] {
-          fb[ridxB62] = cLo2 + rowSlope2 * dtB62
+          let srcB62 = cLo2 + rowSlope2 * dtB62
+          if noDepth || srcB62.a >= 1.0 {
+            fb[ridxB62] = srcB62
+          } else if repaint < 0.5 {
+            let dB62 = fb[ridxB62]
+            let iaB62 = 1.0 - srcB62.a
+            fb[ridxB62] = Color(srcB62.r * srcB62.a + dB62.r * iaB62, srcB62.g * srcB62.a + dB62.g * iaB62, srcB62.b * srcB62.a + dB62.b * iaB62, srcB62.a + dB62.a * iaB62)
+          }
           fbZ[ridxB62] = if noDepth then ZBACK else pdzB62
         }
       }
@@ -17338,7 +18281,14 @@ mod paintTick() {
         let dtB63 = tjB63 - xL2
         let pdzB63 = zLo2 + zSlope2 * dtB63
         if noDepth || pdzB63 >= fbZ[ridxB63] {
-          fb[ridxB63] = cLo2 + rowSlope2 * dtB63
+          let srcB63 = cLo2 + rowSlope2 * dtB63
+          if noDepth || srcB63.a >= 1.0 {
+            fb[ridxB63] = srcB63
+          } else if repaint < 0.5 {
+            let dB63 = fb[ridxB63]
+            let iaB63 = 1.0 - srcB63.a
+            fb[ridxB63] = Color(srcB63.r * srcB63.a + dB63.r * iaB63, srcB63.g * srcB63.a + dB63.g * iaB63, srcB63.b * srcB63.a + dB63.b * iaB63, srcB63.a + dB63.a * iaB63)
+          }
           fbZ[ridxB63] = if noDepth then ZBACK else pdzB63
         }
       }
@@ -17614,7 +18564,14 @@ mod paintTick() {
         let dtC0 = tjC0 - xL3
         let pdzC0 = zLo3 + zSlope3 * dtC0
         if noDepth || pdzC0 >= fbZ[ridxC0] {
-          fb[ridxC0] = cLo3 + rowSlope3 * dtC0
+          let srcC0 = cLo3 + rowSlope3 * dtC0
+          if noDepth || srcC0.a >= 1.0 {
+            fb[ridxC0] = srcC0
+          } else if repaint < 0.5 {
+            let dC0 = fb[ridxC0]
+            let iaC0 = 1.0 - srcC0.a
+            fb[ridxC0] = Color(srcC0.r * srcC0.a + dC0.r * iaC0, srcC0.g * srcC0.a + dC0.g * iaC0, srcC0.b * srcC0.a + dC0.b * iaC0, srcC0.a + dC0.a * iaC0)
+          }
           fbZ[ridxC0] = if noDepth then ZBACK else pdzC0
         }
       }
@@ -17624,7 +18581,14 @@ mod paintTick() {
         let dtC1 = tjC1 - xL3
         let pdzC1 = zLo3 + zSlope3 * dtC1
         if noDepth || pdzC1 >= fbZ[ridxC1] {
-          fb[ridxC1] = cLo3 + rowSlope3 * dtC1
+          let srcC1 = cLo3 + rowSlope3 * dtC1
+          if noDepth || srcC1.a >= 1.0 {
+            fb[ridxC1] = srcC1
+          } else if repaint < 0.5 {
+            let dC1 = fb[ridxC1]
+            let iaC1 = 1.0 - srcC1.a
+            fb[ridxC1] = Color(srcC1.r * srcC1.a + dC1.r * iaC1, srcC1.g * srcC1.a + dC1.g * iaC1, srcC1.b * srcC1.a + dC1.b * iaC1, srcC1.a + dC1.a * iaC1)
+          }
           fbZ[ridxC1] = if noDepth then ZBACK else pdzC1
         }
       }
@@ -17634,7 +18598,14 @@ mod paintTick() {
         let dtC2 = tjC2 - xL3
         let pdzC2 = zLo3 + zSlope3 * dtC2
         if noDepth || pdzC2 >= fbZ[ridxC2] {
-          fb[ridxC2] = cLo3 + rowSlope3 * dtC2
+          let srcC2 = cLo3 + rowSlope3 * dtC2
+          if noDepth || srcC2.a >= 1.0 {
+            fb[ridxC2] = srcC2
+          } else if repaint < 0.5 {
+            let dC2 = fb[ridxC2]
+            let iaC2 = 1.0 - srcC2.a
+            fb[ridxC2] = Color(srcC2.r * srcC2.a + dC2.r * iaC2, srcC2.g * srcC2.a + dC2.g * iaC2, srcC2.b * srcC2.a + dC2.b * iaC2, srcC2.a + dC2.a * iaC2)
+          }
           fbZ[ridxC2] = if noDepth then ZBACK else pdzC2
         }
       }
@@ -17644,7 +18615,14 @@ mod paintTick() {
         let dtC3 = tjC3 - xL3
         let pdzC3 = zLo3 + zSlope3 * dtC3
         if noDepth || pdzC3 >= fbZ[ridxC3] {
-          fb[ridxC3] = cLo3 + rowSlope3 * dtC3
+          let srcC3 = cLo3 + rowSlope3 * dtC3
+          if noDepth || srcC3.a >= 1.0 {
+            fb[ridxC3] = srcC3
+          } else if repaint < 0.5 {
+            let dC3 = fb[ridxC3]
+            let iaC3 = 1.0 - srcC3.a
+            fb[ridxC3] = Color(srcC3.r * srcC3.a + dC3.r * iaC3, srcC3.g * srcC3.a + dC3.g * iaC3, srcC3.b * srcC3.a + dC3.b * iaC3, srcC3.a + dC3.a * iaC3)
+          }
           fbZ[ridxC3] = if noDepth then ZBACK else pdzC3
         }
       }
@@ -17654,7 +18632,14 @@ mod paintTick() {
         let dtC4 = tjC4 - xL3
         let pdzC4 = zLo3 + zSlope3 * dtC4
         if noDepth || pdzC4 >= fbZ[ridxC4] {
-          fb[ridxC4] = cLo3 + rowSlope3 * dtC4
+          let srcC4 = cLo3 + rowSlope3 * dtC4
+          if noDepth || srcC4.a >= 1.0 {
+            fb[ridxC4] = srcC4
+          } else if repaint < 0.5 {
+            let dC4 = fb[ridxC4]
+            let iaC4 = 1.0 - srcC4.a
+            fb[ridxC4] = Color(srcC4.r * srcC4.a + dC4.r * iaC4, srcC4.g * srcC4.a + dC4.g * iaC4, srcC4.b * srcC4.a + dC4.b * iaC4, srcC4.a + dC4.a * iaC4)
+          }
           fbZ[ridxC4] = if noDepth then ZBACK else pdzC4
         }
       }
@@ -17664,7 +18649,14 @@ mod paintTick() {
         let dtC5 = tjC5 - xL3
         let pdzC5 = zLo3 + zSlope3 * dtC5
         if noDepth || pdzC5 >= fbZ[ridxC5] {
-          fb[ridxC5] = cLo3 + rowSlope3 * dtC5
+          let srcC5 = cLo3 + rowSlope3 * dtC5
+          if noDepth || srcC5.a >= 1.0 {
+            fb[ridxC5] = srcC5
+          } else if repaint < 0.5 {
+            let dC5 = fb[ridxC5]
+            let iaC5 = 1.0 - srcC5.a
+            fb[ridxC5] = Color(srcC5.r * srcC5.a + dC5.r * iaC5, srcC5.g * srcC5.a + dC5.g * iaC5, srcC5.b * srcC5.a + dC5.b * iaC5, srcC5.a + dC5.a * iaC5)
+          }
           fbZ[ridxC5] = if noDepth then ZBACK else pdzC5
         }
       }
@@ -17674,7 +18666,14 @@ mod paintTick() {
         let dtC6 = tjC6 - xL3
         let pdzC6 = zLo3 + zSlope3 * dtC6
         if noDepth || pdzC6 >= fbZ[ridxC6] {
-          fb[ridxC6] = cLo3 + rowSlope3 * dtC6
+          let srcC6 = cLo3 + rowSlope3 * dtC6
+          if noDepth || srcC6.a >= 1.0 {
+            fb[ridxC6] = srcC6
+          } else if repaint < 0.5 {
+            let dC6 = fb[ridxC6]
+            let iaC6 = 1.0 - srcC6.a
+            fb[ridxC6] = Color(srcC6.r * srcC6.a + dC6.r * iaC6, srcC6.g * srcC6.a + dC6.g * iaC6, srcC6.b * srcC6.a + dC6.b * iaC6, srcC6.a + dC6.a * iaC6)
+          }
           fbZ[ridxC6] = if noDepth then ZBACK else pdzC6
         }
       }
@@ -17684,7 +18683,14 @@ mod paintTick() {
         let dtC7 = tjC7 - xL3
         let pdzC7 = zLo3 + zSlope3 * dtC7
         if noDepth || pdzC7 >= fbZ[ridxC7] {
-          fb[ridxC7] = cLo3 + rowSlope3 * dtC7
+          let srcC7 = cLo3 + rowSlope3 * dtC7
+          if noDepth || srcC7.a >= 1.0 {
+            fb[ridxC7] = srcC7
+          } else if repaint < 0.5 {
+            let dC7 = fb[ridxC7]
+            let iaC7 = 1.0 - srcC7.a
+            fb[ridxC7] = Color(srcC7.r * srcC7.a + dC7.r * iaC7, srcC7.g * srcC7.a + dC7.g * iaC7, srcC7.b * srcC7.a + dC7.b * iaC7, srcC7.a + dC7.a * iaC7)
+          }
           fbZ[ridxC7] = if noDepth then ZBACK else pdzC7
         }
       }
@@ -17694,7 +18700,14 @@ mod paintTick() {
         let dtC8 = tjC8 - xL3
         let pdzC8 = zLo3 + zSlope3 * dtC8
         if noDepth || pdzC8 >= fbZ[ridxC8] {
-          fb[ridxC8] = cLo3 + rowSlope3 * dtC8
+          let srcC8 = cLo3 + rowSlope3 * dtC8
+          if noDepth || srcC8.a >= 1.0 {
+            fb[ridxC8] = srcC8
+          } else if repaint < 0.5 {
+            let dC8 = fb[ridxC8]
+            let iaC8 = 1.0 - srcC8.a
+            fb[ridxC8] = Color(srcC8.r * srcC8.a + dC8.r * iaC8, srcC8.g * srcC8.a + dC8.g * iaC8, srcC8.b * srcC8.a + dC8.b * iaC8, srcC8.a + dC8.a * iaC8)
+          }
           fbZ[ridxC8] = if noDepth then ZBACK else pdzC8
         }
       }
@@ -17704,7 +18717,14 @@ mod paintTick() {
         let dtC9 = tjC9 - xL3
         let pdzC9 = zLo3 + zSlope3 * dtC9
         if noDepth || pdzC9 >= fbZ[ridxC9] {
-          fb[ridxC9] = cLo3 + rowSlope3 * dtC9
+          let srcC9 = cLo3 + rowSlope3 * dtC9
+          if noDepth || srcC9.a >= 1.0 {
+            fb[ridxC9] = srcC9
+          } else if repaint < 0.5 {
+            let dC9 = fb[ridxC9]
+            let iaC9 = 1.0 - srcC9.a
+            fb[ridxC9] = Color(srcC9.r * srcC9.a + dC9.r * iaC9, srcC9.g * srcC9.a + dC9.g * iaC9, srcC9.b * srcC9.a + dC9.b * iaC9, srcC9.a + dC9.a * iaC9)
+          }
           fbZ[ridxC9] = if noDepth then ZBACK else pdzC9
         }
       }
@@ -17714,7 +18734,14 @@ mod paintTick() {
         let dtC10 = tjC10 - xL3
         let pdzC10 = zLo3 + zSlope3 * dtC10
         if noDepth || pdzC10 >= fbZ[ridxC10] {
-          fb[ridxC10] = cLo3 + rowSlope3 * dtC10
+          let srcC10 = cLo3 + rowSlope3 * dtC10
+          if noDepth || srcC10.a >= 1.0 {
+            fb[ridxC10] = srcC10
+          } else if repaint < 0.5 {
+            let dC10 = fb[ridxC10]
+            let iaC10 = 1.0 - srcC10.a
+            fb[ridxC10] = Color(srcC10.r * srcC10.a + dC10.r * iaC10, srcC10.g * srcC10.a + dC10.g * iaC10, srcC10.b * srcC10.a + dC10.b * iaC10, srcC10.a + dC10.a * iaC10)
+          }
           fbZ[ridxC10] = if noDepth then ZBACK else pdzC10
         }
       }
@@ -17724,7 +18751,14 @@ mod paintTick() {
         let dtC11 = tjC11 - xL3
         let pdzC11 = zLo3 + zSlope3 * dtC11
         if noDepth || pdzC11 >= fbZ[ridxC11] {
-          fb[ridxC11] = cLo3 + rowSlope3 * dtC11
+          let srcC11 = cLo3 + rowSlope3 * dtC11
+          if noDepth || srcC11.a >= 1.0 {
+            fb[ridxC11] = srcC11
+          } else if repaint < 0.5 {
+            let dC11 = fb[ridxC11]
+            let iaC11 = 1.0 - srcC11.a
+            fb[ridxC11] = Color(srcC11.r * srcC11.a + dC11.r * iaC11, srcC11.g * srcC11.a + dC11.g * iaC11, srcC11.b * srcC11.a + dC11.b * iaC11, srcC11.a + dC11.a * iaC11)
+          }
           fbZ[ridxC11] = if noDepth then ZBACK else pdzC11
         }
       }
@@ -17734,7 +18768,14 @@ mod paintTick() {
         let dtC12 = tjC12 - xL3
         let pdzC12 = zLo3 + zSlope3 * dtC12
         if noDepth || pdzC12 >= fbZ[ridxC12] {
-          fb[ridxC12] = cLo3 + rowSlope3 * dtC12
+          let srcC12 = cLo3 + rowSlope3 * dtC12
+          if noDepth || srcC12.a >= 1.0 {
+            fb[ridxC12] = srcC12
+          } else if repaint < 0.5 {
+            let dC12 = fb[ridxC12]
+            let iaC12 = 1.0 - srcC12.a
+            fb[ridxC12] = Color(srcC12.r * srcC12.a + dC12.r * iaC12, srcC12.g * srcC12.a + dC12.g * iaC12, srcC12.b * srcC12.a + dC12.b * iaC12, srcC12.a + dC12.a * iaC12)
+          }
           fbZ[ridxC12] = if noDepth then ZBACK else pdzC12
         }
       }
@@ -17744,7 +18785,14 @@ mod paintTick() {
         let dtC13 = tjC13 - xL3
         let pdzC13 = zLo3 + zSlope3 * dtC13
         if noDepth || pdzC13 >= fbZ[ridxC13] {
-          fb[ridxC13] = cLo3 + rowSlope3 * dtC13
+          let srcC13 = cLo3 + rowSlope3 * dtC13
+          if noDepth || srcC13.a >= 1.0 {
+            fb[ridxC13] = srcC13
+          } else if repaint < 0.5 {
+            let dC13 = fb[ridxC13]
+            let iaC13 = 1.0 - srcC13.a
+            fb[ridxC13] = Color(srcC13.r * srcC13.a + dC13.r * iaC13, srcC13.g * srcC13.a + dC13.g * iaC13, srcC13.b * srcC13.a + dC13.b * iaC13, srcC13.a + dC13.a * iaC13)
+          }
           fbZ[ridxC13] = if noDepth then ZBACK else pdzC13
         }
       }
@@ -17754,7 +18802,14 @@ mod paintTick() {
         let dtC14 = tjC14 - xL3
         let pdzC14 = zLo3 + zSlope3 * dtC14
         if noDepth || pdzC14 >= fbZ[ridxC14] {
-          fb[ridxC14] = cLo3 + rowSlope3 * dtC14
+          let srcC14 = cLo3 + rowSlope3 * dtC14
+          if noDepth || srcC14.a >= 1.0 {
+            fb[ridxC14] = srcC14
+          } else if repaint < 0.5 {
+            let dC14 = fb[ridxC14]
+            let iaC14 = 1.0 - srcC14.a
+            fb[ridxC14] = Color(srcC14.r * srcC14.a + dC14.r * iaC14, srcC14.g * srcC14.a + dC14.g * iaC14, srcC14.b * srcC14.a + dC14.b * iaC14, srcC14.a + dC14.a * iaC14)
+          }
           fbZ[ridxC14] = if noDepth then ZBACK else pdzC14
         }
       }
@@ -17764,7 +18819,14 @@ mod paintTick() {
         let dtC15 = tjC15 - xL3
         let pdzC15 = zLo3 + zSlope3 * dtC15
         if noDepth || pdzC15 >= fbZ[ridxC15] {
-          fb[ridxC15] = cLo3 + rowSlope3 * dtC15
+          let srcC15 = cLo3 + rowSlope3 * dtC15
+          if noDepth || srcC15.a >= 1.0 {
+            fb[ridxC15] = srcC15
+          } else if repaint < 0.5 {
+            let dC15 = fb[ridxC15]
+            let iaC15 = 1.0 - srcC15.a
+            fb[ridxC15] = Color(srcC15.r * srcC15.a + dC15.r * iaC15, srcC15.g * srcC15.a + dC15.g * iaC15, srcC15.b * srcC15.a + dC15.b * iaC15, srcC15.a + dC15.a * iaC15)
+          }
           fbZ[ridxC15] = if noDepth then ZBACK else pdzC15
         }
       }
@@ -17774,7 +18836,14 @@ mod paintTick() {
         let dtC16 = tjC16 - xL3
         let pdzC16 = zLo3 + zSlope3 * dtC16
         if noDepth || pdzC16 >= fbZ[ridxC16] {
-          fb[ridxC16] = cLo3 + rowSlope3 * dtC16
+          let srcC16 = cLo3 + rowSlope3 * dtC16
+          if noDepth || srcC16.a >= 1.0 {
+            fb[ridxC16] = srcC16
+          } else if repaint < 0.5 {
+            let dC16 = fb[ridxC16]
+            let iaC16 = 1.0 - srcC16.a
+            fb[ridxC16] = Color(srcC16.r * srcC16.a + dC16.r * iaC16, srcC16.g * srcC16.a + dC16.g * iaC16, srcC16.b * srcC16.a + dC16.b * iaC16, srcC16.a + dC16.a * iaC16)
+          }
           fbZ[ridxC16] = if noDepth then ZBACK else pdzC16
         }
       }
@@ -17784,7 +18853,14 @@ mod paintTick() {
         let dtC17 = tjC17 - xL3
         let pdzC17 = zLo3 + zSlope3 * dtC17
         if noDepth || pdzC17 >= fbZ[ridxC17] {
-          fb[ridxC17] = cLo3 + rowSlope3 * dtC17
+          let srcC17 = cLo3 + rowSlope3 * dtC17
+          if noDepth || srcC17.a >= 1.0 {
+            fb[ridxC17] = srcC17
+          } else if repaint < 0.5 {
+            let dC17 = fb[ridxC17]
+            let iaC17 = 1.0 - srcC17.a
+            fb[ridxC17] = Color(srcC17.r * srcC17.a + dC17.r * iaC17, srcC17.g * srcC17.a + dC17.g * iaC17, srcC17.b * srcC17.a + dC17.b * iaC17, srcC17.a + dC17.a * iaC17)
+          }
           fbZ[ridxC17] = if noDepth then ZBACK else pdzC17
         }
       }
@@ -17794,7 +18870,14 @@ mod paintTick() {
         let dtC18 = tjC18 - xL3
         let pdzC18 = zLo3 + zSlope3 * dtC18
         if noDepth || pdzC18 >= fbZ[ridxC18] {
-          fb[ridxC18] = cLo3 + rowSlope3 * dtC18
+          let srcC18 = cLo3 + rowSlope3 * dtC18
+          if noDepth || srcC18.a >= 1.0 {
+            fb[ridxC18] = srcC18
+          } else if repaint < 0.5 {
+            let dC18 = fb[ridxC18]
+            let iaC18 = 1.0 - srcC18.a
+            fb[ridxC18] = Color(srcC18.r * srcC18.a + dC18.r * iaC18, srcC18.g * srcC18.a + dC18.g * iaC18, srcC18.b * srcC18.a + dC18.b * iaC18, srcC18.a + dC18.a * iaC18)
+          }
           fbZ[ridxC18] = if noDepth then ZBACK else pdzC18
         }
       }
@@ -17804,7 +18887,14 @@ mod paintTick() {
         let dtC19 = tjC19 - xL3
         let pdzC19 = zLo3 + zSlope3 * dtC19
         if noDepth || pdzC19 >= fbZ[ridxC19] {
-          fb[ridxC19] = cLo3 + rowSlope3 * dtC19
+          let srcC19 = cLo3 + rowSlope3 * dtC19
+          if noDepth || srcC19.a >= 1.0 {
+            fb[ridxC19] = srcC19
+          } else if repaint < 0.5 {
+            let dC19 = fb[ridxC19]
+            let iaC19 = 1.0 - srcC19.a
+            fb[ridxC19] = Color(srcC19.r * srcC19.a + dC19.r * iaC19, srcC19.g * srcC19.a + dC19.g * iaC19, srcC19.b * srcC19.a + dC19.b * iaC19, srcC19.a + dC19.a * iaC19)
+          }
           fbZ[ridxC19] = if noDepth then ZBACK else pdzC19
         }
       }
@@ -17814,7 +18904,14 @@ mod paintTick() {
         let dtC20 = tjC20 - xL3
         let pdzC20 = zLo3 + zSlope3 * dtC20
         if noDepth || pdzC20 >= fbZ[ridxC20] {
-          fb[ridxC20] = cLo3 + rowSlope3 * dtC20
+          let srcC20 = cLo3 + rowSlope3 * dtC20
+          if noDepth || srcC20.a >= 1.0 {
+            fb[ridxC20] = srcC20
+          } else if repaint < 0.5 {
+            let dC20 = fb[ridxC20]
+            let iaC20 = 1.0 - srcC20.a
+            fb[ridxC20] = Color(srcC20.r * srcC20.a + dC20.r * iaC20, srcC20.g * srcC20.a + dC20.g * iaC20, srcC20.b * srcC20.a + dC20.b * iaC20, srcC20.a + dC20.a * iaC20)
+          }
           fbZ[ridxC20] = if noDepth then ZBACK else pdzC20
         }
       }
@@ -17824,7 +18921,14 @@ mod paintTick() {
         let dtC21 = tjC21 - xL3
         let pdzC21 = zLo3 + zSlope3 * dtC21
         if noDepth || pdzC21 >= fbZ[ridxC21] {
-          fb[ridxC21] = cLo3 + rowSlope3 * dtC21
+          let srcC21 = cLo3 + rowSlope3 * dtC21
+          if noDepth || srcC21.a >= 1.0 {
+            fb[ridxC21] = srcC21
+          } else if repaint < 0.5 {
+            let dC21 = fb[ridxC21]
+            let iaC21 = 1.0 - srcC21.a
+            fb[ridxC21] = Color(srcC21.r * srcC21.a + dC21.r * iaC21, srcC21.g * srcC21.a + dC21.g * iaC21, srcC21.b * srcC21.a + dC21.b * iaC21, srcC21.a + dC21.a * iaC21)
+          }
           fbZ[ridxC21] = if noDepth then ZBACK else pdzC21
         }
       }
@@ -17834,7 +18938,14 @@ mod paintTick() {
         let dtC22 = tjC22 - xL3
         let pdzC22 = zLo3 + zSlope3 * dtC22
         if noDepth || pdzC22 >= fbZ[ridxC22] {
-          fb[ridxC22] = cLo3 + rowSlope3 * dtC22
+          let srcC22 = cLo3 + rowSlope3 * dtC22
+          if noDepth || srcC22.a >= 1.0 {
+            fb[ridxC22] = srcC22
+          } else if repaint < 0.5 {
+            let dC22 = fb[ridxC22]
+            let iaC22 = 1.0 - srcC22.a
+            fb[ridxC22] = Color(srcC22.r * srcC22.a + dC22.r * iaC22, srcC22.g * srcC22.a + dC22.g * iaC22, srcC22.b * srcC22.a + dC22.b * iaC22, srcC22.a + dC22.a * iaC22)
+          }
           fbZ[ridxC22] = if noDepth then ZBACK else pdzC22
         }
       }
@@ -17844,7 +18955,14 @@ mod paintTick() {
         let dtC23 = tjC23 - xL3
         let pdzC23 = zLo3 + zSlope3 * dtC23
         if noDepth || pdzC23 >= fbZ[ridxC23] {
-          fb[ridxC23] = cLo3 + rowSlope3 * dtC23
+          let srcC23 = cLo3 + rowSlope3 * dtC23
+          if noDepth || srcC23.a >= 1.0 {
+            fb[ridxC23] = srcC23
+          } else if repaint < 0.5 {
+            let dC23 = fb[ridxC23]
+            let iaC23 = 1.0 - srcC23.a
+            fb[ridxC23] = Color(srcC23.r * srcC23.a + dC23.r * iaC23, srcC23.g * srcC23.a + dC23.g * iaC23, srcC23.b * srcC23.a + dC23.b * iaC23, srcC23.a + dC23.a * iaC23)
+          }
           fbZ[ridxC23] = if noDepth then ZBACK else pdzC23
         }
       }
@@ -17854,7 +18972,14 @@ mod paintTick() {
         let dtC24 = tjC24 - xL3
         let pdzC24 = zLo3 + zSlope3 * dtC24
         if noDepth || pdzC24 >= fbZ[ridxC24] {
-          fb[ridxC24] = cLo3 + rowSlope3 * dtC24
+          let srcC24 = cLo3 + rowSlope3 * dtC24
+          if noDepth || srcC24.a >= 1.0 {
+            fb[ridxC24] = srcC24
+          } else if repaint < 0.5 {
+            let dC24 = fb[ridxC24]
+            let iaC24 = 1.0 - srcC24.a
+            fb[ridxC24] = Color(srcC24.r * srcC24.a + dC24.r * iaC24, srcC24.g * srcC24.a + dC24.g * iaC24, srcC24.b * srcC24.a + dC24.b * iaC24, srcC24.a + dC24.a * iaC24)
+          }
           fbZ[ridxC24] = if noDepth then ZBACK else pdzC24
         }
       }
@@ -17864,7 +18989,14 @@ mod paintTick() {
         let dtC25 = tjC25 - xL3
         let pdzC25 = zLo3 + zSlope3 * dtC25
         if noDepth || pdzC25 >= fbZ[ridxC25] {
-          fb[ridxC25] = cLo3 + rowSlope3 * dtC25
+          let srcC25 = cLo3 + rowSlope3 * dtC25
+          if noDepth || srcC25.a >= 1.0 {
+            fb[ridxC25] = srcC25
+          } else if repaint < 0.5 {
+            let dC25 = fb[ridxC25]
+            let iaC25 = 1.0 - srcC25.a
+            fb[ridxC25] = Color(srcC25.r * srcC25.a + dC25.r * iaC25, srcC25.g * srcC25.a + dC25.g * iaC25, srcC25.b * srcC25.a + dC25.b * iaC25, srcC25.a + dC25.a * iaC25)
+          }
           fbZ[ridxC25] = if noDepth then ZBACK else pdzC25
         }
       }
@@ -17874,7 +19006,14 @@ mod paintTick() {
         let dtC26 = tjC26 - xL3
         let pdzC26 = zLo3 + zSlope3 * dtC26
         if noDepth || pdzC26 >= fbZ[ridxC26] {
-          fb[ridxC26] = cLo3 + rowSlope3 * dtC26
+          let srcC26 = cLo3 + rowSlope3 * dtC26
+          if noDepth || srcC26.a >= 1.0 {
+            fb[ridxC26] = srcC26
+          } else if repaint < 0.5 {
+            let dC26 = fb[ridxC26]
+            let iaC26 = 1.0 - srcC26.a
+            fb[ridxC26] = Color(srcC26.r * srcC26.a + dC26.r * iaC26, srcC26.g * srcC26.a + dC26.g * iaC26, srcC26.b * srcC26.a + dC26.b * iaC26, srcC26.a + dC26.a * iaC26)
+          }
           fbZ[ridxC26] = if noDepth then ZBACK else pdzC26
         }
       }
@@ -17884,7 +19023,14 @@ mod paintTick() {
         let dtC27 = tjC27 - xL3
         let pdzC27 = zLo3 + zSlope3 * dtC27
         if noDepth || pdzC27 >= fbZ[ridxC27] {
-          fb[ridxC27] = cLo3 + rowSlope3 * dtC27
+          let srcC27 = cLo3 + rowSlope3 * dtC27
+          if noDepth || srcC27.a >= 1.0 {
+            fb[ridxC27] = srcC27
+          } else if repaint < 0.5 {
+            let dC27 = fb[ridxC27]
+            let iaC27 = 1.0 - srcC27.a
+            fb[ridxC27] = Color(srcC27.r * srcC27.a + dC27.r * iaC27, srcC27.g * srcC27.a + dC27.g * iaC27, srcC27.b * srcC27.a + dC27.b * iaC27, srcC27.a + dC27.a * iaC27)
+          }
           fbZ[ridxC27] = if noDepth then ZBACK else pdzC27
         }
       }
@@ -17894,7 +19040,14 @@ mod paintTick() {
         let dtC28 = tjC28 - xL3
         let pdzC28 = zLo3 + zSlope3 * dtC28
         if noDepth || pdzC28 >= fbZ[ridxC28] {
-          fb[ridxC28] = cLo3 + rowSlope3 * dtC28
+          let srcC28 = cLo3 + rowSlope3 * dtC28
+          if noDepth || srcC28.a >= 1.0 {
+            fb[ridxC28] = srcC28
+          } else if repaint < 0.5 {
+            let dC28 = fb[ridxC28]
+            let iaC28 = 1.0 - srcC28.a
+            fb[ridxC28] = Color(srcC28.r * srcC28.a + dC28.r * iaC28, srcC28.g * srcC28.a + dC28.g * iaC28, srcC28.b * srcC28.a + dC28.b * iaC28, srcC28.a + dC28.a * iaC28)
+          }
           fbZ[ridxC28] = if noDepth then ZBACK else pdzC28
         }
       }
@@ -17904,7 +19057,14 @@ mod paintTick() {
         let dtC29 = tjC29 - xL3
         let pdzC29 = zLo3 + zSlope3 * dtC29
         if noDepth || pdzC29 >= fbZ[ridxC29] {
-          fb[ridxC29] = cLo3 + rowSlope3 * dtC29
+          let srcC29 = cLo3 + rowSlope3 * dtC29
+          if noDepth || srcC29.a >= 1.0 {
+            fb[ridxC29] = srcC29
+          } else if repaint < 0.5 {
+            let dC29 = fb[ridxC29]
+            let iaC29 = 1.0 - srcC29.a
+            fb[ridxC29] = Color(srcC29.r * srcC29.a + dC29.r * iaC29, srcC29.g * srcC29.a + dC29.g * iaC29, srcC29.b * srcC29.a + dC29.b * iaC29, srcC29.a + dC29.a * iaC29)
+          }
           fbZ[ridxC29] = if noDepth then ZBACK else pdzC29
         }
       }
@@ -17914,7 +19074,14 @@ mod paintTick() {
         let dtC30 = tjC30 - xL3
         let pdzC30 = zLo3 + zSlope3 * dtC30
         if noDepth || pdzC30 >= fbZ[ridxC30] {
-          fb[ridxC30] = cLo3 + rowSlope3 * dtC30
+          let srcC30 = cLo3 + rowSlope3 * dtC30
+          if noDepth || srcC30.a >= 1.0 {
+            fb[ridxC30] = srcC30
+          } else if repaint < 0.5 {
+            let dC30 = fb[ridxC30]
+            let iaC30 = 1.0 - srcC30.a
+            fb[ridxC30] = Color(srcC30.r * srcC30.a + dC30.r * iaC30, srcC30.g * srcC30.a + dC30.g * iaC30, srcC30.b * srcC30.a + dC30.b * iaC30, srcC30.a + dC30.a * iaC30)
+          }
           fbZ[ridxC30] = if noDepth then ZBACK else pdzC30
         }
       }
@@ -17924,7 +19091,14 @@ mod paintTick() {
         let dtC31 = tjC31 - xL3
         let pdzC31 = zLo3 + zSlope3 * dtC31
         if noDepth || pdzC31 >= fbZ[ridxC31] {
-          fb[ridxC31] = cLo3 + rowSlope3 * dtC31
+          let srcC31 = cLo3 + rowSlope3 * dtC31
+          if noDepth || srcC31.a >= 1.0 {
+            fb[ridxC31] = srcC31
+          } else if repaint < 0.5 {
+            let dC31 = fb[ridxC31]
+            let iaC31 = 1.0 - srcC31.a
+            fb[ridxC31] = Color(srcC31.r * srcC31.a + dC31.r * iaC31, srcC31.g * srcC31.a + dC31.g * iaC31, srcC31.b * srcC31.a + dC31.b * iaC31, srcC31.a + dC31.a * iaC31)
+          }
           fbZ[ridxC31] = if noDepth then ZBACK else pdzC31
         }
       }
@@ -17934,7 +19108,14 @@ mod paintTick() {
         let dtC32 = tjC32 - xL3
         let pdzC32 = zLo3 + zSlope3 * dtC32
         if noDepth || pdzC32 >= fbZ[ridxC32] {
-          fb[ridxC32] = cLo3 + rowSlope3 * dtC32
+          let srcC32 = cLo3 + rowSlope3 * dtC32
+          if noDepth || srcC32.a >= 1.0 {
+            fb[ridxC32] = srcC32
+          } else if repaint < 0.5 {
+            let dC32 = fb[ridxC32]
+            let iaC32 = 1.0 - srcC32.a
+            fb[ridxC32] = Color(srcC32.r * srcC32.a + dC32.r * iaC32, srcC32.g * srcC32.a + dC32.g * iaC32, srcC32.b * srcC32.a + dC32.b * iaC32, srcC32.a + dC32.a * iaC32)
+          }
           fbZ[ridxC32] = if noDepth then ZBACK else pdzC32
         }
       }
@@ -17944,7 +19125,14 @@ mod paintTick() {
         let dtC33 = tjC33 - xL3
         let pdzC33 = zLo3 + zSlope3 * dtC33
         if noDepth || pdzC33 >= fbZ[ridxC33] {
-          fb[ridxC33] = cLo3 + rowSlope3 * dtC33
+          let srcC33 = cLo3 + rowSlope3 * dtC33
+          if noDepth || srcC33.a >= 1.0 {
+            fb[ridxC33] = srcC33
+          } else if repaint < 0.5 {
+            let dC33 = fb[ridxC33]
+            let iaC33 = 1.0 - srcC33.a
+            fb[ridxC33] = Color(srcC33.r * srcC33.a + dC33.r * iaC33, srcC33.g * srcC33.a + dC33.g * iaC33, srcC33.b * srcC33.a + dC33.b * iaC33, srcC33.a + dC33.a * iaC33)
+          }
           fbZ[ridxC33] = if noDepth then ZBACK else pdzC33
         }
       }
@@ -17954,7 +19142,14 @@ mod paintTick() {
         let dtC34 = tjC34 - xL3
         let pdzC34 = zLo3 + zSlope3 * dtC34
         if noDepth || pdzC34 >= fbZ[ridxC34] {
-          fb[ridxC34] = cLo3 + rowSlope3 * dtC34
+          let srcC34 = cLo3 + rowSlope3 * dtC34
+          if noDepth || srcC34.a >= 1.0 {
+            fb[ridxC34] = srcC34
+          } else if repaint < 0.5 {
+            let dC34 = fb[ridxC34]
+            let iaC34 = 1.0 - srcC34.a
+            fb[ridxC34] = Color(srcC34.r * srcC34.a + dC34.r * iaC34, srcC34.g * srcC34.a + dC34.g * iaC34, srcC34.b * srcC34.a + dC34.b * iaC34, srcC34.a + dC34.a * iaC34)
+          }
           fbZ[ridxC34] = if noDepth then ZBACK else pdzC34
         }
       }
@@ -17964,7 +19159,14 @@ mod paintTick() {
         let dtC35 = tjC35 - xL3
         let pdzC35 = zLo3 + zSlope3 * dtC35
         if noDepth || pdzC35 >= fbZ[ridxC35] {
-          fb[ridxC35] = cLo3 + rowSlope3 * dtC35
+          let srcC35 = cLo3 + rowSlope3 * dtC35
+          if noDepth || srcC35.a >= 1.0 {
+            fb[ridxC35] = srcC35
+          } else if repaint < 0.5 {
+            let dC35 = fb[ridxC35]
+            let iaC35 = 1.0 - srcC35.a
+            fb[ridxC35] = Color(srcC35.r * srcC35.a + dC35.r * iaC35, srcC35.g * srcC35.a + dC35.g * iaC35, srcC35.b * srcC35.a + dC35.b * iaC35, srcC35.a + dC35.a * iaC35)
+          }
           fbZ[ridxC35] = if noDepth then ZBACK else pdzC35
         }
       }
@@ -17974,7 +19176,14 @@ mod paintTick() {
         let dtC36 = tjC36 - xL3
         let pdzC36 = zLo3 + zSlope3 * dtC36
         if noDepth || pdzC36 >= fbZ[ridxC36] {
-          fb[ridxC36] = cLo3 + rowSlope3 * dtC36
+          let srcC36 = cLo3 + rowSlope3 * dtC36
+          if noDepth || srcC36.a >= 1.0 {
+            fb[ridxC36] = srcC36
+          } else if repaint < 0.5 {
+            let dC36 = fb[ridxC36]
+            let iaC36 = 1.0 - srcC36.a
+            fb[ridxC36] = Color(srcC36.r * srcC36.a + dC36.r * iaC36, srcC36.g * srcC36.a + dC36.g * iaC36, srcC36.b * srcC36.a + dC36.b * iaC36, srcC36.a + dC36.a * iaC36)
+          }
           fbZ[ridxC36] = if noDepth then ZBACK else pdzC36
         }
       }
@@ -17984,7 +19193,14 @@ mod paintTick() {
         let dtC37 = tjC37 - xL3
         let pdzC37 = zLo3 + zSlope3 * dtC37
         if noDepth || pdzC37 >= fbZ[ridxC37] {
-          fb[ridxC37] = cLo3 + rowSlope3 * dtC37
+          let srcC37 = cLo3 + rowSlope3 * dtC37
+          if noDepth || srcC37.a >= 1.0 {
+            fb[ridxC37] = srcC37
+          } else if repaint < 0.5 {
+            let dC37 = fb[ridxC37]
+            let iaC37 = 1.0 - srcC37.a
+            fb[ridxC37] = Color(srcC37.r * srcC37.a + dC37.r * iaC37, srcC37.g * srcC37.a + dC37.g * iaC37, srcC37.b * srcC37.a + dC37.b * iaC37, srcC37.a + dC37.a * iaC37)
+          }
           fbZ[ridxC37] = if noDepth then ZBACK else pdzC37
         }
       }
@@ -17994,7 +19210,14 @@ mod paintTick() {
         let dtC38 = tjC38 - xL3
         let pdzC38 = zLo3 + zSlope3 * dtC38
         if noDepth || pdzC38 >= fbZ[ridxC38] {
-          fb[ridxC38] = cLo3 + rowSlope3 * dtC38
+          let srcC38 = cLo3 + rowSlope3 * dtC38
+          if noDepth || srcC38.a >= 1.0 {
+            fb[ridxC38] = srcC38
+          } else if repaint < 0.5 {
+            let dC38 = fb[ridxC38]
+            let iaC38 = 1.0 - srcC38.a
+            fb[ridxC38] = Color(srcC38.r * srcC38.a + dC38.r * iaC38, srcC38.g * srcC38.a + dC38.g * iaC38, srcC38.b * srcC38.a + dC38.b * iaC38, srcC38.a + dC38.a * iaC38)
+          }
           fbZ[ridxC38] = if noDepth then ZBACK else pdzC38
         }
       }
@@ -18004,7 +19227,14 @@ mod paintTick() {
         let dtC39 = tjC39 - xL3
         let pdzC39 = zLo3 + zSlope3 * dtC39
         if noDepth || pdzC39 >= fbZ[ridxC39] {
-          fb[ridxC39] = cLo3 + rowSlope3 * dtC39
+          let srcC39 = cLo3 + rowSlope3 * dtC39
+          if noDepth || srcC39.a >= 1.0 {
+            fb[ridxC39] = srcC39
+          } else if repaint < 0.5 {
+            let dC39 = fb[ridxC39]
+            let iaC39 = 1.0 - srcC39.a
+            fb[ridxC39] = Color(srcC39.r * srcC39.a + dC39.r * iaC39, srcC39.g * srcC39.a + dC39.g * iaC39, srcC39.b * srcC39.a + dC39.b * iaC39, srcC39.a + dC39.a * iaC39)
+          }
           fbZ[ridxC39] = if noDepth then ZBACK else pdzC39
         }
       }
@@ -18014,7 +19244,14 @@ mod paintTick() {
         let dtC40 = tjC40 - xL3
         let pdzC40 = zLo3 + zSlope3 * dtC40
         if noDepth || pdzC40 >= fbZ[ridxC40] {
-          fb[ridxC40] = cLo3 + rowSlope3 * dtC40
+          let srcC40 = cLo3 + rowSlope3 * dtC40
+          if noDepth || srcC40.a >= 1.0 {
+            fb[ridxC40] = srcC40
+          } else if repaint < 0.5 {
+            let dC40 = fb[ridxC40]
+            let iaC40 = 1.0 - srcC40.a
+            fb[ridxC40] = Color(srcC40.r * srcC40.a + dC40.r * iaC40, srcC40.g * srcC40.a + dC40.g * iaC40, srcC40.b * srcC40.a + dC40.b * iaC40, srcC40.a + dC40.a * iaC40)
+          }
           fbZ[ridxC40] = if noDepth then ZBACK else pdzC40
         }
       }
@@ -18024,7 +19261,14 @@ mod paintTick() {
         let dtC41 = tjC41 - xL3
         let pdzC41 = zLo3 + zSlope3 * dtC41
         if noDepth || pdzC41 >= fbZ[ridxC41] {
-          fb[ridxC41] = cLo3 + rowSlope3 * dtC41
+          let srcC41 = cLo3 + rowSlope3 * dtC41
+          if noDepth || srcC41.a >= 1.0 {
+            fb[ridxC41] = srcC41
+          } else if repaint < 0.5 {
+            let dC41 = fb[ridxC41]
+            let iaC41 = 1.0 - srcC41.a
+            fb[ridxC41] = Color(srcC41.r * srcC41.a + dC41.r * iaC41, srcC41.g * srcC41.a + dC41.g * iaC41, srcC41.b * srcC41.a + dC41.b * iaC41, srcC41.a + dC41.a * iaC41)
+          }
           fbZ[ridxC41] = if noDepth then ZBACK else pdzC41
         }
       }
@@ -18034,7 +19278,14 @@ mod paintTick() {
         let dtC42 = tjC42 - xL3
         let pdzC42 = zLo3 + zSlope3 * dtC42
         if noDepth || pdzC42 >= fbZ[ridxC42] {
-          fb[ridxC42] = cLo3 + rowSlope3 * dtC42
+          let srcC42 = cLo3 + rowSlope3 * dtC42
+          if noDepth || srcC42.a >= 1.0 {
+            fb[ridxC42] = srcC42
+          } else if repaint < 0.5 {
+            let dC42 = fb[ridxC42]
+            let iaC42 = 1.0 - srcC42.a
+            fb[ridxC42] = Color(srcC42.r * srcC42.a + dC42.r * iaC42, srcC42.g * srcC42.a + dC42.g * iaC42, srcC42.b * srcC42.a + dC42.b * iaC42, srcC42.a + dC42.a * iaC42)
+          }
           fbZ[ridxC42] = if noDepth then ZBACK else pdzC42
         }
       }
@@ -18044,7 +19295,14 @@ mod paintTick() {
         let dtC43 = tjC43 - xL3
         let pdzC43 = zLo3 + zSlope3 * dtC43
         if noDepth || pdzC43 >= fbZ[ridxC43] {
-          fb[ridxC43] = cLo3 + rowSlope3 * dtC43
+          let srcC43 = cLo3 + rowSlope3 * dtC43
+          if noDepth || srcC43.a >= 1.0 {
+            fb[ridxC43] = srcC43
+          } else if repaint < 0.5 {
+            let dC43 = fb[ridxC43]
+            let iaC43 = 1.0 - srcC43.a
+            fb[ridxC43] = Color(srcC43.r * srcC43.a + dC43.r * iaC43, srcC43.g * srcC43.a + dC43.g * iaC43, srcC43.b * srcC43.a + dC43.b * iaC43, srcC43.a + dC43.a * iaC43)
+          }
           fbZ[ridxC43] = if noDepth then ZBACK else pdzC43
         }
       }
@@ -18054,7 +19312,14 @@ mod paintTick() {
         let dtC44 = tjC44 - xL3
         let pdzC44 = zLo3 + zSlope3 * dtC44
         if noDepth || pdzC44 >= fbZ[ridxC44] {
-          fb[ridxC44] = cLo3 + rowSlope3 * dtC44
+          let srcC44 = cLo3 + rowSlope3 * dtC44
+          if noDepth || srcC44.a >= 1.0 {
+            fb[ridxC44] = srcC44
+          } else if repaint < 0.5 {
+            let dC44 = fb[ridxC44]
+            let iaC44 = 1.0 - srcC44.a
+            fb[ridxC44] = Color(srcC44.r * srcC44.a + dC44.r * iaC44, srcC44.g * srcC44.a + dC44.g * iaC44, srcC44.b * srcC44.a + dC44.b * iaC44, srcC44.a + dC44.a * iaC44)
+          }
           fbZ[ridxC44] = if noDepth then ZBACK else pdzC44
         }
       }
@@ -18064,7 +19329,14 @@ mod paintTick() {
         let dtC45 = tjC45 - xL3
         let pdzC45 = zLo3 + zSlope3 * dtC45
         if noDepth || pdzC45 >= fbZ[ridxC45] {
-          fb[ridxC45] = cLo3 + rowSlope3 * dtC45
+          let srcC45 = cLo3 + rowSlope3 * dtC45
+          if noDepth || srcC45.a >= 1.0 {
+            fb[ridxC45] = srcC45
+          } else if repaint < 0.5 {
+            let dC45 = fb[ridxC45]
+            let iaC45 = 1.0 - srcC45.a
+            fb[ridxC45] = Color(srcC45.r * srcC45.a + dC45.r * iaC45, srcC45.g * srcC45.a + dC45.g * iaC45, srcC45.b * srcC45.a + dC45.b * iaC45, srcC45.a + dC45.a * iaC45)
+          }
           fbZ[ridxC45] = if noDepth then ZBACK else pdzC45
         }
       }
@@ -18074,7 +19346,14 @@ mod paintTick() {
         let dtC46 = tjC46 - xL3
         let pdzC46 = zLo3 + zSlope3 * dtC46
         if noDepth || pdzC46 >= fbZ[ridxC46] {
-          fb[ridxC46] = cLo3 + rowSlope3 * dtC46
+          let srcC46 = cLo3 + rowSlope3 * dtC46
+          if noDepth || srcC46.a >= 1.0 {
+            fb[ridxC46] = srcC46
+          } else if repaint < 0.5 {
+            let dC46 = fb[ridxC46]
+            let iaC46 = 1.0 - srcC46.a
+            fb[ridxC46] = Color(srcC46.r * srcC46.a + dC46.r * iaC46, srcC46.g * srcC46.a + dC46.g * iaC46, srcC46.b * srcC46.a + dC46.b * iaC46, srcC46.a + dC46.a * iaC46)
+          }
           fbZ[ridxC46] = if noDepth then ZBACK else pdzC46
         }
       }
@@ -18084,7 +19363,14 @@ mod paintTick() {
         let dtC47 = tjC47 - xL3
         let pdzC47 = zLo3 + zSlope3 * dtC47
         if noDepth || pdzC47 >= fbZ[ridxC47] {
-          fb[ridxC47] = cLo3 + rowSlope3 * dtC47
+          let srcC47 = cLo3 + rowSlope3 * dtC47
+          if noDepth || srcC47.a >= 1.0 {
+            fb[ridxC47] = srcC47
+          } else if repaint < 0.5 {
+            let dC47 = fb[ridxC47]
+            let iaC47 = 1.0 - srcC47.a
+            fb[ridxC47] = Color(srcC47.r * srcC47.a + dC47.r * iaC47, srcC47.g * srcC47.a + dC47.g * iaC47, srcC47.b * srcC47.a + dC47.b * iaC47, srcC47.a + dC47.a * iaC47)
+          }
           fbZ[ridxC47] = if noDepth then ZBACK else pdzC47
         }
       }
@@ -18094,7 +19380,14 @@ mod paintTick() {
         let dtC48 = tjC48 - xL3
         let pdzC48 = zLo3 + zSlope3 * dtC48
         if noDepth || pdzC48 >= fbZ[ridxC48] {
-          fb[ridxC48] = cLo3 + rowSlope3 * dtC48
+          let srcC48 = cLo3 + rowSlope3 * dtC48
+          if noDepth || srcC48.a >= 1.0 {
+            fb[ridxC48] = srcC48
+          } else if repaint < 0.5 {
+            let dC48 = fb[ridxC48]
+            let iaC48 = 1.0 - srcC48.a
+            fb[ridxC48] = Color(srcC48.r * srcC48.a + dC48.r * iaC48, srcC48.g * srcC48.a + dC48.g * iaC48, srcC48.b * srcC48.a + dC48.b * iaC48, srcC48.a + dC48.a * iaC48)
+          }
           fbZ[ridxC48] = if noDepth then ZBACK else pdzC48
         }
       }
@@ -18104,7 +19397,14 @@ mod paintTick() {
         let dtC49 = tjC49 - xL3
         let pdzC49 = zLo3 + zSlope3 * dtC49
         if noDepth || pdzC49 >= fbZ[ridxC49] {
-          fb[ridxC49] = cLo3 + rowSlope3 * dtC49
+          let srcC49 = cLo3 + rowSlope3 * dtC49
+          if noDepth || srcC49.a >= 1.0 {
+            fb[ridxC49] = srcC49
+          } else if repaint < 0.5 {
+            let dC49 = fb[ridxC49]
+            let iaC49 = 1.0 - srcC49.a
+            fb[ridxC49] = Color(srcC49.r * srcC49.a + dC49.r * iaC49, srcC49.g * srcC49.a + dC49.g * iaC49, srcC49.b * srcC49.a + dC49.b * iaC49, srcC49.a + dC49.a * iaC49)
+          }
           fbZ[ridxC49] = if noDepth then ZBACK else pdzC49
         }
       }
@@ -18114,7 +19414,14 @@ mod paintTick() {
         let dtC50 = tjC50 - xL3
         let pdzC50 = zLo3 + zSlope3 * dtC50
         if noDepth || pdzC50 >= fbZ[ridxC50] {
-          fb[ridxC50] = cLo3 + rowSlope3 * dtC50
+          let srcC50 = cLo3 + rowSlope3 * dtC50
+          if noDepth || srcC50.a >= 1.0 {
+            fb[ridxC50] = srcC50
+          } else if repaint < 0.5 {
+            let dC50 = fb[ridxC50]
+            let iaC50 = 1.0 - srcC50.a
+            fb[ridxC50] = Color(srcC50.r * srcC50.a + dC50.r * iaC50, srcC50.g * srcC50.a + dC50.g * iaC50, srcC50.b * srcC50.a + dC50.b * iaC50, srcC50.a + dC50.a * iaC50)
+          }
           fbZ[ridxC50] = if noDepth then ZBACK else pdzC50
         }
       }
@@ -18124,7 +19431,14 @@ mod paintTick() {
         let dtC51 = tjC51 - xL3
         let pdzC51 = zLo3 + zSlope3 * dtC51
         if noDepth || pdzC51 >= fbZ[ridxC51] {
-          fb[ridxC51] = cLo3 + rowSlope3 * dtC51
+          let srcC51 = cLo3 + rowSlope3 * dtC51
+          if noDepth || srcC51.a >= 1.0 {
+            fb[ridxC51] = srcC51
+          } else if repaint < 0.5 {
+            let dC51 = fb[ridxC51]
+            let iaC51 = 1.0 - srcC51.a
+            fb[ridxC51] = Color(srcC51.r * srcC51.a + dC51.r * iaC51, srcC51.g * srcC51.a + dC51.g * iaC51, srcC51.b * srcC51.a + dC51.b * iaC51, srcC51.a + dC51.a * iaC51)
+          }
           fbZ[ridxC51] = if noDepth then ZBACK else pdzC51
         }
       }
@@ -18134,7 +19448,14 @@ mod paintTick() {
         let dtC52 = tjC52 - xL3
         let pdzC52 = zLo3 + zSlope3 * dtC52
         if noDepth || pdzC52 >= fbZ[ridxC52] {
-          fb[ridxC52] = cLo3 + rowSlope3 * dtC52
+          let srcC52 = cLo3 + rowSlope3 * dtC52
+          if noDepth || srcC52.a >= 1.0 {
+            fb[ridxC52] = srcC52
+          } else if repaint < 0.5 {
+            let dC52 = fb[ridxC52]
+            let iaC52 = 1.0 - srcC52.a
+            fb[ridxC52] = Color(srcC52.r * srcC52.a + dC52.r * iaC52, srcC52.g * srcC52.a + dC52.g * iaC52, srcC52.b * srcC52.a + dC52.b * iaC52, srcC52.a + dC52.a * iaC52)
+          }
           fbZ[ridxC52] = if noDepth then ZBACK else pdzC52
         }
       }
@@ -18144,7 +19465,14 @@ mod paintTick() {
         let dtC53 = tjC53 - xL3
         let pdzC53 = zLo3 + zSlope3 * dtC53
         if noDepth || pdzC53 >= fbZ[ridxC53] {
-          fb[ridxC53] = cLo3 + rowSlope3 * dtC53
+          let srcC53 = cLo3 + rowSlope3 * dtC53
+          if noDepth || srcC53.a >= 1.0 {
+            fb[ridxC53] = srcC53
+          } else if repaint < 0.5 {
+            let dC53 = fb[ridxC53]
+            let iaC53 = 1.0 - srcC53.a
+            fb[ridxC53] = Color(srcC53.r * srcC53.a + dC53.r * iaC53, srcC53.g * srcC53.a + dC53.g * iaC53, srcC53.b * srcC53.a + dC53.b * iaC53, srcC53.a + dC53.a * iaC53)
+          }
           fbZ[ridxC53] = if noDepth then ZBACK else pdzC53
         }
       }
@@ -18154,7 +19482,14 @@ mod paintTick() {
         let dtC54 = tjC54 - xL3
         let pdzC54 = zLo3 + zSlope3 * dtC54
         if noDepth || pdzC54 >= fbZ[ridxC54] {
-          fb[ridxC54] = cLo3 + rowSlope3 * dtC54
+          let srcC54 = cLo3 + rowSlope3 * dtC54
+          if noDepth || srcC54.a >= 1.0 {
+            fb[ridxC54] = srcC54
+          } else if repaint < 0.5 {
+            let dC54 = fb[ridxC54]
+            let iaC54 = 1.0 - srcC54.a
+            fb[ridxC54] = Color(srcC54.r * srcC54.a + dC54.r * iaC54, srcC54.g * srcC54.a + dC54.g * iaC54, srcC54.b * srcC54.a + dC54.b * iaC54, srcC54.a + dC54.a * iaC54)
+          }
           fbZ[ridxC54] = if noDepth then ZBACK else pdzC54
         }
       }
@@ -18164,7 +19499,14 @@ mod paintTick() {
         let dtC55 = tjC55 - xL3
         let pdzC55 = zLo3 + zSlope3 * dtC55
         if noDepth || pdzC55 >= fbZ[ridxC55] {
-          fb[ridxC55] = cLo3 + rowSlope3 * dtC55
+          let srcC55 = cLo3 + rowSlope3 * dtC55
+          if noDepth || srcC55.a >= 1.0 {
+            fb[ridxC55] = srcC55
+          } else if repaint < 0.5 {
+            let dC55 = fb[ridxC55]
+            let iaC55 = 1.0 - srcC55.a
+            fb[ridxC55] = Color(srcC55.r * srcC55.a + dC55.r * iaC55, srcC55.g * srcC55.a + dC55.g * iaC55, srcC55.b * srcC55.a + dC55.b * iaC55, srcC55.a + dC55.a * iaC55)
+          }
           fbZ[ridxC55] = if noDepth then ZBACK else pdzC55
         }
       }
@@ -18174,7 +19516,14 @@ mod paintTick() {
         let dtC56 = tjC56 - xL3
         let pdzC56 = zLo3 + zSlope3 * dtC56
         if noDepth || pdzC56 >= fbZ[ridxC56] {
-          fb[ridxC56] = cLo3 + rowSlope3 * dtC56
+          let srcC56 = cLo3 + rowSlope3 * dtC56
+          if noDepth || srcC56.a >= 1.0 {
+            fb[ridxC56] = srcC56
+          } else if repaint < 0.5 {
+            let dC56 = fb[ridxC56]
+            let iaC56 = 1.0 - srcC56.a
+            fb[ridxC56] = Color(srcC56.r * srcC56.a + dC56.r * iaC56, srcC56.g * srcC56.a + dC56.g * iaC56, srcC56.b * srcC56.a + dC56.b * iaC56, srcC56.a + dC56.a * iaC56)
+          }
           fbZ[ridxC56] = if noDepth then ZBACK else pdzC56
         }
       }
@@ -18184,7 +19533,14 @@ mod paintTick() {
         let dtC57 = tjC57 - xL3
         let pdzC57 = zLo3 + zSlope3 * dtC57
         if noDepth || pdzC57 >= fbZ[ridxC57] {
-          fb[ridxC57] = cLo3 + rowSlope3 * dtC57
+          let srcC57 = cLo3 + rowSlope3 * dtC57
+          if noDepth || srcC57.a >= 1.0 {
+            fb[ridxC57] = srcC57
+          } else if repaint < 0.5 {
+            let dC57 = fb[ridxC57]
+            let iaC57 = 1.0 - srcC57.a
+            fb[ridxC57] = Color(srcC57.r * srcC57.a + dC57.r * iaC57, srcC57.g * srcC57.a + dC57.g * iaC57, srcC57.b * srcC57.a + dC57.b * iaC57, srcC57.a + dC57.a * iaC57)
+          }
           fbZ[ridxC57] = if noDepth then ZBACK else pdzC57
         }
       }
@@ -18194,7 +19550,14 @@ mod paintTick() {
         let dtC58 = tjC58 - xL3
         let pdzC58 = zLo3 + zSlope3 * dtC58
         if noDepth || pdzC58 >= fbZ[ridxC58] {
-          fb[ridxC58] = cLo3 + rowSlope3 * dtC58
+          let srcC58 = cLo3 + rowSlope3 * dtC58
+          if noDepth || srcC58.a >= 1.0 {
+            fb[ridxC58] = srcC58
+          } else if repaint < 0.5 {
+            let dC58 = fb[ridxC58]
+            let iaC58 = 1.0 - srcC58.a
+            fb[ridxC58] = Color(srcC58.r * srcC58.a + dC58.r * iaC58, srcC58.g * srcC58.a + dC58.g * iaC58, srcC58.b * srcC58.a + dC58.b * iaC58, srcC58.a + dC58.a * iaC58)
+          }
           fbZ[ridxC58] = if noDepth then ZBACK else pdzC58
         }
       }
@@ -18204,7 +19567,14 @@ mod paintTick() {
         let dtC59 = tjC59 - xL3
         let pdzC59 = zLo3 + zSlope3 * dtC59
         if noDepth || pdzC59 >= fbZ[ridxC59] {
-          fb[ridxC59] = cLo3 + rowSlope3 * dtC59
+          let srcC59 = cLo3 + rowSlope3 * dtC59
+          if noDepth || srcC59.a >= 1.0 {
+            fb[ridxC59] = srcC59
+          } else if repaint < 0.5 {
+            let dC59 = fb[ridxC59]
+            let iaC59 = 1.0 - srcC59.a
+            fb[ridxC59] = Color(srcC59.r * srcC59.a + dC59.r * iaC59, srcC59.g * srcC59.a + dC59.g * iaC59, srcC59.b * srcC59.a + dC59.b * iaC59, srcC59.a + dC59.a * iaC59)
+          }
           fbZ[ridxC59] = if noDepth then ZBACK else pdzC59
         }
       }
@@ -18214,7 +19584,14 @@ mod paintTick() {
         let dtC60 = tjC60 - xL3
         let pdzC60 = zLo3 + zSlope3 * dtC60
         if noDepth || pdzC60 >= fbZ[ridxC60] {
-          fb[ridxC60] = cLo3 + rowSlope3 * dtC60
+          let srcC60 = cLo3 + rowSlope3 * dtC60
+          if noDepth || srcC60.a >= 1.0 {
+            fb[ridxC60] = srcC60
+          } else if repaint < 0.5 {
+            let dC60 = fb[ridxC60]
+            let iaC60 = 1.0 - srcC60.a
+            fb[ridxC60] = Color(srcC60.r * srcC60.a + dC60.r * iaC60, srcC60.g * srcC60.a + dC60.g * iaC60, srcC60.b * srcC60.a + dC60.b * iaC60, srcC60.a + dC60.a * iaC60)
+          }
           fbZ[ridxC60] = if noDepth then ZBACK else pdzC60
         }
       }
@@ -18224,7 +19601,14 @@ mod paintTick() {
         let dtC61 = tjC61 - xL3
         let pdzC61 = zLo3 + zSlope3 * dtC61
         if noDepth || pdzC61 >= fbZ[ridxC61] {
-          fb[ridxC61] = cLo3 + rowSlope3 * dtC61
+          let srcC61 = cLo3 + rowSlope3 * dtC61
+          if noDepth || srcC61.a >= 1.0 {
+            fb[ridxC61] = srcC61
+          } else if repaint < 0.5 {
+            let dC61 = fb[ridxC61]
+            let iaC61 = 1.0 - srcC61.a
+            fb[ridxC61] = Color(srcC61.r * srcC61.a + dC61.r * iaC61, srcC61.g * srcC61.a + dC61.g * iaC61, srcC61.b * srcC61.a + dC61.b * iaC61, srcC61.a + dC61.a * iaC61)
+          }
           fbZ[ridxC61] = if noDepth then ZBACK else pdzC61
         }
       }
@@ -18234,7 +19618,14 @@ mod paintTick() {
         let dtC62 = tjC62 - xL3
         let pdzC62 = zLo3 + zSlope3 * dtC62
         if noDepth || pdzC62 >= fbZ[ridxC62] {
-          fb[ridxC62] = cLo3 + rowSlope3 * dtC62
+          let srcC62 = cLo3 + rowSlope3 * dtC62
+          if noDepth || srcC62.a >= 1.0 {
+            fb[ridxC62] = srcC62
+          } else if repaint < 0.5 {
+            let dC62 = fb[ridxC62]
+            let iaC62 = 1.0 - srcC62.a
+            fb[ridxC62] = Color(srcC62.r * srcC62.a + dC62.r * iaC62, srcC62.g * srcC62.a + dC62.g * iaC62, srcC62.b * srcC62.a + dC62.b * iaC62, srcC62.a + dC62.a * iaC62)
+          }
           fbZ[ridxC62] = if noDepth then ZBACK else pdzC62
         }
       }
@@ -18244,7 +19635,14 @@ mod paintTick() {
         let dtC63 = tjC63 - xL3
         let pdzC63 = zLo3 + zSlope3 * dtC63
         if noDepth || pdzC63 >= fbZ[ridxC63] {
-          fb[ridxC63] = cLo3 + rowSlope3 * dtC63
+          let srcC63 = cLo3 + rowSlope3 * dtC63
+          if noDepth || srcC63.a >= 1.0 {
+            fb[ridxC63] = srcC63
+          } else if repaint < 0.5 {
+            let dC63 = fb[ridxC63]
+            let iaC63 = 1.0 - srcC63.a
+            fb[ridxC63] = Color(srcC63.r * srcC63.a + dC63.r * iaC63, srcC63.g * srcC63.a + dC63.g * iaC63, srcC63.b * srcC63.a + dC63.b * iaC63, srcC63.a + dC63.a * iaC63)
+          }
           fbZ[ridxC63] = if noDepth then ZBACK else pdzC63
         }
       }
@@ -18520,7 +19918,14 @@ mod paintTick() {
         let dtD0 = tjD0 - xL4
         let pdzD0 = zLo4 + zSlope4 * dtD0
         if noDepth || pdzD0 >= fbZ[ridxD0] {
-          fb[ridxD0] = cLo4 + rowSlope4 * dtD0
+          let srcD0 = cLo4 + rowSlope4 * dtD0
+          if noDepth || srcD0.a >= 1.0 {
+            fb[ridxD0] = srcD0
+          } else if repaint < 0.5 {
+            let dD0 = fb[ridxD0]
+            let iaD0 = 1.0 - srcD0.a
+            fb[ridxD0] = Color(srcD0.r * srcD0.a + dD0.r * iaD0, srcD0.g * srcD0.a + dD0.g * iaD0, srcD0.b * srcD0.a + dD0.b * iaD0, srcD0.a + dD0.a * iaD0)
+          }
           fbZ[ridxD0] = if noDepth then ZBACK else pdzD0
         }
       }
@@ -18530,7 +19935,14 @@ mod paintTick() {
         let dtD1 = tjD1 - xL4
         let pdzD1 = zLo4 + zSlope4 * dtD1
         if noDepth || pdzD1 >= fbZ[ridxD1] {
-          fb[ridxD1] = cLo4 + rowSlope4 * dtD1
+          let srcD1 = cLo4 + rowSlope4 * dtD1
+          if noDepth || srcD1.a >= 1.0 {
+            fb[ridxD1] = srcD1
+          } else if repaint < 0.5 {
+            let dD1 = fb[ridxD1]
+            let iaD1 = 1.0 - srcD1.a
+            fb[ridxD1] = Color(srcD1.r * srcD1.a + dD1.r * iaD1, srcD1.g * srcD1.a + dD1.g * iaD1, srcD1.b * srcD1.a + dD1.b * iaD1, srcD1.a + dD1.a * iaD1)
+          }
           fbZ[ridxD1] = if noDepth then ZBACK else pdzD1
         }
       }
@@ -18540,7 +19952,14 @@ mod paintTick() {
         let dtD2 = tjD2 - xL4
         let pdzD2 = zLo4 + zSlope4 * dtD2
         if noDepth || pdzD2 >= fbZ[ridxD2] {
-          fb[ridxD2] = cLo4 + rowSlope4 * dtD2
+          let srcD2 = cLo4 + rowSlope4 * dtD2
+          if noDepth || srcD2.a >= 1.0 {
+            fb[ridxD2] = srcD2
+          } else if repaint < 0.5 {
+            let dD2 = fb[ridxD2]
+            let iaD2 = 1.0 - srcD2.a
+            fb[ridxD2] = Color(srcD2.r * srcD2.a + dD2.r * iaD2, srcD2.g * srcD2.a + dD2.g * iaD2, srcD2.b * srcD2.a + dD2.b * iaD2, srcD2.a + dD2.a * iaD2)
+          }
           fbZ[ridxD2] = if noDepth then ZBACK else pdzD2
         }
       }
@@ -18550,7 +19969,14 @@ mod paintTick() {
         let dtD3 = tjD3 - xL4
         let pdzD3 = zLo4 + zSlope4 * dtD3
         if noDepth || pdzD3 >= fbZ[ridxD3] {
-          fb[ridxD3] = cLo4 + rowSlope4 * dtD3
+          let srcD3 = cLo4 + rowSlope4 * dtD3
+          if noDepth || srcD3.a >= 1.0 {
+            fb[ridxD3] = srcD3
+          } else if repaint < 0.5 {
+            let dD3 = fb[ridxD3]
+            let iaD3 = 1.0 - srcD3.a
+            fb[ridxD3] = Color(srcD3.r * srcD3.a + dD3.r * iaD3, srcD3.g * srcD3.a + dD3.g * iaD3, srcD3.b * srcD3.a + dD3.b * iaD3, srcD3.a + dD3.a * iaD3)
+          }
           fbZ[ridxD3] = if noDepth then ZBACK else pdzD3
         }
       }
@@ -18560,7 +19986,14 @@ mod paintTick() {
         let dtD4 = tjD4 - xL4
         let pdzD4 = zLo4 + zSlope4 * dtD4
         if noDepth || pdzD4 >= fbZ[ridxD4] {
-          fb[ridxD4] = cLo4 + rowSlope4 * dtD4
+          let srcD4 = cLo4 + rowSlope4 * dtD4
+          if noDepth || srcD4.a >= 1.0 {
+            fb[ridxD4] = srcD4
+          } else if repaint < 0.5 {
+            let dD4 = fb[ridxD4]
+            let iaD4 = 1.0 - srcD4.a
+            fb[ridxD4] = Color(srcD4.r * srcD4.a + dD4.r * iaD4, srcD4.g * srcD4.a + dD4.g * iaD4, srcD4.b * srcD4.a + dD4.b * iaD4, srcD4.a + dD4.a * iaD4)
+          }
           fbZ[ridxD4] = if noDepth then ZBACK else pdzD4
         }
       }
@@ -18570,7 +20003,14 @@ mod paintTick() {
         let dtD5 = tjD5 - xL4
         let pdzD5 = zLo4 + zSlope4 * dtD5
         if noDepth || pdzD5 >= fbZ[ridxD5] {
-          fb[ridxD5] = cLo4 + rowSlope4 * dtD5
+          let srcD5 = cLo4 + rowSlope4 * dtD5
+          if noDepth || srcD5.a >= 1.0 {
+            fb[ridxD5] = srcD5
+          } else if repaint < 0.5 {
+            let dD5 = fb[ridxD5]
+            let iaD5 = 1.0 - srcD5.a
+            fb[ridxD5] = Color(srcD5.r * srcD5.a + dD5.r * iaD5, srcD5.g * srcD5.a + dD5.g * iaD5, srcD5.b * srcD5.a + dD5.b * iaD5, srcD5.a + dD5.a * iaD5)
+          }
           fbZ[ridxD5] = if noDepth then ZBACK else pdzD5
         }
       }
@@ -18580,7 +20020,14 @@ mod paintTick() {
         let dtD6 = tjD6 - xL4
         let pdzD6 = zLo4 + zSlope4 * dtD6
         if noDepth || pdzD6 >= fbZ[ridxD6] {
-          fb[ridxD6] = cLo4 + rowSlope4 * dtD6
+          let srcD6 = cLo4 + rowSlope4 * dtD6
+          if noDepth || srcD6.a >= 1.0 {
+            fb[ridxD6] = srcD6
+          } else if repaint < 0.5 {
+            let dD6 = fb[ridxD6]
+            let iaD6 = 1.0 - srcD6.a
+            fb[ridxD6] = Color(srcD6.r * srcD6.a + dD6.r * iaD6, srcD6.g * srcD6.a + dD6.g * iaD6, srcD6.b * srcD6.a + dD6.b * iaD6, srcD6.a + dD6.a * iaD6)
+          }
           fbZ[ridxD6] = if noDepth then ZBACK else pdzD6
         }
       }
@@ -18590,7 +20037,14 @@ mod paintTick() {
         let dtD7 = tjD7 - xL4
         let pdzD7 = zLo4 + zSlope4 * dtD7
         if noDepth || pdzD7 >= fbZ[ridxD7] {
-          fb[ridxD7] = cLo4 + rowSlope4 * dtD7
+          let srcD7 = cLo4 + rowSlope4 * dtD7
+          if noDepth || srcD7.a >= 1.0 {
+            fb[ridxD7] = srcD7
+          } else if repaint < 0.5 {
+            let dD7 = fb[ridxD7]
+            let iaD7 = 1.0 - srcD7.a
+            fb[ridxD7] = Color(srcD7.r * srcD7.a + dD7.r * iaD7, srcD7.g * srcD7.a + dD7.g * iaD7, srcD7.b * srcD7.a + dD7.b * iaD7, srcD7.a + dD7.a * iaD7)
+          }
           fbZ[ridxD7] = if noDepth then ZBACK else pdzD7
         }
       }
@@ -18600,7 +20054,14 @@ mod paintTick() {
         let dtD8 = tjD8 - xL4
         let pdzD8 = zLo4 + zSlope4 * dtD8
         if noDepth || pdzD8 >= fbZ[ridxD8] {
-          fb[ridxD8] = cLo4 + rowSlope4 * dtD8
+          let srcD8 = cLo4 + rowSlope4 * dtD8
+          if noDepth || srcD8.a >= 1.0 {
+            fb[ridxD8] = srcD8
+          } else if repaint < 0.5 {
+            let dD8 = fb[ridxD8]
+            let iaD8 = 1.0 - srcD8.a
+            fb[ridxD8] = Color(srcD8.r * srcD8.a + dD8.r * iaD8, srcD8.g * srcD8.a + dD8.g * iaD8, srcD8.b * srcD8.a + dD8.b * iaD8, srcD8.a + dD8.a * iaD8)
+          }
           fbZ[ridxD8] = if noDepth then ZBACK else pdzD8
         }
       }
@@ -18610,7 +20071,14 @@ mod paintTick() {
         let dtD9 = tjD9 - xL4
         let pdzD9 = zLo4 + zSlope4 * dtD9
         if noDepth || pdzD9 >= fbZ[ridxD9] {
-          fb[ridxD9] = cLo4 + rowSlope4 * dtD9
+          let srcD9 = cLo4 + rowSlope4 * dtD9
+          if noDepth || srcD9.a >= 1.0 {
+            fb[ridxD9] = srcD9
+          } else if repaint < 0.5 {
+            let dD9 = fb[ridxD9]
+            let iaD9 = 1.0 - srcD9.a
+            fb[ridxD9] = Color(srcD9.r * srcD9.a + dD9.r * iaD9, srcD9.g * srcD9.a + dD9.g * iaD9, srcD9.b * srcD9.a + dD9.b * iaD9, srcD9.a + dD9.a * iaD9)
+          }
           fbZ[ridxD9] = if noDepth then ZBACK else pdzD9
         }
       }
@@ -18620,7 +20088,14 @@ mod paintTick() {
         let dtD10 = tjD10 - xL4
         let pdzD10 = zLo4 + zSlope4 * dtD10
         if noDepth || pdzD10 >= fbZ[ridxD10] {
-          fb[ridxD10] = cLo4 + rowSlope4 * dtD10
+          let srcD10 = cLo4 + rowSlope4 * dtD10
+          if noDepth || srcD10.a >= 1.0 {
+            fb[ridxD10] = srcD10
+          } else if repaint < 0.5 {
+            let dD10 = fb[ridxD10]
+            let iaD10 = 1.0 - srcD10.a
+            fb[ridxD10] = Color(srcD10.r * srcD10.a + dD10.r * iaD10, srcD10.g * srcD10.a + dD10.g * iaD10, srcD10.b * srcD10.a + dD10.b * iaD10, srcD10.a + dD10.a * iaD10)
+          }
           fbZ[ridxD10] = if noDepth then ZBACK else pdzD10
         }
       }
@@ -18630,7 +20105,14 @@ mod paintTick() {
         let dtD11 = tjD11 - xL4
         let pdzD11 = zLo4 + zSlope4 * dtD11
         if noDepth || pdzD11 >= fbZ[ridxD11] {
-          fb[ridxD11] = cLo4 + rowSlope4 * dtD11
+          let srcD11 = cLo4 + rowSlope4 * dtD11
+          if noDepth || srcD11.a >= 1.0 {
+            fb[ridxD11] = srcD11
+          } else if repaint < 0.5 {
+            let dD11 = fb[ridxD11]
+            let iaD11 = 1.0 - srcD11.a
+            fb[ridxD11] = Color(srcD11.r * srcD11.a + dD11.r * iaD11, srcD11.g * srcD11.a + dD11.g * iaD11, srcD11.b * srcD11.a + dD11.b * iaD11, srcD11.a + dD11.a * iaD11)
+          }
           fbZ[ridxD11] = if noDepth then ZBACK else pdzD11
         }
       }
@@ -18640,7 +20122,14 @@ mod paintTick() {
         let dtD12 = tjD12 - xL4
         let pdzD12 = zLo4 + zSlope4 * dtD12
         if noDepth || pdzD12 >= fbZ[ridxD12] {
-          fb[ridxD12] = cLo4 + rowSlope4 * dtD12
+          let srcD12 = cLo4 + rowSlope4 * dtD12
+          if noDepth || srcD12.a >= 1.0 {
+            fb[ridxD12] = srcD12
+          } else if repaint < 0.5 {
+            let dD12 = fb[ridxD12]
+            let iaD12 = 1.0 - srcD12.a
+            fb[ridxD12] = Color(srcD12.r * srcD12.a + dD12.r * iaD12, srcD12.g * srcD12.a + dD12.g * iaD12, srcD12.b * srcD12.a + dD12.b * iaD12, srcD12.a + dD12.a * iaD12)
+          }
           fbZ[ridxD12] = if noDepth then ZBACK else pdzD12
         }
       }
@@ -18650,7 +20139,14 @@ mod paintTick() {
         let dtD13 = tjD13 - xL4
         let pdzD13 = zLo4 + zSlope4 * dtD13
         if noDepth || pdzD13 >= fbZ[ridxD13] {
-          fb[ridxD13] = cLo4 + rowSlope4 * dtD13
+          let srcD13 = cLo4 + rowSlope4 * dtD13
+          if noDepth || srcD13.a >= 1.0 {
+            fb[ridxD13] = srcD13
+          } else if repaint < 0.5 {
+            let dD13 = fb[ridxD13]
+            let iaD13 = 1.0 - srcD13.a
+            fb[ridxD13] = Color(srcD13.r * srcD13.a + dD13.r * iaD13, srcD13.g * srcD13.a + dD13.g * iaD13, srcD13.b * srcD13.a + dD13.b * iaD13, srcD13.a + dD13.a * iaD13)
+          }
           fbZ[ridxD13] = if noDepth then ZBACK else pdzD13
         }
       }
@@ -18660,7 +20156,14 @@ mod paintTick() {
         let dtD14 = tjD14 - xL4
         let pdzD14 = zLo4 + zSlope4 * dtD14
         if noDepth || pdzD14 >= fbZ[ridxD14] {
-          fb[ridxD14] = cLo4 + rowSlope4 * dtD14
+          let srcD14 = cLo4 + rowSlope4 * dtD14
+          if noDepth || srcD14.a >= 1.0 {
+            fb[ridxD14] = srcD14
+          } else if repaint < 0.5 {
+            let dD14 = fb[ridxD14]
+            let iaD14 = 1.0 - srcD14.a
+            fb[ridxD14] = Color(srcD14.r * srcD14.a + dD14.r * iaD14, srcD14.g * srcD14.a + dD14.g * iaD14, srcD14.b * srcD14.a + dD14.b * iaD14, srcD14.a + dD14.a * iaD14)
+          }
           fbZ[ridxD14] = if noDepth then ZBACK else pdzD14
         }
       }
@@ -18670,7 +20173,14 @@ mod paintTick() {
         let dtD15 = tjD15 - xL4
         let pdzD15 = zLo4 + zSlope4 * dtD15
         if noDepth || pdzD15 >= fbZ[ridxD15] {
-          fb[ridxD15] = cLo4 + rowSlope4 * dtD15
+          let srcD15 = cLo4 + rowSlope4 * dtD15
+          if noDepth || srcD15.a >= 1.0 {
+            fb[ridxD15] = srcD15
+          } else if repaint < 0.5 {
+            let dD15 = fb[ridxD15]
+            let iaD15 = 1.0 - srcD15.a
+            fb[ridxD15] = Color(srcD15.r * srcD15.a + dD15.r * iaD15, srcD15.g * srcD15.a + dD15.g * iaD15, srcD15.b * srcD15.a + dD15.b * iaD15, srcD15.a + dD15.a * iaD15)
+          }
           fbZ[ridxD15] = if noDepth then ZBACK else pdzD15
         }
       }
@@ -18680,7 +20190,14 @@ mod paintTick() {
         let dtD16 = tjD16 - xL4
         let pdzD16 = zLo4 + zSlope4 * dtD16
         if noDepth || pdzD16 >= fbZ[ridxD16] {
-          fb[ridxD16] = cLo4 + rowSlope4 * dtD16
+          let srcD16 = cLo4 + rowSlope4 * dtD16
+          if noDepth || srcD16.a >= 1.0 {
+            fb[ridxD16] = srcD16
+          } else if repaint < 0.5 {
+            let dD16 = fb[ridxD16]
+            let iaD16 = 1.0 - srcD16.a
+            fb[ridxD16] = Color(srcD16.r * srcD16.a + dD16.r * iaD16, srcD16.g * srcD16.a + dD16.g * iaD16, srcD16.b * srcD16.a + dD16.b * iaD16, srcD16.a + dD16.a * iaD16)
+          }
           fbZ[ridxD16] = if noDepth then ZBACK else pdzD16
         }
       }
@@ -18690,7 +20207,14 @@ mod paintTick() {
         let dtD17 = tjD17 - xL4
         let pdzD17 = zLo4 + zSlope4 * dtD17
         if noDepth || pdzD17 >= fbZ[ridxD17] {
-          fb[ridxD17] = cLo4 + rowSlope4 * dtD17
+          let srcD17 = cLo4 + rowSlope4 * dtD17
+          if noDepth || srcD17.a >= 1.0 {
+            fb[ridxD17] = srcD17
+          } else if repaint < 0.5 {
+            let dD17 = fb[ridxD17]
+            let iaD17 = 1.0 - srcD17.a
+            fb[ridxD17] = Color(srcD17.r * srcD17.a + dD17.r * iaD17, srcD17.g * srcD17.a + dD17.g * iaD17, srcD17.b * srcD17.a + dD17.b * iaD17, srcD17.a + dD17.a * iaD17)
+          }
           fbZ[ridxD17] = if noDepth then ZBACK else pdzD17
         }
       }
@@ -18700,7 +20224,14 @@ mod paintTick() {
         let dtD18 = tjD18 - xL4
         let pdzD18 = zLo4 + zSlope4 * dtD18
         if noDepth || pdzD18 >= fbZ[ridxD18] {
-          fb[ridxD18] = cLo4 + rowSlope4 * dtD18
+          let srcD18 = cLo4 + rowSlope4 * dtD18
+          if noDepth || srcD18.a >= 1.0 {
+            fb[ridxD18] = srcD18
+          } else if repaint < 0.5 {
+            let dD18 = fb[ridxD18]
+            let iaD18 = 1.0 - srcD18.a
+            fb[ridxD18] = Color(srcD18.r * srcD18.a + dD18.r * iaD18, srcD18.g * srcD18.a + dD18.g * iaD18, srcD18.b * srcD18.a + dD18.b * iaD18, srcD18.a + dD18.a * iaD18)
+          }
           fbZ[ridxD18] = if noDepth then ZBACK else pdzD18
         }
       }
@@ -18710,7 +20241,14 @@ mod paintTick() {
         let dtD19 = tjD19 - xL4
         let pdzD19 = zLo4 + zSlope4 * dtD19
         if noDepth || pdzD19 >= fbZ[ridxD19] {
-          fb[ridxD19] = cLo4 + rowSlope4 * dtD19
+          let srcD19 = cLo4 + rowSlope4 * dtD19
+          if noDepth || srcD19.a >= 1.0 {
+            fb[ridxD19] = srcD19
+          } else if repaint < 0.5 {
+            let dD19 = fb[ridxD19]
+            let iaD19 = 1.0 - srcD19.a
+            fb[ridxD19] = Color(srcD19.r * srcD19.a + dD19.r * iaD19, srcD19.g * srcD19.a + dD19.g * iaD19, srcD19.b * srcD19.a + dD19.b * iaD19, srcD19.a + dD19.a * iaD19)
+          }
           fbZ[ridxD19] = if noDepth then ZBACK else pdzD19
         }
       }
@@ -18720,7 +20258,14 @@ mod paintTick() {
         let dtD20 = tjD20 - xL4
         let pdzD20 = zLo4 + zSlope4 * dtD20
         if noDepth || pdzD20 >= fbZ[ridxD20] {
-          fb[ridxD20] = cLo4 + rowSlope4 * dtD20
+          let srcD20 = cLo4 + rowSlope4 * dtD20
+          if noDepth || srcD20.a >= 1.0 {
+            fb[ridxD20] = srcD20
+          } else if repaint < 0.5 {
+            let dD20 = fb[ridxD20]
+            let iaD20 = 1.0 - srcD20.a
+            fb[ridxD20] = Color(srcD20.r * srcD20.a + dD20.r * iaD20, srcD20.g * srcD20.a + dD20.g * iaD20, srcD20.b * srcD20.a + dD20.b * iaD20, srcD20.a + dD20.a * iaD20)
+          }
           fbZ[ridxD20] = if noDepth then ZBACK else pdzD20
         }
       }
@@ -18730,7 +20275,14 @@ mod paintTick() {
         let dtD21 = tjD21 - xL4
         let pdzD21 = zLo4 + zSlope4 * dtD21
         if noDepth || pdzD21 >= fbZ[ridxD21] {
-          fb[ridxD21] = cLo4 + rowSlope4 * dtD21
+          let srcD21 = cLo4 + rowSlope4 * dtD21
+          if noDepth || srcD21.a >= 1.0 {
+            fb[ridxD21] = srcD21
+          } else if repaint < 0.5 {
+            let dD21 = fb[ridxD21]
+            let iaD21 = 1.0 - srcD21.a
+            fb[ridxD21] = Color(srcD21.r * srcD21.a + dD21.r * iaD21, srcD21.g * srcD21.a + dD21.g * iaD21, srcD21.b * srcD21.a + dD21.b * iaD21, srcD21.a + dD21.a * iaD21)
+          }
           fbZ[ridxD21] = if noDepth then ZBACK else pdzD21
         }
       }
@@ -18740,7 +20292,14 @@ mod paintTick() {
         let dtD22 = tjD22 - xL4
         let pdzD22 = zLo4 + zSlope4 * dtD22
         if noDepth || pdzD22 >= fbZ[ridxD22] {
-          fb[ridxD22] = cLo4 + rowSlope4 * dtD22
+          let srcD22 = cLo4 + rowSlope4 * dtD22
+          if noDepth || srcD22.a >= 1.0 {
+            fb[ridxD22] = srcD22
+          } else if repaint < 0.5 {
+            let dD22 = fb[ridxD22]
+            let iaD22 = 1.0 - srcD22.a
+            fb[ridxD22] = Color(srcD22.r * srcD22.a + dD22.r * iaD22, srcD22.g * srcD22.a + dD22.g * iaD22, srcD22.b * srcD22.a + dD22.b * iaD22, srcD22.a + dD22.a * iaD22)
+          }
           fbZ[ridxD22] = if noDepth then ZBACK else pdzD22
         }
       }
@@ -18750,7 +20309,14 @@ mod paintTick() {
         let dtD23 = tjD23 - xL4
         let pdzD23 = zLo4 + zSlope4 * dtD23
         if noDepth || pdzD23 >= fbZ[ridxD23] {
-          fb[ridxD23] = cLo4 + rowSlope4 * dtD23
+          let srcD23 = cLo4 + rowSlope4 * dtD23
+          if noDepth || srcD23.a >= 1.0 {
+            fb[ridxD23] = srcD23
+          } else if repaint < 0.5 {
+            let dD23 = fb[ridxD23]
+            let iaD23 = 1.0 - srcD23.a
+            fb[ridxD23] = Color(srcD23.r * srcD23.a + dD23.r * iaD23, srcD23.g * srcD23.a + dD23.g * iaD23, srcD23.b * srcD23.a + dD23.b * iaD23, srcD23.a + dD23.a * iaD23)
+          }
           fbZ[ridxD23] = if noDepth then ZBACK else pdzD23
         }
       }
@@ -18760,7 +20326,14 @@ mod paintTick() {
         let dtD24 = tjD24 - xL4
         let pdzD24 = zLo4 + zSlope4 * dtD24
         if noDepth || pdzD24 >= fbZ[ridxD24] {
-          fb[ridxD24] = cLo4 + rowSlope4 * dtD24
+          let srcD24 = cLo4 + rowSlope4 * dtD24
+          if noDepth || srcD24.a >= 1.0 {
+            fb[ridxD24] = srcD24
+          } else if repaint < 0.5 {
+            let dD24 = fb[ridxD24]
+            let iaD24 = 1.0 - srcD24.a
+            fb[ridxD24] = Color(srcD24.r * srcD24.a + dD24.r * iaD24, srcD24.g * srcD24.a + dD24.g * iaD24, srcD24.b * srcD24.a + dD24.b * iaD24, srcD24.a + dD24.a * iaD24)
+          }
           fbZ[ridxD24] = if noDepth then ZBACK else pdzD24
         }
       }
@@ -18770,7 +20343,14 @@ mod paintTick() {
         let dtD25 = tjD25 - xL4
         let pdzD25 = zLo4 + zSlope4 * dtD25
         if noDepth || pdzD25 >= fbZ[ridxD25] {
-          fb[ridxD25] = cLo4 + rowSlope4 * dtD25
+          let srcD25 = cLo4 + rowSlope4 * dtD25
+          if noDepth || srcD25.a >= 1.0 {
+            fb[ridxD25] = srcD25
+          } else if repaint < 0.5 {
+            let dD25 = fb[ridxD25]
+            let iaD25 = 1.0 - srcD25.a
+            fb[ridxD25] = Color(srcD25.r * srcD25.a + dD25.r * iaD25, srcD25.g * srcD25.a + dD25.g * iaD25, srcD25.b * srcD25.a + dD25.b * iaD25, srcD25.a + dD25.a * iaD25)
+          }
           fbZ[ridxD25] = if noDepth then ZBACK else pdzD25
         }
       }
@@ -18780,7 +20360,14 @@ mod paintTick() {
         let dtD26 = tjD26 - xL4
         let pdzD26 = zLo4 + zSlope4 * dtD26
         if noDepth || pdzD26 >= fbZ[ridxD26] {
-          fb[ridxD26] = cLo4 + rowSlope4 * dtD26
+          let srcD26 = cLo4 + rowSlope4 * dtD26
+          if noDepth || srcD26.a >= 1.0 {
+            fb[ridxD26] = srcD26
+          } else if repaint < 0.5 {
+            let dD26 = fb[ridxD26]
+            let iaD26 = 1.0 - srcD26.a
+            fb[ridxD26] = Color(srcD26.r * srcD26.a + dD26.r * iaD26, srcD26.g * srcD26.a + dD26.g * iaD26, srcD26.b * srcD26.a + dD26.b * iaD26, srcD26.a + dD26.a * iaD26)
+          }
           fbZ[ridxD26] = if noDepth then ZBACK else pdzD26
         }
       }
@@ -18790,7 +20377,14 @@ mod paintTick() {
         let dtD27 = tjD27 - xL4
         let pdzD27 = zLo4 + zSlope4 * dtD27
         if noDepth || pdzD27 >= fbZ[ridxD27] {
-          fb[ridxD27] = cLo4 + rowSlope4 * dtD27
+          let srcD27 = cLo4 + rowSlope4 * dtD27
+          if noDepth || srcD27.a >= 1.0 {
+            fb[ridxD27] = srcD27
+          } else if repaint < 0.5 {
+            let dD27 = fb[ridxD27]
+            let iaD27 = 1.0 - srcD27.a
+            fb[ridxD27] = Color(srcD27.r * srcD27.a + dD27.r * iaD27, srcD27.g * srcD27.a + dD27.g * iaD27, srcD27.b * srcD27.a + dD27.b * iaD27, srcD27.a + dD27.a * iaD27)
+          }
           fbZ[ridxD27] = if noDepth then ZBACK else pdzD27
         }
       }
@@ -18800,7 +20394,14 @@ mod paintTick() {
         let dtD28 = tjD28 - xL4
         let pdzD28 = zLo4 + zSlope4 * dtD28
         if noDepth || pdzD28 >= fbZ[ridxD28] {
-          fb[ridxD28] = cLo4 + rowSlope4 * dtD28
+          let srcD28 = cLo4 + rowSlope4 * dtD28
+          if noDepth || srcD28.a >= 1.0 {
+            fb[ridxD28] = srcD28
+          } else if repaint < 0.5 {
+            let dD28 = fb[ridxD28]
+            let iaD28 = 1.0 - srcD28.a
+            fb[ridxD28] = Color(srcD28.r * srcD28.a + dD28.r * iaD28, srcD28.g * srcD28.a + dD28.g * iaD28, srcD28.b * srcD28.a + dD28.b * iaD28, srcD28.a + dD28.a * iaD28)
+          }
           fbZ[ridxD28] = if noDepth then ZBACK else pdzD28
         }
       }
@@ -18810,7 +20411,14 @@ mod paintTick() {
         let dtD29 = tjD29 - xL4
         let pdzD29 = zLo4 + zSlope4 * dtD29
         if noDepth || pdzD29 >= fbZ[ridxD29] {
-          fb[ridxD29] = cLo4 + rowSlope4 * dtD29
+          let srcD29 = cLo4 + rowSlope4 * dtD29
+          if noDepth || srcD29.a >= 1.0 {
+            fb[ridxD29] = srcD29
+          } else if repaint < 0.5 {
+            let dD29 = fb[ridxD29]
+            let iaD29 = 1.0 - srcD29.a
+            fb[ridxD29] = Color(srcD29.r * srcD29.a + dD29.r * iaD29, srcD29.g * srcD29.a + dD29.g * iaD29, srcD29.b * srcD29.a + dD29.b * iaD29, srcD29.a + dD29.a * iaD29)
+          }
           fbZ[ridxD29] = if noDepth then ZBACK else pdzD29
         }
       }
@@ -18820,7 +20428,14 @@ mod paintTick() {
         let dtD30 = tjD30 - xL4
         let pdzD30 = zLo4 + zSlope4 * dtD30
         if noDepth || pdzD30 >= fbZ[ridxD30] {
-          fb[ridxD30] = cLo4 + rowSlope4 * dtD30
+          let srcD30 = cLo4 + rowSlope4 * dtD30
+          if noDepth || srcD30.a >= 1.0 {
+            fb[ridxD30] = srcD30
+          } else if repaint < 0.5 {
+            let dD30 = fb[ridxD30]
+            let iaD30 = 1.0 - srcD30.a
+            fb[ridxD30] = Color(srcD30.r * srcD30.a + dD30.r * iaD30, srcD30.g * srcD30.a + dD30.g * iaD30, srcD30.b * srcD30.a + dD30.b * iaD30, srcD30.a + dD30.a * iaD30)
+          }
           fbZ[ridxD30] = if noDepth then ZBACK else pdzD30
         }
       }
@@ -18830,7 +20445,14 @@ mod paintTick() {
         let dtD31 = tjD31 - xL4
         let pdzD31 = zLo4 + zSlope4 * dtD31
         if noDepth || pdzD31 >= fbZ[ridxD31] {
-          fb[ridxD31] = cLo4 + rowSlope4 * dtD31
+          let srcD31 = cLo4 + rowSlope4 * dtD31
+          if noDepth || srcD31.a >= 1.0 {
+            fb[ridxD31] = srcD31
+          } else if repaint < 0.5 {
+            let dD31 = fb[ridxD31]
+            let iaD31 = 1.0 - srcD31.a
+            fb[ridxD31] = Color(srcD31.r * srcD31.a + dD31.r * iaD31, srcD31.g * srcD31.a + dD31.g * iaD31, srcD31.b * srcD31.a + dD31.b * iaD31, srcD31.a + dD31.a * iaD31)
+          }
           fbZ[ridxD31] = if noDepth then ZBACK else pdzD31
         }
       }
@@ -18840,7 +20462,14 @@ mod paintTick() {
         let dtD32 = tjD32 - xL4
         let pdzD32 = zLo4 + zSlope4 * dtD32
         if noDepth || pdzD32 >= fbZ[ridxD32] {
-          fb[ridxD32] = cLo4 + rowSlope4 * dtD32
+          let srcD32 = cLo4 + rowSlope4 * dtD32
+          if noDepth || srcD32.a >= 1.0 {
+            fb[ridxD32] = srcD32
+          } else if repaint < 0.5 {
+            let dD32 = fb[ridxD32]
+            let iaD32 = 1.0 - srcD32.a
+            fb[ridxD32] = Color(srcD32.r * srcD32.a + dD32.r * iaD32, srcD32.g * srcD32.a + dD32.g * iaD32, srcD32.b * srcD32.a + dD32.b * iaD32, srcD32.a + dD32.a * iaD32)
+          }
           fbZ[ridxD32] = if noDepth then ZBACK else pdzD32
         }
       }
@@ -18850,7 +20479,14 @@ mod paintTick() {
         let dtD33 = tjD33 - xL4
         let pdzD33 = zLo4 + zSlope4 * dtD33
         if noDepth || pdzD33 >= fbZ[ridxD33] {
-          fb[ridxD33] = cLo4 + rowSlope4 * dtD33
+          let srcD33 = cLo4 + rowSlope4 * dtD33
+          if noDepth || srcD33.a >= 1.0 {
+            fb[ridxD33] = srcD33
+          } else if repaint < 0.5 {
+            let dD33 = fb[ridxD33]
+            let iaD33 = 1.0 - srcD33.a
+            fb[ridxD33] = Color(srcD33.r * srcD33.a + dD33.r * iaD33, srcD33.g * srcD33.a + dD33.g * iaD33, srcD33.b * srcD33.a + dD33.b * iaD33, srcD33.a + dD33.a * iaD33)
+          }
           fbZ[ridxD33] = if noDepth then ZBACK else pdzD33
         }
       }
@@ -18860,7 +20496,14 @@ mod paintTick() {
         let dtD34 = tjD34 - xL4
         let pdzD34 = zLo4 + zSlope4 * dtD34
         if noDepth || pdzD34 >= fbZ[ridxD34] {
-          fb[ridxD34] = cLo4 + rowSlope4 * dtD34
+          let srcD34 = cLo4 + rowSlope4 * dtD34
+          if noDepth || srcD34.a >= 1.0 {
+            fb[ridxD34] = srcD34
+          } else if repaint < 0.5 {
+            let dD34 = fb[ridxD34]
+            let iaD34 = 1.0 - srcD34.a
+            fb[ridxD34] = Color(srcD34.r * srcD34.a + dD34.r * iaD34, srcD34.g * srcD34.a + dD34.g * iaD34, srcD34.b * srcD34.a + dD34.b * iaD34, srcD34.a + dD34.a * iaD34)
+          }
           fbZ[ridxD34] = if noDepth then ZBACK else pdzD34
         }
       }
@@ -18870,7 +20513,14 @@ mod paintTick() {
         let dtD35 = tjD35 - xL4
         let pdzD35 = zLo4 + zSlope4 * dtD35
         if noDepth || pdzD35 >= fbZ[ridxD35] {
-          fb[ridxD35] = cLo4 + rowSlope4 * dtD35
+          let srcD35 = cLo4 + rowSlope4 * dtD35
+          if noDepth || srcD35.a >= 1.0 {
+            fb[ridxD35] = srcD35
+          } else if repaint < 0.5 {
+            let dD35 = fb[ridxD35]
+            let iaD35 = 1.0 - srcD35.a
+            fb[ridxD35] = Color(srcD35.r * srcD35.a + dD35.r * iaD35, srcD35.g * srcD35.a + dD35.g * iaD35, srcD35.b * srcD35.a + dD35.b * iaD35, srcD35.a + dD35.a * iaD35)
+          }
           fbZ[ridxD35] = if noDepth then ZBACK else pdzD35
         }
       }
@@ -18880,7 +20530,14 @@ mod paintTick() {
         let dtD36 = tjD36 - xL4
         let pdzD36 = zLo4 + zSlope4 * dtD36
         if noDepth || pdzD36 >= fbZ[ridxD36] {
-          fb[ridxD36] = cLo4 + rowSlope4 * dtD36
+          let srcD36 = cLo4 + rowSlope4 * dtD36
+          if noDepth || srcD36.a >= 1.0 {
+            fb[ridxD36] = srcD36
+          } else if repaint < 0.5 {
+            let dD36 = fb[ridxD36]
+            let iaD36 = 1.0 - srcD36.a
+            fb[ridxD36] = Color(srcD36.r * srcD36.a + dD36.r * iaD36, srcD36.g * srcD36.a + dD36.g * iaD36, srcD36.b * srcD36.a + dD36.b * iaD36, srcD36.a + dD36.a * iaD36)
+          }
           fbZ[ridxD36] = if noDepth then ZBACK else pdzD36
         }
       }
@@ -18890,7 +20547,14 @@ mod paintTick() {
         let dtD37 = tjD37 - xL4
         let pdzD37 = zLo4 + zSlope4 * dtD37
         if noDepth || pdzD37 >= fbZ[ridxD37] {
-          fb[ridxD37] = cLo4 + rowSlope4 * dtD37
+          let srcD37 = cLo4 + rowSlope4 * dtD37
+          if noDepth || srcD37.a >= 1.0 {
+            fb[ridxD37] = srcD37
+          } else if repaint < 0.5 {
+            let dD37 = fb[ridxD37]
+            let iaD37 = 1.0 - srcD37.a
+            fb[ridxD37] = Color(srcD37.r * srcD37.a + dD37.r * iaD37, srcD37.g * srcD37.a + dD37.g * iaD37, srcD37.b * srcD37.a + dD37.b * iaD37, srcD37.a + dD37.a * iaD37)
+          }
           fbZ[ridxD37] = if noDepth then ZBACK else pdzD37
         }
       }
@@ -18900,7 +20564,14 @@ mod paintTick() {
         let dtD38 = tjD38 - xL4
         let pdzD38 = zLo4 + zSlope4 * dtD38
         if noDepth || pdzD38 >= fbZ[ridxD38] {
-          fb[ridxD38] = cLo4 + rowSlope4 * dtD38
+          let srcD38 = cLo4 + rowSlope4 * dtD38
+          if noDepth || srcD38.a >= 1.0 {
+            fb[ridxD38] = srcD38
+          } else if repaint < 0.5 {
+            let dD38 = fb[ridxD38]
+            let iaD38 = 1.0 - srcD38.a
+            fb[ridxD38] = Color(srcD38.r * srcD38.a + dD38.r * iaD38, srcD38.g * srcD38.a + dD38.g * iaD38, srcD38.b * srcD38.a + dD38.b * iaD38, srcD38.a + dD38.a * iaD38)
+          }
           fbZ[ridxD38] = if noDepth then ZBACK else pdzD38
         }
       }
@@ -18910,7 +20581,14 @@ mod paintTick() {
         let dtD39 = tjD39 - xL4
         let pdzD39 = zLo4 + zSlope4 * dtD39
         if noDepth || pdzD39 >= fbZ[ridxD39] {
-          fb[ridxD39] = cLo4 + rowSlope4 * dtD39
+          let srcD39 = cLo4 + rowSlope4 * dtD39
+          if noDepth || srcD39.a >= 1.0 {
+            fb[ridxD39] = srcD39
+          } else if repaint < 0.5 {
+            let dD39 = fb[ridxD39]
+            let iaD39 = 1.0 - srcD39.a
+            fb[ridxD39] = Color(srcD39.r * srcD39.a + dD39.r * iaD39, srcD39.g * srcD39.a + dD39.g * iaD39, srcD39.b * srcD39.a + dD39.b * iaD39, srcD39.a + dD39.a * iaD39)
+          }
           fbZ[ridxD39] = if noDepth then ZBACK else pdzD39
         }
       }
@@ -18920,7 +20598,14 @@ mod paintTick() {
         let dtD40 = tjD40 - xL4
         let pdzD40 = zLo4 + zSlope4 * dtD40
         if noDepth || pdzD40 >= fbZ[ridxD40] {
-          fb[ridxD40] = cLo4 + rowSlope4 * dtD40
+          let srcD40 = cLo4 + rowSlope4 * dtD40
+          if noDepth || srcD40.a >= 1.0 {
+            fb[ridxD40] = srcD40
+          } else if repaint < 0.5 {
+            let dD40 = fb[ridxD40]
+            let iaD40 = 1.0 - srcD40.a
+            fb[ridxD40] = Color(srcD40.r * srcD40.a + dD40.r * iaD40, srcD40.g * srcD40.a + dD40.g * iaD40, srcD40.b * srcD40.a + dD40.b * iaD40, srcD40.a + dD40.a * iaD40)
+          }
           fbZ[ridxD40] = if noDepth then ZBACK else pdzD40
         }
       }
@@ -18930,7 +20615,14 @@ mod paintTick() {
         let dtD41 = tjD41 - xL4
         let pdzD41 = zLo4 + zSlope4 * dtD41
         if noDepth || pdzD41 >= fbZ[ridxD41] {
-          fb[ridxD41] = cLo4 + rowSlope4 * dtD41
+          let srcD41 = cLo4 + rowSlope4 * dtD41
+          if noDepth || srcD41.a >= 1.0 {
+            fb[ridxD41] = srcD41
+          } else if repaint < 0.5 {
+            let dD41 = fb[ridxD41]
+            let iaD41 = 1.0 - srcD41.a
+            fb[ridxD41] = Color(srcD41.r * srcD41.a + dD41.r * iaD41, srcD41.g * srcD41.a + dD41.g * iaD41, srcD41.b * srcD41.a + dD41.b * iaD41, srcD41.a + dD41.a * iaD41)
+          }
           fbZ[ridxD41] = if noDepth then ZBACK else pdzD41
         }
       }
@@ -18940,7 +20632,14 @@ mod paintTick() {
         let dtD42 = tjD42 - xL4
         let pdzD42 = zLo4 + zSlope4 * dtD42
         if noDepth || pdzD42 >= fbZ[ridxD42] {
-          fb[ridxD42] = cLo4 + rowSlope4 * dtD42
+          let srcD42 = cLo4 + rowSlope4 * dtD42
+          if noDepth || srcD42.a >= 1.0 {
+            fb[ridxD42] = srcD42
+          } else if repaint < 0.5 {
+            let dD42 = fb[ridxD42]
+            let iaD42 = 1.0 - srcD42.a
+            fb[ridxD42] = Color(srcD42.r * srcD42.a + dD42.r * iaD42, srcD42.g * srcD42.a + dD42.g * iaD42, srcD42.b * srcD42.a + dD42.b * iaD42, srcD42.a + dD42.a * iaD42)
+          }
           fbZ[ridxD42] = if noDepth then ZBACK else pdzD42
         }
       }
@@ -18950,7 +20649,14 @@ mod paintTick() {
         let dtD43 = tjD43 - xL4
         let pdzD43 = zLo4 + zSlope4 * dtD43
         if noDepth || pdzD43 >= fbZ[ridxD43] {
-          fb[ridxD43] = cLo4 + rowSlope4 * dtD43
+          let srcD43 = cLo4 + rowSlope4 * dtD43
+          if noDepth || srcD43.a >= 1.0 {
+            fb[ridxD43] = srcD43
+          } else if repaint < 0.5 {
+            let dD43 = fb[ridxD43]
+            let iaD43 = 1.0 - srcD43.a
+            fb[ridxD43] = Color(srcD43.r * srcD43.a + dD43.r * iaD43, srcD43.g * srcD43.a + dD43.g * iaD43, srcD43.b * srcD43.a + dD43.b * iaD43, srcD43.a + dD43.a * iaD43)
+          }
           fbZ[ridxD43] = if noDepth then ZBACK else pdzD43
         }
       }
@@ -18960,7 +20666,14 @@ mod paintTick() {
         let dtD44 = tjD44 - xL4
         let pdzD44 = zLo4 + zSlope4 * dtD44
         if noDepth || pdzD44 >= fbZ[ridxD44] {
-          fb[ridxD44] = cLo4 + rowSlope4 * dtD44
+          let srcD44 = cLo4 + rowSlope4 * dtD44
+          if noDepth || srcD44.a >= 1.0 {
+            fb[ridxD44] = srcD44
+          } else if repaint < 0.5 {
+            let dD44 = fb[ridxD44]
+            let iaD44 = 1.0 - srcD44.a
+            fb[ridxD44] = Color(srcD44.r * srcD44.a + dD44.r * iaD44, srcD44.g * srcD44.a + dD44.g * iaD44, srcD44.b * srcD44.a + dD44.b * iaD44, srcD44.a + dD44.a * iaD44)
+          }
           fbZ[ridxD44] = if noDepth then ZBACK else pdzD44
         }
       }
@@ -18970,7 +20683,14 @@ mod paintTick() {
         let dtD45 = tjD45 - xL4
         let pdzD45 = zLo4 + zSlope4 * dtD45
         if noDepth || pdzD45 >= fbZ[ridxD45] {
-          fb[ridxD45] = cLo4 + rowSlope4 * dtD45
+          let srcD45 = cLo4 + rowSlope4 * dtD45
+          if noDepth || srcD45.a >= 1.0 {
+            fb[ridxD45] = srcD45
+          } else if repaint < 0.5 {
+            let dD45 = fb[ridxD45]
+            let iaD45 = 1.0 - srcD45.a
+            fb[ridxD45] = Color(srcD45.r * srcD45.a + dD45.r * iaD45, srcD45.g * srcD45.a + dD45.g * iaD45, srcD45.b * srcD45.a + dD45.b * iaD45, srcD45.a + dD45.a * iaD45)
+          }
           fbZ[ridxD45] = if noDepth then ZBACK else pdzD45
         }
       }
@@ -18980,7 +20700,14 @@ mod paintTick() {
         let dtD46 = tjD46 - xL4
         let pdzD46 = zLo4 + zSlope4 * dtD46
         if noDepth || pdzD46 >= fbZ[ridxD46] {
-          fb[ridxD46] = cLo4 + rowSlope4 * dtD46
+          let srcD46 = cLo4 + rowSlope4 * dtD46
+          if noDepth || srcD46.a >= 1.0 {
+            fb[ridxD46] = srcD46
+          } else if repaint < 0.5 {
+            let dD46 = fb[ridxD46]
+            let iaD46 = 1.0 - srcD46.a
+            fb[ridxD46] = Color(srcD46.r * srcD46.a + dD46.r * iaD46, srcD46.g * srcD46.a + dD46.g * iaD46, srcD46.b * srcD46.a + dD46.b * iaD46, srcD46.a + dD46.a * iaD46)
+          }
           fbZ[ridxD46] = if noDepth then ZBACK else pdzD46
         }
       }
@@ -18990,7 +20717,14 @@ mod paintTick() {
         let dtD47 = tjD47 - xL4
         let pdzD47 = zLo4 + zSlope4 * dtD47
         if noDepth || pdzD47 >= fbZ[ridxD47] {
-          fb[ridxD47] = cLo4 + rowSlope4 * dtD47
+          let srcD47 = cLo4 + rowSlope4 * dtD47
+          if noDepth || srcD47.a >= 1.0 {
+            fb[ridxD47] = srcD47
+          } else if repaint < 0.5 {
+            let dD47 = fb[ridxD47]
+            let iaD47 = 1.0 - srcD47.a
+            fb[ridxD47] = Color(srcD47.r * srcD47.a + dD47.r * iaD47, srcD47.g * srcD47.a + dD47.g * iaD47, srcD47.b * srcD47.a + dD47.b * iaD47, srcD47.a + dD47.a * iaD47)
+          }
           fbZ[ridxD47] = if noDepth then ZBACK else pdzD47
         }
       }
@@ -19000,7 +20734,14 @@ mod paintTick() {
         let dtD48 = tjD48 - xL4
         let pdzD48 = zLo4 + zSlope4 * dtD48
         if noDepth || pdzD48 >= fbZ[ridxD48] {
-          fb[ridxD48] = cLo4 + rowSlope4 * dtD48
+          let srcD48 = cLo4 + rowSlope4 * dtD48
+          if noDepth || srcD48.a >= 1.0 {
+            fb[ridxD48] = srcD48
+          } else if repaint < 0.5 {
+            let dD48 = fb[ridxD48]
+            let iaD48 = 1.0 - srcD48.a
+            fb[ridxD48] = Color(srcD48.r * srcD48.a + dD48.r * iaD48, srcD48.g * srcD48.a + dD48.g * iaD48, srcD48.b * srcD48.a + dD48.b * iaD48, srcD48.a + dD48.a * iaD48)
+          }
           fbZ[ridxD48] = if noDepth then ZBACK else pdzD48
         }
       }
@@ -19010,7 +20751,14 @@ mod paintTick() {
         let dtD49 = tjD49 - xL4
         let pdzD49 = zLo4 + zSlope4 * dtD49
         if noDepth || pdzD49 >= fbZ[ridxD49] {
-          fb[ridxD49] = cLo4 + rowSlope4 * dtD49
+          let srcD49 = cLo4 + rowSlope4 * dtD49
+          if noDepth || srcD49.a >= 1.0 {
+            fb[ridxD49] = srcD49
+          } else if repaint < 0.5 {
+            let dD49 = fb[ridxD49]
+            let iaD49 = 1.0 - srcD49.a
+            fb[ridxD49] = Color(srcD49.r * srcD49.a + dD49.r * iaD49, srcD49.g * srcD49.a + dD49.g * iaD49, srcD49.b * srcD49.a + dD49.b * iaD49, srcD49.a + dD49.a * iaD49)
+          }
           fbZ[ridxD49] = if noDepth then ZBACK else pdzD49
         }
       }
@@ -19020,7 +20768,14 @@ mod paintTick() {
         let dtD50 = tjD50 - xL4
         let pdzD50 = zLo4 + zSlope4 * dtD50
         if noDepth || pdzD50 >= fbZ[ridxD50] {
-          fb[ridxD50] = cLo4 + rowSlope4 * dtD50
+          let srcD50 = cLo4 + rowSlope4 * dtD50
+          if noDepth || srcD50.a >= 1.0 {
+            fb[ridxD50] = srcD50
+          } else if repaint < 0.5 {
+            let dD50 = fb[ridxD50]
+            let iaD50 = 1.0 - srcD50.a
+            fb[ridxD50] = Color(srcD50.r * srcD50.a + dD50.r * iaD50, srcD50.g * srcD50.a + dD50.g * iaD50, srcD50.b * srcD50.a + dD50.b * iaD50, srcD50.a + dD50.a * iaD50)
+          }
           fbZ[ridxD50] = if noDepth then ZBACK else pdzD50
         }
       }
@@ -19030,7 +20785,14 @@ mod paintTick() {
         let dtD51 = tjD51 - xL4
         let pdzD51 = zLo4 + zSlope4 * dtD51
         if noDepth || pdzD51 >= fbZ[ridxD51] {
-          fb[ridxD51] = cLo4 + rowSlope4 * dtD51
+          let srcD51 = cLo4 + rowSlope4 * dtD51
+          if noDepth || srcD51.a >= 1.0 {
+            fb[ridxD51] = srcD51
+          } else if repaint < 0.5 {
+            let dD51 = fb[ridxD51]
+            let iaD51 = 1.0 - srcD51.a
+            fb[ridxD51] = Color(srcD51.r * srcD51.a + dD51.r * iaD51, srcD51.g * srcD51.a + dD51.g * iaD51, srcD51.b * srcD51.a + dD51.b * iaD51, srcD51.a + dD51.a * iaD51)
+          }
           fbZ[ridxD51] = if noDepth then ZBACK else pdzD51
         }
       }
@@ -19040,7 +20802,14 @@ mod paintTick() {
         let dtD52 = tjD52 - xL4
         let pdzD52 = zLo4 + zSlope4 * dtD52
         if noDepth || pdzD52 >= fbZ[ridxD52] {
-          fb[ridxD52] = cLo4 + rowSlope4 * dtD52
+          let srcD52 = cLo4 + rowSlope4 * dtD52
+          if noDepth || srcD52.a >= 1.0 {
+            fb[ridxD52] = srcD52
+          } else if repaint < 0.5 {
+            let dD52 = fb[ridxD52]
+            let iaD52 = 1.0 - srcD52.a
+            fb[ridxD52] = Color(srcD52.r * srcD52.a + dD52.r * iaD52, srcD52.g * srcD52.a + dD52.g * iaD52, srcD52.b * srcD52.a + dD52.b * iaD52, srcD52.a + dD52.a * iaD52)
+          }
           fbZ[ridxD52] = if noDepth then ZBACK else pdzD52
         }
       }
@@ -19050,7 +20819,14 @@ mod paintTick() {
         let dtD53 = tjD53 - xL4
         let pdzD53 = zLo4 + zSlope4 * dtD53
         if noDepth || pdzD53 >= fbZ[ridxD53] {
-          fb[ridxD53] = cLo4 + rowSlope4 * dtD53
+          let srcD53 = cLo4 + rowSlope4 * dtD53
+          if noDepth || srcD53.a >= 1.0 {
+            fb[ridxD53] = srcD53
+          } else if repaint < 0.5 {
+            let dD53 = fb[ridxD53]
+            let iaD53 = 1.0 - srcD53.a
+            fb[ridxD53] = Color(srcD53.r * srcD53.a + dD53.r * iaD53, srcD53.g * srcD53.a + dD53.g * iaD53, srcD53.b * srcD53.a + dD53.b * iaD53, srcD53.a + dD53.a * iaD53)
+          }
           fbZ[ridxD53] = if noDepth then ZBACK else pdzD53
         }
       }
@@ -19060,7 +20836,14 @@ mod paintTick() {
         let dtD54 = tjD54 - xL4
         let pdzD54 = zLo4 + zSlope4 * dtD54
         if noDepth || pdzD54 >= fbZ[ridxD54] {
-          fb[ridxD54] = cLo4 + rowSlope4 * dtD54
+          let srcD54 = cLo4 + rowSlope4 * dtD54
+          if noDepth || srcD54.a >= 1.0 {
+            fb[ridxD54] = srcD54
+          } else if repaint < 0.5 {
+            let dD54 = fb[ridxD54]
+            let iaD54 = 1.0 - srcD54.a
+            fb[ridxD54] = Color(srcD54.r * srcD54.a + dD54.r * iaD54, srcD54.g * srcD54.a + dD54.g * iaD54, srcD54.b * srcD54.a + dD54.b * iaD54, srcD54.a + dD54.a * iaD54)
+          }
           fbZ[ridxD54] = if noDepth then ZBACK else pdzD54
         }
       }
@@ -19070,7 +20853,14 @@ mod paintTick() {
         let dtD55 = tjD55 - xL4
         let pdzD55 = zLo4 + zSlope4 * dtD55
         if noDepth || pdzD55 >= fbZ[ridxD55] {
-          fb[ridxD55] = cLo4 + rowSlope4 * dtD55
+          let srcD55 = cLo4 + rowSlope4 * dtD55
+          if noDepth || srcD55.a >= 1.0 {
+            fb[ridxD55] = srcD55
+          } else if repaint < 0.5 {
+            let dD55 = fb[ridxD55]
+            let iaD55 = 1.0 - srcD55.a
+            fb[ridxD55] = Color(srcD55.r * srcD55.a + dD55.r * iaD55, srcD55.g * srcD55.a + dD55.g * iaD55, srcD55.b * srcD55.a + dD55.b * iaD55, srcD55.a + dD55.a * iaD55)
+          }
           fbZ[ridxD55] = if noDepth then ZBACK else pdzD55
         }
       }
@@ -19080,7 +20870,14 @@ mod paintTick() {
         let dtD56 = tjD56 - xL4
         let pdzD56 = zLo4 + zSlope4 * dtD56
         if noDepth || pdzD56 >= fbZ[ridxD56] {
-          fb[ridxD56] = cLo4 + rowSlope4 * dtD56
+          let srcD56 = cLo4 + rowSlope4 * dtD56
+          if noDepth || srcD56.a >= 1.0 {
+            fb[ridxD56] = srcD56
+          } else if repaint < 0.5 {
+            let dD56 = fb[ridxD56]
+            let iaD56 = 1.0 - srcD56.a
+            fb[ridxD56] = Color(srcD56.r * srcD56.a + dD56.r * iaD56, srcD56.g * srcD56.a + dD56.g * iaD56, srcD56.b * srcD56.a + dD56.b * iaD56, srcD56.a + dD56.a * iaD56)
+          }
           fbZ[ridxD56] = if noDepth then ZBACK else pdzD56
         }
       }
@@ -19090,7 +20887,14 @@ mod paintTick() {
         let dtD57 = tjD57 - xL4
         let pdzD57 = zLo4 + zSlope4 * dtD57
         if noDepth || pdzD57 >= fbZ[ridxD57] {
-          fb[ridxD57] = cLo4 + rowSlope4 * dtD57
+          let srcD57 = cLo4 + rowSlope4 * dtD57
+          if noDepth || srcD57.a >= 1.0 {
+            fb[ridxD57] = srcD57
+          } else if repaint < 0.5 {
+            let dD57 = fb[ridxD57]
+            let iaD57 = 1.0 - srcD57.a
+            fb[ridxD57] = Color(srcD57.r * srcD57.a + dD57.r * iaD57, srcD57.g * srcD57.a + dD57.g * iaD57, srcD57.b * srcD57.a + dD57.b * iaD57, srcD57.a + dD57.a * iaD57)
+          }
           fbZ[ridxD57] = if noDepth then ZBACK else pdzD57
         }
       }
@@ -19100,7 +20904,14 @@ mod paintTick() {
         let dtD58 = tjD58 - xL4
         let pdzD58 = zLo4 + zSlope4 * dtD58
         if noDepth || pdzD58 >= fbZ[ridxD58] {
-          fb[ridxD58] = cLo4 + rowSlope4 * dtD58
+          let srcD58 = cLo4 + rowSlope4 * dtD58
+          if noDepth || srcD58.a >= 1.0 {
+            fb[ridxD58] = srcD58
+          } else if repaint < 0.5 {
+            let dD58 = fb[ridxD58]
+            let iaD58 = 1.0 - srcD58.a
+            fb[ridxD58] = Color(srcD58.r * srcD58.a + dD58.r * iaD58, srcD58.g * srcD58.a + dD58.g * iaD58, srcD58.b * srcD58.a + dD58.b * iaD58, srcD58.a + dD58.a * iaD58)
+          }
           fbZ[ridxD58] = if noDepth then ZBACK else pdzD58
         }
       }
@@ -19110,7 +20921,14 @@ mod paintTick() {
         let dtD59 = tjD59 - xL4
         let pdzD59 = zLo4 + zSlope4 * dtD59
         if noDepth || pdzD59 >= fbZ[ridxD59] {
-          fb[ridxD59] = cLo4 + rowSlope4 * dtD59
+          let srcD59 = cLo4 + rowSlope4 * dtD59
+          if noDepth || srcD59.a >= 1.0 {
+            fb[ridxD59] = srcD59
+          } else if repaint < 0.5 {
+            let dD59 = fb[ridxD59]
+            let iaD59 = 1.0 - srcD59.a
+            fb[ridxD59] = Color(srcD59.r * srcD59.a + dD59.r * iaD59, srcD59.g * srcD59.a + dD59.g * iaD59, srcD59.b * srcD59.a + dD59.b * iaD59, srcD59.a + dD59.a * iaD59)
+          }
           fbZ[ridxD59] = if noDepth then ZBACK else pdzD59
         }
       }
@@ -19120,7 +20938,14 @@ mod paintTick() {
         let dtD60 = tjD60 - xL4
         let pdzD60 = zLo4 + zSlope4 * dtD60
         if noDepth || pdzD60 >= fbZ[ridxD60] {
-          fb[ridxD60] = cLo4 + rowSlope4 * dtD60
+          let srcD60 = cLo4 + rowSlope4 * dtD60
+          if noDepth || srcD60.a >= 1.0 {
+            fb[ridxD60] = srcD60
+          } else if repaint < 0.5 {
+            let dD60 = fb[ridxD60]
+            let iaD60 = 1.0 - srcD60.a
+            fb[ridxD60] = Color(srcD60.r * srcD60.a + dD60.r * iaD60, srcD60.g * srcD60.a + dD60.g * iaD60, srcD60.b * srcD60.a + dD60.b * iaD60, srcD60.a + dD60.a * iaD60)
+          }
           fbZ[ridxD60] = if noDepth then ZBACK else pdzD60
         }
       }
@@ -19130,7 +20955,14 @@ mod paintTick() {
         let dtD61 = tjD61 - xL4
         let pdzD61 = zLo4 + zSlope4 * dtD61
         if noDepth || pdzD61 >= fbZ[ridxD61] {
-          fb[ridxD61] = cLo4 + rowSlope4 * dtD61
+          let srcD61 = cLo4 + rowSlope4 * dtD61
+          if noDepth || srcD61.a >= 1.0 {
+            fb[ridxD61] = srcD61
+          } else if repaint < 0.5 {
+            let dD61 = fb[ridxD61]
+            let iaD61 = 1.0 - srcD61.a
+            fb[ridxD61] = Color(srcD61.r * srcD61.a + dD61.r * iaD61, srcD61.g * srcD61.a + dD61.g * iaD61, srcD61.b * srcD61.a + dD61.b * iaD61, srcD61.a + dD61.a * iaD61)
+          }
           fbZ[ridxD61] = if noDepth then ZBACK else pdzD61
         }
       }
@@ -19140,7 +20972,14 @@ mod paintTick() {
         let dtD62 = tjD62 - xL4
         let pdzD62 = zLo4 + zSlope4 * dtD62
         if noDepth || pdzD62 >= fbZ[ridxD62] {
-          fb[ridxD62] = cLo4 + rowSlope4 * dtD62
+          let srcD62 = cLo4 + rowSlope4 * dtD62
+          if noDepth || srcD62.a >= 1.0 {
+            fb[ridxD62] = srcD62
+          } else if repaint < 0.5 {
+            let dD62 = fb[ridxD62]
+            let iaD62 = 1.0 - srcD62.a
+            fb[ridxD62] = Color(srcD62.r * srcD62.a + dD62.r * iaD62, srcD62.g * srcD62.a + dD62.g * iaD62, srcD62.b * srcD62.a + dD62.b * iaD62, srcD62.a + dD62.a * iaD62)
+          }
           fbZ[ridxD62] = if noDepth then ZBACK else pdzD62
         }
       }
@@ -19150,7 +20989,14 @@ mod paintTick() {
         let dtD63 = tjD63 - xL4
         let pdzD63 = zLo4 + zSlope4 * dtD63
         if noDepth || pdzD63 >= fbZ[ridxD63] {
-          fb[ridxD63] = cLo4 + rowSlope4 * dtD63
+          let srcD63 = cLo4 + rowSlope4 * dtD63
+          if noDepth || srcD63.a >= 1.0 {
+            fb[ridxD63] = srcD63
+          } else if repaint < 0.5 {
+            let dD63 = fb[ridxD63]
+            let iaD63 = 1.0 - srcD63.a
+            fb[ridxD63] = Color(srcD63.r * srcD63.a + dD63.r * iaD63, srcD63.g * srcD63.a + dD63.g * iaD63, srcD63.b * srcD63.a + dD63.b * iaD63, srcD63.a + dD63.a * iaD63)
+          }
           fbZ[ridxD63] = if noDepth then ZBACK else pdzD63
         }
       }

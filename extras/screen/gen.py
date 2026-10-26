@@ -179,6 +179,13 @@ L.append("var fb: color[]")
 # depth) means "nothing painted here yet".
 L.append("const ZBACK = -1000000000000000.0")
 L.append("var fbZ: float[]")
+# A phantom re-arm repaints a shape that is already on the wall.  For an
+# opaque colour that is a no-op, but a colour with alpha would blend a
+# second time over its own result and come out too strong, so the lanes
+# write straight while a repaint is what is running.  The recomposite's
+# tail arm sets it only once the pass's clearing fill has fallen, so the
+# commit's own paints still blend.
+L.append("var repaint: bool = false")
 # Depth bypass for the black clear fill: it must paint every pixel and
 # reset every depth unconditionally (its corners carry no z).  Set by
 # the clearing arm, cleared at fill end and by any user arm -- a push
@@ -632,6 +639,7 @@ L.append("// (blackPending) runs here first: with a shape staged, the fill runs"
 L.append("// and the shape re-arms when it ends (pending is left set on purpose);")
 L.append("// with nothing staged, the wall simply goes black.")
 L.append("mod drawEdge() {")
+L.append("    repaint = false")
 L.append("    if blackPending {")
 L.append("      blackPending = false")
 L.append("      clearing = true")
@@ -660,11 +668,13 @@ L.append("      commitR = true")
 L.append("      recompOnly = true")
 L.append("    }")
 L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ {")
+L.append("      repaint = true")
 L.append("      prow = pfirst - 4.0")
 L.append("      pcol = 200.0")
 L.append("      polyOn = true")
 L.append("    }")
 L.append("    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ {")
+L.append("      repaint = true")
 for i in range(MAXP):
     L.append("      rX%d = sPx%d" % (i, i))
     L.append("      rY%d = sPy%d" % (i, i))
@@ -1774,12 +1784,14 @@ L.append("        pfirst = bPF")
 L.append("        plast = bPL")
 L.append("        sSegs = bSEGS")
 L.append("      }")
-L.append("      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending {")
+L.append("      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending && !clearing {")
+L.append("        repaint = true")
 L.append("        prow = pfirst - 4.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("      }")
-L.append("      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending {")
+L.append("      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending && !clearing {")
+L.append("        repaint = true")
 for i in range(MAXP):
     L.append("        rX%d = sPx%d" % (i, i))
     L.append("        rY%d = sPy%d" % (i, i))
@@ -2284,6 +2296,15 @@ for i in range(MAXP):
     L.append("      } else {")
     L.append("        eLo%d = 200.0" % i)
     L.append("        eHi%d = -200.0" % i)
+    L.append("      }")
+    # A shape that covers the whole wall is a background: it must paint
+    # every pixel and reset every depth, exactly like the clearing fill.
+    # Without this its far pixels lose the depth test against what an
+    # earlier frame painted, so a shape that moves leaves a trail of its
+    # old position behind -- the background cannot overwrite it.
+    L.append("      if gyMin <= 0.0 && gyMax >= SWF - 1.0 && gxMin <= 0.0"
+             " && gxMax >= SWF - 1.0 {")
+    L.append("        noDepth = true")
     L.append("      }")
 L.append("      if gyMax < 0.0 || gyMin >= SWF || gxMax < 0.0"
          " || gxMin >= SWF {")
@@ -3284,7 +3305,24 @@ for j in range(K):
     L.append("        let dt%d = tj%d - xL" % (j, j))
     L.append("        let pdz%d = zLo + zSlope * dt%d" % (j, j))
     L.append("        if noDepth || pdz%d >= fbZ[ridx%d] {" % (j, j))
-    L.append("          fb[ridx%d] = cLo + rowSlope * dt%d" % (j, j))
+    # Opaque paint writes straight, as always.  A colour with alpha blends
+    # over what is already in the pixel -- black if nothing has painted it,
+    # otherwise whatever the last shape left -- so a semi-transparent shape
+    # shows what is under it.  A phantom re-arm repaints the shape that is
+    # already on the wall: for an opaque colour that is a harmless rewrite,
+    # but blending a transparent colour a second time over its own result
+    # would make it too strong, so `repaint` leaves those pixels alone.
+    L.append("          let srcA%d = cLo + rowSlope * dt%d" % (j, j))
+    L.append("          if noDepth || srcA%d.a >= 1.0 {" % (j,))
+    L.append("            fb[ridx%d] = srcA%d" % (j, j))
+    L.append("          } else if repaint < 0.5 {")
+    L.append("            let dA%d = fb[ridx%d]" % (j, j))
+    L.append("            let iaA%d = 1.0 - srcA%d.a" % (j, j))
+    L.append("            fb[ridx%d] = Color(srcA%d.r * srcA%d.a + dA%d.r * iaA%d,"
+             " srcA%d.g * srcA%d.a + dA%d.g * iaA%d,"
+             " srcA%d.b * srcA%d.a + dA%d.b * iaA%d,"
+             " srcA%d.a + dA%d.a * iaA%d)" % ((j,) * 16))
+    L.append("          }")
     L.append("          fbZ[ridx%d] = if noDepth then ZBACK else pdz%d"
              % (j, j))
     L.append("        }")
@@ -3301,7 +3339,17 @@ for j in range(K):
     L.append("        let dtB%d = tjB%d - xL2" % (j, j))
     L.append("        let pdzB%d = zLo2 + zSlope2 * dtB%d" % (j, j))
     L.append("        if noDepth || pdzB%d >= fbZ[ridxB%d] {" % (j, j))
-    L.append("          fb[ridxB%d] = cLo2 + rowSlope2 * dtB%d" % (j, j))
+    L.append("          let srcB%d = cLo2 + rowSlope2 * dtB%d" % (j, j))
+    L.append("          if noDepth || srcB%d.a >= 1.0 {" % (j,))
+    L.append("            fb[ridxB%d] = srcB%d" % (j, j))
+    L.append("          } else if repaint < 0.5 {")
+    L.append("            let dB%d = fb[ridxB%d]" % (j, j))
+    L.append("            let iaB%d = 1.0 - srcB%d.a" % (j, j))
+    L.append("            fb[ridxB%d] = Color(srcB%d.r * srcB%d.a + dB%d.r * iaB%d,"
+             " srcB%d.g * srcB%d.a + dB%d.g * iaB%d,"
+             " srcB%d.b * srcB%d.a + dB%d.b * iaB%d,"
+             " srcB%d.a + dB%d.a * iaB%d)" % ((j,) * 16))
+    L.append("          }")
     L.append("          fbZ[ridxB%d] = if noDepth then ZBACK else pdzB%d"
              % (j, j))
     L.append("        }")
@@ -3322,8 +3370,19 @@ for _ri, _R in enumerate(("C", "D")):
                  % (_R, j, _sfx, _sfx, _R, j))
         L.append("        if noDepth || pdz%s%d >= fbZ[ridx%s%d] {"
                  % (_R, j, _R, j))
-        L.append("          fb[ridx%s%d] = cLo%s + rowSlope%s * dt%s%d"
+        L.append("          let src%s%d = cLo%s + rowSlope%s * dt%s%d"
                  % (_R, j, _sfx, _sfx, _R, j))
+        L.append("          if noDepth || src%s%d.a >= 1.0 {" % (_R, j))
+        L.append("            fb[ridx%s%d] = src%s%d" % (_R, j, _R, j))
+        L.append("          } else if repaint < 0.5 {")
+        L.append("            let d%s%d = fb[ridx%s%d]" % (_R, j, _R, j))
+        L.append("            let ia%s%d = 1.0 - src%s%d.a" % (_R, j, _R, j))
+        L.append("            fb[ridx%s%d] = Color(src%s%d.r * src%s%d.a + d%s%d.r * ia%s%d,"
+                 " src%s%d.g * src%s%d.a + d%s%d.g * ia%s%d,"
+                 " src%s%d.b * src%s%d.a + d%s%d.b * ia%s%d,"
+                 " src%s%d.a + d%s%d.a * ia%s%d)"
+                 % ((_R, j) * 16))
+        L.append("          }")
         L.append("          fbZ[ridx%s%d] = if noDepth then ZBACK else pdz%s%d"
                  % (_R, j, _R, j))
         L.append("        }")
