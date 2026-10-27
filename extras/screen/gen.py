@@ -46,7 +46,12 @@ TOT = NSLOT + 2
 # partial composition (defined, degraded -- the wall never blanks), and
 # every step costs ~290 nodes in the two walks.  The default covers any
 # chain a 16-deep scene can build; pass a third argument to go deeper.
-WALK = int(sys.argv[3]) if len(sys.argv) > 3 else min(NSLOT, 16)
+# Iterations the ancestor walk may take before it gives up (a cycle).  The walk
+# is a `for` loop, so this is the loop's Count, not a number of copies in the
+# graph: the deepest acyclic chain a 32-slot screen can hold composes in full
+# for the same nodes as a 16-step one.  A cycle paints its WALK-fold
+# composition (defined, degraded -- the wall never blanks).
+WALK = int(sys.argv[3]) if len(sys.argv) > 3 else NSLOT
 MAXP = 16                                   # max vertices per polygon
 MAXP3 = 16                                  # max vertices per polygon (each point is an x,y,z triple)
 EYE = 48.0                                  # perspective eye distance (eye at z=-EYE)
@@ -338,15 +343,6 @@ L.append("var qCN: float[]")
 # The point-transform working state: set by the shadow/slot load
 # (needXF), consumed once by the transform block before either arm.
 L.append("var needXF: bool = false")
-L.append("var wpx: float = 0.0")
-L.append("var wpy: float = 0.0")
-L.append("var wr: float = 0.0")
-L.append("var wsx: float = 1.0")
-L.append("var wsy: float = 1.0")
-L.append("var wpz: float = 0.0")
-L.append("var wrx: float = 0.0")
-L.append("var wry: float = 0.0")
-L.append("var tilt3d: float = 0.0")
 # Tilted-chain world matrix (3x4, row-major): composed parent-outside
 # from self-local outward, applied per point.  Plain vars, written
 # strictly after every let that reads them is bound (the
@@ -367,12 +363,6 @@ for _cm in ("camM00", "camM01", "camM02", "camM03", "camM10", "camM11",
     L.append("var %s: float = %s" % (_cm, "1.0" if _cm in
                                      ("camM00", "camM11", "camM22")
                                      else "0.0"))
-# Compose-step snapshots: nwx/nwy read the pre-step offset, but the
-# step writes wpx before nwy is assigned -- a pure let re-evaluates
-# per use, so without these the second write captures the first
-# (the same write-what-a-pending-let-reads trap the handlers avoid).
-L.append("var swx: float = 0.0")
-L.append("var swy: float = 0.0")
 # The same trap, once per matrix cell.  The chain composition writes
 # m00..m23 in order while its `n**` lets read m00..m23, so without a
 # snapshot each cell is composed from a HALF-composed matrix: `m20`
@@ -1079,7 +1069,6 @@ L.append("    commitQ = false")
 L.append("    slLive[%d] = 0.0" % SCR)
 L.append("    camDirty = true")
 L.append("    needRC = false")
-L.append("    needRC = false")
 # The queue holds eight entries and every one of them is the
 # SAME work with different indices, so it is one body in a loop
 # over the entry index.  The guard is the ladder's own: entry e
@@ -1589,11 +1578,10 @@ L.append("  }")
 # fill's depth buffer tests, so faces keep ordering by how far they are.
 # The ancestor walk is straight-line and capped at WALK steps (every slot
 # index, so the deepest acyclic chain): a dead parent resolves to identity
-# above it; a cycle revisits and paints its WALK-fold composition.  With no tilt anywhere in the chain and a 2D shape
-# the legacy planar path runs bit-identically to before (same op order)
-# and depth is one translated scalar; tilted chains and every 3D shape
-# take the matrix path.  An unparented shape skips the walk entirely (its
-# guard never fires, so the slow computed reads cost nothing in the sim).
+# above it, and a chain that reaches -1 stops there -- that shape is
+# attached to the camera, so it stays in view space.  An unparented shape
+# skips the walk entirely (its guard never fires, so the slow computed
+# reads cost nothing in the sim).
 # The black clearing fill skips the whole block: its corners are
 # screen-space already.
 L.append("  if needXF {")
@@ -1602,66 +1590,15 @@ L.append("    if !clearing {")
 L.append("      let lsx = if pScl.x == 0.0 then 1.0 else pScl.x")
 L.append("      let lsy = if pScl.y == 0.0 then 1.0 else pScl.y")
 L.append("      let lsz = if pScl.z == 0.0 then 1.0 else pScl.z")
-L.append("      wpx = pPos.x")
-L.append("      wpy = pPos.y")
-L.append("      wpz = pPos.z")
-L.append("      wrx = pRot.x")
-L.append("      wry = pRot.y")
-L.append("      wr = pRot.z")
-L.append("      wsx = lsx")
-L.append("      wsy = lsy")
-L.append("      tilt3d = if pRot.x == 0.0 && pRot.y == 0.0 then 0.0 else 1.0")
-L.append("      cur = pParent")
-for _s in range(WALK):
-    # cur is an id the staging clamped: 1..NSLOT, or -1 for the camera.
-    # An id >= 1 names a slot (index = id); -1 ends the chain -- a shape
-    # attached to the camera is already in view space, so nothing composes
-    # above it and the view is not applied to it a second time.
-    #
-    # This walk builds the PLANAR state (wpx/wpy/wpz/wr/wsx/wsy); the
-    # matrix block below builds its own from pPos/pRot/pScl and the same
-    # slXF/slXF2. A 3D shape takes only the matrix path (the gate is
-    # `tilt3d < 0.5 && shIs3 < 0.5`), so this accumulation is dead work
-    # for it -- verified bit-identical either way, and skipped rather
-    # than paid for, since the count here is WALK steps of it.
-    L.append("      if cur >= 1.0 {")
-    L.append("        let pli = cur | 0")
-    L.append("        if slLive[pli] > 0.5 {")
-    L.append("          let ppx = slXF[pli * 6 + 0.0]")
-    L.append("          let ppy = slXF[pli * 6 + 1.0]")
-    L.append("          let pra = slXF[pli * 6 + 2.0]")
-    L.append("          let psx = slXF[pli * 6 + 3.0]")
-    L.append("          let psy = slXF[pli * 6 + 4.0]")
-    L.append("          let ppar = slXF[pli * 6 + 5.0]")
-    L.append("          let ppz = slXF2[pli * 4 + 0.0]")
-    L.append("          let prx = slXF2[pli * 4 + 1.0]")
-    L.append("          let pry = slXF2[pli * 4 + 2.0]")
-    L.append("          let psz = slXF2[pli * 4 + 3.0]")
-    L.append("          let cosp = cos(pra)")
-    L.append("          let sinp = sin(pra)")
-    L.append("          wr = pra + wr")
-    L.append("          swx = wpx")
-    L.append("          swy = wpy")
-    L.append("          let nwx = ppx + ((psx * swx) * cosp)"
-              " - ((psy * swy) * sinp)")
-    L.append("          let nwy = ppy + ((psx * swx) * sinp)"
-              " + ((psy * swy) * cosp)")
-    L.append("          wpx = nwx")
-    L.append("          wpy = nwy")
-    L.append("          wpz = psz * wpz + ppz")
-    L.append("          wsx = psx * wsx")
-    L.append("          wsy = psy * wsy")
-    L.append("          if prx != 0.0 || pry != 0.0 { tilt3d = 1.0 }")
-    L.append("          cur = ppar")
-    L.append("        } else {")
-    L.append("          cur = 0.0")
-    L.append("        }")
-    L.append("      } else {")
-    L.append("        cur = 0.0")
-    L.append("      }")
-# A cycle revisits for all WALK steps and paints its WALK-fold composition
-# (defined, degraded -- the wall never blanks on a bad parent).
-#
+# There is ONE transform: the 3x4 matrix below, composed through every
+# parent, applied to the full (x,y,z) vector, then projected.  The planar
+# accumulator that used to sit here (wpx/wpy/wr/wsx/wsy, chosen by the
+# point count being even or odd) is gone: it wrote nine globals nothing
+# ever read, and it cost WALK steps of gates and nodes per shape for
+# nothing.  A cycle revisits the matrix walk for all WALK steps and paints
+# its WALK-fold composition (defined, degraded -- the wall never blanks on
+# a bad parent).  An unparented shape skips the walk entirely: its guard
+# never fires, so the slow computed reads cost nothing in the sim.
 # There is ONE path now: the 3x4 matrix, composed through every parent,
 # applied to the full (x,y,z) vector, then projected.  There used to be
 # a second, planar path for untilted flat shapes, chosen by the shape's
@@ -1707,83 +1644,103 @@ L.append("        m22 = mm22")
 L.append("        m23 = pPos.z")
 L.append("        camAttach = 0.0")
 L.append("        cur = pParent")
-for _s in range(WALK):
-    # The same id -> index rule as the planar walk above: index = id, and
-    # -1 ends the chain.  Reaching -1 marks the shape as attached to the
-    # camera (camAttach), which is what keeps a view-space child still
-    # while the camera moves.
-    L.append("        if cur >= 1.0 {")
-    L.append("          let qli = cur | 0")
-    L.append("          if slLive[qli] > 0.5 {")
-    # The pre-step matrix, snapshotted before any cell is written.
-    for _r in range(3):
-        for _c in range(4):
-            L.append("            s%d%d = m%d%d" % (_r, _c, _r, _c))
-    L.append("            let qpx = slXF[qli * 6 + 0.0]")
-    L.append("            let qpy = slXF[qli * 6 + 1.0]")
-    L.append("            let qrz = slXF[qli * 6 + 2.0]")
-    L.append("            let qsx = slXF[qli * 6 + 3.0]")
-    L.append("            let qsy = slXF[qli * 6 + 4.0]")
-    L.append("            let qqz = slXF2[qli * 4 + 0.0]")
-    L.append("            let qrx = slXF2[qli * 4 + 1.0]")
-    L.append("            let qry = slXF2[qli * 4 + 2.0]")
-    L.append("            let qsz = slXF2[qli * 4 + 3.0]")
-    L.append("            let qcx = cos(qrx)")
-    L.append("            let qsx2 = sin(qrx)")
-    L.append("            let qcy = cos(qry)")
-    L.append("            let qsy2 = sin(qry)")
-    L.append("            let qcz = cos(qrz)")
-    L.append("            let qsz2 = sin(qrz)")
-    L.append("            let qr00 = qcz * qcy")
-    L.append("            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx")
-    L.append("            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2")
-    L.append("            let qr10 = qsz2 * qcy")
-    L.append("            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx")
-    L.append("            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2")
-    L.append("            let qr20 = 0.0 - qsy2")
-    L.append("            let qr21 = qcy * qsx2")
-    L.append("            let qr22 = qcy * qcx")
-    L.append("            let qp00 = qr00 * qsx")
-    L.append("            let qp01 = qr01 * qsy")
-    L.append("            let qp02 = qr02 * qsz")
-    L.append("            let qp10 = qr10 * qsx")
-    L.append("            let qp11 = qr11 * qsy")
-    L.append("            let qp12 = qr12 * qsz")
-    L.append("            let qp20 = qr20 * qsx")
-    L.append("            let qp21 = qr21 * qsy")
-    L.append("            let qp22 = qr22 * qsz")
-    L.append("            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20")
-    L.append("            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21")
-    L.append("            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22")
-    L.append("            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx")
-    L.append("            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20")
-    L.append("            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21")
-    L.append("            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22")
-    L.append("            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy")
-    L.append("            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20")
-    L.append("            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21")
-    L.append("            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22")
-    L.append("            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz")
-    L.append("            m00 = n00")
-    L.append("            m01 = n01")
-    L.append("            m02 = n02")
-    L.append("            m03 = n03")
-    L.append("            m10 = n10")
-    L.append("            m11 = n11")
-    L.append("            m12 = n12")
-    L.append("            m13 = n13")
-    L.append("            m20 = n20")
-    L.append("            m21 = n21")
-    L.append("            m22 = n22")
-    L.append("            m23 = n23")
-    L.append("            cur = slXF[qli * 6 + 5.0]")
-    L.append("          } else {")
-    L.append("            cur = 0.0")
-    L.append("          }")
-    L.append("        } else {")
-    L.append("          if cur < 0.0 { camAttach = 1.0 }")
-    L.append("          cur = 0.0")
-    L.append("        }")
+# ---- the ancestor walk: ONE body, every ancestor, in this tick ----------
+# This used to be a Python-side unroll: WALK copies of the whole step body
+# (parent matrix from pos/rot/scale, the 12-cell multiply, 12 writes) in the
+# graph, for a cap that was only ever reached by one shape in a test.  WireScript
+# has a real `for`: the body is laid out ONCE as a For Loop plane and the count
+# is a port, so the cap costs a comparison, not a copy -- measured on this
+# compiler, a body of this shape at count 4, 16 and 32 compiles to the same
+# node count.
+#
+# Every iteration runs in the tick the shape was staged in (a loop body is
+# synchronous -- `await` inside one is refused as WS079), so the arm sees the
+# composed points exactly as it always did: no extra ticks, no cross-tick state,
+# nothing to abort when a push interrupts a paint.
+#
+# `break` ends the walk where the chain ends, so the count is only the ceiling
+# a cycle needs; an unparented shape breaks on its first pass and pays nothing.
+#
+# cur is an id the staging clamped: 1..NSLOT names a slot (index = id); -1
+# ends the chain -- a shape attached to the camera is already in view space,
+# so nothing composes above it and the view is not applied to it twice.
+# Reaching -1 marks the shape as attached to the camera (camAttach), which is
+# what keeps a view-space child still while the camera moves.
+L.append("        for _walk in 0..%d {" % WALK)
+L.append("          if cur < 1.0 { break }")
+L.append("          let qli = cur | 0")
+L.append("          if slLive[qli] > 0.5 {")
+# The pre-step matrix, snapshotted before any cell is written.
+for _r in range(3):
+    for _c in range(4):
+        L.append("            s%d%d = m%d%d" % (_r, _c, _r, _c))
+L.append("            let qpx = slXF[qli * 6 + 0.0]")
+L.append("            let qpy = slXF[qli * 6 + 1.0]")
+L.append("            let qrz = slXF[qli * 6 + 2.0]")
+L.append("            let qsx = slXF[qli * 6 + 3.0]")
+L.append("            let qsy = slXF[qli * 6 + 4.0]")
+L.append("            let qqz = slXF2[qli * 4 + 0.0]")
+L.append("            let qrx = slXF2[qli * 4 + 1.0]")
+L.append("            let qry = slXF2[qli * 4 + 2.0]")
+L.append("            let qsz = slXF2[qli * 4 + 3.0]")
+L.append("            let qcx = cos(qrx)")
+L.append("            let qsx2 = sin(qrx)")
+L.append("            let qcy = cos(qry)")
+L.append("            let qsy2 = sin(qry)")
+L.append("            let qcz = cos(qrz)")
+L.append("            let qsz2 = sin(qrz)")
+L.append("            let qr00 = qcz * qcy")
+L.append("            let qr01 = qcz * qsy2 * qsx2 - qsz2 * qcx")
+L.append("            let qr02 = qcz * qsy2 * qcx + qsz2 * qsx2")
+L.append("            let qr10 = qsz2 * qcy")
+L.append("            let qr11 = qsz2 * qsy2 * qsx2 + qcz * qcx")
+L.append("            let qr12 = qsz2 * qsy2 * qcx - qcz * qsx2")
+L.append("            let qr20 = 0.0 - qsy2")
+L.append("            let qr21 = qcy * qsx2")
+L.append("            let qr22 = qcy * qcx")
+L.append("            let qp00 = qr00 * qsx")
+L.append("            let qp01 = qr01 * qsy")
+L.append("            let qp02 = qr02 * qsz")
+L.append("            let qp10 = qr10 * qsx")
+L.append("            let qp11 = qr11 * qsy")
+L.append("            let qp12 = qr12 * qsz")
+L.append("            let qp20 = qr20 * qsx")
+L.append("            let qp21 = qr21 * qsy")
+L.append("            let qp22 = qr22 * qsz")
+L.append("            let n00 = qp00 * s00 + qp01 * s10 + qp02 * s20")
+L.append("            let n01 = qp00 * s01 + qp01 * s11 + qp02 * s21")
+L.append("            let n02 = qp00 * s02 + qp01 * s12 + qp02 * s22")
+L.append("            let n03 = qp00 * s03 + qp01 * s13 + qp02 * s23 + qpx")
+L.append("            let n10 = qp10 * s00 + qp11 * s10 + qp12 * s20")
+L.append("            let n11 = qp10 * s01 + qp11 * s11 + qp12 * s21")
+L.append("            let n12 = qp10 * s02 + qp11 * s12 + qp12 * s22")
+L.append("            let n13 = qp10 * s03 + qp11 * s13 + qp12 * s23 + qpy")
+L.append("            let n20 = qp20 * s00 + qp21 * s10 + qp22 * s20")
+L.append("            let n21 = qp20 * s01 + qp21 * s11 + qp22 * s21")
+L.append("            let n22 = qp20 * s02 + qp21 * s12 + qp22 * s22")
+L.append("            let n23 = qp20 * s03 + qp21 * s13 + qp22 * s23 + qqz")
+L.append("            m00 = n00")
+L.append("            m01 = n01")
+L.append("            m02 = n02")
+L.append("            m03 = n03")
+L.append("            m10 = n10")
+L.append("            m11 = n11")
+L.append("            m12 = n12")
+L.append("            m13 = n13")
+L.append("            m20 = n20")
+L.append("            m21 = n21")
+L.append("            m22 = n22")
+L.append("            m23 = n23")
+L.append("            cur = slXF[qli * 6 + 5.0]")
+L.append("          } else {")
+L.append("            cur = 0.0")
+L.append("          }")
+L.append("        }")
+# The chain is over -- break, a dead parent above the shape, or the ceiling on
+# a cycle.  -1 says the shape is hung on the camera, which is already in view
+# space, so the view is not composed onto it a second time.
+L.append("        if cur < 0.0 { camAttach = 1.0 }")
+L.append("        cur = 0.0")
 # The view: compose the camera onto the shape's world matrix, then project.
 # Shapes whose chain reached -1 (camAttach) are already in view space, so
 # they are left alone and hold their screen position while the camera moves;

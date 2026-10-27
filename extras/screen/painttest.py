@@ -1293,11 +1293,14 @@ def main():
                      % (len(badf), badf[0] if badf else 0))
 
         # ---- transforms + parents: move, shapeScale, rotate, follow -------
-        # Five retained commits in one run, snapshotted each time: a
+        # Seven retained commits in one run, snapshotted each time: a
         # scaled+moved square, a rotated rect edit, a child attached to
-        # slot 1, the parent moved again (child follows), the child
-        # deleted.  The model composes each slot's world transform
-        # through its ancestors exactly like the chip's walk.
+        # slot 1, the parent moved again (child follows), a grandchild
+        # attached to that child (a TWO-deep chain, which the chip's
+        # ancestor walk composes one ancestor a tick), the grandparent
+        # moved again (both descendants follow), the child deleted.  The
+        # model composes each slot's world transform through its ancestors
+        # exactly like the chip's walk.
         xcommits = [
             (rect_pts(4.0, 4.0, 12.0, 12.0), [RED] * 4, 1.0,
              (8.0, 0.0), 0.0, (2.0, 1.0), 0.0),
@@ -1307,6 +1310,10 @@ def main():
              [green] * 3, 2.0, (0.0, 0.0), 0.0, (1.0, 1.0), 1.0),
             (rect_pts(20.0, 20.0, 28.0, 24.0), [blue] * 4, 1.0,
              (12.0, 4.0), 0.5, (1.0, 1.0), 0.0),
+            (rect_pts(0.0, 0.0, 4.0, 4.0), [green] * 4, 3.0,
+             (2.0, 2.0), 0.0, (1.0, 1.0), 2.0),
+            (rect_pts(20.0, 20.0, 28.0, 24.0), [blue] * 4, 1.0,
+             (-4.0, 4.0), 0.5, (1.0, 1.0), 0.0),
             ([], [], 2.0, (0.0, 0.0), 0.0, (1.0, 1.0), 0.0),
         ]
         xplan = {}
@@ -1370,7 +1377,9 @@ def main():
                    "rotated rect edit paints",
                    "child attaches to slot 1",
                    "parent move carries the child",
-                   "delete drops the child"]
+                   "grandchild attaches to slot 2 (two-deep chain)",
+                   "grandparent move carries both descendants",
+                   "delete drops the child, grandchild keeps its own place"]
         for ci, end in enumerate(xends):
             pts, cols, sid, pos, ang, scl, par = xcommits[ci]
             if not pts:
