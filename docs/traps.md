@@ -71,6 +71,19 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   divided with: `m20 = qp20 * m00'` and `m23 = qp20*32 + qp21*32`, both
   exactly the half-composed values. **Snapshot the whole pre-step matrix in
   plain vars** and let the lets read the snapshot.
+- **A `for` inside a MOD INLINED INTO THE DISPATCH CHAIN stores one iteration
+  early.** The same conversion that is safe in the screen chip is not safe here:
+  `retAdjust`'s sixteen-step ladder became `for j in 0..16` and the chip went
+  42,940 -> 40,883 nodes (-2,057), but the suite came back **835 OK / 149 FAIL**
+  and `print(string.upper('abc'))` answered `bad argument #1 to 'string.upper'
+  (string expected, got nil)`. Read off the register writes: HEAD copied slot 4
+  then cleared slot 5; the looped chip copied slot 4 and then cleared **slot 4**
+  -- the body's second branch stored one iteration behind while its first branch
+  was right. Two spellings (`else if`, and two separate `if`s) failed
+  identically, so it is the body's shape in this position, not the spelling.
+  A loop in a plain chip body and a loop in a mod called from a plain body both
+  copy correctly; the failure is specific to the sixteen-step ladder sitting
+  inside the inlined arms. **Not landed.**
 - **Array index WRITES need literal bases -- that was the WS007 rule, and
   the new compiler lifts it.** The screen chip was unrolled per point
   because writes used literal bases; with computed indices the same 256

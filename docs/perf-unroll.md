@@ -154,6 +154,12 @@ ladder was one pass of pure gates, so `tools/chip/perfbench.py` (loop-60, fib,
 strings) is the instrument that decides whether it lands. Not applied to `lua.ws`
 here: that chip is committed, and the change needs the full suite plus a rebuild.
 
+Applied to `lua.ws` on 2026-10-28 and **reverted the same day**: `retAdjust` as
+`for j in 0..16` did deliver the predicted size (42,940 -> 40,883 nodes, 83,437 ->
+78,269 wires) but the suite came back 835 OK / 149 FAIL, and the failure is the
+register copy storing one slot early (docs/traps.md). Size was never the obstacle;
+the body's position in the inlined arms is.
+
 The screen chip took the same conversion and it is landed: the ancestor walk was 16
 copies of a transform step (2,928 nodes) and is now one `for` body (206 nodes plus
 the loop gate and the `break`), in the same tick, with the chain cap widened from 16
