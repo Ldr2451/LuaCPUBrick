@@ -25,9 +25,6 @@ i = i + 8
 end
 return slot + #t
 end
-function setWire(on)
-outNum(4, on)
-end
 function setTransform(xf)
 local i = 1
 while i <= 9 do
@@ -71,7 +68,7 @@ outStr(2, tostring(p))
 local s = id
 if s == nil then s = "" end
 outStr(1, tostring(s))
-if wire ~= nil then outNum(4, wire) end
+outNum(4, wire or 0.0)
 local t = ticks
 if t == nil then t = 0.0 end
 if t == -1.0 then
@@ -157,13 +154,20 @@ push()
 f = f + 1
 end
 end
-function pushShape(pts, cols, xf, parent)
-stage(pts, cols, xf, parent, nil, nil, "")
+function pushShape(pts, cols, xf, parent, wire)
+stage(pts, cols, xf, parent, nil, wire, "")
 fire()
 end
-function editShape(id, pts, cols, xf, parent, ticks)
-stage(pts, cols, xf, parent, ticks, nil, id)
+function editShape(id, pts, cols, xf, parent, ticks, wire)
+stage(pts, cols, xf, parent, ticks, wire, id)
 fire()
+end
+function camera(xf, ticks)
+if xf == nil then
+editShape("-1", {}, nil, nil, "0", nil, 0.0)
+else
+editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", ticks, 0.0)
+end
 end
 function deleteShape(id)
 stage({}, nil, nil, "0", nil, nil, id)
@@ -203,7 +207,6 @@ local faces = {
 {2, 6, 7, 3},
 }
 pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
-setWire(0)
 editShape("1", {0.0, 0.0, 0.0}, nil, {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
 stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.080, 0.0, 0.0, 0.0}, "0", -1.0, nil, "1")
 push()

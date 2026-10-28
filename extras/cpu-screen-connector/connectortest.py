@@ -73,10 +73,9 @@ DRIVER_BODY = """
 pushShape({4.0, 4.0, 0.0, 12.0, 4.0, 0.0, 12.0, 12.0, 0.0, 4.0, 12.0, 0.0},
 {1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0,
 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0})
-setWire(1.0)
 pushShape({30.0, 30.0, 0.0, 50.0, 30.0, 0.0, 30.0, 50.0, 0.0},
-{0.1, 0.4, 1.0, 1.0, 0.1, 0.4, 1.0, 1.0, 0.1, 0.4, 1.0, 1.0})
-setWire(0.0)
+{0.1, 0.4, 1.0, 1.0, 0.1, 0.4, 1.0, 1.0, 0.1, 0.4, 1.0, 1.0},
+nil, nil, 1.0)
 -- the stroke is ~22 rows plus its segment steps: nap past the burst
 -- (drivers pace bursts; a push would abort the walk mid-flight and
 -- the wall would keep a partial stroke)

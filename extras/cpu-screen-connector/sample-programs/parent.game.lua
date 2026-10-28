@@ -25,9 +25,6 @@ i = i + 8
 end
 return slot + #t
 end
-function setWire(on)
-outNum(4, on)
-end
 function setTransform(xf)
 local i = 1
 while i <= 9 do
@@ -71,7 +68,7 @@ outStr(2, tostring(p))
 local s = id
 if s == nil then s = "" end
 outStr(1, tostring(s))
-if wire ~= nil then outNum(4, wire) end
+outNum(4, wire or 0.0)
 local t = ticks
 if t == nil then t = 0.0 end
 if t == -1.0 then
@@ -157,13 +154,20 @@ push()
 f = f + 1
 end
 end
-function pushShape(pts, cols, xf, parent)
-stage(pts, cols, xf, parent, nil, nil, "")
+function pushShape(pts, cols, xf, parent, wire)
+stage(pts, cols, xf, parent, nil, wire, "")
 fire()
 end
-function editShape(id, pts, cols, xf, parent, ticks)
-stage(pts, cols, xf, parent, ticks, nil, id)
+function editShape(id, pts, cols, xf, parent, ticks, wire)
+stage(pts, cols, xf, parent, ticks, wire, id)
 fire()
+end
+function camera(xf, ticks)
+if xf == nil then
+editShape("-1", {}, nil, nil, "0", nil, 0.0)
+else
+editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", ticks, 0.0)
+end
 end
 function deleteShape(id)
 stage({}, nil, nil, "0", nil, nil, id)
@@ -188,7 +192,6 @@ local bgCols = {0.10, 0.10, 0.32, 1.0,
                 0.55, 0.12, 0.40, 1.0,
                 0.95, 0.55, 0.18, 1.0,
                 0.08, 0.50, 0.55, 1.0}
-setWire(0)
 editShape("1", bgPts, bgCols, nil, "0")
 local R = 8.0
 local HY = 9.0
@@ -218,7 +221,6 @@ end
 local top = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
 local low = {13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24}
 local sides = {{1, 13}, {5, 17}, {9, 21}}
-setWire(0)
 editShape("2", {0.0, 0.0, 0.0}, nil, pose, "0")
 pushMesh(pts, cols, {top, low}, nil, "2", nil, 0, 3)
 pushMesh(pts, cols, sides, nil, "2", nil, 1, 5)
@@ -236,7 +238,6 @@ while k < 12 do
   dcol[k * 4 + 4] = 0.55
   k = k + 1
 end
-setWire(0)
 editShape("8", disc, dcol, nil, "2")
 nap(460.0)
 local step = 1
@@ -249,7 +250,6 @@ while step < 3 do
 end
 local xf = {pose[1] + 2 * 6.0, pose[2], pose[3], pose[4], pose[5], pose[6],
             pose[7], pose[8], pose[9]}
-setWire(0)
 editShape("8", disc, dcol, xf, "0")
 nap(460.0)
 local step2 = 3

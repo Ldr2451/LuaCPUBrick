@@ -17,7 +17,6 @@ while i < 13 do
   cols[#cols + 1] = 1.0
   i = i + 1
 end
-setWire(1)
 local f = 0
 while f < 3 do
   stagePush2d(pts, cols, nil, "0", nil, 1, "1")

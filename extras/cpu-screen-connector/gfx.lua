@@ -25,9 +25,9 @@ i = i + 8
 end
 return slot + #t
 end
-function setWire(on)
-outNum(4, on)
-end
+-- Wire mode is not a knob to remember: stage writes outNum4 on every push,
+-- from the shape's own `wire` argument (nil = filled).  A push says what it
+-- is; nothing depends on what the last push left behind.
 function setTransform(xf)
 local i = 1
 while i <= 9 do
@@ -49,8 +49,9 @@ end
 -- (pos.xyz, rot.xyz, scl.xyz), parent the slot id as text ("0" none,
 -- "1".."32" a shape, "-1" the camera so the shape is placed in view
 -- space), ticks the animation length (0 instant, n repaints, -1 forever),
--- wire true for wireframe (edges only) and false for a filled shape, id
--- the slot to store ("0".."32", "-1" the camera, "" = immediate).
+-- wire the wireframe flag: nil or 0 fills, 1 strokes an outline, and it is
+-- written on every push -- id the slot to store ("0".."32", "-1" the
+-- camera, "" = immediate).
 -- stage2d(pts, cols, xf, parent, ticks, wire, id): a FLAT shape, written
 -- as (x, y) pairs, sent as the (x, y, 0) triples the screen takes.  The
 -- screen's port takes triples and only triples, so a flat shape is the
@@ -101,7 +102,7 @@ outStr(2, tostring(p))
 local s = id
 if s == nil then s = "" end
 outStr(1, tostring(s))
-if wire ~= nil then outNum(4, wire) end
+outNum(4, wire or 0.0)
 local t = ticks
 if t == nil then t = 0.0 end
 -- one number, one meaning: -1 is FOREVER (the animation runs until
@@ -229,13 +230,28 @@ push()
 f = f + 1
 end
 end
-function pushShape(pts, cols, xf, parent)
-stage(pts, cols, xf, parent, nil, nil, "")
+function pushShape(pts, cols, xf, parent, wire)
+stage(pts, cols, xf, parent, nil, wire, "")
 fire()
 end
-function editShape(id, pts, cols, xf, parent, ticks)
-stage(pts, cols, xf, parent, ticks, nil, id)
+-- editShape(id, pts, cols, xf, parent, ticks, wire): store or edit a
+-- shape in slot `id` and show it.  wire nil = filled, 1 = outline.
+function editShape(id, pts, cols, xf, parent, ticks, wire)
+stage(pts, cols, xf, parent, ticks, wire, id)
 fire()
+end
+-- camera(xf, ticks): move the view.  xf is the nine-number transform
+-- (pos.xyz, rot.xyz, scl.xyz) -- one point travels with it, which paints
+-- nothing, and the commit recomposites the scene, so no draw is needed to
+-- see the move.  Shapes whose parent chain reaches "-1" ride along and
+-- keep their place on screen; everything else moves with the view.
+-- camera(nil) forgets the camera, which puts the view back to identity.
+function camera(xf, ticks)
+if xf == nil then
+editShape("-1", {}, nil, nil, "0", nil, 0.0)
+else
+editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", ticks, 0.0)
+end
 end
 function deleteShape(id)
 stage({}, nil, nil, "0", nil, nil, id)

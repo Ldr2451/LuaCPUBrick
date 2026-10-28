@@ -25,9 +25,6 @@ i = i + 8
 end
 return slot + #t
 end
-function setWire(on)
-outNum(4, on)
-end
 function setTransform(xf)
 local i = 1
 while i <= 9 do
@@ -71,7 +68,7 @@ outStr(2, tostring(p))
 local s = id
 if s == nil then s = "" end
 outStr(1, tostring(s))
-if wire ~= nil then outNum(4, wire) end
+outNum(4, wire or 0.0)
 local t = ticks
 if t == nil then t = 0.0 end
 if t == -1.0 then
@@ -157,13 +154,20 @@ push()
 f = f + 1
 end
 end
-function pushShape(pts, cols, xf, parent)
-stage(pts, cols, xf, parent, nil, nil, "")
+function pushShape(pts, cols, xf, parent, wire)
+stage(pts, cols, xf, parent, nil, wire, "")
 fire()
 end
-function editShape(id, pts, cols, xf, parent, ticks)
-stage(pts, cols, xf, parent, ticks, nil, id)
+function editShape(id, pts, cols, xf, parent, ticks, wire)
+stage(pts, cols, xf, parent, ticks, wire, id)
 fire()
+end
+function camera(xf, ticks)
+if xf == nil then
+editShape("-1", {}, nil, nil, "0", nil, 0.0)
+else
+editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", ticks, 0.0)
+end
 end
 function deleteShape(id)
 stage({}, nil, nil, "0", nil, nil, id)
@@ -180,13 +184,11 @@ end
 end
 clearScreen()
 local home = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}
-setWire(0)
-editShape("-1", {0.0, 0.0, 0.0}, nil, home, "0")
+camera(home)
 local bg = {-30.0, -30.0, -40.0, 95.0, -30.0, -40.0,
             95.0, 95.0, -40.0, -30.0, 95.0, -40.0}
 local bgc = {0.10, 0.10, 0.32, 1.0, 0.55, 0.12, 0.40, 1.0,
              0.95, 0.55, 0.18, 1.0, 0.08, 0.50, 0.55, 1.0}
-setWire(0)
 editShape("2", bg, bgc, nil, "0")
 local disc = {}
 local dcol = {}
@@ -205,20 +207,16 @@ end
 disc[37] = disc[1]
 disc[38] = disc[2]
 disc[39] = disc[3]
-setWire(0)
 editShape("3", disc, dcol, nil, "0")
 local tri = {44.0, 46.0, 4.0, 58.0, 34.0, 4.0, 38.0, 30.0, 4.0}
 local triCol = {0.30, 0.85, 0.45, 1.0, 0.30, 0.85, 0.45, 1.0,
                 0.30, 0.85, 0.45, 1.0}
-setWire(0)
 editShape("4", tri, triCol, nil, "0")
 local outline = {20.0, 10.0, -6.0, 42.0, 10.0, -6.0, 42.0, 20.0, -6.0,
                  20.0, 20.0, -6.0, 20.0, 10.0, -6.0}
-setWire(1)
-editShape("5", outline, nil, nil, "0")
-setWire(1)
+editShape("5", outline, nil, nil, "0", nil, 1)
 editShape("6", {3.0, 3.0, 0.0, 13.0, 3.0, 0.0, 13.0, 11.0, 0.0,
-                3.0, 11.0, 0.0, 3.0, 3.0, 0.0}, nil, nil, "-1")
+                3.0, 11.0, 0.0, 3.0, 3.0, 0.0}, nil, nil, "-1", nil, 1)
 nap(460.0)
 local step = 1
 while step <= 8 do
@@ -230,9 +228,7 @@ while step <= 8 do
   elseif step == 5 then px = 8.0
   elseif step == 7 then pz = 12.0
   end
-  local xf = {px, 0.0, pz, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}
-  setWire(0)
-  editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0")
+  camera({px, 0.0, pz, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
   nap(460.0)
   step = step + 1
 end

@@ -22,7 +22,6 @@ local bgCols = {0.10, 0.10, 0.32, 1.0,
                 0.55, 0.12, 0.40, 1.0,
                 0.95, 0.55, 0.18, 1.0,
                 0.08, 0.50, 0.55, 1.0}
-setWire(0)
 editShape("1", bgPts, bgCols, nil, "0")
 
 -- The cylinder as a mesh: two rings of twelve vertices, one ring per cap,
@@ -61,7 +60,6 @@ local sides = {{1, 13}, {5, 17}, {9, 21}}
 
 -- The pivot first: a child must have something to hang from.  It carries one
 -- point in fill mode, which paints nothing.
-setWire(0)
 editShape("2", {0.0, 0.0, 0.0}, nil, pose, "0")
 -- Caps filled (ids 3 and 4), then the side edges as strokes (ids 5..7).
 pushMesh(pts, cols, {top, low}, nil, "2", nil, 0, 3)
@@ -83,7 +81,6 @@ while k < 12 do
   dcol[k * 4 + 4] = 0.55
   k = k + 1
 end
-setWire(0)
 editShape("8", disc, dcol, nil, "2")
 nap(460.0)
 
@@ -102,7 +99,6 @@ end
 -- points stay local: the disc keeps its exact pixels, tilt and all.
 local xf = {pose[1] + 2 * 6.0, pose[2], pose[3], pose[4], pose[5], pose[6],
             pose[7], pose[8], pose[9]}
-setWire(0)
 editShape("8", disc, dcol, xf, "0")
 nap(460.0)
 

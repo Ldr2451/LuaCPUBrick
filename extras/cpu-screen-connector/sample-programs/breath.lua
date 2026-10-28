@@ -44,7 +44,6 @@ local faces = {
 -- transform.  An empty push to a slot is the delete, so the pivot carries
 -- one point; wireframe mode stays off here or that point paints a dot.
 pushMesh(base, cols, faces, nil, "1", nil, 1.0, 2)
-setWire(0)
 editShape("1", {0.0, 0.0, 0.0}, nil,
           {30.5, 33.0, 0.0, 0.45, 0.0, 0.85, 1.0, 1.0, 1.0}, "0")
 

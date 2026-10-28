@@ -62,7 +62,6 @@ pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
 -- it off here is the program's job: a bare editShape would inherit it,
 -- and one point in wireframe mode is a two-pixel blob -- the white dot
 -- in the middle of the solid.
-setWire(0)
 editShape("1", {0.0, 0.0, 0.0}, nil, {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
 -- ... and it keeps turning, forever, with no further pushes: the slot's
 -- animation deltas are the spin.  It turns about the vertical, not over:
