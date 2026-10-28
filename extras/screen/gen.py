@@ -2943,6 +2943,50 @@ L.append("  if polyOn || sOn {")
 # black clear covers everything, so there is nothing stale by
 # construction.  Rows the new frame never stages (a shrink's giveaway
 # rows, a delete's whole shape) are still the separate walk's job.
+def paint_row(rowexpr, pcolv, sfx):
+    # ONE body per row instead of K copies of it.  The lane count is the loop's
+    # Count port, so a wider wall costs the body once rather than once per lane
+    # (measured: 207 nodes per copy here, 63 copies = 13,041 nodes).  The body
+    # reads the row's staged bases -- the walk's own vars -- as boundary pins,
+    # which carry the values published when the loop fires; the walks run
+    # before the lanes, so they are fresh, which is exactly what the direct
+    # form was there to get.  Nothing in the body advances a counter the chain
+    # reads after the loop, so the resumed chain is the same shape as before.
+    L.append("      for _lane in 0..%d {" % K)
+    L.append("        let tj = %s + (_lane as float)" % pcolv)
+    L.append("        if tj <= pcurR%s {" % sfx)
+    # Parenthesised: `prow + 1.0 * SWF` would parse as `prow + (1.0 * SWF)`, and
+    # rows B..D would write `prow + 64 + tj` -- one row's worth of pixels at the
+    # wrong place, which reads as rows painting nothing.
+    L.append("          let ridx = (((%s) * SWF + tj) | 0)" % rowexpr)
+    L.append("          let dt = tj - xL%s" % sfx)
+    L.append("          let pdz = zLo%s + zSlope%s * dt" % (sfx, sfx))
+    L.append("          if noDepth || pdz >= fbZ[ridx] {")
+    # Opaque paint writes straight, as always.  A colour with alpha blends
+    # over what is already in the pixel -- black if nothing has painted it,
+    # otherwise whatever the last shape left -- so a semi-transparent shape
+    # shows what is under it.  A phantom re-arm repaints the shape that is
+    # already on the wall: for an opaque colour that is a harmless rewrite,
+    # but blending a transparent colour a second time over its own result
+    # would make it too strong, so `repaint` leaves those pixels alone.
+    L.append("            let src = cLo%s + rowSlope%s * dt" % (sfx, sfx))
+    L.append("            if noDepth || src.a >= 1.0 {")
+    L.append("              fb[ridx] = src")
+    L.append("            } else if repaint < 0.5 {")
+    L.append("              let d = fb[ridx]")
+    L.append("              let ia = 1.0 - src.a")
+    L.append("              fb[ridx] = Color(src.r * src.a + d.r * ia,"
+             " src.g * src.a + d.g * ia,"
+             " src.b * src.a + d.b * ia,"
+             " src.a + d.a * ia)")
+    L.append("            }")
+    L.append("            fbZ[ridx] = if noDepth then ZBACK else pdz")
+    L.append("          }")
+    L.append("        }")
+    L.append("      }")
+    L.append("      %s = %s + %d.0" % (pcolv, pcolv, K))
+
+
 def black_row(tag, vex):
     L.append("    if eraseOK && !noDepth {")
     L.append("      let br%s = (%s | 0)" % (tag, vex))
@@ -2951,15 +2995,17 @@ def black_row(tag, vex):
     L.append("        let okb%s = oldMax[br%s]" % (tag, tag))
     L.append("        let nka%s = covMin[br%s]" % (tag, tag))
     L.append("        let nkb%s = covMax[br%s]" % (tag, tag))
-    for _j in range(64):
-        L.append("        if %d.0 >= oka%s && %d.0 <= okb%s"
-                 " && (%d.0 < nka%s || %d.0 > nkb%s) {"
-                 % (_j, tag, _j, tag, _j, tag, _j, tag))
-        L.append("          fb[((br%s * SWF + %d.0) | 0)]"
-                 " = Color(0.0, 0.0, 0.0, 1.0)" % (tag, _j))
-        L.append("          fbZ[((br%s * SWF + %d.0) | 0)] = ZBACK"
-                 % (tag, _j))
-        L.append("        }")
+    # The sixty-four columns of one row, one body: the only thing that differs
+    # between them is the column index, so the count is a port.
+    L.append("        for _bx in 0..%d {" % SW)
+    L.append("          let okx = (_bx as float)")
+    L.append("          if okx >= oka%s && okx <= okb%s"
+             " && (okx < nka%s || okx > nkb%s) {" % (tag, tag, tag, tag))
+    L.append("            fb[((br%s * SWF + okx) | 0)]"
+             " = Color(0.0, 0.0, 0.0, 1.0)" % tag)
+    L.append("            fbZ[((br%s * SWF + okx) | 0)] = ZBACK" % tag)
+    L.append("          }")
+    L.append("        }")
     L.append("      }")
     L.append("    }")
 black_row("A", "aRow")
@@ -2968,96 +3014,18 @@ black_row("A", "aRow")
     # advance pcol/pcol2 as they go.  The erase's own rects are not
     # coverage: they black pixels the frame gave up, so folding them
     # in would record them as still painted and never erase them.
-for j in range(K):
-    L.append("      let tj%d = pcol + %d.0" % (j, j))
-    L.append("      if tj%d <= pcurR {" % j)
-    L.append("        let ridx%d = ((aRow * SWF + tj%d) | 0)" % (j, j))
-    L.append("        let dt%d = tj%d - xL" % (j, j))
-    L.append("        let pdz%d = zLo + zSlope * dt%d" % (j, j))
-    L.append("        if noDepth || pdz%d >= fbZ[ridx%d] {" % (j, j))
-    # Opaque paint writes straight, as always.  A colour with alpha blends
-    # over what is already in the pixel -- black if nothing has painted it,
-    # otherwise whatever the last shape left -- so a semi-transparent shape
-    # shows what is under it.  A phantom re-arm repaints the shape that is
-    # already on the wall: for an opaque colour that is a harmless rewrite,
-    # but blending a transparent colour a second time over its own result
-    # would make it too strong, so `repaint` leaves those pixels alone.
-    L.append("          let srcA%d = cLo + rowSlope * dt%d" % (j, j))
-    L.append("          if noDepth || srcA%d.a >= 1.0 {" % (j,))
-    L.append("            fb[ridx%d] = srcA%d" % (j, j))
-    L.append("          } else if repaint < 0.5 {")
-    L.append("            let dA%d = fb[ridx%d]" % (j, j))
-    L.append("            let iaA%d = 1.0 - srcA%d.a" % (j, j))
-    L.append("            fb[ridx%d] = Color(srcA%d.r * srcA%d.a + dA%d.r * iaA%d,"
-             " srcA%d.g * srcA%d.a + dA%d.g * iaA%d,"
-             " srcA%d.b * srcA%d.a + dA%d.b * iaA%d,"
-             " srcA%d.a + dA%d.a * iaA%d)" % ((j,) * 16))
-    L.append("          }")
-    L.append("          fbZ[ridx%d] = if noDepth then ZBACK else pdz%d"
-             % (j, j))
-    L.append("        }")
-    L.append("      }")
-L.append("      pcol = pcol + %d.0" % K)
+paint_row("aRow", "pcol", "")
 # The B row paints from its own span at prow (advanced past A): the same
 # shared shape, so a stroke costs one lane duplication after all -- the
 # fill's, which the stroke reuses.
 black_row("B", "prow + 1.0")
-for j in range(K):
-    L.append("      let tjB%d = pcol2 + %d.0" % (j, j))
-    L.append("      if tjB%d <= pcurR2 {" % j)
-    L.append("        let ridxB%d = (((prow + 1.0) * SWF + tjB%d) | 0)" % (j, j))
-    L.append("        let dtB%d = tjB%d - xL2" % (j, j))
-    L.append("        let pdzB%d = zLo2 + zSlope2 * dtB%d" % (j, j))
-    L.append("        if noDepth || pdzB%d >= fbZ[ridxB%d] {" % (j, j))
-    L.append("          let srcB%d = cLo2 + rowSlope2 * dtB%d" % (j, j))
-    L.append("          if noDepth || srcB%d.a >= 1.0 {" % (j,))
-    L.append("            fb[ridxB%d] = srcB%d" % (j, j))
-    L.append("          } else if repaint < 0.5 {")
-    L.append("            let dB%d = fb[ridxB%d]" % (j, j))
-    L.append("            let iaB%d = 1.0 - srcB%d.a" % (j, j))
-    L.append("            fb[ridxB%d] = Color(srcB%d.r * srcB%d.a + dB%d.r * iaB%d,"
-             " srcB%d.g * srcB%d.a + dB%d.g * iaB%d,"
-             " srcB%d.b * srcB%d.a + dB%d.b * iaB%d,"
-             " srcB%d.a + dB%d.a * iaB%d)" % ((j,) * 16))
-    L.append("          }")
-    L.append("          fbZ[ridxB%d] = if noDepth then ZBACK else pdzB%d"
-             % (j, j))
-    L.append("        }")
-    L.append("      }")
-L.append("      pcol2 = pcol2 + %d.0" % K)
+paint_row("prow + 1.0", "pcol2", "2")
 # Rows C..D paint from their own spans: same shape once more per row.
 for _ri, _R in enumerate(("C", "D")):
     _k = _ri + 2
     black_row(_R, "prow + %d.0" % _k)
     _sfx = str(_ri + 3)
-    for j in range(K):
-        L.append("      let tj%s%d = pcol%s + %d.0" % (_R, j, _sfx, j))
-        L.append("      if tj%s%d <= pcurR%s {" % (_R, j, _sfx))
-        L.append("        let ridx%s%d = (((prow + %d.0) * SWF + tj%s%d) | 0)"
-                 % (_R, j, _k, _R, j))
-        L.append("        let dt%s%d = tj%s%d - xL%s" % (_R, j, _R, j, _sfx))
-        L.append("        let pdz%s%d = zLo%s + zSlope%s * dt%s%d"
-                 % (_R, j, _sfx, _sfx, _R, j))
-        L.append("        if noDepth || pdz%s%d >= fbZ[ridx%s%d] {"
-                 % (_R, j, _R, j))
-        L.append("          let src%s%d = cLo%s + rowSlope%s * dt%s%d"
-                 % (_R, j, _sfx, _sfx, _R, j))
-        L.append("          if noDepth || src%s%d.a >= 1.0 {" % (_R, j))
-        L.append("            fb[ridx%s%d] = src%s%d" % (_R, j, _R, j))
-        L.append("          } else if repaint < 0.5 {")
-        L.append("            let d%s%d = fb[ridx%s%d]" % (_R, j, _R, j))
-        L.append("            let ia%s%d = 1.0 - src%s%d.a" % (_R, j, _R, j))
-        L.append("            fb[ridx%s%d] = Color(src%s%d.r * src%s%d.a + d%s%d.r * ia%s%d,"
-                 " src%s%d.g * src%s%d.a + d%s%d.g * ia%s%d,"
-                 " src%s%d.b * src%s%d.a + d%s%d.b * ia%s%d,"
-                 " src%s%d.a + d%s%d.a * ia%s%d)"
-                 % ((_R, j) * 16))
-        L.append("          }")
-        L.append("          fbZ[ridx%s%d] = if noDepth then ZBACK else pdz%s%d"
-                 % (_R, j, _R, j))
-        L.append("        }")
-        L.append("      }")
-    L.append("      pcol%s = pcol%s + %d.0" % (_sfx, _sfx, K))
+    paint_row("prow + %d.0" % _k, "pcol%s" % _sfx, _sfx)
 L.append("  }")
 # The scanout: every pixel global mirrors its fb slot, every tick.
 # ---- the erase pass: black what the new frame no longer covers -----
