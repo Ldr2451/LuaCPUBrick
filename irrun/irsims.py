@@ -308,8 +308,12 @@ class Sim:
         # cached value provably equal to a fresh pull.  A gate's own publish
         # is derived state: it only dirties the gates wired from it, so a
         # repeated read of an unchanged gate still takes the cached prop.
+        # `_fresh` memoises a gate whose whole value-input chain was proven
+        # fresh in this epoch (see `_needs_eval`).
         self._epoch = 0
         self._pured: dict[int, int] = {}
+        self._fresh: dict[int, int] = {}
+        self._val_in: dict[int, list[tuple[int, str]]] = {}
         self.clock_ids: list[int] = []
         self.tick_delta: int = 1
         self._queue_carry: dict[int, dict] = {}
@@ -851,6 +855,64 @@ class Sim:
     def _is_pure(self, cls: str) -> bool:
         return ("Expr_" in cls and "ChangeDetector" not in cls) or "ServerUptime" in cls
 
+    def _value_sources(self, nid: int) -> list[tuple[int, str]]:
+        """The pure value wires into `nid`, cached once per node.
+
+        Exec ports are skipped (a gate runs by execution, never by evaluation),
+        and non-pure sources are skipped: their state move is what bumps the
+        epoch, which already makes every gate stale.
+        """
+        out = self._val_in.get(nid)
+        if out is None:
+            out = []
+            for p in [x[0] for x in self.nodes[nid].pin]:
+                if "Exec" in p:
+                    continue
+                for w in self.in_wires.get((nid, p), []):
+                    src = self.nodes.get(w.src_id)
+                    if src is not None and self._is_pure(src.cls):
+                        out.append((w.src_id, w.src_port))
+            self._val_in[nid] = out
+        return out
+
+    def _needs_eval(self, nid: int) -> bool:
+        """Must this pure gate be recomputed before its value is read?
+
+        Dirty, or not evaluated in this epoch, is the obvious case.  The subtle
+        one is an ANCESTOR: a gate evaluated in this epoch is NOT fresh when a
+        gate further up its input chain published a new value after it, because
+        a publish dirties only its direct consumers.  The screen chip's lane
+        loop published the iteration index, the `(_lane as float)` convert
+        republished, and the arithmetic above -- already evaluated in this
+        epoch -- handed the previous lane's index to the pixel read that then
+        blended over the pixel one column back, so column c came out blended
+        c-7 times.  Walking the value-input chain covers that; a chain proven
+        fresh is memoised, so a repeated read inside one epoch costs one lookup.
+        """
+        if nid in self._dirty or self._pured.get(nid, -1) != self._epoch:
+            return True
+        if self._fresh.get(nid) == self._epoch:
+            return False
+        proven = []
+        seen = set()
+        stack = [nid]
+        while stack:
+            cur = stack.pop()
+            if cur in seen:
+                continue
+            seen.add(cur)
+            if self._fresh.get(cur) == self._epoch:
+                continue
+            if cur in self._dirty or self._pured.get(cur, -1) != self._epoch:
+                return True
+            proven.append(cur)
+            for src_id, _sport in self._value_sources(cur):
+                if src_id not in seen:
+                    stack.append(src_id)
+        for gate in proven:
+            self._fresh[gate] = self._epoch
+        return False
+
     def _build_src(self, key: tuple[int, str]) -> tuple:
         """Resolve an input port's static wiring once.
 
@@ -933,18 +995,17 @@ class Sim:
         for w, src, pure in tail:
             if not src:
                 continue
-            if pure and w.src_id not in self._eval_stack and (
-                    w.src_id in self._dirty
-                    or self._pured.get(w.src_id, -1) != self._epoch):
+            if pure and w.src_id not in self._eval_stack and self._needs_eval(w.src_id):
                 # Pull evaluation: pure gates are side-effect-free functions
                 # of their inputs, so compute on demand for fresh values
                 # instead of trusting possibly-stale cached outputs.  A gate
-                # that is fresh -- evaluated in this epoch, with nothing
-                # published to it since (`_dirty`) -- cannot have moved, so a
-                # repeated read inside one tick takes the cached prop instead
-                # of recomputing its whole chain.  Chip state moving bumps the
-                # epoch (`_bump`), and a publish marks its wired readers, so
-                # both ways a gate's inputs can move are covered.
+                # that is fresh -- evaluated in this epoch, and with nothing
+                # stale anywhere above it in the value chain (`_needs_eval`) --
+                # cannot have moved, so a repeated read inside one tick takes
+                # the cached prop instead of recomputing its whole chain.  Chip
+                # state moving bumps the epoch (`_bump`), and a publish marks
+                # its wired readers, so both ways a gate's inputs can move are
+                # covered.
                 self._eval_stack.add(w.src_id)
                 try:
                     self._exec_node(w.src_id, src, set())
@@ -1588,12 +1649,18 @@ class Sim:
         # A pass starts clean: a break from an earlier iteration, or from an
         # inner loop that already consumed its own, must not end this one.
         self._loop_break = False
-        stack = [(w.dst_id, w.dst_port)
-                 for w in self.out_wires.get((entry, "Body"), [])]
+        # FIFO, like the main drain: siblings run in wire order.  A LIFO stack
+        # ran the last sibling first, so a store could execute ahead of the
+        # gates its own `let` values come from -- the store still pulled them
+        # (see `_needs_eval`), but a body with two side-effecting siblings ran
+        # them backwards.
+        from collections import deque
+        queue = deque((w.dst_id, w.dst_port)
+                      for w in self.out_wires.get((entry, "Body"), []))
         guard = 0
-        while stack and guard < 100000:
+        while queue and guard < 100000:
             guard += 1
-            nid, port = stack.pop()
+            nid, port = queue.popleft()
             if (nid, port) in seen:
                 continue
             seen.add((nid, port))
@@ -1620,7 +1687,7 @@ class Sim:
             self._exec_node(nid, node, nq)
             for item in sorted(nq, key=lambda x: x[0]):
                 if item not in seen:
-                    stack.append(item)
+                    queue.append(item)
 
     # ---- gate impls ----
     def _do_buffer(self, nid: int, nq: set):
