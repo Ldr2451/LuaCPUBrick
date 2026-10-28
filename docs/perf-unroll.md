@@ -158,3 +158,22 @@ The screen chip took the same conversion and it is landed: the ancestor walk was
 copies of a transform step (2,928 nodes) and is now one `for` body (206 nodes plus
 the loop gate and the `break`), in the same tick, with the chain cap widened from 16
 steps to every slot.
+
+## The screen chip's lane rows, as loops (2026-10-28)
+
+The paint side was unrolled the same way: four row bands (A-D), each with a 64-wide
+lane scan written out per lane, plus the erase band's `black_row`. Composed as one
+`for` per band with a helper for the lane body, the chip went **58,125 -> 41,925
+nodes** (78,078 wires) and `screen.brz` **561,727 -> 430,636 bytes**, with no feature
+removed: same slots, same 64 lanes, same resolution.
+
+What it cost was a simulator bug, not a chip bug. A pure gate is cached while it was
+evaluated in the current epoch, and a publish dirties only its DIRECT consumers -- so
+a gate above the chain kept the previous iteration's value and read as fresh. The lane
+loop published its `Index`, the `(_lane as float)` convert republished, and the pixel
+read that blends over the destination still got lane-1: column c came out blended c-7
+times (0.175, 0.2625, 0.30625 ... instead of 0.175 everywhere). The fix is `_needs_eval`
+in `irrun/irsims.py`: staleness walks the value-input chain, memoised per epoch.
+Verified by execution, not by reading: `painttest` pixel-exact (only the two failures
+the committed chip already has), `screenchecks` GREEN at 448/352/641 with settle
+115/414, suite 984/0, perfbench ratios 0.97-1.05.

@@ -23,6 +23,17 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   path, so its nodes were never recorded, and the Union after a branch
   inside a body never fired. The erase walk's chain stopped at exactly
   that Union.
+- **A cached pure gate is fresh only if its ANCESTORS are.** A publish dirties
+  the gates wired straight from it, one level; a gate further up the chain that
+  already ran in this epoch keeps its old value and reads as fresh. The screen
+  chip's lane loop published its `Index`, the `(_lane as float)` convert
+  republished, and the arithmetic above the convert -- evaluated in the same
+  epoch -- still handed the previous lane's index to the pixel read that blends
+  over the destination. Each column was then blended once per lane it had
+  advanced: 0.175, 0.2625, 0.30625 ... instead of 0.175 everywhere, which reads
+  as a colour-blending bug in the chip and is a cache rule in the simulator.
+  **Staleness has to walk the value-input chain** (`_needs_eval`); checking the
+  gate's own dirty flag and epoch is not enough.
 - **The `.wsir` dump leaves some node ids to the reader, and a reader that
   invents them can collide with the dump's own.** A node may be declared
   without an id (`out %_exec_out exec = %3597` -- the compiler names the
