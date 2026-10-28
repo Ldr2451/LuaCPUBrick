@@ -131,3 +131,30 @@ that moves `n` values in three parallel arrays. Returns are usually 0-3 values, 
 400 nodes for copy-only paths). Specialising the remaining sites by count is the
 largest single identified saving, and it is the same shape as a decision already
 made and measured twice in this chip.
+
+## The `for` is the size lever this census missed (2026-10-27)
+
+Both of the two biggest ladders above index ARRAYS (`vtag[dst+j]`, `vnum[dst+j]`,
+`vstr[dst+j]`), and WireScript has a real `for`: the body is laid out ONCE as a For
+Loop plane and `Count`/`FirstIndex`/`Step` are ports, so the iteration count is data
+and costs nothing in the graph. Measured on this compiler with runtime arguments
+(constant arguments fold, and then the probe measures nothing):
+
+| shape | nodes | wires |
+|---|---|---|
+| `retAdjust` ladder, one call site | 250 | 580 |
+| same as `for j in 0..16`, one call site | 34 | 52 |
+| ladder at the chip's ten call sites | 2,466 | 5,856 |
+| loop at the ten call sites | 288 | 540 |
+
+`retCopy` is the same shape at four call sites, so the pair is the largest cut
+available on this chip and it needs no feature removed. What it does cost is tick
+shape: sixteen iterations are sixteen passes of the body's exec chain, where the
+ladder was one pass of pure gates, so `tools/chip/perfbench.py` (loop-60, fib,
+strings) is the instrument that decides whether it lands. Not applied to `lua.ws`
+here: that chip is committed, and the change needs the full suite plus a rebuild.
+
+The screen chip took the same conversion and it is landed: the ancestor walk was 16
+copies of a transform step (2,928 nodes) and is now one `for` body (206 nodes plus
+the loop gate and the `break`), in the same tick, with the chain cap widened from 16
+steps to every slot.

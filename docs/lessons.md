@@ -211,10 +211,16 @@
   PUC's UNSIGNED reading of the shifted pattern (`-1 >> 1` is 2^63-1): 63
   mantissa bits against a double's 53, so no spelling of it -- a wall, pinned
   in CHIP_LOG, not a bug to chase.
-- **`retAdjust` cannot be made cheap either.** It is sixteen unconditional `if`s
-  inlined at ten call sites (3,004 nodes), and an early-exit ladder is the
-  obvious fix — but WireScript has no loop and no recursion, so the ladder *is*
-  the sixteen arms. Attempted, reverted rather than committed as a guess.
+- **`retAdjust` CAN be made cheap, and the reason it was not is the wrong rule
+  above.** It is sixteen unconditional `if`s inlined at ten call sites. Its arms
+  index the `vtag`/`vnum`/`vstr` arrays, so a `for j in 0..16` is exactly the
+  shape the rule said WireScript does not have. Probed with runtime arguments
+  (constant arguments fold, and the probe then measures nothing): the ladder at
+  ten call sites is 2,466 nodes / 5,856 wires, the loop is 288 / 540 — and one
+  call site alone is 250 → 34. Not applied to `lua.ws`: it is the committed chip,
+  so it needs the full suite and a rebuild, and a loop body runs sixteen gate
+  passes where the ladder was one pass of pure gates, which
+  `tools/chip/perfbench.py` is the instrument for.
 - **Merging the two simple return arms is not smaller.** `RETURN` and
   `RETURN0` share their frame teardown in source, but one arm with a `count`
   value and a captured source cost 90 nodes and 256 wires more than the two
@@ -251,8 +257,9 @@
   **Arithmetic is already ONE arm (8..13) and comparisons are already ONE arm
   (17,18,19)**, so the three big ones are `CALL` — which is where the builtin
   dispatch is inlined, not call mechanics — `TAPPEND`, and the four return arms,
-  whose merge is the +90 nodes above. `retAdjust` needs a loop or a dynamic index,
-  and the host's array gates (`ArrayVar_CopyFrom`, `ArrayVar_Slice`, both already
+  whose merge is the +90 nodes above. `retAdjust` is sixteen register copies of one slot; a `for` over the arrays is
+  the cheap shape for it (see the `retAdjust` lesson further down), but that is
+  a node cut, not a dispatch gate cut. The host's array gates (`ArrayVar_CopyFrom`, `ArrayVar_Slice`, both already
   used) move whole arrays, not a range of one, so they cannot do a 16-slot
   register copy. The unused host gates are all exec gates (whose values cannot be
   read into a register in the same instruction), game gates with no PUC
@@ -472,9 +479,13 @@
   boot and nothing else. Do not build it unless a gate that must call Lua
   appears for another reason.
 - **Where a cost belongs:** Lua-level loops are VM state machines (ticks, no
-  gates). WireScript has no loop statement, so a gate-side loop is a hand-unrolled
-  ladder (gates, ~2.5 nodes per arm) or a micro-step (ticks). String-heavy work
-  belongs in Lua; tight per-call arithmetic belongs in a gate.
+  gates). A gate-side repetition has three shapes: a `for` (gates laid out once,
+  every iteration inside the tick), a hand-unrolled ladder (gates, ~2.5 nodes per
+  arm), and a micro-step (ticks, one step a tick). Take the `for` when the work
+  must finish in the tick and it repeats over an array or a count; take the
+  ladder when it repeats over named globals; take the micro-step when it must
+  spread over ticks. String-heavy work belongs in Lua; tight per-call arithmetic
+  belongs in a gate.
 - **The array ports are already whole-array on the wire; only the Lua-side call
   is per element, so batch it by widening the call, not with a machine.**
   `outNumArr` is `@right out outNumArr: float[] = outNumArrV`, so the whole array reaches
@@ -712,12 +723,34 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   probed directly.  The table is one chain (`| < ~ < & < << >> < .. < + -`
   `< * / // % < unary < ^`); `arith-idiv-prec` pins the `//`-vs-`+` seam
   because no existing case mixed them.
-- **WireScript has no loop statement at all** — asked of the compiler with a body
-  reachable from `on Clock`: `for`, `while`, `loop` and `repeat` are all
-  `unknown identifier` (the chip's own `for` is *Lua's* for). A loop is a
-  hand-unrolled ladder or a `buffer`/`await` micro-step. `await` is not a loop:
-  `await 1` and `await 4` both cost 12 nodes, a fixed-cost yield. A dead mod
-  compiles to 4 nodes, so a probe that does not reach its body measures nothing.
+- **WireScript has a `for`, and it is NOT an unroll.** The body is laid out
+  once as a For Loop plane and `Count`/`FirstIndex`/`Step` are ports, so the
+  count is data: one probe body compiled at count 4, 16 and 32 is 28 nodes in
+  all three. Only `for` exists — `while`, `loop` and `repeat` are
+  `unknown identifier` — and it is exec-position only, so written at the top of
+  a file it is `unexpected token 'for'`. The rule here used to say "no loop
+  statement at all": it had been probed at top level, where `for` does not
+  parse, and following it cost a node-reduction detour through micro-steps.
+  A loop body indexes arrays and maps only — a name cannot be computed — so
+  repetition over distinct named globals is still a ladder.
+- **A `for` body runs every iteration inside one tick**, so it cannot wait:
+  `await` inside it is refused (`WS079`), and the game cuts a loop at about
+  100k iterations a tick, which is what `run.aborted` reports. `break` ends the
+  loop where it stands and is not an abort; `continue` adds no gate. Work that
+  must be spread across ticks is still a `buffer`/`await` micro-step — `await 1`
+  and `await 4` both cost 12 nodes, a fixed-cost yield. A dead mod compiles to
+  4 nodes, so a probe that does not reach its body measures nothing.
+- **A loop body pays boundary crossings, not ops.** A global declared outside the
+  loop reaches in on a pin, like a `chip { }` call, so a body touching many
+  globals costs per crossing rather than per gate. Measured on the screen chip:
+  the ancestor walk was 16 unrolled copies of the step (2,928 nodes); the same
+  walk as one `for` is 206 nodes plus the gate and the break, in the same tick,
+  and the chain cap went from 16 steps to every slot.
+- **The simulator has to dispatch the loop gates.** `irrun/irsims.py` runs
+  `Microchip_CountFor`/`ForEach` as every-iteration-in-the-tick and handles
+  `Exec_CallableBreak` (ends the pass, reports the iterations that ran). A gate
+  it does not know is silent corruption, which is why `tools/chip/audit.py`
+  counts unhandled gate classes.
 - Add an oracle case for the *rule* you got wrong, not just the program that
   exposed it.
 - **A quantifier's lower bound has to be enforced at BOTH ends of the walk, and
