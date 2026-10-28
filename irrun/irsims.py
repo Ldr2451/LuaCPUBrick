@@ -175,7 +175,8 @@ def lit_value(lit):
 class Sim:
     def __init__(self, nodes: dict[int, Node], wires: list,
                  groups: dict[int, list[int]] | None = None,
-                 loops: dict[int, int] | None = None):
+                 loops: dict[int, int] | None = None,
+                 loop_pins: dict[int, list[int]] | None = None):
         self.nodes = nodes
         self.wires = wires
         # Each chip call's value pins, keyed by its `_exec_in` pin, read off
@@ -188,6 +189,13 @@ class Sim:
         # it, from `irdump.loop_bodies` ({} when loopless). A loop has no
         # `_exec_in` pin, so the call machinery cannot see it at all.
         self._loop_entries: dict[int, int] = loops or {}
+        # A loop body's boundary pins, keyed by the gate that owns the body, from
+        # `irdump.loop_pins` ({} when loopless). A loop has no `_exec_in` pin, so
+        # the call machinery cannot see it at all.
+        self._loop_pins: dict[int, list[int]] = loop_pins or {}
+        # Set by a `break` gate fired inside a loop body, read and cleared by
+        # `_do_loop` after the pass that ran it.
+        self._loop_break = False
         self.in_wires: dict[tuple[int, str], list] = {}
         self.out_wires: dict[tuple[int, str], list] = {}
         for w in wires:
@@ -1071,6 +1079,12 @@ class Sim:
             self._do_branch(nid, nq)
         elif "WireGraph_Exec_Union" in cls:
             self._do_union(nid, nq)
+        elif "CallableBreak" in cls:
+            # `break` ends the iteration that is running and stops the loop:
+            # nothing after it in the body runs, so the gate forwards no exec
+            # and `_do_loop` stops iterating (see there).
+            self._loop_break = True
+            return
         elif "Expr_ChangeDetectorExec" in cls:
             self._do_changed(nid, nq)
         elif "WireGraph_Expr_LogicalAND" in cls:
@@ -1079,6 +1093,8 @@ class Sim:
             self._do_bool(nid, nq, lambda a, b: a or b)
         elif "WireGraph_Expr_LogicalNOT" in cls:
             self._do_not(nid, nq)
+        elif "Expr_Convert" in cls:
+            self._do_convert(nid, nq)
         elif "Expr_CompareEqual" in cls:
             self._do_cmp(nid, nq, lambda a, b: a == b)
         elif "Expr_CompareNotEqual" in cls:
@@ -1523,15 +1539,38 @@ class Sim:
         step = _as_int(self._in_val(nid, "Step", 1), 1)
         if count < 0:
             count = 0
+        pins = self._loop_pins.get(nid, ())
+        ran = 0
         for i in range(count):
             self._out_val(entry, "Index", first + i * step)
+            # Re-snapshot the body's boundary pins for THIS iteration.  A chip
+            # call does this when `_exec_in` fires; a loop gate has no exec pin,
+            # so without it a VALUE pin holds the first publish of the whole run:
+            # the screen chip's lane rows painted from a span staged two ticks
+            # earlier (cube 448 -> 490 lit, worststroke 641 -> 352).  Reference
+            # pins are untouched here -- they resolve through `_ref_node`, which
+            # is live.  No edges are pushed: the body's chain is run by the pass
+            # below, and pushing a pin's consumers would schedule that chain
+            # through the main drain with an Index the loop has not published.
+            for pin in pins:
+                got = self._loop_pin_value(pin)
+                if got is not None:
+                    self._out_val(pin, "RER_Output", got)
             # Run the body's chain for this iteration.  NOT through `nq`: the
             # main drain would run the chain a second time (this pass does not
             # mark the body gates tick-done, so nothing suppresses it), and the
             # body would execute twice per iteration -- `for i in 0..10`
             # incremented `runs` eleven times a tick.
             self._run_body_pass(entry)
-        self._out_val(nid, "IterationsExecuted", count)
+            ran += 1
+            if self._loop_break:
+                # A `break` in the body ends the loop where it stands.  The
+                # iterations that ran are what the loop reports, and a break is
+                # NOT an abort -- `aborted` is the game's per-tick cut-off, which
+                # a break does not set.
+                self._loop_break = False
+                break
+        self._out_val(nid, "IterationsExecuted", ran)
         self._out_val(nid, "bRunning", False)
         self._out_val(nid, "bAborted", False)
         for w in self.out_wires.get((nid, "Completed"), []):
@@ -1546,6 +1585,9 @@ class Sim:
         own, running each gate once per pass, so every iteration executes.
         """
         seen: set[tuple[int, str]] = set()
+        # A pass starts clean: a break from an earlier iteration, or from an
+        # inner loop that already consumed its own, must not end this one.
+        self._loop_break = False
         stack = [(w.dst_id, w.dst_port)
                  for w in self.out_wires.get((entry, "Body"), [])]
         guard = 0
@@ -1607,6 +1649,37 @@ class Sim:
         vid = self._var_id(nid)
         val = self.vars.get(vid, 0) if vid is not None else 0
         self._out_val(nid, "Value", val)
+        for w in self.out_wires.get((nid, "ExecOut"), []):
+            nq.add((w.dst_id, w.dst_port))
+
+    def _do_convert(self, nid: int, nq: set):
+        """A numeric conversion (`x as float`, `x as int`; `_as` in the dump).
+
+        The gate carries no target type -- the compiler only marks `AS_CONVERT`
+        and the host converts by the wire's declared type -- so the value passes
+        through as the number it holds.  That is what the host does for a scalar
+        already of its target type, and the sim's arithmetic reads either kind as
+        a float (`_as_float`) or truncates to an int (`_as_int`), so no direction
+        has to be guessed here.  A bool converts to 1.0 / 0.0.
+
+        Its value port is named `Input`, not `Value`, so `_find_value_input` --
+        which searches for a port containing "Value" -- finds nothing here; the
+        pins are read directly.
+        """
+        _SENTINEL = object()
+        val = _SENTINEL
+        for p in [x[0] for x in self.nodes[nid].pin]:
+            if "VarRef" in p or p.startswith("Exec"):
+                continue
+            v = self._in_val(nid, p, _SENTINEL)
+            if v is not _SENTINEL:
+                val = v
+                break
+        if val is _SENTINEL:
+            val = 0.0
+        if isinstance(val, bool):
+            val = 1.0 if val else 0.0
+        self._out_val(nid, "Output", val)
         for w in self.out_wires.get((nid, "ExecOut"), []):
             nq.add((w.dst_id, w.dst_port))
 
@@ -2558,6 +2631,34 @@ class Sim:
         pv = self.nodes[nid].props.get(port)
         return _extract(pv) if pv else None
 
+    def _loop_pin_value(self, pin_nid: int):
+        """One iteration's value for a loop body's boundary pin, or None.
+
+        The pull is `_pin_value`'s (a PURE source is re-executed, because it
+        publishes only when pulled; an EXEC source is read as published), but the
+        accepted kinds are wider: `_pin_value` returns scalars only, so a colour
+        or record source -- `Color(...)`, a colour var -- comes back None and the
+        body keeps a stale snapshot.  A loop has no call to be faithful to, so the
+        scalar rule buys nothing here; the value current at this iteration is.
+
+        Reference pins (VarRef / ArrayVarRef) return None: their source publishes
+        no value, and the body resolves them live through `_ref_node`.
+        """
+        for w in self.in_wires.get((pin_nid, "RER_Input"), []):
+            src = self.nodes.get(w.src_id)
+            if src is None:
+                continue
+            if self._is_pure(src.cls) and w.src_id not in self._eval_stack:
+                self._eval_stack.add(w.src_id)
+                try:
+                    self._exec_node(w.src_id, src, set())
+                finally:
+                    self._eval_stack.discard(w.src_id)
+            got = self._published_val(w.src_id, w.src_port)
+            if got is not None:
+                return got
+        return None
+
     def _pin_value(self, pin_nid: int):
         """This call's value for a boundary pin, or None when there is none.
 
@@ -2668,14 +2769,15 @@ class Sim:
 
 def run_ws(ws_path: str, max_ticks: int = MAX_TICKS,
            inputs: dict | None = None) -> dict:
-    from irdump import dump_source_modules, chip_call_groups, loop_bodies
+    from irdump import (dump_source_modules, chip_call_groups, loop_bodies,
+                        loop_pins)
     mods = dump_source_modules(ws_path)
     nodes, wires = {}, []
     for m in mods:
         nodes.update(m["nodes"])
         wires.extend(m["wires"])
     sim = Sim(nodes, [Wire(*w) for w in wires], chip_call_groups(mods),
-              loop_bodies(mods))
+              loop_bodies(mods), loop_pins(mods))
     if inputs:
         sim.inputs = dict(inputs)
     return sim.run(max_ticks)
@@ -2695,14 +2797,15 @@ class ChipRunner:
         # (loaded from a share_dump pickle, say) can make one without compiling.
         if sim is None:
             from irdump import (dump_source_modules, chip_call_groups,
-                              loop_bodies)
+                              loop_bodies, loop_pins)
             mods = dump_source_modules(ws_path)
             nodes, wires = {}, []
             for m in mods:
                 nodes.update(m["nodes"])
                 wires.extend(m["wires"])
             sim = Sim(nodes, [Wire(*w) for w in wires],
-                      chip_call_groups(mods), loop_bodies(mods))
+                      chip_call_groups(mods), loop_bodies(mods),
+                      loop_pins(mods))
         self.sim = sim
 
     def reset(self):
@@ -2735,7 +2838,8 @@ def share_dump(ws_path: str, path: str) -> str:
     seconds before it runs a program that takes a second.
     """
     import pickle
-    from irdump import dump_source_modules, chip_call_groups, loop_bodies
+    from irdump import (dump_source_modules, chip_call_groups, loop_bodies,
+                        loop_pins)
     mods = dump_source_modules(ws_path)
     nodes, wires = {}, []
     for m in mods:
@@ -2743,7 +2847,7 @@ def share_dump(ws_path: str, path: str) -> str:
         wires.extend(m["wires"])
     with open(path, "wb") as f:
         pickle.dump((nodes, wires, chip_call_groups(mods),
-                     loop_bodies(mods)), f)
+                     loop_bodies(mods), loop_pins(mods)), f)
     return path
 
 
@@ -2753,10 +2857,11 @@ def sim_from_dump(path: str) -> "Sim":
     with open(path, "rb") as f:
         loaded = pickle.load(f)
     # Pickles from before the groups existed hold (nodes, wires); before the
-    # loop entries they hold three. Chipless and loopless sources never need
-    # either, so older pickles load as empty rather than failing. Every
-    # current writer stores all four.
+    # loop entries they hold three, and before the loop pins four. Chipless and
+    # loopless sources never need either, so older pickles load as empty rather
+    # than failing. Every current writer stores all five.
     nodes, wires = loaded[0], loaded[1]
     groups = loaded[2] if len(loaded) > 2 else None
     loops = loaded[3] if len(loaded) > 3 else None
-    return Sim(nodes, [Wire(*w) for w in wires], groups, loops)
+    lpins = loaded[4] if len(loaded) > 4 else None
+    return Sim(nodes, [Wire(*w) for w in wires], groups, loops, lpins)

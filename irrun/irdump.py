@@ -326,6 +326,40 @@ def loop_bodies(mods):
     return out
 
 
+def loop_pins(mods):
+    """Each loop gate's boundary pins: the `MicrochipInput` nodes of its body.
+
+    A `for` body reaches outer globals through boundary pins, exactly as a
+    `chip { }` body does.  A call's pins are refreshed when its `_exec_in` fires;
+    a loop gate has no exec pin, so nothing ever refreshes these, and a VALUE pin
+    (`let br = (row | 0)`, `let oka = oldMin[br]`) holds the first publish of the
+    whole run -- a lane row painting from a row span staged two ticks earlier.
+    Reference pins (VarRef/ArrayVarRef) are immune: they resolve through
+    `_ref_node` to the live node.
+
+    Membership comes from module parentage, the way `chip_call_groups` and
+    `loop_bodies` read it, not from reachability.
+
+    Returns {} for a program with no loops.
+    """
+    out = {}
+    root = mods[0]["nodes"] if mods else {}
+    for m in mods[1:]:
+        parent = m.get("parent")
+        if parent is None:
+            continue
+        pnode = root.get(parent)
+        if pnode is None:
+            continue
+        if "Microchip_CountFor" not in pnode.cls and "ForEach" not in pnode.cls:
+            continue
+        pins = [nid for nid, nd in m["nodes"].items()
+                if "Internal_MicrochipInput" in nd.cls]
+        if pins:
+            out[parent] = pins
+    return out
+
+
 def dump_source(path, brz_out=None):
     """Compile path with --dump-ir; return (nodes, wires, nchips).
 

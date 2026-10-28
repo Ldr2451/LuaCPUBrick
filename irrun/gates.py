@@ -171,6 +171,10 @@ STRING_GATE_PORTS = {
 }
 
 VECTOR_GATE_PORTS = {
+    # `x as float` / `x as int`: one value in, one value out.  The dump marks it
+    # with `_as` and no target type (the host converts by the wire's declared
+    # type), so the sim passes the number through.
+    "Convert": (["Input"], ["Output"]),
     "MakeColor": (["R", "G", "B", "A"], ["Output"]),
     "MakeColorHex": (["Input"], ["Output"]),
     "MakeColorSRGB": (["Input"], ["Output"]),
