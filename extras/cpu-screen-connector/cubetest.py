@@ -78,7 +78,7 @@ CUBE_NAP = os.environ.get("CUBE_NAP")
 # settle moments.  A paced program (real naps between pushes) has no quiet
 # stretch to key on -- the next push lands while the chip is still arming,
 # so the settle test never sees it idle and a GIF would get three frames.
-# A cadence longer than the settle wait (428 ticks) lands every sample on a
+# A cadence longer than the settle wait (224 ticks) lands every sample on a
 # whole picture.
 CUBE_SAMPLE = int(os.environ.get("CUBE_SAMPLE") or 0)
 

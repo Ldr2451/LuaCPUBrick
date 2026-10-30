@@ -171,7 +171,7 @@ slice behind the terminator, the parsed vecs and parent id).
 A `draw()` pulse arms a pass; the pass paints over many ticks (the fill
 and stroke walks scan four rows at a tick, a redraw erases the old
 coverage first).  The screen has no "done" output — the contract is a
-**wait**: after `draw()`, wait at least **428 ticks** — the measured
+**wait**: after `draw()`, wait at least **224 ticks** — the measured
 worst pass — before assuming the wall holds the whole picture, and
 before the next `draw()` if you want the previous frame complete on
 screen.
@@ -182,14 +182,15 @@ asserted by `extras/screen/screenchecks.py`):
 
 | pass | worst wait |
 | --- | --- |
-| filled redraw (mover, scale) | 31 ticks |
-| wireframe cube redraw under a spinning pivot | 168 ticks |
-| wave stroke redraw (curve, 11 points) | 124 ticks |
-| tallest protocol stroke (13 colored points, full wall) | 428 ticks |
+| filled redraw (mover, scale) | 23 ticks |
+| wireframe cube redraw under a spinning pivot | 144 ticks |
+| wave stroke redraw (curve, 11 points) | 100 ticks |
+| tallest protocol stroke (13 colored points, full wall) | 224 ticks |
 
-428 is the worst the protocol can make: the cost scales with how many
+224 is the worst the protocol can make: the cost scales with how many
 tall segments a wireframe has — a stroke's walk rebuilds a segment every
-tick, so steep segments dominate (both walks now paint four rows a tick,
-which cut the old worst of 507).  A program that wants fast frames should
-push short strokes or fills.  Game bodies pace with `nap(420)`, which
-covers every typical pass; a full-wall zigzag needs `nap(428)`.
+tick, so steep segments dominate (both walks paint four rows a tick, and
+a redraw paints every shape exactly once; the old worsts were 507 and
+428).  A program that wants fast frames should push short strokes or
+fills.  Game bodies pace with `nap(420)`, which now covers even the
+zigzag; a program may wait as little as `nap(224)`.
