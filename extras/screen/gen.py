@@ -757,6 +757,9 @@ L.append("      sSeg = -1.0")
 L.append("      prow = 0.0")
 L.append("      sLast = -1.0")
 L.append("      pcol = 200.0")
+# An ended walk leaves sEnd re-armed: its tail check sets it again on the
+# same tick as the clear, so a replay arm that forgets it dies on arrival.
+L.append("      sEnd = false")
 L.append("      sOn = true")
 L.append("    }")
 L.append("}")

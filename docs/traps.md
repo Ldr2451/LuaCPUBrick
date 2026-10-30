@@ -100,6 +100,18 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   writes cost 12 nodes instead of 258. Both `for` loops and `chip` calls
   are available now, so the unrolled copies are a choice, not a
   constraint.
+- **A walk that clears its own end flag at the head still leaves it SET:
+  the tail of the same tick's chain re-arms it.** The stroke walk ends
+  with `if sEnd { sOn = false; sEnd = false }` and the segment check
+  below it (`sSeg >= sSegs -> sEnd = true`) runs in the same chain, so
+  the ended walk parks with `sEnd` true. A replay arm that re-arms the
+  walk without clearing `sEnd` dies on arrival: the drawEdge replay set
+  `sOn = true`, the walk's head saw the new value in the same tick, the
+  stale `sEnd` killed it, and a bare `drawAllShapes` painted nothing.
+  Measured on the screen chip: the staged-stroke replay showed as
+  `bursts at []` in the pixel-exact oracle while every arm that DOES
+  clear the flag worked. Every arm of a re-arming walk clears every
+  leftover state flag of the finished walk, not just the counters.
 
 
 Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;

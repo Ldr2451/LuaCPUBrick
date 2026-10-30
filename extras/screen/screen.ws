@@ -9103,6 +9103,7 @@ mod drawEdge() {
       prow = 0.0
       sLast = -1.0
       pcol = 200.0
+      sEnd = false
       sOn = true
     }
 }
