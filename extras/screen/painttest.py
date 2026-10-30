@@ -2144,13 +2144,20 @@ def main():
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
         fant = None
+        frc = None
         for _nid, _nd in sim.nodes.items():
             from irsims import _extract as _ex
-            if _ex(_nd.props.get("_label", ("raw", ""))) == "anTicks":
+            lb = _ex(_nd.props.get("_label", ("raw", "")))
+            if lb == "anTicks":
                 fant = _nid
-                break
+            elif lb == "rcFell":
+                frc = _nid
         fwalls = {}
         fticks = {}
+        # Consecutive SETTLED frames, not fixed tick numbers: the point is
+        # that the wall keeps changing while the forever animation runs, and
+        # how many ticks a pass takes is the chip's timing, not the demo's.
+        fframes = []
 
         def stagef(sn, pts, cols, sid, rot, ticks):
             slide(sn, f_pts, f_cols, pts, cols or None)
@@ -2196,18 +2203,20 @@ def main():
                 arr = sn.arrays.get(fant) or []
                 # Slot ids index by id: id 1 lives at index 1.
                 fticks[tick] = [arr[1]] if len(arr) > 1 else []
+            if frc is not None and sn.vars.get(frc) and 66 <= tick <= 330 \
+                    and len(fframes) < 14:
+                fframes.append((tick, tuple(col(sn, gids, i)
+                                            for i in range(SW * SW))))
 
         sim.run(520, on_tick=watchf)
         ok &= expect(all(fticks[t] == [-1.0]
                          for t in (120, 200, 280)),
                      "forever animation holds its ticks",
                      str({t: fticks.get(t) for t in (120, 200, 280)}))
-        moving = sum(1 for a, b in zip(
-            [fwalls[t] for t in (120, 200, 280)],
-            [fwalls[t] for t in (200, 280, 340)]) if a != b)
-        ok &= expect(moving >= 2,
-                     "forever animation keeps repainting (%d of 3 windows)"
-                     % moving)
+        moved = sum(1 for a, b in zip(fframes, fframes[1:]) if a[1] != b[1])
+        ok &= expect(len(fframes) >= 4 and moved >= 3,
+                     "forever animation keeps repainting (%d frames, "
+                     "%d changed)" % (len(fframes), moved))
         ok &= expect(fwalls[420] == fwalls[500],
                      "a finite push supersedes forever")
 

@@ -168,6 +168,7 @@ var commitQ: bool = false
 var arming: bool = false
 var polyOn: bool = false
 var polyLive: bool = false
+var lastImm: bool = false
 var prow: float = 0.0
 var pcol: float = 0.0
 var pcurR: float = 0.0
@@ -9152,6 +9153,7 @@ on Change(clearAllShapes) {
     polyLive = false
     sOn = false
     sLive = false
+    lastImm = false
     rcOn = false
     brightRC = false
     slLive[0] = 0.0
@@ -13365,13 +13367,13 @@ mod paintTick() {
         plast = bPL
         sSegs = bSEGS
       }
-      if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending && !clearing && (!erasing || !erDone) {
+      if lastImm && polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending && !clearing && (!erasing || !erDone) {
         repaint = true
         prow = pfirst - 4.0
         pcol = 200.0
         polyOn = true
       }
-      if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending && !clearing && (!erasing || !erDone) {
+      if lastImm && sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !pending && !clearing && (!erasing || !erDone) {
         repaint = true
         rX0 = sPx0
         rY0 = sPy0
@@ -14480,6 +14482,7 @@ mod paintTick() {
       fromSlot = false
       eraseOK = true
       noDepth = true
+      lastImm = false
       shPts[0] = 0.0
       shPts[1] = 0.0
       shPts[2] = 64.0
@@ -14516,6 +14519,7 @@ mod paintTick() {
       } else {
         rcOn = false
         eraseOK = false
+        lastImm = true
         n = (shapePoints.length() / 3.0) | 0
           if n > 16.0 { n = 16.0 }
       }
@@ -15010,10 +15014,12 @@ mod paintTick() {
       fromSlot = false
       eraseOK = true
       noDepth = false
+      lastImm = false
     } else {
       rcOn = false
       sSegs = (shapePoints.length() / 3.0) | 0
       if sSegs > 16.0 { sSegs = 16.0 }
+      lastImm = true
     }
     if sSegs < 1.0 {
       sOn = false
