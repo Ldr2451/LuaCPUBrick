@@ -37,7 +37,7 @@
 // and unwired vectors read zeroes (shapePosition/shapeRotation zero are
 // the identity, shapeScale zeroes mean identity too).  brightness
 // is a live user slider the connector never drives (1..100,
-// capped; unwired reads 0.0, the 100 default): it scales every
+// capped; unwired reads 0.0, the 2 default): it scales every
 // painted colour immediately: its edge reruns the retained
 // recomposite without the black clear and refreshes the last
 // immediate shape, so the wall follows with no push and no
@@ -111,7 +111,7 @@ const EYE = 48.000000
 const EYE_X = 32.000000
 const EYE_Y = 32.000000
 const FULL_BRIGHT = 0.35
-const DEF_BRIGHT = 0.350000
+const DEF_BRIGHT = 0.007000
 var fb: color[]
 const ZBACK = -1000000000000000.0
 var fbZ: float[]
@@ -11695,6 +11695,11 @@ mod paintTick() {
     covLo = 200.0
     covHi = -200.0
     cDirty = false
+    let zrHi = if oldHi > 63.0 then 63.0 else oldHi
+    let zN = (zrHi - oldLo + 1.0) * 64.0
+    for zk in 0..zN {
+      fbZ[oldLo * 64.0 + zk] = ZBACK
+    }
     }
     }
     }
@@ -12458,6 +12463,11 @@ mod paintTick() {
       covLo = 200.0
       covHi = -200.0
       cDirty = false
+      let zrHi = if oldHi > 63.0 then 63.0 else oldHi
+      let zN = (zrHi - oldLo + 1.0) * 64.0
+      for zk in 0..zN {
+        fbZ[oldLo * 64.0 + zk] = ZBACK
+      }
       if recompFrame {
         recompFrame = false
         erDone = false
@@ -13107,6 +13117,11 @@ mod paintTick() {
       covLo = 200.0
       covHi = -200.0
       cDirty = false
+      let zrHi = if oldHi > 63.0 then 63.0 else oldHi
+      let zN = (zrHi - oldLo + 1.0) * 64.0
+      for zk in 0..zN {
+        fbZ[oldLo * 64.0 + zk] = ZBACK
+      }
       if recompFrame {
         recompFrame = false
         erDone = false

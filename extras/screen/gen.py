@@ -55,7 +55,7 @@ WALK = int(sys.argv[3]) if len(sys.argv) > 3 else NSLOT
 MAXP = 16                                   # max vertices per polygon
 MAXP3 = 16                                  # max vertices per polygon (each point is an x,y,z triple)
 EYE = 48.0                                  # perspective eye distance (eye at z=-EYE)
-DEF_BRIGHT = 0.35                          # unwired brightness factor
+DEF_BRIGHT = 0.007                         # unwired brightness factor (== brightness 2)
 
 
 L = []
@@ -98,7 +98,7 @@ L.append("// slot; parent 0 (or a dead/missing parent) is the identity,")
 L.append("// and unwired vectors read zeroes (shapePosition/shapeRotation zero are")
 L.append("// the identity, shapeScale zeroes mean identity too).  brightness")
 L.append("// is a live user slider the connector never drives (1..100,")
-L.append("// capped; unwired reads 0.0, the 100 default): it scales every")
+L.append("// capped; unwired reads 0.0, the 2 default): it scales every")
 L.append("// painted colour immediately: its edge reruns the retained")
 L.append("// recomposite without the black clear and refreshes the last")
 L.append("// immediate shape, so the wall follows with no push and no")
@@ -190,9 +190,10 @@ L.append("const EYE_Y = %f" % (SH * 0.5))
 # FULL_BRIGHT is the factor the panel used before the port existed, so
 # brightness 100 is exactly that and nothing above it can be asked for
 # -- there is no way to dial in more white than the screen already had.
-# DEF_BRIGHT is what an unwired port reads as, and it is the same
-# number: an unwired screen is a screen nobody has dimmed, so it comes
-# up at 100 and looks exactly as it did before the port existed.
+# DEF_BRIGHT is what an unwired port reads as: brightness 2 through the
+# same scale (2 * FULL_BRIGHT / 100), so a screen nobody has dimmed comes
+# up dim.  FULL_BRIGHT is unchanged, so wiring 100 still reaches the old
+# full white.
 L.append("const FULL_BRIGHT = 0.35")
 L.append("const DEF_BRIGHT = %f" % DEF_BRIGHT)
 L.append("var fb: color[]")
@@ -554,6 +555,34 @@ for _i in range(64):
 frameRC_lines.append("covLo = 200.0")
 frameRC_lines.append("covHi = -200.0")
 frameRC_lines.append("cDirty = false")
+# A recomposite repaints the whole picture from the store, so a pixel it
+# paints was painted by the frame it replaces -- whose depth is still in
+# fbZ.  Judged against that depth, a paint that is FARTHER is rejected and
+# the old silhouette stays on the wall: the background under a cube that
+# moved never lands, and the frame reads as "only parts of the screen
+# update".  The erase walk cannot cover this: it resets the depths of the
+# spans it BLACKS, and a span the new frame covers is never blacked (a
+# full-wall background covers everything).  So the band the last picture
+# touched is cleared here, before the first slot of this frame arms, and
+# every paint of the frame meets ZBACK.
+#
+# One loop over the band's pixels, not a loop of rows with a loop of columns
+# inside: a nested body's boundary pins are not re-snapshotted per iteration
+# (loop_pins only registers gates whose parent is the root module), so the
+# inner body would see the outer Index frozen at its first publish and clear
+# row 0 only -- measured with a counter in the body: 4096 passes ran, and
+# fbZ changed in one row.
+# Rows only: coverage is per row, and clearing a row's 64 lanes whole costs
+# less than comparing against its spans.  An unpainted wall (oldLo sentinel,
+# oldHi still -200) gives a negative count and runs no iterations.
+# Placed after frameRC_lines at every recomposite start, so `old` is
+# exactly the on-screen frame by then.
+depthReset_lines = []
+depthReset_lines.append("let zrHi = if oldHi > 63.0 then 63.0 else oldHi")
+depthReset_lines.append("let zN = (zrHi - oldLo + 1.0) * 64.0")
+depthReset_lines.append("for zk in 0..zN {")
+depthReset_lines.append("  fbZ[oldLo * 64.0 + zk] = ZBACK")
+depthReset_lines.append("}")
 # Erase-pass state: running, the row cursor, which of a row's two
 # stale spans is next, and the rect being fed to the fill walk.
 L.append("var erasing: bool = false")
@@ -855,7 +884,7 @@ L.append("  }")
 # from a typo).  0 is the one value that cannot be clamped to a
 # sensible dimness: a port holding 0 is how an unwired input reads, and
 # it is outside the range anyway, so it means "no dimmer asked for" and
-# gets the default (which is 100).
+# gets the default (which is 2).
 L.append("  let bclamp = if brightness < 1.0 then 1.0")
 L.append("    else if brightness > 100.0 then 100.0 else brightness")
 L.append("  bf = if brightness <= 0.0 then DEF_BRIGHT")
@@ -984,6 +1013,8 @@ L.append("    rcOn = true")
 L.append("    rcSlot = 1.0")
 L.append("    fromSlot = true")
 for _l in frameRC_lines:
+    L.append("    " + _l)
+for _l in depthReset_lines:
     L.append("    " + _l)
 L.append("    }")
 L.append("    }")
@@ -1242,6 +1273,8 @@ L.append("      rcSlot = 1.0")
 L.append("      fromSlot = true")
 for _l in frameRC_lines:
     L.append("      " + _l)
+for _l in depthReset_lines:
+    L.append("      " + _l)
 # Retire the previous frame before this one paints: the erase walk blacks
 # the band the last frame covered and resets those depths, so the composite
 # lands on a clean band and a shape that moved cannot hold its old pixels
@@ -1339,6 +1372,8 @@ L.append("      rcOn = true")
 L.append("      rcSlot = 1.0")
 L.append("      fromSlot = true")
 for _l in frameRC_lines:
+    L.append("      " + _l)
+for _l in depthReset_lines:
     L.append("      " + _l)
 # Retire the previous frame before this one paints: the erase walk blacks
 # the band the last frame covered and resets those depths, so the composite

@@ -15,11 +15,15 @@ of cpu-screen-connector states the spec; worststroke.lua is the worst pass
 the protocol can send).  If the chip ever gets slower than the spec, this
 turns RED -- the fix is then the chip, not the spec.
 
+And it checks the refresh depth: an animation repaint must not leave the
+frame it replaces behind (ghostprobe.py, the tour's background-under-a-moving
+shape, pixel-checked against the projected footprint).
+
   python -u extras/screen/screenchecks.py
 
 Exit 0 if every check passes, 1 if any fails.  Cheap: two short oracle
 replays plus a compile, on the order of a minute; the settle checks add
-three short replays.
+three short replays and the ghost probe one more.
 """
 import os
 import re
@@ -129,11 +133,30 @@ def run_settle(body):
     return ok
 
 
+def run_ghost():
+    """The refresh-depth regression: a repaint must not leave the old frame's
+    pixels behind.  ghostprobe.py drives a background behind an animated quad
+    and checks every settled frame against the projected footprint."""
+    p = subprocess.run(["python", "-u", "ghostprobe.py"], cwd=HERE,
+                       capture_output=True, text=True, timeout=900)
+    raw = clean(p.stdout + p.stderr)
+    m = re.search(r"settled frames: (\d+)", raw)
+    frames = int(m.group(1)) if m else 0
+    bad = re.search(r"ghosts=(\d+) ", raw)
+    ok = p.returncode == 0 and "RESULT: ok" in raw and frames >= 4 \
+        and "traceback" not in raw.lower()
+    print("ghost probe  rc=%d frames=%d badpx=%s -> %s"
+          % (p.returncode, frames, bad.group(1) if bad else "?",
+             "OK" if ok else "FAIL"))
+    return ok
+
+
 def main():
     checks = []
     checks.append(("compile", compile_screen()))
     checks.append(("cube paint+turn", run_body("cube")))
     checks.append(("curve paint", run_body("curve")))
+    checks.append(("refresh leaves no ghosts", run_ghost()))
     for body in sorted(SETTLE_BODIES):
         checks.append(("%s settle <= %d" % (body, SETTLE), run_settle(body)))
     print("\n=== screenchecks ===")

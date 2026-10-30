@@ -16,6 +16,16 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   body may compute, not advance": the chain that resumes after the loop
   reads the counter the body moved, and a shared body is a different
   graph from an unrolled one.
+- **A loop inside a loop body reads the OUTER index frozen at its first
+  publish.** `loop_pins` registers the boundary pins of a loop whose gate
+  lives in the root module, and re-snapshots them per iteration; a nested
+  loop's gate lives in the outer body's module, so nothing refreshes its
+  pins. The screen chip's depth reset as `for row { for col { fbZ[...] =
+  ZBACK } }` ran all 4096 body passes and cleared row 0 only -- the inner
+  body saw `row` still 0 every time. Measured with a counter in the body:
+  4096 writes, one row changed. Take the flat form: one loop over the
+  band's PIXELS (`for zk in 0..(rows * 64.0)`, index `oldLo * 64.0 + zk`),
+  which costs fewer nodes as well.
 - **A `Union` inside a loop body fires on the nodes that ran in the
   tick, not in the body.** The simulator's Union gate fires only when
   one of its inputs is in `fired_nodes`, and the main drain records

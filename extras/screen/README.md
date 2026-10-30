@@ -83,9 +83,9 @@ painted without a draw, so a frame is a push followed by a draw.
   it, which puts the view back to identity.
 - `brightness` -- 1 to 100, a dimmer for the whole panel. 100 is what
   the panel did before the port existed, so nothing can be asked for
-  that is brighter than the screen already was. Unwired reads as 100, so
-  a screen nobody has dimmed comes up at full and looks as it always
-  did.
+  that is brighter than the screen already was. Unwired reads as 2, so
+  a screen nobody has dimmed comes up dim; wire 100 for the brightness
+  the panel always had.
 - `addToShapeInTicks` -- optional, and it turns the push into an
   animation: with it set to N, every other staged input becomes a
   *change per tick*, applied again each tick for N ticks, so one push
@@ -135,9 +135,17 @@ on the panel, the deferred clear, the pending queue, wireframe and open
 curves, position and scale transforms, parent-child composition, depth,
 and animation.
 
+An animation says how much a shape changes each tick, on every part of the
+transform it sends: position, turn and size. A part you want left alone must
+be sent as `0.0`, not as the value it already has -- sending `1.0` for a size
+makes the shape grow by one every frame. Only an instant push states
+absolute values.
+
 ## Running the tests
 
 ```
 python -u extras/screen/painttest.py           # ~7 min
 python -u extras/screen/animtest.py [ticks]
+python -u extras/screen/screenchecks.py        # fast gate, ~2 min
+python -u extras/screen/ghostprobe.py          # a repaint leaves nothing behind
 ```
