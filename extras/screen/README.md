@@ -50,7 +50,8 @@ painted without a draw, so a frame is a push followed by a draw.
   every point is white.
 - `shapeWireMode` -- false fills the shape, true strokes an outline
   along the points. Repeat the first point at the end to close the
-  outline. A single point strokes as one pixel.
+  outline. A single point stores but paints nothing; a point-sized
+  mark is a real quad small enough to land on one pixel.
 - `shapeId` -- names the shape, so you can change it or delete it later,
   or make other shapes follow it. 0 means "paint this once and forget
   it"; 1 to 32 are the shapes the panel remembers. Pushing new points to

@@ -1204,6 +1204,8 @@ L.append("        if ne < 1.0 && !(qTicks[qe] > 0.5 || qTicks[qe] < -0.5) {")
 L.append("          slLive[nslot] = 0.0")
 L.append("          anTicks[nslot] = 0.0")
 L.append("          needRC = true")
+# A queued one-point entry replays the same way as a pushed one: it
+# stores into the slot and the walks paint nothing from it.
 L.append("        } else if (qTicks[qe] > 0.5 || qTicks[qe] < -0.5) && slLive[nslot] > 0.5 {")
 L.append("          anPts[nsb + 0.0] = if 0.0 < ne * 2.0 then qPts[epb + 0.0] else (if ne < 1.0 then anPts[nsb + 0.0] else 0.0)")
 L.append("          anPts[nsb + 1.0] = if 1.0 < ne * 2.0 then qPts[epb + 1.0] else (if ne < 1.0 then anPts[nsb + 1.0] else 0.0)")
@@ -1405,6 +1407,11 @@ L.append("      slLive[slot] = 0.0")
 L.append("      anTicks[slot] = 0.0")
 L.append("      needRC = true")
 L.append("      recompFrame = false")
+# One point stores like any other shape but renders nothing: the fill
+# walk covers no span under one point, and the stroke arm falls under
+# two.  The camera's view is exactly such a push, so the same commit
+# path serves it: no refusal branch, no channel exception, and the
+# erase bookkeeping still takes the slot's old pixels away.
 L.append("    } else {")
 for i in range(48):
     L.append("      slPts[sbase + %d.0] = shapePoints[%d]" % (i, i))
@@ -2114,8 +2121,10 @@ L.append("  }")
 
 # ---- the stroke arm: points -> preserved store + shift register ------------
 # Runs in the mod when a stroke was pushed.  The count is the array's
-# length; under 2 points there is no segment (a single point is one
-# pixel, an empty array is nothing).  Segments are consecutive pairs with
+# length; under 2 points there is no segment and the arm falls: a
+# single-point push stores like any shape but renders nothing, so a
+# point-sized mark comes only from a real quad small enough to land
+# on one pixel.  Segments are consecutive pairs with
 # no wrap -- the driver closes a wireframe by repeating the first point
 # and leaves an open curve open -- so no closure test and no selects.
 L.append("  if armingS {")
@@ -2144,59 +2153,15 @@ L.append("      sSegs = (shapePoints.length() / 3.0) | 0")
 L.append("      if sSegs > 16.0 { sSegs = 16.0 }")
 L.append("      lastImm = true")
 L.append("    }")
-L.append("    if sSegs < 1.0 {")
+# Under two points nothing strokes: the commit stores a one-point push
+# (the camera's view is exactly one) and arms this walk over it, and an
+# immediate arm of a junk array must not paint either, so the arm
+# falls, paints nothing, and leaves the slot machinery alive.
+L.append("    if sSegs < 2.0 {")
 L.append("      sOn = false")
 L.append("      sLive = false")
 L.append("    } else {")
-L.append("      if sSegs < 2.0 {")
-L.append("        if sPx0 < 0.0 || sPx0 >= SWF || sPy0 < 0.0 || sPy0 >= SWF {")
-L.append("          sOn = false")
-L.append("          sLive = false")
-L.append("        } else {")
-# The dot stages like the multi-point path: no span (pcol 200 /
-# pcurR 100) and prow one below its first row, so the row-advance
-# on the NEXT tick stages the first row -- the arm tick paints
-# nothing.  Staging the span inline instead puts the walk's first
-# row setup in the same tick as the arm's own writes, and the
-# sim's expression lets then read the pre-write values (the
-# colour chain fires early and the lane writes capture the stale
-# colour).  Costs the dot one idle tick; the burst is one row.
-L.append("          prow = (sPy0 | 0) - 2.0")
-L.append("          sLast = sPy0 | 0")
-L.append("          pcol = 200.0")
-L.append("          pcurR = 100.0")
-# The dot's colours stage BEFORE its quad corners: the sim's
-# expression lets fire early within a tick and read whatever the
-# tick has written so far, so the colour chain must land before the
-# corner writes or it captures the previous shape's colours (the
-# same rule the fill's shadow copy follows, staging the point
-# colours before the edge records).
-L.append("          cA = pC0")
-L.append("          cB = pC0")
-L.append("          iAB = 0.0")
-L.append("          iCD = 0.0")
-L.append("          qAx = sPx0 | 0")
-L.append("          qAy = sPy0 | 0")
-L.append("          qAz = sPz0")
-L.append("          qBx = sPx0 | 0")
-L.append("          qBy = sPy0 | 0")
-L.append("          qBz = sPz0")
-L.append("          qCx = sPx0 | 0")
-L.append("          qCy = (sPy0 | 0) + 1.0")
-L.append("          qCz = sPz0")
-L.append("          qDx = sPx0 | 0")
-L.append("          qDy = (sPy0 | 0) + 1.0")
-L.append("          qDz = sPz0")
-L.append("          sFresh = false")
-L.append("          sFreshLast = false")
-L.append("          sEnd = false")
-L.append("          sSeg = 0.0")
-L.append("          sSegs = 0.0")
-L.append("          sOn = true")
-L.append("          sLive = true")
-L.append("        }")
-L.append("      } else {")
-L.append("        sSegs = sSegs - 1.0")
+L.append("      sSegs = sSegs - 1.0")
 for i in range(MAXP):
     L.append("        rX%d = sPx%d" % (i, i))
     L.append("        rY%d = sPy%d" % (i, i))
@@ -2213,7 +2178,6 @@ L.append("        pcurR2 = 100.0")
 L.append("        pcol = 200.0")
 L.append("        sOn = true")
 L.append("        sLive = true")
-L.append("      }")
 L.append("    }")
 L.append("  }")
 
@@ -2248,16 +2212,25 @@ for i in range(MAXP):
         end = "(if %d.0 < n then pC%d else pC0)" % (i + 1, i + 1)
     else:
         end = "pC0"
-    L.append("        let cv%d = prow >= eLo%d && prow < eHi%d" % (i, i, i))
-    L.append("        let cx%d = eX%d + eS%d * (prow - eY%d)" % (i, i, i, i))
-    L.append("        cc%d = pC%d + (prow - eY%d) * eInv%d"
-             " * (%s - pC%d)" % (i, i, i, i, end, i))
+    # A row wins an edge when the edge's y interval overlaps the pixel
+    # row, not merely when the row top is inside it: the sample clamps
+    # to the edge's start, so a row that only clips the edge's top
+    # corner still gets that corner's crossing (this is what paints a
+    # quad small enough to land on a single pixel; for rows at or
+    # below the start it is the old straddle test and sample).
+    L.append("        let cy%d = if prow < eLo%d then eLo%d else prow"
+             % (i, i, i))
+    L.append("        let cv%d = cy%d < eHi%d && eLo%d - prow < 1.0"
+             % (i, i, i, i))
+    L.append("        let cx%d = eX%d + eS%d * (cy%d - eY%d)" % (i, i, i, i, i))
+    L.append("        cc%d = pC%d + (cy%d - eY%d) * eInv%d"
+             " * (%s - pC%d)" % (i, i, i, i, i, end, i))
     if i + 1 < MAXP:
         zend = "(if %d.0 < n then pzV%d else pzV0)" % (i + 1, i + 1)
     else:
         zend = "pzV0"
-    L.append("        let cz%d = pzV%d + (prow - eY%d) * eInv%d"
-             " * (%s - pzV%d)" % (i, i, i, i, zend, i))
+    L.append("        let cz%d = pzV%d + (cy%d - eY%d) * eInv%d"
+             " * (%s - pzV%d)" % (i, i, i, i, i, zend, i))
     # Two masks, one per reduction: the min needs its invalid edges large
     # and the max needs them small, or a 16-edge polygon's twelve dead
     # edges win the max and every row fills to the wall's right edge.
@@ -2373,16 +2346,19 @@ for i in range(MAXP):
         end = "(if %d.0 < n then pC%d else pC0)" % (i + 1, i + 1)
     else:
         end = "pC0"
-    L.append("        let cvB%d = brow >= eLo%d && brow < eHi%d" % (i, i, i))
-    L.append("        let cxB%d = eX%d + eS%d * (brow - eY%d)" % (i, i, i, i))
-    L.append("        cc2_%d = pC%d + (brow - eY%d) * eInv%d"
-             " * (%s - pC%d)" % (i, i, i, i, end, i))
+    L.append("        let cyB%d = if brow < eLo%d then eLo%d else brow"
+             % (i, i, i))
+    L.append("        let cvB%d = cyB%d < eHi%d && eLo%d - brow < 1.0"
+             % (i, i, i, i))
+    L.append("        let cxB%d = eX%d + eS%d * (cyB%d - eY%d)" % (i, i, i, i, i))
+    L.append("        cc2_%d = pC%d + (cyB%d - eY%d) * eInv%d"
+             " * (%s - pC%d)" % (i, i, i, i, i, end, i))
     if i + 1 < MAXP:
         zendB = "(if %d.0 < n then pzV%d else pzV0)" % (i + 1, i + 1)
     else:
         zendB = "pzV0"
-    L.append("        let cz2_%d = pzV%d + (brow - eY%d) * eInv%d"
-             " * (%s - pzV%d)" % (i, i, i, i, zendB, i))
+    L.append("        let cz2_%d = pzV%d + (cyB%d - eY%d) * eInv%d"
+             " * (%s - pzV%d)" % (i, i, i, i, i, zendB, i))
     L.append("        let cmnB%d = if cvB%d then cxB%d else 200.0" % (i, i, i))
     L.append("        let cmxB%d = if cvB%d then cxB%d else -200.0" % (i, i, i))
 bmn = ["cmnB%d" % i for i in range(MAXP)]
@@ -2500,14 +2476,16 @@ for _ri, _R in enumerate(("C", "D")):
         else:
             end = "pC0"
             zend = "pzV0"
-        L.append("        let cv%s%d = rrow%s >= eLo%d && rrow%s < eHi%d"
-                 % (_R, i, _R, i, _R, i))
-        L.append("        let cx%s%d = eX%d + eS%d * (rrow%s - eY%d)"
-                 % (_R, i, i, i, _R, i))
-        L.append("        let cc%s%d = pC%d + (rrow%s - eY%d) * eInv%d"
-                 " * (%s - pC%d)" % (_R, i, i, _R, i, i, end, i))
-        L.append("        let cz%s%d = pzV%d + (rrow%s - eY%d) * eInv%d"
-                 " * (%s - pzV%d)" % (_R, i, i, _R, i, i, zend, i))
+        L.append("        let cy%s%d = if rrow%s < eLo%d then eLo%d else rrow%s"
+                 % (_R, i, _R, i, i, _R))
+        L.append("        let cv%s%d = cy%s%d < eHi%d && eLo%d - rrow%s < 1.0"
+                 % (_R, i, _R, i, i, i, _R))
+        L.append("        let cx%s%d = eX%d + eS%d * (cy%s%d - eY%d)"
+                 % (_R, i, i, i, _R, i, i))
+        L.append("        let cc%s%d = pC%d + (cy%s%d - eY%d) * eInv%d"
+                 " * (%s - pC%d)" % (_R, i, i, _R, i, i, i, end, i))
+        L.append("        let cz%s%d = pzV%d + (cy%s%d - eY%d) * eInv%d"
+                 " * (%s - pzV%d)" % (_R, i, i, _R, i, i, i, zend, i))
         L.append("        let cmn%s%d = if cv%s%d then cx%s%d else 200.0"
                  % (_R, i, _R, i, _R, i))
         L.append("        let cmx%s%d = if cv%s%d then cx%s%d else -200.0"
@@ -2732,17 +2710,19 @@ L.append("          if prow + 1.0 <= sLast {")
 L.append("            let bu0lo = if qAy < qBy then qAy else qBy")
 L.append("            let bu0hi = if qAy < qBy then qBy else qAy")
 L.append("            let bu0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0")
-L.append("            let bu0x = qAx + bu0s * (prow + 1.0 - qAy)")
-L.append("            let bu0v = prow + 1.0 >= bu0lo && prow + 1.0 < bu0hi")
-L.append("            uc0B = cA + (prow + 1.0 - qAy) * iAB * (cB - cA)")
-L.append("            let uz0B = rZ0 + (prow + 1.0 - qAy) * iAB * (rZ1 - rZ0)")
+L.append("            let bu0cy = if prow + 1.0 < bu0lo then bu0lo else prow + 1.0")
+L.append("            let bu0v = bu0cy < bu0hi && bu0lo - (prow + 1.0) < 1.0")
+L.append("            let bu0x = qAx + bu0s * (bu0cy - qAy)")
+L.append("            uc0B = cA + (bu0cy - qAy) * iAB * (cB - cA)")
+L.append("            let uz0B = rZ0 + (bu0cy - qAy) * iAB * (rZ1 - rZ0)")
 L.append("            let bun0 = if bu0v then bu0x else 200.0")
 L.append("            let bux0 = if bu0v then bu0x else -200.0")
 L.append("            let bu1lo = if qBy < qCy then qBy else qCy")
 L.append("            let bu1hi = if qBy < qCy then qCy else qBy")
 L.append("            let bu1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0")
-L.append("            let bu1x = qBx + bu1s * (prow + 1.0 - qBy)")
-L.append("            let bu1v = prow + 1.0 >= bu1lo && prow + 1.0 < bu1hi")
+L.append("            let bu1cy = if prow + 1.0 < bu1lo then bu1lo else prow + 1.0")
+L.append("            let bu1x = qBx + bu1s * (bu1cy - qBy)")
+L.append("            let bu1v = bu1cy < bu1hi && bu1lo - (prow + 1.0) < 1.0")
 L.append("            let buc1 = cB")
 L.append("            let bz1 = rZ1")
 L.append("            let bun1 = if bu1v then bu1x else 200.0")
@@ -2750,17 +2730,19 @@ L.append("            let bux1 = if bu1v then bu1x else -200.0")
 L.append("            let bu2lo = if qCy < qDy then qCy else qDy")
 L.append("            let bu2hi = if qCy < qDy then qDy else qCy")
 L.append("            let bu2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0")
-L.append("            let bu2x = qCx + bu2s * (prow + 1.0 - qCy)")
-L.append("            let bu2v = prow + 1.0 >= bu2lo && prow + 1.0 < bu2hi")
-L.append("            uc2B = cB + (prow + 1.0 - qCy) * iCD * (cA - cB)")
-L.append("            let uz2B = rZ1 + (prow + 1.0 - qCy) * iCD * (rZ0 - rZ1)")
+L.append("            let bu2cy = if prow + 1.0 < bu2lo then bu2lo else prow + 1.0")
+L.append("            let bu2x = qCx + bu2s * (bu2cy - qCy)")
+L.append("            let bu2v = bu2cy < bu2hi && bu2lo - (prow + 1.0) < 1.0")
+L.append("            uc2B = cB + (bu2cy - qCy) * iCD * (cA - cB)")
+L.append("            let uz2B = rZ1 + (bu2cy - qCy) * iCD * (rZ0 - rZ1)")
 L.append("            let bun2 = if bu2v then bu2x else 200.0")
 L.append("            let bux2 = if bu2v then bu2x else -200.0")
 L.append("            let bu3lo = if qDy < qAy then qDy else qAy")
 L.append("            let bu3hi = if qDy < qAy then qAy else qDy")
 L.append("            let bu3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0")
-L.append("            let bu3x = qDx + bu3s * (prow + 1.0 - qDy)")
-L.append("            let bu3v = prow + 1.0 >= bu3lo && prow + 1.0 < bu3hi")
+L.append("            let bu3cy = if prow + 1.0 < bu3lo then bu3lo else prow + 1.0")
+L.append("            let bu3x = qDx + bu3s * (bu3cy - qDy)")
+L.append("            let bu3v = bu3cy < bu3hi && bu3lo - (prow + 1.0) < 1.0")
 L.append("            let buc3 = cA")
 L.append("            let bz3 = rZ0")
 L.append("            let bun3 = if bu3v then bu3x else 200.0")
@@ -2828,20 +2810,24 @@ for _R, _off, _sfx in (("C", 2.0, "3"), ("D", 3.0, "4")):
     L.append("            let bu0hi%s = if qAy < qBy then qBy else qAy" % _R)
     L.append("            let bu0s%s = if qBy > qAy then (qBx - qAx) / (qBy - qAy)"
              " else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0" % _R)
-    L.append("            let bu0x%s = qAx + bu0s%s * (%s - qAy)" % (_R, _R, _r))
-    L.append("            let bu0v%s = %s >= bu0lo%s && %s < bu0hi%s"
-             % (_R, _r, _R, _r, _R))
-    L.append("            let buc0%s = cA + (%s - qAy) * iAB * (cB - cA)" % (_R, _r))
-    L.append("            let buz0%s = rZ0 + (%s - qAy) * iAB * (rZ1 - rZ0)" % (_R, _r))
+    L.append("            let bu0cy%s = if %s < bu0lo%s then bu0lo%s else %s"
+             % (_R, _r, _R, _R, _r))
+    L.append("            let bu0x%s = qAx + bu0s%s * (bu0cy%s - qAy)" % (_R, _R, _R))
+    L.append("            let bu0v%s = bu0cy%s < bu0hi%s && bu0lo%s - (%s) < 1.0"
+             % (_R, _R, _R, _R, _r))
+    L.append("            let buc0%s = cA + (bu0cy%s - qAy) * iAB * (cB - cA)" % (_R, _R))
+    L.append("            let buz0%s = rZ0 + (bu0cy%s - qAy) * iAB * (rZ1 - rZ0)" % (_R, _R))
     L.append("            let bun0%s = if bu0v%s then bu0x%s else 200.0" % (_R, _R, _R))
     L.append("            let bux0%s = if bu0v%s then bu0x%s else -200.0" % (_R, _R, _R))
     L.append("            let bu1lo%s = if qBy < qCy then qBy else qCy" % _R)
     L.append("            let bu1hi%s = if qBy < qCy then qCy else qBy" % _R)
     L.append("            let bu1s%s = if qCy > qBy then (qCx - qBx) / (qCy - qBy)"
              " else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0" % _R)
-    L.append("            let bu1x%s = qBx + bu1s%s * (%s - qBy)" % (_R, _R, _r))
-    L.append("            let bu1v%s = %s >= bu1lo%s && %s < bu1hi%s"
-             % (_R, _r, _R, _r, _R))
+    L.append("            let bu1cy%s = if %s < bu1lo%s then bu1lo%s else %s"
+             % (_R, _r, _R, _R, _r))
+    L.append("            let bu1x%s = qBx + bu1s%s * (bu1cy%s - qBy)" % (_R, _R, _R))
+    L.append("            let bu1v%s = bu1cy%s < bu1hi%s && bu1lo%s - (%s) < 1.0"
+             % (_R, _R, _R, _R, _r))
     L.append("            let buc1%s = cB" % _R)
     L.append("            let buz1%s = rZ1" % _R)
     L.append("            let bun1%s = if bu1v%s then bu1x%s else 200.0" % (_R, _R, _R))
@@ -2850,20 +2836,24 @@ for _R, _off, _sfx in (("C", 2.0, "3"), ("D", 3.0, "4")):
     L.append("            let bu2hi%s = if qCy < qDy then qDy else qCy" % _R)
     L.append("            let bu2s%s = if qDy > qCy then (qDx - qCx) / (qDy - qCy)"
              " else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0" % _R)
-    L.append("            let bu2x%s = qCx + bu2s%s * (%s - qCy)" % (_R, _R, _r))
-    L.append("            let bu2v%s = %s >= bu2lo%s && %s < bu2hi%s"
-             % (_R, _r, _R, _r, _R))
-    L.append("            let buc2%s = cB + (%s - qCy) * iCD * (cA - cB)" % (_R, _r))
-    L.append("            let buz2%s = rZ1 + (%s - qCy) * iCD * (rZ0 - rZ1)" % (_R, _r))
+    L.append("            let bu2cy%s = if %s < bu2lo%s then bu2lo%s else %s"
+             % (_R, _r, _R, _R, _r))
+    L.append("            let bu2x%s = qCx + bu2s%s * (bu2cy%s - qCy)" % (_R, _R, _R))
+    L.append("            let bu2v%s = bu2cy%s < bu2hi%s && bu2lo%s - (%s) < 1.0"
+             % (_R, _R, _R, _R, _r))
+    L.append("            let buc2%s = cB + (bu2cy%s - qCy) * iCD * (cA - cB)" % (_R, _R))
+    L.append("            let buz2%s = rZ1 + (bu2cy%s - qCy) * iCD * (rZ0 - rZ1)" % (_R, _R))
     L.append("            let bun2%s = if bu2v%s then bu2x%s else 200.0" % (_R, _R, _R))
     L.append("            let bux2%s = if bu2v%s then bu2x%s else -200.0" % (_R, _R, _R))
     L.append("            let bu3lo%s = if qDy < qAy then qDy else qAy" % _R)
     L.append("            let bu3hi%s = if qDy < qAy then qAy else qDy" % _R)
     L.append("            let bu3s%s = if qAy > qDy then (qAx - qDx) / (qAy - qDy)"
              " else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0" % _R)
-    L.append("            let bu3x%s = qDx + bu3s%s * (%s - qDy)" % (_R, _R, _r))
-    L.append("            let bu3v%s = %s >= bu3lo%s && %s < bu3hi%s"
-             % (_R, _r, _R, _r, _R))
+    L.append("            let bu3cy%s = if %s < bu3lo%s then bu3lo%s else %s"
+             % (_R, _r, _R, _R, _r))
+    L.append("            let bu3x%s = qDx + bu3s%s * (bu3cy%s - qDy)" % (_R, _R, _R))
+    L.append("            let bu3v%s = bu3cy%s < bu3hi%s && bu3lo%s - (%s) < 1.0"
+             % (_R, _R, _R, _R, _r))
     L.append("            let buc3%s = cA" % _R)
     L.append("            let buz3%s = rZ0" % _R)
     L.append("            let bun3%s = if bu3v%s then bu3x%s else 200.0" % (_R, _R, _R))
@@ -2952,17 +2942,19 @@ for _R, _off, _sfx in (("C", 2.0, "3"), ("D", 3.0, "4")):
 L.append("          let u0lo = if qAy < qBy then qAy else qBy")
 L.append("          let u0hi = if qAy < qBy then qBy else qAy")
 L.append("          let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0")
-L.append("          let u0x = qAx + u0s * (prow - qAy)")
-L.append("          let u0v = prow >= u0lo && prow < u0hi")
-L.append("          uc0 = cA + (prow - qAy) * iAB * (cB - cA)")
-L.append("          let uz0 = rZ0 + (prow - qAy) * iAB * (rZ1 - rZ0)")
+L.append("          let u0cy = if prow < u0lo then u0lo else prow")
+L.append("          let u0x = qAx + u0s * (u0cy - qAy)")
+L.append("          let u0v = u0cy < u0hi && u0lo - prow < 1.0")
+L.append("          uc0 = cA + (u0cy - qAy) * iAB * (cB - cA)")
+L.append("          let uz0 = rZ0 + (u0cy - qAy) * iAB * (rZ1 - rZ0)")
 L.append("          let un0 = if u0v then u0x else 200.0")
 L.append("          let ux0 = if u0v then u0x else -200.0")
 L.append("          let u1lo = if qBy < qCy then qBy else qCy")
 L.append("          let u1hi = if qBy < qCy then qCy else qBy")
 L.append("          let u1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0")
-L.append("          let u1x = qBx + u1s * (prow - qBy)")
-L.append("          let u1v = prow >= u1lo && prow < u1hi")
+L.append("          let u1cy = if prow < u1lo then u1lo else prow")
+L.append("          let u1x = qBx + u1s * (u1cy - qBy)")
+L.append("          let u1v = u1cy < u1hi && u1lo - prow < 1.0")
 L.append("          let uc1 = cB")
 L.append("          let uz1 = rZ1")
 L.append("          let un1 = if u1v then u1x else 200.0")
@@ -2970,17 +2962,19 @@ L.append("          let ux1 = if u1v then u1x else -200.0")
 L.append("          let u2lo = if qCy < qDy then qCy else qDy")
 L.append("          let u2hi = if qCy < qDy then qDy else qCy")
 L.append("          let u2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0")
-L.append("          let u2x = qCx + u2s * (prow - qCy)")
-L.append("          let u2v = prow >= u2lo && prow < u2hi")
-L.append("          uc2 = cB + (prow - qCy) * iCD * (cA - cB)")
-L.append("          let uz2 = rZ1 + (prow - qCy) * iCD * (rZ0 - rZ1)")
+L.append("          let u2cy = if prow < u2lo then u2lo else prow")
+L.append("          let u2x = qCx + u2s * (u2cy - qCy)")
+L.append("          let u2v = u2cy < u2hi && u2lo - prow < 1.0")
+L.append("          uc2 = cB + (u2cy - qCy) * iCD * (cA - cB)")
+L.append("          let uz2 = rZ1 + (u2cy - qCy) * iCD * (rZ0 - rZ1)")
 L.append("          let un2 = if u2v then u2x else 200.0")
 L.append("          let ux2 = if u2v then u2x else -200.0")
 L.append("          let u3lo = if qDy < qAy then qDy else qAy")
 L.append("          let u3hi = if qDy < qAy then qAy else qDy")
 L.append("          let u3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0")
-L.append("          let u3x = qDx + u3s * (prow - qDy)")
-L.append("          let u3v = prow >= u3lo && prow < u3hi")
+L.append("          let u3cy = if prow < u3lo then u3lo else prow")
+L.append("          let u3x = qDx + u3s * (u3cy - qDy)")
+L.append("          let u3v = u3cy < u3hi && u3lo - prow < 1.0")
 L.append("          let uc3 = cA")
 L.append("          let uz3 = rZ0")
 L.append("          let un3 = if u3v then u3x else 200.0")

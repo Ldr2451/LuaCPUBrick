@@ -15038,45 +15038,11 @@ mod paintTick() {
       if sSegs > 16.0 { sSegs = 16.0 }
       lastImm = true
     }
-    if sSegs < 1.0 {
+    if sSegs < 2.0 {
       sOn = false
       sLive = false
     } else {
-      if sSegs < 2.0 {
-        if sPx0 < 0.0 || sPx0 >= SWF || sPy0 < 0.0 || sPy0 >= SWF {
-          sOn = false
-          sLive = false
-        } else {
-          prow = (sPy0 | 0) - 2.0
-          sLast = sPy0 | 0
-          pcol = 200.0
-          pcurR = 100.0
-          cA = pC0
-          cB = pC0
-          iAB = 0.0
-          iCD = 0.0
-          qAx = sPx0 | 0
-          qAy = sPy0 | 0
-          qAz = sPz0
-          qBx = sPx0 | 0
-          qBy = sPy0 | 0
-          qBz = sPz0
-          qCx = sPx0 | 0
-          qCy = (sPy0 | 0) + 1.0
-          qCz = sPz0
-          qDx = sPx0 | 0
-          qDy = (sPy0 | 0) + 1.0
-          qDz = sPz0
-          sFresh = false
-          sFreshLast = false
-          sEnd = false
-          sSeg = 0.0
-          sSegs = 0.0
-          sOn = true
-          sLive = true
-        }
-      } else {
-        sSegs = sSegs - 1.0
+      sSegs = sSegs - 1.0
         rX0 = sPx0
         rY0 = sPy0
         rZ0 = sPz0
@@ -15152,7 +15118,6 @@ mod paintTick() {
         pcol = 200.0
         sOn = true
         sLive = true
-      }
     }
   }
   if polyOn {
@@ -15162,100 +15127,116 @@ mod paintTick() {
         polyOn = false
       } else {
         aRow = prow
-        let cv0 = prow >= eLo0 && prow < eHi0
-        let cx0 = eX0 + eS0 * (prow - eY0)
-        cc0 = pC0 + (prow - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
-        let cz0 = pzV0 + (prow - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cy0 = if prow < eLo0 then eLo0 else prow
+        let cv0 = cy0 < eHi0 && eLo0 - prow < 1.0
+        let cx0 = eX0 + eS0 * (cy0 - eY0)
+        cc0 = pC0 + (cy0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let cz0 = pzV0 + (cy0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmn0 = if cv0 then cx0 else 200.0
         let cmx0 = if cv0 then cx0 else -200.0
-        let cv1 = prow >= eLo1 && prow < eHi1
-        let cx1 = eX1 + eS1 * (prow - eY1)
-        cc1 = pC1 + (prow - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
-        let cz1 = pzV1 + (prow - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cy1 = if prow < eLo1 then eLo1 else prow
+        let cv1 = cy1 < eHi1 && eLo1 - prow < 1.0
+        let cx1 = eX1 + eS1 * (cy1 - eY1)
+        cc1 = pC1 + (cy1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let cz1 = pzV1 + (cy1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmn1 = if cv1 then cx1 else 200.0
         let cmx1 = if cv1 then cx1 else -200.0
-        let cv2 = prow >= eLo2 && prow < eHi2
-        let cx2 = eX2 + eS2 * (prow - eY2)
-        cc2 = pC2 + (prow - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
-        let cz2 = pzV2 + (prow - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cy2 = if prow < eLo2 then eLo2 else prow
+        let cv2 = cy2 < eHi2 && eLo2 - prow < 1.0
+        let cx2 = eX2 + eS2 * (cy2 - eY2)
+        cc2 = pC2 + (cy2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let cz2 = pzV2 + (cy2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmn2 = if cv2 then cx2 else 200.0
         let cmx2 = if cv2 then cx2 else -200.0
-        let cv3 = prow >= eLo3 && prow < eHi3
-        let cx3 = eX3 + eS3 * (prow - eY3)
-        cc3 = pC3 + (prow - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
-        let cz3 = pzV3 + (prow - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cy3 = if prow < eLo3 then eLo3 else prow
+        let cv3 = cy3 < eHi3 && eLo3 - prow < 1.0
+        let cx3 = eX3 + eS3 * (cy3 - eY3)
+        cc3 = pC3 + (cy3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let cz3 = pzV3 + (cy3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmn3 = if cv3 then cx3 else 200.0
         let cmx3 = if cv3 then cx3 else -200.0
-        let cv4 = prow >= eLo4 && prow < eHi4
-        let cx4 = eX4 + eS4 * (prow - eY4)
-        cc4 = pC4 + (prow - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
-        let cz4 = pzV4 + (prow - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cy4 = if prow < eLo4 then eLo4 else prow
+        let cv4 = cy4 < eHi4 && eLo4 - prow < 1.0
+        let cx4 = eX4 + eS4 * (cy4 - eY4)
+        cc4 = pC4 + (cy4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let cz4 = pzV4 + (cy4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmn4 = if cv4 then cx4 else 200.0
         let cmx4 = if cv4 then cx4 else -200.0
-        let cv5 = prow >= eLo5 && prow < eHi5
-        let cx5 = eX5 + eS5 * (prow - eY5)
-        cc5 = pC5 + (prow - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
-        let cz5 = pzV5 + (prow - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cy5 = if prow < eLo5 then eLo5 else prow
+        let cv5 = cy5 < eHi5 && eLo5 - prow < 1.0
+        let cx5 = eX5 + eS5 * (cy5 - eY5)
+        cc5 = pC5 + (cy5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let cz5 = pzV5 + (cy5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmn5 = if cv5 then cx5 else 200.0
         let cmx5 = if cv5 then cx5 else -200.0
-        let cv6 = prow >= eLo6 && prow < eHi6
-        let cx6 = eX6 + eS6 * (prow - eY6)
-        cc6 = pC6 + (prow - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
-        let cz6 = pzV6 + (prow - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cy6 = if prow < eLo6 then eLo6 else prow
+        let cv6 = cy6 < eHi6 && eLo6 - prow < 1.0
+        let cx6 = eX6 + eS6 * (cy6 - eY6)
+        cc6 = pC6 + (cy6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let cz6 = pzV6 + (cy6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmn6 = if cv6 then cx6 else 200.0
         let cmx6 = if cv6 then cx6 else -200.0
-        let cv7 = prow >= eLo7 && prow < eHi7
-        let cx7 = eX7 + eS7 * (prow - eY7)
-        cc7 = pC7 + (prow - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
-        let cz7 = pzV7 + (prow - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cy7 = if prow < eLo7 then eLo7 else prow
+        let cv7 = cy7 < eHi7 && eLo7 - prow < 1.0
+        let cx7 = eX7 + eS7 * (cy7 - eY7)
+        cc7 = pC7 + (cy7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let cz7 = pzV7 + (cy7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmn7 = if cv7 then cx7 else 200.0
         let cmx7 = if cv7 then cx7 else -200.0
-        let cv8 = prow >= eLo8 && prow < eHi8
-        let cx8 = eX8 + eS8 * (prow - eY8)
-        cc8 = pC8 + (prow - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
-        let cz8 = pzV8 + (prow - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cy8 = if prow < eLo8 then eLo8 else prow
+        let cv8 = cy8 < eHi8 && eLo8 - prow < 1.0
+        let cx8 = eX8 + eS8 * (cy8 - eY8)
+        cc8 = pC8 + (cy8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let cz8 = pzV8 + (cy8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmn8 = if cv8 then cx8 else 200.0
         let cmx8 = if cv8 then cx8 else -200.0
-        let cv9 = prow >= eLo9 && prow < eHi9
-        let cx9 = eX9 + eS9 * (prow - eY9)
-        cc9 = pC9 + (prow - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
-        let cz9 = pzV9 + (prow - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cy9 = if prow < eLo9 then eLo9 else prow
+        let cv9 = cy9 < eHi9 && eLo9 - prow < 1.0
+        let cx9 = eX9 + eS9 * (cy9 - eY9)
+        cc9 = pC9 + (cy9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let cz9 = pzV9 + (cy9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmn9 = if cv9 then cx9 else 200.0
         let cmx9 = if cv9 then cx9 else -200.0
-        let cv10 = prow >= eLo10 && prow < eHi10
-        let cx10 = eX10 + eS10 * (prow - eY10)
-        cc10 = pC10 + (prow - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
-        let cz10 = pzV10 + (prow - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cy10 = if prow < eLo10 then eLo10 else prow
+        let cv10 = cy10 < eHi10 && eLo10 - prow < 1.0
+        let cx10 = eX10 + eS10 * (cy10 - eY10)
+        cc10 = pC10 + (cy10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let cz10 = pzV10 + (cy10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmn10 = if cv10 then cx10 else 200.0
         let cmx10 = if cv10 then cx10 else -200.0
-        let cv11 = prow >= eLo11 && prow < eHi11
-        let cx11 = eX11 + eS11 * (prow - eY11)
-        cc11 = pC11 + (prow - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
-        let cz11 = pzV11 + (prow - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cy11 = if prow < eLo11 then eLo11 else prow
+        let cv11 = cy11 < eHi11 && eLo11 - prow < 1.0
+        let cx11 = eX11 + eS11 * (cy11 - eY11)
+        cc11 = pC11 + (cy11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let cz11 = pzV11 + (cy11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmn11 = if cv11 then cx11 else 200.0
         let cmx11 = if cv11 then cx11 else -200.0
-        let cv12 = prow >= eLo12 && prow < eHi12
-        let cx12 = eX12 + eS12 * (prow - eY12)
-        cc12 = pC12 + (prow - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
-        let cz12 = pzV12 + (prow - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cy12 = if prow < eLo12 then eLo12 else prow
+        let cv12 = cy12 < eHi12 && eLo12 - prow < 1.0
+        let cx12 = eX12 + eS12 * (cy12 - eY12)
+        cc12 = pC12 + (cy12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let cz12 = pzV12 + (cy12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmn12 = if cv12 then cx12 else 200.0
         let cmx12 = if cv12 then cx12 else -200.0
-        let cv13 = prow >= eLo13 && prow < eHi13
-        let cx13 = eX13 + eS13 * (prow - eY13)
-        cc13 = pC13 + (prow - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
-        let cz13 = pzV13 + (prow - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cy13 = if prow < eLo13 then eLo13 else prow
+        let cv13 = cy13 < eHi13 && eLo13 - prow < 1.0
+        let cx13 = eX13 + eS13 * (cy13 - eY13)
+        cc13 = pC13 + (cy13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let cz13 = pzV13 + (cy13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmn13 = if cv13 then cx13 else 200.0
         let cmx13 = if cv13 then cx13 else -200.0
-        let cv14 = prow >= eLo14 && prow < eHi14
-        let cx14 = eX14 + eS14 * (prow - eY14)
-        cc14 = pC14 + (prow - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
-        let cz14 = pzV14 + (prow - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cy14 = if prow < eLo14 then eLo14 else prow
+        let cv14 = cy14 < eHi14 && eLo14 - prow < 1.0
+        let cx14 = eX14 + eS14 * (cy14 - eY14)
+        cc14 = pC14 + (cy14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let cz14 = pzV14 + (cy14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmn14 = if cv14 then cx14 else 200.0
         let cmx14 = if cv14 then cx14 else -200.0
-        let cv15 = prow >= eLo15 && prow < eHi15
-        let cx15 = eX15 + eS15 * (prow - eY15)
-        cc15 = pC15 + (prow - eY15) * eInv15 * (pC0 - pC15)
-        let cz15 = pzV15 + (prow - eY15) * eInv15 * (pzV0 - pzV15)
+        let cy15 = if prow < eLo15 then eLo15 else prow
+        let cv15 = cy15 < eHi15 && eLo15 - prow < 1.0
+        let cx15 = eX15 + eS15 * (cy15 - eY15)
+        cc15 = pC15 + (cy15 - eY15) * eInv15 * (pC0 - pC15)
+        let cz15 = pzV15 + (cy15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmn15 = if cv15 then cx15 else 200.0
         let cmx15 = if cv15 then cx15 else -200.0
         let n0_0 = if cmn0 < cmn1 then cmn0 else cmn1
@@ -15383,100 +15364,116 @@ mod paintTick() {
         if pcol2 > pcurR2 {
           let brow = prow + 1.0
           if brow <= plast {
-        let cvB0 = brow >= eLo0 && brow < eHi0
-        let cxB0 = eX0 + eS0 * (brow - eY0)
-        cc2_0 = pC0 + (brow - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
-        let cz2_0 = pzV0 + (brow - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cyB0 = if brow < eLo0 then eLo0 else brow
+        let cvB0 = cyB0 < eHi0 && eLo0 - brow < 1.0
+        let cxB0 = eX0 + eS0 * (cyB0 - eY0)
+        cc2_0 = pC0 + (cyB0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let cz2_0 = pzV0 + (cyB0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnB0 = if cvB0 then cxB0 else 200.0
         let cmxB0 = if cvB0 then cxB0 else -200.0
-        let cvB1 = brow >= eLo1 && brow < eHi1
-        let cxB1 = eX1 + eS1 * (brow - eY1)
-        cc2_1 = pC1 + (brow - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
-        let cz2_1 = pzV1 + (brow - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cyB1 = if brow < eLo1 then eLo1 else brow
+        let cvB1 = cyB1 < eHi1 && eLo1 - brow < 1.0
+        let cxB1 = eX1 + eS1 * (cyB1 - eY1)
+        cc2_1 = pC1 + (cyB1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let cz2_1 = pzV1 + (cyB1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnB1 = if cvB1 then cxB1 else 200.0
         let cmxB1 = if cvB1 then cxB1 else -200.0
-        let cvB2 = brow >= eLo2 && brow < eHi2
-        let cxB2 = eX2 + eS2 * (brow - eY2)
-        cc2_2 = pC2 + (brow - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
-        let cz2_2 = pzV2 + (brow - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cyB2 = if brow < eLo2 then eLo2 else brow
+        let cvB2 = cyB2 < eHi2 && eLo2 - brow < 1.0
+        let cxB2 = eX2 + eS2 * (cyB2 - eY2)
+        cc2_2 = pC2 + (cyB2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let cz2_2 = pzV2 + (cyB2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnB2 = if cvB2 then cxB2 else 200.0
         let cmxB2 = if cvB2 then cxB2 else -200.0
-        let cvB3 = brow >= eLo3 && brow < eHi3
-        let cxB3 = eX3 + eS3 * (brow - eY3)
-        cc2_3 = pC3 + (brow - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
-        let cz2_3 = pzV3 + (brow - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cyB3 = if brow < eLo3 then eLo3 else brow
+        let cvB3 = cyB3 < eHi3 && eLo3 - brow < 1.0
+        let cxB3 = eX3 + eS3 * (cyB3 - eY3)
+        cc2_3 = pC3 + (cyB3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let cz2_3 = pzV3 + (cyB3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnB3 = if cvB3 then cxB3 else 200.0
         let cmxB3 = if cvB3 then cxB3 else -200.0
-        let cvB4 = brow >= eLo4 && brow < eHi4
-        let cxB4 = eX4 + eS4 * (brow - eY4)
-        cc2_4 = pC4 + (brow - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
-        let cz2_4 = pzV4 + (brow - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cyB4 = if brow < eLo4 then eLo4 else brow
+        let cvB4 = cyB4 < eHi4 && eLo4 - brow < 1.0
+        let cxB4 = eX4 + eS4 * (cyB4 - eY4)
+        cc2_4 = pC4 + (cyB4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let cz2_4 = pzV4 + (cyB4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnB4 = if cvB4 then cxB4 else 200.0
         let cmxB4 = if cvB4 then cxB4 else -200.0
-        let cvB5 = brow >= eLo5 && brow < eHi5
-        let cxB5 = eX5 + eS5 * (brow - eY5)
-        cc2_5 = pC5 + (brow - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
-        let cz2_5 = pzV5 + (brow - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cyB5 = if brow < eLo5 then eLo5 else brow
+        let cvB5 = cyB5 < eHi5 && eLo5 - brow < 1.0
+        let cxB5 = eX5 + eS5 * (cyB5 - eY5)
+        cc2_5 = pC5 + (cyB5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let cz2_5 = pzV5 + (cyB5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnB5 = if cvB5 then cxB5 else 200.0
         let cmxB5 = if cvB5 then cxB5 else -200.0
-        let cvB6 = brow >= eLo6 && brow < eHi6
-        let cxB6 = eX6 + eS6 * (brow - eY6)
-        cc2_6 = pC6 + (brow - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
-        let cz2_6 = pzV6 + (brow - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cyB6 = if brow < eLo6 then eLo6 else brow
+        let cvB6 = cyB6 < eHi6 && eLo6 - brow < 1.0
+        let cxB6 = eX6 + eS6 * (cyB6 - eY6)
+        cc2_6 = pC6 + (cyB6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let cz2_6 = pzV6 + (cyB6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnB6 = if cvB6 then cxB6 else 200.0
         let cmxB6 = if cvB6 then cxB6 else -200.0
-        let cvB7 = brow >= eLo7 && brow < eHi7
-        let cxB7 = eX7 + eS7 * (brow - eY7)
-        cc2_7 = pC7 + (brow - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
-        let cz2_7 = pzV7 + (brow - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cyB7 = if brow < eLo7 then eLo7 else brow
+        let cvB7 = cyB7 < eHi7 && eLo7 - brow < 1.0
+        let cxB7 = eX7 + eS7 * (cyB7 - eY7)
+        cc2_7 = pC7 + (cyB7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let cz2_7 = pzV7 + (cyB7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnB7 = if cvB7 then cxB7 else 200.0
         let cmxB7 = if cvB7 then cxB7 else -200.0
-        let cvB8 = brow >= eLo8 && brow < eHi8
-        let cxB8 = eX8 + eS8 * (brow - eY8)
-        cc2_8 = pC8 + (brow - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
-        let cz2_8 = pzV8 + (brow - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cyB8 = if brow < eLo8 then eLo8 else brow
+        let cvB8 = cyB8 < eHi8 && eLo8 - brow < 1.0
+        let cxB8 = eX8 + eS8 * (cyB8 - eY8)
+        cc2_8 = pC8 + (cyB8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let cz2_8 = pzV8 + (cyB8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnB8 = if cvB8 then cxB8 else 200.0
         let cmxB8 = if cvB8 then cxB8 else -200.0
-        let cvB9 = brow >= eLo9 && brow < eHi9
-        let cxB9 = eX9 + eS9 * (brow - eY9)
-        cc2_9 = pC9 + (brow - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
-        let cz2_9 = pzV9 + (brow - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cyB9 = if brow < eLo9 then eLo9 else brow
+        let cvB9 = cyB9 < eHi9 && eLo9 - brow < 1.0
+        let cxB9 = eX9 + eS9 * (cyB9 - eY9)
+        cc2_9 = pC9 + (cyB9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let cz2_9 = pzV9 + (cyB9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnB9 = if cvB9 then cxB9 else 200.0
         let cmxB9 = if cvB9 then cxB9 else -200.0
-        let cvB10 = brow >= eLo10 && brow < eHi10
-        let cxB10 = eX10 + eS10 * (brow - eY10)
-        cc2_10 = pC10 + (brow - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
-        let cz2_10 = pzV10 + (brow - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cyB10 = if brow < eLo10 then eLo10 else brow
+        let cvB10 = cyB10 < eHi10 && eLo10 - brow < 1.0
+        let cxB10 = eX10 + eS10 * (cyB10 - eY10)
+        cc2_10 = pC10 + (cyB10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let cz2_10 = pzV10 + (cyB10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnB10 = if cvB10 then cxB10 else 200.0
         let cmxB10 = if cvB10 then cxB10 else -200.0
-        let cvB11 = brow >= eLo11 && brow < eHi11
-        let cxB11 = eX11 + eS11 * (brow - eY11)
-        cc2_11 = pC11 + (brow - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
-        let cz2_11 = pzV11 + (brow - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cyB11 = if brow < eLo11 then eLo11 else brow
+        let cvB11 = cyB11 < eHi11 && eLo11 - brow < 1.0
+        let cxB11 = eX11 + eS11 * (cyB11 - eY11)
+        cc2_11 = pC11 + (cyB11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let cz2_11 = pzV11 + (cyB11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnB11 = if cvB11 then cxB11 else 200.0
         let cmxB11 = if cvB11 then cxB11 else -200.0
-        let cvB12 = brow >= eLo12 && brow < eHi12
-        let cxB12 = eX12 + eS12 * (brow - eY12)
-        cc2_12 = pC12 + (brow - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
-        let cz2_12 = pzV12 + (brow - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cyB12 = if brow < eLo12 then eLo12 else brow
+        let cvB12 = cyB12 < eHi12 && eLo12 - brow < 1.0
+        let cxB12 = eX12 + eS12 * (cyB12 - eY12)
+        cc2_12 = pC12 + (cyB12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let cz2_12 = pzV12 + (cyB12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnB12 = if cvB12 then cxB12 else 200.0
         let cmxB12 = if cvB12 then cxB12 else -200.0
-        let cvB13 = brow >= eLo13 && brow < eHi13
-        let cxB13 = eX13 + eS13 * (brow - eY13)
-        cc2_13 = pC13 + (brow - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
-        let cz2_13 = pzV13 + (brow - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cyB13 = if brow < eLo13 then eLo13 else brow
+        let cvB13 = cyB13 < eHi13 && eLo13 - brow < 1.0
+        let cxB13 = eX13 + eS13 * (cyB13 - eY13)
+        cc2_13 = pC13 + (cyB13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let cz2_13 = pzV13 + (cyB13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnB13 = if cvB13 then cxB13 else 200.0
         let cmxB13 = if cvB13 then cxB13 else -200.0
-        let cvB14 = brow >= eLo14 && brow < eHi14
-        let cxB14 = eX14 + eS14 * (brow - eY14)
-        cc2_14 = pC14 + (brow - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
-        let cz2_14 = pzV14 + (brow - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cyB14 = if brow < eLo14 then eLo14 else brow
+        let cvB14 = cyB14 < eHi14 && eLo14 - brow < 1.0
+        let cxB14 = eX14 + eS14 * (cyB14 - eY14)
+        cc2_14 = pC14 + (cyB14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let cz2_14 = pzV14 + (cyB14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnB14 = if cvB14 then cxB14 else 200.0
         let cmxB14 = if cvB14 then cxB14 else -200.0
-        let cvB15 = brow >= eLo15 && brow < eHi15
-        let cxB15 = eX15 + eS15 * (brow - eY15)
-        cc2_15 = pC15 + (brow - eY15) * eInv15 * (pC0 - pC15)
-        let cz2_15 = pzV15 + (brow - eY15) * eInv15 * (pzV0 - pzV15)
+        let cyB15 = if brow < eLo15 then eLo15 else brow
+        let cvB15 = cyB15 < eHi15 && eLo15 - brow < 1.0
+        let cxB15 = eX15 + eS15 * (cyB15 - eY15)
+        cc2_15 = pC15 + (cyB15 - eY15) * eInv15 * (pC0 - pC15)
+        let cz2_15 = pzV15 + (cyB15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnB15 = if cvB15 then cxB15 else 200.0
         let cmxB15 = if cvB15 then cxB15 else -200.0
         let bn0_0 = if cmnB0 < cmnB1 then cmnB0 else cmnB1
@@ -15607,100 +15604,116 @@ mod paintTick() {
         if pcol3 > pcurR3 {
           let rrowC = prow + 2.0
           if rrowC <= plast {
-        let cvC0 = rrowC >= eLo0 && rrowC < eHi0
-        let cxC0 = eX0 + eS0 * (rrowC - eY0)
-        let ccC0 = pC0 + (rrowC - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
-        let czC0 = pzV0 + (rrowC - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cyC0 = if rrowC < eLo0 then eLo0 else rrowC
+        let cvC0 = cyC0 < eHi0 && eLo0 - rrowC < 1.0
+        let cxC0 = eX0 + eS0 * (cyC0 - eY0)
+        let ccC0 = pC0 + (cyC0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let czC0 = pzV0 + (cyC0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnC0 = if cvC0 then cxC0 else 200.0
         let cmxC0 = if cvC0 then cxC0 else -200.0
-        let cvC1 = rrowC >= eLo1 && rrowC < eHi1
-        let cxC1 = eX1 + eS1 * (rrowC - eY1)
-        let ccC1 = pC1 + (rrowC - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
-        let czC1 = pzV1 + (rrowC - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cyC1 = if rrowC < eLo1 then eLo1 else rrowC
+        let cvC1 = cyC1 < eHi1 && eLo1 - rrowC < 1.0
+        let cxC1 = eX1 + eS1 * (cyC1 - eY1)
+        let ccC1 = pC1 + (cyC1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let czC1 = pzV1 + (cyC1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnC1 = if cvC1 then cxC1 else 200.0
         let cmxC1 = if cvC1 then cxC1 else -200.0
-        let cvC2 = rrowC >= eLo2 && rrowC < eHi2
-        let cxC2 = eX2 + eS2 * (rrowC - eY2)
-        let ccC2 = pC2 + (rrowC - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
-        let czC2 = pzV2 + (rrowC - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cyC2 = if rrowC < eLo2 then eLo2 else rrowC
+        let cvC2 = cyC2 < eHi2 && eLo2 - rrowC < 1.0
+        let cxC2 = eX2 + eS2 * (cyC2 - eY2)
+        let ccC2 = pC2 + (cyC2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let czC2 = pzV2 + (cyC2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnC2 = if cvC2 then cxC2 else 200.0
         let cmxC2 = if cvC2 then cxC2 else -200.0
-        let cvC3 = rrowC >= eLo3 && rrowC < eHi3
-        let cxC3 = eX3 + eS3 * (rrowC - eY3)
-        let ccC3 = pC3 + (rrowC - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
-        let czC3 = pzV3 + (rrowC - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cyC3 = if rrowC < eLo3 then eLo3 else rrowC
+        let cvC3 = cyC3 < eHi3 && eLo3 - rrowC < 1.0
+        let cxC3 = eX3 + eS3 * (cyC3 - eY3)
+        let ccC3 = pC3 + (cyC3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let czC3 = pzV3 + (cyC3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnC3 = if cvC3 then cxC3 else 200.0
         let cmxC3 = if cvC3 then cxC3 else -200.0
-        let cvC4 = rrowC >= eLo4 && rrowC < eHi4
-        let cxC4 = eX4 + eS4 * (rrowC - eY4)
-        let ccC4 = pC4 + (rrowC - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
-        let czC4 = pzV4 + (rrowC - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cyC4 = if rrowC < eLo4 then eLo4 else rrowC
+        let cvC4 = cyC4 < eHi4 && eLo4 - rrowC < 1.0
+        let cxC4 = eX4 + eS4 * (cyC4 - eY4)
+        let ccC4 = pC4 + (cyC4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let czC4 = pzV4 + (cyC4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnC4 = if cvC4 then cxC4 else 200.0
         let cmxC4 = if cvC4 then cxC4 else -200.0
-        let cvC5 = rrowC >= eLo5 && rrowC < eHi5
-        let cxC5 = eX5 + eS5 * (rrowC - eY5)
-        let ccC5 = pC5 + (rrowC - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
-        let czC5 = pzV5 + (rrowC - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cyC5 = if rrowC < eLo5 then eLo5 else rrowC
+        let cvC5 = cyC5 < eHi5 && eLo5 - rrowC < 1.0
+        let cxC5 = eX5 + eS5 * (cyC5 - eY5)
+        let ccC5 = pC5 + (cyC5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let czC5 = pzV5 + (cyC5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnC5 = if cvC5 then cxC5 else 200.0
         let cmxC5 = if cvC5 then cxC5 else -200.0
-        let cvC6 = rrowC >= eLo6 && rrowC < eHi6
-        let cxC6 = eX6 + eS6 * (rrowC - eY6)
-        let ccC6 = pC6 + (rrowC - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
-        let czC6 = pzV6 + (rrowC - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cyC6 = if rrowC < eLo6 then eLo6 else rrowC
+        let cvC6 = cyC6 < eHi6 && eLo6 - rrowC < 1.0
+        let cxC6 = eX6 + eS6 * (cyC6 - eY6)
+        let ccC6 = pC6 + (cyC6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let czC6 = pzV6 + (cyC6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnC6 = if cvC6 then cxC6 else 200.0
         let cmxC6 = if cvC6 then cxC6 else -200.0
-        let cvC7 = rrowC >= eLo7 && rrowC < eHi7
-        let cxC7 = eX7 + eS7 * (rrowC - eY7)
-        let ccC7 = pC7 + (rrowC - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
-        let czC7 = pzV7 + (rrowC - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cyC7 = if rrowC < eLo7 then eLo7 else rrowC
+        let cvC7 = cyC7 < eHi7 && eLo7 - rrowC < 1.0
+        let cxC7 = eX7 + eS7 * (cyC7 - eY7)
+        let ccC7 = pC7 + (cyC7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let czC7 = pzV7 + (cyC7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnC7 = if cvC7 then cxC7 else 200.0
         let cmxC7 = if cvC7 then cxC7 else -200.0
-        let cvC8 = rrowC >= eLo8 && rrowC < eHi8
-        let cxC8 = eX8 + eS8 * (rrowC - eY8)
-        let ccC8 = pC8 + (rrowC - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
-        let czC8 = pzV8 + (rrowC - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cyC8 = if rrowC < eLo8 then eLo8 else rrowC
+        let cvC8 = cyC8 < eHi8 && eLo8 - rrowC < 1.0
+        let cxC8 = eX8 + eS8 * (cyC8 - eY8)
+        let ccC8 = pC8 + (cyC8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let czC8 = pzV8 + (cyC8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnC8 = if cvC8 then cxC8 else 200.0
         let cmxC8 = if cvC8 then cxC8 else -200.0
-        let cvC9 = rrowC >= eLo9 && rrowC < eHi9
-        let cxC9 = eX9 + eS9 * (rrowC - eY9)
-        let ccC9 = pC9 + (rrowC - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
-        let czC9 = pzV9 + (rrowC - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cyC9 = if rrowC < eLo9 then eLo9 else rrowC
+        let cvC9 = cyC9 < eHi9 && eLo9 - rrowC < 1.0
+        let cxC9 = eX9 + eS9 * (cyC9 - eY9)
+        let ccC9 = pC9 + (cyC9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let czC9 = pzV9 + (cyC9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnC9 = if cvC9 then cxC9 else 200.0
         let cmxC9 = if cvC9 then cxC9 else -200.0
-        let cvC10 = rrowC >= eLo10 && rrowC < eHi10
-        let cxC10 = eX10 + eS10 * (rrowC - eY10)
-        let ccC10 = pC10 + (rrowC - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
-        let czC10 = pzV10 + (rrowC - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cyC10 = if rrowC < eLo10 then eLo10 else rrowC
+        let cvC10 = cyC10 < eHi10 && eLo10 - rrowC < 1.0
+        let cxC10 = eX10 + eS10 * (cyC10 - eY10)
+        let ccC10 = pC10 + (cyC10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let czC10 = pzV10 + (cyC10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnC10 = if cvC10 then cxC10 else 200.0
         let cmxC10 = if cvC10 then cxC10 else -200.0
-        let cvC11 = rrowC >= eLo11 && rrowC < eHi11
-        let cxC11 = eX11 + eS11 * (rrowC - eY11)
-        let ccC11 = pC11 + (rrowC - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
-        let czC11 = pzV11 + (rrowC - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cyC11 = if rrowC < eLo11 then eLo11 else rrowC
+        let cvC11 = cyC11 < eHi11 && eLo11 - rrowC < 1.0
+        let cxC11 = eX11 + eS11 * (cyC11 - eY11)
+        let ccC11 = pC11 + (cyC11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let czC11 = pzV11 + (cyC11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnC11 = if cvC11 then cxC11 else 200.0
         let cmxC11 = if cvC11 then cxC11 else -200.0
-        let cvC12 = rrowC >= eLo12 && rrowC < eHi12
-        let cxC12 = eX12 + eS12 * (rrowC - eY12)
-        let ccC12 = pC12 + (rrowC - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
-        let czC12 = pzV12 + (rrowC - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cyC12 = if rrowC < eLo12 then eLo12 else rrowC
+        let cvC12 = cyC12 < eHi12 && eLo12 - rrowC < 1.0
+        let cxC12 = eX12 + eS12 * (cyC12 - eY12)
+        let ccC12 = pC12 + (cyC12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let czC12 = pzV12 + (cyC12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnC12 = if cvC12 then cxC12 else 200.0
         let cmxC12 = if cvC12 then cxC12 else -200.0
-        let cvC13 = rrowC >= eLo13 && rrowC < eHi13
-        let cxC13 = eX13 + eS13 * (rrowC - eY13)
-        let ccC13 = pC13 + (rrowC - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
-        let czC13 = pzV13 + (rrowC - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cyC13 = if rrowC < eLo13 then eLo13 else rrowC
+        let cvC13 = cyC13 < eHi13 && eLo13 - rrowC < 1.0
+        let cxC13 = eX13 + eS13 * (cyC13 - eY13)
+        let ccC13 = pC13 + (cyC13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let czC13 = pzV13 + (cyC13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnC13 = if cvC13 then cxC13 else 200.0
         let cmxC13 = if cvC13 then cxC13 else -200.0
-        let cvC14 = rrowC >= eLo14 && rrowC < eHi14
-        let cxC14 = eX14 + eS14 * (rrowC - eY14)
-        let ccC14 = pC14 + (rrowC - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
-        let czC14 = pzV14 + (rrowC - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cyC14 = if rrowC < eLo14 then eLo14 else rrowC
+        let cvC14 = cyC14 < eHi14 && eLo14 - rrowC < 1.0
+        let cxC14 = eX14 + eS14 * (cyC14 - eY14)
+        let ccC14 = pC14 + (cyC14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let czC14 = pzV14 + (cyC14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnC14 = if cvC14 then cxC14 else 200.0
         let cmxC14 = if cvC14 then cxC14 else -200.0
-        let cvC15 = rrowC >= eLo15 && rrowC < eHi15
-        let cxC15 = eX15 + eS15 * (rrowC - eY15)
-        let ccC15 = pC15 + (rrowC - eY15) * eInv15 * (pC0 - pC15)
-        let czC15 = pzV15 + (rrowC - eY15) * eInv15 * (pzV0 - pzV15)
+        let cyC15 = if rrowC < eLo15 then eLo15 else rrowC
+        let cvC15 = cyC15 < eHi15 && eLo15 - rrowC < 1.0
+        let cxC15 = eX15 + eS15 * (cyC15 - eY15)
+        let ccC15 = pC15 + (cyC15 - eY15) * eInv15 * (pC0 - pC15)
+        let czC15 = pzV15 + (cyC15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnC15 = if cvC15 then cxC15 else 200.0
         let cmxC15 = if cvC15 then cxC15 else -200.0
         let mC0_0 = if cmnC0 < cmnC1 then cmnC0 else cmnC1
@@ -15830,100 +15843,116 @@ mod paintTick() {
         if pcol4 > pcurR4 {
           let rrowD = prow + 3.0
           if rrowD <= plast {
-        let cvD0 = rrowD >= eLo0 && rrowD < eHi0
-        let cxD0 = eX0 + eS0 * (rrowD - eY0)
-        let ccD0 = pC0 + (rrowD - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
-        let czD0 = pzV0 + (rrowD - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
+        let cyD0 = if rrowD < eLo0 then eLo0 else rrowD
+        let cvD0 = cyD0 < eHi0 && eLo0 - rrowD < 1.0
+        let cxD0 = eX0 + eS0 * (cyD0 - eY0)
+        let ccD0 = pC0 + (cyD0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let czD0 = pzV0 + (cyD0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnD0 = if cvD0 then cxD0 else 200.0
         let cmxD0 = if cvD0 then cxD0 else -200.0
-        let cvD1 = rrowD >= eLo1 && rrowD < eHi1
-        let cxD1 = eX1 + eS1 * (rrowD - eY1)
-        let ccD1 = pC1 + (rrowD - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
-        let czD1 = pzV1 + (rrowD - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
+        let cyD1 = if rrowD < eLo1 then eLo1 else rrowD
+        let cvD1 = cyD1 < eHi1 && eLo1 - rrowD < 1.0
+        let cxD1 = eX1 + eS1 * (cyD1 - eY1)
+        let ccD1 = pC1 + (cyD1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let czD1 = pzV1 + (cyD1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnD1 = if cvD1 then cxD1 else 200.0
         let cmxD1 = if cvD1 then cxD1 else -200.0
-        let cvD2 = rrowD >= eLo2 && rrowD < eHi2
-        let cxD2 = eX2 + eS2 * (rrowD - eY2)
-        let ccD2 = pC2 + (rrowD - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
-        let czD2 = pzV2 + (rrowD - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
+        let cyD2 = if rrowD < eLo2 then eLo2 else rrowD
+        let cvD2 = cyD2 < eHi2 && eLo2 - rrowD < 1.0
+        let cxD2 = eX2 + eS2 * (cyD2 - eY2)
+        let ccD2 = pC2 + (cyD2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let czD2 = pzV2 + (cyD2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnD2 = if cvD2 then cxD2 else 200.0
         let cmxD2 = if cvD2 then cxD2 else -200.0
-        let cvD3 = rrowD >= eLo3 && rrowD < eHi3
-        let cxD3 = eX3 + eS3 * (rrowD - eY3)
-        let ccD3 = pC3 + (rrowD - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
-        let czD3 = pzV3 + (rrowD - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
+        let cyD3 = if rrowD < eLo3 then eLo3 else rrowD
+        let cvD3 = cyD3 < eHi3 && eLo3 - rrowD < 1.0
+        let cxD3 = eX3 + eS3 * (cyD3 - eY3)
+        let ccD3 = pC3 + (cyD3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let czD3 = pzV3 + (cyD3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnD3 = if cvD3 then cxD3 else 200.0
         let cmxD3 = if cvD3 then cxD3 else -200.0
-        let cvD4 = rrowD >= eLo4 && rrowD < eHi4
-        let cxD4 = eX4 + eS4 * (rrowD - eY4)
-        let ccD4 = pC4 + (rrowD - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
-        let czD4 = pzV4 + (rrowD - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
+        let cyD4 = if rrowD < eLo4 then eLo4 else rrowD
+        let cvD4 = cyD4 < eHi4 && eLo4 - rrowD < 1.0
+        let cxD4 = eX4 + eS4 * (cyD4 - eY4)
+        let ccD4 = pC4 + (cyD4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let czD4 = pzV4 + (cyD4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnD4 = if cvD4 then cxD4 else 200.0
         let cmxD4 = if cvD4 then cxD4 else -200.0
-        let cvD5 = rrowD >= eLo5 && rrowD < eHi5
-        let cxD5 = eX5 + eS5 * (rrowD - eY5)
-        let ccD5 = pC5 + (rrowD - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
-        let czD5 = pzV5 + (rrowD - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
+        let cyD5 = if rrowD < eLo5 then eLo5 else rrowD
+        let cvD5 = cyD5 < eHi5 && eLo5 - rrowD < 1.0
+        let cxD5 = eX5 + eS5 * (cyD5 - eY5)
+        let ccD5 = pC5 + (cyD5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let czD5 = pzV5 + (cyD5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnD5 = if cvD5 then cxD5 else 200.0
         let cmxD5 = if cvD5 then cxD5 else -200.0
-        let cvD6 = rrowD >= eLo6 && rrowD < eHi6
-        let cxD6 = eX6 + eS6 * (rrowD - eY6)
-        let ccD6 = pC6 + (rrowD - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
-        let czD6 = pzV6 + (rrowD - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
+        let cyD6 = if rrowD < eLo6 then eLo6 else rrowD
+        let cvD6 = cyD6 < eHi6 && eLo6 - rrowD < 1.0
+        let cxD6 = eX6 + eS6 * (cyD6 - eY6)
+        let ccD6 = pC6 + (cyD6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let czD6 = pzV6 + (cyD6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnD6 = if cvD6 then cxD6 else 200.0
         let cmxD6 = if cvD6 then cxD6 else -200.0
-        let cvD7 = rrowD >= eLo7 && rrowD < eHi7
-        let cxD7 = eX7 + eS7 * (rrowD - eY7)
-        let ccD7 = pC7 + (rrowD - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
-        let czD7 = pzV7 + (rrowD - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
+        let cyD7 = if rrowD < eLo7 then eLo7 else rrowD
+        let cvD7 = cyD7 < eHi7 && eLo7 - rrowD < 1.0
+        let cxD7 = eX7 + eS7 * (cyD7 - eY7)
+        let ccD7 = pC7 + (cyD7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let czD7 = pzV7 + (cyD7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnD7 = if cvD7 then cxD7 else 200.0
         let cmxD7 = if cvD7 then cxD7 else -200.0
-        let cvD8 = rrowD >= eLo8 && rrowD < eHi8
-        let cxD8 = eX8 + eS8 * (rrowD - eY8)
-        let ccD8 = pC8 + (rrowD - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
-        let czD8 = pzV8 + (rrowD - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
+        let cyD8 = if rrowD < eLo8 then eLo8 else rrowD
+        let cvD8 = cyD8 < eHi8 && eLo8 - rrowD < 1.0
+        let cxD8 = eX8 + eS8 * (cyD8 - eY8)
+        let ccD8 = pC8 + (cyD8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let czD8 = pzV8 + (cyD8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnD8 = if cvD8 then cxD8 else 200.0
         let cmxD8 = if cvD8 then cxD8 else -200.0
-        let cvD9 = rrowD >= eLo9 && rrowD < eHi9
-        let cxD9 = eX9 + eS9 * (rrowD - eY9)
-        let ccD9 = pC9 + (rrowD - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
-        let czD9 = pzV9 + (rrowD - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
+        let cyD9 = if rrowD < eLo9 then eLo9 else rrowD
+        let cvD9 = cyD9 < eHi9 && eLo9 - rrowD < 1.0
+        let cxD9 = eX9 + eS9 * (cyD9 - eY9)
+        let ccD9 = pC9 + (cyD9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let czD9 = pzV9 + (cyD9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnD9 = if cvD9 then cxD9 else 200.0
         let cmxD9 = if cvD9 then cxD9 else -200.0
-        let cvD10 = rrowD >= eLo10 && rrowD < eHi10
-        let cxD10 = eX10 + eS10 * (rrowD - eY10)
-        let ccD10 = pC10 + (rrowD - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
-        let czD10 = pzV10 + (rrowD - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
+        let cyD10 = if rrowD < eLo10 then eLo10 else rrowD
+        let cvD10 = cyD10 < eHi10 && eLo10 - rrowD < 1.0
+        let cxD10 = eX10 + eS10 * (cyD10 - eY10)
+        let ccD10 = pC10 + (cyD10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let czD10 = pzV10 + (cyD10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnD10 = if cvD10 then cxD10 else 200.0
         let cmxD10 = if cvD10 then cxD10 else -200.0
-        let cvD11 = rrowD >= eLo11 && rrowD < eHi11
-        let cxD11 = eX11 + eS11 * (rrowD - eY11)
-        let ccD11 = pC11 + (rrowD - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
-        let czD11 = pzV11 + (rrowD - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
+        let cyD11 = if rrowD < eLo11 then eLo11 else rrowD
+        let cvD11 = cyD11 < eHi11 && eLo11 - rrowD < 1.0
+        let cxD11 = eX11 + eS11 * (cyD11 - eY11)
+        let ccD11 = pC11 + (cyD11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let czD11 = pzV11 + (cyD11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnD11 = if cvD11 then cxD11 else 200.0
         let cmxD11 = if cvD11 then cxD11 else -200.0
-        let cvD12 = rrowD >= eLo12 && rrowD < eHi12
-        let cxD12 = eX12 + eS12 * (rrowD - eY12)
-        let ccD12 = pC12 + (rrowD - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
-        let czD12 = pzV12 + (rrowD - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
+        let cyD12 = if rrowD < eLo12 then eLo12 else rrowD
+        let cvD12 = cyD12 < eHi12 && eLo12 - rrowD < 1.0
+        let cxD12 = eX12 + eS12 * (cyD12 - eY12)
+        let ccD12 = pC12 + (cyD12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let czD12 = pzV12 + (cyD12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnD12 = if cvD12 then cxD12 else 200.0
         let cmxD12 = if cvD12 then cxD12 else -200.0
-        let cvD13 = rrowD >= eLo13 && rrowD < eHi13
-        let cxD13 = eX13 + eS13 * (rrowD - eY13)
-        let ccD13 = pC13 + (rrowD - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
-        let czD13 = pzV13 + (rrowD - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
+        let cyD13 = if rrowD < eLo13 then eLo13 else rrowD
+        let cvD13 = cyD13 < eHi13 && eLo13 - rrowD < 1.0
+        let cxD13 = eX13 + eS13 * (cyD13 - eY13)
+        let ccD13 = pC13 + (cyD13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let czD13 = pzV13 + (cyD13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnD13 = if cvD13 then cxD13 else 200.0
         let cmxD13 = if cvD13 then cxD13 else -200.0
-        let cvD14 = rrowD >= eLo14 && rrowD < eHi14
-        let cxD14 = eX14 + eS14 * (rrowD - eY14)
-        let ccD14 = pC14 + (rrowD - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
-        let czD14 = pzV14 + (rrowD - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
+        let cyD14 = if rrowD < eLo14 then eLo14 else rrowD
+        let cvD14 = cyD14 < eHi14 && eLo14 - rrowD < 1.0
+        let cxD14 = eX14 + eS14 * (cyD14 - eY14)
+        let ccD14 = pC14 + (cyD14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let czD14 = pzV14 + (cyD14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnD14 = if cvD14 then cxD14 else 200.0
         let cmxD14 = if cvD14 then cxD14 else -200.0
-        let cvD15 = rrowD >= eLo15 && rrowD < eHi15
-        let cxD15 = eX15 + eS15 * (rrowD - eY15)
-        let ccD15 = pC15 + (rrowD - eY15) * eInv15 * (pC0 - pC15)
-        let czD15 = pzV15 + (rrowD - eY15) * eInv15 * (pzV0 - pzV15)
+        let cyD15 = if rrowD < eLo15 then eLo15 else rrowD
+        let cvD15 = cyD15 < eHi15 && eLo15 - rrowD < 1.0
+        let cxD15 = eX15 + eS15 * (cyD15 - eY15)
+        let ccD15 = pC15 + (cyD15 - eY15) * eInv15 * (pC0 - pC15)
+        let czD15 = pzV15 + (cyD15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnD15 = if cvD15 then cxD15 else 200.0
         let cmxD15 = if cvD15 then cxD15 else -200.0
         let mD0_0 = if cmnD0 < cmnD1 then cmnD0 else cmnD1
@@ -16212,17 +16241,19 @@ mod paintTick() {
             let bu0lo = if qAy < qBy then qAy else qBy
             let bu0hi = if qAy < qBy then qBy else qAy
             let bu0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
-            let bu0x = qAx + bu0s * (prow + 1.0 - qAy)
-            let bu0v = prow + 1.0 >= bu0lo && prow + 1.0 < bu0hi
-            uc0B = cA + (prow + 1.0 - qAy) * iAB * (cB - cA)
-            let uz0B = rZ0 + (prow + 1.0 - qAy) * iAB * (rZ1 - rZ0)
+            let bu0cy = if prow + 1.0 < bu0lo then bu0lo else prow + 1.0
+            let bu0v = bu0cy < bu0hi && bu0lo - (prow + 1.0) < 1.0
+            let bu0x = qAx + bu0s * (bu0cy - qAy)
+            uc0B = cA + (bu0cy - qAy) * iAB * (cB - cA)
+            let uz0B = rZ0 + (bu0cy - qAy) * iAB * (rZ1 - rZ0)
             let bun0 = if bu0v then bu0x else 200.0
             let bux0 = if bu0v then bu0x else -200.0
             let bu1lo = if qBy < qCy then qBy else qCy
             let bu1hi = if qBy < qCy then qCy else qBy
             let bu1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0
-            let bu1x = qBx + bu1s * (prow + 1.0 - qBy)
-            let bu1v = prow + 1.0 >= bu1lo && prow + 1.0 < bu1hi
+            let bu1cy = if prow + 1.0 < bu1lo then bu1lo else prow + 1.0
+            let bu1x = qBx + bu1s * (bu1cy - qBy)
+            let bu1v = bu1cy < bu1hi && bu1lo - (prow + 1.0) < 1.0
             let buc1 = cB
             let bz1 = rZ1
             let bun1 = if bu1v then bu1x else 200.0
@@ -16230,17 +16261,19 @@ mod paintTick() {
             let bu2lo = if qCy < qDy then qCy else qDy
             let bu2hi = if qCy < qDy then qDy else qCy
             let bu2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0
-            let bu2x = qCx + bu2s * (prow + 1.0 - qCy)
-            let bu2v = prow + 1.0 >= bu2lo && prow + 1.0 < bu2hi
-            uc2B = cB + (prow + 1.0 - qCy) * iCD * (cA - cB)
-            let uz2B = rZ1 + (prow + 1.0 - qCy) * iCD * (rZ0 - rZ1)
+            let bu2cy = if prow + 1.0 < bu2lo then bu2lo else prow + 1.0
+            let bu2x = qCx + bu2s * (bu2cy - qCy)
+            let bu2v = bu2cy < bu2hi && bu2lo - (prow + 1.0) < 1.0
+            uc2B = cB + (bu2cy - qCy) * iCD * (cA - cB)
+            let uz2B = rZ1 + (bu2cy - qCy) * iCD * (rZ0 - rZ1)
             let bun2 = if bu2v then bu2x else 200.0
             let bux2 = if bu2v then bu2x else -200.0
             let bu3lo = if qDy < qAy then qDy else qAy
             let bu3hi = if qDy < qAy then qAy else qDy
             let bu3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0
-            let bu3x = qDx + bu3s * (prow + 1.0 - qDy)
-            let bu3v = prow + 1.0 >= bu3lo && prow + 1.0 < bu3hi
+            let bu3cy = if prow + 1.0 < bu3lo then bu3lo else prow + 1.0
+            let bu3x = qDx + bu3s * (bu3cy - qDy)
+            let bu3v = bu3cy < bu3hi && bu3lo - (prow + 1.0) < 1.0
             let buc3 = cA
             let bz3 = rZ0
             let bun3 = if bu3v then bu3x else 200.0
@@ -16301,17 +16334,19 @@ mod paintTick() {
             let bu0loC = if qAy < qBy then qAy else qBy
             let bu0hiC = if qAy < qBy then qBy else qAy
             let bu0sC = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
-            let bu0xC = qAx + bu0sC * (prow + 2.0 - qAy)
-            let bu0vC = prow + 2.0 >= bu0loC && prow + 2.0 < bu0hiC
-            let buc0C = cA + (prow + 2.0 - qAy) * iAB * (cB - cA)
-            let buz0C = rZ0 + (prow + 2.0 - qAy) * iAB * (rZ1 - rZ0)
+            let bu0cyC = if prow + 2.0 < bu0loC then bu0loC else prow + 2.0
+            let bu0xC = qAx + bu0sC * (bu0cyC - qAy)
+            let bu0vC = bu0cyC < bu0hiC && bu0loC - (prow + 2.0) < 1.0
+            let buc0C = cA + (bu0cyC - qAy) * iAB * (cB - cA)
+            let buz0C = rZ0 + (bu0cyC - qAy) * iAB * (rZ1 - rZ0)
             let bun0C = if bu0vC then bu0xC else 200.0
             let bux0C = if bu0vC then bu0xC else -200.0
             let bu1loC = if qBy < qCy then qBy else qCy
             let bu1hiC = if qBy < qCy then qCy else qBy
             let bu1sC = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0
-            let bu1xC = qBx + bu1sC * (prow + 2.0 - qBy)
-            let bu1vC = prow + 2.0 >= bu1loC && prow + 2.0 < bu1hiC
+            let bu1cyC = if prow + 2.0 < bu1loC then bu1loC else prow + 2.0
+            let bu1xC = qBx + bu1sC * (bu1cyC - qBy)
+            let bu1vC = bu1cyC < bu1hiC && bu1loC - (prow + 2.0) < 1.0
             let buc1C = cB
             let buz1C = rZ1
             let bun1C = if bu1vC then bu1xC else 200.0
@@ -16319,17 +16354,19 @@ mod paintTick() {
             let bu2loC = if qCy < qDy then qCy else qDy
             let bu2hiC = if qCy < qDy then qDy else qCy
             let bu2sC = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0
-            let bu2xC = qCx + bu2sC * (prow + 2.0 - qCy)
-            let bu2vC = prow + 2.0 >= bu2loC && prow + 2.0 < bu2hiC
-            let buc2C = cB + (prow + 2.0 - qCy) * iCD * (cA - cB)
-            let buz2C = rZ1 + (prow + 2.0 - qCy) * iCD * (rZ0 - rZ1)
+            let bu2cyC = if prow + 2.0 < bu2loC then bu2loC else prow + 2.0
+            let bu2xC = qCx + bu2sC * (bu2cyC - qCy)
+            let bu2vC = bu2cyC < bu2hiC && bu2loC - (prow + 2.0) < 1.0
+            let buc2C = cB + (bu2cyC - qCy) * iCD * (cA - cB)
+            let buz2C = rZ1 + (bu2cyC - qCy) * iCD * (rZ0 - rZ1)
             let bun2C = if bu2vC then bu2xC else 200.0
             let bux2C = if bu2vC then bu2xC else -200.0
             let bu3loC = if qDy < qAy then qDy else qAy
             let bu3hiC = if qDy < qAy then qAy else qDy
             let bu3sC = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0
-            let bu3xC = qDx + bu3sC * (prow + 2.0 - qDy)
-            let bu3vC = prow + 2.0 >= bu3loC && prow + 2.0 < bu3hiC
+            let bu3cyC = if prow + 2.0 < bu3loC then bu3loC else prow + 2.0
+            let bu3xC = qDx + bu3sC * (bu3cyC - qDy)
+            let bu3vC = bu3cyC < bu3hiC && bu3loC - (prow + 2.0) < 1.0
             let buc3C = cA
             let buz3C = rZ0
             let bun3C = if bu3vC then bu3xC else 200.0
@@ -16390,17 +16427,19 @@ mod paintTick() {
             let bu0loD = if qAy < qBy then qAy else qBy
             let bu0hiD = if qAy < qBy then qBy else qAy
             let bu0sD = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
-            let bu0xD = qAx + bu0sD * (prow + 3.0 - qAy)
-            let bu0vD = prow + 3.0 >= bu0loD && prow + 3.0 < bu0hiD
-            let buc0D = cA + (prow + 3.0 - qAy) * iAB * (cB - cA)
-            let buz0D = rZ0 + (prow + 3.0 - qAy) * iAB * (rZ1 - rZ0)
+            let bu0cyD = if prow + 3.0 < bu0loD then bu0loD else prow + 3.0
+            let bu0xD = qAx + bu0sD * (bu0cyD - qAy)
+            let bu0vD = bu0cyD < bu0hiD && bu0loD - (prow + 3.0) < 1.0
+            let buc0D = cA + (bu0cyD - qAy) * iAB * (cB - cA)
+            let buz0D = rZ0 + (bu0cyD - qAy) * iAB * (rZ1 - rZ0)
             let bun0D = if bu0vD then bu0xD else 200.0
             let bux0D = if bu0vD then bu0xD else -200.0
             let bu1loD = if qBy < qCy then qBy else qCy
             let bu1hiD = if qBy < qCy then qCy else qBy
             let bu1sD = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0
-            let bu1xD = qBx + bu1sD * (prow + 3.0 - qBy)
-            let bu1vD = prow + 3.0 >= bu1loD && prow + 3.0 < bu1hiD
+            let bu1cyD = if prow + 3.0 < bu1loD then bu1loD else prow + 3.0
+            let bu1xD = qBx + bu1sD * (bu1cyD - qBy)
+            let bu1vD = bu1cyD < bu1hiD && bu1loD - (prow + 3.0) < 1.0
             let buc1D = cB
             let buz1D = rZ1
             let bun1D = if bu1vD then bu1xD else 200.0
@@ -16408,17 +16447,19 @@ mod paintTick() {
             let bu2loD = if qCy < qDy then qCy else qDy
             let bu2hiD = if qCy < qDy then qDy else qCy
             let bu2sD = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0
-            let bu2xD = qCx + bu2sD * (prow + 3.0 - qCy)
-            let bu2vD = prow + 3.0 >= bu2loD && prow + 3.0 < bu2hiD
-            let buc2D = cB + (prow + 3.0 - qCy) * iCD * (cA - cB)
-            let buz2D = rZ1 + (prow + 3.0 - qCy) * iCD * (rZ0 - rZ1)
+            let bu2cyD = if prow + 3.0 < bu2loD then bu2loD else prow + 3.0
+            let bu2xD = qCx + bu2sD * (bu2cyD - qCy)
+            let bu2vD = bu2cyD < bu2hiD && bu2loD - (prow + 3.0) < 1.0
+            let buc2D = cB + (bu2cyD - qCy) * iCD * (cA - cB)
+            let buz2D = rZ1 + (bu2cyD - qCy) * iCD * (rZ0 - rZ1)
             let bun2D = if bu2vD then bu2xD else 200.0
             let bux2D = if bu2vD then bu2xD else -200.0
             let bu3loD = if qDy < qAy then qDy else qAy
             let bu3hiD = if qDy < qAy then qAy else qDy
             let bu3sD = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0
-            let bu3xD = qDx + bu3sD * (prow + 3.0 - qDy)
-            let bu3vD = prow + 3.0 >= bu3loD && prow + 3.0 < bu3hiD
+            let bu3cyD = if prow + 3.0 < bu3loD then bu3loD else prow + 3.0
+            let bu3xD = qDx + bu3sD * (bu3cyD - qDy)
+            let bu3vD = bu3cyD < bu3hiD && bu3loD - (prow + 3.0) < 1.0
             let buc3D = cA
             let buz3D = rZ0
             let bun3D = if bu3vD then bu3xD else 200.0
@@ -16478,17 +16519,19 @@ mod paintTick() {
           let u0lo = if qAy < qBy then qAy else qBy
           let u0hi = if qAy < qBy then qBy else qAy
           let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else if qBy < qAy then (qBx - qAx) / (qBy - qAy) else 0.0
-          let u0x = qAx + u0s * (prow - qAy)
-          let u0v = prow >= u0lo && prow < u0hi
-          uc0 = cA + (prow - qAy) * iAB * (cB - cA)
-          let uz0 = rZ0 + (prow - qAy) * iAB * (rZ1 - rZ0)
+          let u0cy = if prow < u0lo then u0lo else prow
+          let u0x = qAx + u0s * (u0cy - qAy)
+          let u0v = u0cy < u0hi && u0lo - prow < 1.0
+          uc0 = cA + (u0cy - qAy) * iAB * (cB - cA)
+          let uz0 = rZ0 + (u0cy - qAy) * iAB * (rZ1 - rZ0)
           let un0 = if u0v then u0x else 200.0
           let ux0 = if u0v then u0x else -200.0
           let u1lo = if qBy < qCy then qBy else qCy
           let u1hi = if qBy < qCy then qCy else qBy
           let u1s = if qCy > qBy then (qCx - qBx) / (qCy - qBy) else if qCy < qBy then (qCx - qBx) / (qCy - qBy) else 0.0
-          let u1x = qBx + u1s * (prow - qBy)
-          let u1v = prow >= u1lo && prow < u1hi
+          let u1cy = if prow < u1lo then u1lo else prow
+          let u1x = qBx + u1s * (u1cy - qBy)
+          let u1v = u1cy < u1hi && u1lo - prow < 1.0
           let uc1 = cB
           let uz1 = rZ1
           let un1 = if u1v then u1x else 200.0
@@ -16496,17 +16539,19 @@ mod paintTick() {
           let u2lo = if qCy < qDy then qCy else qDy
           let u2hi = if qCy < qDy then qDy else qCy
           let u2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else if qDy < qCy then (qDx - qCx) / (qDy - qCy) else 0.0
-          let u2x = qCx + u2s * (prow - qCy)
-          let u2v = prow >= u2lo && prow < u2hi
-          uc2 = cB + (prow - qCy) * iCD * (cA - cB)
-          let uz2 = rZ1 + (prow - qCy) * iCD * (rZ0 - rZ1)
+          let u2cy = if prow < u2lo then u2lo else prow
+          let u2x = qCx + u2s * (u2cy - qCy)
+          let u2v = u2cy < u2hi && u2lo - prow < 1.0
+          uc2 = cB + (u2cy - qCy) * iCD * (cA - cB)
+          let uz2 = rZ1 + (u2cy - qCy) * iCD * (rZ0 - rZ1)
           let un2 = if u2v then u2x else 200.0
           let ux2 = if u2v then u2x else -200.0
           let u3lo = if qDy < qAy then qDy else qAy
           let u3hi = if qDy < qAy then qAy else qDy
           let u3s = if qAy > qDy then (qAx - qDx) / (qAy - qDy) else if qAy < qDy then (qAx - qDx) / (qAy - qDy) else 0.0
-          let u3x = qDx + u3s * (prow - qDy)
-          let u3v = prow >= u3lo && prow < u3hi
+          let u3cy = if prow < u3lo then u3lo else prow
+          let u3x = qDx + u3s * (u3cy - qDy)
+          let u3v = u3cy < u3hi && u3lo - prow < 1.0
           let uc3 = cA
           let uz3 = rZ0
           let un3 = if u3v then u3x else 200.0

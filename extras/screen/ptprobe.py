@@ -1,13 +1,15 @@
-"""Does a one-point shape walk out, or break the chip?
+"""Does a one-point shape store, erase, and render nothing?
 
-The protocol's thinnest shape is a single point: one triple plus the
-terminator.  A fill of one point covers no span; a stroke of one point is
-the chip's single pixel (under two points there is no segment).  Either way the
-walks must scan out and fall, the commit must erase what the slot used to
-hold and repaint its new nothing, and the slot machinery must stay alive
-for the NEXT push.  A walk that never ends, a slot that keeps its old
-pixels through the replacement, or a later push that never lands is the
-bug this probe catches.
+One point is accepted like any other push: the commit stores it and
+replaces the slot exactly as before, but the geometry it paints is
+nothing -- a fill covers no span under one point, a stroke has no
+segment under two -- and the erase bookkeeping blacks the slot's old
+pixels.  The probe stages a square, replaces it with a lone point (fill
+and stroke alike), and checks the wall is empty at both commits and the
+square comes back after: not the point's pixel, not the square still
+standing.  A commit that leaves stale pixels, paints the point, or
+leaves the slot unusable for the NEXT push is the bug this probe
+catches.
 
    python -u extras/screen/ptprobe.py [screen.ws]
    python -u extras/screen/ptprobe.py trace   # per-tick state window
@@ -83,7 +85,7 @@ def main():
         plan.update(stage(150, 1, ONE, [RED], False, True))
         # the slot must stay usable after that: the square comes back
         plan.update(stage(290, 1, SQ, [RED] * 4, False, True))
-        # a one-point STROKE in a slot: one pixel, never a residue
+        # a one-point STROKE in a slot: stores, paints nothing
         plan.update(stage(430, 1, ONE, [RED], True, True))
         # and the whole path again after the stroke walk
         plan.update(stage(570, 1, SQ, [RED] * 4, False, True))
@@ -134,10 +136,12 @@ def main():
 
         for tick, why in sorted((t, snaps[t]) for t in walls):
             wall = walls[tick]
-            if why == "one-point stroke commit":
-                want = {0}
+            # The one-point commits store and paint nothing: the wall is
+            # empty there, the square everywhere else.
+            if why == "one-point fill commit" or why == "one-point stroke commit":
+                want = set()
             else:
-                want = sq_px if why != "one-point fill commit" else set()
+                want = sq_px
             bad = [i for i in range(4096)
                    if not (wall[i] == RED if i in want else
                            wall[i] == BLACK)]

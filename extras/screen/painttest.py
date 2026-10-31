@@ -185,8 +185,9 @@ def poly_pixels(pts):
     while row <= last:
         cmn, cmx = [], []
         for ex, ey, es, elo, ehi in edges:
-            if elo <= row < ehi:
-                x = ex + es * (row - ey)
+            cy = elo if row < elo else row
+            if cy < ehi and elo - row < 1.0:
+                x = ex + es * (cy - ey)
                 cmn.append(x)
                 cmx.append(x)
             else:
@@ -216,10 +217,7 @@ def stroke_pixels(pts):
     if n < 1:
         return set()
     if n == 1:
-        x, y = pts[0], pts[1]
-        if x < 0.0 or x >= 64.0 or y < 0.0 or y >= 64.0:
-            return set()
-        return {int(y) * SW + int(x)}
+        return set()
     out = set()
     for i in range(n - 1):
         ax, ay = pts[2 * i], pts[2 * i + 1]
@@ -244,9 +242,10 @@ def stroke_pixels(pts):
                 x0, y0 = quad[k]
                 x1, y1 = quad[(k + 1) % 4]
                 lo, hi = (y0, y1) if y0 < y1 else (y1, y0)
-                if lo <= row < hi:
+                cy = lo if row < lo else row
+                if cy < hi and lo - row < 1.0:
                     s = (x1 - x0) / (y1 - y0) if y1 != y0 else 0.0
-                    x = x0 + s * (row - y0)
+                    x = x0 + s * (cy - y0)
                     cmn.append(x)
                     cmx.append(x)
                 else:
@@ -313,11 +312,12 @@ def poly_colors(pts, colors):
         # need: the min wants its dead edges large, the max small.
         xmn, xmx, cs = [], [], []
         for ex, ey, es, elo, ehi, ein, ci, cj in edges:
-            if elo <= row < ehi:
-                x = ex + es * (row - ey)
+            cy = elo if row < elo else row
+            if cy < ehi and elo - row < 1.0:
+                x = ex + es * (cy - ey)
                 xmn.append(x)
                 xmx.append(x)
-                t = (row - ey) * ein
+                t = (cy - ey) * ein
                 cs.append(tuple(ci[k] + t * (cj[k] - ci[k])
                                 for k in range(4)))
             else:
@@ -359,10 +359,7 @@ def stroke_colors(pts, colors):
         return {}
     colors = list(colors) + [WHITE] * (16 - len(colors))
     if n == 1:
-        x, y = pts[0], pts[1]
-        if x < 0.0 or x >= 64.0 or y < 0.0 or y >= 64.0:
-            return {}
-        return {int(y) * SW + int(x): colors[0]}
+        return {}
     out = {}
     for i in range(n - 1):
         ax, ay = pts[2 * i], pts[2 * i + 1]
@@ -390,12 +387,13 @@ def stroke_colors(pts, colors):
                 x0, y0 = quad[k]
                 x1, y1 = quad[(k + 1) % 4]
                 lo, hi = (y0, y1) if y0 < y1 else (y1, y0)
-                if lo <= row < hi:
+                cy = lo if row < lo else row
+                if cy < hi and lo - row < 1.0:
                     s = (x1 - x0) / (y1 - y0) if y1 != y0 else 0.0
-                    xmn.append(x0 + s * (row - y0))
-                    xmx.append(x0 + s * (row - y0))
+                    xmn.append(x0 + s * (cy - y0))
+                    xmx.append(x0 + s * (cy - y0))
                     if y1 != y0:
-                        t = (row - y0) / (y1 - y0)
+                        t = (cy - y0) / (y1 - y0)
                         cs.append(tuple(qc[k][m] + t * (qc[(k + 1) % 4][m]
                                                         - qc[k][m])
                                         for m in range(4)))
@@ -615,11 +613,12 @@ def z_colors(wpts, colors):
     while row <= last:
         items = []
         for (ax, ay, az, s, einv, elo, ehi, c0, c1, bz) in edges:
-            if elo <= row < ehi:
-                x = ax + s * (row - ay)
-                cc = tuple(a + (row - ay) * einv * (b - a)
+            cy = elo if row < elo else row
+            if cy < ehi and elo - row < 1.0:
+                x = ax + s * (cy - ay)
+                cc = tuple(a + (cy - ay) * einv * (b - a)
                            for a, b in zip(c0, c1))
-                zz = az + (row - ay) * einv * (bz - az)
+                zz = az + (cy - ay) * einv * (bz - az)
                 items.append((x, cc, zz))
         if items:
             mn = min(items, key=lambda t: t[0])
@@ -709,6 +708,7 @@ def main():
             ([10.0, 4.0, 10.0, 40.0, 10.0, 40.0], blue),  # a hairline
             ([8.0, 6.0, 40.0, 14.0, 36.0, 20.0, 4.0, 12.0], blue),  # thick line
             (rect_pts(0.0, 0.0, 64.0, 64.0) + [0.0, 0.0] * 12, RED),  # N=16
+            (rect_pts(50.2, 50.2, 50.6, 50.6), RED),  # sub-pixel quad
         ]
         # schedule: each shape's slot is its own row span plus slack, so
         # a burst always finishes before the next drawAllShapes (a re-arm
@@ -886,9 +886,11 @@ def main():
         strokes = [
             ([5.0, 30.0, 20.0, 15.0, 35.0, 30.0],
              [blue, blue]),                        # open curve
-            ([40.0, 40.0], [blue]),                           # a dot
+            ([40.0, 40.0], [blue]),     # one point: stores, paints nothing
             ([10.0, 10.0, 20.0, 10.0, 20.0, 20.0, 10.0, 20.0,
               10.0, 10.0], [blue] * 5),                     # wireframe square
+            ([55.0, 55.2, 55.6, 55.2],
+              [blue]),                        # sub-pixel segment
             ([2.0, 8.0, 6.0, 12.0],
              [RED, blue]),                   # diagonal, red -> blue
         ]
