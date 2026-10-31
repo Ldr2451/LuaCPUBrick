@@ -6,16 +6,18 @@ function nap(c)
 local t = clock()
 while clock() < t + c do end
 end
-local function pulse(n)
-outNum(n, 1.0)
+-- One array carries everything: shape data in slots 1..100, control in
+-- 200..214 (see connector.ws).  A pulse is 1, one tick, 0.
+local function pulse(slot)
+outNumArr(slot, 1.0)
 tick()
-outNum(n, 0.0)
+outNumArr(slot, 0.0)
 end
 function push()
-pulse(1)
+pulse(200)
 end
 function draw()
-pulse(2)
+pulse(201)
 end
 local function putn(slot, t)
 local i = 1
@@ -25,18 +27,35 @@ i = i + 8
 end
 return slot + #t
 end
--- Wire mode is not a knob to remember: stage writes outNum4 on every push,
--- from the shape's own `wire` argument (nil = filled).  A push says what it
--- is; nothing depends on what the last push left behind.
-function setTransform(xf)
-local i = 1
-while i <= 9 do
-outStrArr(i, tostring(xf[i]))
-i = i + 1
+-- ids and parents are numbers now: the slot array is numeric, so a string
+-- is converted once here ("" and nil mean 0 = immediate / no parent).
+local function num(v)
+if v == nil then return 0.0 end
+if type(v) == "string" then return tonumber(v) or 0.0 end
+return v
 end
+-- rep(t, n): n copies of t end to end -- one colour repeated per point.
+function rep(t, n)
+local out = {}
+local i = 1
+local k = 0
+while k < n do
+local j = 1
+while j <= #t do
+out[i] = t[j]
+i = i + 1
+j = j + 1
+end
+k = k + 1
+end
+return out
+end
+function setTransform(xf)
+outNumArr(206, xf[1], xf[2], xf[3], xf[4], xf[5], xf[6], xf[7], xf[8])
+outNumArr(214, xf[9])
 end
 -- stage(pts, cols, xf, parent, ticks, wire, id): put one shape on the
--- ports, ready for the next push.
+-- array, ready for the next push.
 -- pts is a flat list of point FLOATS: two per point for a 2D shape
 -- (x, y) and three for a 3D one (x, y, z).  The chip reads an odd
 -- length as 3D and projects it, so a 3D outline is sent as its
@@ -46,10 +65,10 @@ end
 -- this library only moves numbers to the outputs.
 -- cols is optional and per-point (four numbers each): one colour per
 -- point, white where absent.  xf is the nine-number transform
--- (pos.xyz, rot.xyz, scl.xyz), parent the slot id as text ("0" none,
--- "1".."32" a shape, "-1" the camera so the shape is placed in view
--- space), ticks the animation length (0 instant, n repaints, -1 forever),
--- wire the wireframe flag: nil or 0 fills, 1 strokes an outline, and it is
+-- (pos.xyz, rot.xyz, scl.xyz), parent the slot id ("0" none, "1".."32"
+-- a shape, "-1" the camera so the shape is placed in view space), ticks
+-- the animation length (0 instant, n repaints, -1 forever), wire the
+-- wireframe flag: nil or 0 fills, 1 strokes an outline, and it is
 -- written on every push -- id the slot to store ("0".."32", "-1" the
 -- camera, "" = immediate).
 -- stage2d(pts, cols, xf, parent, ticks, wire, id): a FLAT shape, written
@@ -91,18 +110,9 @@ putn(termAt + 1, cols)
 end
 local x = xf
 if x == nil then x = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0} end
-local j = 1
-while j <= 9 do
-outStrArr(j, tostring(x[j]))
-j = j + 1
-end
-local p = parent
-if p == nil then p = "0" end
-outStr(2, tostring(p))
-local s = id
-if s == nil then s = "" end
-outStr(1, tostring(s))
-outNum(4, wire or 0.0)
+setTransform(x)
+-- control: wire, id, parent in one call, then the animation length.
+outNumArr(203, wire or 0.0, num(id), num(parent))
 local t = ticks
 if t == nil then t = 0.0 end
 -- one number, one meaning: -1 is FOREVER (the animation runs until
@@ -110,8 +120,6 @@ if t == nil then t = 0.0 end
 -- A step lands at a REPAINT, not at a clock tick: the screen holds its
 -- animation while it scans out a pass, so N is the number of frames the
 -- eye sees, which is the only rate the eye can see anyway.
--- -1.0 at slot 100 used to mean instant, so it now means forever;
--- instant moved to 0.0 (which is also what an unwritten slot reads).
 if t == -1.0 then
 outNumArr(100, -1.0)
 elseif t >= 1.0 then
@@ -121,12 +129,12 @@ outNumArr(100, 0.0)
 end
 end
 function fire(after)
-outNum(1, 1.0)
+outNumArr(200, 1.0)
 tick()
-outNum(1, 0.0)
-outNum(2, 1.0)
+outNumArr(200, 0.0)
+outNumArr(201, 1.0)
 tick()
-outNum(2, 0.0)
+outNumArr(201, 0.0)
 if after ~= nil then
 if after > 0.0 then nap(after) end
 end
@@ -258,9 +266,9 @@ stage({}, nil, nil, "0", nil, nil, id)
 fire()
 end
 function clearScreen(after)
-outNum(3, 1.0)
+outNumArr(202, 1.0)
 tick()
-outNum(3, 0.0)
+outNumArr(202, 0.0)
 draw()
 if after ~= nil then
 if after > 0.0 then nap(after) end

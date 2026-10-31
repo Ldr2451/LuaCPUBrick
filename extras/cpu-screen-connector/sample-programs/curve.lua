@@ -76,6 +76,6 @@ local f = 0
 while f < 10 do
   wave(f * 0.55)
   draw()
-  nap(420.0)
+  nap(224.0)
   f = f + 1
 end

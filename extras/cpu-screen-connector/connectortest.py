@@ -3,11 +3,14 @@
 A small Lua driver exercises every translation the connector does --
 push/draw thresholds, the terminator-truncated tight points pass,
 the per-point colour slice (points first, terminator, then four
-floats per point), the parent id from outStr2, the transform vecs
-from outStrArr, shapeWireMode, the string slot id and the clear flag --
-and the wall is diffed against a Python model of the whole chain,
-so a dropped channel, a wrong colour or a misread slot shows up as
-a pixel diff.
+floats per point), the parent id and transform from the one array,
+shapeWireMode, the slot id and the clear flag -- and the wall is
+diffed against a Python model of the whole chain, so a dropped slot,
+a wrong colour or a misread slot shows up as a pixel diff.
+
+The connector now takes a single numeric array (outNumArr): shape data
+in slots 1..100 and control in 200..214, so the CPU's other ports stay
+free and a driver wires one array.
 
 The sim's math gates are float-only, so colour arithmetic reads as
 0.0 there; colormath.install() patches them to the documented
@@ -30,7 +33,7 @@ import colormath  # noqa: E402
 
 colormath.install()
 from painttest import poly_pixels, stroke_pixels, slide, xf_points  # noqa: E402
-from painttest import close, slide3  # noqa: E402
+from painttest import close, slide3, over  # noqa: E402
 import luastream  # noqa: E402
 from animtest import port_slice  # noqa: E402
 
@@ -44,6 +47,10 @@ BLACK = (0.0, 0.0, 0.0, 1.0)
 # at 0.35 * pushed colour.  Divided back out where the wall is read, so
 # the rest of the chain test compares a pushed colour against the wall.
 BF = 0.35
+# The wall stores the COMPOSITE of a pushed colour (alpha 0.5 green over
+# black is (0, 0.5, 0, 1)), so a translucent expectation goes through the
+# same `over` the paint model uses.
+GREEN = over(BLACK, (0.0, 1.0, 0.0, 0.5))
 
 
 def undim(v):
@@ -86,42 +93,40 @@ pushShape({4.0, 4.0, 0.0, 12.0, 4.0, 0.0, 12.0, 12.0, 0.0, 4.0, 12.0, 0.0},
 {0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0,
 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0},
 {8.0, 4.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "2")
-outStr(2, "")
 -- shape 4: retained green triangle in slot 1 (identity transform
 -- restated: a push carries its full shape or inherits the mover's).
 editShape("1", {8.0, 8.0, 0.0, 20.0, 8.0, 0.0, 8.0, 20.0, 0.0},
 {0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5},
 {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0})
-outStr(1, "")
 -- shape 5: animate slot 1's triangle (+2 x/tick over 4 ticks).
 -- The nap below is shape 4's burst settling before the new push,
 -- which would otherwise abort it mid-flight.
 nap(1.2)
 editShape("1", {0.0, 0.0, 0.0}, nil,
 {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, "0", 4.0)
-outStr(1, "")
 outNumArr(100, 0.0)
--- the animated commit paints nothing and the 4 ticks run free; one
--- bare draw afterwards shows the triangle moved +8 in x
-nap(0.4)
+-- the animated commit paints nothing and the 4 ticks run free; the
+-- animation advances one step per completed pass, so wait it out before
+-- the bare draw that shows the triangle moved +8 in x
+nap(4.0)
 draw()
 -- let the bare draw's burst finish before clearing, or the pulse
 -- abandons it mid-flight and no moved triangle ever lands
 -- clearing, or the pulse abandons it mid-flight and no complete triangle
 -- ever lands for the snapshot below
 nap(1.2)
--- clear via outNum3 pulse, then off again
-outNum(3, 1.0)
+-- clear via the clear pulse (slot 202), then off again
+outNumArr(202, 1.0)
 tick()
 tick()
-outNum(3, 0.0)
+outNumArr(202, 0.0)
 tick()
 tick()
 -- clearAllShapes only forgets the slots: the next drawAllShapes is the pulse that
 -- actually blacks the wall
-outNum(2, 1.0)
+outNumArr(201, 1.0)
 tick()
-outNum(2, 0.0)
+outNumArr(201, 0.0)
 tick()
 tick()
 print('driver done')
@@ -184,8 +189,8 @@ def main():
         samples = None
         oracled = False
         if not force_chip and luastream.LUA_BIN is not None:
-            samples = luastream.sample_rows(
-                luastream.record(DRIVER_BODY, GFX, budget=BUDGET))
+            samples = luastream.sample_arr(
+                luastream.record(DRIVER_BODY, GFX, budget=BUDGET), n_arr=215)
             if not samples:
                 samples = None
             else:
@@ -200,47 +205,11 @@ def main():
             dumps.append(lua_dump)
             share_dump(LUA_WS, lua_dump)
             lsim = sim_from_dump(lua_dump)
-            r1 = resolve_port(lsim, out_port_id(lsim, "outNum1"))
-            r2 = resolve_port(lsim, out_port_id(lsim, "outNum2"))
-            r3 = resolve_port(lsim, out_port_id(lsim, "outNum3"))
-            r4 = resolve_port(lsim, out_port_id(lsim, "outNum4"))
             ra = resolve_port(lsim, out_port_id(lsim, "outNumArr"))
-            rs = resolve_port(lsim, out_port_id(lsim, "outStr1"))
-            rs2 = resolve_port(lsim, out_port_id(lsim, "outStr2"))
-            rsa = resolve_port(lsim, out_port_id(lsim, "outStrArr"))
             samples = []
 
-            def destr(v):
-                # one string-array element: strip the "quoted" wrapper the
-                # same way as the scalar string ports
-                import re as _re
-                if not isinstance(v, str):
-                    return ""
-                m = _re.search(r'"([^"]*)"', v)
-                return m.group(1) if m else v
-
             def hook(s, tick):
-                # the id travels as text: read the raw string port (values may
-                # carry "quoted" wrappers, stripped the same way as _out_globals)
-                import re as _re
-                kind, sid = rs
-                raw = s.vars.get(sid, "")
-                if not isinstance(raw, str):
-                    raw = ""
-                else:
-                    m = _re.search(r'"([^"]*)"', raw)
-                    raw = m.group(1) if m else raw
-                kind2, sid2 = rs2
-                raw2 = s.vars.get(sid2, "")
-                if not isinstance(raw2, str):
-                    raw2 = ""
-                else:
-                    m = _re.search(r'"([^"]*)"', raw2)
-                    raw2 = m.group(1) if m else raw2
-                samples.append((port_val(s, r1), port_val(s, r2),
-                                port_val(s, r3), port_val(s, r4),
-                                port_slice(s, ra), raw, raw2,
-                                [destr(v) for v in port_val(s, rsa)]))
+                samples.append([float(x) for x in port_slice(s, ra, n=215)])
 
             lsim.reset()
             lsim.inputs = {"program": DRIVER, "run": True}
@@ -251,9 +220,11 @@ def main():
             dbg = og.get("progDebug") or ""
             ok &= expect(not any(l.startswith("err:") for l in dbg.splitlines()),
                          "driver compiles clean", str(dbg))
-            p3_hi = [k for k, s in enumerate(samples) if s[2] > 0.5]
-            p4_hi = [k for k, s in enumerate(samples) if s[3] > 0.5]
-            print("   lua outNum3 high at: %s  outNum4 high at: %s"
+            p3_hi = [k for k, a in enumerate(samples)
+                     if len(a) > 201 and a[201] > 0.5]
+            p4_hi = [k for k, a in enumerate(samples)
+                     if len(a) > 202 and a[202] > 0.5]
+            print("   lua clear high at: %s  wire high at: %s"
                   % (p3_hi[:8], p4_hi[:8]))
 
         # ---- phase 2: connector translates ------------------------------
@@ -305,13 +276,8 @@ def main():
         def hookc2(s, tick):
             k = tick + slice_eff
             if k < len(samples):
-                p1, p2, p3, p4, a, st, st2, sa = samples[k]
-                s.inputs = dict(s.inputs, **{
-                    "outNum1": p1, "outNum2": p2, "outNum3": p3,
-                    "outNum4": p4, "outStr1": st, "outStr2": st2,
-                    "outNumArr": list(a[:128]),
-                    "outStrArr": list(sa[:12]),
-                })
+                a = samples[k]
+                s.inputs = dict(s.inputs, outNumArr=list(a[:215]))
             row = {}
             for k, pid in cpull.items():
                 v = s._in_val(pid, "RER_Input", None)
@@ -366,18 +332,18 @@ def main():
                     and (cstream[k].get("parentShapeId") or 0.0) == 2.0:
                 th = k
                 break
-        ok &= expect(th is not None, "parent id parses from outStr2",
+        ok &= expect(th is not None, "parent id reads array slot 205",
                      "no tick with the square + parent 2")
         if th is not None:
             prow = cstream[th]
             ok &= expect(tuple(prow["shapePosition"][:3]) == (8.0, 4.0, 0.0),
-                         "shapePosition parses from outStrArr",
+                         "shapePosition reads slots 206..208",
                          "%r" % (prow["shapePosition"],))
             ok &= expect(tuple(prow["shapeRotation"][:3]) == (0.0, 0.0, 0.0),
-                         "shapeRotation parses from outStrArr",
+                         "shapeRotation reads slots 209..211",
                          "%r" % (prow["shapeRotation"],))
             ok &= expect(tuple(prow["shapeScale"][:3]) == (1.0, 1.0, 1.0),
-                         "shapeScale parses from outStrArr",
+                         "shapeScale reads slots 212..214",
                          "%r" % (prow["shapeScale"],))
 
         # the tick count rides slot 100 as a second terminator (-1 =
@@ -455,7 +421,14 @@ def main():
         # wall still shows the triangle); the bare draw after the
         # ticks shows it moved +8 in x (snapB).
         snap3_tick = (reds[2] + 2 + 18) if len(reds) >= 4 else None
-        snapA_tick = (reds[4] + 2 + 120) if len(reds) >= 6 else None
+        # shape 5's animated commit advances its slot one step per
+        # completed recomposite pass; the four steps settle well after the
+        # commit edge.  The chip repaints its live slots forever between
+        # draws, so no fixed tick is a safe still: keep the newest wall up
+        # to just before the bare draw's pulse reaches the chip (the edge
+        # lags the stream by 2 ticks).
+        snapA_min = (reds[4] + 2 + 250) if len(reds) >= 6 else None
+        snapA_end = (reds[5] + 1) if len(reds) >= 6 else None
         snapB_tick = (reds[5] + 2 + 95) if len(reds) >= 6 else None
         snap = None
 
@@ -464,6 +437,14 @@ def main():
         last_slid = [None, None]
 
         def hook2(s, tick):
+            if trace_fn and lo <= tick <= hi:
+                g = lambda n: s.vars.get(tvids[n])
+                px = [undim(tuple(float(x) for x in
+                                  s.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
+                      for i in (524, 528, 532, 576, 580, 1156, 1160)]
+                print("t%-4d " % tick + " ".join(
+                    "%s=%s" % (n, g(n)) for n in trace_fn) +
+                    " px:" + "/".join(str(c) for c in px), flush=True)
             if tick < len(cstream):
                 c = cstream[tick]
                 # arrays/colour lead; the bool edge follows 2 ticks later
@@ -514,11 +495,15 @@ def main():
                     undim(tuple(float(x) for x in s.vars.get(
                         gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                     for i in range(SW * SW)) if gids else None
-            if snapA_tick is not None and tick == snapA_tick:
+            if snapA_end is not None and snapA_min is not None \
+                    and snapA_min <= tick < snapA_end and gids:
+                # the chip re-runs its refresh chain forever here, so no
+                # fixed tick is a safe still: keep the newest wall, ending
+                # strictly before the bare draw's pulse reaches the chip
                 snap_holder["wallA"] = tuple(
                     undim(tuple(float(x) for x in s.vars.get(
                         gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
-                    for i in range(SW * SW)) if gids else None
+                    for i in range(SW * SW))
             if snapB_tick is not None and tick == snapB_tick:
                 snap_holder["wallB"] = tuple(
                     undim(tuple(float(x) for x in s.vars.get(
@@ -531,6 +516,26 @@ def main():
             lb = _extract(nd.props.get("_label", ("raw", "")))
             if isinstance(lb, str) and lb.startswith("g") and lb[1:].isdigit():
                 gids[int(lb[1:])] = nid
+        # diagnosis aid: TRACEWIN=lo:hi prints the chip's per-tick state
+        # and a few wall pixels in that window (chain-vs-probe divergence).
+        tw = os.environ.get("TRACEWIN", "")
+        trace_fn = []
+        if tw:
+            lo, hi = (int(x) for x in tw.split(":"))
+
+            def _vid(name):
+                for nid, nd in ssim.nodes.items():
+                    if _extract(nd.props.get("_label", ("raw", ""))) == name:
+                        return nid
+                raise RuntimeError("no var %r" % name)
+
+            trace_fn = ["cDirty", "erArm", "eraseOK", "noDepth", "arming",
+                        "polyOn", "sOn", "rcOn", "erasing", "erDone",
+                        "wasPaint", "pending", "commitR", "commitQ",
+                        "recompFrame", "fullErase", "lastImm", "polyLive",
+                        "sLive", "repaint", "pfirst", "plast", "rcSlot",
+                        "fromSlot", "brightRC"]
+            tvids = {n: _vid(n) for n in trace_fn}
         # The replay covers the sliced stream plus settle margin for
         # the last burst (the clear's, ~85 ticks); the idle tail past
         # that never painted anything and costs ~4 screen ticks a
@@ -570,8 +575,7 @@ def main():
             ok &= expect(False, "moved square paints through chain",
                          "no snapshot (only %d redraws)" % len(reds))
         if snap_holder.get("wall") is not None:
-            want_tri = {p: (0.0, 1.0, 0.0, 0.5)
-                        for p in poly_pixels(tri)}
+            want_tri = {p: GREEN for p in poly_pixels(tri)}
             bad = [i for i in range(SW * SW)
                    if not close(snap_holder["wall"][i], want_tri.get(
                        i, (0.0, 0.0, 0.0, 1.0)))]
@@ -593,16 +597,19 @@ def main():
         # so snapA -- taken with no drawAllShapes since the commit --
         # already shows the triangle moved.
         movedA0 = xf_points(tri, (8.0, 0.0), 0.0, (1.0, 1.0))
-        wantA = {p: (0.0, 1.0, 0.0, 0.5) for p in poly_pixels(movedA0)}
+        wantA = {p: GREEN for p in poly_pixels(movedA0)}
         if snap_holder.get("wallA") is not None:
             badA = [i for i in range(SW * SW)
                     if not close(snap_holder["wallA"][i], wantA.get(
                         i, (0.0, 0.0, 0.0, 1.0)))]
             if badA:
+                byrow = {}
+                for b in badA:
+                    byrow.setdefault(b // 64, []).append(
+                        (b % 64, tuple(round(c, 3)
+                         for c in snap_holder["wallA"][b])))
                 print("   motion diffs: %s"
-                      % [(b // 64, b % 64,
-                          tuple(round(c, 3) for c in snap_holder["wallA"][b]))
-                         for b in badA[:8]])
+                      % ["r%d:%s" % (r, v) for r, v in sorted(byrow.items())])
             ok &= expect(not badA, "motion advances with no draw",
                          "%d of 4096 differ, first at %d"
                          % (len(badA), badA[0] if badA else 0))
@@ -611,8 +618,7 @@ def main():
                          "no snapshot (only %d redraws)" % len(reds))
         if snap_holder.get("wallB") is not None:
             movedA = xf_points(tri, (8.0, 0.0), 0.0, (1.0, 1.0))
-            wantB = {p: (0.0, 1.0, 0.0, 0.5)
-                     for p in poly_pixels(movedA)}
+            wantB = {p: GREEN for p in poly_pixels(movedA)}
             badB = [i for i in range(SW * SW)
                     if not close(snap_holder["wallB"][i], wantB.get(
                         i, (0.0, 0.0, 0.0, 1.0)))]

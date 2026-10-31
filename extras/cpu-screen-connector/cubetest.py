@@ -164,27 +164,19 @@ def chip_stream(ticks, ok):
     try:
         share_dump(LUA_WS, lua_dump)
         lsim = sim_from_dump(lua_dump)
-        r1 = resolve_port(lsim, out_port_id(lsim, "outNum1"))
-        r2 = resolve_port(lsim, out_port_id(lsim, "outNum2"))
-        r3 = resolve_port(lsim, out_port_id(lsim, "outNum3"))
-        r4 = resolve_port(lsim, out_port_id(lsim, "outNum4"))
         ra = resolve_port(lsim, out_port_id(lsim, "outNumArr"))
-        rs = resolve_port(lsim, out_port_id(lsim, "outStr1"))
-        rs2 = resolve_port(lsim, out_port_id(lsim, "outStr2"))
-        rsa = resolve_port(lsim, out_port_id(lsim, "outStrArr"))
         rows = []
         live_seen = [False]
 
         def hook(s, tick):
-            row = (port_val(s, r1), port_val(s, r2), port_val(s, r3),
-                   port_val(s, r4),
-                   [float(x) for x in port_slice(s, ra, n=128)],
-                   destr(s.vars.get(rs[1], "")),
-                   destr(s.vars.get(rs2[1], "")),
-                   [destr(v) for v in port_val(s, rsa)])
-            live = row[0] > 0.5 or row[1] > 0.5 or row[2] > 0.5 \
-                or row[3] > 0.5
-            if live:
+            row = [float(x) for x in port_slice(s, ra, n=215)]
+            live = len(row) > 201 and (row[199] > 0.5 or row[200] > 0.5
+                                       or row[201] > 0.5)
+            if not live_seen[0] and live:
+                # one all-zero baseline row first: the connector's
+                # ContainerChange takes its first look as the baseline, so
+                # a first pulse must arrive as a CHANGE, not as the start.
+                rows.append([0.0] * 215)
                 live_seen[0] = True
             if live_seen[0]:
                 rows.append(row)
@@ -208,19 +200,24 @@ def chip_stream(ticks, ok):
 
 
 def latch_edges(samples):
-    """rising outNum1 edges -> (st, st2, a[97], a[99], a[:12], sa[:9]).
-    sa is compared at its first 9 fields: the chip's outStrArr port is
-    wider and pads with empty strings, real Lua's slice stops at 9."""
+    """rising push pulses (slot 200) -> the staged shape's control fields.
+
+    The connector takes one array now, so a latch is the array's own state
+    at the push edge: id, parent, float count, animation length, the first
+    four points and the nine transform floats.
+    """
     out = []
     prev = 0.0
-    for row in samples:
-        p, _r, _c, _w, a, st, st2, sa = row
+    for a in samples:
+        p = a[199] if len(a) > 199 else 0.0
         if p > 0.5 and prev <= 0.5:
-            out.append((st, st2,
-                        a[97] if len(a) > 97 else 0.0,
-                        a[99] if len(a) > 99 else 0.0,
-                        tuple(round(float(x), 3) for x in a[:12]),
-                        tuple(sa[:9])))
+            out.append((
+                a[203] if len(a) > 203 else 0.0,
+                a[204] if len(a) > 204 else 0.0,
+                a[97] if len(a) > 97 else 0.0,
+                a[99] if len(a) > 99 else 0.0,
+                tuple(round(float(x), 3) for x in a[:12]),
+                tuple(round(float(x), 3) for x in a[205:214])))
         prev = p
     return out
 
@@ -266,7 +263,7 @@ def main():
         samples, ok = chip_stream(TICKS, ok)
         # oracle reference for the latch comparison
         ow = luastream.record(body, GFX, budget=BUDGET)
-        osamp = luastream.sample_rows(ow) if ow is not None else []
+        osamp = luastream.sample_arr(ow, 215) if ow is not None else []
         lg_chip = latch_edges(samples)
         lg_orac = latch_edges(osamp)
         print("push latches: chip=%d oracle=%d"
@@ -282,11 +279,11 @@ def main():
             print("chip push 1 detail:", lg_chip[0])
     else:
         writes = luastream.record(body, GFX, budget=BUDGET)
-        samples = luastream.sample_rows(writes) if writes is not None else []
+        samples = luastream.sample_arr(writes, 215) if writes is not None else []
 
     # bound the replay: keep every push, then a short animation tail
     pe = [k for k in range(1, len(samples))
-          if samples[k][0] > 0.5 and samples[k - 1][0] <= 0.5]
+          if samples[k][199] > 0.5 and samples[k - 1][199] <= 0.5]
     if pe:
         head = max(0, pe[0] - 50)
         samples = list(samples[head:pe[-1] + TAIL])
@@ -326,13 +323,8 @@ def main():
 
         def hookc(s, tick):
             if tick < len(samples):
-                p1, p2, p3, p4, a, st, st2, sa = samples[tick]
-                s.inputs = dict(s.inputs, **{
-                    "outNum1": p1, "outNum2": p2, "outNum3": p3,
-                    "outNum4": p4, "outStr1": st, "outStr2": st2,
-                    "outNumArr": list(a[:128]),
-                    "outStrArr": list(sa[:12]),
-                })
+                a = samples[tick]
+                s.inputs = dict(s.inputs, outNumArr=list(a[:215]))
             row = {}
             for k, pid in cpull.items():
                 v = s._in_val(pid, "RER_Input", None)
