@@ -52,7 +52,7 @@
 // wrap, so the driver closes a wireframe by repeating the first
 // point and leaves an open curve open (butt caps; joins overlap
 // in the same colour, so need no mitres).  A single point
-// strokes as a 2x2 dot.  Bounds are clipped; a fully off-screen
+// strokes as one pixel.  Bounds are clipped; a fully off-screen
 // shape paints nothing.  Brick colors persist until rewritten,
 // so there is no keepalive and no expiry: the chip emits one
 // burst per drawAllShapes and is silent otherwise.
@@ -15048,7 +15048,7 @@ mod paintTick() {
           sLive = false
         } else {
           prow = (sPy0 | 0) - 2.0
-          sLast = if sPy0 >= 62.0 then 63.0 else (sPy0 | 0) + 1.0
+          sLast = sPy0 | 0
           pcol = 200.0
           pcurR = 100.0
           cA = pC0
@@ -15058,14 +15058,14 @@ mod paintTick() {
           qAx = sPx0 | 0
           qAy = sPy0 | 0
           qAz = sPz0
-          qBx = (sPx0 | 0) + 1.0
+          qBx = sPx0 | 0
           qBy = sPy0 | 0
           qBz = sPz0
-          qCx = (sPx0 | 0) + 1.0
-          qCy = (sPy0 | 0) + 2.0
+          qCx = sPx0 | 0
+          qCy = (sPy0 | 0) + 1.0
           qCz = sPz0
           qDx = sPx0 | 0
-          qDy = (sPy0 | 0) + 2.0
+          qDy = (sPy0 | 0) + 1.0
           qDz = sPz0
           sFresh = false
           sFreshLast = false

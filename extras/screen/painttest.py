@@ -209,7 +209,7 @@ def stroke_pixels(pts):
     A transcription of gen.py's stroke arm and walk -- consecutive pairs
     with no wrap, a 2px quad per segment offset by the unit normal and
     extended a pixel along the tangent, degenerate pairs skipped, a
-    single point as a 2x2 dot -- so chip and test agree by construction.
+    single point as one pixel -- so chip and test agree by construction.
     """
     import math
     n = len(pts) // 2
@@ -219,13 +219,7 @@ def stroke_pixels(pts):
         x, y = pts[0], pts[1]
         if x < 0.0 or x >= 64.0 or y < 0.0 or y >= 64.0:
             return set()
-        out = set()
-        for dr in (0, 1):
-            for dc in (0, 1):
-                r, c = int(y) + dr, int(x) + dc
-                if r < 64 and c < 64:
-                    out.add(r * SW + c)
-        return out
+        return {int(y) * SW + int(x)}
     out = set()
     for i in range(n - 1):
         ax, ay = pts[2 * i], pts[2 * i + 1]
@@ -368,13 +362,7 @@ def stroke_colors(pts, colors):
         x, y = pts[0], pts[1]
         if x < 0.0 or x >= 64.0 or y < 0.0 or y >= 64.0:
             return {}
-        out = {}
-        for dr in (0, 1):
-            for dc in (0, 1):
-                r, c = int(y) + dr, int(x) + dc
-                if r < 64 and c < 64:
-                    out[r * SW + c] = colors[0]
-        return out
+        return {int(y) * SW + int(x): colors[0]}
     out = {}
     for i in range(n - 1):
         ax, ay = pts[2 * i], pts[2 * i + 1]

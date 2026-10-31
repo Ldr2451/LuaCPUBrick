@@ -148,7 +148,7 @@ L.append("// outline implicitly; a stroke runs consecutive pairs with no")
 L.append("// wrap, so the driver closes a wireframe by repeating the first")
 L.append("// point and leaves an open curve open (butt caps; joins overlap")
 L.append("// in the same colour, so need no mitres).  A single point")
-L.append("// strokes as a 2x2 dot.  Bounds are clipped; a fully off-screen")
+L.append("// strokes as one pixel.  Bounds are clipped; a fully off-screen")
 L.append("// shape paints nothing.  Brick colors persist until rewritten,")
 L.append("// so there is no keepalive and no expiry: the chip emits one")
 L.append("// burst per drawAllShapes and is silent otherwise.")
@@ -2114,8 +2114,8 @@ L.append("  }")
 
 # ---- the stroke arm: points -> preserved store + shift register ------------
 # Runs in the mod when a stroke was pushed.  The count is the array's
-# length; under 2 points there is no segment (a single point is a 2x2
-# dot, an empty array is nothing).  Segments are consecutive pairs with
+# length; under 2 points there is no segment (a single point is one
+# pixel, an empty array is nothing).  Segments are consecutive pairs with
 # no wrap -- the driver closes a wireframe by repeating the first point
 # and leaves an open curve open -- so no closure test and no selects.
 L.append("  if armingS {")
@@ -2160,9 +2160,9 @@ L.append("        } else {")
 # row setup in the same tick as the arm's own writes, and the
 # sim's expression lets then read the pre-write values (the
 # colour chain fires early and the lane writes capture the stale
-# colour).  Costs the dot one idle tick; the burst is 2 rows.
+# colour).  Costs the dot one idle tick; the burst is one row.
 L.append("          prow = (sPy0 | 0) - 2.0")
-L.append("          sLast = if sPy0 >= 62.0 then 63.0 else (sPy0 | 0) + 1.0")
+L.append("          sLast = sPy0 | 0")
 L.append("          pcol = 200.0")
 L.append("          pcurR = 100.0")
 # The dot's colours stage BEFORE its quad corners: the sim's
@@ -2178,14 +2178,14 @@ L.append("          iCD = 0.0")
 L.append("          qAx = sPx0 | 0")
 L.append("          qAy = sPy0 | 0")
 L.append("          qAz = sPz0")
-L.append("          qBx = (sPx0 | 0) + 1.0")
+L.append("          qBx = sPx0 | 0")
 L.append("          qBy = sPy0 | 0")
 L.append("          qBz = sPz0")
-L.append("          qCx = (sPx0 | 0) + 1.0")
-L.append("          qCy = (sPy0 | 0) + 2.0")
+L.append("          qCx = sPx0 | 0")
+L.append("          qCy = (sPy0 | 0) + 1.0")
 L.append("          qCz = sPz0")
 L.append("          qDx = sPx0 | 0")
-L.append("          qDy = (sPy0 | 0) + 2.0")
+L.append("          qDy = (sPy0 | 0) + 1.0")
 L.append("          qDz = sPz0")
 L.append("          sFresh = false")
 L.append("          sFreshLast = false")

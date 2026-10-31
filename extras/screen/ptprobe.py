@@ -2,7 +2,7 @@
 
 The protocol's thinnest shape is a single point: one triple plus the
 terminator.  A fill of one point covers no span; a stroke of one point is
-the chip's 2x2 dot (under two points there is no segment).  Either way the
+the chip's single pixel (under two points there is no segment).  Either way the
 walks must scan out and fall, the commit must erase what the slot used to
 hold and repaint its new nothing, and the slot machinery must stay alive
 for the NEXT push.  A walk that never ends, a slot that keeps its old
@@ -83,7 +83,7 @@ def main():
         plan.update(stage(150, 1, ONE, [RED], False, True))
         # the slot must stay usable after that: the square comes back
         plan.update(stage(290, 1, SQ, [RED] * 4, False, True))
-        # a one-point STROKE in a slot: 2x2 dot or nothing, never a residue
+        # a one-point STROKE in a slot: one pixel, never a residue
         plan.update(stage(430, 1, ONE, [RED], True, True))
         # and the whole path again after the stroke walk
         plan.update(stage(570, 1, SQ, [RED] * 4, False, True))
@@ -132,20 +132,15 @@ def main():
                                  if i % 3 != 2]))
         bad_total = 0
 
-        def near_dot(i):
-            r, c = divmod(i, 64)
-            return r <= 3 and c <= 3
-
         for tick, why in sorted((t, snaps[t]) for t in walls):
             wall = walls[tick]
             if why == "one-point stroke commit":
-                bad = [i for i in range(4096)
-                       if wall[i] != BLACK and not near_dot(i)]
+                want = {0}
             else:
                 want = sq_px if why != "one-point fill commit" else set()
-                bad = [i for i in range(4096)
-                       if not (wall[i] == RED if i in want else
-                               wall[i] == BLACK)]
+            bad = [i for i in range(4096)
+                   if not (wall[i] == RED if i in want else
+                           wall[i] == BLACK)]
             bad_total += len(bad)
             print("  t=%-4d %-32s bad=%-4d %s"
                   % (tick, why, len(bad), "BUG" if bad else "ok"))
