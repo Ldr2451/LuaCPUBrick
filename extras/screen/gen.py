@@ -22,6 +22,41 @@ read by literal index, and slot loads -- unavoidably computed -- are
 kept to one 32-read pass per shape), and a deep chain of pure
 compare/select gates costs about a quarter of a second a gate (so spans
 are min/max trees, and the stroke walk holds no selects).
+
+Scheduling is a contract, not a convention. Six passes share one graph;
+every cross-pass piece of state has exactly one OWNER:
+
+  staging ticks    owns animDirty, pending, commitR/RQ, cDirty,
+                   recompFrame, arming, needRC/brightRC
+                   -> arms the other passes; may read old/cov to SIZE
+                      a frame only, never to erase
+  refresh iterator owns rcOn, rcSlot, fromSlot, lastImm
+                   -> sets fullErase for a refresh frame (all live slots
+                      repaint, so the fused erase may take the whole
+                      old span); the phantom arms are its own
+  paint walk       owns polyOn, sOn, prow, pcol*, the per-row spans it
+                      folds into cov
+                   -> READS erase state only through the arrays and the
+                      handoff written by the erase (eFullA..eFullD)
+  fused in-lane    READS old/cov/fullErase; WRITES eFullX ("this row's
+      erase          base was freshly cleared") and consumes the row's
+                      old span (sentinel) after erasing it
+  post-burst erase owns erasing, erRow, erDone; blacks old MINUS cov
+                      only, AFTER the burst (a black over the overlap
+                      would wipe an earlier slot's fresh output)
+  scanout          owns the pixel globals (mirror fb, every tick)
+
+The handoffs are DATA, never inferred timing: a lane that must know
+whether its base is stale or freshly erased READS eFullX written by the
+erase beside it -- the `repaint` skip rule for translucent colours holds
+ONLY when the base is not freshly cleared. An edit that moves a flag to
+a new reader without restating this map is out of contract.
+
+Chip-level gate: extras/screen/checkall.py (gen + build + probes +
+screenchecks, watchdog-attached, minutes). The chain test (connectortest,
+~14 min) confirms, it does not discover: fix chip scheduling at probe
+level first. See docs/lessons.md ("Fixing bugs") and watchdog.py for
+the per-tick invariants this map buys.
 """
 import os
 import sys
@@ -531,6 +566,24 @@ L.append("var cDirty: bool = true")
 # Every retained commit clears and repaints instead, so its pass is the
 # one that needs the erase.
 L.append("var eraseOK: bool = false")
+# A refresh frame (animation self-refresh, animated push, bare draw with
+# live animation) repaints EVERY live slot, so the fused row erase may
+# black the row's whole previous span, overlap included: whatever the
+# new picture still wants gets repainted by the walk that follows, and
+# what it gave up stays black -- the translucent shape then composites
+# once over a clean base instead of over the pixels it already holds
+# (which read five blends deep on an animated triangle).  Consuming the
+# row (sentinel after erasing) makes the erase fire once per row, so a
+# later slot cannot wipe the fresh output of an earlier one.
+L.append("var fullErase: bool = false")
+# Erase -> paint handoff (contract: fused erase WRITES, the lane beside
+# it READS): "this row's base was freshly cleared this tick", so even a
+# repaint frame may blend onto it -- the phantom skip rule (blending a
+# second time over one's own output reads too strong) holds only where
+# the base is NOT freshly cleared.  A refresh that erased its rows must
+# repaint translucent shapes over the black base, once.
+for _t in "ABCD":
+    L.append("var eFull%s: bool = false" % _t)
 # A retained commit starts a new frame: whatever is on screen now --
 # immediate paints included, which never run an erase pass -- becomes
 # the previous frame, and coverage starts empty.  Roll AND reset happen
@@ -702,10 +755,13 @@ L.append("    pushArm = true")
 L.append("  }")
 L.append("}")
 L.append("")
-L.append("// A bare drawAllShapes replays the last shape: the edge records (fill) or the")
+L.append("// A bare drawAllShapes replays the last IMMEDIATE shape: the edge records (fill) or the")
 L.append("// preserved points (stroke) are still staged, so only the walk state")
 L.append("// resets.  Each replay is guarded against the other walk and every arm,")
-L.append("// so a fill burst and a stroke replay can never collide.  A staged")
+L.append("// so a fill burst and a stroke replay can never collide.  Only the")
+L.append("// immediate shapes replay (lastImm): a retained slot is already on the")
+L.append("// wall from its commit, and replaying it would composite it a second")
+L.append("// time -- invisible when opaque, a brighter ghost when translucent.  A staged")
 L.append("// retained push commits instead: the slot is stored and the wall is")
 L.append("// recomposited from every live slot in order.  A staged clearAllShapes fill")
 L.append("// (blackPending) runs here first: with a shape staged, the fill runs")
@@ -725,9 +781,15 @@ L.append("    } else if pending {")
 L.append("      pending = false")
 L.append("      if qCount > 1.5 {")
 L.append("        commitQ = true")
+# a store commit recomposites the wall from the slot table: the staged
+# shape replaces whatever was staged before, so the immediate replay dies
+# here -- leaving it set lets the commit's recomposite re-paint an OLD
+# immediate shape (one push behind) over the erase walk's cleared rows.
+L.append("        lastImm = false")
 L.append("      } else if pId >= 1.0 || pId < 0.0 {")
 L.append("        commitR = true")
 L.append("        qCount = 0.0")
+L.append("        lastImm = false")
 L.append("      } else {")
 L.append("        if pWire {")
 L.append("          armingS = true")
@@ -740,13 +802,13 @@ L.append("    } else if animDirty {")
 L.append("      commitR = true")
 L.append("      recompOnly = true")
 L.append("    }")
-L.append("    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ && (!erasing || !erDone) {")
+L.append("    if lastImm && polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ && (!erasing || !erDone) {")
 L.append("      repaint = true")
 L.append("      prow = pfirst - 4.0")
 L.append("      pcol = 200.0")
 L.append("      polyOn = true")
 L.append("    }")
-L.append("    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ && (!erasing || !erDone) {")
+L.append("    if lastImm && sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ && (!erasing || !erDone) {")
 L.append("      repaint = true")
 for i in range(MAXP):
     L.append("      rX%d = sPx%d" % (i, i))
@@ -777,6 +839,13 @@ L.append("// block at the iterator's end refreshes the last immediate shape")
 L.append("// the same way -- except the recomposite repaints through the")
 L.append("// same walks, so a brightness pass snapshots the armed immediate")
 L.append("// parameters when it starts and restores them before the replay.")
+# The refresh's own replay at the iterator's end needs the same snapshot:
+# the slot loads clobber the shadow, so the last IMMEDIATE shape would be
+# repainted as the last LOADED slot -- invisible while rows are stale (the
+# repaint rule skips blending), a missing shape once the erase freshly
+# cleared them.  lastImm asks for the same snapshot, so the replay finds
+# the immediate's own edges back and its erase lane's freshly cleared
+# rows (eFull) blend it exactly once.
 L.append("// The wall follows within one recomposite, with no")
 L.append("// drawAllShapes and no restaging; live bursts and recomposites serialize")
 L.append("// ahead of it (their remaining rows already read the new factor")
@@ -1021,6 +1090,7 @@ L.append("    animDirty = false")
 L.append("    rcOn = true")
 L.append("    rcSlot = 1.0")
 L.append("    fromSlot = true")
+L.append("    fullErase = true")
 for _l in frameRC_lines:
     L.append("    " + _l)
 for _l in depthReset_lines:
@@ -1294,10 +1364,12 @@ for _l in depthReset_lines:
 L.append("      if recompFrame {")
 L.append("        recompFrame = false")
 L.append("        erDone = false")
+L.append("        fullErase = true")
 L.append("      } else {")
 L.append("        erasing = true")
 L.append("        erRow = oldLo")
 L.append("        erDone = true")
+L.append("        fullErase = false")
 L.append("      }")
 L.append("    }")
 L.append("  }")
@@ -1394,10 +1466,12 @@ for _l in depthReset_lines:
 L.append("      if recompFrame {")
 L.append("        recompFrame = false")
 L.append("        erDone = false")
+L.append("        fullErase = true")
 L.append("      } else {")
 L.append("        erasing = true")
 L.append("        erRow = oldLo")
 L.append("        erDone = true")
+L.append("        fullErase = false")
 L.append("      }")
 L.append("    }")
 L.append("  }")
@@ -1493,7 +1567,8 @@ L.append("  if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR"
          " && (!erasing || !erDone) {")
 L.append("    if rcSlot > %d.0 {" % (SCR + 1))
 L.append("      rcOn = false")
-L.append("      if brightRC {")
+L.append("      needRC = false")
+L.append("      if brightRC || lastImm {")
 L.append("        brightRC = false")
 for i in range(MAXP):
     L.append("        eX%d = bEX%d" % (i, i))
@@ -1535,7 +1610,7 @@ L.append("        pcol = 200.0")
 L.append("        sOn = true")
 L.append("      }")
 L.append("    } else {")
-L.append("      if brightRC && rcSlot < 2.0 {")
+L.append("      if (brightRC || lastImm) && rcSlot < 2.0 {")
 for i in range(MAXP):
     L.append("        bEX%d = eX%d" % (i, i))
     L.append("        bEY%d = eY%d" % (i, i))
@@ -2991,7 +3066,7 @@ L.append("  if polyOn || sOn {")
 # black clear covers everything, so there is nothing stale by
 # construction.  Rows the new frame never stages (a shrink's giveaway
 # rows, a delete's whole shape) are still the separate walk's job.
-def paint_row(rowexpr, pcolv, sfx):
+def paint_row(rowexpr, pcolv, sfx, tag):
     # ONE body per row instead of K copies of it.  The lane count is the loop's
     # Count port, so a wider wall costs the body once rather than once per lane
     # (measured: 207 nodes per copy here, 63 copies = 13,041 nodes).  The body
@@ -3017,10 +3092,13 @@ def paint_row(rowexpr, pcolv, sfx):
     # already on the wall: for an opaque colour that is a harmless rewrite,
     # but blending a transparent colour a second time over its own result
     # would make it too strong, so `repaint` leaves those pixels alone.
+    # That rule only holds while the base is NOT freshly cleared: the erase
+    # lane beside us publishes eFull (contract handoff), and over a
+    # freshly-black base the blend is exactly once -- take it.
     L.append("            let src = cLo%s + rowSlope%s * dt" % (sfx, sfx))
     L.append("            if noDepth || src.a >= 1.0 {")
     L.append("              fb[ridx] = src")
-    L.append("            } else if repaint < 0.5 {")
+    L.append("            } else if repaint < 0.5 || eFull%s {" % tag)
     L.append("              let d = fb[ridx]")
     L.append("              let ia = 1.0 - src.a")
     L.append("              fb[ridx] = Color(src.r * src.a + d.r * ia,"
@@ -3036,6 +3114,7 @@ def paint_row(rowexpr, pcolv, sfx):
 
 
 def black_row(tag, vex):
+    L.append("    eFull%s = false" % tag)
     L.append("    if eraseOK && !noDepth {")
     L.append("      let br%s = (%s | 0)" % (tag, vex))
     L.append("      if br%s >= 0.0 && br%s <= 63.0 {" % (tag, tag))
@@ -3043,17 +3122,26 @@ def black_row(tag, vex):
     L.append("        let okb%s = oldMax[br%s]" % (tag, tag))
     L.append("        let nka%s = covMin[br%s]" % (tag, tag))
     L.append("        let nkb%s = covMax[br%s]" % (tag, tag))
+    # The erase announces, as owned data, that it freshly cleared the
+    # row: the paint lane beside it blends even on a repaint frame
+    # (contract: erase WRITES eFullX, that lane READS it).
+    L.append("        eFull%s = if fullErase && okb%s >= oka%s"
+             " then true else false" % (tag, tag, tag))
     # The sixty-four columns of one row, one body: the only thing that differs
     # between them is the column index, so the count is a port.
     L.append("        for _bx in 0..%d {" % SW)
     L.append("          let okx = (_bx as float)")
     L.append("          if okx >= oka%s && okx <= okb%s"
-             " && (okx < nka%s || okx > nkb%s) {" % (tag, tag, tag, tag))
+             " && (fullErase || okx < nka%s || okx > nkb%s) {" % (tag, tag, tag, tag))
     L.append("            fb[((br%s * SWF + okx) | 0)]"
              " = Color(0.0, 0.0, 0.0, 1.0)" % tag)
     L.append("            fbZ[((br%s * SWF + okx) | 0)] = ZBACK" % tag)
     L.append("          }")
     L.append("        }")
+    # Consume the row: the erase has run for it, and on a refresh frame a
+    # later slot must not black the earlier slot's fresh output again.
+    L.append("        oldMin[br%s] = 200.0" % tag)
+    L.append("        oldMax[br%s] = -200.0" % tag)
     L.append("      }")
     L.append("    }")
 black_row("A", "aRow")
@@ -3062,18 +3150,18 @@ black_row("A", "aRow")
     # advance pcol/pcol2 as they go.  The erase's own rects are not
     # coverage: they black pixels the frame gave up, so folding them
     # in would record them as still painted and never erase them.
-paint_row("aRow", "pcol", "")
+paint_row("aRow", "pcol", "", "A")
 # The B row paints from its own span at prow (advanced past A): the same
 # shared shape, so a stroke costs one lane duplication after all -- the
 # fill's, which the stroke reuses.
 black_row("B", "prow + 1.0")
-paint_row("prow + 1.0", "pcol2", "2")
+paint_row("prow + 1.0", "pcol2", "2", "B")
 # Rows C..D paint from their own spans: same shape once more per row.
 for _ri, _R in enumerate(("C", "D")):
     _k = _ri + 2
     black_row(_R, "prow + %d.0" % _k)
     _sfx = str(_ri + 3)
-    paint_row("prow + %d.0" % _k, "pcol%s" % _sfx, _sfx)
+    paint_row("prow + %d.0" % _k, "pcol%s" % _sfx, _sfx, _R)
 L.append("  }")
 # The scanout: every pixel global mirrors its fb slot, every tick.
 # ---- the erase pass: black what the new frame no longer covers -----

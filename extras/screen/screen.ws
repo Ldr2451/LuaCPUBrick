@@ -611,6 +611,11 @@ var oldLo: float = 200.0
 var oldHi: float = -200.0
 var cDirty: bool = true
 var eraseOK: bool = false
+var fullErase: bool = false
+var eFullA: bool = false
+var eFullB: bool = false
+var eFullC: bool = false
+var eFullD: bool = false
 var erasing: bool = false
 var erRow: float = 0.0
 var erL: float = 0.0
@@ -8989,10 +8994,13 @@ on Change(pushShape) {
   }
 }
 
-// A bare drawAllShapes replays the last shape: the edge records (fill) or the
+// A bare drawAllShapes replays the last IMMEDIATE shape: the edge records (fill) or the
 // preserved points (stroke) are still staged, so only the walk state
 // resets.  Each replay is guarded against the other walk and every arm,
-// so a fill burst and a stroke replay can never collide.  A staged
+// so a fill burst and a stroke replay can never collide.  Only the
+// immediate shapes replay (lastImm): a retained slot is already on the
+// wall from its commit, and replaying it would composite it a second
+// time -- invisible when opaque, a brighter ghost when translucent.  A staged
 // retained push commits instead: the slot is stored and the wall is
 // recomposited from every live slot in order.  A staged clearAllShapes fill
 // (blackPending) runs here first: with a shape staged, the fill runs
@@ -9012,9 +9020,11 @@ mod drawEdge() {
       pending = false
       if qCount > 1.5 {
         commitQ = true
+        lastImm = false
       } else if pId >= 1.0 || pId < 0.0 {
         commitR = true
         qCount = 0.0
+        lastImm = false
       } else {
         if pWire {
           armingS = true
@@ -9027,13 +9037,13 @@ mod drawEdge() {
       commitR = true
       recompOnly = true
     }
-    if polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ && (!erasing || !erDone) {
+    if lastImm && polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ && (!erasing || !erDone) {
       repaint = true
       prow = pfirst - 4.0
       pcol = 200.0
       polyOn = true
     }
-    if sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ && (!erasing || !erDone) {
+    if lastImm && sLive && !sOn && !armingS && !polyOn && !arming && !commitR && !commitQ && (!erasing || !erDone) {
       repaint = true
       rX0 = sPx0
       rY0 = sPy0
@@ -11435,6 +11445,7 @@ mod paintTick() {
     rcOn = true
     rcSlot = 1.0
     fromSlot = true
+    fullErase = true
     if oldLo > 63.0 {
       oldMin[0] = covMin[0]
       oldMax[0] = covMax[0]
@@ -12474,10 +12485,12 @@ mod paintTick() {
       if recompFrame {
         recompFrame = false
         erDone = false
+        fullErase = true
       } else {
         erasing = true
         erRow = oldLo
         erDone = true
+        fullErase = false
       }
     }
   }
@@ -13128,10 +13141,12 @@ mod paintTick() {
       if recompFrame {
         recompFrame = false
         erDone = false
+        fullErase = true
       } else {
         erasing = true
         erRow = oldLo
         erDone = true
+        fullErase = false
       }
     }
   }
@@ -13202,7 +13217,8 @@ mod paintTick() {
   if rcOn && !polyOn && !sOn && !arming && !armingS && !commitR && (!erasing || !erDone) {
     if rcSlot > 33.0 {
       rcOn = false
-      if brightRC {
+      needRC = false
+      if brightRC || lastImm {
         brightRC = false
         eX0 = bEX0
         eY0 = bEY0
@@ -13452,7 +13468,7 @@ mod paintTick() {
         sOn = true
       }
     } else {
-      if brightRC && rcSlot < 2.0 {
+      if (brightRC || lastImm) && rcSlot < 2.0 {
         bEX0 = eX0
         bEY0 = eY0
         bES0 = eS0
@@ -16561,6 +16577,7 @@ mod paintTick() {
   // wrong row.  The direct form is the original chip's lane
   // shape, which never had that hazard.
   if polyOn || sOn {
+    eFullA = false
     if eraseOK && !noDepth {
       let brA = (aRow | 0)
       if brA >= 0.0 && brA <= 63.0 {
@@ -16568,13 +16585,16 @@ mod paintTick() {
         let okbA = oldMax[brA]
         let nkaA = covMin[brA]
         let nkbA = covMax[brA]
+        eFullA = if fullErase && okbA >= okaA then true else false
         for _bx in 0..64 {
           let okx = (_bx as float)
-          if okx >= okaA && okx <= okbA && (okx < nkaA || okx > nkbA) {
+          if okx >= okaA && okx <= okbA && (fullErase || okx < nkaA || okx > nkbA) {
             fb[((brA * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
             fbZ[((brA * SWF + okx) | 0)] = ZBACK
           }
         }
+        oldMin[brA] = 200.0
+        oldMax[brA] = -200.0
       }
     }
       for _lane in 0..64 {
@@ -16587,7 +16607,7 @@ mod paintTick() {
             let src = cLo + rowSlope * dt
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
-            } else if repaint < 0.5 {
+            } else if repaint < 0.5 || eFullA {
               let d = fb[ridx]
               let ia = 1.0 - src.a
               fb[ridx] = Color(src.r * src.a + d.r * ia, src.g * src.a + d.g * ia, src.b * src.a + d.b * ia, src.a + d.a * ia)
@@ -16597,6 +16617,7 @@ mod paintTick() {
         }
       }
       pcol = pcol + 64.0
+    eFullB = false
     if eraseOK && !noDepth {
       let brB = (prow + 1.0 | 0)
       if brB >= 0.0 && brB <= 63.0 {
@@ -16604,13 +16625,16 @@ mod paintTick() {
         let okbB = oldMax[brB]
         let nkaB = covMin[brB]
         let nkbB = covMax[brB]
+        eFullB = if fullErase && okbB >= okaB then true else false
         for _bx in 0..64 {
           let okx = (_bx as float)
-          if okx >= okaB && okx <= okbB && (okx < nkaB || okx > nkbB) {
+          if okx >= okaB && okx <= okbB && (fullErase || okx < nkaB || okx > nkbB) {
             fb[((brB * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
             fbZ[((brB * SWF + okx) | 0)] = ZBACK
           }
         }
+        oldMin[brB] = 200.0
+        oldMax[brB] = -200.0
       }
     }
       for _lane in 0..64 {
@@ -16623,7 +16647,7 @@ mod paintTick() {
             let src = cLo2 + rowSlope2 * dt
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
-            } else if repaint < 0.5 {
+            } else if repaint < 0.5 || eFullB {
               let d = fb[ridx]
               let ia = 1.0 - src.a
               fb[ridx] = Color(src.r * src.a + d.r * ia, src.g * src.a + d.g * ia, src.b * src.a + d.b * ia, src.a + d.a * ia)
@@ -16633,6 +16657,7 @@ mod paintTick() {
         }
       }
       pcol2 = pcol2 + 64.0
+    eFullC = false
     if eraseOK && !noDepth {
       let brC = (prow + 2.0 | 0)
       if brC >= 0.0 && brC <= 63.0 {
@@ -16640,13 +16665,16 @@ mod paintTick() {
         let okbC = oldMax[brC]
         let nkaC = covMin[brC]
         let nkbC = covMax[brC]
+        eFullC = if fullErase && okbC >= okaC then true else false
         for _bx in 0..64 {
           let okx = (_bx as float)
-          if okx >= okaC && okx <= okbC && (okx < nkaC || okx > nkbC) {
+          if okx >= okaC && okx <= okbC && (fullErase || okx < nkaC || okx > nkbC) {
             fb[((brC * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
             fbZ[((brC * SWF + okx) | 0)] = ZBACK
           }
         }
+        oldMin[brC] = 200.0
+        oldMax[brC] = -200.0
       }
     }
       for _lane in 0..64 {
@@ -16659,7 +16687,7 @@ mod paintTick() {
             let src = cLo3 + rowSlope3 * dt
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
-            } else if repaint < 0.5 {
+            } else if repaint < 0.5 || eFullC {
               let d = fb[ridx]
               let ia = 1.0 - src.a
               fb[ridx] = Color(src.r * src.a + d.r * ia, src.g * src.a + d.g * ia, src.b * src.a + d.b * ia, src.a + d.a * ia)
@@ -16669,6 +16697,7 @@ mod paintTick() {
         }
       }
       pcol3 = pcol3 + 64.0
+    eFullD = false
     if eraseOK && !noDepth {
       let brD = (prow + 3.0 | 0)
       if brD >= 0.0 && brD <= 63.0 {
@@ -16676,13 +16705,16 @@ mod paintTick() {
         let okbD = oldMax[brD]
         let nkaD = covMin[brD]
         let nkbD = covMax[brD]
+        eFullD = if fullErase && okbD >= okaD then true else false
         for _bx in 0..64 {
           let okx = (_bx as float)
-          if okx >= okaD && okx <= okbD && (okx < nkaD || okx > nkbD) {
+          if okx >= okaD && okx <= okbD && (fullErase || okx < nkaD || okx > nkbD) {
             fb[((brD * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
             fbZ[((brD * SWF + okx) | 0)] = ZBACK
           }
         }
+        oldMin[brD] = 200.0
+        oldMax[brD] = -200.0
       }
     }
       for _lane in 0..64 {
@@ -16695,7 +16727,7 @@ mod paintTick() {
             let src = cLo4 + rowSlope4 * dt
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
-            } else if repaint < 0.5 {
+            } else if repaint < 0.5 || eFullD {
               let d = fb[ridx]
               let ia = 1.0 - src.a
               fb[ridx] = Color(src.r * src.a + d.r * ia, src.g * src.a + d.g * ia, src.b * src.a + d.b * ia, src.a + d.a * ia)

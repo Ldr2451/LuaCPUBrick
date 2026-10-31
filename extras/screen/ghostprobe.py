@@ -20,6 +20,7 @@ This is the regression case for the depth reset gen.py stages at every
 recomposite start; screenchecks.py runs it as a gate.
 
   python -u extras/screen/ghostprobe.py [screen.ws]
+  python -u extras/screen/ghostprobe.py trace   # per-tick state window
 """
 import os
 import sys
@@ -32,9 +33,11 @@ sys.path.insert(0, HERE)
 
 from irsims import share_dump, _extract  # noqa: E402
 from painttest import fresh_sim, slide3, poly_pixels, col  # noqa
+from watchdog import make_watch
 
 WS = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 \
-    else os.path.join(HERE, "screen.ws")
+    and not sys.argv[1].startswith("-") else os.path.join(HERE, "screen.ws")
+TRACE = [430, 540] if "trace" in sys.argv[2:] else None
 BG = (0.05, 0.05, 0.20, 1.0)
 RED = (1.0, 0.0, 0.0, 1.0)
 DX = 4.0
@@ -100,6 +103,7 @@ def main():
         share_dump(WS, dump)
         print("chip built from %s" % WS)
         sim, gids, _polyon, _son, pts_aid, cols_aid = fresh_sim(dump)
+        wd = make_watch(sim)
         rc_fell = var_id(sim, "rcFell")
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "shapeWireMode": False,
@@ -126,10 +130,54 @@ def main():
         plan.update(stage(430, 2, [0.0, 0.0, 0.0], [],
                           (DX, 0.0, 0.0), (0, 0, 0), 0, -1, False))
 
+        trace = TRACE
+        if trace:
+            fn = ["rcOn", "erasing", "erDone", "wasPaint", "arming",
+                  "polyOn", "sOn", "recompFrame", "eraseOK", "fromSlot"]
+            vids = {n: var_id(sim, n) for n in fn}
+            er_row = var_id(sim, "erRow")
+            old_lo = var_id(sim, "oldLo")
+            old_hi = var_id(sim, "oldHi")
+            pf_vid = var_id(sim, "pfirst")
+            pl_vid = var_id(sim, "plast")
+            pr_vid = var_id(sim, "prow")
+
+            def trace_watch(sn, tick):
+                if tick in plan:
+                    step = dict(plan[tick])
+                    if "shapePoints" in step:
+                        slide3(sn, pts_aid, cols_aid, step.pop("shapePoints"),
+                               step.pop("shapeColors", None))
+                    sn.inputs = dict(sn.inputs, **step)
+                if trace[0] <= tick <= trace[1]:
+                    line = "t%-4d " % tick + " ".join(
+                        "%s=%d" % (n, int(bool(sn.vars.get(vids[n]))))
+                        for n in fn)
+                    line += " erRow=%s oldLo=%s oldHi=%s pf=%s pl=%s prow=%s" % (
+                        sn.vars.get(er_row), sn.vars.get(old_lo),
+                        sn.vars.get(old_hi), sn.vars.get(pf_vid),
+                        sn.vars.get(pl_vid), sn.vars.get(pr_vid))
+                    cov = sn.chip_array("covMin")
+                    old = sn.chip_array("oldMin")
+                    covx = sn.chip_array("covMax")
+                    oldx = sn.chip_array("oldMax")
+                    line += " r0: old=[%s,%s] cov=[%s,%s]" % (
+                        old[0] if old else None, oldx[0] if oldx else None,
+                        cov[0] if cov else None, covx[0] if covx else None)
+                    px = [sn.vars.get(gids[j], (0.0,) * 4)[:4]
+                          for j in (0, 64, 128, 192, 4095)]
+                    line += " px0=%s px64=%s px128=%s px192=%s px4095=%s" % tuple(
+                        tuple(round(float(c), 3) for c in p) for p in px)
+                    print(line)
+
+            sim.run(trace[1] + 5, on_tick=trace_watch)
+            return 0
+
         frames = []
         state = {"was": False, "dx": None}
 
         def watch(sn, tick):
+            wd(sn, tick)
             if tick in plan:
                 step = dict(plan[tick])
                 if "shapePoints" in step:
@@ -164,9 +212,11 @@ def main():
                 rows = sorted({i // 64 for i in ghosts})
                 print("      ghost rows %r, first pixels %r"
                       % (rows[:8], ghosts[:6]))
+        for f in wd.failures():
+            print("WATCH: " + f)
         print("RESULT: %s" % ("BUG (old pixels survive a refresh)"
                               if bad_total else "ok"))
-        return 1 if bad_total else 0
+        return 1 if (bad_total or wd.failures()) else 0
     finally:
         os.unlink(dump)
 
