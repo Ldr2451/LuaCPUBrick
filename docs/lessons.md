@@ -924,6 +924,12 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   the wrong thing (the `math.type` arm that only looked guarded was exactly
   that). Read the diff before trusting any claim about what is on disk, and
   before running a suite that would only tell you the tree passes.
+- **The screen chip has one gate: `python -u extras/screen/checkall.py`** (gen,
+  build, both probes, the six checks — minutes). It carries the watchdog's
+  per-tick structural checks, so a pass that mis-coordinates another pass says
+  so at the tick it starts instead of surfacing hours later as a pixel diff on
+  the chain. The chain test (~14 min) confirms a green gate; it does not
+  discover, so never debug chip scheduling through it.
 - Keep a todo list for multi-step work, exactly one `in_progress` at a time, and
   update it as steps finish.
 - **Commit a change as soon as it is clear and tested, without waiting to be

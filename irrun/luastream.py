@@ -172,6 +172,34 @@ def record(src, lib_path, budget=40000, timeout=180):
     return writes
 
 
+def sample_arr(writes, n_arr=NSLOT):
+    """The write log -> per-tick snapshots of the numeric array port only.
+
+    A connector that takes one array needs no scalar/string channels, so
+    a caller that only watches that array gets the array itself (one list
+    per tick) instead of an 8-tuple whose other fields are always empty.
+    """
+    if writes is None:
+        return None
+    arr = [0.0] * n_arr
+    rows = []
+    i = 0
+    n = len(writes)
+    t = 0
+    while i < n:
+        while i < n and writes[i].tick == t:
+            wr = writes[i]
+            i += 1
+            if wr.kind == "A":
+                base = int(wr.port)
+                for k, v in enumerate(wr.vals):
+                    if 1 <= base + k <= n_arr:
+                        arr[base + k - 1] = v
+        rows.append(list(arr))
+        t += 1
+    return rows
+
+
 def sample_rows(writes, n_arr=NSLOT, n_str=NSTR, cols=8):
     """The write log -> the per-tick sample rows the screen replay reads.
 

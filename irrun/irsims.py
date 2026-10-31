@@ -217,6 +217,7 @@ class Sim:
         self.tick = 0
         self._deferred: dict[int, list] = {}
         self._chg_state: dict = {}
+        self._cc_state: dict = {}
         # Does a port raise an edge for the value it already carries when the chip
         # starts?  False (the default) says yes, which is what every case in the
         # suite has been relying on without knowing it: they all deliver their
@@ -328,6 +329,16 @@ class Sim:
             if src and 'Internal_MicrochipInput' in src.cls and dst and 'Expr_ChangeDetectorExec' in dst.cls and getattr(w, 'src_port', None) == 'RER_Output':
                 label = _extract(src.props.get('PortLabel', ('raw', '')))
                 self.chg_inputs[getattr(w, 'dst_id', None)] = label if isinstance(label, str) else str(label)
+        # ContainerChangeDetector watches an array/map's CONTENTS (its wire
+        # carries the same reference however the contents move, WS059).
+        # Resolve the watched container to the id `self.arrays` is keyed by,
+        # once: the wire never changes.
+        self.cc_inputs: dict[int, int] = {}
+        for nid, nd in self.nodes.items():
+            if "Expr_ContainerChangeDetector" in nd.cls:
+                for w in self.in_wires.get((nid, "ContainerRef"), []):
+                    self.cc_inputs[nid] = self._arr_id(w.src_id)
+                    break
         # Every input PORT node, so a value that moves can be re-read.  The queue
         # only fires them once, from the initial pass, which left a port holding
         # whatever it read at tick 0: the cached prop is returned before the live
@@ -435,6 +446,7 @@ class Sim:
         self.tick = 0
         self._deferred = {}
         self._chg_state = {}
+        self._cc_state = {}
         self._eval_stack = set()
         self._unimpl_warned = set()
         self._queue_carry = {}
@@ -1148,6 +1160,8 @@ class Sim:
             return
         elif "Expr_ChangeDetectorExec" in cls:
             self._do_changed(nid, nq)
+        elif "Expr_ContainerChangeDetector" in cls:
+            self._do_container_changed(nid, nq)
         elif "WireGraph_Expr_LogicalAND" in cls:
             self._do_bool(nid, nq, lambda a, b: a and b)
         elif "WireGraph_Expr_LogicalOR" in cls:
@@ -1786,6 +1800,26 @@ class Sim:
             cur = self._in_val(nid, "Input", None)
         if self._chg_state.get(key) is None or self._chg_state[key] != cur:
             self._chg_state[key] = cur
+            for w in self.out_wires.get((nid, "OnChanged"), []):
+                nq.add((w.dst_id, w.dst_port))
+
+    def _do_container_changed(self, nid: int, nq: set):
+        """Fire once the watched container's CONTENTS move.
+
+        `Change` cannot see a container: its wire carries the same
+        reference however the contents move (WS059), so the host's
+        ContainerChangeDetector compares the contents instead.  The first
+        look is the BASELINE, not a change -- the array the chip was handed
+        at tick 0 is not news.  Then every contents move fires `OnChanged`.
+        """
+        aid = self.cc_inputs.get(nid)
+        cur = list(self._arr_list(aid)) if aid is not None else []
+        prev = self._cc_state.get(nid)
+        if prev is None:
+            self._cc_state[nid] = cur
+            return
+        if cur != prev:
+            self._cc_state[nid] = cur
             for w in self.out_wires.get((nid, "OnChanged"), []):
                 nq.add((w.dst_id, w.dst_port))
 
