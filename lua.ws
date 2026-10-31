@@ -2281,23 +2281,27 @@ mod vStr(r: int) -> string {
 // whatever a reused register holds.
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
+// The four copy mods below are `for` loops, not ladders.  A loop body is its
+// own plane: it reads `var` storage from outside (a boundary crossing, like a
+// chip call) but NOT a computed value, so the indices and the count of each
+// copy go through these scratch vars, written right above the loop.  Reading
+// the mod's parameters from inside the body is silent corruption: the gates
+// exist and the node count looks good, but the count is not the fresh value.
+var cpSrc: int
+var cpDst: int
+var cpK: int
+var cpN: int
+
 mod retAdjust(src: int, dst: int, k: int, n: int) {
-  if 1 <= k { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] } else if 1 <= n { vtag[dst] = 0 }
-  if 2 <= k { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] } else if 2 <= n { vtag[dst+1] = 0 }
-  if 3 <= k { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] } else if 3 <= n { vtag[dst+2] = 0 }
-  if 4 <= k { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] } else if 4 <= n { vtag[dst+3] = 0 }
-  if 5 <= k { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] } else if 5 <= n { vtag[dst+4] = 0 }
-  if 6 <= k { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] } else if 6 <= n { vtag[dst+5] = 0 }
-  if 7 <= k { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] } else if 7 <= n { vtag[dst+6] = 0 }
-  if 8 <= k { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] } else if 8 <= n { vtag[dst+7] = 0 }
-  if 9 <= k { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] } else if 9 <= n { vtag[dst+8] = 0 }
-  if 10 <= k { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] } else if 10 <= n { vtag[dst+9] = 0 }
-  if 11 <= k { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] } else if 11 <= n { vtag[dst+10] = 0 }
-  if 12 <= k { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] } else if 12 <= n { vtag[dst+11] = 0 }
-  if 13 <= k { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] } else if 13 <= n { vtag[dst+12] = 0 }
-  if 14 <= k { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] } else if 14 <= n { vtag[dst+13] = 0 }
-  if 15 <= k { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] } else if 15 <= n { vtag[dst+14] = 0 }
-  if 16 <= k { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] } else if 16 <= n { vtag[dst+15] = 0 }
+  cpSrc = src
+  cpDst = dst
+  cpK = k
+  cpN = n
+  let mx = if k > n then k else n
+  let mxc = if mx > 16 then 16 else mx
+  for j in 0..mxc {
+    if j < cpK { vtag[cpDst+j] = vtag[cpSrc+j] vnum[cpDst+j] = vnum[cpSrc+j] vstr[cpDst+j] = vstr[cpSrc+j] } else if j < cpN { vtag[cpDst+j] = 0 }
+  }
 }
 
 // A CHIP: inlined copies multiply through outer mods (gateHigh, vmStep).
@@ -2307,22 +2311,13 @@ mod retAdjust(src: int, dst: int, k: int, n: int) {
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
 mod retCopy(src: int, dst: int, n: int) {
-  if 1 <= n { vtag[dst] = vtag[src] vnum[dst] = vnum[src] vstr[dst] = vstr[src] }
-  if 2 <= n { vtag[dst+1] = vtag[src+1] vnum[dst+1] = vnum[src+1] vstr[dst+1] = vstr[src+1] }
-  if 3 <= n { vtag[dst+2] = vtag[src+2] vnum[dst+2] = vnum[src+2] vstr[dst+2] = vstr[src+2] }
-  if 4 <= n { vtag[dst+3] = vtag[src+3] vnum[dst+3] = vnum[src+3] vstr[dst+3] = vstr[src+3] }
-  if 5 <= n { vtag[dst+4] = vtag[src+4] vnum[dst+4] = vnum[src+4] vstr[dst+4] = vstr[src+4] }
-  if 6 <= n { vtag[dst+5] = vtag[src+5] vnum[dst+5] = vnum[src+5] vstr[dst+5] = vstr[src+5] }
-  if 7 <= n { vtag[dst+6] = vtag[src+6] vnum[dst+6] = vnum[src+6] vstr[dst+6] = vstr[src+6] }
-  if 8 <= n { vtag[dst+7] = vtag[src+7] vnum[dst+7] = vnum[src+7] vstr[dst+7] = vstr[src+7] }
-  if 9 <= n { vtag[dst+8] = vtag[src+8] vnum[dst+8] = vnum[src+8] vstr[dst+8] = vstr[src+8] }
-  if 10 <= n { vtag[dst+9] = vtag[src+9] vnum[dst+9] = vnum[src+9] vstr[dst+9] = vstr[src+9] }
-  if 11 <= n { vtag[dst+10] = vtag[src+10] vnum[dst+10] = vnum[src+10] vstr[dst+10] = vstr[src+10] }
-  if 12 <= n { vtag[dst+11] = vtag[src+11] vnum[dst+11] = vnum[src+11] vstr[dst+11] = vstr[src+11] }
-  if 13 <= n { vtag[dst+12] = vtag[src+12] vnum[dst+12] = vnum[src+12] vstr[dst+12] = vstr[src+12] }
-  if 14 <= n { vtag[dst+13] = vtag[src+13] vnum[dst+13] = vnum[src+13] vstr[dst+13] = vstr[src+13] }
-  if 15 <= n { vtag[dst+14] = vtag[src+14] vnum[dst+14] = vnum[src+14] vstr[dst+14] = vstr[src+14] }
-  if 16 <= n { vtag[dst+15] = vtag[src+15] vnum[dst+15] = vnum[src+15] vstr[dst+15] = vstr[src+15] }
+  cpSrc = src
+  cpDst = dst
+  cpN = n
+  let nc = if n > 16 then 16 else n
+  for j in 0..nc {
+    vtag[cpDst+j] = vtag[cpSrc+j] vnum[cpDst+j] = vnum[cpSrc+j] vstr[cpDst+j] = vstr[cpSrc+j]
+  }
 }
 
 // A CHIP: 137 call sites, and a mod inlines at every one of them.  This was
@@ -3388,43 +3383,25 @@ chip tblLink(tid: int, sl: int) {
 // Copy up to MAXVALS values from the register file into the vararg stack.
 // A CHIP: 4 sites, 1 grid.
 chip vaSpill(src: int, dst: int, n: int) {
-  if 1 <= n { vaTag[dst] = vtag[src] vaNum[dst] = vnum[src] vaStr[dst] = vstr[src] }
-  if 2 <= n { vaTag[dst+1] = vtag[src+1] vaNum[dst+1] = vnum[src+1] vaStr[dst+1] = vstr[src+1] }
-  if 3 <= n { vaTag[dst+2] = vtag[src+2] vaNum[dst+2] = vnum[src+2] vaStr[dst+2] = vstr[src+2] }
-  if 4 <= n { vaTag[dst+3] = vtag[src+3] vaNum[dst+3] = vnum[src+3] vaStr[dst+3] = vstr[src+3] }
-  if 5 <= n { vaTag[dst+4] = vtag[src+4] vaNum[dst+4] = vnum[src+4] vaStr[dst+4] = vstr[src+4] }
-  if 6 <= n { vaTag[dst+5] = vtag[src+5] vaNum[dst+5] = vnum[src+5] vaStr[dst+5] = vstr[src+5] }
-  if 7 <= n { vaTag[dst+6] = vtag[src+6] vaNum[dst+6] = vnum[src+6] vaStr[dst+6] = vstr[src+6] }
-  if 8 <= n { vaTag[dst+7] = vtag[src+7] vaNum[dst+7] = vnum[src+7] vaStr[dst+7] = vstr[src+7] }
-  if 9 <= n { vaTag[dst+8] = vtag[src+8] vaNum[dst+8] = vnum[src+8] vaStr[dst+8] = vstr[src+8] }
-  if 10 <= n { vaTag[dst+9] = vtag[src+9] vaNum[dst+9] = vnum[src+9] vaStr[dst+9] = vstr[src+9] }
-  if 11 <= n { vaTag[dst+10] = vtag[src+10] vaNum[dst+10] = vnum[src+10] vaStr[dst+10] = vstr[src+10] }
-  if 12 <= n { vaTag[dst+11] = vtag[src+11] vaNum[dst+11] = vnum[src+11] vaStr[dst+11] = vstr[src+11] }
-  if 13 <= n { vaTag[dst+12] = vtag[src+12] vaNum[dst+12] = vnum[src+12] vaStr[dst+12] = vstr[src+12] }
-  if 14 <= n { vaTag[dst+13] = vtag[src+13] vaNum[dst+13] = vnum[src+13] vaStr[dst+13] = vstr[src+13] }
-  if 15 <= n { vaTag[dst+14] = vtag[src+14] vaNum[dst+14] = vnum[src+14] vaStr[dst+14] = vstr[src+14] }
-  if 16 <= n { vaTag[dst+15] = vtag[src+15] vaNum[dst+15] = vnum[src+15] vaStr[dst+15] = vstr[src+15] }
+  cpSrc = src
+  cpDst = dst
+  cpN = n
+  let nc = if n > 16 then 16 else n
+  for j in 0..nc {
+    vaTag[cpDst+j] = vtag[cpSrc+j] vaNum[cpDst+j] = vnum[cpSrc+j] vaStr[cpDst+j] = vstr[cpSrc+j]
+  }
 }
 
 // Copy up to MAXVALS values from the vararg stack into registers (VARARG).
 // A CHIP: 3 sites, 1 grid.
 chip vaFill(base: int, dst: int, n: int) {
-  if 1 <= n { vtag[dst] = vaTag[base] vnum[dst] = vaNum[base] vstr[dst] = vaStr[base] }
-  if 2 <= n { vtag[dst+1] = vaTag[base+1] vnum[dst+1] = vaNum[base+1] vstr[dst+1] = vaStr[base+1] }
-  if 3 <= n { vtag[dst+2] = vaTag[base+2] vnum[dst+2] = vaNum[base+2] vstr[dst+2] = vaStr[base+2] }
-  if 4 <= n { vtag[dst+3] = vaTag[base+3] vnum[dst+3] = vaNum[base+3] vstr[dst+3] = vaStr[base+3] }
-  if 5 <= n { vtag[dst+4] = vaTag[base+4] vnum[dst+4] = vaNum[base+4] vstr[dst+4] = vaStr[base+4] }
-  if 6 <= n { vtag[dst+5] = vaTag[base+5] vnum[dst+5] = vaNum[base+5] vstr[dst+5] = vaStr[base+5] }
-  if 7 <= n { vtag[dst+6] = vaTag[base+6] vnum[dst+6] = vaNum[base+6] vstr[dst+6] = vaStr[base+6] }
-  if 8 <= n { vtag[dst+7] = vaTag[base+7] vnum[dst+7] = vaNum[base+7] vstr[dst+7] = vaStr[base+7] }
-  if 9 <= n { vtag[dst+8] = vaTag[base+8] vnum[dst+8] = vaNum[base+8] vstr[dst+8] = vaStr[base+8] }
-  if 10 <= n { vtag[dst+9] = vaTag[base+9] vnum[dst+9] = vaNum[base+9] vstr[dst+9] = vaStr[base+9] }
-  if 11 <= n { vtag[dst+10] = vaTag[base+10] vnum[dst+10] = vaNum[base+10] vstr[dst+10] = vaStr[base+10] }
-  if 12 <= n { vtag[dst+11] = vaTag[base+11] vnum[dst+11] = vaNum[base+11] vstr[dst+11] = vaStr[base+11] }
-  if 13 <= n { vtag[dst+12] = vaTag[base+12] vnum[dst+12] = vaNum[base+12] vstr[dst+12] = vaStr[base+12] }
-  if 14 <= n { vtag[dst+13] = vaTag[base+13] vnum[dst+13] = vaNum[base+13] vstr[dst+13] = vaStr[base+13] }
-  if 15 <= n { vtag[dst+14] = vaTag[base+14] vnum[dst+14] = vaNum[base+14] vstr[dst+14] = vaStr[base+14] }
-  if 16 <= n { vtag[dst+15] = vaTag[base+15] vnum[dst+15] = vaNum[base+15] vstr[dst+15] = vaStr[base+15] }
+  cpSrc = base
+  cpDst = dst
+  cpN = n
+  let nc = if n > 16 then 16 else n
+  for j in 0..nc {
+    vtag[cpDst+j] = vaTag[cpSrc+j] vnum[cpDst+j] = vaNum[cpSrc+j] vstr[cpDst+j] = vaStr[cpSrc+j]
+  }
 }
 
 mod fmtVal(tag: int, num: float, s: string) -> string {

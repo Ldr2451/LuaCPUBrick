@@ -6,6 +6,18 @@ measured rather than styled; `tools/chip/wswarn.py` flags the visible ones and
 here cost a debugging session, which is why the wording is specific.
 
 Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
+- **A loop body that reads a `mod`'s parameters reads stale; go through `var`
+  storage.** The four register-copy ladders (`retAdjust`, `retCopy`, `vaSpill`,
+  `vaFill`) made into `for` bodies that index `dst+j`/`src+j` straight from the
+  parameters compiled to plausible node counts, kept the suite's simple cases
+  green, and broke exactly the cascading ones -- `local n = tonumber print(n('ff',
+  16))` said `attempt to call`, `print(tonumber('ff',16))` said `bad argument
+  #1 to 'select'`, audit saw no unknown gate class. `audit.py` cannot see this
+  because every gate exists. The shape that works: copy the indices and the
+  count into chip-level scratch `var`s (`cpSrc`, `cpDst`, `cpK`, `cpN`) right
+  above the loop, cap the count (`let nc = if n > 16 then 16 else n`) and let
+  the body read only those. One shared scratch set is safe: a Lua instruction
+  runs one arm per tick, and each call site's writes precede its own body.
 - **A loop's body is a SHARED microchip, and a body that advances a
   counter the chain reads afterwards is not the same shape.** The screen
   chip's erase walk ran four row-steps per tick, unrolled; made a loop,
