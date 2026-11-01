@@ -72,27 +72,8 @@ end
 -- wireframe flag: nil or 0 fills, 1 strokes an outline, and it is
 -- written on every push -- id the slot to store ("0".."32", "-1" the
 -- camera, "" = immediate).
--- stage2d(pts, cols, xf, parent, ticks, wire, id): a FLAT shape, written
--- as (x, y) pairs, sent as the (x, y, 0) triples the screen takes.  The
--- screen's port takes triples and only triples, so a flat shape is the
--- same shape with a zero z -- this is the shorthand for that, not a
--- second kind of shape.
-local function asTriples(pts)
-local out = {}
-local i = 1
-while i <= #pts do
-out[#out + 1] = pts[i]
-out[#out + 1] = pts[i + 1]
-out[#out + 1] = 0.0
-i = i + 2
-end
-return out
-end
-
-function stage2d(pts, cols, xf, parent, ticks, wire, id)
-stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
-end
-
+-- stage2d and its triples helper are defined AFTER stage, below: the
+-- shorthand calls it, so the definition order keeps the call honest.
 function stage(pts, cols, xf, parent, ticks, wire, id)
 local termAt = putn(1, pts)
 if cols == nil then
@@ -129,6 +110,28 @@ end
 -- push: the slots are sticky.
 outNumArr(196, #pts * 1.0)
 end
+
+-- stage2d(pts, cols, xf, parent, ticks, wire, id): a FLAT shape, written
+-- as (x, y) pairs, sent as the (x, y, 0) triples the screen takes.  The
+-- screen's port takes triples and only triples, so a flat shape is the
+-- same shape with a zero z -- this is the shorthand for that, not a
+-- second kind of shape.
+local function asTriples(pts)
+local out = {}
+local i = 1
+while i <= #pts do
+out[#out + 1] = pts[i]
+out[#out + 1] = pts[i + 1]
+out[#out + 1] = 0.0
+i = i + 2
+end
+return out
+end
+
+function stage2d(pts, cols, xf, parent, ticks, wire, id)
+stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
+end
+
 function fire(after)
 outNumArr(200, 1.0)
 tick()
