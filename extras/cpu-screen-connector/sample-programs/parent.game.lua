@@ -105,17 +105,10 @@ function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
 stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 push()
 end
-function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
-local base = firstId
-if base == nil then base = 0 end
-local nfaces = #faces
-local nv = (#points / 3) | 0
+function meshEdges(faces, nv, ea, eb, corner)
 local seen = {}
-local ea = {}
-local eb = {}
-local corner = {}
 local f = 1
-while f <= nfaces do
+while f <= #faces do
 local face = faces[f]
 local m = #face
 if m > 1 and face[1] == face[m] then
@@ -151,9 +144,10 @@ k = k + 1
 end
 f = f + 1
 end
-if wire == nil or wire == 0 or wire == false then
-f = 1
-while f <= nfaces do
+end
+function fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+local f = 1
+while f <= #faces do
 local face = faces[f]
 local m = #face
 if m > 1 and face[1] == face[m] then
@@ -181,8 +175,8 @@ stage(pts, cols, xf, parent, ticks, wire, tostring(base + f - 1))
 push()
 f = f + 1
 end
-return
 end
+function pairOddCorners(nv, corner, ea, eb)
 local odd = 0
 local v = 1
 while v <= nv do
@@ -241,14 +235,9 @@ end
 end
 odd = odd - 2
 end
-local used = {}
-if firstdup ~= 0 then
-used[firstdup] = 1
+return firstdup
 end
-local nsh = 0
-local live = 1
-while live == 1 do
-live = 0
+function nextStart(nv, corner, used)
 local s = 0
 local anyv = 0
 local v = 1
@@ -271,10 +260,11 @@ end
 v = v + 1
 end
 if s == 0 then s = anyv end
-if s ~= 0 then
+return s
+end
+function tourMesh(s, corner, used, ea, eb, path)
 local stack = {s}
 local top = 1
-local path = {}
 local pn = 0
 while top > 0 do
 local cur = stack[top]
@@ -301,7 +291,11 @@ path[pn] = cur
 top = top - 1
 end
 end
-local at = pn
+return pn
+end
+function sendWalk(points, pcols, path, xf, parent, ticks, wire, base)
+local nsh = 0
+local at = #path
 while at >= 1 do
 local from = at - 15
 if from < 1 then from = 1 end
@@ -334,8 +328,35 @@ else
 at = 0
 end
 end
-live = 1
+return nsh
 end
+function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
+local base = firstId
+if base == nil then base = 0 end
+local nv = (#points / 3) | 0
+local ea = {}
+local eb = {}
+local corner = {}
+meshEdges(faces, nv, ea, eb, corner)
+if wire == nil or wire == 0 or wire == false then
+fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+return
+end
+local firstdup = pairOddCorners(nv, corner, ea, eb)
+local used = {}
+if firstdup ~= 0 then
+used[firstdup] = 1
+end
+local nsh = 0
+while true do
+local s = nextStart(nv, corner, used)
+if s == 0 then
+break
+end
+local path = {}
+tourMesh(s, corner, used, ea, eb, path)
+nsh = nsh + sendWalk(points, pcols, path, xf, parent, ticks, wire,
+base + nsh)
 end
 end
 function pushShape(pts, cols, xf, parent, wire)

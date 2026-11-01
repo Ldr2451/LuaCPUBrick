@@ -186,22 +186,23 @@ end
 -- firstId is the first shape's slot: a cube wireframe under a pivot
 -- in slot 1 is the ONE slot 2.  A face given with its first vertex
 -- repeated at the end is the same face.
-function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
-local base = firstId
-if base == nil then base = 0 end
-local nfaces = #faces
+--
+-- The walk's four parts are separate functions: the chip resolves a
+-- name through a ladder of 32 live locals per scope, counted across
+-- the frames a scope reaches, and the sample's main chunk already
+-- carries its own locals under this library -- one body doing edges,
+-- pairing, the tour and the staging would overflow that scope and be
+-- refused at parse.  These are globals like every other library step,
+-- so they add nothing on top of the library either.
+function meshEdges(faces, nv, ea, eb, corner)
 -- the mesh's edges, each ONCE: an edge names its two corners, low
 -- first, so the two faces that share it name it the same way, and
 -- the pair is its key.  Each corner keeps the edge numbers that meet
 -- it, which is what the walk follows; an odd corner is one an odd
 -- number of them meet.
-local nv = (#points / 3) | 0
 local seen = {}
-local ea = {}
-local eb = {}
-local corner = {}
 local f = 1
-while f <= nfaces do
+while f <= #faces do
 local face = faces[f]
 local m = #face
 if m > 1 and face[1] == face[m] then
@@ -237,14 +238,15 @@ k = k + 1
 end
 f = f + 1
 end
-if wire == nil or wire == 0 or wire == false then
--- FILL: one closed outline per face; reading the face round one
--- vertex past its end repeats the first vertex and closes it.  The
--- copy indexes by the vertex number so the lists stay tight:
--- writing at t[#t + 1] and then t[#t + 2] re-reads the length after
--- the first write and leaves a hole in the table.
-f = 1
-while f <= nfaces do
+end
+-- FILL: one closed outline per face, one face per slot.
+function fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+-- reading the face round one vertex past its end repeats the first
+-- vertex and closes it.  The copy indexes by the vertex number so the
+-- lists stay tight: writing at t[#t + 1] and then t[#t + 2] re-reads
+-- the length after the first write and leaves a hole in the table.
+local f = 1
+while f <= #faces do
 local face = faces[f]
 local m = #face
 if m > 1 and face[1] == face[m] then
@@ -272,14 +274,16 @@ stage(pts, cols, xf, parent, ticks, wire, tostring(base + f - 1))
 push()
 f = f + 1
 end
-return
 end
 -- A walk can start and stop only at corners an odd number of edges meet, so
 -- while the mesh has such corners left, the library walks the shortest route
 -- between two of them a second time: the route's pixels are painted twice
 -- and the mesh gains nothing.  The route always exists -- a mesh's corners
 -- are joined by its edges -- so after this every corner is even and the walk
--- below never leaves the mesh.
+-- below never leaves the mesh.  One of the added edges is returned as
+-- firstdup and needs no point of its own: the walk leaves it unwalked,
+-- standing in for the walk's return over paint the same route laid before.
+function pairOddCorners(nv, corner, ea, eb)
 local odd = 0
 local v = 1
 while v <= nv do
@@ -296,9 +300,9 @@ while u == 0 and v <= nv do
 if corner[v] ~= nil and #corner[v] % 2 == 1 then u = v end
 v = v + 1
 end
--- the nearest other odd corner, reached breadth first over the mesh's edges;
--- prevE says which edge brought a corner into the search, so the route back
--- from the target is the chain of those edges.
+-- the nearest other odd corner, reached breadth first over the mesh's
+-- edges; prevE says which edge brought a corner into the search, so
+-- the route back from the target is the chain of those edges.
 local prevE = {}
 local mark = {}
 mark[u] = 1
@@ -341,24 +345,13 @@ end
 end
 odd = odd - 2
 end
--- STROKE: walk the edges end to end and send what the walk gives.  One of
--- the edges a paired route added is left for the walk's return over paint
--- the same route laid a moment before, so it needs no point of its own:
--- a cube's twelve edges, with four routes added, go in sixteen points
--- rather than seventeen.  From any corner that still has an edge to walk
--- -- an odd one first, so a walk that has to stop does so at a corner it
--- cannot leave -- the walk steps over unwalked edges until the piece has
--- none left: every edge sits in the walk exactly once.  A mesh whose
--- pieces are apart gives one shape per piece, sharing the parent and the
--- next slots, so the whole mesh still moves as one.
-local used = {}
-if firstdup ~= 0 then
-used[firstdup] = 1
+return firstdup
 end
-local nsh = 0
-local live = 1
-while live == 1 do
-live = 0
+-- nextStart(nv, corner, used): where the next walk begins: a corner with
+-- an ODD number of unwalked edges left -- so a walk that has to stop
+-- does so where it cannot leave -- and any corner with an edge left if
+-- none is odd; 0 when the mesh has nothing left to walk.
+function nextStart(nv, corner, used)
 local s = 0
 local anyv = 0
 local v = 1
@@ -381,13 +374,16 @@ end
 v = v + 1
 end
 if s == 0 then s = anyv end
-if s ~= 0 then
+return s
+end
 -- Hierholzer: a corner that cannot leave drops into the path as the walk
 -- back passes it, so the tour reads backwards from where it stands:
--- path[pn] .. path[1].
+-- path[pn] .. path[1].  The tour is written into path (1..pn) and pn is
+-- returned.  ea/eb name an edge's corners, which is how the walk steps
+-- to the far end of the edge it moves over.
+function tourMesh(s, corner, used, ea, eb, path)
 local stack = {s}
 local top = 1
-local path = {}
 local pn = 0
 while top > 0 do
 local cur = stack[top]
@@ -414,14 +410,23 @@ path[pn] = cur
 top = top - 1
 end
 end
+return pn
+end
 -- Send the tour in shapes of at most sixteen points: the cap one shape
 -- takes, colour and all.  Where the tour needs more than one shape, the
 -- corner it splits at closes one and opens the next, so the shapes join
 -- back into the tour's line.  A cube's twelve edges walk as sixteen
 -- points -- four edges are walked twice so the walk can leave every
 -- corner, and the last of those returns over paint already laid --
--- and go in ONE shape, one slot, one commit.
-local at = pn
+-- and go in ONE shape, one slot, one commit.  The tour and its staging
+-- travel together here because the chip's call gate carries at most
+-- eight parameters, and naming one shape's tour range as well as what
+-- stage needs would name ten: the whole tour comes in and the shapes
+-- leave it, one slot after the next from `base`, and how many shapes
+-- it sent -- how many slots the mesh took -- is returned.
+function sendWalk(points, pcols, path, xf, parent, ticks, wire, base)
+local nsh = 0
+local at = #path
 while at >= 1 do
 local from = at - 15
 if from < 1 then from = 1 end
@@ -454,8 +459,44 @@ else
 at = 0
 end
 end
-live = 1
+return nsh
 end
+function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
+local base = firstId
+if base == nil then base = 0 end
+local nv = (#points / 3) | 0
+local ea = {}
+local eb = {}
+local corner = {}
+meshEdges(faces, nv, ea, eb, corner)
+if wire == nil or wire == 0 or wire == false then
+fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+return
+end
+local firstdup = pairOddCorners(nv, corner, ea, eb)
+-- STROKE: walk the edges end to end and send what the walk gives.
+-- One of the edges a paired route added is left for the walk's return
+-- over paint the same route laid a moment before, so it needs no point
+-- of its own: from any corner that still has an edge to walk -- an odd
+-- one first, so a walk that has to stop does so at a corner it cannot
+-- leave -- the walk steps over unwalked edges until the piece has
+-- none left: every edge sits in the walk exactly once.  A mesh whose
+-- pieces are apart gives one shape per piece, sharing the parent and
+-- the next slots, so the whole mesh still moves as one.
+local used = {}
+if firstdup ~= 0 then
+used[firstdup] = 1
+end
+local nsh = 0
+while true do
+local s = nextStart(nv, corner, used)
+if s == 0 then
+break
+end
+local path = {}
+tourMesh(s, corner, used, ea, eb, path)
+nsh = nsh + sendWalk(points, pcols, path, xf, parent, ticks, wire,
+base + nsh)
 end
 end
 function pushShape(pts, cols, xf, parent, wire)
