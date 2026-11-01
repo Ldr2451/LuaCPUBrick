@@ -55,13 +55,25 @@ WHITE = (1.0, 1.0, 1.0, 1.0)
 # the model below keeps comparing a pushed colour against the wall.
 BF = 0.35
 TICKS = int(sys.argv[1]) if len(sys.argv) > 1 else 9000
-# Virtual-tick budget for the real-Lua stream.  The checks below name
+# Virtual-tick budget for the real-Lua stream. The checks below name
 # four shapes and a well-spaced redraw, and the program paces itself
 # ~300 ticks a frame, so 3000 gives ~45 frames -- an order of magnitude
-# more than the checks need, while keeping the screen replay (the only
-# expensive part left) short.
+# more than the checks need. The replay does NOT run to this number: it
+# runs the stream and stops (see the replay arm in phase 2 and SETTLE),
+# which is where the run's cost actually is.
 BUDGET = int(os.environ.get("STREAM_BUDGET") or 3000)
 force_chip = "--chip" in sys.argv
+# A screen replay pays the wall, not the clock: the measured cost of an
+# animating wall here is ~8 ticks/s, so replaying ticks the program never
+# wrote is the expensive part of the run, and its cost is the whole point
+# of the tail below -- the last draw's paint walk has to have fallen before
+# the wall is read (measured: a draw settles in at most 224 ticks).
+SETTLE = 300
+
+# Every sim in this file runs the same screen chip; compiling it costs
+# 3.9s and loading its dump 0.6s (measured), so the file compiles once
+# into one pickle and rebuilds a clean sim from it per case.
+SCR_PICKLE = None
 
 
 def lua_stream(src, gfx_path, budget, force_chip=False):
@@ -140,39 +152,41 @@ def port_slice(sim, res, n=216):
 
 
 def tight(a):
-    """The connector's truncation and colour split, mirrored: with a
-    point count in 1-based slot 196 the terminator is read directly
-    instead of scanned for, so coordinates are unrestricted; without
-    one the legacy scan applies (an exact integer in [-17, -1] ends
-    the list).  Either way the count after the terminator is colours
-    -- white where the driver sent none."""
-    n = None
+    """The connector's truncation and colour split, mirrored exactly
+    (connector.ws lines 103..152).  With a FLOAT count in 1-based slot
+    196 the terminator is read directly at 0-based index cn right after
+    the slice, so coordinates are unrestricted; without one the
+    committed x-slot scan ladder applies.  Either way the terminator's
+    value says how many colours follow (-1 = none, -(1+c) = c) and the
+    colours sit right after it -- white where the driver sent none."""
+    def in_term(v):
+        return -17.0 <= v <= -1.0 and v == int(v)
+
     if len(a) > 195 and a[195] > 0.5:
-        n = max(0, min(16, int(a[195])))
-        term = a[2 * n] if len(a) > 2 * n else -1.0
-        if not (-17.0 <= term <= -1.0 and term == int(term)):
+        cn = min(48, int(a[195]))
+        term = a[cn] if len(a) > cn else -1.0
+        if not in_term(term):
             term = -1.0
-    pts = []
-    if n is None:
-        term = -1.0
-        for i in range(16):
-            x = a[2 * i] if len(a) > 2 * i else -1.0
-            if -17.0 <= x <= -1.0 and x == int(x):
-                term = x
-                break
-            y = a[2 * i + 1] if len(a) > 2 * i + 1 else 0.0
-            pts += [x, y]
-        n = len(pts) // 2
     else:
-        for i in range(n):
-            x = a[2 * i] if len(a) > 2 * i else 0.0
-            y = a[2 * i + 1] if len(a) > 2 * i + 1 else 0.0
-            pts += [x, y]
-    n = len(pts) // 2
+        # the chain's literal ladder: integer test on the x slots,
+        # value taken from the window slot -- as the committed
+        # connector has it
+        cn = 48
+        term = -1.0
+        for k in range(16):
+            i = (0, 3, 9, 12, 18, 21, 27, 30, 36, 39, 45, 48, 54, 57,
+                 63, 66)[k]
+            j = 2 * k
+            if len(a) > max(i, j):
+                if a[i] == int(a[i]) and in_term(a[j]):
+                    cn = k * 3
+                    term = a[j]
+                    break
     kc = max(0, min(16, int(-term) - 1)) if term <= -1.0 else 16
+    pts = [float(v) for v in a[:cn]]
     cols = []
-    for i in range(n):
-        b = 2 * n + 1 + 4 * i
+    for i in range(cn // 3):
+        b = cn + 1 + 4 * i
         if i < kc and len(a) > b + 3:
             cols.append(tuple(float(v) for v in a[b:b + 4]))
         else:
@@ -191,6 +205,59 @@ def strip_lib(src):
     return "\n".join(l for l in src.split("\n")
                      if l.strip() != ""
                      and not l.strip().startswith("--"))
+
+
+def screen_sim():
+    """A fresh screen sim, built off ONE compiled screen chip.
+
+    Compiling `screen.ws` costs 3.9s and loading its dump 0.6s (measured),
+    and this file wants three independent sims -- compiled separately that
+    is 12s of a run that is mostly sim ticks.  The chip is compiled once
+    into SCR_PICKLE and each sim is rebuilt from it: the same graph, a
+    clean state, exactly as a fresh dump would give.
+    """
+    global SCR_PICKLE
+    if SCR_PICKLE is None:
+        SCR_PICKLE = os.path.join(tempfile.gettempdir(), "animtest_screen.pkl")
+        share_dump(SCREEN_WS, SCR_PICKLE)
+    ssim = sim_from_dump(SCR_PICKLE)
+    ssim.reset()
+    spts = scols = None
+    gids = {}
+    for nid, nd in ssim.nodes.items():
+        pl = _extract(nd.props.get("PortLabel", ("raw", "")))
+        if pl == "shapePoints":
+            spts = nid
+        elif pl == "shapeColors":
+            scols = nid
+        lb = _extract(nd.props.get("_label", ("raw", "")))
+        if isinstance(lb, str) and lb.startswith("g") and lb[1:].isdigit():
+            gids[int(lb[1:])] = nid
+    assert spts is not None and scols is not None, "no shape ports"
+    return ssim, spts, scols, gids
+
+
+def wall_gauges(ssim, gids):
+    """How the wall is read: the pushed colour divided back out of BF.
+
+    `painted_on` counts lit pixels; `full_frame` keeps the whole wall, so a
+    frame that grew into a second one shows up in the samples.
+    """
+    def painted_on():
+        return sum(1 for i in range(SW * SW)
+                   if tuple(float(x) / BF if k < 3 else float(x)
+                            for k, x in
+                            enumerate(ssim.vars.get(
+                                gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
+                            )[:3] != (0.0, 0.0, 0.0))
+
+    def full_frame():
+        return tuple(tuple(float(x) / BF if k < 3 else float(x)
+                           for k, x in
+                           enumerate(ssim.vars.get(
+                               gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
+                     for i in range(SW * SW))
+    return painted_on, full_frame
 
 
 class Stream:
@@ -245,128 +312,93 @@ def zero_point_forever_case():
       1. the established triangle survives the arm (slot kept),
       2. something keeps rotating (frames differ across the tail),
       3. no frame ever grows past a ghost bound (the second frame)."""
-    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-        scr_dump = f.name
-    try:
-        share_dump(SCREEN_WS, scr_dump)
-        ssim = sim_from_dump(scr_dump)
-        ssim.reset()
-        spts = scols = None
-        for nid, nd in ssim.nodes.items():
-            pl = _extract(nd.props.get("PortLabel", ("raw", "")))
-            if pl == "shapePoints":
-                spts = nid
-            elif pl == "shapeColors":
-                scols = nid
-        assert spts is not None and scols is not None
-        gids = {}
-        for nid, nd in ssim.nodes.items():
-            lb = _extract(nd.props.get("_label", ("raw", "")))
-            if isinstance(lb, str) and lb.startswith("g") and lb[1:].isdigit():
-                gids[int(lb[1:])] = nid
+    ssim, spts, scols, gids = screen_sim()
+    painted_on, full_frame = wall_gauges(ssim, gids)
 
-        def painted_on():
-            return sum(1 for i in range(SW * SW)
-                       if tuple(float(x) / BF if k < 3 else float(x)
-                                for k, x in
-                                enumerate(ssim.vars.get(
-                                    gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
-                                )[:3] != (0.0, 0.0, 0.0))
+    ssim.inputs = {"shapePoints": [0.0] * 8,
+                   "shapeColors": [],
+                   "pushShape": False, "shapeWireMode": False,
+                   "shapeId": 0.0, "drawAllShapes": False,
+                   "clearAllShapes": False,
+                   "shapePosition": (0.0, 0.0, 0.0),
+                   "shapeRotation": (0.0, 0.0, 0.0),
+                   "shapeScale": (1.0, 1.0, 1.0),
+                   "parentShapeId": 0.0, "addToShapeInTicks": 0.0,
+                   "brightness": 100.0}
+    ssim.run(2)
+    ssim.inputs = {k: v for k, v in ssim.inputs.items()
+                   if k != "shapePoints"}
 
-        def full_frame():
-            return tuple(tuple(float(x) / BF if k < 3 else float(x)
-                               for k, x in
-                               enumerate(ssim.vars.get(
-                                   gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
-                         for i in range(SW * SW))
-
-        ssim.inputs = {"shapePoints": [0.0] * 8,
-                       "shapeColors": [],
-                       "pushShape": False, "shapeWireMode": False,
-                       "shapeId": 0.0, "drawAllShapes": False,
-                       "clearAllShapes": False,
-                       "shapePosition": (0.0, 0.0, 0.0),
-                       "shapeRotation": (0.0, 0.0, 0.0),
-                       "shapeScale": (1.0, 1.0, 1.0),
-                       "parentShapeId": 0.0, "addToShapeInTicks": 0.0,
-                       "brightness": 100.0}
+    # run() delivers inputs only from tick 1 (tick 0 runs literals
+    # only), so a pulse must span two ticks of a run; a one-tick
+    # pulse inside run(1) is consumed by tick 0 and never fires.
+    def edge(pin, extra=None):
+        if extra is not None:
+            ssim.inputs = dict(ssim.inputs, **extra)
+        ssim.inputs = dict(ssim.inputs, **{pin: True})
         ssim.run(2)
-        ssim.inputs = {k: v for k, v in ssim.inputs.items()
-                       if k != "shapePoints"}
-
-        # run() delivers inputs only from tick 1 (tick 0 runs literals
-        # only), so a pulse must span two ticks of a run; a one-tick
-        # pulse inside run(1) is consumed by tick 0 and never fires.
-        def edge(pin, extra=None):
-            if extra is not None:
-                ssim.inputs = dict(ssim.inputs, **extra)
-            ssim.inputs = dict(ssim.inputs, **{pin: True})
-            ssim.run(2)
-            ssim.inputs = dict(ssim.inputs, **{pin: False})
-            ssim.run(2)
-
-        # the screen boots with a staged black fill consumed by the
-        # FIRST draw; every driver clears first, so does this case.
-        slide(ssim, spts, scols, [], [])
+        ssim.inputs = dict(ssim.inputs, **{pin: False})
         ssim.run(2)
-        edge("clearAllShapes")
-        edge("drawAllShapes")
 
-        # establish a coloured triangle on retained slot 1 (instant).
-        # painttest's staging rule: the array must be visible BEFORE the
-        # edge tick, so slide first, run one idle tick, then pulse.
-        pts = [(10.0, 10.0), (34.0, 12.0), (22.0, 30.0)]
-        cols = [(1.0, 0.2, 0.2, 1.0), (0.2, 1.0, 0.2, 1.0),
-                (0.2, 0.2, 1.0, 1.0)]
-        slide(ssim, spts, scols, [v for p in pts for v in p], cols)
-        ssim.run(2)
-        edge("pushShape", {"shapeId": 1.0})
-        edge("drawAllShapes")
-        ssim.run(140)
-        base_px = painted_on()
-        ok = expect(base_px > 0, "slot 1 established (%d px)" % base_px)
+    # the screen boots with a staged black fill consumed by the
+    # FIRST draw; every driver clears first, so does this case.
+    slide(ssim, spts, scols, [], [])
+    ssim.run(2)
+    edge("clearAllShapes")
+    edge("drawAllShapes")
 
-        # the zero-point forever arm, exactly like the cube's pivot:
-        # empty points, ticks = -1.0 (forever on the wire), all scale
-        # rates zero (scale fields are per-tick DELTAS here; a nonzero
-        # walk makes the shape explode by design)
-        slide(ssim, spts, scols, [], [])
-        ssim.run(2)
-        edge("pushShape", {
-            "shapeId": 1.0, "addToShapeInTicks": -1.0,
-            "shapePosition": (0.0, 0.0, 0.0),
-            "shapeRotation": (0.0, 0.0, 0.03),
-            "shapeScale": (0.0, 0.0, 0.0)})
-        edge("drawAllShapes")
-        ssim.run(140)
+    # establish a coloured triangle on retained slot 1 (instant).
+    # painttest's staging rule: the array must be visible BEFORE the
+    # edge tick, so slide first, run one idle tick, then pulse.
+    pts = [(10.0, 10.0), (34.0, 12.0), (22.0, 30.0)]
+    cols = [(1.0, 0.2, 0.2, 1.0), (0.2, 1.0, 0.2, 1.0),
+            (0.2, 0.2, 1.0, 1.0)]
+    slide(ssim, spts, scols, [v for p in pts for v in p], cols)
+    ssim.run(2)
+    edge("pushShape", {"shapeId": 1.0})
+    edge("drawAllShapes")
+    ssim.run(140)
+    base_px = painted_on()
+    ok = expect(base_px > 0, "slot 1 established (%d px)" % base_px)
 
-        # watch ~12 repaints: the slot must survive and keep spinning,
-        # and the painted area must never balloon into a second frame.
-        # The self-refresh cycle runs ~100 ticks (advance -> idle ->
-        # recomposite walk), so 40-tick sampling crosses phases.
-        seen = []
-        frames = []
-        for step in range(12):
-            ssim.run(40)
-            frames.append(full_frame())
-            seen.append(painted_on())
-        diff = sum(1 for i in range(SW * SW)
-                   if frames[0][i] != frames[-1][i])
-        nframes = len(set(hash(f) for f in frames))
-        ok &= expect(min(seen) > 0,
-                     "zero-point arm keeps the slot live",
-                     "painted after arm: %s" % seen)
-        ok &= expect(nframes >= 3,
-                     "forever arm keeps animating",
-                     "only %d distinct frames across the tail; painted=%s"
-                     % (nframes, seen))
-        ok &= expect(max(seen) <= max(base_px, 1) * 3 / 2 + 8,
-                     "no ghost growth over the tail",
-                     "base=%d tail=%s" % (base_px, seen))
-        return ok
-    finally:
-        if os.path.exists(scr_dump):
-            os.unlink(scr_dump)
+    # the zero-point forever arm, exactly like the cube's pivot:
+    # empty points, ticks = -1.0 (forever on the wire), all scale
+    # rates zero (scale fields are per-tick DELTAS here; a nonzero
+    # walk makes the shape explode by design)
+    slide(ssim, spts, scols, [], [])
+    ssim.run(2)
+    edge("pushShape", {
+        "shapeId": 1.0, "addToShapeInTicks": -1.0,
+        "shapePosition": (0.0, 0.0, 0.0),
+        "shapeRotation": (0.0, 0.0, 0.03),
+        "shapeScale": (0.0, 0.0, 0.0)})
+    edge("drawAllShapes")
+    ssim.run(140)
+
+    # watch ~12 repaints: the slot must survive and keep spinning,
+    # and the painted area must never balloon into a second frame.
+    # The self-refresh cycle runs ~100 ticks (advance -> idle ->
+    # recomposite walk), so 40-tick sampling crosses phases.
+    seen = []
+    frames = []
+    for step in range(12):
+        ssim.run(40)
+        frames.append(full_frame())
+        seen.append(painted_on())
+    diff = sum(1 for i in range(SW * SW)
+               if frames[0][i] != frames[-1][i])
+    nframes = len(set(hash(f) for f in frames))
+    ok &= expect(min(seen) > 0,
+                 "zero-point arm keeps the slot live",
+                 "painted after arm: %s" % seen)
+    ok &= expect(nframes >= 3,
+                 "forever arm keeps animating",
+                 "only %d distinct frames across the tail; painted=%s"
+                 % (nframes, seen))
+    ok &= expect(max(seen) <= max(base_px, 1) * 3 / 2 + 8,
+                 "no ghost growth over the tail",
+                 "base=%d tail=%s" % (base_px, seen))
+    return ok
 
 
 def slot_two_animates_case():
@@ -384,114 +416,79 @@ def slot_two_animates_case():
     slot 2, and asserts the wall CHANGES: with the ladder's off-by-one
     the shape sits still.
     """
-    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-        scr_dump = f.name
-    try:
-        share_dump(SCREEN_WS, scr_dump)
-        ssim = sim_from_dump(scr_dump)
-        ssim.reset()
-        spts = scols = None
-        for nid, nd in ssim.nodes.items():
-            pl = _extract(nd.props.get("PortLabel", ("raw", "")))
-            if pl == "shapePoints":
-                spts = nid
-            elif pl == "shapeColors":
-                scols = nid
-        assert spts is not None and scols is not None
-        gids = {}
-        for nid, nd in ssim.nodes.items():
-            lb = _extract(nd.props.get("_label", ("raw", "")))
-            if isinstance(lb, str) and lb.startswith("g") and lb[1:].isdigit():
-                gids[int(lb[1:])] = nid
+    ssim, spts, scols, gids = screen_sim()
+    painted_on, full_frame = wall_gauges(ssim, gids)
 
-        def painted_on():
-            return sum(1 for i in range(SW * SW)
-                       if tuple(float(x) / BF if k < 3 else float(x)
-                                for k, x in
-                                enumerate(ssim.vars.get(
-                                    gids[i], (0.0, 0.0, 0.0, 0.0))[:4])
-                                )[:3] != (0.0, 0.0, 0.0))
+    ssim.inputs = {"shapePoints": [0.0] * 8,
+                   "shapeColors": [],
+                   "pushShape": False, "shapeWireMode": False,
+                   "shapeId": 0.0, "drawAllShapes": False,
+                   "clearAllShapes": False,
+                   "shapePosition": (0.0, 0.0, 0.0),
+                   "shapeRotation": (0.0, 0.0, 0.0),
+                   "shapeScale": (1.0, 1.0, 1.0),
+                   "parentShapeId": 0.0, "addToShapeInTicks": 0.0,
+                   "brightness": 100.0}
+    ssim.run(2)
+    ssim.inputs = {k: v for k, v in ssim.inputs.items()
+                   if k != "shapePoints"}
 
-        def full_frame():
-            return tuple(tuple(float(x) / BF if k < 3 else float(x)
-                               for k, x in
-                               enumerate(ssim.vars.get(
-                                   gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
-                         for i in range(SW * SW))
-
-        ssim.inputs = {"shapePoints": [0.0] * 8,
-                       "shapeColors": [],
-                       "pushShape": False, "shapeWireMode": False,
-                       "shapeId": 0.0, "drawAllShapes": False,
-                       "clearAllShapes": False,
-                       "shapePosition": (0.0, 0.0, 0.0),
-                       "shapeRotation": (0.0, 0.0, 0.0),
-                       "shapeScale": (1.0, 1.0, 1.0),
-                       "parentShapeId": 0.0, "addToShapeInTicks": 0.0,
-                       "brightness": 100.0}
+    def edge(pin, extra=None):
+        if extra is not None:
+            ssim.inputs = dict(ssim.inputs, **extra)
+        ssim.inputs = dict(ssim.inputs, **{pin: True})
         ssim.run(2)
-        ssim.inputs = {k: v for k, v in ssim.inputs.items()
-                       if k != "shapePoints"}
-
-        def edge(pin, extra=None):
-            if extra is not None:
-                ssim.inputs = dict(ssim.inputs, **extra)
-            ssim.inputs = dict(ssim.inputs, **{pin: True})
-            ssim.run(2)
-            ssim.inputs = dict(ssim.inputs, **{pin: False})
-            ssim.run(2)
-
-        slide(ssim, spts, scols, [], [])
+        ssim.inputs = dict(ssim.inputs, **{pin: False})
         ssim.run(2)
-        edge("clearAllShapes")
-        edge("drawAllShapes")
 
-        # the triangle goes in slot 2, NOT slot 1.
-        pts = [(10.0, 10.0), (34.0, 12.0), (22.0, 30.0)]
-        cols = [(1.0, 0.2, 0.2, 1.0), (0.2, 1.0, 0.2, 1.0),
-                (0.2, 0.2, 1.0, 1.0)]
-        slide(ssim, spts, scols, [v for p in pts for v in p], cols)
-        ssim.run(2)
-        edge("pushShape", {"shapeId": 2.0})
-        edge("drawAllShapes")
-        ssim.run(140)
-        base_px = painted_on()
-        ok = expect(base_px > 0, "slot 2 established (%d px)" % base_px)
+    slide(ssim, spts, scols, [], [])
+    ssim.run(2)
+    edge("clearAllShapes")
+    edge("drawAllShapes")
 
-        # the same forever arm the cube's pivot uses, on slot 2.
-        slide(ssim, spts, scols, [], [])
-        ssim.run(2)
-        edge("pushShape", {
-            "shapeId": 2.0, "addToShapeInTicks": -1.0,
-            "shapePosition": (0.0, 0.0, 0.0),
-            "shapeRotation": (0.0, 0.0, 0.03),
-            "shapeScale": (0.0, 0.0, 0.0)})
-        edge("drawAllShapes")
-        ssim.run(140)
+    # the triangle goes in slot 2, NOT slot 1.
+    pts = [(10.0, 10.0), (34.0, 12.0), (22.0, 30.0)]
+    cols = [(1.0, 0.2, 0.2, 1.0), (0.2, 1.0, 0.2, 1.0),
+            (0.2, 0.2, 1.0, 1.0)]
+    slide(ssim, spts, scols, [v for p in pts for v in p], cols)
+    ssim.run(2)
+    edge("pushShape", {"shapeId": 2.0})
+    edge("drawAllShapes")
+    ssim.run(140)
+    base_px = painted_on()
+    ok = expect(base_px > 0, "slot 2 established (%d px)" % base_px)
 
-        frames = []
-        seen = []
-        for _step in range(12):
-            ssim.run(40)
-            frames.append(full_frame())
-            seen.append(painted_on())
-        diff = sum(1 for i in range(SW * SW)
-                   if frames[0][i] != frames[-1][i])
-        nframes = len(set(hash(f) for f in frames))
-        ok &= expect(min(seen) > 0,
-                     "slot 2 arm keeps the slot live",
-                     "painted after arm: %s" % seen)
-        ok &= expect(nframes >= 3,
-                     "slot 2 animates",
-                     "only %d distinct frames across the tail; painted=%s"
-                     % (nframes, seen))
-        ok &= expect(diff > 0,
-                     "slot 2 pixels move",
-                     "no pixel changed across the tail")
-        return ok
-    finally:
-        if os.path.exists(scr_dump):
-            os.unlink(scr_dump)
+    # the same forever arm the cube's pivot uses, on slot 2.
+    slide(ssim, spts, scols, [], [])
+    ssim.run(2)
+    edge("pushShape", {
+        "shapeId": 2.0, "addToShapeInTicks": -1.0,
+        "shapePosition": (0.0, 0.0, 0.0),
+        "shapeRotation": (0.0, 0.0, 0.03),
+        "shapeScale": (0.0, 0.0, 0.0)})
+    edge("drawAllShapes")
+    ssim.run(140)
+
+    frames = []
+    seen = []
+    for _step in range(12):
+        ssim.run(40)
+        frames.append(full_frame())
+        seen.append(painted_on())
+    diff = sum(1 for i in range(SW * SW)
+               if frames[0][i] != frames[-1][i])
+    nframes = len(set(hash(f) for f in frames))
+    ok &= expect(min(seen) > 0,
+                 "slot 2 arm keeps the slot live",
+                 "painted after arm: %s" % seen)
+    ok &= expect(nframes >= 3,
+                 "slot 2 animates",
+                 "only %d distinct frames across the tail; painted=%s"
+                 % (nframes, seen))
+    ok &= expect(diff > 0,
+                 "slot 2 pixels move",
+                 "no pixel changed across the tail")
+    return ok
 
 
 def main():
@@ -588,10 +585,14 @@ def main():
         ok &= expect(seq_ok, "push-then-redraw ordering")
         # no redraw may fire while the previous burst could still be
         # running: pair each redraw with its shape and require the gap to
-        # cover that shape's rows (a polygon burst is two rows
-        # per tick, so this is conservative)
+        # cover that shape's burst TICKS (a polygon burst walks two rows
+        # per tick, so this is rows/2 plus a margin)
         def shape_rows(pts):
-            px = poly_pixels(pts)
+            # the wire carries triples; the burst walks x,y pixels
+            pairs = []
+            for i in range(0, len(pts) - 2, 3):
+                pairs += [pts[i], pts[i + 1]]
+            px = poly_pixels(pairs)
             return (max((p // SW for p in px), default=0) -
                     min((p // SW for p in px), default=0) + 1) if px else 1
 
@@ -601,7 +602,7 @@ def main():
             if not shapes_before:
                 continue
             rows = shape_rows(latched[shapes_before[-1]][0])
-            if reds[i + 1] - reds[i] < rows + 4:
+            if reds[i + 1] - reds[i] < (rows + 1) // 2 + 4:
                 gap_ok = False
         ok &= expect(gap_ok, "redraws spaced past burst time")
         colors_ok = all(0.0 <= v <= 1.0
@@ -615,22 +616,7 @@ def main():
                      "clears=%s reds=%s" % (clears[:6], reds[:6]))
 
         # ---- phase 2: replay into the screen chip -----------------------
-        with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-            scr_dump = f.name
-        dumps.append(scr_dump)
-        share_dump(SCREEN_WS, scr_dump)
-        ssim = sim_from_dump(scr_dump)
-        ssim.reset()
-        spts = None
-        scols = None
-        for nid, nd in ssim.nodes.items():
-            pl = _extract(nd.props.get("PortLabel", ("raw", "")))
-            if pl == "shapePoints":
-                spts = nid
-            elif pl == "shapeColors":
-                scols = nid
-        assert spts is not None, "no shapePoints port"
-        assert scols is not None, "no shapeColors port"
+        ssim, spts, scols, gids = screen_sim()
         ssim.inputs = {"shapePoints": [0.0] * 32,
                        "shapeColors": [],
                        "pushShape": False, "shapeWireMode": False,
@@ -660,13 +646,12 @@ def main():
                 "clearAllShapes": c > 0.5,
             })
 
-        ssim.run(TICKS - S, on_tick=hook2)
+        # Stop SETTLE ticks after the stream's last write, not at a fixed
+        # tick count: nothing past there can change the wall, and the
+        # animating wall costs the whole tail (measured: a draw settles
+        # in at most 224 ticks).
+        ssim.run(len(samples) + SETTLE - S, on_tick=hook2)
 
-        gids = {}
-        for nid, nd in ssim.nodes.items():
-            lb = _extract(nd.props.get("_label", ("raw", "")))
-            if isinstance(lb, str) and lb.startswith("g") and lb[1:].isdigit():
-                gids[int(lb[1:])] = nid
         if len(gids) != SW * SW:
             print("FAIL globals found: %d" % len(gids))
             return False
