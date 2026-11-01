@@ -6,7 +6,8 @@ function nap(c)
 local t = clock()
 while clock() < t + c do end
 end
--- One array carries everything: shape data in slots 1..100, control in
+-- One array carries everything: shape data in slots 1..113 at most, the
+-- float count and animation length at 196 and 198, control in
 -- 200..214 (see connector.ws).  A pulse is 1, one tick, 0.
 local function pulse(slot)
 outNumArr(slot, 1.0)
@@ -93,14 +94,6 @@ stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 end
 
 function stage(pts, cols, xf, parent, ticks, wire, id)
--- the point float count, 1-based slot 98: the connector reads the
--- terminator directly instead of scanning for it, so coordinates are
--- unrestricted (any float, including negatives).  FLOATS, not points:
--- two per point for a 2D shape, three (x, y, z) for a 3D one, and the
--- screen reads an odd delivered length as triples.  Written on every
--- push like slot 100: the slots are sticky, so a stale count would
--- ghost-parse the next shape.
-outNumArr(98, #pts * 1.0)
 local termAt = putn(1, pts)
 if cols == nil then
 outNumArr(termAt, -1.0)
@@ -121,12 +114,20 @@ if t == nil then t = 0.0 end
 -- animation while it scans out a pass, so N is the number of frames the
 -- eye sees, which is the only rate the eye can see anyway.
 if t == -1.0 then
-outNumArr(100, -1.0)
+outNumArr(198, -1.0)
 elseif t >= 1.0 then
-outNumArr(100, -(1.0 + t))
+outNumArr(198, -(1.0 + t))
 else
-outNumArr(100, 0.0)
+outNumArr(198, 0.0)
 end
+-- the point float count, 1-based slot 196: when positive the connector
+-- reads the terminator directly instead of scanning, so coordinates are
+-- unrestricted.  FLOATS, not points.  The count and the animation slot
+-- sit above the shape data -- the biggest shape the screen takes (sixteen
+-- points, each with a colour) reaches slot 113 -- so staging a full shape
+-- never disturbs them and they need no special order.  Written on every
+-- push: the slots are sticky.
+outNumArr(196, #pts * 1.0)
 end
 function fire(after)
 outNumArr(200, 1.0)
@@ -160,82 +161,301 @@ end
 -- faces  -- the faces, each a list of vertex indices (1-based) into
 --           points: four for a quad, three for a triangle.
 --
--- Every face goes to the screen as its own shape -- the screen draws one
--- outline per shape -- and all the faces share one parent, so one
--- transform moves the whole solid.  firstId is the slot of the first
--- face and the next faces take the next slots: a six-face cube under a
--- pivot in slot 1 is slots 2 to 7.  The screen remembers thirty-two slots,
--- so a mesh has room for plenty of faces, and one less if the
--- mesh needs a slot of its own for the parent.
+-- A mesh is ONE shape: its edges are walked end to end into one
+-- outline, so the solid arrives on the wall whole, in one push and one
+-- commit, never built face by face.  A stroke draws a mesh's EDGES, and
+-- an edge two faces share is ONE edge -- it belongs to both and is
+-- stroked once for both, in the colour of the vertices it joins (which
+-- is why pcols is per vertex).  A cube's twelve edges need four edges
+-- walked twice to be one walk; the last of those is the walk's return
+-- over paint already laid, so the walk is sixteen points: one shape,
+-- one slot, one commit.
 --
--- A face's outline is closed here (its first vertex repeated at the
--- end), because the screen's stroke joins consecutive points and an
--- open outline would not come back round.
+-- A walk can only start and stop at corners an odd number of edges
+-- meet, so where the mesh has more, the library walks the shortest
+-- route between two such corners a second time (the walk retraces it,
+-- which paints the same pixels again and adds nothing).  That route
+-- always exists, so the staging below never has to lift its pen.  A
+-- mesh whose walk is longer than a shape holds (sixteen points) also
+-- goes as shapes of the walk, broken where it passes the cap, the
+-- joint vertex closing one shape and opening the next.
+--
+-- A fill is a different unit: a filled shape is one closed outline,
+-- so a filled mesh's shapes are its faces, one face per slot.
+--
+-- firstId is the first shape's slot: a cube wireframe under a pivot
+-- in slot 1 is the ONE slot 2.  A face given with its first vertex
+-- repeated at the end is the same face.
 function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
 local base = firstId
 if base == nil then base = 0 end
-local f = 1
 local nfaces = #faces
+-- the mesh's edges, each ONCE: an edge names its two corners, low
+-- first, so the two faces that share it name it the same way, and
+-- the pair is its key.  Each corner keeps the edge numbers that meet
+-- it, which is what the walk follows; an odd corner is one an odd
+-- number of them meet.
+local nv = (#points / 3) | 0
+local seen = {}
+local ea = {}
+local eb = {}
+local corner = {}
+local f = 1
 while f <= nfaces do
 local face = faces[f]
 local m = #face
--- the face's points, closed: the first vertex again at the end.
--- The counts are kept by hand: writing t[#t + 1] and then t[#t + 2]
--- re-reads the length after the first write, which leaves a hole in
--- the table and the shape arrives with a hole in it.
-local pts = {}
-local cols = {}
-local np = 0
-local nc = 0
+if m > 1 and face[1] == face[m] then
+m = m - 1
+end
 local k = 1
 while k <= m do
-local vi = face[k]
--- The flat lists are 1-based, so the first vertex starts at 1 and
--- every vertex after it three floats on: (vi - 1) * 3 + 1, never
--- (vi - 1) * 3 -- that reads one float early, so the first vertex
--- of every face came out as a hole (nothing) and the rest of the
--- face was the wrong vertex.
-local b = (vi - 1) * 3 + 1
-np = np + 1
-pts[np] = points[b]
-np = np + 1
-pts[np] = points[b + 1]
-np = np + 1
-pts[np] = points[b + 2]
--- the vertex's colour, the same one in every face that uses it
-if pcols ~= nil then
-local c = (vi - 1) * 4 + 1
-nc = nc + 1
-cols[nc] = pcols[c]
-nc = nc + 1
-cols[nc] = pcols[c + 1]
-nc = nc + 1
-cols[nc] = pcols[c + 2]
-nc = nc + 1
-cols[nc] = pcols[c + 3]
+local a = face[k]
+local b = face[k % m + 1]
+if a ~= b then
+local lo = a
+local hi = b
+if b < a then
+lo = b
+hi = a
+end
+local key = lo * nv + hi
+if seen[key] == nil then
+seen[key] = 1
+ea[#ea + 1] = lo
+eb[#eb + 1] = hi
+if corner[lo] == nil then
+corner[lo] = {}
+end
+corner[lo][#corner[lo] + 1] = #ea
+if corner[hi] == nil then
+corner[hi] = {}
+end
+corner[hi][#corner[hi] + 1] = #ea
+end
 end
 k = k + 1
 end
--- close the outline: the first vertex again, with its colour
-np = np + 1
-pts[np] = pts[1]
-np = np + 1
-pts[np] = pts[2]
-np = np + 1
-pts[np] = pts[3]
+f = f + 1
+end
+if wire == nil or wire == 0 or wire == false then
+-- FILL: one closed outline per face; reading the face round one
+-- vertex past its end repeats the first vertex and closes it.  The
+-- copy indexes by the vertex number so the lists stay tight:
+-- writing at t[#t + 1] and then t[#t + 2] re-reads the length after
+-- the first write and leaves a hole in the table.
+f = 1
+while f <= nfaces do
+local face = faces[f]
+local m = #face
+if m > 1 and face[1] == face[m] then
+m = m - 1
+end
+local pts = {}
+local cols = {}
+local k = 1
+while k <= m + 1 do
+local vi = face[(k - 1) % m + 1]
+local b = (vi - 1) * 3 + 1
+pts[k * 3 - 2] = points[b]
+pts[k * 3 - 1] = points[b + 1]
+pts[k * 3] = points[b + 2]
 if pcols ~= nil then
-nc = nc + 1
-cols[nc] = cols[1]
-nc = nc + 1
-cols[nc] = cols[2]
-nc = nc + 1
-cols[nc] = cols[3]
-nc = nc + 1
-cols[nc] = cols[4]
+local c = (vi - 1) * 4 + 1
+cols[k * 4 - 3] = pcols[c]
+cols[k * 4 - 2] = pcols[c + 1]
+cols[k * 4 - 1] = pcols[c + 2]
+cols[k * 4] = pcols[c + 3]
+end
+k = k + 1
 end
 stage(pts, cols, xf, parent, ticks, wire, tostring(base + f - 1))
 push()
 f = f + 1
+end
+return
+end
+-- A walk can start and stop only at corners an odd number of edges meet, so
+-- while the mesh has such corners left, the library walks the shortest route
+-- between two of them a second time: the route's pixels are painted twice
+-- and the mesh gains nothing.  The route always exists -- a mesh's corners
+-- are joined by its edges -- so after this every corner is even and the walk
+-- below never leaves the mesh.
+local odd = 0
+local v = 1
+while v <= nv do
+if corner[v] ~= nil and #corner[v] % 2 == 1 then
+odd = odd + 1
+end
+v = v + 1
+end
+local firstdup = 0
+while odd >= 2 do
+local u = 0
+v = 1
+while u == 0 and v <= nv do
+if corner[v] ~= nil and #corner[v] % 2 == 1 then u = v end
+v = v + 1
+end
+-- the nearest other odd corner, reached breadth first over the mesh's edges;
+-- prevE says which edge brought a corner into the search, so the route back
+-- from the target is the chain of those edges.
+local prevE = {}
+local mark = {}
+mark[u] = 1
+local queue = {u}
+local qi = 1
+local target = 0
+while target == 0 and qi <= #queue do
+local cur = queue[qi]
+qi = qi + 1
+local cs = corner[cur]
+local j = 1
+while cs ~= nil and j <= #cs and target == 0 do
+local eid = cs[j]
+local nb = eb[eid]
+if nb == cur then nb = ea[eid] end
+if mark[nb] == nil then
+mark[nb] = 1
+prevE[nb] = eid
+queue[#queue + 1] = nb
+if corner[nb] ~= nil and #corner[nb] % 2 == 1 then target = nb end
+end
+j = j + 1
+end
+end
+local cur = target
+while cur ~= u do
+local eid = prevE[cur]
+ea[#ea + 1] = ea[eid]
+eb[#eb + 1] = eb[eid]
+local x = ea[eid]
+local y = eb[eid]
+corner[x][#corner[x] + 1] = #ea
+corner[y][#corner[y] + 1] = #ea
+if firstdup == 0 then firstdup = #ea end
+if x == cur then
+cur = y
+else
+cur = x
+end
+end
+odd = odd - 2
+end
+-- STROKE: walk the edges end to end and send what the walk gives.  One of
+-- the edges a paired route added is left for the walk's return over paint
+-- the same route laid a moment before, so it needs no point of its own:
+-- a cube's twelve edges, with four routes added, go in sixteen points
+-- rather than seventeen.  From any corner that still has an edge to walk
+-- -- an odd one first, so a walk that has to stop does so at a corner it
+-- cannot leave -- the walk steps over unwalked edges until the piece has
+-- none left: every edge sits in the walk exactly once.  A mesh whose
+-- pieces are apart gives one shape per piece, sharing the parent and the
+-- next slots, so the whole mesh still moves as one.
+local used = {}
+if firstdup ~= 0 then
+used[firstdup] = 1
+end
+local nsh = 0
+local live = 1
+while live == 1 do
+live = 0
+local s = 0
+local anyv = 0
+local v = 1
+while v <= nv and s == 0 do
+local cs = corner[v]
+local left = 0
+if cs ~= nil then
+local j = 1
+while j <= #cs do
+if used[cs[j]] == nil then
+left = left + 1
+end
+j = j + 1
+end
+end
+if left > 0 then
+if anyv == 0 then anyv = v end
+if left % 2 == 1 then s = v end
+end
+v = v + 1
+end
+if s == 0 then s = anyv end
+if s ~= 0 then
+-- Hierholzer: a corner that cannot leave drops into the path as the walk
+-- back passes it, so the tour reads backwards from where it stands:
+-- path[pn] .. path[1].
+local stack = {s}
+local top = 1
+local path = {}
+local pn = 0
+while top > 0 do
+local cur = stack[top]
+local moved = 0
+local cs = corner[cur]
+if cs ~= nil then
+local j = 1
+while j <= #cs and moved == 0 do
+local e = cs[j]
+if used[e] == nil then
+used[e] = 1
+local w = eb[e]
+if w == cur then w = ea[e] end
+top = top + 1
+stack[top] = w
+moved = 1
+end
+j = j + 1
+end
+end
+if moved == 0 then
+pn = pn + 1
+path[pn] = cur
+top = top - 1
+end
+end
+-- Send the tour in shapes of at most sixteen points: the cap one shape
+-- takes, colour and all.  Where the tour needs more than one shape, the
+-- corner it splits at closes one and opens the next, so the shapes join
+-- back into the tour's line.  A cube's twelve edges walk as sixteen
+-- points -- four edges are walked twice so the walk can leave every
+-- corner, and the last of those returns over paint already laid --
+-- and go in ONE shape, one slot, one commit.
+local at = pn
+while at >= 1 do
+local from = at - 15
+if from < 1 then from = 1 end
+local pts = {}
+local cols = {}
+local np = 0
+local i = at
+while i >= from do
+local vi = path[i]
+local b = (vi - 1) * 3 + 1
+np = np + 1
+pts[np * 3 - 2] = points[b]
+pts[np * 3 - 1] = points[b + 1]
+pts[np * 3] = points[b + 2]
+if pcols ~= nil then
+local c = (vi - 1) * 4 + 1
+cols[np * 4 - 3] = pcols[c]
+cols[np * 4 - 2] = pcols[c + 1]
+cols[np * 4 - 1] = pcols[c + 2]
+cols[np * 4] = pcols[c + 3]
+end
+i = i - 1
+end
+stage(pts, cols, xf, parent, ticks, wire, tostring(base + nsh))
+push()
+nsh = nsh + 1
+if from > 1 then
+at = from
+else
+at = 0
+end
+end
+live = 1
+end
 end
 end
 function pushShape(pts, cols, xf, parent, wire)

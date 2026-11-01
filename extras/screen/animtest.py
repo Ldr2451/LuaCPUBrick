@@ -1,14 +1,14 @@
 """End-to-end test for anim.lua driving the wall screen.
 
-The game wiring this program was written for is (via the connector):
-  outNum1   -> pushShape
-  outNum2   -> drawAllShapes
-  outNum3   -> clearAllShapes
-  outNumArr -> only the points the shape needs (1..) plus one -1
-               terminator, then optional colours (four per point);
-               the connector truncates there and defaults missing
-               colours to white
-(shapeWireMode and shapeId stay at their defaults: immediate fills.)
+The game wiring this program drives (via the connector), v2: everything
+rides ONE array port -- the CPU's outNumArr wired to the connector:
+  outNumArr -> point floats (1..) plus a terminator, then optional
+               colours; the push, draw and clear pulses ride slots
+               200/201/202, the float count and animation length ride
+               196/198 above the shape data, and the control block
+               stays at 200..214; the connector truncates at the
+               terminator and defaults missing colours to white
+  (shapeWireMode and shapeId stay at their defaults: immediate fills.)
 
 So the test builds exactly that wiring in the sim.  Phase 1 runs the
 Lua chip and samples outNum1/outNum2/outNum3/outNumArr every tick.
@@ -73,8 +73,18 @@ def lua_stream(src, gfx_path, budget, force_chip=False):
     """
     if force_chip or luastream.LUA_BIN is None:
         return None
-    return luastream.sample_rows(
-        luastream.record(src, gfx_path, budget=budget), cols=4)
+    rows = luastream.sample_rows(
+        luastream.record(src, gfx_path, budget=budget),
+        n_arr=216, cols=4)
+    # v2 protocol: the pulses ride the array too, slots 200..202, so
+    # read them where the game reads them, not off scalar ports.
+    out = []
+    for (_p, _r, _c, a) in rows:
+        out.append((1.0 if len(a) > 199 and a[199] > 0.5 else 0.0,
+                    1.0 if len(a) > 200 and a[200] > 0.5 else 0.0,
+                    1.0 if len(a) > 201 and a[201] > 0.5 else 0.0,
+                    a))
+    return out
 
 
 def out_port_id(sim, name):
@@ -118,10 +128,10 @@ def port_val(sim, res):
     return float(v) if isinstance(v, (int, float)) else 0.0
 
 
-def port_slice(sim, res, n=128):
-    """port_val, but array ports are truncated to n slots: drivers never
-    write past ~100 (16 points + terminator + 16 colours), and the full
-    16k copy every tick dominates phase-1 wall time."""
+def port_slice(sim, res, n=216):
+    """port_val, but array ports are truncated to n slots: the protocol
+    ends at the control block's slot 214, and the full 16k copy every
+    tick dominates phase-1 wall time."""
     kind, sid = res
     if kind == "arr":
         v = sim.arrays.get(sid)
@@ -131,14 +141,14 @@ def port_slice(sim, res, n=128):
 
 def tight(a):
     """The connector's truncation and colour split, mirrored: with a
-    point count in 1-based slot 98 the terminator is read directly
+    point count in 1-based slot 196 the terminator is read directly
     instead of scanned for, so coordinates are unrestricted; without
     one the legacy scan applies (an exact integer in [-17, -1] ends
     the list).  Either way the count after the terminator is colours
     -- white where the driver sent none."""
     n = None
-    if len(a) > 97 and a[97] > 0.5:
-        n = max(0, min(16, int(a[97])))
+    if len(a) > 195 and a[195] > 0.5:
+        n = max(0, min(16, int(a[195])))
         term = a[2 * n] if len(a) > 2 * n else -1.0
         if not (-17.0 <= term <= -1.0 and term == int(term)):
             term = -1.0
@@ -511,24 +521,22 @@ def main():
             dumps.append(lua_dump)
             share_dump(LUA_WS, lua_dump)
             lsim = sim_from_dump(lua_dump)
-            pid_push = out_port_id(lsim, "outNum1")
-            pid_red = out_port_id(lsim, "outNum2")
-            pid_clr = out_port_id(lsim, "outNum3")
             pid_arr = out_port_id(lsim, "outNumArr")
-            r_push = resolve_port(lsim, pid_push)
-            r_red = resolve_port(lsim, pid_red)
-            r_clr = resolve_port(lsim, pid_clr)
             r_arr = resolve_port(lsim, pid_arr)
 
             samples = Stream()
             live = [False]
 
             def hook(s, tick):
-                p = port_val(s, r_push)
-                r = port_val(s, r_red)
-                c = port_val(s, r_clr)
+                # v2 protocol: the push, draw and clear pulses ride the
+                # array at slots 200..202, so read them off the slice,
+                # exactly where the connector reads them.
+                a = port_slice(s, r_arr, 216)
+                p = a[199] if len(a) > 199 else 0.0
+                r = a[200] if len(a) > 200 else 0.0
+                c = a[201] if len(a) > 201 else 0.0
                 if live[0]:
-                    samples.push((p, r, c, port_slice(s, r_arr)), True)
+                    samples.push((p, r, c, a), True)
                 else:
                     samples.push((p, r, c, []), False)
                     if p > 0.5 or r > 0.5 or c > 0.5:

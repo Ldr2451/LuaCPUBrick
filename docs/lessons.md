@@ -794,6 +794,12 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   Otherwise make the code say it.
 - Prefer deleting a concept over documenting it; remove a workaround once the
   real thing exists.
+- **Clean solutions, always (the user insisted twice): no small tricks, one-off
+  patches, or workarounds around a limit.** When a probe forces something off
+  contract -- a smaller shape than asked, a reordered write, a special case --
+  the CONTRACT was wrong: fix the design so the full case fits (the protocol's
+  control slots moved above the biggest shape's data, so a full 16-point
+  colored shape can state its count and animation without being clobbered).
 - The README is for humans, not implementers: plain words for what the chip
   does (`run` = true starts the program), never jargon (no "rising edge", no
   port-clearing internals, no sermons about what the reader can already see in

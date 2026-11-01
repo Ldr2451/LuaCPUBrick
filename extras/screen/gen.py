@@ -731,7 +731,7 @@ L.append("    pTicks = if addToShapeInTicks < -0.5 then -1.0 else if addToShapeI
 # a 3D shape is at most 10 points (30 floats).
 L.append("    pIs3 = 0.0")
 # addToShapeInTicks -1 means FOREVER: the animation runs until another
-# command edits the slot.  -1.0 at slot 100 keeps meaning INSTANT (every
+# command edits the slot.  -1.0 at slot 198 keeps meaning INSTANT (every
 # plain push in every existing program uses it), so the wire code for
 # forever is -0.5 -- the (-1, 0) interval is otherwise unused, and 0.0
 # (the unwired default) stays instant.

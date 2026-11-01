@@ -46,9 +46,10 @@ TAIL = {"cube": "600", "curve": "150"}
 # the handshake spec (cpu-screen-connector README): worst measured pass.
 # Only the two stroke bodies are timed -- they are the slow passes, and
 # replaying a few hundred ticks each is what keeps this gate cheap.
-# Re-measured on the once-painted chip: worststroke.lua is 224 on the
-# README's protocol (209 inside the gate's shorter tail).
-SETTLE = 224
+# Re-measured on the once-painted chip: worststroke.lua (16 colored
+# points, the cap) is 260 on the README's protocol (258 inside the
+# gate's shorter tail).
+SETTLE = 260
 SETTLE_BODIES = {"curve": ("1200", "150"), "worststroke": ("900", "40")}
 
 

@@ -88,7 +88,7 @@ def pace(src):
         import re as _re
         src = _re.sub(r"nap\([0-9.]+ *\)", "nap(%s)" % float(CUBE_NAP), src)
     return src
-# The cube's shape-by-shape checks (six faces, the pivot, shared points)
+# The cube's shape-by-shape checks (the walked shape, the pivot, shared points)
 # only describe cube.lua.  Any other sample still has to paint, but its
 # checks are the picture, not a slot table.
 STRICT = BODY_NAME == "cube.lua"
@@ -214,8 +214,8 @@ def latch_edges(samples):
             out.append((
                 a[203] if len(a) > 203 else 0.0,
                 a[204] if len(a) > 204 else 0.0,
-                a[97] if len(a) > 97 else 0.0,
-                a[99] if len(a) > 99 else 0.0,
+                a[195] if len(a) > 195 else 0.0,
+                a[197] if len(a) > 197 else 0.0,
                 tuple(round(float(x), 3) for x in a[:12]),
                 tuple(round(float(x), 3) for x in a[205:214])))
         prev = p
@@ -224,7 +224,7 @@ def latch_edges(samples):
 
 def expect(cond, what, detail=""):
     """Report one check; the run is green only if every check is."""
-    # The slot-by-slot checks describe cube.lua's six faces.  Another
+    # The slot-by-slot checks describe cube.lua's walked cube.  Another
     # sample still has to paint, but its verdict is its picture, so with
     # CUBE_BODY set to something else these checks are skipped instead of
     # failing every line of a run whose frames are the point.
@@ -377,20 +377,23 @@ def main():
         print("  NO non-zero shapePoints staged => screen gets empties")
         ok = False
 
-    # ---- pushMesh: the cube's six faces arrive as six shapes ---------------
+    # ---- pushMesh: the cube arrives as ONE shape, walked end to end -------
     # The demo builds its cube with pushMesh (a mesh of points, one colour
     # per point, and faces naming the points they use), so the
-    # connector's stream IS the helper's contract: six shapes, slots
-    # 2..7, each under the pivot in slot 1, each carrying one face's
-    # four corners as a closed outline (five points, fifteen floats) and
-    # one colour per point.
+    # connector's stream IS the helper's contract: a stroke mesh is its
+    # edge graph walked -- an edge two faces share is ONE edge -- so the
+    # cube is twelve edges walked, four of them a second time so the walk
+    # can leave every corner -- the last of those four is the walk's
+    # return over paint already laid: sixteen
+    # points, one shape, one slot, one commit.  Then the pivot push
+    # and its forever spin edit: three pushes in all.
     faces = []
     prev = 0.0
     for k, r in enumerate(cstream):
         if (r["pushShape"] or 0.0) > 0.5 and prev <= 0.5:
             faces.append((k, r))
         prev = r["pushShape"] or 0.0
-    ok &= expect(len(faces) == 8, "pushMesh sends the cube's six faces",
+    ok &= expect(len(faces) == 3, "pushMesh walks the cube into one shape",
                  "%d pushes" % len(faces))
     # The mesh's points, as the demo defines them: a cube of eight
     # corners, each with its own colour.  The demo's cube has half-size
@@ -410,73 +413,61 @@ def main():
                 (H, -H): (0.40, 0.35, 0.40),
                 (H, H): (0.45, 0.40, 0.45),
                 (-H, H): (0.40, 0.35, 0.40)}[(x, y)]
-    # The six-face/point/colour checks describe cube.lua only; a mesh body
-    # whose vertices are not the cube corners (breath breathes them) must not
-    # be scored against the corner table, or point_colour raises KeyError.
-    if STRICT and len(faces) == 8:
-        for i, (k, r) in enumerate(faces[:6]):
-            ok &= expect((r["shapeId"] or 0.0) == float(i + 2),
-                         "face %d takes slot %d" % (i, i + 2),
-                         "id=%s" % (r.get("shapeId"),))
-            ok &= expect((r["parentShapeId"] or 0.0) == 1.0,
-                         "face %d follows the pivot" % i,
-                         "parent=%s" % (r.get("parentShapeId"),))
-            ok &= expect(len(r["shapePoints"]) == 15,
-                         "face %d is a closed outline" % i,
-                         "%d floats" % len(r["shapePoints"]))
-            ok &= expect((r["shapeWireMode"] or 0.0) > 0.5,
-                         "face %d is a wireframe" % i,
-                         "wire=%s" % (r.get("shapeWireMode"),))
-            cols = r.get("shapeColors") or []
-            # Each point of the face carries ITS colour: the connector's
-            # array is padded past them (it sizes the colour slice by
-            # floats, so it runs to its 16 cap), and the chip reads as
-            # many colours as the shape has points.
-            pts = r["shapePoints"]
-            bad = []
-            for j in range(5):
-                pt = (pts[3 * j], pts[3 * j + 1], pts[3 * j + 2])
-                want = tuple(round(x, 3) for x in point_colour(pt))
-                have = tuple(round(x, 3) for x in cols[j][:3]) \
-                    if j < len(cols) else None
-                if have != want:
-                    bad.append((pt, want, have))
-            ok &= expect(not bad,
-                         "face %d colours each point with its own" % i,
-                         "%r" % (bad[:2],))
-            # The face is closed: its last point repeats its first, so
-            # the outline comes back round.
-            ok &= expect(pts[0:3] == pts[12:15],
-                         "face %d closes its outline" % i,
-                         "%r" % (pts[12:15],))
-        # A point that two faces share carries the SAME colour in both --
-        # that is the whole point of the indexed mesh, and it is what
-        # stops a shared edge from showing two colours.
-        shared = {}
-        clash = []
-        for i, (k, r) in enumerate(faces[:6]):
-            cols = r.get("shapeColors") or []
-            pts = r["shapePoints"]
-            for j in range(4):
-                pt = (pts[3 * j], pts[3 * j + 1], pts[3 * j + 2])
-                c = tuple(round(x, 3) for x in cols[j][:3]) \
-                    if j < len(cols) else None
-                if pt in shared and shared[pt] != c:
-                    clash.append((pt, shared[pt], c))
-                shared.setdefault(pt, c)
-        ok &= expect(not clash,
-                     "a shared point keeps its colour in both faces",
-                     "%r" % (clash[:2],))
-        ok &= expect(len(shared) == 8,
-                     "the six faces share eight points",
-                     "%d distinct" % len(shared))
-        # the pivot: one point (a live slot with nothing to fill)
-        pk, pr = faces[6]
-        ok &= expect((pr["shapeId"] or 0.0) == 1.0,
-                     "the pivot is slot 1", "id=%s" % (pr.get("shapeId"),))
-        ok &= expect(len(pr["shapePoints"]) == 3,
-                     "the pivot is one point",
-                     "%d floats" % len(pr["shapePoints"]))
+    # The walk/point/colour checks describe cube.lua only; a mesh body
+    # whose vertices are not the cube corners (breath breathes them) must
+    # not be scored against the corner table, or point_colour raises
+    # KeyError.
+    if STRICT and len(faces) == 3:
+        wk, wr = faces[0]
+        pts = wr["shapePoints"]
+        ok &= expect((wr["shapeId"] or 0.0) == 2.0,
+                     "the walk is slot 2", "id=%s" % (wr.get("shapeId"),))
+        ok &= expect((wr["parentShapeId"] or 0.0) == 1.0,
+                     "the walk follows the pivot",
+                     "parent=%s" % (wr.get("parentShapeId"),))
+        ok &= expect((wr["shapeWireMode"] or 0.0) > 0.5,
+                     "the walk is a wireframe", "wire=%s" % (wr.get("shapeWireMode"),))
+        ok &= expect(len(pts) == 48, "the walk is sixteen points",
+                     "%d floats" % len(pts))
+        ok &= expect(pts[0:3] != pts[45:48],
+                     "the walk is open (four edges walked twice, the last a return)",
+                     "%r vs %r" % (pts[0:3], pts[45:48]))
+        cols = wr.get("shapeColors") or []
+        # Each corner of the walk carries ITS colour: the connector's
+        # array is padded past the points, and the chip reads as many
+        # colours as the shape has points.
+        bad = []
+        for j in range(16):
+            pt = (pts[3 * j], pts[3 * j + 1], pts[3 * j + 2])
+            want = tuple(round(x, 3) for x in point_colour(pt))
+            have = tuple(round(x, 3) for x in cols[j][:3]) \
+                if j < len(cols) else None
+            if have != want:
+                bad.append((pt, want, have))
+        ok &= expect(not bad, "the walk colours each corner with its own",
+                     "%r" % (bad[:2],))
+        verts = set()
+        segs = set()
+        for j in range(16):
+            pt = (pts[3 * j], pts[3 * j + 1], pts[3 * j + 2])
+            verts.add(pt)
+            if j + 1 < 16:
+                q = (pts[3 * j + 3], pts[3 * j + 4], pts[3 * j + 5])
+                if pt != q:
+                    segs.add(frozenset((pt, q)))
+        ok &= expect(len(verts) == 8,
+                     "the walk touches the eight corners",
+                     "%d distinct" % len(verts))
+        ok &= expect(len(segs) == 12,
+                     "the walk strokes twelve distinct edges "
+                     "(shared edges once)",
+                     "%d distinct" % len(segs))
+        # The pivot: its slot-1 push, then the forever spin edit to it.
+        ok &= expect((faces[1][1]["shapeId"] or 0.0) == 1.0,
+                     "the pivot is slot 1", "id=%s" % (faces[1][1].get("shapeId"),))
+        ok &= expect((faces[2][1]["shapeId"] or 0.0) == 1.0,
+                     "the spin edits the pivot in place",
+                     "id=%s" % (faces[2][1].get("shapeId"),))
 
     # ---- phase 3: screen replay ---------------------------------------
     with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
@@ -613,7 +604,7 @@ def main():
                 undim(tuple(float(x) for x in
                             s.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]))
                 for i in range(SW * SW)) if gids else None
-            if CUBE_SAMPLE and tick % CUBE_SAMPLE == 0 and len(snaps) < 60:
+            if CUBE_SAMPLE and tick % CUBE_SAMPLE == 0 and len(snaps) < 192:
                 # CUBE_SAMPLE: the paced-program frame picker (see the env
                 # knob); every sample lands on a settled wall.
                 snaps[len(snaps)] = wall()

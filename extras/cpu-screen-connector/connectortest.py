@@ -104,7 +104,7 @@ editShape("1", {8.0, 8.0, 0.0, 20.0, 8.0, 0.0, 8.0, 20.0, 0.0},
 nap(1.2)
 editShape("1", {0.0, 0.0, 0.0}, nil,
 {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, "0", 4.0)
-outNumArr(100, 0.0)
+outNumArr(198, 0.0)
 -- the animated commit paints nothing and the 4 ticks run free; the
 -- animation advances one step per completed pass, so wait it out before
 -- the bare draw that shows the triangle moved +8 in x
@@ -346,14 +346,14 @@ def main():
                          "shapeScale reads slots 212..214",
                          "%r" % (prow["shapeScale"],))
 
-        # the tick count rides slot 100 as a second terminator (-1 =
-        # instant, -(1+T) = animate over T ticks).  Shapes 1-4 never
-        # stage it and shape 5 rewrites the explicit stop after its
+        # the animation length rides slot 198 (-1 = forever, -(1+T) =
+        # animate over T ticks, 0.0 = instant).  Shapes 1-4 never
+        # stage an animation and shape 5 restates the slot after its
         # push, so every row but the animated push must read instant.
         ticks_seen = set(float(r.get("addToShapeInTicks") or 0.0)
                          for r in cstream)
         ok &= expect(4.0 in ticks_seen,
-                     "tick count parses from slot 100",
+                     "tick count parses from slot 198",
                      "%r" % (sorted(ticks_seen),))
         ok &= expect(ticks_seen <= {0.0, 4.0},
                      "unstaged ticks read instant",

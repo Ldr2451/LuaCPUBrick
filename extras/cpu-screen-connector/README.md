@@ -26,7 +26,7 @@ left, screen-side outputs on the right -- 12 wires from connector to
 screen in total, every one required.  The connector re-reads on
 `ContainerChange(outNumArr)` (a `Change` trigger on the array never
 fires -- WS059).  `addToShapeInTicks` is easy to miss because it has no
-port of its own (it rides `outNumArr` slot 100); without that wire every
+port of its own (it rides `outNumArr` slot 198); without that wire every
 animation arm reads an instant push, the chip deletes instead of arming,
 and retained shapes fall apart.  `brightness` on the screen stays
 unwired (defaults bright).
@@ -44,12 +44,15 @@ until written again -- which is why `stage` restates what matters:
         carries z = 0; the screen reads the delivered length's parity
         as 2D/3D, so a closed 3D outline repeats the first vertex)
 m+1     terminator: -1 = no colours (all white), -(1+c) = c colours
-        follow; with the count stated at slot 98, coordinates are
+        follow; with the count stated at slot 196, coordinates are
         completely unrestricted
 m+2..   colours r1, g1, b1, a1, ... four floats per point
-98      point FLOAT count (the library writes it every push: a stale
-        count would ghost-parse the next shape)
-100     animation: 0 instant, N steps (one per repaint), -1 forever
+196     point FLOAT count (the library writes it every push: a stale
+        count would ghost-parse the next shape); 196 and 198 sit ABOVE
+        the data -- the biggest shape the screen takes (16 points,
+        colour and all) reaches slot 113, so staging one never disturbs
+        them
+198     animation: 0 instant, N steps (one per repaint), -1 forever
 200     push pulse: 1 stages the shape on the ports, 0 ends the pulse
 201     draw pulse: 1 repaints every retained shape
 202     clear pulse: 1 forgets every slot
@@ -145,7 +148,7 @@ slice behind the terminator, the parsed vecs and parent id).
 A `draw()` pulse arms a pass; the pass paints over many ticks (the fill
 and stroke walks scan four rows at a tick, a redraw erases the old
 coverage first).  The screen has no "done" output -- the contract is a
-**wait**: after `draw()`, wait at least **224 ticks** -- the measured
+**wait**: after `draw()`, wait at least **260 ticks** -- the measured
 worst pass -- before assuming the wall holds the whole picture, and
 before the next `draw()` if you want the previous frame complete on
 screen.
@@ -159,12 +162,12 @@ asserted by `extras/screen/screenchecks.py`):
 | filled redraw (mover, scale) | 23 ticks |
 | wireframe cube redraw under a spinning pivot | 144 ticks |
 | wave stroke redraw (curve, 11 points) | 100 ticks |
-| tallest protocol stroke (13 colored points, full wall) | 224 ticks |
+| tallest protocol stroke (16 colored points, full wall) | 260 ticks |
 
-224 is the worst the protocol can make: the cost scales with how many
+260 is the worst the protocol can make: the cost scales with how many
 tall segments a wireframe has -- a stroke's walk rebuilds a segment every
 tick, so steep segments dominate (both walks paint four rows a tick, and
 a redraw paints every shape exactly once; the old worsts were 507 and
 428).  A program that wants fast frames should push short strokes or
-fills.  Game bodies pace with `nap(224)`, which now covers even the
-zigzag; a program may wait as little as `nap(224)`.
+fills.  Game bodies pace with `nap(224)`, enough for their shapes; only
+the full-wall zigzag needs `nap(260)`.

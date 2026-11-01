@@ -6,16 +6,16 @@ function nap(c)
 local t = clock()
 while clock() < t + c do end
 end
-local function pulse(n)
-outNum(n, 1.0)
+local function pulse(slot)
+outNumArr(slot, 1.0)
 tick()
-outNum(n, 0.0)
+outNumArr(slot, 0.0)
 end
 function push()
-pulse(1)
+pulse(200)
 end
 function draw()
-pulse(2)
+pulse(201)
 end
 local function putn(slot, t)
 local i = 1
@@ -25,12 +25,29 @@ i = i + 8
 end
 return slot + #t
 end
-function setTransform(xf)
-local i = 1
-while i <= 9 do
-outStrArr(i, tostring(xf[i]))
-i = i + 1
+local function num(v)
+if v == nil then return 0.0 end
+if type(v) == "string" then return tonumber(v) or 0.0 end
+return v
 end
+function rep(t, n)
+local out = {}
+local i = 1
+local k = 0
+while k < n do
+local j = 1
+while j <= #t do
+out[i] = t[j]
+i = i + 1
+j = j + 1
+end
+k = k + 1
+end
+return out
+end
+function setTransform(xf)
+outNumArr(206, xf[1], xf[2], xf[3], xf[4], xf[5], xf[6], xf[7], xf[8])
+outNumArr(214, xf[9])
 end
 local function asTriples(pts)
 local out = {}
@@ -47,7 +64,6 @@ function stage2d(pts, cols, xf, parent, ticks, wire, id)
 stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
 end
 function stage(pts, cols, xf, parent, ticks, wire, id)
-outNumArr(98, #pts * 1.0)
 local termAt = putn(1, pts)
 if cols == nil then
 outNumArr(termAt, -1.0)
@@ -57,35 +73,26 @@ putn(termAt + 1, cols)
 end
 local x = xf
 if x == nil then x = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0} end
-local j = 1
-while j <= 9 do
-outStrArr(j, tostring(x[j]))
-j = j + 1
-end
-local p = parent
-if p == nil then p = "0" end
-outStr(2, tostring(p))
-local s = id
-if s == nil then s = "" end
-outStr(1, tostring(s))
-outNum(4, wire or 0.0)
+setTransform(x)
+outNumArr(203, wire or 0.0, num(id), num(parent))
 local t = ticks
 if t == nil then t = 0.0 end
 if t == -1.0 then
-outNumArr(100, -1.0)
+outNumArr(198, -1.0)
 elseif t >= 1.0 then
-outNumArr(100, -(1.0 + t))
+outNumArr(198, -(1.0 + t))
 else
-outNumArr(100, 0.0)
+outNumArr(198, 0.0)
 end
+outNumArr(196, #pts * 1.0)
 end
 function fire(after)
-outNum(1, 1.0)
+outNumArr(200, 1.0)
 tick()
-outNum(1, 0.0)
-outNum(2, 1.0)
+outNumArr(200, 0.0)
+outNumArr(201, 1.0)
 tick()
-outNum(2, 0.0)
+outNumArr(201, 0.0)
 if after ~= nil then
 if after > 0.0 then nap(after) end
 end
@@ -101,57 +108,234 @@ end
 function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
 local base = firstId
 if base == nil then base = 0 end
-local f = 1
 local nfaces = #faces
+local nv = (#points / 3) | 0
+local seen = {}
+local ea = {}
+local eb = {}
+local corner = {}
+local f = 1
 while f <= nfaces do
 local face = faces[f]
 local m = #face
-local pts = {}
-local cols = {}
-local np = 0
-local nc = 0
+if m > 1 and face[1] == face[m] then
+m = m - 1
+end
 local k = 1
 while k <= m do
-local vi = face[k]
-local b = (vi - 1) * 3 + 1
-np = np + 1
-pts[np] = points[b]
-np = np + 1
-pts[np] = points[b + 1]
-np = np + 1
-pts[np] = points[b + 2]
-if pcols ~= nil then
-local c = (vi - 1) * 4 + 1
-nc = nc + 1
-cols[nc] = pcols[c]
-nc = nc + 1
-cols[nc] = pcols[c + 1]
-nc = nc + 1
-cols[nc] = pcols[c + 2]
-nc = nc + 1
-cols[nc] = pcols[c + 3]
+local a = face[k]
+local b = face[k % m + 1]
+if a ~= b then
+local lo = a
+local hi = b
+if b < a then
+lo = b
+hi = a
+end
+local key = lo * nv + hi
+if seen[key] == nil then
+seen[key] = 1
+ea[#ea + 1] = lo
+eb[#eb + 1] = hi
+if corner[lo] == nil then
+corner[lo] = {}
+end
+corner[lo][#corner[lo] + 1] = #ea
+if corner[hi] == nil then
+corner[hi] = {}
+end
+corner[hi][#corner[hi] + 1] = #ea
+end
 end
 k = k + 1
 end
-np = np + 1
-pts[np] = pts[1]
-np = np + 1
-pts[np] = pts[2]
-np = np + 1
-pts[np] = pts[3]
+f = f + 1
+end
+if wire == nil or wire == 0 or wire == false then
+f = 1
+while f <= nfaces do
+local face = faces[f]
+local m = #face
+if m > 1 and face[1] == face[m] then
+m = m - 1
+end
+local pts = {}
+local cols = {}
+local k = 1
+while k <= m + 1 do
+local vi = face[(k - 1) % m + 1]
+local b = (vi - 1) * 3 + 1
+pts[k * 3 - 2] = points[b]
+pts[k * 3 - 1] = points[b + 1]
+pts[k * 3] = points[b + 2]
 if pcols ~= nil then
-nc = nc + 1
-cols[nc] = cols[1]
-nc = nc + 1
-cols[nc] = cols[2]
-nc = nc + 1
-cols[nc] = cols[3]
-nc = nc + 1
-cols[nc] = cols[4]
+local c = (vi - 1) * 4 + 1
+cols[k * 4 - 3] = pcols[c]
+cols[k * 4 - 2] = pcols[c + 1]
+cols[k * 4 - 1] = pcols[c + 2]
+cols[k * 4] = pcols[c + 3]
+end
+k = k + 1
 end
 stage(pts, cols, xf, parent, ticks, wire, tostring(base + f - 1))
 push()
 f = f + 1
+end
+return
+end
+local odd = 0
+local v = 1
+while v <= nv do
+if corner[v] ~= nil and #corner[v] % 2 == 1 then
+odd = odd + 1
+end
+v = v + 1
+end
+local firstdup = 0
+while odd >= 2 do
+local u = 0
+v = 1
+while u == 0 and v <= nv do
+if corner[v] ~= nil and #corner[v] % 2 == 1 then u = v end
+v = v + 1
+end
+local prevE = {}
+local mark = {}
+mark[u] = 1
+local queue = {u}
+local qi = 1
+local target = 0
+while target == 0 and qi <= #queue do
+local cur = queue[qi]
+qi = qi + 1
+local cs = corner[cur]
+local j = 1
+while cs ~= nil and j <= #cs and target == 0 do
+local eid = cs[j]
+local nb = eb[eid]
+if nb == cur then nb = ea[eid] end
+if mark[nb] == nil then
+mark[nb] = 1
+prevE[nb] = eid
+queue[#queue + 1] = nb
+if corner[nb] ~= nil and #corner[nb] % 2 == 1 then target = nb end
+end
+j = j + 1
+end
+end
+local cur = target
+while cur ~= u do
+local eid = prevE[cur]
+ea[#ea + 1] = ea[eid]
+eb[#eb + 1] = eb[eid]
+local x = ea[eid]
+local y = eb[eid]
+corner[x][#corner[x] + 1] = #ea
+corner[y][#corner[y] + 1] = #ea
+if firstdup == 0 then firstdup = #ea end
+if x == cur then
+cur = y
+else
+cur = x
+end
+end
+odd = odd - 2
+end
+local used = {}
+if firstdup ~= 0 then
+used[firstdup] = 1
+end
+local nsh = 0
+local live = 1
+while live == 1 do
+live = 0
+local s = 0
+local anyv = 0
+local v = 1
+while v <= nv and s == 0 do
+local cs = corner[v]
+local left = 0
+if cs ~= nil then
+local j = 1
+while j <= #cs do
+if used[cs[j]] == nil then
+left = left + 1
+end
+j = j + 1
+end
+end
+if left > 0 then
+if anyv == 0 then anyv = v end
+if left % 2 == 1 then s = v end
+end
+v = v + 1
+end
+if s == 0 then s = anyv end
+if s ~= 0 then
+local stack = {s}
+local top = 1
+local path = {}
+local pn = 0
+while top > 0 do
+local cur = stack[top]
+local moved = 0
+local cs = corner[cur]
+if cs ~= nil then
+local j = 1
+while j <= #cs and moved == 0 do
+local e = cs[j]
+if used[e] == nil then
+used[e] = 1
+local w = eb[e]
+if w == cur then w = ea[e] end
+top = top + 1
+stack[top] = w
+moved = 1
+end
+j = j + 1
+end
+end
+if moved == 0 then
+pn = pn + 1
+path[pn] = cur
+top = top - 1
+end
+end
+local at = pn
+while at >= 1 do
+local from = at - 15
+if from < 1 then from = 1 end
+local pts = {}
+local cols = {}
+local np = 0
+local i = at
+while i >= from do
+local vi = path[i]
+local b = (vi - 1) * 3 + 1
+np = np + 1
+pts[np * 3 - 2] = points[b]
+pts[np * 3 - 1] = points[b + 1]
+pts[np * 3] = points[b + 2]
+if pcols ~= nil then
+local c = (vi - 1) * 4 + 1
+cols[np * 4 - 3] = pcols[c]
+cols[np * 4 - 2] = pcols[c + 1]
+cols[np * 4 - 1] = pcols[c + 2]
+cols[np * 4] = pcols[c + 3]
+end
+i = i - 1
+end
+stage(pts, cols, xf, parent, ticks, wire, tostring(base + nsh))
+push()
+nsh = nsh + 1
+if from > 1 then
+at = from
+else
+at = 0
+end
+end
+live = 1
+end
 end
 end
 function pushShape(pts, cols, xf, parent, wire)
@@ -174,9 +358,9 @@ stage({}, nil, nil, "0", nil, nil, id)
 fire()
 end
 function clearScreen(after)
-outNum(3, 1.0)
+outNumArr(202, 1.0)
 tick()
-outNum(3, 0.0)
+outNumArr(202, 0.0)
 draw()
 if after ~= nil then
 if after > 0.0 then nap(after) end

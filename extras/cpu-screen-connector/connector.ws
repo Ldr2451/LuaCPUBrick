@@ -28,12 +28,12 @@
 //           including a negative coordinate -- is a point like any
 //           other.
 //   m+2..  colours r1, g1, b1, a1, ... four per point
-//   98     float count (optional): when positive, the terminator is
+//   196    float count (optional): when positive, the terminator is
 //           read directly at m+1 instead of scanned for, so
 //           coordinates are completely unrestricted -- even exact
 //           integers in the terminator window transmit as points.  It
 //           counts FLOATS, not points.
-//   100    animation length: -1 means FOREVER, -(1+T) animates the staged
+//   198    animation length: -1 means FOREVER, -(1+T) animates the staged
 //           shape over T ticks, and anything else (including 0.0, which
 //           is what an unwritten slot reads) is INSTANT.
 //   200    push pulse: 1 stages the shape on the ports, 0 ends the pulse
@@ -122,15 +122,18 @@ mod passArrays() {
     let t13 = (outNumArr[57] | 0) == outNumArr[57] && outNumArr[26] >= -17.0 && outNumArr[26] <= -1.0
     let t14 = (outNumArr[63] | 0) == outNumArr[63] && outNumArr[28] >= -17.0 && outNumArr[28] <= -1.0
     let t15 = (outNumArr[66] | 0) == outNumArr[66] && outNumArr[30] >= -17.0 && outNumArr[30] <= -1.0
-    // Point float count, 1-based slot 98 (0-based 97): when a driver
+    // Point float count, 1-based slot 196 (0-based 195): when a driver
     // states how many floats follow, the terminator is read directly
     // instead of scanned for, so coordinates are completely unrestricted.
+    // The count and the animation slot sit above the shape data -- the
+    // biggest shape the screen takes (16 points, colour and all) reaches
+    // slot 113 -- so staging a full shape never disturbs them.
     // FLOATS, not points: a shape of k points states 3k, and the screen
     // reads the delivered array as triples.
-    let hasCount = if outNumArr.length() > 97.0 then (if outNumArr[97] > 0.5 then 1.0 else 0.0) else 0.0
-    let cnRaw = if hasCount > 0.5 then outNumArr[97] else 0.0
+    let hasCount = if outNumArr.length() > 195.0 then (if outNumArr[195] > 0.5 then 1.0 else 0.0) else 0.0
+    let cnRaw = if hasCount > 0.5 then outNumArr[195] else 0.0
     let cn = if cnRaw > 48.0 then 48.0 else (cnRaw | 0)
-    let rawTerm = if outNumArr.length() > 97.0 then outNumArr[cn] else -1.0
+    let rawTerm = if hasCount > 0.5 then outNumArr[cn] else -1.0
     let rawOk = ((rawTerm | 0) == rawTerm && rawTerm >= -17.0 && rawTerm <= -1.0)
     let n = if hasCount > 0.5 then cn else if t0 then 0.0 else if t1 then 1.0 else if t2 then 2.0 else if t3 then 3.0 else if t4 then 4.0 else if t5 then 5.0 else if t6 then 6.0 else if t7 then 7.0 else if t8 then 8.0 else if t9 then 9.0 else if t10 then 10.0 else if t11 then 11.0 else if t12 then 12.0 else if t13 then 13.0 else if t14 then 14.0 else if t15 then 15.0 else 16.0
     // The stated count is FLOATS, so the array is sliced at the count and
@@ -169,7 +172,7 @@ mod passArrays() {
     // no-op when staging per-tick animation deltas -- so omitted colours
     // hold still instead of flashing white.  Capped at 16 like before.
     cols.resize(if nc > 16.0 then 16.0 else nc, Color(1.0, 1.0, 1.0, 1.0))
-    ticks = if outNumArr.length() > 99.0 then (if outNumArr[99] == -1.0 then -1.0 else if outNumArr[99] < -1.0 then (0.0 - outNumArr[99]) - 1.0 else 0.0) else 0.0
+    ticks = if outNumArr.length() > 197.0 then (if outNumArr[197] == -1.0 then -1.0 else if outNumArr[197] < -1.0 then (0.0 - outNumArr[197]) - 1.0 else 0.0) else 0.0
   }
 }
 // The one event: the array's contents moved.  The CPU stages a whole

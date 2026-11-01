@@ -7,8 +7,9 @@
 -- sends IS the cube.
 --
 -- The cube is eight vertices and six faces, and pushMesh sends the
--- faces as six shapes under one parent, so the parent's turn moves the
--- whole solid.  The vertices are the cube's, and a vertex's colour is
+-- whole mesh as ONE shape: it walks the twelve edges end to end into
+-- one outline in one slot, under one parent, so the parent's turn moves
+-- the whole solid.  The vertices are the cube's, and a vertex's colour is
 -- the colour of the EDGES that meet there: every face shares the
 -- vertices it touches, so an edge is drawn once, in one colour, and
 -- the two faces that meet along it cannot show through each other.
@@ -50,8 +51,8 @@ local faces = {
 {1, 4, 8, 5},
 {2, 6, 7, 3},
 }
--- The six faces go to the screen as six shapes, slots 2 to 7, all
--- under the pivot in slot 1.  They go as OUTLINES, so the cube reads
+-- The twelve edges go to the screen as ONE walked shape, slot 2, under
+-- the pivot in slot 1.  They go as OUTLINES, so the cube reads
 -- as a wireframe solid: you can see which face is which as it turns.
 pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
 -- The pivot: where the cube sits on the wall and how it is turned.  It

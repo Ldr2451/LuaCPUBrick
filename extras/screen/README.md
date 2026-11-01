@@ -118,8 +118,8 @@ a push that also carries points still waits for its `drawAllShapes`, so a
 staged-but-undrawn shape is never shown.
 
 ```
-outNumArr(100, -(1.0 + 30))     -- animate the staged shape over 30 ticks
-outNumArr(100, -1.0)            -- FOREVER: runs until another command
+outNumArr(198, -(1.0 + 30))     -- animate the staged shape over 30 ticks
+outNumArr(198, -1.0)            -- FOREVER: runs until another command
                                  -- edits the shape (via the gfx library,
                                  -- `ticks` of -1; instant is 0.0)
 ```

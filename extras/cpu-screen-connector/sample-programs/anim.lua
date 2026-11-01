@@ -1,13 +1,11 @@
 -- Rainbow spirograph, polygon edition -- driver for the 64x64 screen.
--- Wires: outNum1 -> pushShape, outNum2 -> drawAllShapes, outNum3 -> clearAllShapes,
--- outNumArr -> only the points the shape needs (1..) plus one -1
--- terminator; the connector truncates there.  No colours are sent: the
--- screen defaults every point to white, which keeps this driver's write
--- budget the smallest it can be (the arrays below are 3 slots shorter
--- per frame than the old colour-first layout) -- this program is the
--- refresh-rate benchmark, and the colour feature is demonstrated by
--- showcase.lua.  One shape per frame, bursts hidden under the next
--- frame's compute.  Terse: the lexer runs ~1 char/tick.
+-- Everything rides the one array the gfx library stages (points, then a
+-- terminator, then colours; the connector truncates at the terminator).
+-- No colours are sent: the screen defaults every point to white, which
+-- keeps this driver's per-frame write budget the smallest it can be --
+-- this program is the refresh-rate benchmark, and the colour feature is
+-- demonstrated by showcase.lua.  One shape per frame, bursts hidden
+-- under the next frame's compute.  Terse: the lexer runs ~1 char/tick.
 
 clearScreen()
 local sets = {

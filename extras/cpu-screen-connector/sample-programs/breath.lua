@@ -3,8 +3,9 @@
 --
 -- Nothing is scaled.  Each frame sends its OWN eight vertices -- the same
 -- x and z, a y that grows and shrinks -- so this is the sample for editing
--- a shape's points while it is on screen: pushMesh stages a face and pushes
--- it, draw() commits the six faces and the wall is recomposited from the
+-- a shape's points while it is on screen: pushMesh stages the walked
+-- outline and pushes it, draw() commits it and the wall is recomposited
+-- from the
 -- stored slots.  The chip transforms, projects and paints; the program
 -- never computes a pixel.
 clearScreen()
