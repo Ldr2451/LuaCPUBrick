@@ -306,8 +306,11 @@
 const STEP_INTERVAL = 0.01
 const MAX_INSTR = 4096
 // the prepended library plus a full program; the token arrays are sized from
-// this, so raising it costs gates (see tools/chip/audit.py)
-const MAX_TOKENS = 4096
+// this.  The sizing is host bulk resize, so raising the ceiling costs no
+// gates and no time (probed: MAX_HEAP 4096->65536, plNext resize ARR_SLOTS
+// 1024 vs 16384 measured flat); it has to cover the biggest showcase the
+// samples assemble -- the tour's gfx-prepended body.
+const MAX_TOKENS = 8192
 // Entries in the inNumArr, inStrArr, outNumArr and outStrArr ports.  A
 // const rather than inNumArr.length() because an input PORT cannot be
 // read during codegen - it empties every program's log - and the width

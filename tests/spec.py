@@ -43,7 +43,11 @@ N_OPS = len(OP_NAMES)
 # constant at reset, so it is memory and not graph (measured: 1,024 -> 1,536 and
 # 1,536 -> 4,096 both left tools/chip/audit.py at the same figure).  See libStrDyn.
 MAX_INSTR = 4096
-MAX_TOKENS = 4096
+# The token ceiling has to cover the biggest showcase a sample assembles
+# (gfx library prepended to the tour body): raised 4096 -> 8192, measured
+# flat at tools/chip/audit.py -- token arrays are reset-time sizing,
+# memory and not graph, like MAX_INSTR's raising above.
+MAX_TOKENS = 8192
 MAX_REGS = 200
 MAX_FUNCS = 96
 MAX_CLO = 256    # extra closure records on top of MAX_FUNCS; see cloF in lua.ws
