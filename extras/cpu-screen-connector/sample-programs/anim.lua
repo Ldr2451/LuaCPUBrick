@@ -51,7 +51,8 @@ end
 local function tracer(bx, by, h)
   local ex, ey = bx + 8.0, by + 8.0
   outNumArr(1, bx, by, 0.0, ex, by, 0.0, ex, ey, 0.0, bx, ey, 0.0)
-  outNumArr(9, -1.0)
+  outNumArr(13, -1.0)
+  outNumArr(196, 12.0)
   fire()
 end
 
@@ -64,7 +65,8 @@ local function core(r, h)
   local ky0, ky1 = cx - k, cx + k
   outNumArr(1, kx0, y0, 0.0, kx1, y0, 0.0, x1, ky0, 0.0, x1, ky1, 0.0)
   outNumArr(9, kx1, y1, kx0, y1, x0, ky1, x0, ky0)
-  outNumArr(17, -1.0)
+  outNumArr(25, -1.0)
+  outNumArr(196, 24.0)
   fire()
 end
 
