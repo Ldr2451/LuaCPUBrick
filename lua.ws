@@ -1898,7 +1898,15 @@ mod noteIndex(name: string) {
 }
 
 mod noteUnknown(name: string) {
+  // A DECLARATION is an assignment: `function f(` and `local function f(`
+  // install f, so calling a function the file declares further down reads
+  // a live function, not nil -- the case that made a library that spells
+  // `function stage(` after the shorthand that calls it look broken.
+  // `srcUses` is a substring test, so this keeps quiet rather than being
+  // sure: `function stage(` also matches `function stage2d(`.
   if !srcUses(lsrc, name .. " =") && !srcUses(lsrc, name .. "=")
+    && !srcUses(lsrc, "function " .. name .. "(")
+    && !srcUses(lsrc, "function " .. name .. " ")
     && !srcUses(nameWarn, name) {
     nameWarn = nameWarn .. "warn: '" .. name
       .. "' is not a port or a builtin, and the program never assigns it, so it reads as nil"
