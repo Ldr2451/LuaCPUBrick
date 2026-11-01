@@ -1,4 +1,4 @@
--- The screen tour: seven beats, looping -- one showcase of the whole
+-- The screen tour: eight beats, looping -- one showcase of the whole
 -- chain, speaking the gfx library (no port touches, no v1 hand-staging).
 --
 -- Every wait is nap(224.0): the measured handshake wait (README table --
@@ -101,7 +101,7 @@ nap(224.0)
 clearScreen()
 
 -- 5 3D: a cube under a pivot, depth, and a HUD riding the camera.
-print("5 3D: six faces under one pivot, one draw")
+print("5 3D: one walked cube under one pivot, one draw")
 camera({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
 editShape("1", wall, {-0.08, -0.08, -0.30, 1.0, 0.45, 0.10, 0.30, 1.0,
                       0.90, 0.45, 0.15, 1.0, 0.05, 0.35, 0.45, 1.0},
@@ -112,7 +112,8 @@ editShape("2", {0.0, 0.0, 0.0}, nil,
           {32.0, 33.0, 0.0, 0.5, 0.0, 0.85, 1.0, 1.0, 1.0}, "0")
 -- The cube: eight vertices, one colour each -- near corners bright, far
 -- ones dark -- and a shared vertex carries one colour into every face,
--- so a shared edge is stroked once.  Faces 3..8 under the pivot.
+-- so a shared edge is stroked once.  The whole mesh walks into ONE
+-- shape, slot 3, under the pivot.
 local h = 11.0
 local pts = {-h, -h, h, h, -h, h, h, h, h, -h, h, h,
              -h, -h, -h, h, -h, -h, h, h, -h, -h, h, -h}
@@ -182,3 +183,36 @@ stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.04, 0.0, 0.0, 0.0}, "0",
       -1.0, nil, "2")
 push()
 nap(2240.0)
+
+-- 8 wave: an OPEN curve stroked in colour, ANIMATED frame by frame --
+-- the curve is restaged with its phase advanced each frame, so the
+-- crests travel while the colours keep their point slots: the wave
+-- flows, the picture does not slide.
+print("8 wave: an open curve, running")
+clearScreen()
+local nw = 11
+local wav = {}
+local wc = {}
+local i = 0
+while i < nw do
+  local t = i / (nw - 1)
+  wav[i * 2 + 1] = 4.0 + 56.0 * t
+  wc[i * 4 + 1] = 1.0 - 0.8 * t
+  wc[i * 4 + 2] = 0.2 + 0.8 * t
+  wc[i * 4 + 3] = 0.3
+  wc[i * 4 + 4] = 1.0
+  i = i + 1
+end
+local f = 0
+while f < 6 do
+  i = 0
+  while i < nw do
+    local t = i / (nw - 1)
+    wav[i * 2 + 2] = 32.0 + 9.0 * math.sin(f * 0.55 + 6.2 * t)
+    i = i + 1
+  end
+  stagePush2d(wav, wc, nil, "0", nil, 1, "20")
+  draw()
+  nap(224.0)
+  f = f + 1
+end
