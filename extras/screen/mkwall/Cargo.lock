@@ -942,7 +942,7 @@ dependencies = [
 
 [[package]]
 name = "wirescript"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "bitflags",
  "brdb",
