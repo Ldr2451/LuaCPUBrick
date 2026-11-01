@@ -64,9 +64,14 @@
   `tools/chip/pucount.py` — pure text, seconds — to ask how many asserts are
   harvestable at all.
 - A differential sweep's batch unit is the *program*, not the value: one
-  `io.write` can carry a group (the log keeps 32 appends). Two silent ceilings:
-  the source buffer is ~4 KB *including* the prepended library, and an expression
-  is MAXVALS = 16 registers.
+  `io.write` can carry a group (the log keeps 32 appends). The parse REFUSES
+  rather than miscompiles, and its ceilings name where a program is refused:
+  the token buffer (`MAX_TOKENS`, raised to 8192 -- ~4 KB used to be the limit
+  and cost a session), an expression's MAXVALS = 16 registers, 32 live locals
+  in a scope counted across the frames it reaches (so a library helper is not
+  allowed to lean on the sample's own locals), and 8 parameters in the call
+  gate. A helper that answers one of these is split by design, never by
+  trimming a capability.
 - Time each phase, not just the script. A run whose program errored should stop
   when the error appears — `irsims.py` breaks on `errV` for exactly that reason.
 - Read every file a change will touch in one batched read before editing.
