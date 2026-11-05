@@ -49,21 +49,7 @@ function setTransform(xf)
 outNumArr(206, xf[1], xf[2], xf[3], xf[4], xf[5], xf[6], xf[7], xf[8])
 outNumArr(214, xf[9])
 end
-local function asTriples(pts)
-local out = {}
-local i = 1
-while i <= #pts do
-out[#out + 1] = pts[i]
-out[#out + 1] = pts[i + 1]
-out[#out + 1] = 0.0
-i = i + 2
-end
-return out
-end
-function stage2d(pts, cols, xf, parent, ticks, wire, id)
-stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
-end
-function stage(pts, cols, xf, parent, ticks, wire, id)
+function stage(pts, cols, xf, parent, wire, id)
 local termAt = putn(1, pts)
 if cols == nil then
 outNumArr(termAt, -1.0)
@@ -75,16 +61,21 @@ local x = xf
 if x == nil then x = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0} end
 setTransform(x)
 outNumArr(203, wire or 0.0, num(id), num(parent))
-local t = ticks
-if t == nil then t = 0.0 end
-if t == -1.0 then
-outNumArr(198, -1.0)
-elseif t >= 1.0 then
-outNumArr(198, -(1.0 + t))
-else
-outNumArr(198, 0.0)
-end
 outNumArr(196, #pts * 1.0)
+end
+local function asTriples(pts)
+local out = {}
+local i = 1
+while i <= #pts do
+out[#out + 1] = pts[i]
+out[#out + 1] = pts[i + 1]
+out[#out + 1] = 0.0
+i = i + 2
+end
+return out
+end
+function stage2d(pts, cols, xf, parent, wire, id)
+stage(asTriples(pts), cols, xf, parent, wire, id)
 end
 function fire(after)
 outNumArr(200, 1.0)
@@ -97,12 +88,12 @@ if after ~= nil then
 if after > 0.0 then nap(after) end
 end
 end
-function stagePush(pts, cols, xf, parent, ticks, wire, id)
-stage(pts, cols, xf, parent, ticks, wire, id)
+function stagePush(pts, cols, xf, parent, wire, id)
+stage(pts, cols, xf, parent, wire, id)
 push()
 end
-function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
-stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
+function stagePush2d(pts, cols, xf, parent, wire, id)
+stage(asTriples(pts), cols, xf, parent, wire, id)
 push()
 end
 function meshEdges(faces, nv, ea, eb, corner)
@@ -145,7 +136,7 @@ end
 f = f + 1
 end
 end
-function fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+function fillMesh(points, pcols, faces, xf, parent, wire, base)
 local f = 1
 while f <= #faces do
 local face = faces[f]
@@ -171,7 +162,7 @@ cols[k * 4] = pcols[c + 3]
 end
 k = k + 1
 end
-stage(pts, cols, xf, parent, ticks, wire, tostring(base + f - 1))
+stage(pts, cols, xf, parent, wire, tostring(base + f - 1))
 push()
 f = f + 1
 end
@@ -293,7 +284,7 @@ end
 end
 return pn
 end
-function sendWalk(points, pcols, path, xf, parent, ticks, wire, base)
+function sendWalk(points, pcols, path, xf, parent, wire, base)
 local nsh = 0
 local at = #path
 while at >= 1 do
@@ -319,7 +310,7 @@ cols[np * 4] = pcols[c + 3]
 end
 i = i - 1
 end
-stage(pts, cols, xf, parent, ticks, wire, tostring(base + nsh))
+stage(pts, cols, xf, parent, wire, tostring(base + nsh))
 push()
 nsh = nsh + 1
 if from > 1 then
@@ -330,7 +321,7 @@ end
 end
 return nsh
 end
-function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
+function pushMesh(points, pcols, faces, xf, parent, wire, firstId)
 local base = firstId
 if base == nil then base = 0 end
 local nv = (#points / 3) | 0
@@ -339,7 +330,7 @@ local eb = {}
 local corner = {}
 meshEdges(faces, nv, ea, eb, corner)
 if wire == nil or wire == 0 or wire == false then
-fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+fillMesh(points, pcols, faces, xf, parent, wire, base)
 return
 end
 local firstdup = pairOddCorners(nv, corner, ea, eb)
@@ -355,27 +346,27 @@ break
 end
 local path = {}
 tourMesh(s, corner, used, ea, eb, path)
-nsh = nsh + sendWalk(points, pcols, path, xf, parent, ticks, wire,
+nsh = nsh + sendWalk(points, pcols, path, xf, parent, wire,
 base + nsh)
 end
 end
 function pushShape(pts, cols, xf, parent, wire)
-stage(pts, cols, xf, parent, nil, wire, "")
+stage(pts, cols, xf, parent, wire, "")
 fire()
 end
-function editShape(id, pts, cols, xf, parent, ticks, wire)
-stage(pts, cols, xf, parent, ticks, wire, id)
+function editShape(id, pts, cols, xf, parent, wire)
+stage(pts, cols, xf, parent, wire, id)
 fire()
 end
-function camera(xf, ticks)
+function camera(xf)
 if xf == nil then
-editShape("-1", {}, nil, nil, "0", nil, 0.0)
+editShape("-1", {}, nil, nil, "0", 0.0)
 else
-editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", ticks, 0.0)
+editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", 0.0)
 end
 end
 function deleteShape(id)
-stage({}, nil, nil, "0", nil, nil, id)
+stage({}, nil, nil, "0", nil, id)
 fire()
 end
 function clearScreen(after)
@@ -392,9 +383,9 @@ print("1 slots: push, edit, delete")
 local sq = {4.0, 4.0, 30.0, 4.0, 30.0, 24.0, 4.0, 24.0}
 local sqc = {1.0, 0.2, 0.2, 1.0, 0.2, 1.0, 0.2, 1.0,
              0.2, 0.4, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0}
-stagePush2d(sq, sqc, nil, "0", nil, 0, "1")
+stagePush2d(sq, sqc, nil, "0", 0, "1")
 local tri = {38.0, 4.0, 60.0, 4.0, 49.0, 24.0}
-stagePush2d(tri, rep({0.2, 0.9, 0.9, 1.0}, 3), nil, "0", nil, 0, "2")
+stagePush2d(tri, rep({0.2, 0.9, 0.9, 1.0}, 3), nil, "0", 0, "2")
 local pent = {}
 local k = 0
 while k < 5 do
@@ -403,9 +394,9 @@ while k < 5 do
   pent[k * 2 + 2] = 44.0 + 9.0 * math.sin(a)
   k = k + 1
 end
-stagePush2d(pent, rep({0.8, 0.5, 1.0, 1.0}, 5), nil, "0", nil, 0, "3")
+stagePush2d(pent, rep({0.8, 0.5, 1.0, 1.0}, 5), nil, "0", 0, "3")
 stage2d(tri, rep({1.0, 0.6, 0.1, 1.0}, 3),
-        {-4.0, 6.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "0", nil, 0, "2")
+        {-4.0, 6.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "0", 0, "2")
 push()
 print("1 slots: slot 2 edited in place")
 deleteShape("3")
@@ -413,7 +404,7 @@ print("1 slots: slot 3 deleted")
 clearScreen()
 print("2 strokes: wireframe, open curve, dot, gradient")
 stagePush2d({4.0, 6.0, 24.0, 6.0, 24.0, 26.0, 4.0, 26.0, 4.0, 6.0},
-            nil, nil, "0", nil, 1, "4")
+            nil, nil, "0", 1, "4")
 local nw = 9
 local wav = {}
 local wc = {}
@@ -428,10 +419,10 @@ while k < nw do
   wc[k * 4 + 4] = 1.0
   k = k + 1
 end
-stagePush2d(wav, wc, nil, "0", nil, 1, "5")
-stagePush2d({48.0, 44.0}, rep({1.0, 1.0, 0.3, 1.0}, 1), nil, "0", nil, 1, "6")
+stagePush2d(wav, wc, nil, "0", 1, "5")
+stagePush2d({48.0, 44.0}, rep({1.0, 1.0, 0.3, 1.0}, 1), nil, "0", 1, "6")
 stagePush2d({8.0, 40.0, 24.0, 58.0},
-            {1.0, 0.15, 0.15, 1.0, 0.15, 0.3, 1.0, 1.0}, nil, "0", nil, 1, "7")
+            {1.0, 0.15, 0.15, 1.0, 0.15, 0.3, 1.0, 1.0}, nil, "0", 1, "7")
 clearScreen()
 print("3 transparency: alpha blends over what is under it")
 local wall = {-6.0, -6.0, -40.0, 70.0, -6.0, -40.0,
@@ -447,11 +438,11 @@ while k < 10 do
   disc[k * 2 + 2] = 34.0 + 11.0 * math.sin(a)
   k = k + 1
 end
-stage2d(disc, rep({0.95, 0.10, 0.10, 0.5}, 10), nil, "0", nil, 0, "2")
+stage2d(disc, rep({0.95, 0.10, 0.10, 0.5}, 10), nil, "0", 0, "2")
 push()
 stage({30.0, 20.0, 1.0, 52.0, 20.0, 1.0, 52.0, 46.0, 1.0,
        30.0, 46.0, 1.0, 30.0, 20.0, 1.0},
-      rep({0.10, 0.25, 0.95, 0.5}, 5), nil, "0", nil, 0, "3")
+      rep({0.10, 0.25, 0.95, 0.5}, 5), nil, "0", 0, "3")
 push()
 clearScreen()
 print("4 immediate: id '' paints and is forgotten")
@@ -461,7 +452,7 @@ pushShape({18.0, 18.0, 0.0, 30.0, 18.0, 0.0, 30.0, 30.0, 0.0,
            18.0, 30.0, 0.0}, rep({1.0, 0.85, 0.15, 1.0}, 4), nil, "0", 0)
 pushShape({32.0, 30.0, 0.0, 44.0, 30.0, 0.0, 44.0, 42.0, 0.0,
            32.0, 42.0, 0.0}, rep({0.2, 0.9, 0.4, 1.0}, 4), nil, "0", 0)
-print("4 immediate: a bare draw erases them")
+print("4 immediate: a bare draw replays the last one")
 draw()
 nap(224.0)
 clearScreen()
@@ -480,7 +471,7 @@ local cols = {1.0, 0.9, 0.7, 1.0, 1.0, 0.85, 0.5, 1.0, 0.9, 0.9, 0.8, 1.0,
               0.35, 0.55, 0.75, 1.0, 0.4, 0.5, 0.9, 1.0}
 local faces = {{1, 2, 3, 4}, {5, 8, 7, 6}, {1, 5, 6, 2},
                {4, 3, 7, 8}, {1, 4, 8, 5}, {2, 6, 7, 3}}
-pushMesh(pts, cols, faces, nil, "2", nil, 1.0, 3)
+pushMesh(pts, cols, faces, nil, "2", 1.0, 3)
 draw()
 nap(224.0)
 local dd = {}
@@ -508,10 +499,10 @@ while k < nc do
   cc[k * 4 + 4] = 1.0
   k = k + 1
 end
-stage(cv, cc, nil, "0", nil, 1, "10")
+stage(cv, cc, nil, "0", 1, "10")
 push()
 editShape("11", {2.0, 2.0, 0.0, 14.0, 2.0, 0.0, 14.0, 10.0, 0.0,
-                 2.0, 10.0, 0.0, 2.0, 2.0, 0.0}, nil, nil, "-1", nil, 1)
+                 2.0, 10.0, 0.0, 2.0, 2.0, 0.0}, nil, nil, "-1", 1)
 nap(224.0)
 print("6 camera: the world moves, the HUD holds")
 camera({-9.0, 4.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
@@ -520,16 +511,23 @@ camera({0.0, 0.0, 12.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
 nap(224.0)
 camera({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
 nap(224.0)
-print("7 animation: 8 frames of +2 x on the disc")
-stage({0.0, 0.0, 0.0}, nil,
-      {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, "0", 8.0, nil, "9")
-fire()
-nap(224.0)
-print("7 animation: -1 keeps the cube turning")
-stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.04, 0.0, 0.0, 0.0}, "0",
-      -1.0, nil, "2")
-push()
-nap(2240.0)
+print("7 motion: the disc slides, +2 x a frame")
+local f = 1
+while f <= 8 do
+  editShape("9", dd, rep({0.95, 0.12, 0.12, 0.5}, 10),
+            {2.0 * f, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
+  nap(224.0)
+  f = f + 1
+end
+print("7 motion: the cube turns, pose by re-pushed pose")
+f = 1
+while f <= 14 do
+  editShape("2", {0.0, 0.0, 0.0}, nil,
+            {32.0, 33.0, 0.0, 0.5, 0.0, 0.85 + 0.04 * f, 1.0, 1.0, 1.0},
+            "0")
+  nap(224.0)
+  f = f + 1
+end
 print("8 wave: an open curve, running")
 clearScreen()
 local nw = 11
@@ -553,7 +551,7 @@ while f < 6 do
     wav[i * 2 + 2] = 32.0 + 9.0 * math.sin(f * 0.55 + 6.2 * t)
     i = i + 1
   end
-  stagePush2d(wav, wc, nil, "0", nil, 1, "20")
+  stagePush2d(wav, wc, nil, "0", 1, "20")
   draw()
   nap(224.0)
   f = f + 1

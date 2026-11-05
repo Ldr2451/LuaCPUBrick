@@ -49,21 +49,7 @@ function setTransform(xf)
 outNumArr(206, xf[1], xf[2], xf[3], xf[4], xf[5], xf[6], xf[7], xf[8])
 outNumArr(214, xf[9])
 end
-local function asTriples(pts)
-local out = {}
-local i = 1
-while i <= #pts do
-out[#out + 1] = pts[i]
-out[#out + 1] = pts[i + 1]
-out[#out + 1] = 0.0
-i = i + 2
-end
-return out
-end
-function stage2d(pts, cols, xf, parent, ticks, wire, id)
-stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
-end
-function stage(pts, cols, xf, parent, ticks, wire, id)
+function stage(pts, cols, xf, parent, wire, id)
 local termAt = putn(1, pts)
 if cols == nil then
 outNumArr(termAt, -1.0)
@@ -75,16 +61,21 @@ local x = xf
 if x == nil then x = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0} end
 setTransform(x)
 outNumArr(203, wire or 0.0, num(id), num(parent))
-local t = ticks
-if t == nil then t = 0.0 end
-if t == -1.0 then
-outNumArr(198, -1.0)
-elseif t >= 1.0 then
-outNumArr(198, -(1.0 + t))
-else
-outNumArr(198, 0.0)
-end
 outNumArr(196, #pts * 1.0)
+end
+local function asTriples(pts)
+local out = {}
+local i = 1
+while i <= #pts do
+out[#out + 1] = pts[i]
+out[#out + 1] = pts[i + 1]
+out[#out + 1] = 0.0
+i = i + 2
+end
+return out
+end
+function stage2d(pts, cols, xf, parent, wire, id)
+stage(asTriples(pts), cols, xf, parent, wire, id)
 end
 function fire(after)
 outNumArr(200, 1.0)
@@ -97,12 +88,12 @@ if after ~= nil then
 if after > 0.0 then nap(after) end
 end
 end
-function stagePush(pts, cols, xf, parent, ticks, wire, id)
-stage(pts, cols, xf, parent, ticks, wire, id)
+function stagePush(pts, cols, xf, parent, wire, id)
+stage(pts, cols, xf, parent, wire, id)
 push()
 end
-function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
-stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
+function stagePush2d(pts, cols, xf, parent, wire, id)
+stage(asTriples(pts), cols, xf, parent, wire, id)
 push()
 end
 function meshEdges(faces, nv, ea, eb, corner)
@@ -145,7 +136,7 @@ end
 f = f + 1
 end
 end
-function fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+function fillMesh(points, pcols, faces, xf, parent, wire, base)
 local f = 1
 while f <= #faces do
 local face = faces[f]
@@ -171,7 +162,7 @@ cols[k * 4] = pcols[c + 3]
 end
 k = k + 1
 end
-stage(pts, cols, xf, parent, ticks, wire, tostring(base + f - 1))
+stage(pts, cols, xf, parent, wire, tostring(base + f - 1))
 push()
 f = f + 1
 end
@@ -293,7 +284,7 @@ end
 end
 return pn
 end
-function sendWalk(points, pcols, path, xf, parent, ticks, wire, base)
+function sendWalk(points, pcols, path, xf, parent, wire, base)
 local nsh = 0
 local at = #path
 while at >= 1 do
@@ -319,7 +310,7 @@ cols[np * 4] = pcols[c + 3]
 end
 i = i - 1
 end
-stage(pts, cols, xf, parent, ticks, wire, tostring(base + nsh))
+stage(pts, cols, xf, parent, wire, tostring(base + nsh))
 push()
 nsh = nsh + 1
 if from > 1 then
@@ -330,7 +321,7 @@ end
 end
 return nsh
 end
-function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
+function pushMesh(points, pcols, faces, xf, parent, wire, firstId)
 local base = firstId
 if base == nil then base = 0 end
 local nv = (#points / 3) | 0
@@ -339,7 +330,7 @@ local eb = {}
 local corner = {}
 meshEdges(faces, nv, ea, eb, corner)
 if wire == nil or wire == 0 or wire == false then
-fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+fillMesh(points, pcols, faces, xf, parent, wire, base)
 return
 end
 local firstdup = pairOddCorners(nv, corner, ea, eb)
@@ -355,27 +346,27 @@ break
 end
 local path = {}
 tourMesh(s, corner, used, ea, eb, path)
-nsh = nsh + sendWalk(points, pcols, path, xf, parent, ticks, wire,
+nsh = nsh + sendWalk(points, pcols, path, xf, parent, wire,
 base + nsh)
 end
 end
 function pushShape(pts, cols, xf, parent, wire)
-stage(pts, cols, xf, parent, nil, wire, "")
+stage(pts, cols, xf, parent, wire, "")
 fire()
 end
-function editShape(id, pts, cols, xf, parent, ticks, wire)
-stage(pts, cols, xf, parent, ticks, wire, id)
+function editShape(id, pts, cols, xf, parent, wire)
+stage(pts, cols, xf, parent, wire, id)
 fire()
 end
-function camera(xf, ticks)
+function camera(xf)
 if xf == nil then
-editShape("-1", {}, nil, nil, "0", nil, 0.0)
+editShape("-1", {}, nil, nil, "0", 0.0)
 else
-editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", ticks, 0.0)
+editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", 0.0)
 end
 end
 function deleteShape(id)
-stage({}, nil, nil, "0", nil, nil, id)
+stage({}, nil, nil, "0", nil, id)
 fire()
 end
 function clearScreen(after)
@@ -427,8 +418,8 @@ local top = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
 local low = {13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24}
 local sides = {{1, 13}, {5, 17}, {9, 21}}
 editShape("2", {0.0, 0.0, 0.0}, nil, pose, "0")
-pushMesh(pts, cols, {top, low}, nil, "2", nil, 0, 3)
-pushMesh(pts, cols, sides, nil, "2", nil, 1, 5)
+pushMesh(pts, cols, {top, low}, nil, "2", 0, 3)
+pushMesh(pts, cols, sides, nil, "2", 1, 5)
 local disc = {}
 local dcol = {}
 k = 0

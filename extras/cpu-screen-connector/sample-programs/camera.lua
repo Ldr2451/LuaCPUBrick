@@ -56,12 +56,12 @@ editShape("4", tri, triCol, nil, "0")
 
 local outline = {20.0, 10.0, -6.0, 42.0, 10.0, -6.0, 42.0, 20.0, -6.0,
                  20.0, 20.0, -6.0, 20.0, 10.0, -6.0}
-editShape("5", outline, nil, nil, "0", nil, 1)
+editShape("5", outline, nil, nil, "0", 1)
 
 -- The HUD: parent "-1", so it hangs off the camera.  It moves WITH the
 -- camera, which means it stays exactly where it is on screen.
 editShape("6", {3.0, 3.0, 0.0, 13.0, 3.0, 0.0, 13.0, 11.0, 0.0,
-                3.0, 11.0, 0.0, 3.0, 3.0, 0.0}, nil, nil, "-1", nil, 1)
+                3.0, 11.0, 0.0, 3.0, 3.0, 0.0}, nil, nil, "-1", 1)
 nap(460.0)
 
 -- Move the camera back and forth: pan left, come home, pan right, come

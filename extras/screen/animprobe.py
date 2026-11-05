@@ -1,29 +1,39 @@
-"""Does a refresh repaint a TRANSLUCENT shape exactly once?
+"""Does a re-pushed TRANSLUCENT shape composite exactly once per frame?
 
-The connector's chain test (connectortest.py) is red on a green triangle
-(alpha 0.5) stored in slot 1 and animated +2 x per step over 4 steps:
-where the old and new footprints overlap, the wall reads the DOUBLE
-composite of the pushed colour (0, 0.75, 0) instead of the single one
-(0, 0.5, 0), and a ~4 px band of the final pose's hypotenuse never
-lands (black).  The pixels are translucent, so a double blend is
-distinguishable from a doubled-coverage single blend, which an opaque
+The wall is reactive-only: every frame is a picture the CPU pushed, so
+the connector's chain test moves a green triangle (alpha 0.5) by
+re-pushing it +2 x and drawing, once per frame. A settled re-push frame
+whose overlap band reads the DOUBLE composite of the pushed colour (0,
+0.75, 0) instead of the single one (0, 0.5, 0) says the erase failed to
+retire the previous frame and the repaint blended onto it; a ~4 px band
+of the new pose's hypotenuse that never lands (black) is the same hole
+seen from the other side. The pixels are translucent, so a double blend
+is distinguishable from a doubled-coverage single blend, which an opaque
 probe (ghostprobe.py) cannot see.
 
-This drives screen.ws alone with exactly the chain test's scene: slot
-1 holds the triangle (immediate edit with a draw, so the wall holds it
-first), then a pure-delta animation edit (+2 x, 4 steps, no draw --
-the chip's self-refresh advances live slots itself).  Every settled
-frame after the animation is done must be exactly over(black, pushed)
-inside the moved footprint and black outside: an overlap band that
-reads brighter is the double composite; a footprint pixel that is
-black is the pose that never landed.  The frames mid-animation are
-reported but not failed: only the settled end state and the bare draw
-after it have a fixed expectation.
+This drives screen.ws alone with exactly the chain test's scene: slot 1
+holds the triangle (push + draw, so the wall shows it first), then four
+RE-PUSH frames move it +2 x and draw -- the chip re-composites from the
+store, with no animation state of its own.  Every settled frame after the
+movement must be exactly over(black, pushed) inside the moved footprint
+and black outside.  The frames mid-movement are reported but not failed:
+only the settled end state and the bare draw after it have a fixed
+expectation.
 
 The scene also carries an immediate blue square staged BEFORE the
-animation, because that is what the chain does and the failure needs:
-a non-retained push sets the iterator's `lastImm`, and without it the
-probe passed while the chain was red.
+movement, because that is what the chain does and the failure needs: a
+non-retained push sets the iterator's `lastImm`, and without it the probe
+passed while the chain was red.  The square is only expected while `lastImm`
+holds: the first retained re-push's commit recomposite runs WITHOUT a phantom
+replay (it clears `lastImm`) and its erase retires the whole wall, so from
+that frame on the blue square is gone -- erased, not repainted.  A snapshot
+between the push and the first re-push proves the phantom replay keeps it
+alive; the settled frames and wallB after it must NOT expect blue.  The square is only expected while `lastImm`
+holds: the first retained re-push's commit recomposite runs WITHOUT a phantom
+replay (it clears `lastImm`) and its erase retires the whole wall, so from
+that frame on the blue square is gone -- erased, not repainted.  A snapshot
+between the push and the first re-push proves the phantom replay keeps it
+alive; the settled frames and wallB after it must NOT expect blue.
 
   python -u extras/screen/animprobe.py [screen.ws]
   python -u extras/screen/animprobe.py trace   # per-tick state window
@@ -46,8 +56,8 @@ WS = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 \
 TRI3 = [8.0, 8.0, 0.0, 20.0, 8.0, 0.0, 8.0, 20.0, 0.0]
 PUSHED = (0.0, 1.0, 0.0, 0.5)
 # An IMMEDIATE square too, like the chain's moved square: it sets
-# lastImm, so every refresh ends with a phantom repaint walk -- and
-# whatever that walk does to a translucent refresh is what the chain
+# lastImm, so every recomposite ends with a phantom replay walk -- and
+# whatever that walk does to a translucent re-push is what the chain
 # test sees.  Kept clear of the triangle (y +24).
 SQ3 = [4.0, 4.0, 0.0, 12.0, 4.0, 0.0, 12.0, 12.0, 0.0, 4.0, 12.0, 0.0]
 # The wall holds the pushed colour times the brightness factor
@@ -64,7 +74,7 @@ STEPS = 4
 
 
 def moved_footprint(dx):
-    """The triangle's pixels at accumulated delta x (z = 0 projects 1:1)."""
+    """The triangle's pixels at absolute x offset (z = 0 projects 1:1)."""
     pts = []
     for i in range(0, len(TRI3), 3):
         pts += [TRI3[i] + dx, TRI3[i + 1]]
@@ -93,7 +103,9 @@ def main():
         share_dump(WS, dump)
         sim, gids, _polyon, _son, pts_aid, cols_aid = fresh_sim(dump)
         wd = make_watch(sim)
-        rc_fell = var_id(sim, "rcFell")
+        wvid = {n: var_id(sim, n) for n in
+                ("rcOn", "polyOn", "sOn", "arming", "armingS",
+                 "erasing", "commitR", "commitQ")}
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "shapeWireMode": False,
                       "shapeId": 0.0, "drawAllShapes": False,
@@ -101,20 +113,18 @@ def main():
                       "shapePosition": (0.0, 0.0, 0.0),
                       "shapeRotation": (0.0, 0.0, 0.0),
                       "shapeScale": (0.0, 0.0, 0.0),
-                      "parentShapeId": 0.0, "brightness": 100.0,
-                      "addToShapeInTicks": 0.0}
+                      "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
 
         plan = {}
 
-        def stage(t, sid, pts, cols, pos, ticks, draw):
+        def stage(t, sid, pts, cols, pos, draw):
             plan[t] = {"shapePoints": list(pts), "shapeColors": list(cols),
                        "shapeWireMode": False, "shapeId": float(sid),
                        "shapePosition": tuple(pos), "shapeRotation": (0.0, 0.0, 0.0),
-                       "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0,
-                       "addToShapeInTicks": float(ticks)}
+                       "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0}
             plan[t + 2] = {"pushShape": True}
             plan[t + 4] = {"pushShape": False}
             if draw:
@@ -122,24 +132,27 @@ def main():
                 plan[t + 8] = {"drawAllShapes": False}
 
         # slot 1: the translucent triangle, stored and shown.
-        stage(10, 1, TRI3, [PUSHED[0:4]] * 3, (0.0, 0.0, 0.0), 0.0, True)
+        stage(10, 1, TRI3, [PUSHED[0:4]] * 3, (0.0, 0.0, 0.0), True)
         # an IMMEDIATE square, like the chain's moved square: it sets
-        # lastImm, so every refresh ends with a phantom repaint walk.
-        stage(60, 0, SQ3, [(0.0, 0.0, 1.0, 1.0)] * 4, (0.0, 24.0, 0.0), 0.0, True)
+        # lastImm, so every recomposite ends with a phantom replay walk.
+        stage(60, 0, SQ3, [(0.0, 0.0, 1.0, 1.0)] * 4, (0.0, 24.0, 0.0), True)
         IMM_T = 62  # the square's push tick: before it, no blue to expect
-        # the animation: pure delta (+2 x), 4 steps, NO draw -- the chip's
-        # self-refresh must land every step and the final pose.
-        stage(430, 1, [0.0, 0.0, 0.0], [], (DX, 0.0, 0.0), 4.0, False)
-        # the bare draw after the animation, like connectortest's wallB.
+        # the movement: four RE-PUSH frames, +2 x more each, each drawn.
+        for k in range(1, STEPS + 1):
+            stage(430 + 140 * k, 1, TRI3, [PUSHED[0:4]] * 3,
+                  (DX * k, 0.0, 0.0), True)
+        FIRST_REPUSH = 430 + 140  # the first re-push's stage tick: its
+                                  # retained commit's recomposite erases the
+                                  # immediate square, phantom replay over
+        FIRST_REPUSH = 430 + 140  # the first re-push's push tick
+        # the bare draw after the movement, like connectortest's wallB.
         plan[1150] = {"drawAllShapes": True}
         plan[1152] = {"drawAllShapes": False}
 
-        frames = []
-        wallB = [None]
         if "trace" in sys.argv:
             fn = ["cDirty", "erArm", "eraseOK", "noDepth", "arming", "polyOn",
                   "rcOn", "erasing", "erDone", "wasPaint", "pending",
-                  "recompFrame", "commitR", "fullErase", "lastImm", "polyLive",
+                  "commitR", "lastImm", "polyLive",
                   "sLive", "repaint", "pfirst", "plast", "prow", "rcSlot"]
             vids = {n: var_id(sim, n) for n in fn}
             er_row = var_id(sim, "erRow")
@@ -155,7 +168,7 @@ def main():
                         slide3(sn, pts_aid, cols_aid, step.pop("shapePoints"),
                                step.pop("shapeColors", None))
                     sn.inputs = dict(sn.inputs, **step)
-                if 428 <= tick <= 545:
+                if 428 <= tick <= 950:
                     cov = sn.chip_array("covMin")
                     old = sn.chip_array("oldMin")
                     covx = sn.chip_array("covMax")
@@ -177,7 +190,7 @@ def main():
                         for cc in w8)
                     print(line)
 
-            sim.run(500, on_tick=trace_watch)
+            sim.run(960, on_tick=trace_watch)
             return 0
 
         def watch(sn, tick):
@@ -188,19 +201,31 @@ def main():
                     slide3(sn, pts_aid, cols_aid, step.pop("shapePoints"),
                            step.pop("shapeColors", None))
                 sn.inputs = dict(sn.inputs, **step)
-            fell = bool(sn.vars.get(rc_fell))
-            if fell and not state["was"]:
+            # A frame is settled when NOTHING is walking: the recomposite,
+            # its erase lane and the phantom replay of the last immediate
+            # shape have all finished, so the wall holds the whole picture
+            # and no further walk can repaint a row.
+            act = any(bool(sn.vars.get(wvid[n])) for n in wvid)
+            if state["was"] and not act:
                 xf = sn.chip_array("slXF")
                 dx_now = xf[6 + 0] if xf else None
                 frames.append((tick, dx_now,
                                [sn.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]
                                 for i in range(4096)]))
-            state["was"] = fell
+            state["was"] = act
             if tick == 1250:
                 # past the bare draw's pulse (1150 + 2 edge lag + burst)
                 wallB[0] = [sn.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]
                             for i in range(4096)]
+            if tick == 300:
+                # settled idle window between the immediate push and the
+                # first re-push: the phantom replay keeps the square lit.
+                wallA[0] = [sn.vars.get(gids[i], (0.0, 0.0, 0.0, 0.0))[:4]
+                            for i in range(4096)]
 
+        frames = []
+        wallA = [None]
+        wallB = [None]
         state = {"was": False}
 
         SQPIX = sq_pixels()
@@ -222,11 +247,12 @@ def main():
                 print("  t=%-5d no-dx" % tick)
                 continue
             want_px = moved_footprint(dx)
-            wrong = _diff(wall, want_px, tick >= IMM_T)
+            wrong = _diff(wall, want_px,
+                          IMM_T <= tick < FIRST_REPUSH)
             nz = [i for i in range(4096)
                   if any(abs(float(c)) > 1e-6 for c in wall[i][:3])]
             # a frame whose wall-nz is below the footprint count caught
-            # the refresh mid-paint (erase walked, rows still coming):
+            # the recomposite mid-paint (erase walked, rows still coming):
             # informational, the settled ones below must be exact.
             print("  t=%-5d dx=%-5s wrong=%-4d wall-nz=%-4d want-nz=%-4d"
                   % (tick, dx, len(wrong), len(nz), len(want_px)))
@@ -236,18 +262,32 @@ def main():
                 print("      vals %r first %r"
                       % (vals, wrong[:3]))
             if dx == DX * STEPS and len(nz) == len(want_px) + len(SQPIX) and wrong:
-                # The chip advances a step mid-cycle and repaints it on
-                # the next one, so a sample between the two shows the
-                # wall at exactly the previous pose.  That is lag, not
-                # a compositing bug: fail only when the wall is not a
-                # clean previous pose as well.
+                # A re-push settles exactly at the pushed pose; a wall that
+                # still holds the previous one is a lagging commit, not a
+                # compositing bug -- fail only when it is neither pose.
                 if dx > 0 and not _diff(wall, moved_footprint(dx - DX),
-                                         tick >= IMM_T):
+                                        IMM_T <= tick < FIRST_REPUSH):
                     print("      lag: wall is the previous pose")
                 else:
                     bad_total += len(wrong)
+        if wallA[0] is not None:
+            # before the first re-push the phantom replay keeps the
+            # immediate square lit next to the resting triangle.
+            wrong = _diff(wallA[0], moved_footprint(0.0), True)
+            print("wallA wrong=%d" % len(wrong))
+            if wrong:
+                vals = sorted({tuple(round(float(c), 3) for c in w[1][:4])
+                               for w in wrong})
+                print("      vals %r first %r" % (vals, wrong[:3]))
+                bad_total += len(wrong)
+        else:
+            print("wallA: no snapshot")
+            bad_total += 1
         if wallB[0] is not None:
-            wrong = _diff(wallB[0], moved_footprint(DX * STEPS), True)
+            # the first retained re-push's recomposite cleared lastImm and
+            # erased the whole wall, so the square is GONE: wallB holds
+            # only the last re-pushed pose.
+            wrong = _diff(wallB[0], moved_footprint(DX * STEPS), False)
             print("wallB wrong=%d" % len(wrong))
             if wrong:
                 vals = sorted({tuple(round(float(c), 3) for c in w[1][:4])
@@ -259,7 +299,7 @@ def main():
             bad_total += 1
         for f in wd.failures():
             print("WATCH: " + f)
-        print("RESULT: %s" % ("BUG (refresh double-composites translucent repaints)"
+        print("RESULT: %s" % ("BUG (re-push double-composites translucent frames)"
                               if bad_total else "ok"))
         return 1 if (bad_total or wd.failures()) else 0
     finally:

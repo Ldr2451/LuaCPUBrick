@@ -1906,50 +1906,58 @@ def main():
                          "%d of 4096 differ, first at %d"
                          % (len(bad), bad[0] if bad else 0))
 
-        # ---- per-tick animation: deltas, skip, motion, supersede --------
-        # With addToShapeInTicks = N the staged inputs are per-tick
-        # deltas, added to the stored slot every tick for N ticks.  The
-        # animated commit paints nothing (the wall already shows those
-        # values); motion becomes visible on a later bare drawAllShapes;
-        # a new push to the same slot always wins, even mid-flight (an
-        # instant one kills the animation outright).
+        # ---- re-pushed motion: the CPU restages and re-pushes every frame
+        # The wall is reactive-only: a moving picture is a CPU that re-pushes
+        # the shape, drawn, each frame -- a commit retires the frame it
+        # replaces and recomposites the new one.  A later bare drawAllShapes
+        # holds the last frame; a push to the same slot while a recomposite
+        # is still walking always wins -- the walk aborts and the new commit
+        # replaces the whole picture.
         aA = rect_pts(4.0, 4.0, 12.0, 12.0)
         aT = [30.0, 30.0, 38.0, 30.0, 34.0, 38.0]
         ablue = (0.1, 0.4, 1.0, 1.0)
         aplan = {}
         aplan[20] = {"pts": list(aA), "cols": [RED] * 4, "sid": 1.0,
-                     "pos": (0.0, 0.0, 0.0), "ticks": 0.0}
+                     "pos": (0.0, 0.0, 0.0)}
         aplan[22] = {"push": True}
         aplan[24] = {"push": False}
         aplan[26] = {"draw": True}
         aplan[28] = {"draw": False}
         aend0 = 108
-        # zero point-deltas, no colours (transparent hold), +2 x/tick.
-        aplan[120] = {"pts": [0.0, 0.0], "cols": [], "sid": 1.0,
-                      "pos": (2.0, 0.0, 0.0), "ticks": 4.0}
-        aplan[122] = {"push": True}
-        aplan[124] = {"push": False}
-        aplan[126] = {"draw": True}
-        aplan[128] = {"draw": False}
-        aend1 = 158
-        aplan[190] = {"draw": True}
-        aplan[192] = {"draw": False}
-        aend2 = 272
-        # mid-flight supersede: +5 x/tick over 20 ticks, then an
-        # instant triangle to the same slot kills it outright.
-        aplan[284] = {"pts": [0.0, 0.0], "cols": [], "sid": 1.0,
-                      "pos": (5.0, 0.0, 0.0), "ticks": 20.0}
-        aplan[286] = {"push": True}
-        aplan[288] = {"push": False}
-        aplan[290] = {"draw": True}
-        aplan[292] = {"draw": False}
-        aplan[298] = {"pts": list(aT), "cols": [ablue] * 3, "sid": 1.0,
-                      "pos": (0.0, 0.0, 0.0), "ticks": 0.0}
-        aplan[300] = {"push": True}
-        aplan[302] = {"push": False}
-        aplan[304] = {"draw": True}
-        aplan[306] = {"draw": False}
-        aend3 = 386
+        # three RE-PUSH frames: the whole square, +2 x further each time,
+        # each one drawn; the gap between them is one settled pass (the
+        # burst is a handful of rows, so 140 ticks holds the frame well
+        # past any settle wait).
+        for k in range(1, 4):
+            t0 = 140 + 140 * k
+            aplan[t0] = {"pts": list(aA), "cols": [RED] * 4, "sid": 1.0,
+                         "pos": (2.0 * k, 0.0, 0.0)}
+            aplan[t0 + 2] = {"push": True}
+            aplan[t0 + 4] = {"push": False}
+            aplan[t0 + 6] = {"draw": True}
+            aplan[t0 + 8] = {"draw": False}
+        aend1 = 660
+        # the bare draw after the frames: the wall already holds the last
+        # pose; the draw must hold it, not move or blank it.
+        aplan[700] = {"draw": True}
+        aplan[702] = {"draw": False}
+        aend2 = 780
+        # supersede mid-flight: a re-push frame whose recomposite is still
+        # walking when a different shape reaches the same slot -- the new
+        # commit wins outright and the wall ends on the triangle.
+        aplan[800] = {"pts": list(aA), "cols": [RED] * 4, "sid": 1.0,
+                      "pos": (20.0, 0.0, 0.0)}
+        aplan[802] = {"push": True}
+        aplan[804] = {"push": False}
+        aplan[806] = {"draw": True}
+        aplan[808] = {"draw": False}
+        aplan[812] = {"pts": list(aT), "cols": [ablue] * 3, "sid": 1.0,
+                      "pos": (0.0, 0.0, 0.0)}
+        aplan[814] = {"push": True}
+        aplan[816] = {"push": False}
+        aplan[818] = {"draw": True}
+        aplan[820] = {"draw": False}
+        aend3 = 920
         atotal = aend3 + 20
 
         sim, gids, polyon, son, pts_aid, cols_aid = fresh_sim(dump_path)
@@ -1960,8 +1968,7 @@ def main():
                       "shapePosition": (0.0, 0.0, 0.0),
                       "shapeRotation": (0.0, 0.0, 0.0),
                       "shapeScale": (0.0, 0.0, 0.0),
-                      "parentShapeId": 0.0, "brightness": 100.0,
-                      "addToShapeInTicks": 0.0}
+                      "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -1975,8 +1982,7 @@ def main():
                           step.pop("cols", None))
                     sn.inputs = dict(sn.inputs, **{
                         "shapeId": step.pop("sid", 0.0),
-                        "shapePosition": step.pop("pos", (0.0, 0.0, 0.0)),
-                        "addToShapeInTicks": step.pop("ticks", 0.0)})
+                        "shapePosition": step.pop("pos", (0.0, 0.0, 0.0))})
                     step = {}
                 renamed = {"push": "pushShape", "draw": "drawAllShapes"}
                 sn.inputs = dict(sn.inputs, **{
@@ -1993,19 +1999,17 @@ def main():
                             awant0.get(i, BLACK))]
         ok &= expect(not bad, "animated slot establishes",
                      "%d of 4096 differ" % len(bad))
-        amoved8 = dict(poly_colors(
-            xf_points(aA, (8.0, 0.0), 0.0, (1.0, 1.0)), [RED] * 4))
+        amoved6 = dict(poly_colors(
+            xf_points(aA, (6.0, 0.0), 0.0, (1.0, 1.0)), [RED] * 4))
         bad = [i for i in range(SW * SW)
                if not close(asnaps[aend1].get(i, BLACK),
-                            amoved8.get(i, BLACK))]
-        ok &= expect(not bad, "motion advances with no draw",
+                            amoved6.get(i, BLACK))]
+        ok &= expect(not bad, "each re-push settles at the pose it pushed",
                      "%d of 4096 differ" % len(bad))
-        amoved = dict(poly_colors(
-            xf_points(aA, (8.0, 0.0), 0.0, (1.0, 1.0)), [RED] * 4))
         bad = [i for i in range(SW * SW)
                if not close(asnaps[aend2].get(i, BLACK),
-                            amoved.get(i, BLACK))]
-        ok &= expect(not bad, "bare draw shows the motion",
+                            amoved6.get(i, BLACK))]
+        ok &= expect(not bad, "bare draw holds the last pose",
                      "%d of 4096 differ" % len(bad))
         atri = dict(poly_colors(aT, [ablue] * 3))
         bad = [i for i in range(SW * SW)
@@ -2015,19 +2019,11 @@ def main():
                      "%d of 4096 differ" % len(bad))
 
         # ---- an undrawn push stays off the wall ------------------------
-        # Auto-animate repaints live slots without the CPU pumping
-        # drawAllShapes.  The guarantee that makes that safe: only what
-        # addToShapeInTicks asked to update ever reaches the wall.
-        #
-        # Two properties, so two phases.  A: slot 1 (red, drawn) runs a
-        # 40-tick +2x/tick animation with nothing else staged -- the wall
-        # must show it moving.  B: while that motion is live, slot 2
-        # (green) is pushed and never drawn.  Two things must hold: no
-        # green ever paints, and the staged push must not drag anything
-        # else onto the wall either.  (A staged push leaves the chip
-        # `pending`, which holds every repaint off -- that is the same
-        # guarantee seen from the other side, so the motion check
-        # applies to phase A only.)
+        # The push only STAGES the slot: the wall repaints when a commit
+        # arrives, and nothing animates on its own.  A re-push of the drawn
+        # shape, shifted, with no draw at all, must leave the wall exactly
+        # as it was -- and a staged shape that is never drawn (slot 2,
+        # green) must never paint, nor drag anything else onto the wall.
         uA = rect_pts(4.0, 4.0, 12.0, 12.0)
         uB = rect_pts(30.0, 30.0, 38.0, 38.0)
         ugreen = (0.0, 1.0, 0.0, 1.0)
@@ -2039,17 +2035,16 @@ def main():
                       "shapePosition": (0.0, 0.0, 0.0),
                       "shapeRotation": (0.0, 0.0, 0.0),
                       "shapeScale": (0.0, 0.0, 0.0),
-                      "parentShapeId": 0.0, "brightness": 100.0,
-                      "addToShapeInTicks": 0.0}
+                      "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
 
-        def stage(sn, pts, cols, sid, pos, ticks):
+        def stage(sn, pts, cols, sid, pos):
             slide(sn, u_pts, u_cols, pts, cols or None)
             sn.inputs = dict(sn.inputs, **{
                 "shapeId": sid, "shapePosition": pos,
-                "parentShapeId": 0.0, "addToShapeInTicks": ticks})
+                "parentShapeId": 0.0})
 
         green_seen = []
         red_seen = []
@@ -2057,7 +2052,7 @@ def main():
         def watchu(sn, tick):
             # tick 20: draw slot 1 only.
             if tick == 20:
-                stage(sn, list(uA), [RED] * 4, 1.0, (0.0, 0.0, 0.0), 0.0)
+                stage(sn, list(uA), [RED] * 4, 1.0, (0.0, 0.0, 0.0))
             if tick == 22:
                 sn.inputs = dict(sn.inputs, pushShape=True)
             if tick == 24:
@@ -2066,17 +2061,17 @@ def main():
                 sn.inputs = dict(sn.inputs, drawAllShapes=True)
             if tick == 28:
                 sn.inputs = dict(sn.inputs, drawAllShapes=False)
-            # tick 60: start slot 1's animation, no draw at all.
+            # tick 60: RE-PUSH slot 1 shifted +2 x -- but with no draw at
+            # all: the staged shape must leave the wall alone.
             if tick == 60:
-                stage(sn, [0.0, 0.0], [], 1.0, (2.0, 0.0, 0.0), 40.0)
+                stage(sn, list(uA), [RED] * 4, 1.0, (2.0, 0.0, 0.0))
             if tick == 62:
                 sn.inputs = dict(sn.inputs, pushShape=True)
             if tick == 64:
-                sn.inputs = dict(sn.inputs, pushShape=False,
-                                 addToShapeInTicks=0.0)
+                sn.inputs = dict(sn.inputs, pushShape=False)
             # tick 130: stage slot 2 (green) -- pushed, never drawn.
             if tick == 130:
-                stage(sn, list(uB), [ugreen] * 4, 2.0, (0.0, 0.0, 0.0), 0.0)
+                stage(sn, list(uB), [ugreen] * 4, 2.0, (0.0, 0.0, 0.0))
             if tick == 132:
                 sn.inputs = dict(sn.inputs, pushShape=True)
             if tick == 134:
@@ -2096,29 +2091,27 @@ def main():
                      "staged-but-undrawn shape never paints",
                      "green first seen at tick %d"
                      % green_seen[0] if green_seen else "")
-        # The animation ran with no drawAllShapes anywhere: the square's
-        # left edge advanced by exactly the tick count times the delta
-        # (8 ticks at +2x/tick = +16px, 4 -> 20).
+        # The re-push arrived with no drawAllShapes anywhere after the
+        # first draw: the wall keeps the ORIGINAL pose -- a commit needs
+        # a command, the wall never moves on its own.
         early = [x for t, x in red_seen if t < 130]
-        ok &= expect(len(early) >= 20 and early[-1] > early[0] + 4,
-                     "addToShapeInTicks repaints with no draw",
+        ok &= expect(early and all(x == early[0] for x in early),
+                     "an undrawn re-push leaves the wall still",
                      "left edge %s..%s over %d ticks"
                      % (early[0] if early else None,
                         early[-1] if early else None, len(early)))
-        # And it never vanishes while it moves, and nothing else appears:
-        # every sampled tick still has the drawn shape painted.
+        # And it never vanishes while the push waits, and nothing else
+        # appears: every sampled tick still has the drawn shape painted.
         ok &= expect(len(red_seen) == 240 - 66 + 1,
-                     "the drawn shape stays painted through the motion",
+                     "the drawn shape stays painted through the pending push",
                      "painted on %d of 175 ticks" % len(red_seen))
 
-        # ---- a -1 animation runs until superseded ----------------------
-        # addToShapeInTicks -1 means FOREVER: the slot keeps updating
-        # with no drawAllShapes until another command edits it.  A: draw
-        # a square, start a -1 rotation drift with no draw -- the wall
-        # must keep changing long past any finite count, and anTicks
-        # must read back -1.  B: push a finite animation to the same
-        # slot -- once its ticks run out the wall must go still (the
-        # forever is over).
+        # ---- the idle wall holds still: nothing repaints itself ---------
+        # A settled picture stays on the wall until the CPU commits the
+        # next one: draw the square, sample the wall across idle ticks --
+        # every frame must be the SAME picture, no self-refresh.  Then one
+        # drawn RE-PUSH +2 x: the new pose lands, and after it the wall
+        # holds THAT pose to the very end.
         fA = rect_pts(4.0, 4.0, 12.0, 12.0)
         sim, gids, _po, _so, f_pts, f_cols = fresh_sim(dump_path)
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
@@ -2128,37 +2121,21 @@ def main():
                       "shapePosition": (0.0, 0.0, 0.0),
                       "shapeRotation": (0.0, 0.0, 0.0),
                       "shapeScale": (0.0, 0.0, 0.0),
-                      "parentShapeId": 0.0, "brightness": 100.0,
-                      "addToShapeInTicks": 0.0}
+                      "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
-        fant = None
-        frc = None
-        for _nid, _nd in sim.nodes.items():
-            from irsims import _extract as _ex
-            lb = _ex(_nd.props.get("_label", ("raw", "")))
-            if lb == "anTicks":
-                fant = _nid
-            elif lb == "rcFell":
-                frc = _nid
         fwalls = {}
-        fticks = {}
-        # Consecutive SETTLED frames, not fixed tick numbers: the point is
-        # that the wall keeps changing while the forever animation runs, and
-        # how many ticks a pass takes is the chip's timing, not the demo's.
-        fframes = []
 
-        def stagef(sn, pts, cols, sid, rot, ticks):
+        def stagef(sn, pts, cols, sid, pos):
             slide(sn, f_pts, f_cols, pts, cols or None)
             sn.inputs = dict(sn.inputs, **{
-                "shapeId": sid, "shapeRotation": rot,
-                "parentShapeId": 0.0, "addToShapeInTicks": ticks})
+                "shapeId": sid, "shapePosition": pos,
+                "parentShapeId": 0.0})
 
         def watchf(sn, tick):
             if tick == 20:
-                stagef(sn, list(fA), [RED] * 4, 1.0,
-                       (0.0, 0.0, 0.0), 0.0)
+                stagef(sn, list(fA), [RED] * 4, 1.0, (0.0, 0.0, 0.0))
             if tick == 22:
                 sn.inputs = dict(sn.inputs, pushShape=True)
             if tick == 24:
@@ -2167,48 +2144,40 @@ def main():
                 sn.inputs = dict(sn.inputs, drawAllShapes=True)
             if tick == 28:
                 sn.inputs = dict(sn.inputs, drawAllShapes=False)
-            if tick == 60:
-                stagef(sn, [0.0, 0.0], [], 1.0, (0.0, 0.0, 0.1),
-                       -1.0)
-            if tick == 62:
+            # tick 280: one drawn re-push, +2 x: the commit moves the
+            # square -- and nothing else does, before or after.
+            if tick == 280:
+                stagef(sn, list(fA), [RED] * 4, 1.0, (2.0, 0.0, 0.0))
+            if tick == 282:
                 sn.inputs = dict(sn.inputs, pushShape=True)
-            if tick == 64:
+            if tick == 284:
                 sn.inputs = dict(sn.inputs, pushShape=False,
-                                 addToShapeInTicks=0.0)
-            if tick == 300:
-                stagef(sn, [0.0, 0.0], [], 1.0, (0.0, 0.0, 0.0),
-                       4.0)
-                sn.inputs = dict(sn.inputs,
-                                 shapePosition=(2.0, 0.0, 0.0))
-            if tick == 302:
-                sn.inputs = dict(sn.inputs, pushShape=True)
-            if tick == 304:
-                sn.inputs = dict(sn.inputs, pushShape=False,
-                                 addToShapeInTicks=0.0,
                                  shapePosition=(0.0, 0.0, 0.0))
-                sn.inputs = dict(sn.inputs, shapeId=0.0)
-            if tick in (120, 200, 280, 340, 420, 500):
+            if tick == 286:
+                sn.inputs = dict(sn.inputs, drawAllShapes=True)
+            if tick == 288:
+                sn.inputs = dict(sn.inputs, drawAllShapes=False,
+                                 shapeId=0.0)
+            if tick in (110, 190, 270, 380, 460, 500):
                 fwalls[tick] = tuple(col(sn, gids, i)
                                      for i in range(SW * SW))
-                arr = sn.arrays.get(fant) or []
-                # Slot ids index by id: id 1 lives at index 1.
-                fticks[tick] = [arr[1]] if len(arr) > 1 else []
-            if frc is not None and sn.vars.get(frc) and 66 <= tick <= 330 \
-                    and len(fframes) < 14:
-                fframes.append((tick, tuple(col(sn, gids, i)
-                                            for i in range(SW * SW))))
 
         sim.run(520, on_tick=watchf)
-        ok &= expect(all(fticks[t] == [-1.0]
-                         for t in (120, 200, 280)),
-                     "forever animation holds its ticks",
-                     str({t: fticks.get(t) for t in (120, 200, 280)}))
-        moved = sum(1 for a, b in zip(fframes, fframes[1:]) if a[1] != b[1])
-        ok &= expect(len(fframes) >= 4 and moved >= 3,
-                     "forever animation keeps repainting (%d frames, "
-                     "%d changed)" % (len(fframes), moved))
-        ok &= expect(fwalls[420] == fwalls[500],
-                     "a finite push supersedes forever")
+        ok &= expect(fwalls[110] == fwalls[190] == fwalls[270],
+                     "the idle wall holds still: nothing repaints itself",
+                     "frames differ")
+        ok &= expect(fwalls[380] == fwalls[460] == fwalls[500],
+                     "the last pose holds with no further commands",
+                     "frames differ")
+        fmove2 = dict(poly_colors(
+            xf_points(fA, (2.0, 0.0), 0.0, (1.0, 1.0)), [RED] * 4))
+        bad = [i for i in range(SW * SW)
+               if not close(fwalls[500][i], fmove2.get(i, BLACK))]
+        ok &= expect(not bad, "the drawn re-push lands the new pose",
+                     "%d of 4096 differ" % len(bad))
+        ok &= expect(fwalls[380] != fwalls[270],
+                     "the commit -- and only the commit -- moves the wall",
+                     "no change at the re-push")
 
         # ---- a bare chip paints nothing ---------------------------------
         # All scalar ports at their game defaults (unwired reads 0/False;

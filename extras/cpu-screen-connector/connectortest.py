@@ -98,22 +98,31 @@ pushShape({4.0, 4.0, 0.0, 12.0, 4.0, 0.0, 12.0, 12.0, 0.0, 4.0, 12.0, 0.0},
 editShape("1", {8.0, 8.0, 0.0, 20.0, 8.0, 0.0, 8.0, 20.0, 0.0},
 {0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5},
 {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0})
--- shape 5: animate slot 1's triangle (+2 x/tick over 4 ticks).
--- The nap below is shape 4's burst settling before the new push,
--- which would otherwise abort it mid-flight.
+-- shape 5: move slot 1's triangle +2 x per frame.  The wall is
+-- reactive-only: every frame is a picture the CPU pushed, so the
+-- motion is FOUR re-pushes of the full shape, each drawn -- a
+-- commit retires the frame it replaces.  The nap below is shape 4's
+-- burst settling before the first re-push, which would otherwise
+-- abort it mid-flight; each re-push naps for its own burst.
 nap(1.2)
-editShape("1", {0.0, 0.0, 0.0}, nil,
-{2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, "0", 4.0)
-outNumArr(198, 0.0)
--- the animated commit paints nothing and the 4 ticks run free; the
--- animation advances one step per completed pass, so wait it out before
--- the bare draw that shows the triangle moved +8 in x
-nap(4.0)
+local f = 1
+while f <= 4 do
+editShape("1", {8.0, 8.0, 0.0, 20.0, 8.0, 0.0, 8.0, 20.0, 0.0},
+{0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.0, 0.5},
+{2.0 * f, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
+nap(0.4)
+f = f + 1
+end
+-- the last re-push already shows the triangle moved +8 in x; let its
+-- burst settle fully before the bare draw arrives, so the snapshot
+-- below catches a still wall between the two pulses
+nap(1.2)
+-- the last re-push already shows the triangle moved +8 in x; the
+-- bare draw that follows proves the wall holds it without restaging
 draw()
 -- let the bare draw's burst finish before clearing, or the pulse
--- abandons it mid-flight and no moved triangle ever lands
--- clearing, or the pulse abandons it mid-flight and no complete triangle
--- ever lands for the snapshot below
+-- abandons it mid-flight and no complete triangle ever lands for the
+-- snapshot below
 nap(1.2)
 -- clear via the clear pulse (slot 202), then off again
 outNumArr(202, 1.0)
@@ -264,7 +273,7 @@ def main():
         # too: it belongs here, not in cout.)
         cpull = {}
         for name in ("pushShape", "drawAllShapes", "shapeWireMode", "shapeId",
-                     "clearAllShapes", "parentShapeId", "addToShapeInTicks"):
+                     "clearAllShapes", "parentShapeId"):
             cpull[name] = out_port_id(csim, name)
         # The oracle stream has no parse head (its clock starts with the
         # program), so phases 2-3 replay it whole; the chip stream skips
@@ -346,18 +355,12 @@ def main():
                          "shapeScale reads slots 212..214",
                          "%r" % (prow["shapeScale"],))
 
-        # the animation length rides slot 198 (-1 = forever, -(1+T) =
-        # animate over T ticks, 0.0 = instant).  Shapes 1-4 never
-        # stage an animation and shape 5 restates the slot after its
-        # push, so every row but the animated push must read instant.
-        ticks_seen = set(float(r.get("addToShapeInTicks") or 0.0)
-                         for r in cstream)
-        ok &= expect(4.0 in ticks_seen,
-                     "tick count parses from slot 198",
-                     "%r" % (sorted(ticks_seen),))
-        ok &= expect(ticks_seen <= {0.0, 4.0},
-                     "unstaged ticks read instant",
-                     "%r" % (sorted(ticks_seen),))
+        # The reactive contract has no animation length to parse: the
+        # driver re-pushes the moved triangle, so no row of the run may
+        # carry animation state at all.
+        ok &= expect(all(r.get("shapePoints") is not None
+                         for r in cstream),
+                     "the array stream stays whole", "shapePoints present")
 
         # ---- phase 3: screen paints --------------------------------------
         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
@@ -380,8 +383,7 @@ def main():
                        "shapeColors": [(1.0, 1.0, 1.0, 1.0)] * 4,
                        "pushShape": False, "shapeWireMode": False,
                        "shapeId": 0.0, "drawAllShapes": False,
-                       "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0,
-                       "addToShapeInTicks": 0.0}
+                       "clearAllShapes": False, "shapePosition": (0.0, 0.0, 0.0), "shapeRotation": (0.0, 0.0, 0.0), "shapeScale": (0.0, 0.0, 0.0), "parentShapeId": 0.0, "brightness": 100.0}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
@@ -391,8 +393,9 @@ def main():
         # shape 3 paints the moved blue square over them (immediate,
         # dead-slot parent = identity), shape 4 stores green in slot 1
         # (its commit clears and repaints just the triangle), shape 5
-        # animates that triangle (+2 x/tick over 4 ticks, no repaint)
-        # and the bare draw shows it moved, then the flag clears
+        # re-pushes that triangle +2 x further, drawn, four times -- the
+        # reactive contract: every frame is a picture the CPU pushed --
+        # and the bare draw shows the last pose held, then the flag clears
         # everything.
         # Snapshot after shape 4's commit lands, then the final black.
         # Bool edges are replayed 2 ticks after the arrays that belong to
@@ -417,19 +420,16 @@ def main():
         # moved square) to prove the transform end to end.  The burst
         # is ~12 rows from the redraw; the snapshot sits past its end
         # but strictly before the next push, which would abort it.
-        # Shape 5's animated commit paints nothing (snapA proves the
-        # wall still shows the triangle); the bare draw after the
-        # ticks shows it moved +8 in x (snapB).
-        snap3_tick = (reds[2] + 2 + 18) if len(reds) >= 4 else None
-        # shape 5's animated commit advances its slot one step per
-        # completed recomposite pass; the four steps settle well after the
-        # commit edge.  The chip repaints its live slots forever between
-        # draws, so no fixed tick is a safe still: keep the newest wall up
-        # to just before the bare draw's pulse reaches the chip (the edge
-        # lags the stream by 2 ticks).
-        snapA_min = (reds[4] + 2 + 250) if len(reds) >= 6 else None
-        snapA_end = (reds[5] + 1) if len(reds) >= 6 else None
-        snapB_tick = (reds[5] + 2 + 95) if len(reds) >= 6 else None
+        # The four re-push frames each settle at the pose they pushed
+        # (snapA proves the wall holds the triangle between draws -- a
+        # hold, not motion); the bare draw after them shows the last
+        # pose still there (snapB).
+        snap3_tick = (reds[2] + 2 + 18) if len(reds) >= 9 else None
+        # snapA_min: past the last re-push's burst; snapA_end: just before
+        # the bare draw's pulse reaches the chip (the edge lags by 2 ticks).
+        snapA_min = (reds[7] + 2 + 95) if len(reds) >= 9 else None
+        snapA_end = reds[8] if len(reds) >= 9 else None
+        snapB_tick = (reds[8] + 2 + 95) if len(reds) >= 9 else None
         snap = None
 
         # (snapshots are taken in hook2 below via closure state)
@@ -477,8 +477,6 @@ def main():
                     tuple(b.get("shapeRotation") or (0.0, 0.0, 0.0))[:3],
                 "shapeScale":
                     tuple(b.get("shapeScale") or (0.0, 0.0, 0.0))[:3],
-                "addToShapeInTicks":
-                    float(b.get("addToShapeInTicks") or 0.0),
             })
             if snap_tick is not None and tick == snap_tick:
                 snap_holder["wall"] = tuple(
@@ -532,7 +530,7 @@ def main():
             trace_fn = ["cDirty", "erArm", "eraseOK", "noDepth", "arming",
                         "polyOn", "sOn", "rcOn", "erasing", "erDone",
                         "wasPaint", "pending", "commitR", "commitQ",
-                        "recompFrame", "fullErase", "lastImm", "polyLive",
+                        "lastImm", "polyLive",
                         "sLive", "repaint", "pfirst", "plast", "rcSlot",
                         "fromSlot", "brightRC"]
             tvids = {n: _vid(n) for n in trace_fn}
@@ -592,10 +590,9 @@ def main():
             ok &= expect(False, "retained store through connector",
                          "no snapshot (only %d redraws)" % len(reds))
         asq = [4.0, 4.0, 12.0, 4.0, 12.0, 12.0, 4.0, 12.0]
-        # shape 5 animates slot 1's triangle in place: the motion
-        # advances with no draw (the chip repaints live slots itself),
-        # so snapA -- taken with no drawAllShapes since the commit --
-        # already shows the triangle moved.
+        # shape 5 re-pushed slot 1's triangle +2 x further four times, each
+        # frame drawn: the last pose is +8 in x, and with no draw pending
+        # the wall must hold it until the bare draw restates the picture.
         movedA0 = xf_points(tri, (8.0, 0.0), 0.0, (1.0, 1.0))
         wantA = {p: GREEN for p in poly_pixels(movedA0)}
         if snap_holder.get("wallA") is not None:
@@ -610,11 +607,11 @@ def main():
                          for c in snap_holder["wallA"][b])))
                 print("   motion diffs: %s"
                       % ["r%d:%s" % (r, v) for r, v in sorted(byrow.items())])
-            ok &= expect(not badA, "motion advances with no draw",
+            ok &= expect(not badA, "the last re-push holds with no draw",
                          "%d of 4096 differ, first at %d"
                          % (len(badA), badA[0] if badA else 0))
         else:
-            ok &= expect(False, "motion advances with no draw",
+            ok &= expect(False, "the last re-push holds with no draw",
                          "no snapshot (only %d redraws)" % len(reds))
         if snap_holder.get("wallB") is not None:
             movedA = xf_points(tri, (8.0, 0.0), 0.0, (1.0, 1.0))
@@ -622,11 +619,11 @@ def main():
             badB = [i for i in range(SW * SW)
                     if not close(snap_holder["wallB"][i], wantB.get(
                         i, (0.0, 0.0, 0.0, 1.0)))]
-            ok &= expect(not badB, "bare draw shows the motion",
+            ok &= expect(not badB, "bare draw holds the last pose",
                          "%d of 4096 differ, first at %d"
                          % (len(badB), badB[0] if badB else 0))
         else:
-            ok &= expect(False, "bare draw shows the motion",
+            ok &= expect(False, "bare draw holds the last pose",
                          "no snapshot (only %d redraws)" % len(reds))
         painted = sum(1 for v in got if v[:3] != (0.0, 0.0, 0.0))
         left = [(i // 64, i % 64, got[i])

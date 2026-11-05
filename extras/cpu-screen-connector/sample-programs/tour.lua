@@ -11,9 +11,9 @@ print("1 slots: push, edit, delete")
 local sq = {4.0, 4.0, 30.0, 4.0, 30.0, 24.0, 4.0, 24.0}
 local sqc = {1.0, 0.2, 0.2, 1.0, 0.2, 1.0, 0.2, 1.0,
              0.2, 0.4, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0}
-stagePush2d(sq, sqc, nil, "0", nil, 0, "1")
+stagePush2d(sq, sqc, nil, "0", 0, "1")
 local tri = {38.0, 4.0, 60.0, 4.0, 49.0, 24.0}
-stagePush2d(tri, rep({0.2, 0.9, 0.9, 1.0}, 3), nil, "0", nil, 0, "2")
+stagePush2d(tri, rep({0.2, 0.9, 0.9, 1.0}, 3), nil, "0", 0, "2")
 -- A regular pentagon, 5 points, radius 9, one point up.
 local pent = {}
 local k = 0
@@ -23,10 +23,10 @@ while k < 5 do
   pent[k * 2 + 2] = 44.0 + 9.0 * math.sin(a)
   k = k + 1
 end
-stagePush2d(pent, rep({0.8, 0.5, 1.0, 1.0}, 5), nil, "0", nil, 0, "3")
+stagePush2d(pent, rep({0.8, 0.5, 1.0, 1.0}, 5), nil, "0", 0, "3")
 -- The edit of slot 2: a new colour and a new place, same slot.
 stage2d(tri, rep({1.0, 0.6, 0.1, 1.0}, 3),
-        {-4.0, 6.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "0", nil, 0, "2")
+        {-4.0, 6.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "0", 0, "2")
 push()
 print("1 slots: slot 2 edited in place")
 deleteShape("3")
@@ -36,7 +36,7 @@ clearScreen()
 -- 2 strokes: wireframe, open curve, a one-point dot, a graded line.
 print("2 strokes: wireframe, open curve, dot, gradient")
 stagePush2d({4.0, 6.0, 24.0, 6.0, 24.0, 26.0, 4.0, 26.0, 4.0, 6.0},
-            nil, nil, "0", nil, 1, "4")
+            nil, nil, "0", 1, "4")
 local nw = 9
 local wav = {}
 local wc = {}
@@ -51,10 +51,10 @@ while k < nw do
   wc[k * 4 + 4] = 1.0
   k = k + 1
 end
-stagePush2d(wav, wc, nil, "0", nil, 1, "5")
-stagePush2d({48.0, 44.0}, rep({1.0, 1.0, 0.3, 1.0}, 1), nil, "0", nil, 1, "6")
+stagePush2d(wav, wc, nil, "0", 1, "5")
+stagePush2d({48.0, 44.0}, rep({1.0, 1.0, 0.3, 1.0}, 1), nil, "0", 1, "6")
 stagePush2d({8.0, 40.0, 24.0, 58.0},
-            {1.0, 0.15, 0.15, 1.0, 0.15, 0.3, 1.0, 1.0}, nil, "0", nil, 1, "7")
+            {1.0, 0.15, 0.15, 1.0, 0.15, 0.3, 1.0, 1.0}, nil, "0", 1, "7")
 clearScreen()
 
 -- 3 transparency: alpha blends over whatever is under it.
@@ -75,19 +75,18 @@ while k < 10 do
   disc[k * 2 + 2] = 34.0 + 11.0 * math.sin(a)
   k = k + 1
 end
-stage2d(disc, rep({0.95, 0.10, 0.10, 0.5}, 10), nil, "0", nil, 0, "2")
+stage2d(disc, rep({0.95, 0.10, 0.10, 0.5}, 10), nil, "0", 0, "2")
 push()
 -- A blue quad at z = 1 over both: three floats per point, and the
 -- outline closes so the point count stays odd.
 stage({30.0, 20.0, 1.0, 52.0, 20.0, 1.0, 52.0, 46.0, 1.0,
        30.0, 46.0, 1.0, 30.0, 20.0, 1.0},
-      rep({0.10, 0.25, 0.95, 0.5}, 5), nil, "0", nil, 0, "3")
+      rep({0.10, 0.25, 0.95, 0.5}, 5), nil, "0", 0, "3")
 push()
 clearScreen()
 
--- 4 immediate: id 0 paints and is forgotten -- unbounded accumulation
--- is the animation's medium -- and a bare draw erases everything it
--- left, because nothing retains it to repaint.
+-- 4 immediate: id 0 paints and is forgotten -- a later bare draw brings
+-- back ONLY the last one, because nothing retains the rest to repaint.
 print("4 immediate: id '' paints and is forgotten")
 pushShape({2.0, 2.0, 0.0, 12.0, 2.0, 0.0, 12.0, 12.0, 0.0,
            2.0, 12.0, 0.0, 2.0, 2.0, 0.0}, nil, nil, "0", 1)
@@ -95,7 +94,7 @@ pushShape({18.0, 18.0, 0.0, 30.0, 18.0, 0.0, 30.0, 30.0, 0.0,
            18.0, 30.0, 0.0}, rep({1.0, 0.85, 0.15, 1.0}, 4), nil, "0", 0)
 pushShape({32.0, 30.0, 0.0, 44.0, 30.0, 0.0, 44.0, 42.0, 0.0,
            32.0, 42.0, 0.0}, rep({0.2, 0.9, 0.4, 1.0}, 4), nil, "0", 0)
-print("4 immediate: a bare draw erases them")
+print("4 immediate: a bare draw replays the last one")
 draw()
 nap(224.0)
 clearScreen()
@@ -125,7 +124,7 @@ local cols = {1.0, 0.9, 0.7, 1.0, 1.0, 0.85, 0.5, 1.0, 0.9, 0.9, 0.8, 1.0,
               0.35, 0.55, 0.75, 1.0, 0.4, 0.5, 0.9, 1.0}
 local faces = {{1, 2, 3, 4}, {5, 8, 7, 6}, {1, 5, 6, 2},
                {4, 3, 7, 8}, {1, 4, 8, 5}, {2, 6, 7, 3}}
-pushMesh(pts, cols, faces, nil, "2", nil, 1.0, 3)
+pushMesh(pts, cols, faces, nil, "2", 1.0, 3)
 draw()
 nap(224.0)
 -- A red disc floating in FRONT of the cube's near face (z = 16): the
@@ -156,12 +155,12 @@ while k < nc do
   cc[k * 4 + 4] = 1.0
   k = k + 1
 end
-stage(cv, cc, nil, "0", nil, 1, "10")
+stage(cv, cc, nil, "0", 1, "10")
 push()
 -- The HUD: parent "-1", hung off the camera, placed in view space --
 -- it keeps its pixels while the world moves.
 editShape("11", {2.0, 2.0, 0.0, 14.0, 2.0, 0.0, 14.0, 10.0, 0.0,
-                 2.0, 10.0, 0.0, 2.0, 2.0, 0.0}, nil, nil, "-1", nil, 1)
+                 2.0, 10.0, 0.0, 2.0, 2.0, 0.0}, nil, nil, "-1", 1)
 nap(224.0)
 print("6 camera: the world moves, the HUD holds")
 camera({-9.0, 4.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
@@ -171,20 +170,29 @@ nap(224.0)
 camera({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0})
 nap(224.0)
 
--- 7 animation: the push stages DELTAS on every channel, so the scale
--- channels are zeroes here -- 1,1,1 would grow the shape every frame.
-print("7 animation: 8 frames of +2 x on the disc")
-stage({0.0, 0.0, 0.0}, nil,
-      {2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, "0", 8.0, nil, "9")
-fire()
-nap(224.0)
-print("7 animation: -1 keeps the cube turning")
-stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.04, 0.0, 0.0, 0.0}, "0",
-      -1.0, nil, "2")
-push()
-nap(2240.0)
+-- 7 motion: the wall is reactive-only, so a move is a RE-PUSH.  The disc's
+-- whole shape goes out again eight times, +2 x further each frame -- the
+-- transform, not a delta, carries the new pose -- and the cube's pivot
+-- turns the same way, pose by re-pushed pose, about five degrees a frame.
+print("7 motion: the disc slides, +2 x a frame")
+local f = 1
+while f <= 8 do
+  editShape("9", dd, rep({0.95, 0.12, 0.12, 0.5}, 10),
+            {2.0 * f, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
+  nap(224.0)
+  f = f + 1
+end
+print("7 motion: the cube turns, pose by re-pushed pose")
+f = 1
+while f <= 14 do
+  editShape("2", {0.0, 0.0, 0.0}, nil,
+            {32.0, 33.0, 0.0, 0.5, 0.0, 0.85 + 0.04 * f, 1.0, 1.0, 1.0},
+            "0")
+  nap(224.0)
+  f = f + 1
+end
 
--- 8 wave: an OPEN curve stroked in colour, ANIMATED frame by frame --
+-- 8 wave: an OPEN curve stroked in colour, re-pushed frame by frame --
 -- the curve is restaged with its phase advanced each frame, so the
 -- crests travel while the colours keep their point slots: the wave
 -- flows, the picture does not slide.
@@ -211,7 +219,7 @@ while f < 6 do
     wav[i * 2 + 2] = 32.0 + 9.0 * math.sin(f * 0.55 + 6.2 * t)
     i = i + 1
   end
-  stagePush2d(wav, wc, nil, "0", nil, 1, "20")
+  stagePush2d(wav, wc, nil, "0", 1, "20")
   draw()
   nap(224.0)
   f = f + 1

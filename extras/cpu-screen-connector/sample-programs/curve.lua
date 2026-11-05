@@ -9,10 +9,11 @@
 -- follows the points it was given, no more.
 --
 -- Only the wave moves.  Each frame it is staged again with its phase
--- advanced, so the crests travel along the wall while every point keeps
--- its own colour slot and the wireframe keeps its own path: the wave
--- flows instead of the whole picture sliding.  The arc and the chevron
--- are staged once; the screen keeps them and repaints them every frame.
+-- advanced and pushed, so the crests travel along the wall while every
+-- point keeps its own colour slot and the wireframe keeps its own
+-- path: the wave flows instead of the whole picture sliding.  The arc
+-- and the chevron are pushed once and stay live: the recomposite paints
+-- every stored slot with every picture.
 clearScreen()
 -- The wave: 11 points across the wall, one sine period sampled.  Eleven
 -- keeps the CPU's per-frame cost low enough that a frame fits in a run.
@@ -40,7 +41,7 @@ local function wave(ph)
     pts[#pts + 1] = 20.0 + 9.0 * math.sin(ph + 6.2 * t)
     k = k + 1
   end
-  stagePush2d(pts, wcols, nil, "0", nil, 1, "1")
+  stagePush2d(pts, wcols, nil, "0", 1, "1")
 end
 -- An open arc: half a circle, 9 points, the two ends 22 apart.  Nothing
 -- joins them.
@@ -61,13 +62,13 @@ while i < 9 do
   acols[#acols + 1] = 1.0
   i = i + 1
 end
-stagePush2d(arc, acols, nil, "0", nil, 1, "2")
+stagePush2d(arc, acols, nil, "0", 1, "2")
 -- A chevron: three points, two segments.  A triangle would need a third
 -- segment back to the start, which this stroke does not have.
 local chev = {40.0, 52.0, 49.0, 40.0, 58.0, 52.0}
 local ccols = {0.3, 0.8, 1.0, 1.0, 0.3, 0.8, 1.0, 1.0,
                0.3, 0.8, 1.0, 1.0}
-stagePush2d(chev, ccols, nil, "0", nil, 1, "3")
+stagePush2d(chev, ccols, nil, "0", 1, "3")
 -- Frames: one push per frame, then a draw so the screen scans out the
 -- new wave.  A nap long enough for the screen to finish the pass before
 -- the next push is queued -- a push that lands while a pass is running

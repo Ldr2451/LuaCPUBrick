@@ -1,23 +1,23 @@
-"""Does an animation refresh leave the previous frame's pixels on the wall?
+"""Does a re-pushed frame leave the previous frame's pixels on the wall?
 
-The tour's beat 7 turns a cube forever inside a full-wall background.  A
-refresh repaint (animation deltas, no geometry change) skips the up-front
-erase, so the depth buffer it paints into still holds the last frame's
-depths.  A pixel the old cube covered keeps its old depth, the background
-that repaints it is FARTHER and loses the depth test, and the old silhouette
-stays on the wall -- which reads as "only parts of the screen update".
+The wall is reactive-only: every frame is a picture the CPU pushed.  The
+tour's moving-cube beat is therefore a CPU that re-pushes the shape and
+draws it every frame.  If the re-push fails to retire the previous frame
+-- a stale erase, or a depth buffer that still holds the last frame's
+depths -- the old silhouette survives: a pixel the old cube covered keeps
+its old depth, the background that repaints it is FARTHER and loses the
+depth test, and the old shape stays on the wall, which reads as "only
+parts of the screen update".  This is the regression case for the depth
+reset the recomposite stages at its start.
 
 This drives the smallest version of that scene at screen.ws alone: a
 full-wall background at z=0 in slot 1 (it projects 1:1, so it covers the
-wall), a red quad at z=10 in slot 2 (nearer, so it wins the depth test where
-it lands), one draw, then a pure-delta animation moving the quad +4 world x
-per frame.  Every settled frame must be background everywhere except the
-quad's projected footprint; a pixel of an old footprint that stays red is the
-bug, and a pixel of the current footprint that is not red is the same bug
-seen from the other side.
-
-This is the regression case for the depth reset gen.py stages at every
-recomposite start; screenchecks.py runs it as a gate.
+wall), a red quad at z=10 in slot 2 (nearer, so it wins the depth test
+where it lands), then four RE-PUSHED frames moving the quad +4 world x
+each time, each one drawn.  Every settled frame must be background
+everywhere except the quad's projected footprint; a pixel of an old
+footprint that stays red is the bug, and a pixel of the current footprint
+that is not red is the same bug seen from the other side.
 
   python -u extras/screen/ghostprobe.py [screen.ws]
   python -u extras/screen/ghostprobe.py trace   # per-tick state window
@@ -81,13 +81,12 @@ def var_id(sim, name):
     raise RuntimeError("no var %r" % name)
 
 
-def stage(t, sid, pts, cols, pos, scl, parent, ticks, draw):
+def stage(t, sid, pts, cols, pos, scl, parent, draw):
     """Stage, pulse push, and optionally draw, two ticks apart each."""
     p = {t: {"shapePoints": list(pts), "shapeColors": list(cols),
              "shapeWireMode": False, "shapeId": float(sid),
              "shapePosition": tuple(pos), "shapeRotation": (0.0, 0.0, 0.0),
-             "shapeScale": tuple(scl), "parentShapeId": float(parent),
-             "addToShapeInTicks": float(ticks)},
+             "shapeScale": tuple(scl), "parentShapeId": float(parent)},
          t + 2: {"pushShape": True},
          t + 4: {"pushShape": False}}
     if draw:
@@ -104,7 +103,9 @@ def main():
         print("chip built from %s" % WS)
         sim, gids, _polyon, _son, pts_aid, cols_aid = fresh_sim(dump)
         wd = make_watch(sim)
-        rc_fell = var_id(sim, "rcFell")
+        wvid = {n: var_id(sim, n) for n in
+                ("rcOn", "polyOn", "sOn", "arming", "armingS",
+                 "erasing", "commitR", "commitQ")}
         sim.inputs = {"shapePoints": [0.0] * 32, "shapeColors": [],
                       "pushShape": False, "shapeWireMode": False,
                       "shapeId": 0.0, "drawAllShapes": False,
@@ -112,8 +113,7 @@ def main():
                       "shapePosition": (0.0, 0.0, 0.0),
                       "shapeRotation": (0.0, 0.0, 0.0),
                       "shapeScale": (0.0, 0.0, 0.0),
-                      "parentShapeId": 0.0, "brightness": 100.0,
-                      "addToShapeInTicks": 0.0}
+                      "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -122,18 +122,21 @@ def main():
         plan = {}
         # slot 1: the background, the whole wall, behind everything
         plan.update(stage(10, 1, rect3(0.0, 0.0, 64.0, 64.0, 0.0),
-                          [BG] * 4, (0, 0, 0), (0, 0, 0), 0, 0, True))
+                          [BG] * 4, (0, 0, 0), (0, 0, 0), 0, True))
         # slot 2: a red quad in front of it
         plan.update(stage(220, 2, quad, [RED] * 4,
-                          (0, 0, 0), (0, 0, 0), 0, 0, True))
-        # a pure-delta animation: +4 x per frame, forever, scale untouched
-        plan.update(stage(430, 2, [0.0, 0.0, 0.0], [],
-                          (DX, 0.0, 0.0), (0, 0, 0), 0, -1, False))
+                          (0, 0, 0), (0, 0, 0), 0, True))
+        # the moving frames: the CPU RE-PUSHES the quad +4 x further every
+        # frame and draws it -- the reactive contract replaces animation
+        # state in the chip
+        for k in range(1, 5):
+            plan.update(stage(430 + 100 * k, 2, quad, [RED] * 4,
+                              (DX * k, 0.0, 0.0), (0, 0, 0), 0, True))
 
         trace = TRACE
         if trace:
             fn = ["rcOn", "erasing", "erDone", "wasPaint", "arming",
-                  "polyOn", "sOn", "recompFrame", "eraseOK", "fromSlot"]
+                  "polyOn", "sOn", "eraseOK", "fromSlot"]
             vids = {n: var_id(sim, n) for n in fn}
             er_row = var_id(sim, "erRow")
             old_lo = var_id(sim, "oldLo")
@@ -174,7 +177,7 @@ def main():
             return 0
 
         frames = []
-        state = {"was": False, "dx": None}
+        state = {"was": False}
 
         def watch(sn, tick):
             wd(sn, tick)
@@ -184,23 +187,23 @@ def main():
                     slide3(sn, pts_aid, cols_aid, step.pop("shapePoints"),
                            step.pop("shapeColors", None))
                 sn.inputs = dict(sn.inputs, **step)
-            xf = sn.chip_array("slXF")
-            dx_now = xf[2 * 6 + 0] if xf else None
-            fell = bool(sn.vars.get(rc_fell))
-            # The advance runs at rcFell, before this tick's rows: the frame
-            # that just settled was armed from the PREVIOUS tick's position,
-            # so that is the one its footprint must be checked against.
-            if fell and not state["was"] and tick > 440:
-                frames.append((tick, state["dx"],
+            # A frame is settled when NOTHING is walking: the recomposite,
+            # its erase lane and any phantom replay have all finished, so
+            # the wall holds the whole picture and no further walk can
+            # repaint a row.
+            act = any(bool(sn.vars.get(wvid[n])) for n in wvid)
+            if state["was"] and not act and tick > 440:
+                xf = sn.chip_array("slXF")
+                dx_now = xf[2 * 6 + 0] if xf else None
+                frames.append((tick, dx_now,
                                [col(sn, gids, i) for i in range(4096)]))
-            state["was"] = fell
-            state["dx"] = dx_now
+            state["was"] = act
 
-        sim.run(880, on_tick=watch)
+        sim.run(1000, on_tick=watch)
         print("settled frames: %d" % len(frames))
         bad_total = 0
         for tick, dx, wall in frames:
-            want = set(poly_pixels(project(quad, (dx, 0.0, 0.0))))
+            want = set(poly_pixels(project(quad, (dx or 0.0, 0.0, 0.0))))
             ghosts = [i for i in range(4096)
                       if i not in want and not same(wall[i], BG)]
             missing = [i for i in want if not same(wall[i], RED)]
@@ -214,7 +217,7 @@ def main():
                       % (rows[:8], ghosts[:6]))
         for f in wd.failures():
             print("WATCH: " + f)
-        print("RESULT: %s" % ("BUG (old pixels survive a refresh)"
+        print("RESULT: %s" % ("BUG (old pixels survive a re-push)"
                               if bad_total else "ok"))
         return 1 if (bad_total or wd.failures()) else 0
     finally:

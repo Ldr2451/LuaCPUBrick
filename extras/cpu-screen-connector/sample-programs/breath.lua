@@ -44,7 +44,7 @@ local faces = {
 -- pose, with no animation -- the picture changes by its POINTS, not by a
 -- transform.  An empty push to a slot is the delete, so the pivot carries
 -- one point; wireframe mode stays off here or that point paints a dot.
-pushMesh(base, cols, faces, nil, "1", nil, 1.0, 2)
+pushMesh(base, cols, faces, nil, "1", 1.0, 2)
 editShape("1", {0.0, 0.0, 0.0}, nil,
           {30.5, 33.0, 0.0, 0.45, 0.0, 0.85, 1.0, 1.0, 1.0}, "0")
 
@@ -62,7 +62,7 @@ while f < 6 do
     pts[k * 3 + 3] = base[k * 3 + 3]
     k = k + 1
   end
-  pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
+  pushMesh(pts, cols, faces, nil, "1", 1.0, 2)
   draw()
   -- Hold the frame on screen for about a pass.  cubetest replays bodies at
   -- its own pacing (CUBE_NAP), so the number here is the game's pace, not

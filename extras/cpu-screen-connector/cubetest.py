@@ -48,9 +48,10 @@ CUBE_SETTLE = os.environ.get("CUBE_SETTLE") == "1"
 CUBE_FLAGS = os.environ.get("CUBE_FLAGS") == "1"
 BUDGET = int(_args[0]) if _args else 1800
 TICKS = int(_args[0]) if _args else (12000 if USE_CHIP else 0) or BUDGET
-# second numeric arg: ticks of forever-animation tail observed past the
-# last draw edge (default 60 = about one burst; use 700+ to watch the
-# per-burst stale-erase behaviour the black-ghosting report is about)
+# second numeric arg: ticks observed past the last draw edge (default
+# 60 = about one burst).  The wall is reactive-only, so the tail watches
+# the IDLE wall -- the black-ghosting report is about a stale erase walk
+# painting over a settled picture, which shows up here
 TAIL = int(_args[1]) if len(_args) > 1 else 60
 sys.argv = [sys.argv[0]] + _args
 
@@ -81,6 +82,9 @@ CUBE_NAP = os.environ.get("CUBE_NAP")
 # A cadence longer than the settle wait (224 ticks) lands every sample on a
 # whole picture.
 CUBE_SAMPLE = int(os.environ.get("CUBE_SAMPLE") or 0)
+# cube.lua's spin: the pivot's pose re-pushed this many times, each one
+# drawn -- the re-push contract.  Pushes total 2 + CUBE_SPIN.
+CUBE_SPIN = 8
 
 
 def pace(src):
@@ -317,7 +321,7 @@ def main():
 
         cpull = {}
         for name in ("pushShape", "drawAllShapes", "shapeWireMode", "shapeId",
-                     "clearAllShapes", "parentShapeId", "addToShapeInTicks"):
+                     "clearAllShapes", "parentShapeId"):
             cpull[name] = out_port_id(csim, name)
         cstream = []
 
@@ -386,15 +390,18 @@ def main():
     # can leave every corner -- the last of those four is the walk's
     # return over paint already laid: sixteen
     # points, one shape, one slot, one commit.  Then the pivot push
-    # and its forever spin edit: three pushes in all.
+    # and its eight spin RE-PUSHes -- the reactive contract: every frame
+    # is a picture the CPU sent: ten pushes in all.
     faces = []
     prev = 0.0
     for k, r in enumerate(cstream):
         if (r["pushShape"] or 0.0) > 0.5 and prev <= 0.5:
             faces.append((k, r))
         prev = r["pushShape"] or 0.0
-    ok &= expect(len(faces) == 3, "pushMesh walks the cube into one shape",
-                 "%d pushes" % len(faces))
+    if STRICT:
+        ok &= expect(len(faces) == 2 + CUBE_SPIN,
+                     "pushMesh walks the cube into one shape",
+                     "%d pushes" % len(faces))
     # The mesh's points, as the demo defines them: a cube of eight
     # corners, each with its own colour.  The demo's cube has half-size
     # 10, so the points are the eight sign combinations.
@@ -417,7 +424,7 @@ def main():
     # whose vertices are not the cube corners (breath breathes them) must
     # not be scored against the corner table, or point_colour raises
     # KeyError.
-    if STRICT and len(faces) == 3:
+    if STRICT and len(faces) == 2 + CUBE_SPIN:
         wk, wr = faces[0]
         pts = wr["shapePoints"]
         ok &= expect((wr["shapeId"] or 0.0) == 2.0,
@@ -462,12 +469,22 @@ def main():
                      "the walk strokes twelve distinct edges "
                      "(shared edges once)",
                      "%d distinct" % len(segs))
-        # The pivot: its slot-1 push, then the forever spin edit to it.
+        # The pivot: its slot-1 push, then the spin re-pushes to it --
+        # every frame restates the whole pivot, so all nine pushes after
+        # the walk name slot 1.
         ok &= expect((faces[1][1]["shapeId"] or 0.0) == 1.0,
                      "the pivot is slot 1", "id=%s" % (faces[1][1].get("shapeId"),))
-        ok &= expect((faces[2][1]["shapeId"] or 0.0) == 1.0,
-                     "the spin edits the pivot in place",
-                     "id=%s" % (faces[2][1].get("shapeId"),))
+        ok &= expect(all((f[1]["shapeId"] or 0.0) == 1.0
+                         for f in faces[2:]),
+                     "the spin re-pushes the pivot in place",
+                     "ids=%s" % ([f[1].get("shapeId") for f in faces[2:]],))
+        # A re-push restates the WHOLE pose, not a delta: the last push's
+        # rotation is the full turn (8 frames at 0.080 z a frame).
+        last = faces[-1][1]
+        ok &= expect(abs((last["shapeRotation"] or (0.0,))[2] - 0.64)
+                     < 1e-3,
+                     "the last re-push carries the whole turn",
+                     "rot z=%s" % ((last["shapeRotation"] or (0.0, 0.0, 0.0))[2],))
 
     # ---- phase 3: screen replay ---------------------------------------
     with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
@@ -497,8 +514,7 @@ def main():
                        "shapePosition": (0.0, 0.0, 0.0),
                        "shapeRotation": (0.0, 0.0, 0.0),
                        "shapeScale": (0.0, 0.0, 0.0),
-                       "parentShapeId": 0.0, "brightness": 100.0,
-                       "addToShapeInTicks": 0.0}
+                       "parentShapeId": 0.0, "brightness": 100.0}
         ssim.run(1)
         ssim.inputs = {k: v for k, v in ssim.inputs.items()
                        if k != "shapePoints"}
@@ -524,26 +540,24 @@ def main():
             if isinstance(lb, str) and lb in (
                     "pWire", "pending", "arming", "armingS", "sOn",
                     "polyOn", "commitR", "commitQ", "sSegs", "qCount",
-                    "rcOn", "fromSlot", "rcSlot", "animDirty", "erasing",
-                    "wasPaint", "brightRC", "pTicks", "eraseOK",
+                    "rcOn", "fromSlot", "rcSlot", "erasing",
+                    "wasPaint", "brightRC", "eraseOK",
                     "erRow", "covLo", "covHi", "oldLo", "oldHi", "needRC"):
                 vids[lb] = nid
 
         def hook2(s, tick):
             if CUBE_FLAGS:
                 f = [n for n in ("polyOn", "sOn", "rcOn", "arming", "armingS",
-                                 "pending", "commitR", "commitQ", "animDirty",
+                                 "pending", "commitR", "commitQ",
                                  "erasing", "qCount", "pWire", "wasPaint",
                                  "rcSlot", "needRC")]
                 qnv = [round(float(x), 1) for x in (s.chip_array("qN") or [])[:8]]
                 slv = [round(float(x), 1) for x in (s.chip_array("slLive") or [])[:8]]
                 line = "t%-4d " % tick + " ".join(
                     "%s=%d" % (n, int(bool(s.vars.get(vids.get(n))))) for n in f)
-                line += " wire=%d sid=%.0f pT=%.0f add=%.0f" % (
+                line += " wire=%d sid=%.0f" % (
                     int(bool(s.inputs.get("shapeWireMode"))),
-                    float(s.inputs.get("shapeId") or 0.0),
-                    float(s.vars.get(vids.get("pTicks")) or 0.0),
-                    float(s.inputs.get("addToShapeInTicks") or 0.0))
+                    float(s.inputs.get("shapeId") or 0.0))
                 line += " push=%d draw=%d clr=%d par=%.0f pts=%d" % (
                     int(bool(s.inputs.get("pushShape"))),
                     int(bool(s.inputs.get("drawAllShapes"))),
@@ -588,17 +602,15 @@ def main():
                         tuple(b.get("shapeRotation") or (0.0, 0.0, 0.0))[:3],
                     "shapeScale":
                         tuple(b.get("shapeScale") or (0.0, 0.0, 0.0))[:3],
-                    "addToShapeInTicks":
-                        float(b.get("addToShapeInTicks") or 0.0),
                 })
             # snapshot the wall: a pass paints over MANY ticks, so a
             # tick-count sample catches a half-drawn wall.  Under --save
             # take one frame each time a pass SETTLES -- the fill/stroke
             # walks and any erase walk have all finished and the chip is
             # idle -- which is the moment the wall holds a whole picture,
-            # and the forever-spin has advanced by one delta since the
-            # previous one: one frame per turn step, which is exactly
-            # what a GIF of the rotation wants.
+            # and the spin's latest RE-PUSHED pose is in place: one frame
+            # per re-pushed frame, which is exactly what a GIF of the
+            # rotation wants.
             base = reds[-1] if reds else 0
             wall = lambda: tuple(
                 undim(tuple(float(x) for x in
@@ -618,7 +630,12 @@ def main():
                 # have all fallen and nothing else is running.
                 busy = (bool(s.vars.get(vids.get("polyOn"))) or
                         bool(s.vars.get(vids.get("sOn"))) or
-                        bool(s.vars.get(vids.get("erasing"))))
+                        bool(s.vars.get(vids.get("erasing"))) or
+                        bool(s.vars.get(vids.get("rcOn"))) or
+                        bool(s.vars.get(vids.get("arming"))) or
+                        bool(s.vars.get(vids.get("armingS"))) or
+                        bool(s.vars.get(vids.get("commitR"))) or
+                        bool(s.vars.get(vids.get("commitQ"))))
                 idle = (not bool(s.vars.get(vids.get("rcOn"))) and
                         not bool(s.vars.get(vids.get("arming"))) and
                         not bool(s.vars.get(vids.get("armingS"))) and
@@ -626,16 +643,18 @@ def main():
                         not bool(s.vars.get(vids.get("commitQ"))))
                 if last_busy[0] and not busy and idle and len(snaps) < 24:
                     snaps[len(snaps)] = wall()
-                    # the pivot's accumulated turn, so each frame has a
-                    # number as well as a picture: a turn that reverses
-                    # shows up here and not in the silhouette
+                    # the pivot's stored transform: slot 1, rot.z first --
+                    # so each settled frame has a number as well as a
+                    # picture, and a turn that rocks or reverses shows up
+                    # here (slot ids index the per-slot stride: slXF is
+                    # 6 floats a slot: x, y, rot.z, sx, sy, parent)
                     xf2 = s.chip_array("slXF2") or []
                     xf = s.chip_array("slXF") or []
-                    angs.append((round(float(xf[2]), 3) if len(xf) > 2
+                    angs.append((round(float(xf[6 + 2]), 3) if len(xf) > 8
                                  else None,
-                                 round(float(xf2[1]), 3) if len(xf2) > 1
+                                 round(float(xf2[4 + 1]), 3) if len(xf2) > 5
                                  else None,
-                                 round(float(xf2[2]), 3) if len(xf2) > 2
+                                 round(float(xf2[4 + 2]), 3) if len(xf2) > 6
                                  else None))
                 last_busy[0] = busy
             else:
@@ -654,7 +673,9 @@ def main():
                 busy2 = (bool(s.vars.get(vids.get("polyOn"))) or
                          bool(s.vars.get(vids.get("sOn"))) or
                          bool(s.vars.get(vids.get("erasing"))) or
-                         bool(s.vars.get(vids.get("rcOn"))))
+                         bool(s.vars.get(vids.get("rcOn"))) or
+                         bool(s.vars.get(vids.get("commitR"))) or
+                         bool(s.vars.get(vids.get("commitQ"))))
                 idle2 = (not bool(s.vars.get(vids.get("arming"))) and
                          not bool(s.vars.get(vids.get("armingS"))))
                 if last_busy2[0] and not busy2 and idle2 and draw_tick[0] >= 0:
@@ -690,14 +711,11 @@ def main():
                 if PASS:
                     xf = s.chip_array("slXF") or []
                     xf2 = s.chip_array("slXF2") or []
-                    at = s.chip_array("anTicks") or []
                     # slot 1 is the pivot: rot.z lives in slXF[2], rot.x
-                    # and rot.y in slXF2[1..2]; the demo's delta is on
-                    # ONE of them, and which one is the question
+                    # and rot.y in slXF2[1..2]
                     ang = (round(float(xf[2]), 4) if len(xf) > 2 else None,
                            round(float(xf2[1]), 4) if len(xf2) > 1 else None,
-                           round(float(xf2[2]), 4) if len(xf2) > 2 else None,
-                           round(float(at[0]), 2) if len(at) > 0 else None)
+                           round(float(xf2[2]), 4) if len(xf2) > 2 else None)
                     if last_rc[0] and not rc_now:
                         print("  pass end   t%-6d angle %s" % (tick, ang))
                     if order_erase[0] and not er_now:
@@ -736,10 +754,9 @@ def main():
             for t, r in enumerate(cstream):
                 p = bool(r.get("pushShape"))
                 if p and not prev:
-                    print("  push@%d id=%s parent=%s wire=%s ticks=%s pts=%d"
+                    print("  push@%d id=%s parent=%s wire=%s pts=%d"
                           % (t, r.get("shapeId"), r.get("parentShapeId"),
                              r.get("shapeWireMode"),
-                             r.get("addToShapeInTicks"),
                              len(r.get("shapePoints") or [])))
                 prev = p
         cap = (reds[-1] + 2 + 40 + TAIL) if reds else (len(cstream) + 150)
@@ -759,7 +776,7 @@ def main():
                "pivot slot is a fill, so no dot in the middle",
                "slMode[0]=%s" % (mode0,))
         if TRACE:
-            for nm in ("slXF", "anXF", "anTicks"):
+            for nm in ("slXF",):
                 a = ssim.chip_array(nm)
                 print("  %-7s" % nm,
                       None if a is None else [round(float(x), 3) for x in a])
@@ -796,7 +813,7 @@ def main():
             for nid, nd in ssim.nodes.items():
                 lb = _extract(nd.props.get("_label", ("raw", "")))
                 if isinstance(lb, str) and lb in ("slMode", "pWire", "pId",
-                                                  "pTicks", "slLive"):
+                                                  "slLive"):
                     v = ssim.arrays.get(nid)
                     if v is None:
                         v = ssim.vars.get(nid)

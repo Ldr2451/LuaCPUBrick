@@ -33,9 +33,6 @@
 //           coordinates are completely unrestricted -- even exact
 //           integers in the terminator window transmit as points.  It
 //           counts FLOATS, not points.
-//   198    animation length: -1 means FOREVER, -(1+T) animates the staged
-//           shape over T ticks, and anything else (including 0.0, which
-//           is what an unwritten slot reads) is INSTANT.
 //   200    push pulse: 1 stages the shape on the ports, 0 ends the pulse
 //   201    draw pulse: 1 repaints every retained shape, 0 ends it
 //   202    clear pulse: 1 forgets every slot, 0 ends it
@@ -68,7 +65,6 @@ var cols: color[]
 var tpos: vector = Vec(0.0, 0.0, 0.0)
 var trot: vector = Vec(0.0, 0.0, 0.0)
 var tscl: vector = Vec(1.0, 1.0, 1.0)
-var ticks: float = 0.0
 var pushV: bool = false
 var drawV: bool = false
 var clearV: bool = false
@@ -86,7 +82,6 @@ out shapeColors: color[] = cols
 out shapePosition: vector = tpos
 out shapeRotation: vector = trot
 out shapeScale: vector = tscl
-out addToShapeInTicks: float = ticks
 mod passArrays() {
   // The pulse flags are read on every change so a falling pulse reaches
   // the screen; the shape slice waits for one of them to be high.
@@ -168,11 +163,9 @@ mod passArrays() {
     cols[14] = if nc > 59 then Color(cfl[56], cfl[57], cfl[58], cfl[59]) else Color(1.0, 1.0, 1.0, 1.0)
     cols[15] = if nc > 63 then Color(cfl[60], cfl[61], cfl[62], cfl[63]) else Color(1.0, 1.0, 1.0, 1.0)
     // Exact colour count out (never padded past it): the screen defaults
-    // missing colours to white when painting, and to the transparent
-    // no-op when staging per-tick animation deltas -- so omitted colours
-    // hold still instead of flashing white.  Capped at 16 like before.
+    // missing colours to white when painting, so omitted colours hold
+    // still instead of flashing white.  Capped at 16 like before.
     cols.resize(if nc > 16.0 then 16.0 else nc, Color(1.0, 1.0, 1.0, 1.0))
-    ticks = if outNumArr.length() > 197.0 then (if outNumArr[197] == -1.0 then -1.0 else if outNumArr[197] < -1.0 then (0.0 - outNumArr[197]) - 1.0 else 0.0) else 0.0
   }
 }
 // The one event: the array's contents moved.  The CPU stages a whole

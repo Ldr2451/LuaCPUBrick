@@ -23,34 +23,30 @@ kept to one 32-read pass per shape), and a deep chain of pure
 compare/select gates costs about a quarter of a second a gate (so spans
 are min/max trees, and the stroke walk holds no selects).
 
-Scheduling is a contract, not a convention. Six passes share one graph;
+Scheduling is a contract, not a convention. Five passes share one graph;
 every cross-pass piece of state has exactly one OWNER:
 
-  staging ticks    owns animDirty, pending, commitR/RQ, cDirty,
-                   recompFrame, arming, needRC/brightRC
+  staging ticks    owns pending, commitR/RQ, cDirty, arming,
+                   needRC/brightRC
                    -> arms the other passes; may read old/cov to SIZE
                       a frame only, never to erase
   refresh iterator owns rcOn, rcSlot, fromSlot, lastImm
-                   -> sets fullErase for a refresh frame (all live slots
-                      repaint, so the fused erase may take the whole
-                      old span); the phantom arms are its own
+                   -> the phantom arms are its own
   paint walk       owns polyOn, sOn, prow, pcol*, the per-row spans it
                       folds into cov
-                   -> READS erase state only through the arrays and the
-                      handoff written by the erase (eFullA..eFullD)
-  fused in-lane    READS old/cov/fullErase; WRITES eFullX ("this row's
-      erase          base was freshly cleared") and consumes the row's
-                      old span (sentinel) after erasing it
+                   -> READS erase state only through the arrays the
+                      erase leaves behind
+  fused in-lane    READS old/cov, blacks the row's stale span and
+      erase          consumes it (sentinel) right after erasing it
   post-burst erase owns erasing, erRow, erDone; blacks old MINUS cov
                       only, AFTER the burst (a black over the overlap
                       would wipe an earlier slot's fresh output)
-  scanout          owns the pixel globals (mirror fb, every tick)
 
-The handoffs are DATA, never inferred timing: a lane that must know
-whether its base is stale or freshly erased READS eFullX written by the
-erase beside it -- the `repaint` skip rule for translucent colours holds
-ONLY when the base is not freshly cleared. An edit that moves a flag to
-a new reader without restating this map is out of contract.
+The erase consumes the rows it clears by sentinel, so a later slot of
+the same frame can never black an earlier slot's fresh output: lanes
+read the arrays, never an inferred tick count. The screen is reactive
+only -- every picture on the wall comes from a push the CPU made -- so
+there is no chip-side animation state to schedule at all.
 
 Chip-level gate: extras/screen/checkall.py (gen + build + probes +
 screenchecks, watchdog-attached, minutes). The chain test (connectortest,
@@ -197,7 +193,6 @@ L.append("@left in shapePosition: vector")
 L.append("@left in shapeRotation: vector")
 L.append("@left in shapeScale: vector")
 L.append("@left in parentShapeId: float")
-L.append("@left in addToShapeInTicks: float")
 L.append("@left in brightness: float")
 L.append("")
 
@@ -327,17 +322,9 @@ L.append("var pIs3: float = 0.0")
 # The same flag for the shape in hand (set by whichever load staged the
 # shadow, consumed by the transform below).
 L.append("var shIs3: float = 0.0")
-# Per-push animation length, staged from addToShapeInTicks (0 means
-# instant, the long-standing behavior): truncated, never negative.
-L.append("var pTicks: float = 0.0")
 # Whether the current commit must repaint (an absolute store, a delete,
-# or a first-time establish always does; a pure delta stage to a live
-# slot skips the recomposite -- the wall already shows those values).
+# or a first-time establish always does).
 L.append("var needRC: bool = false")
-# A bare drawAllShapes with live animation repaints through the commit
-# path without storing anything (the values already live in the slots).
-L.append("var recompOnly: bool = false")
-L.append("var animDirty: bool = false")
 # One shadow array feeds both arms, so there is exactly one arm path:
 # immediate pushes copy the port into it (literal reads, fast), slot
 # loads copy a slot into it (computed reads, one pass per shape).
@@ -350,8 +337,7 @@ L.append("var shPz: float[]")
 # Retained slots: points, colour, mode, live flag, point count.  Id k
 # lives at index k-1, the camera (-1) at CAM, paint-once (0) at SCR -- the
 # same index everywhere, so no slot is special.  Arrays are sized memory;
-# what costs nodes is the per-slot animation advance and the recomposite
-# scan, measured at ~220 nodes per slot.
+# what costs nodes is the recomposite scan.
 L.append("var slPts: float[]")
 L.append("var slPC: color[]")
 L.append("var slMode: float[]")
@@ -367,20 +353,12 @@ L.append("var slIs3: float[]")
 L.append("var slXF: float[]")
 # Depth channels of the slot transform (pos.z, rot.x, rot.y, scl.z) at
 # base (k-1)*4: the vec inputs' third fields, which the planar path
-# never needed.  Stored, queued, animated and parent-walked exactly
-# like slXF; the slot protocol (points/colours/counts) is untouched,
+# never needed.  Stored, queued and parent-walked exactly like slXF;
+# the slot protocol (points/colours/counts) is untouched,
 # so drivers and the connector need no changes.
 L.append("var slXF2: float[]")
-# Per-slot animation deltas (added to the stored values every tick while
-# time remains) plus the per-entry tick counts for the pending queue.
-# Sized memory, not gates -- like the slot arrays, they cost no nodes.
-L.append("var anPts: float[]")
-L.append("var anCol: color[]")
-L.append("var anXF: float[]")
-L.append("var anXF2: float[]")
-L.append("var anTicks: float[]")
-L.append("var qTicks: float[]")
-L.append("var qCN: float[]")
+# Per-entry colour count for the pending queue.
+
 # The point-transform working state: set by the shadow/slot load
 # (needXF), consumed once by the transform block before either arm.
 L.append("var needXF: bool = false")
@@ -433,12 +411,6 @@ L.append("var bf: float = 1.0")
 # pattern); the restore is consumed by the walks a tick later, so no
 # pass reads what it wrote.
 L.append("var rcOn: bool = false")
-L.append("var rcPrev: bool = false")
-# The frame edge the animation rides: true on the ONE tick a pass
-# finishes.  A delta per idle tick made the turn rate the length of the
-# erase walk -- the cube jumped 6 deltas one frame and 41 the next,
-# which reads as a spin that changes direction.
-L.append("var rcFell: bool = false")
 L.append("var rcSlot: float = 1.0")
 L.append("var brightRC: bool = false")
 # The recomposite's scan snapshot: eight sequential conditional
@@ -566,24 +538,6 @@ L.append("var cDirty: bool = true")
 # Every retained commit clears and repaints instead, so its pass is the
 # one that needs the erase.
 L.append("var eraseOK: bool = false")
-# A refresh frame (animation self-refresh, animated push, bare draw with
-# live animation) repaints EVERY live slot, so the fused row erase may
-# black the row's whole previous span, overlap included: whatever the
-# new picture still wants gets repainted by the walk that follows, and
-# what it gave up stays black -- the translucent shape then composites
-# once over a clean base instead of over the pixels it already holds
-# (which read five blends deep on an animated triangle).  Consuming the
-# row (sentinel after erasing) makes the erase fire once per row, so a
-# later slot cannot wipe the fresh output of an earlier one.
-L.append("var fullErase: bool = false")
-# Erase -> paint handoff (contract: fused erase WRITES, the lane beside
-# it READS): "this row's base was freshly cleared this tick", so even a
-# repaint frame may blend onto it -- the phantom skip rule (blending a
-# second time over one's own output reads too strong) holds only where
-# the base is NOT freshly cleared.  A refresh that erased its rows must
-# repaint translucent shapes over the black base, once.
-for _t in "ABCD":
-    L.append("var eFull%s: bool = false" % _t)
 # A retained commit starts a new frame: whatever is on screen now --
 # immediate paints included, which never run an erase pass -- becomes
 # the previous frame, and coverage starts empty.  Roll AND reset happen
@@ -659,9 +613,6 @@ L.append("var erArm: bool = false")
 # geometry change) clears it, so those frames keep the after-paint erase and
 # never show a blanked band.
 L.append("var erDone: bool = false")
-# Whether the frame being armed came from an animation refresh rather than a
-# geometry change (see the erase trigger in the commit block).
-L.append("var recompFrame: bool = false")
 # the second stale span of a row waits here while the first is armed
 L.append("var erL2: float = 0.0")
 L.append("var erR2: float = 0.0")
@@ -723,18 +674,12 @@ L.append("    pScl = shapeScale")
 L.append("    pParent = if parentShapeId < -0.5 then -1.0"
          " else if parentShapeId > %d.0 then %d.0 else (parentShapeId | 0)"
          % (NSLOT, NSLOT))
-L.append("    pTicks = if addToShapeInTicks < -0.5 then -1.0 else if addToShapeInTicks < 1.0 then 0.0 else (addToShapeInTicks | 0)")
 # A shape's points are (x,y) pairs, or (x,y,z) triples when the staged
 # array's length is odd -- the one bit of shape kind the protocol adds,
 # and the CPU never has to say more than "here are the vertices".  Both
 # forms ride the same 32-slot staging array, so nothing else changes:
 # a 3D shape is at most 10 points (30 floats).
 L.append("    pIs3 = 0.0")
-# addToShapeInTicks -1 means FOREVER: the animation runs until another
-# command edits the slot.  -1.0 at slot 198 keeps meaning INSTANT (every
-# plain push in every existing program uses it), so the wire code for
-# forever is -0.5 -- the (-1, 0) interval is otherwise unused, and 0.0
-# (the unwired default) stays instant.
 L.append("    pending = true")
 L.append("    qPush = true")
 L.append("    polyOn = false")
@@ -798,9 +743,6 @@ L.append("          arming = true")
 L.append("        }")
 L.append("        qCount = 0.0")
 L.append("      }")
-L.append("    } else if animDirty {")
-L.append("      commitR = true")
-L.append("      recompOnly = true")
 L.append("    }")
 L.append("    if lastImm && polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ && (!erasing || !erDone) {")
 L.append("      repaint = true")
@@ -839,13 +781,12 @@ L.append("// block at the iterator's end refreshes the last immediate shape")
 L.append("// the same way -- except the recomposite repaints through the")
 L.append("// same walks, so a brightness pass snapshots the armed immediate")
 L.append("// parameters when it starts and restores them before the replay.")
-# The refresh's own replay at the iterator's end needs the same snapshot:
+# The replay at the iterator's end needs the same snapshot:
 # the slot loads clobber the shadow, so the last IMMEDIATE shape would be
 # repainted as the last LOADED slot -- invisible while rows are stale (the
 # repaint rule skips blending), a missing shape once the erase freshly
 # cleared them.  lastImm asks for the same snapshot, so the replay finds
-# the immediate's own edges back and its erase lane's freshly cleared
-# rows (eFull) blend it exactly once.
+# the immediate's own edges back.
 L.append("// The wall follows within one recomposite, with no")
 L.append("// drawAllShapes and no restaging; live bursts and recomposites serialize")
 L.append("// ahead of it (their remaining rows already read the new factor")
@@ -884,8 +825,6 @@ L.append("    rcOn = false")
 L.append("    brightRC = false")
 for _i in range(TOT):
     L.append("    slLive[%d] = 0.0" % _i)
-for _i in range(TOT):
-    L.append("    anTicks[%d] = 0.0" % _i)
 # The camera is forgotten too: the view returns to identity, so the next
 # scene is placed in world coordinates again.
 L.append("    camDirty = true")
@@ -912,11 +851,6 @@ L.append("  if drawArm {")
 L.append("    drawArm = false")
 L.append("    drawEdge()")
 L.append("  }")
-# The pass-finished edge, first thing in the tick: the animation below
-# and the store/load/arm code all read it, and reading it before this
-# tick's pass start is what makes the delta land exactly once.
-L.append("  rcFell = rcPrev && !rcOn")
-L.append("  rcPrev = rcOn")
 L.append("  if !fbInit {")
 L.append("    fb.resize(NP, Color(0.0, 0.0, 0.0, 1.0))")
 L.append("    fbZ.resize(NP, ZBACK)")
@@ -930,17 +864,11 @@ L.append("    covMin.resize(64, 200.0)")
 L.append("    covMax.resize(64, -200.0)")
 L.append("    oldMin.resize(64, 200.0)")
 L.append("    oldMax.resize(64, -200.0)")
-L.append("    anPts.resize(%d, 0.0)" % (TOT * 48))
-L.append("    anCol.resize(%d, Color(0.0, 0.0, 0.0, 0.0))" % (TOT * 16))
-L.append("    anXF.resize(%d, 0.0)" % (TOT * 6))
-L.append("    anXF2.resize(%d, 0.0)" % (TOT * 4))
-L.append("    anTicks.resize(%d, 0.0)" % TOT)
 L.append("    slMode.resize(%d, 0.0)" % TOT)
 L.append("    slLive.resize(%d, 0.0)" % TOT)
 L.append("    slCount.resize(%d, 0.0)" % TOT)
 L.append("    slIs3.resize(%d, 0.0)" % TOT)
-L.append("    qTicks.resize(8, 0.0)")
-L.append("    qCN.resize(8, 0.0)")
+
 L.append("    qN.resize(8, 0.0)")
 L.append("    qIs3.resize(8, 0.0)")
 L.append("    qPts.resize(384, 0.0)")
@@ -977,129 +905,6 @@ L.append("    else bclamp * FULL_BRIGHT / 100.0")
 # unless a clearAllShapes fill just ran (justCleared), in which case the
 # repaint arms directly.  Immediate pushes (id 0) never come here;
 # they arm their walk directly.
-# ---- an animation-only push commits itself ---------------------------
-# A staged push (pending) normally waits for its drawAllShapes, which is
-# what commits it -- that is the guarantee a driver relies on: nothing
-# reaches the wall until it is asked for.  An animated push is the
-# exception the user asked for: addToShapeInTicks must update on its
-# own, with no drawAllShapes anywhere.
-#
-# The line is drawn by what the push carries.  A push whose staged
-# points are too few to paint anything is a pure delta -- it moves a
-# live slot and changes no geometry -- so it commits itself, and the
-# recomposite that commit starts is the automatic update.  A push that
-# also carries points changes what the wall shows, and that still waits
-# for the CPU's draw: the wall never shows a shape the CPU did not ask
-# to see.  The threshold is the same one the arms use (a fill needs 3
-# points, a stroke needs 2 to draw a segment -- fewer paints nothing).
-#
-# It runs here, before the advance block below, so the commit's stored
-# deltas and anTicks are visible to the advance on the NEXT tick; that
-# tick's advance raises animDirty, which the self-refresh arm at the
-# end of this block turns into a repaint.  Clearing `pending` is what
-# unblocks that arm, and it is safe to clear precisely because this
-# branch only fires for a push that paints nothing itself.
-L.append("  if pending && (pTicks > 0.5 || pTicks < -0.5) && !clearing {")
-# addToShapeInTicks is the classifier: a non-zero push is a delta and
-# commits itself, with no drawAllShapes.  The slot's stored geometry and
-# colours are untouched; only the animation registers (tick count, zeroed
-# point deltas, the nine transform channels).  animDirty is what the
-# self-refresh arm turns into a repaint on the next tick's advance.
-L.append("    pending = false")
-L.append("    let slot = if pId < 0.0 then %d.0"
-         " else if pId < 1.0 then %d.0 else (pId | 0)" % (CAM, SCR))
-L.append("    let ab = slot * 48.0")
-L.append("    let ax = slot * 6.0")
-L.append("    let ax2 = slot * 4.0")
-L.append("    anTicks[slot] = pTicks")
-# The delta moves the transform only; point deltas are zeroed.  Reading
-# shapePoints/shapeColors here would put extra reader gates on the same
-# arrays the paint path consumes and corrupt that path, so a delta never
-# touches point/colour data -- geometry changes belong to a shape push.
-# The bases are computed, not a ladder over every slot: this path runs
-# once per animated push, so it pays gates when it runs and costs no
-# nodes per slot.
-for _i in range(48):
-    L.append("    anPts[ab + %d.0] = 0.0" % _i)
-L.append("    anXF[ax + 0.0] = pPos.x")
-L.append("    anXF[ax + 1.0] = pPos.y")
-L.append("    anXF[ax + 2.0] = pRot.z")
-L.append("    anXF[ax + 3.0] = pScl.x")
-L.append("    anXF[ax + 4.0] = pScl.y")
-L.append("    anXF2[ax2 + 0.0] = pPos.z")
-L.append("    anXF2[ax2 + 1.0] = pRot.x")
-L.append("    anXF2[ax2 + 2.0] = pRot.y")
-L.append("    anXF2[ax2 + 3.0] = pScl.z")
-L.append("    animDirty = true")
-L.append("  }")
-L.append("")
-# ---- per-pass animation: advance every live slot ----------------------
-# Runs before every store, load and arm below, so all of them read
-# fresh values (program order: the sanctioned snapshot pattern).
-# A slot with no time left costs one literal read; live slots pay
-# their adds.  Deltas are uniform adds on every channel (points,
-# colour channels, transform); the parent link (index 5) is never
-# animated -- it relinks instantly at stage time.
-#
-# ONE advance per finished PASS (rcFell), not per idle tick: idle
-# ticks are however many the erase walk and the last stroke's tail
-# happen to take, so a per-tick delta turned the speed of the animation
-# into a property of how long the wall took to clean itself -- the cube
-# moved 6 deltas one frame and 41 the next, and read as a turn that
-# reverses.
-def _advance_block(k):
-    # One slot's advance: the guard is a literal read (idle slots cost one
-    # gate), and the adds are literal-index writes -- computed reads are slow
-    # in the runner, so the walk stays unrolled per slot.
-    b, c, x, x2 = k * 48, k * 16, k * 6, k * 4
-    L.append("  if (anTicks[%d.0] > 0.5 || anTicks[%d.0] < -0.5) && rcFell {" % (k, k))
-    L.append("    if anTicks[%d.0] > 0.5"
-             " { anTicks[%d.0] = anTicks[%d.0] - 1.0 }" % (k, k, k))
-    L.append("    animDirty = true")
-    if k == CAM:
-        # The camera's deltas move the view, so the matrix is rebuilt.
-        L.append("    camDirty = true")
-    for _i in range(32):
-        L.append("    slPts[%d] = slPts[%d] + anPts[%d]" % (b + _i, b + _i, b + _i))
-    for _i in range(16):
-        L.append("    slPC[%d] = slPC[%d] + anCol[%d]" % (c + _i, c + _i, c + _i))
-    for _i in range(5):
-        L.append("    slXF[%d] = slXF[%d] + anXF[%d]" % (x + _i, x + _i, x + _i))
-    for _i in range(4):
-        L.append("    slXF2[%d] = slXF2[%d] + anXF2[%d]" % (x2 + _i, x2 + _i, x2 + _i))
-    L.append("  }")
-
-
-for _k in range(TOT):
-    _advance_block(_k)
-
-# ---- animation self-refresh: motion without a draw -------------------
-# A slot whose deltas advanced this tick (animDirty) repaints itself as
-# soon as the chip is idle -- the CPU only stages the animation, never
-# pumps drawAllShapes for it.  It is a plain full recomposite (same
-# slots, latest values), so static content repaints pixel-identically
-# and only the motion shows.  It starts only with nothing staged
-# (!pending: a staged-but-undrawn push must never reach the wall
-# through this path) and nothing running; a user push aborts it like
-# any pass, and the advance resumes it on the next idle tick.
-L.append("  if animDirty {")
-L.append("    if !rcOn && !polyOn && !sOn && !arming && !armingS {")
-L.append("    if !erasing && !wasPaint && !pending && !commitR {")
-L.append("    if !commitQ && !brightRC {")
-L.append("    animDirty = false")
-L.append("    rcOn = true")
-L.append("    rcSlot = 1.0")
-L.append("    fromSlot = true")
-L.append("    fullErase = true")
-for _l in frameRC_lines:
-    L.append("    " + _l)
-for _l in depthReset_lines:
-    L.append("    " + _l)
-L.append("    }")
-L.append("    }")
-L.append("    }")
-L.append("  }")
-L.append("")
 
 L.append("  if qPush {")
 L.append("    qPush = false")
@@ -1160,8 +965,6 @@ L.append("    qN[e] = if shapePoints.length() / 3.0 > 16.0 then 16.0 else (shape
 L.append("    qIs3[e] = pIs3")
 L.append("    qMode[e] = if pWire then 1.0 else 0.0")
 L.append("    qId[e] = pId")
-L.append("    qTicks[e] = pTicks")
-L.append("    qCN[e] = shapeColors.length() | 0")
 L.append("    qXF[xb + 0.0] = pPos.x")
 L.append("    qXF[xb + 1.0] = pPos.y")
 L.append("    qXF[xb + 2.0] = pRot.z")
@@ -1200,72 +1003,11 @@ L.append("        let epb = qe * 48.0")
 L.append("        let ecb = qe * 16.0")
 L.append("        let exb = qe * 6.0")
 L.append("        let mxe = qe * 4.0")
-L.append("        if ne < 1.0 && !(qTicks[qe] > 0.5 || qTicks[qe] < -0.5) {")
+L.append("        if ne < 1.0 {")
 L.append("          slLive[nslot] = 0.0")
-L.append("          anTicks[nslot] = 0.0")
 L.append("          needRC = true")
 # A queued one-point entry replays the same way as a pushed one: it
 # stores into the slot and the walks paint nothing from it.
-L.append("        } else if (qTicks[qe] > 0.5 || qTicks[qe] < -0.5) && slLive[nslot] > 0.5 {")
-L.append("          anPts[nsb + 0.0] = if 0.0 < ne * 2.0 then qPts[epb + 0.0] else (if ne < 1.0 then anPts[nsb + 0.0] else 0.0)")
-L.append("          anPts[nsb + 1.0] = if 1.0 < ne * 2.0 then qPts[epb + 1.0] else (if ne < 1.0 then anPts[nsb + 1.0] else 0.0)")
-L.append("          anPts[nsb + 2.0] = if 2.0 < ne * 2.0 then qPts[epb + 2.0] else (if ne < 1.0 then anPts[nsb + 2.0] else 0.0)")
-L.append("          anPts[nsb + 3.0] = if 3.0 < ne * 2.0 then qPts[epb + 3.0] else (if ne < 1.0 then anPts[nsb + 3.0] else 0.0)")
-L.append("          anPts[nsb + 4.0] = if 4.0 < ne * 2.0 then qPts[epb + 4.0] else (if ne < 1.0 then anPts[nsb + 4.0] else 0.0)")
-L.append("          anPts[nsb + 5.0] = if 5.0 < ne * 2.0 then qPts[epb + 5.0] else (if ne < 1.0 then anPts[nsb + 5.0] else 0.0)")
-L.append("          anPts[nsb + 6.0] = if 6.0 < ne * 2.0 then qPts[epb + 6.0] else (if ne < 1.0 then anPts[nsb + 6.0] else 0.0)")
-L.append("          anPts[nsb + 7.0] = if 7.0 < ne * 2.0 then qPts[epb + 7.0] else (if ne < 1.0 then anPts[nsb + 7.0] else 0.0)")
-L.append("          anPts[nsb + 8.0] = if 8.0 < ne * 2.0 then qPts[epb + 8.0] else (if ne < 1.0 then anPts[nsb + 8.0] else 0.0)")
-L.append("          anPts[nsb + 9.0] = if 9.0 < ne * 2.0 then qPts[epb + 9.0] else (if ne < 1.0 then anPts[nsb + 9.0] else 0.0)")
-L.append("          anPts[nsb + 10.0] = if 10.0 < ne * 2.0 then qPts[epb + 10.0] else (if ne < 1.0 then anPts[nsb + 10.0] else 0.0)")
-L.append("          anPts[nsb + 11.0] = if 11.0 < ne * 2.0 then qPts[epb + 11.0] else (if ne < 1.0 then anPts[nsb + 11.0] else 0.0)")
-L.append("          anPts[nsb + 12.0] = if 12.0 < ne * 2.0 then qPts[epb + 12.0] else (if ne < 1.0 then anPts[nsb + 12.0] else 0.0)")
-L.append("          anPts[nsb + 13.0] = if 13.0 < ne * 2.0 then qPts[epb + 13.0] else (if ne < 1.0 then anPts[nsb + 13.0] else 0.0)")
-L.append("          anPts[nsb + 14.0] = if 14.0 < ne * 2.0 then qPts[epb + 14.0] else (if ne < 1.0 then anPts[nsb + 14.0] else 0.0)")
-L.append("          anPts[nsb + 15.0] = if 15.0 < ne * 2.0 then qPts[epb + 15.0] else (if ne < 1.0 then anPts[nsb + 15.0] else 0.0)")
-L.append("          anPts[nsb + 16.0] = if 16.0 < ne * 2.0 then qPts[epb + 16.0] else (if ne < 1.0 then anPts[nsb + 16.0] else 0.0)")
-L.append("          anPts[nsb + 17.0] = if 17.0 < ne * 2.0 then qPts[epb + 17.0] else (if ne < 1.0 then anPts[nsb + 17.0] else 0.0)")
-L.append("          anPts[nsb + 18.0] = if 18.0 < ne * 2.0 then qPts[epb + 18.0] else (if ne < 1.0 then anPts[nsb + 18.0] else 0.0)")
-L.append("          anPts[nsb + 19.0] = if 19.0 < ne * 2.0 then qPts[epb + 19.0] else (if ne < 1.0 then anPts[nsb + 19.0] else 0.0)")
-L.append("          anPts[nsb + 20.0] = if 20.0 < ne * 2.0 then qPts[epb + 20.0] else (if ne < 1.0 then anPts[nsb + 20.0] else 0.0)")
-L.append("          anPts[nsb + 21.0] = if 21.0 < ne * 2.0 then qPts[epb + 21.0] else (if ne < 1.0 then anPts[nsb + 21.0] else 0.0)")
-L.append("          anPts[nsb + 22.0] = if 22.0 < ne * 2.0 then qPts[epb + 22.0] else (if ne < 1.0 then anPts[nsb + 22.0] else 0.0)")
-L.append("          anPts[nsb + 23.0] = if 23.0 < ne * 2.0 then qPts[epb + 23.0] else (if ne < 1.0 then anPts[nsb + 23.0] else 0.0)")
-L.append("          anPts[nsb + 24.0] = if 24.0 < ne * 2.0 then qPts[epb + 24.0] else (if ne < 1.0 then anPts[nsb + 24.0] else 0.0)")
-L.append("          anPts[nsb + 25.0] = if 25.0 < ne * 2.0 then qPts[epb + 25.0] else (if ne < 1.0 then anPts[nsb + 25.0] else 0.0)")
-L.append("          anPts[nsb + 26.0] = if 26.0 < ne * 2.0 then qPts[epb + 26.0] else (if ne < 1.0 then anPts[nsb + 26.0] else 0.0)")
-L.append("          anPts[nsb + 27.0] = if 27.0 < ne * 2.0 then qPts[epb + 27.0] else (if ne < 1.0 then anPts[nsb + 27.0] else 0.0)")
-L.append("          anPts[nsb + 28.0] = if 28.0 < ne * 2.0 then qPts[epb + 28.0] else (if ne < 1.0 then anPts[nsb + 28.0] else 0.0)")
-L.append("          anPts[nsb + 29.0] = if 29.0 < ne * 2.0 then qPts[epb + 29.0] else (if ne < 1.0 then anPts[nsb + 29.0] else 0.0)")
-L.append("          anPts[nsb + 30.0] = if 30.0 < ne * 2.0 then qPts[epb + 30.0] else (if ne < 1.0 then anPts[nsb + 30.0] else 0.0)")
-L.append("          anPts[nsb + 31.0] = if 31.0 < ne * 2.0 then qPts[epb + 31.0] else (if ne < 1.0 then anPts[nsb + 31.0] else 0.0)")
-L.append("          anCol[ncb + 0.0] = if 0.0 < qCN[qe] then qCol[ecb + 0.0] else (if ne < 1.0 then anCol[ncb + 0.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 1.0] = if 1.0 < qCN[qe] then qCol[ecb + 1.0] else (if ne < 1.0 then anCol[ncb + 1.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 2.0] = if 2.0 < qCN[qe] then qCol[ecb + 2.0] else (if ne < 1.0 then anCol[ncb + 2.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 3.0] = if 3.0 < qCN[qe] then qCol[ecb + 3.0] else (if ne < 1.0 then anCol[ncb + 3.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 4.0] = if 4.0 < qCN[qe] then qCol[ecb + 4.0] else (if ne < 1.0 then anCol[ncb + 4.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 5.0] = if 5.0 < qCN[qe] then qCol[ecb + 5.0] else (if ne < 1.0 then anCol[ncb + 5.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 6.0] = if 6.0 < qCN[qe] then qCol[ecb + 6.0] else (if ne < 1.0 then anCol[ncb + 6.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 7.0] = if 7.0 < qCN[qe] then qCol[ecb + 7.0] else (if ne < 1.0 then anCol[ncb + 7.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 8.0] = if 8.0 < qCN[qe] then qCol[ecb + 8.0] else (if ne < 1.0 then anCol[ncb + 8.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 9.0] = if 9.0 < qCN[qe] then qCol[ecb + 9.0] else (if ne < 1.0 then anCol[ncb + 9.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 10.0] = if 10.0 < qCN[qe] then qCol[ecb + 10.0] else (if ne < 1.0 then anCol[ncb + 10.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 11.0] = if 11.0 < qCN[qe] then qCol[ecb + 11.0] else (if ne < 1.0 then anCol[ncb + 11.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 12.0] = if 12.0 < qCN[qe] then qCol[ecb + 12.0] else (if ne < 1.0 then anCol[ncb + 12.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 13.0] = if 13.0 < qCN[qe] then qCol[ecb + 13.0] else (if ne < 1.0 then anCol[ncb + 13.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 14.0] = if 14.0 < qCN[qe] then qCol[ecb + 14.0] else (if ne < 1.0 then anCol[ncb + 14.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          anCol[ncb + 15.0] = if 15.0 < qCN[qe] then qCol[ecb + 15.0] else (if ne < 1.0 then anCol[ncb + 15.0] else Color(0.0, 0.0, 0.0, 0.0))")
-L.append("          slMode[nslot] = if qMode[qe] > 0.5 then 1.0 else 0.0")
-L.append("          slXF[nxb + 5.0] = qXF[exb + 5.0]")
-L.append("          anXF[nxb + 0.0] = qXF[exb + 0.0]")
-L.append("          anXF[nxb + 1.0] = qXF[exb + 1.0]")
-L.append("          anXF[nxb + 2.0] = qXF[exb + 2.0]")
-L.append("          anXF[nxb + 3.0] = qXF[exb + 3.0]")
-L.append("          anXF[nxb + 4.0] = qXF[exb + 4.0]")
-L.append("          anXF2[mxb + 0.0] = qXF2[mxe + 0.0]")
-L.append("          anXF2[mxb + 1.0] = qXF2[mxe + 1.0]")
-L.append("          anXF2[mxb + 2.0] = qXF2[mxe + 2.0]")
-L.append("          anXF2[mxb + 3.0] = qXF2[mxe + 3.0]")
 L.append("        } else {")
 L.append("          slPts[nsb + 0.0] = qPts[epb + 0.0]")
 L.append("          slPts[nsb + 1.0] = qPts[epb + 1.0]")
@@ -1329,13 +1071,11 @@ L.append("          slXF2[mxb + 0.0] = qXF2[mxe + 0.0]")
 L.append("          slXF2[mxb + 1.0] = qXF2[mxe + 1.0]")
 L.append("          slXF2[mxb + 2.0] = qXF2[mxe + 2.0]")
 L.append("          slXF2[mxb + 3.0] = qXF2[mxe + 3.0]")
-L.append("          anTicks[nslot] = 0.0")
 L.append("          needRC = true")
 L.append("      }")
 L.append("    }")
 L.append("    }")
 L.append("    qCount = 0.0")
-L.append("    animDirty = false")
 L.append("    if justCleared {")
 L.append("      justCleared = false")
 L.append("      rcOn = true")
@@ -1360,19 +1100,10 @@ for _l in depthReset_lines:
 # the band the last frame covered and resets those depths, so the composite
 # lands on a clean band and a shape that moved cannot hold its old pixels
 # through the depth test against pixels it no longer covers.  Waiting for
-# the walk is the iterator's and the phantom arms' `!erasing` guard.  A
-# refresh repaint (animation deltas, no geometry change) skips it -- the
-# wall already shows those values, and blanking the band would flicker.
-L.append("      if recompFrame {")
-L.append("        recompFrame = false")
-L.append("        erDone = false")
-L.append("        fullErase = true")
-L.append("      } else {")
-L.append("        erasing = true")
-L.append("        erRow = oldLo")
-L.append("        erDone = true")
-L.append("        fullErase = false")
-L.append("      }")
+# the walk is the iterator's and the phantom arms' `!erasing` guard.
+L.append("      erasing = true")
+L.append("      erRow = oldLo")
+L.append("      erDone = true")
 L.append("    }")
 L.append("  }")
 L.append("  if commitR {")
@@ -1394,19 +1125,9 @@ L.append("    let cbase = slot * 16.0")
 L.append("    let xbase = slot * 6.0")
 L.append("    let xbase2 = slot * 4.0")
 L.append("    needRC = false")
-# A bare drawAllShapes with live animation repaints through this path
-# without storing anything (recompOnly); an animated push to a live
-# slot stores deltas and skips the recomposite (the wall already shows
-# those values -- repainting identical pixels would only flicker).
-L.append("    if recompOnly {")
-L.append("      recompOnly = false")
-L.append("      needRC = true")
-L.append("      recompFrame = true")
-L.append("    } else if n < 1.0 && !(pTicks > 0.5 || pTicks < -0.5) {")
+L.append("    if n < 1.0 {")
 L.append("      slLive[slot] = 0.0")
-L.append("      anTicks[slot] = 0.0")
 L.append("      needRC = true")
-L.append("      recompFrame = false")
 # One point stores like any other shape but renders nothing: the fill
 # walk covers no span under one point, and the stroke arm falls under
 # two.  The camera's view is exactly such a push, so the same commit
@@ -1435,14 +1156,8 @@ L.append("      slXF[xbase + 3.0] = if pScl.x == 0.0 then 1.0 else pScl.x")
 L.append("      slXF[xbase + 4.0] = if pScl.y == 0.0 then 1.0 else pScl.y")
 L.append("      slXF[xbase + 5.0] = pParent")
 L.append("      slXF2[xbase2 + 3.0] = if pScl.z == 0.0 then 1.0 else pScl.z")
-L.append("      anTicks[slot] = 0.0")
 L.append("      needRC = true")
-# An animated push (ticks nonzero) is a refresh of the wall the shape is
-# already on, not a new picture: it must not retire the previous frame, or
-# every tick of the animation would blank the band it is repainting.
-L.append("      recompFrame = if pTicks > 0.5 || pTicks < -0.5 then true else false")
 L.append("    }")
-L.append("    animDirty = false")
 L.append("    if justCleared {")
 L.append("      justCleared = false")
 L.append("      rcOn = true")
@@ -1467,19 +1182,10 @@ for _l in depthReset_lines:
 # the band the last frame covered and resets those depths, so the composite
 # lands on a clean band and a shape that moved cannot hold its old pixels
 # through the depth test against pixels it no longer covers.  Waiting for
-# the walk is the iterator's and the phantom arms' `!erasing` guard.  A
-# refresh repaint (animation deltas, no geometry change) skips it -- the
-# wall already shows those values, and blanking the band would flicker.
-L.append("      if recompFrame {")
-L.append("        recompFrame = false")
-L.append("        erDone = false")
-L.append("        fullErase = true")
-L.append("      } else {")
-L.append("        erasing = true")
-L.append("        erRow = oldLo")
-L.append("        erDone = true")
-L.append("        fullErase = false")
-L.append("      }")
+# the walk is the iterator's and the phantom arms' `!erasing` guard.
+L.append("      erasing = true")
+L.append("      erRow = oldLo")
+L.append("      erDone = true")
 L.append("    }")
 L.append("  }")
 L.append("")
@@ -3060,7 +2766,7 @@ L.append("  if polyOn || sOn {")
 # black clear covers everything, so there is nothing stale by
 # construction.  Rows the new frame never stages (a shrink's giveaway
 # rows, a delete's whole shape) are still the separate walk's job.
-def paint_row(rowexpr, pcolv, sfx, tag):
+def paint_row(rowexpr, pcolv, sfx):
     # ONE body per row instead of K copies of it.  The lane count is the loop's
     # Count port, so a wider wall costs the body once rather than once per lane
     # (measured: 207 nodes per copy here, 63 copies = 13,041 nodes).  The body
@@ -3086,13 +2792,10 @@ def paint_row(rowexpr, pcolv, sfx, tag):
     # already on the wall: for an opaque colour that is a harmless rewrite,
     # but blending a transparent colour a second time over its own result
     # would make it too strong, so `repaint` leaves those pixels alone.
-    # That rule only holds while the base is NOT freshly cleared: the erase
-    # lane beside us publishes eFull (contract handoff), and over a
-    # freshly-black base the blend is exactly once -- take it.
     L.append("            let src = cLo%s + rowSlope%s * dt" % (sfx, sfx))
     L.append("            if noDepth || src.a >= 1.0 {")
     L.append("              fb[ridx] = src")
-    L.append("            } else if repaint < 0.5 || eFull%s {" % tag)
+    L.append("            } else if repaint < 0.5 {")
     L.append("              let d = fb[ridx]")
     L.append("              let ia = 1.0 - src.a")
     L.append("              fb[ridx] = Color(src.r * src.a + d.r * ia,"
@@ -3108,7 +2811,6 @@ def paint_row(rowexpr, pcolv, sfx, tag):
 
 
 def black_row(tag, vex):
-    L.append("    eFull%s = false" % tag)
     L.append("    if eraseOK && !noDepth {")
     L.append("      let br%s = (%s | 0)" % (tag, vex))
     L.append("      if br%s >= 0.0 && br%s <= 63.0 {" % (tag, tag))
@@ -3116,24 +2818,19 @@ def black_row(tag, vex):
     L.append("        let okb%s = oldMax[br%s]" % (tag, tag))
     L.append("        let nka%s = covMin[br%s]" % (tag, tag))
     L.append("        let nkb%s = covMax[br%s]" % (tag, tag))
-    # The erase announces, as owned data, that it freshly cleared the
-    # row: the paint lane beside it blends even on a repaint frame
-    # (contract: erase WRITES eFullX, that lane READS it).
-    L.append("        eFull%s = if fullErase && okb%s >= oka%s"
-             " then true else false" % (tag, tag, tag))
     # The sixty-four columns of one row, one body: the only thing that differs
     # between them is the column index, so the count is a port.
     L.append("        for _bx in 0..%d {" % SW)
     L.append("          let okx = (_bx as float)")
     L.append("          if okx >= oka%s && okx <= okb%s"
-             " && (fullErase || okx < nka%s || okx > nkb%s) {" % (tag, tag, tag, tag))
+             " && (okx < nka%s || okx > nkb%s) {" % (tag, tag, tag, tag))
     L.append("            fb[((br%s * SWF + okx) | 0)]"
              " = Color(0.0, 0.0, 0.0, 1.0)" % tag)
     L.append("            fbZ[((br%s * SWF + okx) | 0)] = ZBACK" % tag)
     L.append("          }")
     L.append("        }")
-    # Consume the row: the erase has run for it, and on a refresh frame a
-    # later slot must not black the earlier slot's fresh output again.
+    # Consume the row: the erase has run for it, so a later slot of the
+    # same frame never blacks it again.
     L.append("        oldMin[br%s] = 200.0" % tag)
     L.append("        oldMax[br%s] = -200.0" % tag)
     L.append("      }")
@@ -3144,18 +2841,18 @@ black_row("A", "aRow")
     # advance pcol/pcol2 as they go.  The erase's own rects are not
     # coverage: they black pixels the frame gave up, so folding them
     # in would record them as still painted and never erase them.
-paint_row("aRow", "pcol", "", "A")
+paint_row("aRow", "pcol", "")
 # The B row paints from its own span at prow (advanced past A): the same
 # shared shape, so a stroke costs one lane duplication after all -- the
 # fill's, which the stroke reuses.
 black_row("B", "prow + 1.0")
-paint_row("prow + 1.0", "pcol2", "2", "B")
+paint_row("prow + 1.0", "pcol2", "2")
 # Rows C..D paint from their own spans: same shape once more per row.
 for _ri, _R in enumerate(("C", "D")):
     _k = _ri + 2
     black_row(_R, "prow + %d.0" % _k)
     _sfx = str(_ri + 3)
-    paint_row("prow + %d.0" % _k, "pcol%s" % _sfx, _sfx, _R)
+    paint_row("prow + %d.0" % _k, "pcol%s" % _sfx, _sfx)
 L.append("  }")
 # The scanout: every pixel global mirrors its fb slot, every tick.
 # ---- the erase pass: black what the new frame no longer covers -----
@@ -3252,14 +2949,12 @@ L.append("}")
 L.append("")
 L.append("on Clock(interval = 0.01) {")
 # The clock gates the paint tick on there being work: a walk, an erase, an
-# arm, a commit, a queued push, a live animation delta, or the tick right
-# after a clear.  An idle screen has nothing to paint -- its pixels already
-# hold the picture -- so the mod does not fire and the whole node graph
-# stays asleep.  The wall refreshes identically: pixels change only when a
-# pass writes them.
+# arm, a commit, a staged shape, or the tick right after a clear.  An idle
+# screen has nothing to paint -- its pixels already hold the picture -- so
+# the mod does not fire and the whole node graph stays asleep.  The wall
+# refreshes identically: pixels change only when a pass writes them.
 L.append("  if polyOn || sOn || erasing || rcOn || arming || armingS || commitR"
-        " || commitQ || pending || animDirty || justCleared || pushArm || drawArm"
-        " || addToShapeInTicks != 0.0 {")
+        " || commitQ || pending || justCleared || pushArm || drawArm {")
 L.append("    paintTick()")
 L.append("  }")
 L.append("}")

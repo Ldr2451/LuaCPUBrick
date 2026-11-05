@@ -40,7 +40,7 @@ local pcol = {0.75, 0.45, 1.0, 1.0, 0.75, 0.45, 1.0, 1.0,
 -- shape by the program: the port is sticky, so a fill that says nothing
 -- would inherit the stroke of the shape before it.
 stagePush2d(pent, pcol, {32.0, 31.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0},
-            "0", nil, 0, "3")
+            "0", 0, "3")
 -- The two movers.  Each frame: stage both, push both, then draw, so the
 -- screen scans out one frame in which both shapes have moved.  The
 -- square crosses the wall left to right along the top band, the
@@ -50,10 +50,10 @@ local f = 0
 while f < 10 do
   stagePush2d(sq, ocol,
               {8.0 + 4.0 * f, 18.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0},
-              "0", nil, 0, "1")
+              "0", 0, "1")
   stagePush2d(tri, tcol,
               {56.0 - 4.0 * f, 44.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0},
-              "0", nil, 0, "2")
+              "0", 0, "2")
   draw()
   nap(224.0)
   f = f + 1

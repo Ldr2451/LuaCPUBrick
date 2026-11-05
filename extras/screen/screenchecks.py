@@ -2,12 +2,12 @@
 
 animtest is the full gate but takes tens of minutes; these checks catch the
 same CLASS of bug in seconds: a chip-level change that silently stops the
-wall painting, or that stops an animation from committing, is visible here
+wall painting, or that stops a commit from landing, is visible here
 without replaying the whole oracle stream.  It runs the proven cubetest.py
-replay on two short bodies -- cube.lua (filled faces + a forever pivot turn,
-so the animation-commit path is exercised) and curve.lua (open wireframe
-strokes) -- and asserts each paints.  cube's pivot turn angle must advance
-across settled frames, which is what a committed animation delta shows.
+replay on two short bodies -- cube.lua (filled faces + a re-pushed pivot
+turn, so the commit-and-recomposite path is exercised) and curve.lua (open
+wireframe strokes) -- and asserts each paints.  cube's pivot turn angle
+must advance across settled frames, which is what re-pushed poses show.
 
 It also checks the handshake wait: after draw(), a program must wait no
 more than SETTLE ticks for the wall to hold the whole picture (the README
@@ -78,7 +78,11 @@ def clean(text):
 def run_body(body):
     """Replay one body through cubetest and report painted + turn advance."""
     frames = os.path.join(TMP, "screencheck_%s" % body)
-    env = dict(os.environ, CUBE_BODY=body + ".lua", CUBE_FRAMES=frames)
+    env = dict(os.environ, CUBE_BODY=body + ".lua", CUBE_FRAMES=frames,
+               # the bodies nap at game pace (224); the oracle charges
+               # nap(c) at 100 ticks a unit, so a replay pays the measured
+               # handshake wait only in the game, not in the test
+               CUBE_NAP="2")
     p = subprocess.run(["python", "-u", "cubetest.py", BUDGET[body], TAIL[body], "--save"],
                        cwd=CONN, env=env, capture_output=True, text=True, timeout=900)
     raw = clean(p.stdout + p.stderr)

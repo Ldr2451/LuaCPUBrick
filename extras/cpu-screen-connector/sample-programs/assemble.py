@@ -24,7 +24,8 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 GFX = os.path.join(os.path.dirname(HERE), "gfx.lua")
 BODIES = ("anim.lua", "cube.lua", "curve.lua", "mover.lua", "scale.lua",
-          "breath.lua", "parent.lua", "camera.lua", "tour.lua")
+          "breath.lua", "parent.lua", "camera.lua", "tour.lua",
+          "scene.lua")
 
 
 def strip(src):

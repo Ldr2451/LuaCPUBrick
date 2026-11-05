@@ -54,7 +54,7 @@ local faces = {
 -- The twelve edges go to the screen as ONE walked shape, slot 2, under
 -- the pivot in slot 1.  They go as OUTLINES, so the cube reads
 -- as a wireframe solid: you can see which face is which as it turns.
-pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
+pushMesh(pts, cols, faces, nil, "1", 1.0, 2)
 -- The pivot: where the cube sits on the wall and how it is turned.  It
 -- needs a shape of its own -- an EMPTY push to a slot is the delete --
 -- but it must not paint: one point is a live slot with no edge to fill,
@@ -63,13 +63,24 @@ pushMesh(pts, cols, faces, nil, "1", nil, 1.0, 2)
 -- it off here is the program's job: a bare editShape would inherit it,
 -- and one point in wireframe mode is a two-pixel blob -- the white dot
 -- in the middle of the solid.
-editShape("1", {0.0, 0.0, 0.0}, nil, {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0")
--- ... and it keeps turning, forever, with no further pushes: the slot's
--- animation deltas are the spin.  It turns about the vertical, not over:
--- a tumble passes edge-on, where a cube is a line and the picture says
--- nothing.  One delta lands per REPAINT, not per tick: the screen holds
--- the animation while it scans out a pass (a seven-slot pass is a couple
--- of hundred ticks), so this step is what the eye sees between frames --
--- about five degrees, a turn in a minute or so.
-stage({}, nil, {0.0, 0.0, 0.0, 0.0, 0.0, 0.080, 0.0, 0.0, 0.0}, "0", -1.0, nil, "1")
-push()
+editShape("1", {0.0, 0.0, 0.0}, nil,
+          {32.0, 32.0, 0.0, 0.35, 0.0, 0.0, 1.0, 1.0, 1.0}, "0", 0.0)
+-- ... and it keeps turning: the wall is reactive-only, so a spin is the
+-- pivot's pose re-pushed every frame, each one drawn -- every settled
+-- picture is one the CPU sent.  A re-push replaces the pivot's WHOLE
+-- pose (the transform, not a delta), its commit retires the frame it
+-- replaces and recomposites the scene, and the cube -- slot 2, parent
+-- "1" -- rides along with the pivot's new angle.  The nap is the
+-- measured handshake wait: the spin never aborts a pass mid-scan-out.
+-- It turns about the vertical, not over: a tumble passes edge-on, where
+-- a cube is a line and the picture says nothing.  One full turn is
+-- 0.080 a frame.
+local f = 1
+while f <= 8 do
+  editShape("1", {0.0, 0.0, 0.0}, nil,
+            {32.0, 32.0, 0.0, 0.35, 0.0, 0.080 * f, 1.0, 1.0, 1.0}, "0",
+            0.0)
+  draw()
+  nap(224.0)
+  f = f + 1
+end

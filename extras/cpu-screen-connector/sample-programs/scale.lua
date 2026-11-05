@@ -33,7 +33,7 @@ local dcol = {1.0, 0.20, 0.85, 1.0, 1.0, 0.20, 0.85, 1.0,
 -- The diamond once, offset in its parent's frame, so the square's scale
 -- arrives at it through the compose.
 stagePush2d(dia, dcol, {3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0},
-            "1", nil, 0, "3")
+            "1", 0, "3")
 -- Two tables, one per frame: the square's even scale, the bar's x only.
 local ss = {0.35, 0.60, 0.95, 1.35, 1.80, 2.20, 1.80, 1.35, 0.95, 0.60}
 local xx = {0.40, 0.70, 1.10, 1.50, 1.90, 2.30, 1.90, 1.50, 1.10, 0.70}
@@ -42,10 +42,10 @@ while f < 10 do
   local s = ss[f + 1]
   stagePush2d(sq, scol,
               {18.0, 20.0, 0.0, 0.0, 0.0, 0.0, s, s, 1.0},
-              "0", nil, 0, "1")
+              "0", 0, "1")
   stagePush2d(bar, bcol,
               {46.0, 44.0, 0.0, 0.0, 0.0, 0.0, xx[f + 1], 1.0, 1.0},
-              "0", nil, 0, "2")
+              "0", 0, "2")
   draw()
   nap(224.0)
   f = f + 1

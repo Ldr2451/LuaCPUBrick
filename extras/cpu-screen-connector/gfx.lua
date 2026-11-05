@@ -7,8 +7,8 @@ local t = clock()
 while clock() < t + c do end
 end
 -- One array carries everything: shape data in slots 1..113 at most, the
--- float count and animation length at 196 and 198, control in
--- 200..214 (see connector.ws).  A pulse is 1, one tick, 0.
+-- float count at 196, control in 200..214 (see connector.ws).  A pulse
+-- is 1, one tick, 0.
 local function pulse(slot)
 outNumArr(slot, 1.0)
 tick()
@@ -55,7 +55,7 @@ function setTransform(xf)
 outNumArr(206, xf[1], xf[2], xf[3], xf[4], xf[5], xf[6], xf[7], xf[8])
 outNumArr(214, xf[9])
 end
--- stage(pts, cols, xf, parent, ticks, wire, id): put one shape on the
+-- stage(pts, cols, xf, parent, wire, id): put one shape on the
 -- array, ready for the next push.
 -- pts is a flat list of point FLOATS: two per point for a 2D shape
 -- (x, y) and three for a 3D one (x, y, z).  The chip reads an odd
@@ -67,14 +67,14 @@ end
 -- cols is optional and per-point (four numbers each): one colour per
 -- point, white where absent.  xf is the nine-number transform
 -- (pos.xyz, rot.xyz, scl.xyz), parent the slot id ("0" none, "1".."32"
--- a shape, "-1" the camera so the shape is placed in view space), ticks
--- the animation length (0 instant, n repaints, -1 forever), wire the
--- wireframe flag: nil or 0 fills, 1 strokes an outline, and it is
+-- a shape, "-1" the camera so the shape is placed in view space), wire
+-- the wireframe flag: nil or 0 fills, 1 strokes an outline, and it is
 -- written on every push -- id the slot to store ("0".."32", "-1" the
--- camera, "" = immediate).
+-- camera, "" = immediate).  The screen is reactive-only: a moving
+-- picture is a CPU that re-stages and re-pushes the shape every frame.
 -- stage2d and its triples helper are defined AFTER stage, below: the
 -- shorthand calls it, so the definition order keeps the call honest.
-function stage(pts, cols, xf, parent, ticks, wire, id)
+function stage(pts, cols, xf, parent, wire, id)
 local termAt = putn(1, pts)
 if cols == nil then
 outNumArr(termAt, -1.0)
@@ -85,22 +85,8 @@ end
 local x = xf
 if x == nil then x = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0} end
 setTransform(x)
--- control: wire, id, parent in one call, then the animation length.
+-- control: wire, id, parent in one call.
 outNumArr(203, wire or 0.0, num(id), num(parent))
-local t = ticks
-if t == nil then t = 0.0 end
--- one number, one meaning: -1 is FOREVER (the animation runs until
--- another command edits the slot), 0 is INSTANT, N > 0 runs N steps.
--- A step lands at a REPAINT, not at a clock tick: the screen holds its
--- animation while it scans out a pass, so N is the number of frames the
--- eye sees, which is the only rate the eye can see anyway.
-if t == -1.0 then
-outNumArr(198, -1.0)
-elseif t >= 1.0 then
-outNumArr(198, -(1.0 + t))
-else
-outNumArr(198, 0.0)
-end
 -- the point float count, 1-based slot 196: when positive the connector
 -- reads the terminator directly instead of scanning, so coordinates are
 -- unrestricted.  FLOATS, not points.  The count and the animation slot
@@ -111,7 +97,7 @@ end
 outNumArr(196, #pts * 1.0)
 end
 
--- stage2d(pts, cols, xf, parent, ticks, wire, id): a FLAT shape, written
+-- stage2d(pts, cols, xf, parent, wire, id): a FLAT shape, written
 -- as (x, y) pairs, sent as the (x, y, 0) triples the screen takes.  The
 -- screen's port takes triples and only triples, so a flat shape is the
 -- same shape with a zero z -- this is the shorthand for that, not a
@@ -128,8 +114,8 @@ end
 return out
 end
 
-function stage2d(pts, cols, xf, parent, ticks, wire, id)
-stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
+function stage2d(pts, cols, xf, parent, wire, id)
+stage(asTriples(pts), cols, xf, parent, wire, id)
 end
 
 function fire(after)
@@ -143,16 +129,16 @@ if after ~= nil then
 if after > 0.0 then nap(after) end
 end
 end
-function stagePush(pts, cols, xf, parent, ticks, wire, id)
-stage(pts, cols, xf, parent, ticks, wire, id)
+function stagePush(pts, cols, xf, parent, wire, id)
+stage(pts, cols, xf, parent, wire, id)
 push()
 end
 -- stagePush2d: a flat shape (pairs) staged and pushed in one call.
-function stagePush2d(pts, cols, xf, parent, ticks, wire, id)
-stage(asTriples(pts), cols, xf, parent, ticks, wire, id)
+function stagePush2d(pts, cols, xf, parent, wire, id)
+stage(asTriples(pts), cols, xf, parent, wire, id)
 push()
 end
--- pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId):
+-- pushMesh(points, pcols, faces, xf, parent, wire, firstId):
 -- send a whole mesh to the screen.
 --
 -- points -- the mesh's vertices, a flat list of (x, y, z) triples.
@@ -243,7 +229,7 @@ f = f + 1
 end
 end
 -- FILL: one closed outline per face, one face per slot.
-function fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+function fillMesh(points, pcols, faces, xf, parent, wire, base)
 -- reading the face round one vertex past its end repeats the first
 -- vertex and closes it.  The copy indexes by the vertex number so the
 -- lists stay tight: writing at t[#t + 1] and then t[#t + 2] re-reads
@@ -273,7 +259,7 @@ cols[k * 4] = pcols[c + 3]
 end
 k = k + 1
 end
-stage(pts, cols, xf, parent, ticks, wire, tostring(base + f - 1))
+stage(pts, cols, xf, parent, wire, tostring(base + f - 1))
 push()
 f = f + 1
 end
@@ -427,7 +413,7 @@ end
 -- stage needs would name ten: the whole tour comes in and the shapes
 -- leave it, one slot after the next from `base`, and how many shapes
 -- it sent -- how many slots the mesh took -- is returned.
-function sendWalk(points, pcols, path, xf, parent, ticks, wire, base)
+function sendWalk(points, pcols, path, xf, parent, wire, base)
 local nsh = 0
 local at = #path
 while at >= 1 do
@@ -453,7 +439,7 @@ cols[np * 4] = pcols[c + 3]
 end
 i = i - 1
 end
-stage(pts, cols, xf, parent, ticks, wire, tostring(base + nsh))
+stage(pts, cols, xf, parent, wire, tostring(base + nsh))
 push()
 nsh = nsh + 1
 if from > 1 then
@@ -464,7 +450,7 @@ end
 end
 return nsh
 end
-function pushMesh(points, pcols, faces, xf, parent, ticks, wire, firstId)
+function pushMesh(points, pcols, faces, xf, parent, wire, firstId)
 local base = firstId
 if base == nil then base = 0 end
 local nv = (#points / 3) | 0
@@ -473,7 +459,7 @@ local eb = {}
 local corner = {}
 meshEdges(faces, nv, ea, eb, corner)
 if wire == nil or wire == 0 or wire == false then
-fillMesh(points, pcols, faces, xf, parent, ticks, wire, base)
+fillMesh(points, pcols, faces, xf, parent, wire, base)
 return
 end
 local firstdup = pairOddCorners(nv, corner, ea, eb)
@@ -498,35 +484,39 @@ break
 end
 local path = {}
 tourMesh(s, corner, used, ea, eb, path)
-nsh = nsh + sendWalk(points, pcols, path, xf, parent, ticks, wire,
+nsh = nsh + sendWalk(points, pcols, path, xf, parent, wire,
 base + nsh)
 end
 end
 function pushShape(pts, cols, xf, parent, wire)
-stage(pts, cols, xf, parent, nil, wire, "")
+stage(pts, cols, xf, parent, wire, "")
 fire()
 end
--- editShape(id, pts, cols, xf, parent, ticks, wire): store or edit a
+-- editShape(id, pts, cols, xf, parent, wire): store or edit a
 -- shape in slot `id` and show it.  wire nil = filled, 1 = outline.
-function editShape(id, pts, cols, xf, parent, ticks, wire)
-stage(pts, cols, xf, parent, ticks, wire, id)
+-- The screen is reactive-only: to move a stored shape, call editShape
+-- again with the new transform every frame -- the commit retires the
+-- frame it replaces and recomposites the new one.
+function editShape(id, pts, cols, xf, parent, wire)
+stage(pts, cols, xf, parent, wire, id)
 fire()
 end
--- camera(xf, ticks): move the view.  xf is the nine-number transform
+-- camera(xf): move the view.  xf is the nine-number transform
 -- (pos.xyz, rot.xyz, scl.xyz) -- one point travels with it, which paints
 -- nothing, and the commit recomposites the scene, so no draw is needed to
--- see the move.  Shapes whose parent chain reaches "-1" ride along and
--- keep their place on screen; everything else moves with the view.
+-- see the move.  A MOVING view is this call once per frame: the camera is
+-- the view, not a parent, and shapes whose parent chain reaches "-1" ride
+-- along and keep their place on screen; everything else moves with it.
 -- camera(nil) forgets the camera, which puts the view back to identity.
-function camera(xf, ticks)
+function camera(xf)
 if xf == nil then
-editShape("-1", {}, nil, nil, "0", nil, 0.0)
+editShape("-1", {}, nil, nil, "0", 0.0)
 else
-editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", ticks, 0.0)
+editShape("-1", {0.0, 0.0, 0.0}, nil, xf, "0", 0.0)
 end
 end
 function deleteShape(id)
-stage({}, nil, nil, "0", nil, nil, id)
+stage({}, nil, nil, "0", nil, id)
 fire()
 end
 function clearScreen(after)

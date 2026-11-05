@@ -62,8 +62,8 @@ local sides = {{1, 13}, {5, 17}, {9, 21}}
 -- point in fill mode, which paints nothing.
 editShape("2", {0.0, 0.0, 0.0}, nil, pose, "0")
 -- Caps filled (ids 3 and 4), then the side edges as strokes (ids 5..7).
-pushMesh(pts, cols, {top, low}, nil, "2", nil, 0, 3)
-pushMesh(pts, cols, sides, nil, "2", nil, 1, 5)
+pushMesh(pts, cols, {top, low}, nil, "2", 0, 3)
+pushMesh(pts, cols, sides, nil, "2", 1, 5)
 
 -- The disc: a twelve-gon in front of the cylinder, red with alpha 0.55.
 -- It is the last slot (8) and a child of the pivot like the cylinder.

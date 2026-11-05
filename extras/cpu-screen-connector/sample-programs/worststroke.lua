@@ -1,7 +1,7 @@
 -- Temporary probe (delete after measuring): the tallest stroke the
--- protocol can send: 16 colored points (the cap; colour and all reach
--- slot 113, and the count and animation slots sit above that) zigzagging
--- rows 2..60, pushed and redrawn like curve.lua's wave.
+-- protocol can send: 16 colored points (the cap; the whole data span
+-- reaches slot 113) zigzagging rows 2..60, pushed and redrawn like
+-- curve.lua's wave.
 local pts = {}
 local i = 0
 while i < 16 do
@@ -20,7 +20,7 @@ while i < 16 do
 end
 local f = 0
 while f < 3 do
-  stagePush2d(pts, cols, nil, "0", nil, 1, "1")
+  stagePush2d(pts, cols, nil, "0", 1, "1")
   draw()
   nap(2.0)
   f = f + 1

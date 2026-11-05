@@ -58,8 +58,7 @@ def main():
                       "shapePosition": (0.0, 0.0, 0.0),
                       "shapeRotation": (0.0, 0.0, 0.0),
                       "shapeScale": (0.0, 0.0, 0.0),
-                      "parentShapeId": 0.0, "brightness": 100.0,
-                      "addToShapeInTicks": 0.0}
+                      "parentShapeId": 0.0, "brightness": 100.0}
         sim.run(1)
         sim.inputs = {k: v for k, v in sim.inputs.items()
                       if k != "shapePoints"}
@@ -70,7 +69,7 @@ def main():
                      "shapePosition": (0.0, 0.0, 0.0),
                      "shapeRotation": (0.0, 0.0, 0.0),
                      "shapeScale": (0.0, 0.0, 0.0),
-                     "parentShapeId": 0.0, "addToShapeInTicks": 0.0},
+                     "parentShapeId": 0.0},
                  t + 2: {"pushShape": True},
                  t + 4: {"pushShape": False}}
             if draw:
@@ -93,7 +92,7 @@ def main():
         trace = TRACE
         if trace:
             fn = ["rcOn", "erasing", "erDone", "wasPaint", "arming",
-                  "polyOn", "sOn", "recompFrame", "eraseOK", "fromSlot"]
+                  "polyOn", "sOn", "eraseOK", "fromSlot"]
             vids = {n: var_id(n) for n in fn}
             er_row = var_id("erRow")
 
