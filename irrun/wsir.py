@@ -757,6 +757,14 @@ def _parse_item(p, mod, add):
             if body_name.startswith('"'):
                 body_name = body_name[1:-1]
         operands = []
+        # A function definition writes its chip class with a props block
+        # before the body (`Component_Internal_Microchip_FunctionDefinition
+        # { label = "vSet" } !layout_after(...) {`): the brace holds `key =
+        # value` pairs, so it is attributes, not the body.  A bare `{` after
+        # `chip` is still the body.
+        if tk.at_punct("{") and (tk.peek(1) or "").strip() and re.match(
+                r'^[A-Za-z_][A-Za-z0-9_]*$', tk.peek(1)) and tk.peek(2) == '=':
+            p.parse_attrs(props)
         if tk.at_punct("("):
             tk.take()
             while not tk.at_punct(")"):
@@ -877,7 +885,9 @@ def _default_out_port(node):
             if str(ty).lower() != "exec":
                 return name
         return ports[0][0]
-    raise WsirError("bare ref to node %s with no outputs" % node.id)
+    # A definition node carries no value: `Definition: %vSet` on a Function
+    # Call is a structural edge, so it names no output port.
+    return ""
 
 
 def parse_program(text):
