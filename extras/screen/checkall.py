@@ -23,6 +23,8 @@ STEPS = [
     ("animprobe (translucent refresh)", ["extras/screen/animprobe.py"]),
     ("ghostprobe (opaque refresh)", ["extras/screen/ghostprobe.py"]),
     ("ptprobe (one-point shapes)", ["extras/screen/ptprobe.py"]),
+    ("cullprobe (off-wall strokes)", ["extras/screen/cullprobe.py"]),
+    ("rowsprobe (8-row walks)", ["extras/screen/rowsprobe.py"]),
     ("screenchecks (six gates)", ["extras/screen/screenchecks.py"]),
 ]
 

@@ -494,10 +494,10 @@ L.append("var rowSlope2: color = Color(0.0, 0.0, 0.0, 0.0)")
 L.append("var pcol2: float = 200.0")
 L.append("var pcurR2: float = 100.0")
 L.append("var aRow: float = 0.0")
-# Rows C..D: the fill stages four rows a tick, so rows past B need
-# their own span, colours, bounds and depth state.  The stroke keeps
-# using A/B only (its quad walk advances two rows a tick).
-for _r in range(3, 5):
+# Rows C..H: both walks now stage eight rows a tick (fill advances 8;
+# the stroke quad walk's ladder is 8/4/1/1), so rows past B need their
+# own span, colours, bounds and depth state.
+for _r in range(3, 9):
     L.append("var xL%d: float = 0.0" % _r)
     L.append("var cLo%d: color = Color(1.0, 1.0, 1.0, 1.0)" % _r)
     L.append("var rowSlope%d: color = Color(0.0, 0.0, 0.0, 0.0)" % _r)
@@ -746,7 +746,7 @@ L.append("      }")
 L.append("    }")
 L.append("    if lastImm && polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !commitQ && (!erasing || !erDone) {")
 L.append("      repaint = true")
-L.append("      prow = pfirst - 4.0")
+L.append("      prow = pfirst - 8.0")
 L.append("      pcol = 200.0")
 L.append("      polyOn = true")
 L.append("    }")
@@ -1300,7 +1300,7 @@ L.append("        sSegs = bSEGS")
 L.append("      }")
 L.append("      if lastImm && polyLive && !polyOn && !arming && !sOn && !armingS && !commitR && !pending && !clearing && (!erasing || !erDone) {")
 L.append("        repaint = true")
-L.append("        prow = pfirst - 4.0")
+L.append("        prow = pfirst - 8.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("      }")
@@ -1817,7 +1817,7 @@ L.append("        polyLive = false")
 L.append("      } else {")
 L.append("        pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)")
 L.append("        plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)")
-L.append("        prow = pfirst - 4.0")
+L.append("        prow = pfirst - 8.0")
 L.append("        pcol = 200.0")
 L.append("        polyOn = true")
 L.append("        polyLive = true")
@@ -1863,7 +1863,35 @@ L.append("    }")
 # (the camera's view is exactly one) and arms this walk over it, and an
 # immediate arm of a junk array must not paint either, so the arm
 # falls, paints nothing, and leaves the slot machinery alive.
-L.append("    if sSegs < 2.0 {")
+L.append("    let sXmn = 200.0")
+L.append("    let sXmx = -200.0")
+L.append("    let sYmn = 200.0")
+L.append("    let sYmx = -200.0")
+for i in range(MAXP):
+    # A stroke entirely off the wall paints no pixel: its segments and
+    # their one-pixel extensions all live outside, so the walk is
+    # never armed (the fill arm culls the same way).  The margin of
+    # 2 covers a span's or join's overshoot at the wall's edge.
+    # Inactive points (at/after the count) sit at the sentinels.
+    sXmn = "sXmn%d" % i
+    sXmx = "sXmx%d" % i
+    sYmn = "sYmn%d" % i
+    sYmx = "sYmx%d" % i
+    L.append("    let %s = if %d.0 < sSegs && sPx%d < %s then sPx%d else %s"
+             % (sXmn, i, i, "200.0" if i == 0 else "sXmn%d" % (i - 1), i,
+                "200.0" if i == 0 else "sXmn%d" % (i - 1)))
+    L.append("    let %s = if %d.0 < sSegs && sPx%d > %s then sPx%d else %s"
+             % (sXmx, i, i, "-200.0" if i == 0 else "sXmx%d" % (i - 1), i,
+                "-200.0" if i == 0 else "sXmx%d" % (i - 1)))
+    L.append("    let %s = if %d.0 < sSegs && sPy%d < %s then sPy%d else %s"
+             % (sYmn, i, i, "200.0" if i == 0 else "sYmn%d" % (i - 1), i,
+                "200.0" if i == 0 else "sYmn%d" % (i - 1)))
+    L.append("    let %s = if %d.0 < sSegs && sPy%d > %s then sPy%d else %s"
+             % (sYmx, i, i, "-200.0" if i == 0 else "sYmx%d" % (i - 1), i,
+                "-200.0" if i == 0 else "sYmx%d" % (i - 1)))
+L.append("    if sSegs < 2.0 || sXmx%d < -2.0 || sXmn%d > 65.0"
+         " || sYmx%d < -2.0 || sYmn%d > 65.0 {"
+         % (MAXP - 1, MAXP - 1, MAXP - 1, MAXP - 1))
 L.append("      sOn = false")
 L.append("      sLive = false")
 L.append("    } else {")
@@ -1896,7 +1924,7 @@ L.append("  }")
 # machinery.
 L.append("  if polyOn {")
 L.append("    if pcol > pcurR {")
-L.append("      prow = prow + 4.0")
+L.append("      prow = prow + 8.0")
 L.append("      if prow > plast {")
 L.append("        polyOn = false")
 L.append("      } else {")
@@ -2164,11 +2192,11 @@ L.append("          }")
 L.append("        }")
 L.append("      }")
 L.append("    }")
-# ---- rows C..D: two more fill rows a tick --------------------------------
+# ---- rows C..H: six more fill rows a tick ---------------------------------
 # Same shape as B (own row var, span state, colours, depth, coverage
-# fold): the fill stages and paints four rows a tick.  Fill-only --
-# the stroke keeps A/B (its quad walk advances two rows a tick).
-for _ri, _R in enumerate(("C", "D")):
+# fold): the fill stages and paints eight rows a tick.  Fill-only --
+# the stroke stages its rows E..H from the same quad, further ahead.
+for _ri, _R in enumerate(("C", "D", "E", "F", "G", "H")):
     _k = _ri + 2
     _sfx = str(_ri + 3)
     L.append("      if polyOn {")
@@ -2349,7 +2377,7 @@ L.append("    sEnd = false")
 L.append("  }")
 L.append("    if pcol > pcurR {")
 L.append("      pPrev = prow")
-L.append("      prow = prow + (if sFreshLast then 1.0 else if prow + 4.0 <= sLast then 4.0 else if prow + 1.0 <= sLast then 1.0 else 1.0)")
+L.append("      prow = prow + (if sFreshLast then 1.0 else if prow + 8.0 <= sLast then 8.0 else if prow + 4.0 <= sLast then 4.0 else if prow + 1.0 <= sLast then 1.0 else 1.0)")
 L.append("      if prow > sLast {")
 L.append("        sSeg = sSeg + 1.0")
 L.append("        if sSeg >= sSegs {")
@@ -2509,7 +2537,8 @@ L.append("          }")
 # row re-crosses the current quad's four edges and stages its own span
 # state; the shared lanes paint prow+2 and prow+3 from it.  Same math as
 # the B row, same pixel set -- the quad walk just reads further ahead.
-for _R, _off, _sfx in (("C", 2.0, "3"), ("D", 3.0, "4")):
+for _R, _off, _sfx in (("C", 2.0, "3"), ("D", 3.0, "4"), ("E", 4.0, "5"),
+                       ("F", 5.0, "6"), ("G", 6.0, "7"), ("H", 7.0, "8")):
     _r = "prow + %.1f" % _off
     L.append("          if %s <= sLast {" % _r)
     L.append("            let bu0lo%s = if qAy < qBy then qAy else qBy" % _R)
@@ -2847,8 +2876,8 @@ paint_row("aRow", "pcol", "")
 # fill's, which the stroke reuses.
 black_row("B", "prow + 1.0")
 paint_row("prow + 1.0", "pcol2", "2")
-# Rows C..D paint from their own spans: same shape once more per row.
-for _ri, _R in enumerate(("C", "D")):
+# Rows C..H paint from their own spans: same shape once more per row.
+for _ri, _R in enumerate(("C", "D", "E", "F", "G", "H")):
     _k = _ri + 2
     black_row(_R, "prow + %d.0" % _k)
     _sfx = str(_ri + 3)
