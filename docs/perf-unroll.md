@@ -1,8 +1,51 @@
 # The unroll, measured on this chip (2026-09-26)
 
-The 4x `vmStep` unroll was worth ~59k nodes on a 37,899-node chip, so it looked
-affordable. Measured on the chip as it stands it is not, and it is not free
-either. Both numbers are below; the second one is the reason nothing was landed.
+**The CPU chip's budget: 40,362 nodes (the baseline) is the ceiling, and the
+working rule is "at or under it".** Every fast-step or unroll row below is a
+measurement to be paid INSIDE that budget; a row above it is a shape that got
+cut back down, not a shape that shipped.
+
+## The fast-set expansion and the 7-site burst (2026-11-05/06)
+
+The census `perfbench.py` prints per tick (`vm ops`) showed exactly which hot
+opcodes sat outside the fast set and wasted five of the six dispatch slots:
+CALL (callloop 393 ticks of it), GETUP (closures/pcall), FORPREP, RETURN0,
+LEN. Expanding the ONE shared vmStepFast body, with each new arm a mod shared
+with vmStep so the two paths cannot drift (frame teardown under one path only
+is the drift shape vmReturn/vmForLoop already document):
+
+| step | nodes | wires | callloop | closures | pcall | calls | recurse | fields |
+|---|---|---|---|---|---|---|---|---|
+| 5+1, old set (dad0176) | 40,362 | 76,683 | 393 | 214 | 294 | 134 | 158 | 1,193 |
+| + LEN/FORPREP/NEWTABLE/RETURN0/GETUP/SETUP/GEN/VARARG/IDIV | 44,120 | 83,623 | 393 | 171 | 213 | 113 | 157 | 1,192 |
+| + Lua-only fast CALL (vmCallFast, NB <= cid) | 61,105 | 113,678 | 293 | 156 | 213 | 112 | 131 | 1,192 |
+| 7 fast sites + 1 | 73,053 | 135,240 | 243 | 149 | 192 | 105 | 119 | 941 |
+| **5+1 LANDED: hot 29/30, +GETUP/GEN, string-library GETFIELD back** | **40,329** | **76,918** | 393 | 172 | 214 | 113 | 157 | 1,193 |
+
+The landed row is the same five sites inside the 40,362 ceiling: the four rejected
+arm groups (RETURNV 26, LEN 31, FORPREP 32, NEWTABLE 28, SETUP 47 -- ~1,430
+nodes) stay in vmStep's chain, GETFIELD/SETFIELD keep HOT-CASE-ONLY fast arms
+whose acting shapes move pc themselves and whose declines fall through
+(29/30 are NOT in the pc tail set), and GETFIELD's string-library shape is a
+second acting branch -- without it `string` pays vmStep's whole dispatch per
+library call, 1,632 -> 1,646. Suite 984/984, perfbench no benchmark slower,
+audit 0 unhandled.
+
+The old "fast GETUP saved ZERO ticks" note is false on this chip: closures
+214 -> 156. What IS true, and what the suite pins, is that GATE BUILTINS must
+stay out of the fast CALL arm: gateLow's register writes are dropped when
+inlined inside a CHIP body (the gmatch trap one level up), and dispatching
+builtins from the fast side turned select's error into "attempt to call"
+(`sel-oob`, `arr-multi-badval`). The fast arm therefore admits only cid >= NB
+(Lua functions; the gateHigh half of the dispatch) and builtins fall through
+to vmStep's inline arm, where their writes land. 23 is NOT in the fast tail
+set, so the fast firings are pure misses for builtins.
+
+A `for` around the chip call is the erase-walk chain-freeze shape: the suite
+came back RED (stuck/empty logs) with `for _burst in 0..8 { vmStepFast() }`;
+seven written sites, reverted. Ticks are the in-game currency: every row above
+is a gate that kept 984/984 and ticked no benchmark slower; the 7-site row
+brings the per-tick budget to 8 dispatches, 16.7 ms apart.
 
 ## Cost and speed, 1 / 2 / 4 calls per tick
 
@@ -33,6 +76,9 @@ Read three ways:
 
 ## The unroll is not free: two calls break the upvalue cases
 
+Measured shapes only. The 2x and 4x rows (60,840 and 104,949 nodes) are OVER the
+40k ceiling and were never landed; they price the copies, nothing else.
+
 Landing two steps failed at first, and that was the real half of the problem:
 upvalue-read and upvalue-write came back with an EMPTY log, so a second dispatch
 was not a slow path, it was a broken one. The cause was one misplaced check, and
@@ -50,11 +96,12 @@ Moving the guard into vmStep fixed it, and with it the whole unroll:
 | 2 | 930,432 | 60,672 | 128,433 | 128 | no answer | ok |
 | 4 | 1,598,905 | 104,949 | 222,375 | 96 | 15,782 -> 2584 | 222 -> 41 |
 
-Four steps is 2.05x on a loop, and it is the only setting where a call-heavy
-program finishes at all, so the capability threshold and the speed win point the
-same way. The partial unroll below was designed to get most of the loop win for
-about 7% of the price; the full 4x is landed instead, and the partial idea is only
-worth reviving if the size has to come back down.
+**40k nodes is the CPU chip's ceiling, and the 4x rows above are rejected
+measurements, not a landed setting.** They say what a fourth copy of the chain
+would cost and buy, and nothing more: nothing in this repo has ever treated ~100k
+as affordable, and `git log lua.ws` is a long run of dedicated node cuts. The
+partial unroll below is what landed, at ~43k; further shared-piece and lexer work
+carried it to 40,362 at the current baseline.
 and a correctness question that has to be answered before any of it can land.
 `tools/chip/modcost.py` and `tools/chip/armcost.py` are how the cost half was
 measured; the correctness half needs the two failing cases as the spec.
@@ -104,6 +151,9 @@ And the mechanical one: the extracted chain comes out one block short, because t
 dropped along with the arms after it.
 
 ## Where the 4x actually went: the node census
+
+Census of the rejected 104,949-node build; the per-mod numbers are still the
+shape costs, the total is not a legal target.
 
 The compiler prints a source line per node, so ONE build attributes every node to
 the mod that emitted it (102,296 of 104,949 attributed; the rest are ports and

@@ -522,6 +522,15 @@ TESTS = [
      "print(9, h(), 8)", None, "run"),
     ("retm-call-only", "function g() return 7 end function h() return g() end "
      "print(h())", None, "run"),
+    # The hot GETFIELD/SETFIELD fast arms act or DECLINE; a decline must leave
+    # pc alone, and both acting shapes (table hit, string through the library)
+    # move pc themselves.  One program per shape, in one loop so every shape
+    # lands inside the five fast steps rather than only in vmStep: a doubled
+    # or skipped instruction here shows up as wrong output, not as an error.
+    ("fast-arms-mixed", "local t = {x = 1} local function f() return t.x end "
+     "local s = 0 for i = 1, 30 do s = s + f() + t.x + (t.missing or 0) "
+     "t.y = i t.n = nil end local u = 'ab' "
+     "print(s, u:upper(), t.y, t.x)", None, "run"),
     ("ret-multi3", "function f() return 1, 2, 3 end print(f())", None, "run"),
     ("ret-multi-mid", "function f() return 1, 2 end print(9, f(), 8)", None,
      "run"),

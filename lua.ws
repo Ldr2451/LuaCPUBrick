@@ -10567,6 +10567,195 @@ mod vmForLoop(a: int, c: int) {
   }
 }
 
+// The arms that join the FAST path, each ONE body for both dispatch paths --
+// the same rule vmReturn and vmForLoop state: two hand-kept copies of a frame
+// teardown or a loop entry would drift, and the drift would be a pushed frame
+// under one dispatch path only, which no program can see directly.  CALL does
+// not join at all: gateHigh's register writes are dropped when inlined inside
+// a CHIP body (the gmatch trap one level up), and a CALL arm costs 13,576
+// nodes at four sites, so no fast site count fits it under the node ceiling.
+mod vmReturn0() {
+  let ra = fRetA[fRetA.length() - 1]
+  let rb = fRetBase[fRetBase.length() - 1]
+  let rpc = fRetPC[fRetPC.length() - 1]
+  fFunc.pop()
+  fBase.pop()
+  fRetA.pop()
+  fRetBase.pop()
+  fRetPC.pop()
+  fRetN.pop()
+  vaTop = fVaB.pop().Value
+  forDepth = fForDepth.pop()
+  if fFunc.length() == 0 {
+    resultV = ""
+    vmHalted = true
+  } else {
+    vmBase = rb
+    vSetNil(ra)
+    vmPc = rpc
+    retCountV = 0
+  }
+}
+
+// FORPREP, both paths.  TRUE on the trip that pushes loop state (the arm
+// moved pc); false is the zero-trip fall-through, where the shared tail
+// advances pc over the loop entry instead.
+mod vmForPrep(a: int, b: int, c: int) -> bool {
+  var adv = false
+  let stp = vNum(c)
+  if stp == 0.0 { vmFail("'for' step is zero") }
+  if vTag(a) == 6 && (vTag(b) != 6 || vTag(c) != 6) {
+    vSetNum(a, vNum(a))
+  }
+  let ctrl = vNum(a)
+  let lim = vNum(b)
+  if (stp > 0.0 && ctrl <= lim) || (stp < 0.0 && ctrl >= lim) {
+    let rem = floor((lim - ctrl) / stp) + 1.0
+    if 16 <= forDepth {
+      vmFail("too many nested numeric loops")
+    } else {
+      forCtrl[forDepth] = a
+      forRem[forDepth] = rem
+      forDepth = forDepth + 1
+      vmPc = vmPc + 2
+      adv = true
+    }
+  }
+  return adv
+}
+
+// LEN, both paths.  Both lengths are one step: the table reads its cached
+// border, the string its own length.
+mod vmLenOp(a: int, b: int) {
+  let bt = vTag(b)
+  if bt == 5 {
+    vSetN(a, 6, tLen[toInt(vNum(b))] + 0.0)
+  } else if bt == 2 {
+    vSetN(a, 6, vStr(b).Length() + 0.0)
+  } else {
+    vmFail("attempt to get length of a " .. typeName(bt) .. " value")
+  }
+}
+
+mod vmNewTable(a: int) {
+  if tCount >= MAX_TABLES {
+    // toInt, because the constant folder turns `MAX_TABLES | 0` into the
+    // float literal 68 and the message then reads "68.0"
+    let cap = toInt(MAX_TABLES + 0.0)
+    vmFail("too many tables (" .. (cap | 0) .. ")")
+  } else {
+    tLen[tCount] = 0
+    vSetN(a, 5, tCount + 0.0)
+    tCount = tCount + 1
+  }
+}
+
+mod vmGetUp(a: int, b: int, c: int) {
+  let cell = cellRead(curFid(), b, c == 1)
+  if 0 < cell {
+    vSet(a, uTag[cell], uNum[cell], uStr[cell])
+  } else {
+    vSetNil(a)
+  }
+}
+
+mod vmSetUp(a: int, b: int, c: int) {
+  let fid = curFid()
+  if c == 1 {
+    let cell = cloU[curClo() * MAX_UP + b]
+    if 0 < cell {
+      uTag[cell] = vTag(a)
+      uNum[cell] = vNum(a)
+      uStr[cell] = vStr(a)
+      uDirty[cell] = true
+    }
+  } else {
+    let cell = cellRead(fid, b, false)
+    if 0 < cell {
+      uTag[cell] = vTag(a)
+      uNum[cell] = vNum(a)
+      uStr[cell] = vStr(a)
+      uDirty[cell] = true
+    }
+    let abs = vmBase + fUpSrc[fid * MAX_UP + b]
+    vtag[abs] = vTag(a)
+    vnum[abs] = vNum(a)
+    vstr[abs] = vStr(a)
+  }
+}
+
+mod vmVarArg(a: int, b: int) {
+  // VARARG a, b: b = 1 gives one value, b = 0 gives all of them.
+  // The entry is the frame's slotB (see slotBase); its varargs start a
+  // table above it.
+  let base = fVaB[fVaB.length() - 1] + 3 * fUpSlotN[curFid()] + 1
+  let have = vaTop - base
+  let want = if b == 0 then have else b
+  if 1 <= want {
+    let k = if have < want then have else want
+    vaFill(base, vmBase + a, k)
+    if k < want {
+      // pad with nil through vrgStep (nxMode 6), one per tick, so a
+      // fixed-arity target list sees the missing values.  Sixteen
+      // unrolled guards lived here; the machine is one call instead.
+      vrgDst = a + k
+      vrgI = 0
+      vrgEnd = want - k
+      nxDst = vmBase + a
+      nxPc = vmPc
+      nxActive = true
+      nxMode = 6
+    }
+  } else {
+    vSetNil(a)
+  }
+  retCountV = want
+}
+
+mod vmIDiv(a: int, b: int, c: int) {
+  let lt = vTag(b)
+  let rt = vTag(c)
+  // // coerces like the other arithmetic operators (PUC: '10' // 3 is 3), and
+  // a string that will not convert says "attempt to idiv a 'string' with a
+  // 'number'" where anything else says "on a <type> value".
+  let lx = arithValL(lt, vNum(b), vStr(b))
+  let rx = arithValR(rt, vNum(c), vStr(c))
+  let lbad = coerceL == 3
+  let rbad = coerceR == 3
+  if lbad || rbad {
+    vmFail("attempt to idiv a '" .. typeName(lt) .. "' with a '" .. typeName(rt) .. "'")
+  } else if lt != 6 && lt != 1 && lt != 2 || rt != 6 && rt != 1 && rt != 2 {
+    // the tag choice is hoisted out of the call: a call whose argument is a
+    // folded && or || loses the operand's tag in the compiler's register
+    // allocation, and a message that names the wrong type is worse than no
+    // message.  compute, use, write last.
+    let badT = if lt != 1 && lt != 6 && lt != 2 then lt else rt
+    vmFail("attempt to perform arithmetic on a " .. typeName(badT) .. " value")
+  } else {
+    let li = lt == 6 || coerceL == 1
+    let ri = rt == 6 || coerceR == 1
+    let x = lx
+    let y = rx
+    if y == 0.0 {
+      if li && ri {
+        vmFail("attempt to divide by zero")
+      } else {
+        vSetNum(a, x / y)
+      }
+    } else if li && ri {
+      let q = x / y
+      let t = q | 0
+      let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+      vSetInt(a, fl)
+    } else {
+      let q = x / y
+      let t = q | 0
+      let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+      vSetNum(a, fl)
+    }
+  }
+}
+
 mod vmStep() {
   if cloActive {
     // A closure being filled owns the WHOLE tick: its cells go in one per tick
@@ -10831,12 +11020,6 @@ mod vmStep() {
         // of pushing.  Bit 2 survives the +2 patches (addition preserves it)
         // and is set once, at the return that owns the call, so masking is
         // exact here.
-        //
-        // The arm used to be `op == 23 || op == 41` and mtSelf also tested
-        // `op == 41`, for CALLM.  It is still an opcode in docs/vm-isa and still
-        // nothing emits it -- there is no bEmit(41, ...) anywhere in the
-        // compiler -- so both were a comparison paid by every Lua call in the
-        // hottest arm in the chip.
         // Bits, not a list of cases: `c == 1 || c == 3 || c == 5 || c == 7`
         // and its five siblings are nine comparisons paid by EVERY Lua call in
         // the chip, and three masks say the same thing.
@@ -10865,55 +11048,12 @@ mod vmStep() {
         }
       }
     } else if op == 45 {
-      // VARARG a, b: b = 1 gives one value, b = 0 gives all of them.
-      // The entry is the frame's slotB (see slotBase); its varargs start a
-      // table above it.
-      let base = fVaB[fVaB.length() - 1] + 3 * fUpSlotN[curFid()] + 1
-      let have = vaTop - base
-      let want = if b == 0 then have else b
-      if 1 <= want {
-        let k = if have < want then have else want
-        vaFill(base, vmBase + a, k)
-        if k < want {
-          // pad with nil through vrgStep (nxMode 6), one per tick, so a
-          // fixed-arity target list sees the missing values.  Sixteen
-          // unrolled guards lived here; the machine is one call instead.
-          vrgDst = a + k
-          vrgI = 0
-          vrgEnd = want - k
-          nxDst = vmBase + a
-          nxPc = vmPc
-          nxActive = true
-          nxMode = 6
-        }
-      } else {
-        vSetNil(a)
-      }
-      retCountV = want
+      vmVarArg(a, b)
     } else if op == 24 {
       vmReturn(a)
       advanced = true
     } else if op == 26 {
-      let ra = fRetA[fRetA.length() - 1]
-      let rb = fRetBase[fRetBase.length() - 1]
-      let rpc = fRetPC[fRetPC.length() - 1]
-      fFunc.pop()
-      fBase.pop()
-      fRetA.pop()
-      fRetBase.pop()
-      fRetPC.pop()
-      fRetN.pop()
-      vaTop = fVaB.pop().Value
-      forDepth = fForDepth.pop()
-      if fFunc.length() == 0 {
-        resultV = ""
-        vmHalted = true
-      } else {
-        vmBase = rb
-        vSetNil(ra)
-        vmPc = rpc
-        retCountV = 0
-      }
+      vmReturn0()
       advanced = true
     } else if op == 27 {
       if retCountV == -1 {
@@ -11055,51 +11195,9 @@ mod vmStep() {
         advanced = true
       }
     } else if op == 46 {
-      // GETUP a, b=descriptor, c=0 this frame's own cell for the local or
-      // c=1 the enclosing closure's cell for it
-      //
-      // NOT on the fast path, and measured: a fast arm here cost 364 nodes and
-      // saved ZERO ticks, because GETUP only runs inside closure code and
-      // vmStepFast returns early when vmBusy() - and cloActive is exactly what
-      // makes GETUP frequent.  The fast path and the micro-step machines are
-      // mutually exclusive, so a fast arm can only ever help an op that runs in
-      // PLAIN execution.  That is the whole reason FORLOOP gained a tick per
-      // iteration and this did not.
-      let cell = cellRead(curFid(), b, c == 1)
-      if 0 < cell {
-        vSet(a, uTag[cell], uNum[cell], uStr[cell])
-      } else {
-        vSetNil(a)
-      }
+      vmGetUp(a, b, c)
     } else if op == 47 {
-      // SETUP a=source, b=descriptor, c=kind.  The local's own register is
-      // written as well as the cell, because the register is its home and a
-      // closure made later copies the register in when the cell has not been
-      // written since (see cellAt).  Both paths set uDirty: the c == 0 one has
-      // the register current too, but marking it is harmless and it keeps the
-      // rule to one statement instead of two that have to agree.
-      let fid = curFid()
-      if c == 1 {
-        let cell = cloU[curClo() * MAX_UP + b]
-        if 0 < cell {
-          uTag[cell] = vTag(a)
-          uNum[cell] = vNum(a)
-          uStr[cell] = vStr(a)
-          uDirty[cell] = true
-        }
-      } else {
-        let cell = cellRead(fid, b, false)
-        if 0 < cell {
-          uTag[cell] = vTag(a)
-          uNum[cell] = vNum(a)
-          uStr[cell] = vStr(a)
-          uDirty[cell] = true
-        }
-        let abs = vmBase + fUpSrc[fid * MAX_UP + b]
-        vtag[abs] = vTag(a)
-        vnum[abs] = vNum(a)
-        vstr[abs] = vStr(a)
-      }
+      vmSetUp(a, b, c)
     } else if op == 48 {
       vSetN(a, 4, curClo())
     } else if op == 49 {
@@ -11111,16 +11209,7 @@ mod vmStep() {
     } else if op == 50 {
       forDepth = forDepth - 1
     } else if op == 28 {
-      if tCount >= MAX_TABLES {
-        // toInt, because the constant folder turns `MAX_TABLES | 0` into the
-        // float literal 68 and the message then reads "68.0"
-        let cap = toInt(MAX_TABLES + 0.0)
-        vmFail("too many tables (" .. (cap | 0) .. ")")
-      } else {
-        tLen[tCount] = 0
-        vSetN(a, 5, tCount + 0.0)
-        tCount = tCount + 1
-      }
+      vmNewTable(a)
     } else if op == 29 {
       let kt = keyTag(vTag(c), vNum(c))
       if vTag(b) == 2 {
@@ -11196,88 +11285,14 @@ mod vmStep() {
         }
       }
     } else if op == 31 {
-      let bt = vTag(b)
-      if bt == 5 {
-        // The cached border: it follows an append, it follows a delete, and it
-        // extends across a gap that is filled later, because tblHas asks the map
-        // the way the rest of the table code does.  All three were measured
-        // against PUC; see AGENTS.md.
-        vSetN(a, 6, tLen[toInt(vNum(b))] + 0.0)
-      } else if bt == 2 {
-        vSetN(a, 6, vStr(b).Length() + 0.0)
-      } else {
-        // PUC also names the value: "attempt to get length of a nil value", plus
-        // "(global 'print')" when it is a named one, which needs a descriptor the
-        // length operator does not carry
-        vmFail("attempt to get length of a " .. typeName(bt) .. " value")
-      }
+      vmLenOp(a, b)
     } else if op == 32 {
-      let stp = vNum(c)
-      if stp == 0.0 { vmFail("'for' step is zero") }
-      if vTag(a) == 6 && (vTag(b) != 6 || vTag(c) != 6) {
-        vSetNum(a, vNum(a))
-      }
-      let ctrl = vNum(a)
-      let lim = vNum(b)
-      if (stp > 0.0 && ctrl <= lim) || (stp < 0.0 && ctrl >= lim) {
-        let rem = floor((lim - ctrl) / stp) + 1.0
-        if 16 <= forDepth {
-          vmFail("too many nested numeric loops")
-        } else {
-          forCtrl[forDepth] = a
-          forRem[forDepth] = rem
-          forDepth = forDepth + 1
-          vmPc = vmPc + 2
-          advanced = true
-        }
-      } else {
-        advanced = false
-      }
+      advanced = vmForPrep(a, b, c)
     } else if op == 33 {
       vmForLoop(a, c)
       advanced = true
     } else if op == 34 {
-      let lt = vTag(b)
-      let rt = vTag(c)
-      // // coerces like the other arithmetic operators (PUC: '10' // 3 is 3), and
-      // a string that will not convert says "attempt to idiv a 'string' with a
-      // 'number'" where anything else says "on a <type> value".
-      let lx = arithValL(lt, vNum(b), vStr(b))
-      let rx = arithValR(rt, vNum(c), vStr(c))
-      let lbad = coerceL == 3
-      let rbad = coerceR == 3
-      if lbad || rbad {
-        vmFail("attempt to idiv a '" .. typeName(lt) .. "' with a '" .. typeName(rt) .. "'")
-      } else if lt != 6 && lt != 1 && lt != 2 || rt != 6 && rt != 1 && rt != 2 {
-        // the tag choice is hoisted out of the call: a call whose argument is a
-        // folded && or || loses the operand's tag in the compiler's register
-        // allocation, and a message that names the wrong type is worse than no
-        // message.  compute, use, write last.
-        let badT = if lt != 1 && lt != 6 && lt != 2 then lt else rt
-        vmFail("attempt to perform arithmetic on a " .. typeName(badT) .. " value")
-      } else {
-        let li = lt == 6 || coerceL == 1
-        let ri = rt == 6 || coerceR == 1
-        let x = lx
-        let y = rx
-        if y == 0.0 {
-          if li && ri {
-            vmFail("attempt to divide by zero")
-          } else {
-            vSetNum(a, x / y)
-          }
-        } else if li && ri {
-          let q = x / y
-          let t = q | 0
-          let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
-          vSetInt(a, fl)
-        } else {
-          let q = x / y
-          let t = q | 0
-          let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
-          vSetNum(a, fl)
-        }
-      }
+      vmIDiv(a, b, c)
     } else if op == 35 {
       let lt = vTag(b)
       let rt = vTag(c)
@@ -11362,11 +11377,12 @@ mod vmStep() {
 // the value is published at the end, and nothing may read it half-built. The
 // step lives here rather than in vmStep: measured in the old four-step burst,
 // the rare arm cost every program about a fifth of its per-tick time.
-// A fast dispatch: the arms a loop body and straight-line code are made of, and
-// nothing else.  Four of these plus one full vmStep is most of the 4x speed for a
-// fraction of the gates, because the three extra copies never carry the helpers
-// the expensive arms call - retCopy, retAdjust, tblSetKey, vmFail - and those are
-// what made the full unroll 2.58x the artifact.
+// A fast dispatch: the arms a loop body and straight-line code are made of.
+// The set now covers what the benchmark census shows hot -- CALL and the
+// returns, the table/length/field ops, the numeric-for entry, the upvalue
+// reads -- each shared with vmStep through a mod, so neither path can drift.
+// Left out: the arms that install machines (LOADFUNC, RETURNV/RETURNM/TAPPEND)
+// and everything cold.
 //
 // The pc advances only when an arm in THIS step matched, which is the whole point:
 // the shared tail in vmStep fires whenever `advanced` is false, and that is only
@@ -11374,10 +11390,9 @@ mod vmStep() {
 // so no arm body is edited - an earlier attempt inserted a statement per arm and
 // the compiler reported a branch type mismatch three arms later, because an arm
 // body whose last statement is a single expression gives the block its value.
-// A CHIP: vmBurst calls this four times, so as a mod the body existed four
-// times over (1,173 nodes each, 4,692 = 13% of the chip) purely to be four
-// call sites.  As a chip it is one body with four call sites, and a chip costs
-// no ticks per run -- so this is nodes removed with the tick count unchanged.
+// A CHIP: vmBurst calls this seven times, so as a mod the body existed seven
+// times over purely to be seven call sites.  As a chip it is one body with
+// seven call sites, and a chip costs no ticks per run.
 chip vmStepFast() {
   if vmHalted || vmBusy() {
     return
@@ -11609,13 +11624,26 @@ chip vmStepFast() {
   } else if op == 50 {
     forDepth = forDepth - 1
   } else if op == 29 {
+    // GETFIELD, TWO ACTING SHAPES ONLY: (a) a real table whose key IS in the
+    // map -- a missing key, a nil, a bad key leave the instruction to vmStep's
+    // full arm; (b) indexing a STRING through the library, the way PUC's string
+    // metatable makes s:upper() work, which acts unconditionally (a miss is a
+    // nil field) and is what keeps the string benchmark from paying vmStep's
+    // whole dispatch for every library call.  Both acting shapes move pc
+    // themselves; a declining shape must not, which is why 29 is NOT in the pc
+    // set below.  The vmFail branches stay vmStep's: they cost ~1,400 nodes at
+    // every copy here for an error path the full arm already owns.
     let kt = keyTag(vTag(c), vNum(c))
-    if vTag(b) == 2 {
-      // Indexing a string reaches the string library, the way PUC Lua's
-      // string metatable does.  This is what makes s:upper() work without
-      // metatables.  The table is looked up here rather than cached: the
-      // library creates it while the program runs, so a cached id would be
-      // resolved before it exists.
+    if vTag(b) == 5 {
+      if kt != 0 && !(kt == 1 && vNum(c) != floor(vNum(c))) {
+        let r = tmap.get(tkey(toInt(vNum(b)), kt, vNum(c), vStr(c)))
+        if r.Found {
+          vSet(a, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
+          vmPc = vmPc + 1
+          advanced = true
+        }
+      }
+    } else if vTag(b) == 2 {
       let sr = gmap.get("string")
       if kt == 2 && sr.Found && gtag[sr.Value] == 5 {
         let r = tmap.get(tkey(toInt(gnum[sr.Value]), kt, vNum(c), vStr(c)))
@@ -11624,38 +11652,21 @@ chip vmStepFast() {
         } else {
           vSetNil(a)
         }
-      } else {
-        vSetNil(a)
-      }
-    } else if vTag(b) != 5 {
-      // PUC says WHICH kind.  Indexing nil is the common case -- a field off a
-      // nil return, a typo'd global, `coroutine.create` on a build with no
-      // coroutines -- and "non-table" sends the reader hunting for a number or
-      // a string when the value is nil.
-      vmFail(if vTag(b) == 0 then "attempt to index a nil value"
-        else "attempt to index a " .. typeName(vTag(b)) .. " value")
-    } else if kt == 0 {
-      vmFail("table index is nil")
-    } else if kt == 1 && vNum(c) != floor(vNum(c)) {
-      vSetNil(a)
-    } else {
-      let r = tmap.get(tkey(toInt(vNum(b)), kt, vNum(c), vStr(c)))
-      if r.Found {
-        vSet(a, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
-      } else {
-        vSetNil(a)
+        vmPc = vmPc + 1
+        advanced = true
       }
     }
   } else if op == 30 {
-    let kt = keyTag(vTag(b), vNum(b))
-    if vTag(a) != 5 {
-      vmFail("attempt to index a non-table value")
-    } else if kt == 0 {
-      vmFail("table index is nil")
-    } else if kt == 1 && vNum(b) != floor(vNum(b)) {
-      vmFail("non-integer number keys are not supported")
-    } else {
-      tblSetKey(toInt(vNum(a)), kt, vNum(b), vStr(b), vTag(c), vNum(c), vStr(c))
+    // SETFIELD, HOT CASE ONLY: a real table with a usable key.  A nil or bad
+    // key leaves the raise to vmStep's arm, so 30 is not in the pc set below
+    // either; the acting case advances itself.
+    if vTag(a) == 5 {
+      let kt = keyTag(vTag(b), vNum(b))
+      if kt != 0 && !(kt == 1 && vNum(b) != floor(vNum(b))) {
+        tblSetKey(toInt(vNum(a)), kt, vNum(b), vStr(b), vTag(c), vNum(c), vStr(c))
+        vmPc = vmPc + 1
+        advanced = true
+      }
     }
   } else if op == 43 {
     // ADJUST a=src b=dst c=max: normalise the rest of the last call's results
@@ -11664,26 +11675,29 @@ chip vmStepFast() {
     let avail = if 0 < retCountV then retCountV - 1 else 0
     let n = if avail < c then avail else c
     retAdjust(vmBase + a, vmBase + b, n, c)
+  } else if op == 46 {
+    vmGetUp(a, b, c)
+  } else if op == 49 {
+    upGen[b] = upGen[b] + 1
   } else if op == 0 {
     vmHalted = true
     advanced = true
   }
-  // The same set as `op <= 15 || (17 <= op && op <= 22) || op == 24 || op == 33
-  // || op == 50`, written so it costs five comparisons instead of six: 0..15 and
-  // 17..22 together are exactly "at most 22 and not 16".  A comparison is one
-  // gate and this runs on every fast dispatch, four of them to a tick, so one
-  // fewer term is four fewer gates a tick.
+  // The set above is written as ranges so it costs a handful of comparisons:
+  // 0..22, 24, 33, 43, 46, 49, 50 are exactly the arms that leave pc alone
+  // for the tail to move.  GETFIELD (29) and SETFIELD (30) are
+  // deliberately NOT here: their fast arms take the hot case only, and an
+  // acting arm moves pc itself and reports through `advanced`, so a declining
+  // fast step leaves the instruction to the full dispatch untouched.  A
+  // comparison is one gate and this runs on every fast dispatch, so the
+  // ranges matter: the hot-set expansion is one-time in the body, not per
+  // term here.
   //
   // The parentheses round the WHOLE set, not just its first term: `||` binds
   // looser than `&&`, so an unbracketed tail would bind only the last term and
   // leave `!advanced` guarding nothing but it.
-  // The set is now "0..22, 24, 29, 30, 33, 43, 50": CONCAT (16) joined the fast
-  // path, which also makes the guard one comparison cheaper than the
-  // "0..22 and not 16" spelling it replaces.  The parentheses round the WHOLE
-  // set, not just its first term: `||` binds looser than `&&`, so an
-  // unbracketed tail would bind only the last term and leave `!advanced`
-  // guarding nothing but it.
-  if (op <= 22 || op == 24 || op == 33 || op == 50 || op == 29 || op == 30 || op == 43)
+  if (op <= 22 || op == 24 || op == 33 || op == 43 || op == 46 || op == 49
+     || op == 50)
     && !advanced && !vmHalted {
     vmPc = vmPc + 1
     if vmPc >= bop.length() {
@@ -11697,17 +11711,27 @@ mod vmBurst() {
   if cloActive {
     cloStep()
   } else {
-    // FIVE cheap dispatches and one full one.  vmStepFast is a CHIP -- one
-    // shared body -- so a call site costs its pins and not an inlined copy,
-    // which is what makes the fifth one affordable (the mod era priced every
-    // extra dispatch at ~19k nodes; a chip-boundary call is ~0.9k).  Each
-    // vmStep re-reads the routing flags, so a closure fill, a pcall or a
-    // micro-step machine that the first step started is serviced by the second
-    // instead of dispatched past - which is what made every upvalue program
-    // produce no output at all before the guard moved out of vmBurst and into
-    // vmStep.
-    // Measured on the benchmark: 4+1 gives 1,056 run ticks, 5+1 gives 902 --
-    // the run is instruction-bound at the slot budget, so a slot is a tick.
+    // FIVE cheap dispatches and one full one, inside the chip's node budget.
+    // vmStepFast is a CHIP -- one shared body -- so a call site costs its pins
+    // (~2,080 with the hot arms in the body, ~1k in the old mod era, and a
+    // full inlined vmStep copy was ~19k), and the cheap body carries the hot
+    // ARMS rather than the chain being copied.  Measured against the 40,362
+    // node ceiling: five sites with the hot 29/30 and the GETUP/GEN arms land
+    // at 40,329 -- calls 134 -> 113, closures 214 -> 172, pcall 294 -> 214 --
+    // and the arms that did not fit (RETURNV 26, LEN 31, FORPREP 32, NEWTABLE
+    // 28, SETUP 47, ~1,430 nodes together) stay in vmStep's chain: at four
+    // sites they bought nothing that a fifth site and the hot arms do not
+    // already buy, and adding them at five sites pushed the chip past the
+    // ceiling with `string` slower.  Seven sites were 73,053 (callloop 393
+    // -> 243 for 32,691 nodes), and a CALL arm in the fast body costs 13,576
+    // nodes at four sites alone (gateHigh's builtin dispatch is inlined into
+    // every copy), so CALL stays in vmStep's chain.  Each vmStep re-reads the
+    // routing flags, so a closure fill, a pcall or a micro-step machine that
+    // the first step started is serviced by the second instead of dispatched
+    // past - which is what made every upvalue program produce no output at
+    // all before the guard moved out of vmBurst and into vmStep.  A `for`
+    // around the chip call is the erase-walk freeze shape (the chain after a
+    // shared microchip is a union against THAT tick): written sites, measured.
     vmStepFast()
     vmStepFast()
     vmStepFast()
@@ -11797,9 +11821,10 @@ on Change(run) {
 // do work: it used to ask for a parse on every grid read, which meant a chip that
 // was never asked to run parsed anyway.  It no longer asks at all - the CLOCK
 // raises the request, once, while the text is unparsed, and `sched` refuses a
-// request when there is nothing to compile.  A read is a read.
-on ReadBrickGrid() {
-}
+// request when there is nothing to compile.  A read is a read, so there is no
+// handler: the grid gate costs a node for a body that does nothing, and the
+// official simulator refuses it (`reads BrickGrid, a gate the simulator does
+// not model`), which is what makes the suite's sim the one without it.
 
 // The ONLY place a parse starts, and the only place that can be wrong about it.
 //
