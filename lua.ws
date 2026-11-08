@@ -440,57 +440,57 @@ const NB = 27
 // string function pays for one family, not for all eight.
 // Library functions are written as field assignments, not `function string.f`:
 // the parser does not take a dotted name on `function` yet.
-const LIB_iter = "function _ipairs_iter(a, b) b = b + 1 local c = a[b] if c ~= nil then return b, c end end\nfunction ipairs(a) return _ipairs_iter, a, 0 end\nfunction pairs(a) return next, a, nil, nil end\n"
-const LIB_str_fmt = "string = string or {}\nstring.format = _fmt\n"
+const LIB_iter = "function _ipairs_iter(a, b) b = b + 1 local c = a[b] if c ~= nil then return b, c end end function ipairs(a) return _ipairs_iter, a, 0 end function pairs(a) return next, a, nil, nil end "
+const LIB_str_fmt = "string = string or {} string.format = _fmt "
 // The wrappers pass their arguments straight through rather than naming them:
 // a named parameter pads a missing one with nil, and PUC's "got no value" and
 // "got nil" are different messages.  A vararg call keeps the real count.
-const LIB_str_pat = "string = string or {}\nstring.find = function(...) return _pat(0, ...) end\nstring.match = function(...) return _pat(1, ...) end\n"
+const LIB_str_pat = "string = string or {} string.find = function(...) return _pat(0, ...) end string.match = function(...) return _pat(1, ...) end "
 // gmatch is a gate that answers all three values itself, so the piece is the
 // binding and nothing else: 25 characters, where the gsub piece is 3109.
-const LIB_str_gmatch = "string = string or {}\nstring.gmatch = _gmatch\n"
-const LIB_math_const = "math = math or {}\nmath.pi = 3.141592653589793\nmath.huge = 1.7976931348623157e308\nmath.maxinteger = 9223372036854775807\nmath.mininteger = -9223372036854775808\n"
-const LIB_math_int = "math = math or {}\nmath.floor = function(a) return _m(1, a, 0) end\nmath.ceil = function(a) return _m(2, a, 0) end\nmath.tointeger = function(a) return _m(13, a, 0) end\nmath.type = function(a) return _m(14, a, 0) end\nmath.sqrt = function(a) return _m(3, a, 0) end\n"
-const LIB_math_trig = "math = math or {}\nmath.sin = function(a) return _m(4, a, 0) end\nmath.cos = function(a) return _m(5, a, 0) end\nmath.tan = function(a) return _m(6, a, 0) end\nmath.asin = function(a) return _m(7, a, 0) end\nmath.acos = function(a) return _m(8, a, 0) end\nmath.atan = function(b, a) return _m(9, b, a or 1) end\n"
-const LIB_math_exp = "math = math or {}\nmath.exp = function(a) return _m(10, a, 0) end\nmath.log = function(a, c)\nif c == nil then return _m(11, a, 0) end\nif c == 10 then return _m(12, a, 0) end\nreturn _m(11, a, 0) / _m(11, c, 0)\nend\nmath.ldexp = function(a, d) return a * (2.0 ^ d) end\n"
-const LIB_tab_concat = "table = table or {}\ntable.concat = function(a, b, c, d)\nb = b or \"\"\nc = c or 1\nd = d or #a\nlocal e = \"\"\nfor f = c, d do\nlocal g = a[f]\nif f > c then e = e .. b end\ne = e .. g\nend\nreturn e\nend\n"
-const LIB_tab_sort = "table = table or {}\n_lt = function(c, d) return c < d end\ntable.sort = function(e, f)\nlocal g = f or _lt\nfor h = 2, #e do\nlocal k = e[h]\nlocal l = h - 1\nwhile l >= 1 and g(k, e[l]) do e[l + 1] = e[l] l = l - 1 end\ne[l + 1] = k\nend\nend\n"
-const LIB_io = "io = io or {}\nio.read = function(...) if select('#', ...) == 0 then return _rd('*l') end return _rd((...)) end\nio.write = function(...) for a = 1, select('#', ...) do _wr(tostring((select(a, ...)))) end end\n_io_next = function() local b = _rd('*l') if b == nil then return nil end return b end\nio.lines = function() _rd('*r') return _io_next end\n"
-const LIB_str_gsub = "string = string or {}\nstring.gsub = function(c, e, f, g)\nif type(c) == \"number\" then c = tostring(c) end\nlocal h, l, t, u, x = #c, \"\", 1, 0, -1\nlocal y = _s(1, e, 0, 1) == \"^\"\nlocal z = type(f)\nif f == nil then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got no value)\", 2) end\nif z == \"number\" then f = tostring(f) z = \"string\" end\nlocal aa = function(v)\nlocal tv = type(v)\nif tv == \"string\" then return v end\nif tv == \"number\" then return tostring(v) end\nif tv == \"boolean\" then error(\"invalid replacement value (a boolean)\", 2) end\nerror(\"invalid replacement value (a \" .. tv .. \")\", 2)\nend\nlocal ab = function(kt, kr, aa, ac, m)\nif kt == \"function\" then\nlocal v, w\nif ac[3] == 0 then v, w = kr(m) else v, w = kr(unpack(ac, 4, 3 + ac[3])) end\nif v == nil or v == false then return m end\nif w == nil or w == false then return aa(v) end\nreturn aa(v) .. aa(w)\nelseif kt == \"table\" then\nlocal k = m\nif ac[3] > 0 then k = ac[4] end\nlocal v = kr[k]\nif v == nil or v == false then return m end\nreturn aa(v)\nelse\nlocal o, i, rl = \"\", 1, #kr\nwhile i <= rl do\nlocal j = string.find(kr, \"%\", i, true)\nif j == nil then o = o .. _s(1, kr, i - 1, rl - i + 1) break end\nif i < j then o = o .. _s(1, kr, i - 1, j - i) end\nif j == rl then error(\"invalid use of '%' in replacement string\", 2) end\nlocal d = _s(1, kr, j, 1)\nif d == \"%\" then o = o .. \"%\"\nelseif d == \"0\" then o = o .. m\nelse\nlocal q = _s(4, d, 0, 0) - 48\nif q < 1 or 9 < q then error(\"invalid use of '%' in replacement string\", 2) end\nif 1 < q and ac[3] < q then error(\"invalid capture index %\" .. d, 2) end\nif q == 1 and ac[3] == 0 then o = o .. m else o = o .. aa(ac[q + 3]) end\nend\ni = j + 2\nend\nreturn o\nend\nend\nif z ~= \"string\" and z ~= \"table\" and z ~= \"function\" then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got \" .. z .. \")\", 2) end\nif g == nil then g = h + 1 end\nif type(g) ~= \"number\" then error(\"bad argument #4 to 'string.gsub' (number expected, got \" .. type(g) .. \")\", 2) end\ng = _m(13, g, 0)\nif g == nil then error(\"bad argument #4 to 'string.gsub' (number has no integer representation)\", 2) end\nif g < 1 then return c, 0 end\nwhile u < g do\nlocal ac = {_pat(2, c, e, t)}\nif ac[1] == nil then break end\nlocal ad, ae = ac[1], ac[2]\nif ae == x then\nif t <= h then l = l .. _s(1, c, t - 1, 1) t = t + 1 else break end\nelse\nif t < ad then l = l .. _s(1, c, t - 1, ad - t) end\nl = l .. ab(z, f, aa, ac, _s(1, c, ad - 1, ae - ad + 1))\nu = u + 1\nt = ae + 1\nend\nx = ae\nif y then break end\nend\nreturn l .. _s(1, c, t - 1, h - t + 1), u\nend\n"
-const LIB_tonumber = "tonumber = function(...)\nlocal a = select(\"#\", ...)\nlocal b = select(1, ...)\nlocal c = select(2, ...)\nif a == 0 then\nerror(\"bad argument #1 to 'tonumber' (value expected)\", 2)\nend\nif c ~= nil then\nif type(b) ~= \"string\" then\nerror(\"bad argument #1 to 'tonumber' (string expected, got \" .. type(b) .. \")\", 2)\nend\nif c < 2 or c > 36 then\nerror(\"bad argument #2 to 'tonumber' (base out of range)\", 2)\nend\nreturn _tonum_int(b, c)\nend\nif type(b) == \"number\" then return b end\nif type(b) ~= \"string\" then return nil end\nlocal d = _m(15, b, 0)\nif d ~= nil then return d end\nif _pat(0, b, \"0x\", 1, 1) or _pat(0, b, \"0X\", 1, 1) then return _tonum_hex(b) end\nreturn nil\nend\n"
-const LIB_math_random = "math = math or {}\nlocal _rs = 12345\nmath.random = function(c, d, ...)\nif select(\"#\", c, d, ...) > 2 then\nerror(\"wrong number of arguments\", 2)\nend\nlocal e = (_rs * 1664525 + 1013904223) & 0xFFFFFFFF\n_rs = e\nif c == nil then\nreturn e / 4294967296.0\nend\nif type(c) == \"string\" then c = c + 0 end\nif _m(13, c, 0) == nil then\nerror(\"bad argument #1 to 'random' (number has no integer representation)\", 2)\nend\nlocal f, g\nif d == nil then\nf, g = 1, c\nelse\nif type(d) == \"string\" then d = d + 0 end\nif _m(13, d, 0) == nil then\nerror(\"bad argument #2 to 'random' (number has no integer representation)\", 2)\nend\nf, g = c, d\nargn = \"2\"\nend\nif g < f then\nerror(\"bad argument #1 to 'random' (interval is empty)\", 2)\nend\nreturn f + _m(1, e / 4294967296.0 * (g - f + 1), 0)\nend\nmath.randomseed = function(h, i)\nlocal j = 0\nlocal k = 0\nif h ~= nil then j = _m(1, h, 0) end\nif i ~= nil then k = _m(1, i, 0) end\nlocal l = (j * 1013904223 + k) & 0xFFFFFFFF\nif l == 0 then l = 1 end\n_rs = l\nreturn j, k\nend\n"
-const LIB_io_stderr = "io = io or {}\nio.stderr = {\nwrite = function(a, ...)\nfor b = 1, select(\"#\", ...) do _wr(tostring((select(b, ...)))) end\nreturn a\nend,\nflush = function(a) return a end,\n}\n"
-const LIB_os_exit = "os = os or {}\nos.exit = function(a)\nif a == nil or a == true or a == 0 then error(\"\", 0) else error(\"exit: \" .. tostring(a), 0) end\nend\n"
-const LIB_tonumber_hex = "local function _tonum_hex(s)\nlocal a = #s\nlocal c = 0\nlocal d = 0\nwhile c < a do\nd = _s(4, s, c, 0)\nif d ~= 32 and d ~= 9 and d ~= 10 and d ~= 13 and d ~= 12 and d ~= 11 then break end\nc = c + 1\nend\nlocal e = a - 1\nwhile e >= c do\nd = _s(4, s, e, 0)\nif d ~= 32 and d ~= 9 and d ~= 10 and d ~= 13 and d ~= 12 and d ~= 11 then break end\ne = e - 1\nend\nif c > e then return nil end\nlocal f = false\nd = _s(4, s, c, 0)\nif d == 43 or d == 45 then\nf = d == 45\nc = c + 1\nend\nif _s(1, s, c, 2) ~= \"0x\" and _s(1, s, c, 2) ~= \"0X\" then return nil end\nc = c + 2\nlocal g = 0\nlocal h = 0\nlocal k = 0\nlocal l = 0\nlocal o = false\nlocal p = 0\nlocal q = false\nwhile c <= e do\nd = _s(4, s, c, 0)\nlocal r = nil\nif d >= 48 and d <= 57 then r = d - 48 end\nif d >= 65 and d <= 70 then r = d - 55 end\nif d >= 97 and d <= 102 then r = d - 87 end\nif r == nil then break end\nl = l + 1\nif r ~= 0 or o then\no = true\nif h < 13 then\ng = g * 16 + r\nh = h + 1\nelseif k == 0 then\np = r\nk = k + 1\nelse\nif r ~= 0 then q = true end\nk = k + 1\nend\nend\nc = c + 1\nend\nif p > 8 or (p == 8 and (q or g % 2 == 1)) then\ng = g + 1\nend\nlocal t = 0\nlocal u = 0\nlocal w = false\nlocal x = true\nif c <= e and _s(4, s, c, 0) == 46 then\nx = false\nc = c + 1\nlocal y = 0\nwhile c <= e do\nd = _s(4, s, c, 0)\nlocal r = nil\nif d >= 48 and d <= 57 then r = d - 48 end\nif d >= 65 and d <= 70 then r = d - 55 end\nif d >= 97 and d <= 102 then r = d - 87 end\nif r == nil then break end\nl = l + 1\nu = u + 1\nif r ~= 0 or w then\nw = true\nif y < 13 then\nt = t * 16 + r\ny = y + 1\nend\nend\nc = c + 1\nend\nend\nif l == 0 then return nil end\nlocal z = 0\nlocal aa = true\nif c <= e then\nd = _s(4, s, c, 0)\nif d == 112 or d == 80 then\naa = false\nc = c + 1\nlocal ab = false\nif c <= e then\nd = _s(4, s, c, 0)\nif d == 43 or d == 45 then\nab = d == 45\nc = c + 1\nend\nend\nlocal ac = 0\nwhile c <= e do\nd = _s(4, s, c, 0)\nif d < 48 or d > 57 then break end\nz = z * 10 + (d - 48)\nac = ac + 1\nc = c + 1\nend\nif ac == 0 then return nil end\nif ab then z = -z end\nend\nend\nif c <= e then return nil end\nif x and aa then\nlocal ad = g\nif k ~= 0 then ad = g * (16 ^ k) end\nif ad < 9007199254740992 then\nlocal ae = _m(13, ad, 0)\nif ae ~= nil then\nif f then ae = -ae end\nreturn ae\nend\nend\nend\nlocal af = 0\nif g ~= 0 then af = g * (2 ^ (4 * k + z)) end\nif u > 0 and t ~= 0 then af = af + t * (2 ^ (-4 * u + z)) end\nif af == 0 then\nif f then return -0.0 else return 0.0 end\nend\nif f then af = -af end\nreturn af\nend\n"
-const LIB_tab_unpack = "table = table or {}\ntable.unpack = unpack\n"
-const LIB_tab_pack = "table = table or {}\ntable.pack = function(...) local a = {...} a.n = select('#', ...) return a end\n"
-const LIB_tab_insert = "table = table or {}\ntable.insert = function(a, ...)\nlocal b = #a\nlocal d = select('#', ...)\nif d == 1 then\na[b + 1] = (...)\nelseif d == 2 then\nlocal e, f = ...\nlocal g = _m(13, e, 0)\nif g == nil then\nerror(\"bad argument #2 to 'table.insert' (number has no integer representation)\", 2)\nend\nif g < 1 or g > b + 1 then\nerror(\"bad argument #2 to 'table.insert' (position out of bounds)\", 2)\nend\nfor h = b, g, -1 do a[h + 1] = a[h] end\na[g] = f\nelse\nerror(\"wrong number of arguments to 'insert'\", 2)\nend\nend\n"
-const LIB_tab_remove = "table = table or {}\ntable.remove = function(a, b)\nlocal c = #a\nif b == nil then b = c end\nlocal d = _m(13, b, 0)\nif d == nil then\nerror(\"bad argument #2 to 'table.remove' (number has no integer representation)\", 2)\nend\nif d ~= c and (d < 1 or c + 1 < d) then error(\"bad argument #2 to 'table.remove' (position out of bounds)\", 2) end\nlocal e = a[d]\nlocal f = d\nwhile f < c do a[f] = a[f + 1] f = f + 1 end\na[f] = nil\nreturn e\nend\n"
-const LIB_str_byte = "string = string or {}\nstring.byte = function(...)\nlocal a = select('#', ...) == 0\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nlocal f = e\nif a then f = \"no value\" end\nerror(\"bad argument #1 to 'string.byte' (string expected, got \" .. f .. \")\", 2)\nend\nc = c or 1\nd = d or c\nif c < 0 then c = #b + c + 1 end\nif d < 0 then d = #b + d + 1 end\nif c < 1 then c = 1 end\nif d > #b then d = #b end\nif c > d then return end\nif c == d then return _s(4, b, c - 1, 0) end\nlocal g = {}\nfor h = c, d do g[#g + 1] = _s(4, b, h - 1, 0) end\nreturn unpack(g, 1, #g)\nend\n"
-const LIB_str_char = "string = string or {}\nstring.char = function(...)\nlocal a = \"\"\nfor b = 1, select('#', ...) do a = a .. _s(5, \"\", select(b, ...), 0) end\nreturn a\nend\n"
-const LIB_tonumber_base = "local function _tonum_int(s, base)\nlocal a = #s\nlocal c = 0\nlocal e = 0\nwhile c < a do\ne = _s(4, s, c, 0)\nif e ~= 32 and e ~= 9 and e ~= 10 and e ~= 13 and e ~= 12 and e ~= 11 then break end\nc = c + 1\nend\nlocal f = a - 1\nwhile f >= c do\ne = _s(4, s, f, 0)\nif e ~= 32 and e ~= 9 and e ~= 10 and e ~= 13 and e ~= 12 and e ~= 11 then break end\nf = f - 1\nend\nif c > f then return nil end\nlocal g = false\ne = _s(4, s, c, 0)\nif e == 43 or e == 45 then\ng = e == 45\nc = c + 1\nend\nlocal h = 0\nlocal k = 0\nlocal l = 0\nlocal o = false\nlocal p = 0\nwhile c <= f do\ne = _s(4, s, c, 0)\nlocal q = nil\nif e >= 48 and e <= 57 then q = e - 48 end\nif e >= 65 and e <= 90 then q = e - 55 end\nif e >= 97 and e <= 122 then q = e - 87 end\nif q == nil or q >= base then break end\np = p + 1\nif q ~= 0 or o then\no = true\nif k < 10 then\nh = h * base + q\nk = k + 1\nelse\nl = l + 1\nend\nend\nc = c + 1\nend\nif p == 0 or c <= f then return nil end\nlocal r = h\nif h == 0 then\nr = 0\nelseif l > 0 then\nr = h * (base ^ l)\nend\nif g then r = -r end\nlocal t = _m(13, r, 0)\nif t ~= nil then return t end\nreturn r\nend\n"
-const LIB_bit32 = "bit32 = bit32 or {}\nbit32.bnot = function(c) return ~c & 0xFFFFFFFF end\nbit32.band = function(d, e, g, ...)\nif not g then\nreturn ((d or -1) & (e or -1)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d & e & g\nfor k = 1, #h do j = j & h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.bor = function(d, e, g, ...)\nif not g then\nreturn ((d or 0) | (e or 0)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d | e | g\nfor k = 1, #h do j = j | h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.bxor = function(d, e, g, ...)\nif not g then\nreturn ((d or 0) ~ (e or 0)) & 0xFFFFFFFF\nelse\nlocal h = {...}\nlocal j = d ~ e ~ g\nfor k = 1, #h do j = j ~ h[k] end\nreturn j & 0xFFFFFFFF\nend\nend\nbit32.btest = function(...) return bit32.band(...) ~= 0 end\nbit32.lshift = function(c, l)\nif l * l >= 1024 then return 0 end\nc = c & 0xFFFFFFFF\nif l < 16 then return (c << l) & 0xFFFFFFFF end\nreturn ((c % 65536) << l) & 0xFFFFFFFF\nend\nbit32.rshift = function(c, l)\nif l * l >= 1024 then return 0 end\nreturn ((c & 0xFFFFFFFF) >> l) & 0xFFFFFFFF\nend\nbit32.arshift = function(c, l)\nc = c & 0xFFFFFFFF\nif l <= 0 or (c & 0x80000000) == 0 then\nreturn (c >> l) & 0xFFFFFFFF\nelse\nreturn ((c >> l) | ~(0xFFFFFFFF >> l)) & 0xFFFFFFFF\nend\nend\nbit32.lrotate = function(c, l)\nl = l & 31\nc = c & 0xFFFFFFFF\nc = bit32.lshift(c, l) | (c >> (32 - l))\nreturn c & 0xFFFFFFFF\nend\nbit32.rrotate = function(c, l) return bit32.lrotate(c, -l) end\nlocal function m(n, o)\no = o or 1\nassert(n >= 0, \"field cannot be negative\")\nassert(o > 0, \"width must be positive\")\nassert(n + o <= 32, \"trying to access non-existent bits\")\nreturn n, ~(-1 << o)\nend\nbit32.extract = function(c, n, o)\nlocal n, p = m(n, o)\nreturn (c >> n) & p\nend\nbit32.replace = function(c, q, n, o)\nlocal n, p = m(n, o)\nq = q & p\nc = (c & ~(p << n)) | (q << n)\nreturn c & 0xFFFFFFFF\nend\n"
-const LIB_utf8 = "utf8 = utf8 or {}\nlocal _floor = {0, 0x80, 0x800, 0x10000, 0x200000, 0x4000000}\nlocal function a(p, q, u)\nlocal b = _s(4, p, q - 1, 0)\nif b == nil then return nil end\nif b < 0x80 then return b, 1 end\nlocal e, f\nif b < 0xC2 then return nil end\nif b < 0xE0 then e, f = 2, b & 0x1F\nelseif b < 0xF0 then e, f = 3, b & 0x0F\nelseif b < 0xF8 then e, f = 4, b & 0x07\nelseif b < 0xFC then e, f = 5, b & 0x03\nelseif b < 0xFE then e, f = 6, b & 0x01\nelse return nil end\nfor g = 1, e - 1 do\nlocal h = _s(4, p, q + g - 1, 0)\nif h == nil or h < 0x80 or h > 0xBF then return nil end\nf = f * 64 + (h & 0x3F)\nend\nif f < _floor[e] then return nil end\nif u then\nif f >= 0x80000000 then return nil end\nelseif f > 0x10FFFF or (f >= 0xD800 and f <= 0xDFFF) then\nreturn nil\nend\nreturn f, e\nend\nlocal function l(p, g)\nwhile g > 1 do\nlocal b = _s(4, p, g - 1, 0)\nif b == nil or b < 0x80 or b >= 0xC0 then break end\ng = g - 1\nend\nreturn g\nend\nlocal function m(p, q, what)\nlocal o = #p\nif q == nil then return nil end\nif q < 0 then q = o + q + 1 end\nif q < 1 or q > o + 1 then\nerror(\"bad argument #3 to '\" .. what .. \"' (position out of bounds)\", 3)\nend\nreturn q, o\nend\nutf8.len = function(p, q, t, u)\nlocal e = #p\nq = q or 1\nt = t or e\nif q < 0 then q = e + q + 1 end\nif t < 0 then t = e + t + 1 end\nif q < 1 or q > e + 1 then\nerror(\"bad argument #2 to 'utf8.len' (initial position out of bounds)\", 2)\nend\nif t < 0 or t > e then\nerror(\"bad argument #3 to 'utf8.len' (final position out of bounds)\", 2)\nend\nlocal g, x = q, 0\nwhile g <= t do\nlocal _, y = a(p, g, u)\nif y == nil then return nil, g end\ng, x = g + y, x + 1\nend\nreturn x\nend\nutf8.offset = function(p, e, q)\nlocal o = #p\nif e == 0 then\nq, o = m(p, q or 1, \"utf8.offset\")\nq = l(p, q)\nlocal _, y = a(p, q, true)\nif y == nil then return nil end\nreturn q, q + y - 1\nend\nif e > 0 then\nq, o = m(p, q or 1, \"utf8.offset\")\nlocal g, y = q, 1\nfor t = 1, e do\nif g > o + 1 then return nil end\nif g == o + 1 then\nif t == e then return g, g end\nreturn nil\nend\nlocal _, z = a(p, g, true)\nif z == nil then return nil end\ng, y = g + z, z\nend\nreturn g - y, g - 1\nend\nq, o = m(p, q or o + 1, \"utf8.offset\")\nlocal g, y = q, 1\nfor _ = 1, -e do\nif g <= 1 then return nil end\ng = l(p, g - 1)\nlocal _, z = a(p, g, true)\nif z == nil then return nil end\ny = z\nend\nreturn g, g + y - 1\nend\nutf8.codepoint = function(p, q, t, u)\nlocal e = #p\nq = q or 1\nt = t or q\nif q < 0 then q = e + q + 1 end\nif t < 0 then t = e + t + 1 end\nif q < 1 or q > e + 1 then\nerror(\"bad argument #2 to 'utf8.codepoint' (out of bounds)\", 2)\nend\nif t > e then\nerror(\"bad argument #3 to 'utf8.codepoint' (out of bounds)\", 2)\nend\nif t < q then return end\nlocal x = {}\nlocal g = q\nwhile g <= t do\nlocal f, y = a(p, g, u)\nif y == nil then error(\"invalid UTF-8 code\", 2) end\nx[#x + 1] = f\ng = g + y\nend\nreturn unpack(x, 1, #x)\nend\n"
-const LIB_utf8_char = "utf8 = utf8 or {}\nlocal _lim = {0x80, 0x800, 0x10000, 0x200000, 0x4000000}\nlocal _lead = {0, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC}\nutf8.char = function(...)\nlocal a = \"\"\nfor b = 1, select('#', ...) do\nlocal c = select(b, ...)\nif c < 0 or c >= 0x80000000 then\nerror(\"bad argument #1 to 'utf8.char' (value out of range)\", 2)\nend\nif c < 0x80 then\na = a .. _s(5, \"\", c, 0)\nelse\nlocal d = 2\nwhile d < 6 and c >= _lim[d] do d = d + 1 end\na = a .. _s(5, \"\", _lead[d] + (c >> (6 * (d - 1))), 0)\nfor e = d - 2, 0, -1 do\na = a .. _s(5, \"\", 0x80 + ((c >> (6 * e)) & 0x3F), 0)\nend\nend\nend\nreturn a\nend\n"
-const LIB_os_date = "os = os or {}\nlocal function a(p)\nreturn (p % 4 == 0 and p % 100 ~= 0) or p % 400 == 0\nend\nlocal _md = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}\nlocal _mn = {\"January\", \"February\", \"March\", \"April\", \"May\", \"June\", \"July\",\n\"August\", \"September\", \"October\", \"November\", \"December\"}\nlocal _wn = {\"Sunday\", \"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\",\n\"Saturday\"}\nlocal function b(p, u, r)\nif u <= 2 then p, u = p - 1, u + 12 end\nlocal e = (p >= 0 and p or p - 399) // 400\nlocal g = p - e * 400\nlocal j = (153 * (u - 3) + 2) // 5 + r - 1\nlocal l = g * 365 + g // 4 - g // 100 + j\nreturn e * 146097 + l - 719468\nend\nlocal function o(z)\nz = z + 719468\nlocal e = (z >= 0 and z or z - 146096) // 146097\nlocal l = z - e * 146097\nlocal g = (l - l // 1460 + l // 36524 - l // 146096) // 365\nlocal p = g + e * 400\nlocal j = l - (365 * g + g // 4 - g // 100)\nlocal q = (5 * j + 2) // 153\nlocal r = j - (153 * q + 2) // 5 + 1\nlocal u = q + 3\nif u > 12 then p, u = p + 1, u - 12 end\nreturn p, u, r\nend\nlocal function v(ak)\nak = _m(13, ak, 0) or ak\nlocal x = ak // 86400\nlocal aa = ak - x * 86400\nlocal ab = aa // 3600\nlocal ac = (aa - ab * 3600) // 60\nlocal ad = aa - ab * 3600 - ac * 60\nlocal p, u, r = o(x)\nif p < -2147483648 or p > 2147483647 then\nerror(\"date result cannot be represented in this installation\", 3)\nend\nlocal ae = (x + 4) % 7 + 1\nif ae < 1 then ae = ae + 7 end\nlocal af = b(p, u, r) - b(p, 1, 1) + 1\nreturn p, u, r, ab, ac, ad, ae, af\nend\nlocal function ag(n)\nn = n - n % 1\nif n < 10 then return \"0\" .. n end\nreturn \"\" .. n\nend\nlocal function ah(af, ap)\nlocal ai = (7 - ap) % 7\nif af - 1 < ai then return \"00\" end\nreturn ag(1 + (af - 1 - ai) // 7)\nend\nos.date = function(aj, ak)\nif aj == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nif aj == \"\" or aj == \"!\" then return \"\" end\nlocal al = 1\nif _s(1, aj, 0, 1) == \"!\" then al = 2 end\nif _s(1, aj, al - 1, 2) == \"*t\" and al + 2 > #aj then\nif ak == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal p, u, r, ab, ac, ad, ae, af = v(ak)\nreturn {year = p, month = u, day = r, hour = ab, min = ac, sec = ad,\nwday = ae, yday = af, isdst = false}\nend\nlocal am = false\nlocal an = al\nwhile an <= #aj do\nif _s(1, aj, an - 1, 1) == \"%\" then am = true break end\nan = an + 1\nend\nif not am then\nif al == 1 then return aj end\nreturn _s(1, aj, al - 1, #aj - al + 1)\nend\nif ak == nil then\nerror(\"bad argument #1 to 'os.date' (no clock)\", 2)\nend\nlocal p, u, r, ab, ac, ad, ae, af = v(ak)\nlocal ao = ae - 1\nlocal ap = (ao - (af - 1)) % 7\nlocal aq = \"\"\nlocal ar = al\nwhile ar <= #aj do\nlocal as = _s(1, aj, ar - 1, 1)\nif as ~= \"%\" then\naq = aq .. as\nar = ar + 1\nelse\nlocal at = _s(1, aj, ar, 1)\nif (at == \"E\" or at == \"O\") and ar + 1 <= #aj then\nat = at .. _s(1, aj, ar + 1, 1)\nar = ar + 1\nend\nif at == \"Y\" then aq = aq .. p\nelseif at == \"m\" then aq = aq .. ag(u)\nelseif at == \"d\" then aq = aq .. ag(r)\nelseif at == \"H\" then aq = aq .. ag(ab)\nelseif at == \"M\" then aq = aq .. ag(ac)\nelseif at == \"S\" then aq = aq .. ag(ad)\nelseif at == \"w\" then aq = aq .. ao\nelseif at == \"y\" or at == \"Oy\" then aq = aq .. ag(p % 100)\nelseif at == \"j\" then\nlocal au = \"\" .. af\nwhile #au < 3 do au = \"0\" .. au end\naq = aq .. au\nelseif at == \"U\" then aq = aq .. ah(af, ap)\nelseif at == \"W\" then aq = aq .. ah(af, (ap + 6) % 7)\nelseif at == \"a\" then aq = aq .. _s(1, _wn[ao + 1], 0, 3)\nelseif at == \"A\" then aq = aq .. _wn[ao + 1]\nelseif at == \"b\" or at == \"h\" then aq = aq .. _s(1, _mn[u], 0, 3)\nelseif at == \"B\" then aq = aq .. _mn[u]\nelseif at == \"p\" then aq = aq .. (ab < 12 and \"AM\" or \"PM\")\nelseif at == \"c\" then\naq = aq .. ag(u) .. \"/\" .. ag(r) .. \"/\" .. ag(p % 100) .. \" \"\n.. ag(ab) .. \":\" .. ag(ac) .. \":\" .. ag(ad)\nelseif at == \"x\" or at == \"Ex\" then\naq = aq .. ag(u) .. \"/\" .. ag(r) .. \"/\" .. ag(p % 100)\nelseif at == \"X\" then\naq = aq .. ag(ab) .. \":\" .. ag(ac) .. \":\" .. ag(ad)\nelseif at == \"e\" then\naq = aq .. (r < 10 and \" \" .. r or \"\" .. r)\nelseif at == \"s\" then aq = aq .. (ak - ak % 1)\nelseif at == \"%\" then aq = aq .. \"%\"\nelse aq = aq .. \"%\" .. at\nend\nar = ar + 2\nend\nend\nreturn aq\nend\n"
-const LIB_raw = "rawequal = function(c, d) return c == d end\nrawget = function(e, f) return e[f] end\nrawset = function(e, f, g) e[f] = g return e end\nrawlen = function(e) return #e end\n"
-const LIB_os_env = "os = os or {}\nos.getenv = function(...)\nif select('#', ...) == 0 then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got no value)\", 2)\nend\nlocal a = ...\nif a == nil then\nerror(\"bad argument #1 to 'os.getenv' (string expected, \"\n.. \"got nil)\", 2)\nend\nreturn nil\nend\n"
-const LIB_os_clock = "os = os or {}\nos.clock = function() return clock() + 0.0 end\nos.difftime = function(c, d) return c - d + 0.0 end\nos.setlocale = function(c, d)\nif c == nil or c == \"C\" then return \"C\" end\nreturn nil\nend\n"
-const LIB_math_ult = "math = math or {}\nlocal function _ult_num(f)\nreturn f + 0\nend\nmath.ult = function(...)\nlocal c = select(\"#\", ...)\nif c == 0 then\nerror(\"bad argument #1 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal d = select(1, ...)\nlocal e = type(d)\nif e ~= \"number\" and e ~= \"string\" then\nerror(\"bad argument #1 to 'math.ult' (number expected, got \" .. e .. \")\", 2)\nend\nif e == \"string\" then\nlocal f = _m(15, d, 0)\nif f == nil then\nerror(\"bad argument #1 to 'math.ult' (number expected, got string)\", 2)\nend\nd = f\nend\nlocal g = _m(13, d, 0)\nif g == nil then\nerror(\"bad argument #1 to 'math.ult' (number has no integer representation)\", 2)\nend\nif c < 2 then\nerror(\"bad argument #2 to 'math.ult' (number expected, got no value)\", 2)\nend\nlocal h = select(2, ...)\nlocal i = type(h)\nif i ~= \"number\" and i ~= \"string\" then\nerror(\"bad argument #2 to 'math.ult' (number expected, got \" .. i .. \")\", 2)\nend\nif i == \"string\" then\nlocal j = _m(15, h, 0)\nif j == nil then\nerror(\"bad argument #2 to 'math.ult' (number expected, got string)\", 2)\nend\nh = j\nend\nlocal k = _m(13, h, 0)\nif k == nil then\nerror(\"bad argument #2 to 'math.ult' (number has no integer representation)\", 2)\nend\nif g < 0 then\nif k < 0 then\nreturn g < k\nelse\nreturn false\nend\nelse\nif k < 0 then\nreturn true\nelse\nreturn g < k\nend\nend\nend\n"
-const LIB_str_rep = "string = string or {}\nstring.rep = function(...)\nlocal a = select('#', ...)\nif a == 0 then\nerror(\"bad argument #1 to 'string.rep' (string expected, got no value)\", 2)\nend\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nerror(\"bad argument #1 to 'string.rep' (string expected, got \" .. e .. \")\", 2)\nend\nif a < 2 then\nerror(\"bad argument #2 to 'string.rep' (number expected, got no value)\", 2)\nend\nlocal f = type(c)\nlocal g = c\nif f ~= \"number\" and f ~= \"string\" then\nerror(\"bad argument #2 to 'string.rep' (number expected, got \" .. f .. \")\", 2)\nend\nif f == \"string\" then\nlocal h = _m(15, c, 0)\nif h == nil then\nerror(\"bad argument #2 to 'string.rep' (number expected, got string)\", 2)\nend\ng = h\nend\nlocal i = _m(13, g, 0)\nif i == nil then\nerror(\"bad argument #2 to 'string.rep' (number has no integer representation)\", 2)\nend\nc = i\nif d == nil then\nd = \"\"\nelse\nlocal j = type(d)\nif j == \"number\" then\nd = tostring(d)\nelseif j ~= \"string\" then\nerror(\"bad argument #3 to 'string.rep' (string expected, got \" .. j .. \")\", 2)\nend\nend\nif c <= 0 then return \"\" end\nlocal l = \"\"\nlocal m = b\nlocal o = c\nlocal p = false\nwhile 0 < o do\nif o % 2 == 1 then\nif p then\nl = l .. d .. m\nelse\nl = m\np = true\nend\nend\no = (o - o % 2) / 2\nif 0 < o then m = m .. d .. m end\nend\nreturn l\nend\n"
-const LIB_str_reverse = "string = string or {}\nstring.reverse = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.reverse' (string expected, got \" .. d .. \")\", 2)\nend\nlocal e = \"\"\nfor f = #b, 1, -1 do e = e .. _s(1, b, f - 1, 1) end\nreturn e\nend\n"
-const LIB_str_upper = "string = string or {}\nstring.upper = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.upper' (string expected, got \" .. d .. \")\", 2)\nend\nreturn _s(2, b)\nend\n"
-const LIB_str_lower = "string = string or {}\nstring.lower = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.lower' (string expected, got \" .. d .. \")\", 2)\nend\nreturn _s(3, b)\nend\n"
-const LIB_str_len = "string = string or {}\nstring.len = function(...)\nlocal a = select('#', ...) == 0\nlocal b = select(1, ...)\nlocal c = type(b)\nif c == \"number\" then\nb = tostring(b)\nelseif c ~= \"string\" then\nlocal d = c\nif a then d = \"no value\" end\nerror(\"bad argument #1 to 'string.len' (string expected, got \" .. d .. \")\", 2)\nend\nreturn #b\nend\n"
-const LIB_str_sub = "string = string or {}\nstring.sub = function(...)\nlocal a = select('#', ...) == 0\nlocal b, c, d = select(1, ...)\nlocal e = type(b)\nif e == \"number\" then\nb = tostring(b)\nelseif e ~= \"string\" then\nlocal f = e\nif a then f = \"no value\" end\nerror(\"bad argument #1 to 'string.sub' (string expected, got \" .. f .. \")\", 2)\nend\nlocal g = #b\nc = c or 1\nd = d or -1\nif c < 0 then c = g + c + 1 if c < 1 then c = 1 end elseif c == 0 then c = 1 end\nif d < 0 then d = g + d + 1 elseif d > g then d = g end\nif c > d then return \"\" end\nreturn _s(1, b, c - 1, d - c + 1)\nend\n"
-const LIB_math_abs = "math = math or {}\nmath.abs = function(a) if type(a) == \"string\" then a = a + 0.0 end if a < 0 then return -a end if a == 0 then return a - a end return a end\n"
-const LIB_tab_move = "table = table or {}\ntable.move = function(a, b, c, d, g)\ng = g or a\nif c >= b then\nif d > c or d <= b or a ~= g then\nfor h = 0, c - b do g[d + h] = a[b + h] end\nelse\nfor h = c - b, 0, -1 do g[d + h] = a[b + h] end\nend\nend\nreturn g\nend\n"
-const LIB_math_fmod = "math = math or {}\nmath.fmod = function(c, d)\nif type(c) == \"string\" then c = c + 0.0 end\nif type(d) == \"string\" then d = d + 0.0 end\nlocal e = c % d\nif e ~= 0 and (c < 0) ~= (d < 0) then e = e - d end\nreturn e\nend\n"
-const LIB_math_modf = "math = math or {}\nmath.modf = function(a) if type(a) == \"string\" then a = a + 0.0 end local b = (a >= 0 and _m(1, a, 0)) or _m(2, a, 0) return b, a - b end\n"
-const LIB_math_max = "math = math or {}\nmath.max = function(b, ...)\nlocal c = b\nfor d = 1, select('#', ...) do local e = select(d, ...) if e > c then c = e end end\nreturn c\nend\n"
-const LIB_math_min = "math = math or {}\nmath.min = function(b, ...)\nlocal c = b\nfor d = 1, select('#', ...) do local e = select(d, ...) if e < c then c = e end end\nreturn c\nend\n"
-const LIB_math_deg = "math = math or {}\nmath.deg = function(a) return a * 57.295779513082323 end\nmath.rad = function(a) return a * 0.017453292519943295 end\n"
-const LIB_os_time = "os = os or {}\nlocal function a(i, j, k)\nif j <= 2 then i, j = i - 1, j + 12 end\nlocal b = (i >= 0 and i or i - 399) // 400\nlocal c = i - b * 400\nlocal e = (153 * (j - 3) + 2) // 5 + k - 1\nlocal f = c * 365 + c // 4 - c // 100 + e\nreturn b * 146097 + f - 719468\nend\nos.time = function(g)\nif g == nil then\nerror(\"bad argument #1 to 'os.time' (no clock)\", 2)\nend\nlocal i, j, k = g.year, g.month, g.day\nif i == nil then\nerror(\"field 'year' missing in date table\", 2)\nend\nlocal l = _m(13, i, 0)\nif l == nil then\nerror(\"field 'year' is not an integer\", 2)\nend\nif l < -2147483648 or l > 2147483647 then\nerror(\"field 'year' is out-of-bound\", 2)\nend\nif j == nil then\nerror(\"field 'month' missing in date table\", 2)\nend\nif _m(13, j, 0) == nil then\nerror(\"field 'month' is not an integer\", 2)\nend\nif k == nil then\nerror(\"field 'day' missing in date table\", 2)\nend\nif _m(13, k, 0) == nil then\nerror(\"field 'day' is not an integer\", 2)\nend\nlocal n, o, p = g.hour or 12, g.min or 0, g.sec or 0\nif _m(13, n, 0) == nil then\nerror(\"field 'hour' is not an integer\", 2)\nend\nif _m(13, o, 0) == nil then\nerror(\"field 'min' is not an integer\", 2)\nend\nif _m(13, p, 0) == nil then\nerror(\"field 'sec' is not an integer\", 2)\nend\nlocal q = a(i, j, k) * 86400 + n * 3600 + o * 60 + p\nreturn _m(13, q, 0) or q\nend\n"
+const LIB_str_gmatch = "string = string or {} string.gmatch = _gmatch "
+const LIB_math_const = "math = math or {} math.pi = 3.141592653589793 math.huge = 1.7976931348623157e308 math.maxinteger = 9223372036854775807 math.mininteger = -9223372036854775808 "
+const LIB_math_int = "math = math or {} math.floor = function(a) return _m(1, a, 0) end math.ceil = function(a) return _m(2, a, 0) end math.tointeger = function(a) return _m(13, a, 0) end math.type = function(a) return _m(14, a, 0) end math.sqrt = function(a) return _m(3, a, 0) end "
+const LIB_math_trig = "math = math or {} math.sin = function(a) return _m(4, a, 0) end math.cos = function(a) return _m(5, a, 0) end math.tan = function(a) return _m(6, a, 0) end math.asin = function(a) return _m(7, a, 0) end math.acos = function(a) return _m(8, a, 0) end math.atan = function(b, a) return _m(9, b, a or 1) end "
+const LIB_math_exp = "math = math or {} math.exp = function(a) return _m(10, a, 0) end math.log = function(a, c) if c == nil then return _m(11, a, 0) end if c == 10 then return _m(12, a, 0) end return _m(11, a, 0) / _m(11, c, 0) end math.ldexp = function(a, d) return a * (2.0 ^ d) end "
+const LIB_tab_concat = "table = table or {} table.concat = function(a, b, c, d) b = b or \"\" c = c or 1 d = d or #a local e = \"\" for f = c, d do local g = a[f] if f > c then e = e .. b end e = e .. g end return e end "
+const LIB_tab_sort = "table = table or {} _lt = function(c, d) return c < d end table.sort = function(e, f) local g = f or _lt for h = 2, #e do local k = e[h] local l = h - 1 while l >= 1 and g(k, e[l]) do e[l + 1] = e[l] l = l - 1 end e[l + 1] = k end end "
+const LIB_io = "io = io or {} io.read = function(...) if select('#', ...) == 0 then return _rd('*l') end return _rd((...)) end io.write = function(...) for a = 1, select('#', ...) do _wr(tostring((select(a, ...)))) end end _io_next = function() local b = _rd('*l') if b == nil then return nil end return b end io.lines = function() _rd('*r') return _io_next end "
+const LIB_str_gsub = "string = string or {} string.gsub = function(c, e, f, g) if type(c) == \"number\" then c = tostring(c) end local h, l, t, u, x = #c, \"\", 1, 0, -1 local y = _s(1, e, 0, 1) == \"^\" local z = type(f) if f == nil then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got no value)\", 2) end if z == \"number\" then f = tostring(f) z = \"string\" end local aa = function(v) local tv = type(v) if tv == \"string\" then return v end if tv == \"number\" then return tostring(v) end if tv == \"boolean\" then error(\"invalid replacement value (a boolean)\", 2) end error(\"invalid replacement value (a \" .. tv .. \")\", 2) end local ab = function(kt, kr, aa, ac, m) if kt == \"function\" then local v, w if ac[3] == 0 then v, w = kr(m) else v, w = kr(unpack(ac, 4, 3 + ac[3])) end if v == nil or v == false then return m end if w == nil or w == false then return aa(v) end return aa(v) .. aa(w) elseif kt == \"table\" then local k = m if ac[3] > 0 then k = ac[4] end local v = kr[k] if v == nil or v == false then return m end return aa(v) else local o, i, rl = \"\", 1, #kr while i <= rl do local j = string.find(kr, \"%\", i, true) if j == nil then o = o .. _s(1, kr, i - 1, rl - i + 1) break end if i < j then o = o .. _s(1, kr, i - 1, j - i) end if j == rl then error(\"invalid use of '%' in replacement string\", 2) end local d = _s(1, kr, j, 1) if d == \"%\" then o = o .. \"%\" elseif d == \"0\" then o = o .. m else local q = _s(4, d, 0, 0) - 48 if q < 1 or 9 < q then error(\"invalid use of '%' in replacement string\", 2) end if 1 < q and ac[3] < q then error(\"invalid capture index %\" .. d, 2) end if q == 1 and ac[3] == 0 then o = o .. m else o = o .. aa(ac[q + 3]) end end i = j + 2 end return o end end if z ~= \"string\" and z ~= \"table\" and z ~= \"function\" then error(\"bad argument #3 to 'string.gsub' (string/function/table expected, got \" .. z .. \")\", 2) end if g == nil then g = h + 1 end if type(g) ~= \"number\" then error(\"bad argument #4 to 'string.gsub' (number expected, got \" .. type(g) .. \")\", 2) end g = _m(13, g, 0) if g == nil then error(\"bad argument #4 to 'string.gsub' (number has no integer representation)\", 2) end if g < 1 then return c, 0 end while u < g do local ac = {_pat(2, c, e, t)} if ac[1] == nil then break end local ad, ae = ac[1], ac[2] if ae == x then if t <= h then l = l .. _s(1, c, t - 1, 1) t = t + 1 else break end else if t < ad then l = l .. _s(1, c, t - 1, ad - t) end l = l .. ab(z, f, aa, ac, _s(1, c, ad - 1, ae - ad + 1)) u = u + 1 t = ae + 1 end x = ae if y then break end end return l .. _s(1, c, t - 1, h - t + 1), u end "
+const LIB_tonumber = "tonumber = function(...) local a = select(\"#\", ...) local b = select(1, ...) local c = select(2, ...) if a == 0 then error(\"bad argument #1 to 'tonumber' (value expected)\", 2) end if c ~= nil then if type(b) ~= \"string\" then error(\"bad argument #1 to 'tonumber' (string expected, got \" .. type(b) .. \")\", 2) end if c < 2 or c > 36 then error(\"bad argument #2 to 'tonumber' (base out of range)\", 2) end return _tonum_int(b, c) end if type(b) == \"number\" then return b end if type(b) ~= \"string\" then return nil end local d = _m(15, b, 0) if d ~= nil then return d end if _pat(0, b, \"0x\", 1, 1) or _pat(0, b, \"0X\", 1, 1) then return _tonum_hex(b) end return nil end "
+const LIB_math_random = "math = math or {} local _rs = 12345 math.random = function(c, d, ...) if select(\"#\", c, d, ...) > 2 then error(\"wrong number of arguments\", 2) end local e = (_rs * 1664525 + 1013904223) & 0xFFFFFFFF _rs = e if c == nil then return e / 4294967296.0 end if type(c) == \"string\" then c = c + 0 end if _m(13, c, 0) == nil then error(\"bad argument #1 to 'random' (number has no integer representation)\", 2) end local f, g if d == nil then f, g = 1, c else if type(d) == \"string\" then d = d + 0 end if _m(13, d, 0) == nil then error(\"bad argument #2 to 'random' (number has no integer representation)\", 2) end f, g = c, d argn = \"2\" end if g < f then error(\"bad argument #1 to 'random' (interval is empty)\", 2) end return f + _m(1, e / 4294967296.0 * (g - f + 1), 0) end math.randomseed = function(h, i) local j = 0 local k = 0 if h ~= nil then j = _m(1, h, 0) end if i ~= nil then k = _m(1, i, 0) end local l = (j * 1013904223 + k) & 0xFFFFFFFF if l == 0 then l = 1 end _rs = l return j, k end "
+const LIB_io_stderr = "io = io or {} io.stderr = { write = function(a, ...) for b = 1, select(\"#\", ...) do _wr(tostring((select(b, ...)))) end return a end, flush = function(a) return a end, } "
+const LIB_os_exit = "os = os or {} os.exit = function(a) if a == nil or a == true or a == 0 then error(\"\", 0) else error(\"exit: \" .. tostring(a), 0) end end "
+const LIB_tonumber_hex = "local function _tonum_hex(s) local a = #s local c = 0 local d = 0 while c < a do d = _s(4, s, c, 0) if d ~= 32 and d ~= 9 and d ~= 10 and d ~= 13 and d ~= 12 and d ~= 11 then break end c = c + 1 end local e = a - 1 while e >= c do d = _s(4, s, e, 0) if d ~= 32 and d ~= 9 and d ~= 10 and d ~= 13 and d ~= 12 and d ~= 11 then break end e = e - 1 end if c > e then return nil end local f = false d = _s(4, s, c, 0) if d == 43 or d == 45 then f = d == 45 c = c + 1 end if _s(1, s, c, 2) ~= \"0x\" and _s(1, s, c, 2) ~= \"0X\" then return nil end c = c + 2 local g = 0 local h = 0 local k = 0 local l = 0 local o = false local p = 0 local q = false while c <= e do d = _s(4, s, c, 0) local r = nil if d >= 48 and d <= 57 then r = d - 48 end if d >= 65 and d <= 70 then r = d - 55 end if d >= 97 and d <= 102 then r = d - 87 end if r == nil then break end l = l + 1 if r ~= 0 or o then o = true if h < 13 then g = g * 16 + r h = h + 1 elseif k == 0 then p = r k = k + 1 else if r ~= 0 then q = true end k = k + 1 end end c = c + 1 end if p > 8 or (p == 8 and (q or g % 2 == 1)) then g = g + 1 end local t = 0 local u = 0 local w = false local x = true if c <= e and _s(4, s, c, 0) == 46 then x = false c = c + 1 local y = 0 while c <= e do d = _s(4, s, c, 0) local r = nil if d >= 48 and d <= 57 then r = d - 48 end if d >= 65 and d <= 70 then r = d - 55 end if d >= 97 and d <= 102 then r = d - 87 end if r == nil then break end l = l + 1 u = u + 1 if r ~= 0 or w then w = true if y < 13 then t = t * 16 + r y = y + 1 end end c = c + 1 end end if l == 0 then return nil end local z = 0 local aa = true if c <= e then d = _s(4, s, c, 0) if d == 112 or d == 80 then aa = false c = c + 1 local ab = false if c <= e then d = _s(4, s, c, 0) if d == 43 or d == 45 then ab = d == 45 c = c + 1 end end local ac = 0 while c <= e do d = _s(4, s, c, 0) if d < 48 or d > 57 then break end z = z * 10 + (d - 48) ac = ac + 1 c = c + 1 end if ac == 0 then return nil end if ab then z = -z end end end if c <= e then return nil end if x and aa then local ad = g if k ~= 0 then ad = g * (16 ^ k) end if ad < 9007199254740992 then local ae = _m(13, ad, 0) if ae ~= nil then if f then ae = -ae end return ae end end end local af = 0 if g ~= 0 then af = g * (2 ^ (4 * k + z)) end if u > 0 and t ~= 0 then af = af + t * (2 ^ (-4 * u + z)) end if af == 0 then if f then return -0.0 else return 0.0 end end if f then af = -af end return af end "
+const LIB_tab_unpack = "table = table or {} table.unpack = unpack "
+const LIB_tab_pack = "table = table or {} table.pack = function(...) local a = {...} a.n = select('#', ...) return a end "
+const LIB_tab_insert = "table = table or {} table.insert = function(a, ...) local b = #a local d = select('#', ...) if d == 1 then a[b + 1] = (...) elseif d == 2 then local e, f = ... local g = _m(13, e, 0) if g == nil then error(\"bad argument #2 to 'table.insert' (number has no integer representation)\", 2) end if g < 1 or g > b + 1 then error(\"bad argument #2 to 'table.insert' (position out of bounds)\", 2) end for h = b, g, -1 do a[h + 1] = a[h] end a[g] = f else error(\"wrong number of arguments to 'insert'\", 2) end end "
+const LIB_tab_remove = "table = table or {} table.remove = function(a, b) local c = #a if b == nil then b = c end local d = _m(13, b, 0) if d == nil then error(\"bad argument #2 to 'table.remove' (number has no integer representation)\", 2) end if d ~= c and (d < 1 or c + 1 < d) then error(\"bad argument #2 to 'table.remove' (position out of bounds)\", 2) end local e = a[d] local f = d while f < c do a[f] = a[f + 1] f = f + 1 end a[f] = nil return e end "
+const LIB_str_byte = "string = string or {} string.byte = function(...) local a = select('#', ...) == 0 local b, c, d = select(1, ...) local e = type(b) if e == \"number\" then b = tostring(b) elseif e ~= \"string\" then local f = e if a then f = \"no value\" end error(\"bad argument #1 to 'string.byte' (string expected, got \" .. f .. \")\", 2) end c = c or 1 d = d or c if c < 0 then c = #b + c + 1 end if d < 0 then d = #b + d + 1 end if c < 1 then c = 1 end if d > #b then d = #b end if c > d then return end if c == d then return _s(4, b, c - 1, 0) end local g = {} for h = c, d do g[#g + 1] = _s(4, b, h - 1, 0) end return unpack(g, 1, #g) end "
+const LIB_str_char = "string = string or {} string.char = function(...) local a = \"\" for b = 1, select('#', ...) do a = a .. _s(5, \"\", select(b, ...), 0) end return a end "
+const LIB_tonumber_base = "local function _tonum_int(s, base) local a = #s local c = 0 local e = 0 while c < a do e = _s(4, s, c, 0) if e ~= 32 and e ~= 9 and e ~= 10 and e ~= 13 and e ~= 12 and e ~= 11 then break end c = c + 1 end local f = a - 1 while f >= c do e = _s(4, s, f, 0) if e ~= 32 and e ~= 9 and e ~= 10 and e ~= 13 and e ~= 12 and e ~= 11 then break end f = f - 1 end if c > f then return nil end local g = false e = _s(4, s, c, 0) if e == 43 or e == 45 then g = e == 45 c = c + 1 end local h = 0 local k = 0 local l = 0 local o = false local p = 0 while c <= f do e = _s(4, s, c, 0) local q = nil if e >= 48 and e <= 57 then q = e - 48 end if e >= 65 and e <= 90 then q = e - 55 end if e >= 97 and e <= 122 then q = e - 87 end if q == nil or q >= base then break end p = p + 1 if q ~= 0 or o then o = true if k < 10 then h = h * base + q k = k + 1 else l = l + 1 end end c = c + 1 end if p == 0 or c <= f then return nil end local r = h if h == 0 then r = 0 elseif l > 0 then r = h * (base ^ l) end if g then r = -r end local t = _m(13, r, 0) if t ~= nil then return t end return r end "
+const LIB_bit32 = "bit32 = bit32 or {} bit32.bnot = function(c) return ~c & 0xFFFFFFFF end bit32.band = function(d, e, g, ...) if not g then return ((d or -1) & (e or -1)) & 0xFFFFFFFF else local h = {...} local j = d & e & g for k = 1, #h do j = j & h[k] end return j & 0xFFFFFFFF end end bit32.bor = function(d, e, g, ...) if not g then return ((d or 0) | (e or 0)) & 0xFFFFFFFF else local h = {...} local j = d | e | g for k = 1, #h do j = j | h[k] end return j & 0xFFFFFFFF end end bit32.bxor = function(d, e, g, ...) if not g then return ((d or 0) ~ (e or 0)) & 0xFFFFFFFF else local h = {...} local j = d ~ e ~ g for k = 1, #h do j = j ~ h[k] end return j & 0xFFFFFFFF end end bit32.btest = function(...) return bit32.band(...) ~= 0 end bit32.lshift = function(c, l) if l * l >= 1024 then return 0 end c = c & 0xFFFFFFFF if l < 16 then return (c << l) & 0xFFFFFFFF end return ((c % 65536) << l) & 0xFFFFFFFF end bit32.rshift = function(c, l) if l * l >= 1024 then return 0 end return ((c & 0xFFFFFFFF) >> l) & 0xFFFFFFFF end bit32.arshift = function(c, l) c = c & 0xFFFFFFFF if l <= 0 or (c & 0x80000000) == 0 then return (c >> l) & 0xFFFFFFFF else return ((c >> l) | ~(0xFFFFFFFF >> l)) & 0xFFFFFFFF end end bit32.lrotate = function(c, l) l = l & 31 c = c & 0xFFFFFFFF c = bit32.lshift(c, l) | (c >> (32 - l)) return c & 0xFFFFFFFF end bit32.rrotate = function(c, l) return bit32.lrotate(c, -l) end local function m(n, o) o = o or 1 assert(n >= 0, \"field cannot be negative\") assert(o > 0, \"width must be positive\") assert(n + o <= 32, \"trying to access non-existent bits\") return n, ~(-1 << o) end bit32.extract = function(c, n, o) local n, p = m(n, o) return (c >> n) & p end bit32.replace = function(c, q, n, o) local n, p = m(n, o) q = q & p c = (c & ~(p << n)) | (q << n) return c & 0xFFFFFFFF end "
+const LIB_utf8 = "utf8 = utf8 or {} local _floor = {0, 0x80, 0x800, 0x10000, 0x200000, 0x4000000} local function a(p, q, u) local b = _s(4, p, q - 1, 0) if b == nil then return nil end if b < 0x80 then return b, 1 end local e, f if b < 0xC2 then return nil end if b < 0xE0 then e, f = 2, b & 0x1F elseif b < 0xF0 then e, f = 3, b & 0x0F elseif b < 0xF8 then e, f = 4, b & 0x07 elseif b < 0xFC then e, f = 5, b & 0x03 elseif b < 0xFE then e, f = 6, b & 0x01 else return nil end for g = 1, e - 1 do local h = _s(4, p, q + g - 1, 0) if h == nil or h < 0x80 or h > 0xBF then return nil end f = f * 64 + (h & 0x3F) end if f < _floor[e] then return nil end if u then if f >= 0x80000000 then return nil end elseif f > 0x10FFFF or (f >= 0xD800 and f <= 0xDFFF) then return nil end return f, e end local function l(p, g) while g > 1 do local b = _s(4, p, g - 1, 0) if b == nil or b < 0x80 or b >= 0xC0 then break end g = g - 1 end return g end local function m(p, q, what) local o = #p if q == nil then return nil end if q < 0 then q = o + q + 1 end if q < 1 or q > o + 1 then error(\"bad argument #3 to '\" .. what .. \"' (position out of bounds)\", 3) end return q, o end utf8.len = function(p, q, t, u) local e = #p q = q or 1 t = t or e if q < 0 then q = e + q + 1 end if t < 0 then t = e + t + 1 end if q < 1 or q > e + 1 then error(\"bad argument #2 to 'utf8.len' (initial position out of bounds)\", 2) end if t < 0 or t > e then error(\"bad argument #3 to 'utf8.len' (final position out of bounds)\", 2) end local g, x = q, 0 while g <= t do local _, y = a(p, g, u) if y == nil then return nil, g end g, x = g + y, x + 1 end return x end utf8.offset = function(p, e, q) local o = #p if e == 0 then q, o = m(p, q or 1, \"utf8.offset\") q = l(p, q) local _, y = a(p, q, true) if y == nil then return nil end return q, q + y - 1 end if e > 0 then q, o = m(p, q or 1, \"utf8.offset\") local g, y = q, 1 for t = 1, e do if g > o + 1 then return nil end if g == o + 1 then if t == e then return g, g end return nil end local _, z = a(p, g, true) if z == nil then return nil end g, y = g + z, z end return g - y, g - 1 end q, o = m(p, q or o + 1, \"utf8.offset\") local g, y = q, 1 for _ = 1, -e do if g <= 1 then return nil end g = l(p, g - 1) local _, z = a(p, g, true) if z == nil then return nil end y = z end return g, g + y - 1 end utf8.codepoint = function(p, q, t, u) local e = #p q = q or 1 t = t or q if q < 0 then q = e + q + 1 end if t < 0 then t = e + t + 1 end if q < 1 or q > e + 1 then error(\"bad argument #2 to 'utf8.codepoint' (out of bounds)\", 2) end if t > e then error(\"bad argument #3 to 'utf8.codepoint' (out of bounds)\", 2) end if t < q then return end local x = {} local g = q while g <= t do local f, y = a(p, g, u) if y == nil then error(\"invalid UTF-8 code\", 2) end x[#x + 1] = f g = g + y end return unpack(x, 1, #x) end "
+const LIB_utf8_char = "utf8 = utf8 or {} local _lim = {0x80, 0x800, 0x10000, 0x200000, 0x4000000} local _lead = {0, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC} utf8.char = function(...) local a = \"\" for b = 1, select('#', ...) do local c = select(b, ...) if c < 0 or c >= 0x80000000 then error(\"bad argument #1 to 'utf8.char' (value out of range)\", 2) end if c < 0x80 then a = a .. _s(5, \"\", c, 0) else local d = 2 while d < 6 and c >= _lim[d] do d = d + 1 end a = a .. _s(5, \"\", _lead[d] + (c >> (6 * (d - 1))), 0) for e = d - 2, 0, -1 do a = a .. _s(5, \"\", 0x80 + ((c >> (6 * e)) & 0x3F), 0) end end end return a end "
+const LIB_os_date = "os = os or {} local function a(p) return (p % 4 == 0 and p % 100 ~= 0) or p % 400 == 0 end local _md = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31} local _mn = {\"January\", \"February\", \"March\", \"April\", \"May\", \"June\", \"July\", \"August\", \"September\", \"October\", \"November\", \"December\"} local _wn = {\"Sunday\", \"Monday\", \"Tuesday\", \"Wednesday\", \"Thursday\", \"Friday\", \"Saturday\"} local function b(p, u, r) if u <= 2 then p, u = p - 1, u + 12 end local e = (p >= 0 and p or p - 399) // 400 local g = p - e * 400 local j = (153 * (u - 3) + 2) // 5 + r - 1 local l = g * 365 + g // 4 - g // 100 + j return e * 146097 + l - 719468 end local function o(z) z = z + 719468 local e = (z >= 0 and z or z - 146096) // 146097 local l = z - e * 146097 local g = (l - l // 1460 + l // 36524 - l // 146096) // 365 local p = g + e * 400 local j = l - (365 * g + g // 4 - g // 100) local q = (5 * j + 2) // 153 local r = j - (153 * q + 2) // 5 + 1 local u = q + 3 if u > 12 then p, u = p + 1, u - 12 end return p, u, r end local function v(ak) ak = _m(13, ak, 0) or ak local x = ak // 86400 local aa = ak - x * 86400 local ab = aa // 3600 local ac = (aa - ab * 3600) // 60 local ad = aa - ab * 3600 - ac * 60 local p, u, r = o(x) if p < -2147483648 or p > 2147483647 then error(\"date result cannot be represented in this installation\", 3) end local ae = (x + 4) % 7 + 1 if ae < 1 then ae = ae + 7 end local af = b(p, u, r) - b(p, 1, 1) + 1 return p, u, r, ab, ac, ad, ae, af end local function ag(n) n = n - n % 1 if n < 10 then return \"0\" .. n end return \"\" .. n end local function ah(af, ap) local ai = (7 - ap) % 7 if af - 1 < ai then return \"00\" end return ag(1 + (af - 1 - ai) // 7) end os.date = function(aj, ak) if aj == nil then error(\"bad argument #1 to 'os.date' (no clock)\", 2) end if aj == \"\" or aj == \"!\" then return \"\" end local al = 1 if _s(1, aj, 0, 1) == \"!\" then al = 2 end if _s(1, aj, al - 1, 2) == \"*t\" and al + 2 > #aj then if ak == nil then error(\"bad argument #1 to 'os.date' (no clock)\", 2) end local p, u, r, ab, ac, ad, ae, af = v(ak) return {year = p, month = u, day = r, hour = ab, min = ac, sec = ad, wday = ae, yday = af, isdst = false} end local am = false local an = al while an <= #aj do if _s(1, aj, an - 1, 1) == \"%\" then am = true break end an = an + 1 end if not am then if al == 1 then return aj end return _s(1, aj, al - 1, #aj - al + 1) end if ak == nil then error(\"bad argument #1 to 'os.date' (no clock)\", 2) end local p, u, r, ab, ac, ad, ae, af = v(ak) local ao = ae - 1 local ap = (ao - (af - 1)) % 7 local aq = \"\" local ar = al while ar <= #aj do local as = _s(1, aj, ar - 1, 1) if as ~= \"%\" then aq = aq .. as ar = ar + 1 else local at = _s(1, aj, ar, 1) if (at == \"E\" or at == \"O\") and ar + 1 <= #aj then at = at .. _s(1, aj, ar + 1, 1) ar = ar + 1 end if at == \"Y\" then aq = aq .. p elseif at == \"m\" then aq = aq .. ag(u) elseif at == \"d\" then aq = aq .. ag(r) elseif at == \"H\" then aq = aq .. ag(ab) elseif at == \"M\" then aq = aq .. ag(ac) elseif at == \"S\" then aq = aq .. ag(ad) elseif at == \"w\" then aq = aq .. ao elseif at == \"y\" or at == \"Oy\" then aq = aq .. ag(p % 100) elseif at == \"j\" then local au = \"\" .. af while #au < 3 do au = \"0\" .. au end aq = aq .. au elseif at == \"U\" then aq = aq .. ah(af, ap) elseif at == \"W\" then aq = aq .. ah(af, (ap + 6) % 7) elseif at == \"a\" then aq = aq .. _s(1, _wn[ao + 1], 0, 3) elseif at == \"A\" then aq = aq .. _wn[ao + 1] elseif at == \"b\" or at == \"h\" then aq = aq .. _s(1, _mn[u], 0, 3) elseif at == \"B\" then aq = aq .. _mn[u] elseif at == \"p\" then aq = aq .. (ab < 12 and \"AM\" or \"PM\") elseif at == \"c\" then aq = aq .. ag(u) .. \"/\" .. ag(r) .. \"/\" .. ag(p % 100) .. \" \" .. ag(ab) .. \":\" .. ag(ac) .. \":\" .. ag(ad) elseif at == \"x\" or at == \"Ex\" then aq = aq .. ag(u) .. \"/\" .. ag(r) .. \"/\" .. ag(p % 100) elseif at == \"X\" then aq = aq .. ag(ab) .. \":\" .. ag(ac) .. \":\" .. ag(ad) elseif at == \"e\" then aq = aq .. (r < 10 and \" \" .. r or \"\" .. r) elseif at == \"s\" then aq = aq .. (ak - ak % 1) elseif at == \"%\" then aq = aq .. \"%\" else aq = aq .. \"%\" .. at end ar = ar + 2 end end return aq end "
+const LIB_raw = "rawequal = function(c, d) return c == d end rawget = function(e, f) return e[f] end rawset = function(e, f, g) e[f] = g return e end rawlen = function(e) return #e end "
+const LIB_os_env = "os = os or {} os.getenv = function(...) if select('#', ...) == 0 then error(\"bad argument #1 to 'os.getenv' (string expected, \" .. \"got no value)\", 2) end local a = ... if a == nil then error(\"bad argument #1 to 'os.getenv' (string expected, \" .. \"got nil)\", 2) end return nil end "
+const LIB_os_clock = "os = os or {} os.clock = function() return clock() + 0.0 end os.difftime = function(c, d) return c - d + 0.0 end os.setlocale = function(c, d) if c == nil or c == \"C\" then return \"C\" end return nil end "
+const LIB_math_ult = "math = math or {} local function _ult_num(f) return f + 0 end math.ult = function(...) local c = select(\"#\", ...) if c == 0 then error(\"bad argument #1 to 'math.ult' (number expected, got no value)\", 2) end local d = select(1, ...) local e = type(d) if e ~= \"number\" and e ~= \"string\" then error(\"bad argument #1 to 'math.ult' (number expected, got \" .. e .. \")\", 2) end if e == \"string\" then local f = _m(15, d, 0) if f == nil then error(\"bad argument #1 to 'math.ult' (number expected, got string)\", 2) end d = f end local g = _m(13, d, 0) if g == nil then error(\"bad argument #1 to 'math.ult' (number has no integer representation)\", 2) end if c < 2 then error(\"bad argument #2 to 'math.ult' (number expected, got no value)\", 2) end local h = select(2, ...) local i = type(h) if i ~= \"number\" and i ~= \"string\" then error(\"bad argument #2 to 'math.ult' (number expected, got \" .. i .. \")\", 2) end if i == \"string\" then local j = _m(15, h, 0) if j == nil then error(\"bad argument #2 to 'math.ult' (number expected, got string)\", 2) end h = j end local k = _m(13, h, 0) if k == nil then error(\"bad argument #2 to 'math.ult' (number has no integer representation)\", 2) end if g < 0 then if k < 0 then return g < k else return false end else if k < 0 then return true else return g < k end end end "
+const LIB_str_rep = "string = string or {} string.rep = function(...) local a = select('#', ...) if a == 0 then error(\"bad argument #1 to 'string.rep' (string expected, got no value)\", 2) end local b, c, d = select(1, ...) local e = type(b) if e == \"number\" then b = tostring(b) elseif e ~= \"string\" then error(\"bad argument #1 to 'string.rep' (string expected, got \" .. e .. \")\", 2) end if a < 2 then error(\"bad argument #2 to 'string.rep' (number expected, got no value)\", 2) end local f = type(c) local g = c if f ~= \"number\" and f ~= \"string\" then error(\"bad argument #2 to 'string.rep' (number expected, got \" .. f .. \")\", 2) end if f == \"string\" then local h = _m(15, c, 0) if h == nil then error(\"bad argument #2 to 'string.rep' (number expected, got string)\", 2) end g = h end local i = _m(13, g, 0) if i == nil then error(\"bad argument #2 to 'string.rep' (number has no integer representation)\", 2) end c = i if d == nil then d = \"\" else local j = type(d) if j == \"number\" then d = tostring(d) elseif j ~= \"string\" then error(\"bad argument #3 to 'string.rep' (string expected, got \" .. j .. \")\", 2) end end if c <= 0 then return \"\" end local l = \"\" local m = b local o = c local p = false while 0 < o do if o % 2 == 1 then if p then l = l .. d .. m else l = m p = true end end o = (o - o % 2) / 2 if 0 < o then m = m .. d .. m end end return l end "
+const LIB_str_reverse = "string = string or {} string.reverse = function(...) local a = select('#', ...) == 0 local b = select(1, ...) local c = type(b) if c == \"number\" then b = tostring(b) elseif c ~= \"string\" then local d = c if a then d = \"no value\" end error(\"bad argument #1 to 'string.reverse' (string expected, got \" .. d .. \")\", 2) end local e = \"\" for f = #b, 1, -1 do e = e .. _s(1, b, f - 1, 1) end return e end "
+const LIB_str_upper = "string = string or {} string.upper = function(...) local a = select('#', ...) == 0 local b = select(1, ...) local c = type(b) if c == \"number\" then b = tostring(b) elseif c ~= \"string\" then local d = c if a then d = \"no value\" end error(\"bad argument #1 to 'string.upper' (string expected, got \" .. d .. \")\", 2) end return _s(2, b) end "
+const LIB_str_lower = "string = string or {} string.lower = function(...) local a = select('#', ...) == 0 local b = select(1, ...) local c = type(b) if c == \"number\" then b = tostring(b) elseif c ~= \"string\" then local d = c if a then d = \"no value\" end error(\"bad argument #1 to 'string.lower' (string expected, got \" .. d .. \")\", 2) end return _s(3, b) end "
+const LIB_str_len = "string = string or {} string.len = function(...) local a = select('#', ...) == 0 local b = select(1, ...) local c = type(b) if c == \"number\" then b = tostring(b) elseif c ~= \"string\" then local d = c if a then d = \"no value\" end error(\"bad argument #1 to 'string.len' (string expected, got \" .. d .. \")\", 2) end return #b end "
+const LIB_str_sub = "string = string or {} string.sub = function(...) local a = select('#', ...) == 0 local b, c, d = select(1, ...) local e = type(b) if e == \"number\" then b = tostring(b) elseif e ~= \"string\" then local f = e if a then f = \"no value\" end error(\"bad argument #1 to 'string.sub' (string expected, got \" .. f .. \")\", 2) end local g = #b c = c or 1 d = d or -1 if c < 0 then c = g + c + 1 if c < 1 then c = 1 end elseif c == 0 then c = 1 end if d < 0 then d = g + d + 1 elseif d > g then d = g end if c > d then return \"\" end return _s(1, b, c - 1, d - c + 1) end "
+const LIB_math_abs = "math = math or {} math.abs = function(a) if type(a) == \"string\" then a = a + 0.0 end if a < 0 then return -a end if a == 0 then return a - a end return a end "
+const LIB_tab_move = "table = table or {} table.move = function(a, b, c, d, g) g = g or a if c >= b then if d > c or d <= b or a ~= g then for h = 0, c - b do g[d + h] = a[b + h] end else for h = c - b, 0, -1 do g[d + h] = a[b + h] end end end return g end "
+const LIB_math_fmod = "math = math or {} math.fmod = function(c, d) if type(c) == \"string\" then c = c + 0.0 end if type(d) == \"string\" then d = d + 0.0 end local e = c % d if e ~= 0 and (c < 0) ~= (d < 0) then e = e - d end return e end "
+const LIB_math_modf = "math = math or {} math.modf = function(a) if type(a) == \"string\" then a = a + 0.0 end local b = (a >= 0 and _m(1, a, 0)) or _m(2, a, 0) return b, a - b end "
+const LIB_math_max = "math = math or {} math.max = function(b, ...) local c = b for d = 1, select('#', ...) do local e = select(d, ...) if e > c then c = e end end return c end "
+const LIB_math_min = "math = math or {} math.min = function(b, ...) local c = b for d = 1, select('#', ...) do local e = select(d, ...) if e < c then c = e end end return c end "
+const LIB_math_deg = "math = math or {} math.deg = function(a) return a * 57.295779513082323 end math.rad = function(a) return a * 0.017453292519943295 end "
+const LIB_os_time = "os = os or {} local function a(i, j, k) if j <= 2 then i, j = i - 1, j + 12 end local b = (i >= 0 and i or i - 399) // 400 local c = i - b * 400 local e = (153 * (j - 3) + 2) // 5 + k - 1 local f = c * 365 + c // 4 - c // 100 + e return b * 146097 + f - 719468 end os.time = function(g) if g == nil then error(\"bad argument #1 to 'os.time' (no clock)\", 2) end local i, j, k = g.year, g.month, g.day if i == nil then error(\"field 'year' missing in date table\", 2) end local l = _m(13, i, 0) if l == nil then error(\"field 'year' is not an integer\", 2) end if l < -2147483648 or l > 2147483647 then error(\"field 'year' is out-of-bound\", 2) end if j == nil then error(\"field 'month' missing in date table\", 2) end if _m(13, j, 0) == nil then error(\"field 'month' is not an integer\", 2) end if k == nil then error(\"field 'day' missing in date table\", 2) end if _m(13, k, 0) == nil then error(\"field 'day' is not an integer\", 2) end local n, o, p = g.hour or 12, g.min or 0, g.sec or 0 if _m(13, n, 0) == nil then error(\"field 'hour' is not an integer\", 2) end if _m(13, o, 0) == nil then error(\"field 'min' is not an integer\", 2) end if _m(13, p, 0) == nil then error(\"field 'sec' is not an integer\", 2) end local q = a(i, j, k) * 86400 + n * 3600 + o * 60 + p return _m(13, q, 0) or q end "
 // The seven library-table names plus debug, as |name| entries.  A Find on
 // this answers "is it a library" the way LIBMEMBERS answers "is it a
 // member": one gate instead of a seven-way `==` chain (measured both here).
@@ -549,7 +549,7 @@ mod fmtNum(v: float) -> string {
   return if v != v then "nan"
     else if v != 0.0 && 2.0 * v == v then if v > 0.0 then "inf" else "-inf"
     else if v == 0.0 then if 1.0 / v < 0.0 then "-0.0" else "0.0"
-    else if v == floor(v) && abs(v) < 1e15 then ("" .. (v | 0)) .. ".0"
+    else if v == floor(v) && abs(v) < 1e15 then ("" .. ((v as int) | 0)) .. ".0"
     else "" .. v
 }
 
@@ -590,6 +590,10 @@ var lerrMsg: string = ""
 var lstrDelim: string = ""
 // lines the prepended library added, so error line numbers match the program
 var libLines: int = 0
+// pending newline walk of a long string/comment: stage 20 of lexStep counts
+// its newlines, one certified Find per call (Replace cannot: the official
+// sim certifies a needle that matches twice or more)
+var nlWalkStr: string = ""
 var lnumInt: float = 0.0
 var lnumFrac: float = 0.0
 var lnumDiv: float = 1.0
@@ -1009,7 +1013,7 @@ var coerceL: int = 0
 var coerceR: int = 0
 
 mod toInt(v: float) -> int {
-  return v | 0
+  return v as int
 }
 
 const INT64_LIMIT = 9223372036854775808.0
@@ -1019,9 +1023,9 @@ const INT64_WRAP = 18446744073709551616.0
 // Composite map key for table `tid`: kt is the key's value tag.
 // Normalize integral floats to the int tag so 1 and 1.0 share one key.
 mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
-  return if kt == 1 || kt == 6 then tid .. "#" .. (kn | 0)
-    else if kt == 2 then tid .. "$" .. ks
-    else tid .. "@" .. kt .. ":" .. (kn | 0)
+  return if kt == 2 then tid .. "$" .. ks
+    else tid .. (if kt == 1 || kt == 6 then "#" else "@" .. kt .. ":")
+      .. ((kn as int) | 0)
 }
 
 mod keyTag(t: int, v: float) -> int {
@@ -1455,7 +1459,10 @@ var jobBusy: bool = false
 // chip: it never misses a word the program actually uses, and the worst a
 // needless match can do is parse a little more library.
 mod srcUses(p: string, name: string) -> bool {
-  return p.Find(name, true, 0) >= 0
+  // Contains, not Find+Compare: this mod is inlined at every library-selector
+  // call (dozens), and the certified Contains law answers the yes/no directly,
+  // one gate per site instead of a search plus a compare.
+  return p.Contains(name, true)
 }
 
 // ---------------------------------------------------------------- parser/codegen state
@@ -1925,11 +1932,11 @@ mod noteLibField(baseReg: int, field: string) {
   if baseReg != lastBaseReg {
     return
   }
-  if LIBNAMES.Find("|" .. lastBase .. "|", true, 0) < 0 {
+  if !LIBNAMES.Contains("|" .. lastBase .. "|", true) {
     return
   }
   let dotted = lastBase .. "." .. field
-  if LIBMEMBERS.Find("|" .. dotted .. "|", true, 0) >= 0 {
+  if LIBMEMBERS.Contains("|" .. dotted .. "|", true) {
     return
   }
   if srcUses(nameWarn, dotted) {
@@ -3329,38 +3336,49 @@ mod patSetHit() {
 }
 
 // n bytes from the cursor, or whatever is left of them.
-// A mod, not a chip: measured cheaper here (instances cost pins -- see the
-// chip screening note on cNum).
-mod rdTake(n: int) {
-  let avail = rdText.Length() - rdPos
+// A CHIP that takes the text and the cursor as PINS: the official simulator
+// dirties a chip's remote var-reads from the var's write and refreshes them
+// before the call fires ("unwired" refusal on the Substring); a value that
+// enters through a call pin exists only when the call fires, so it is live.
+// The writes (rdBuf/rdGot/rdPos) stay inside: those run with the body.
+chip rdTake(rdt: string, rpi: int, n: int) {
+  let avail = rdt.Length() - rpi
   let k = if n < avail then n else avail
-  rdBuf = if k <= 0 then "" else rdText.Substring(rdPos, k)
-  rdPos = rdPos + k
+  rdBuf = if k <= 0 then "" else rdt.Substring(rpi, k)
+  rdPos = rpi + k
   rdGot = rdBuf != ""
 }
 
-// One line, as PUC's "*l" gives it: no newline, and a trailing CR is not part of
-// the line.  rdGot is false at the end of the text, so io.lines terminates --
+// One line, as PUC's "*l" gives it: no newline, and a trailing CR is not part
+// of the line.  rdGot is false at the end of the text, so io.lines terminates --
 // and a blank line in the middle is a line, not the end.
-// A mod, not a chip: measured cheaper here (instances cost pins -- see the
-// chip screening note on cNum).
-mod rdLine() {
-  let nl = rdText.Find("\n", true, rdPos)
-  if rdPos >= rdText.Length() {
+// Pin-passed like rdTake for the same cert reason.
+chip rdLine(rdt: string, rpi: int) {
+  // The official sim's Find law ignores the Start port (the game does not):
+  // search the tail from the cursor instead.  The end-of-text test reads `tail`
+  // rather than a second eager rdt.Length(): the sim refreshes the pure
+  // Length before the exec chain has fired its Var-Get ("unwired" refusal),
+  // while tail -- already computed on this tick -- is always live.
+  // tail == "" is exactly rpi >= rdt.Length(): the slice starts at the cursor.
+  // abs keeps the eager Substring below certified when the search missed;
+  // that slice is dead in the missed case.
+  let tail = rdt.Substring(rpi, 8192)
+  let nl = tail.Find("\n", true, 0)
+  if tail == "" {
     rdGot = false
     rdBuf = ""
   } else if nl < 0 {
-    rdBuf = rdText.Substring(rdPos, rdText.Length() - rdPos)
-    rdPos = rdText.Length()
+    rdBuf = tail
+    rdPos = rdt.Length()
     rdGot = true
   } else {
-    rdBuf = rdText.Substring(rdPos, nl - rdPos)
+    rdBuf = tail.Substring(0, abs(nl))
     if rdBuf.Length() > 0 {
       if rdBuf.Substring(rdBuf.Length() - 1, 1) == "\r" {
         rdBuf = rdBuf.Substring(0, rdBuf.Length() - 1)
       }
     }
-    rdPos = nl + 1
+    rdPos = rpi + nl + 1
     rdGot = true
   }
 }
@@ -3426,9 +3444,9 @@ mod fmtVal(tag: int, num: float, s: string) -> string {
     // address itself cannot be -- the registers are doubles and PUC's pointer
     // is 64-bit -- so this is the closure or table number, which is what the
     // old "function" and "table: 0x" spellings each half-agreed with.
-    else if tag == 4 then "function: 0x" .. (num | 0)
-    else if tag == 5 then "table: 0x" .. (num | 0)
-    else if tag == 6 then "" .. (num | 0)
+    else if tag == 4 then "function: 0x" .. ((num as int) | 0)
+    else if tag == 5 then "table: 0x" .. ((num as int) | 0)
+    else if tag == 6 then "" .. ((num as int) | 0)
     else fmtNum(num)
 }
 
@@ -3910,21 +3928,25 @@ mod libTonumberBase(p: string) -> string {
   if i0 < 0 {
     return ""
   }
-  if p.Substring(i0, 64).Find(",", true, 0) >= 0 {
+  if p.Substring(i0, 64).Contains(",", true) {
     return LIB_tonumber_base
   }
-  let i1 = p.Find("tonumber(", true, i0 + 9)
-  if i1 < 0 {
+  // The official sim's Find law ignores the Start port (the game does not), so
+  // each step searches the tail after the previous hit; nothing downstream
+  // reads these indexes as absolute positions.
+  let t1 = p.Substring(i0 + 9, 8192)
+  let r1 = t1.Find("tonumber(", true, 0)
+  if r1 < 0 {
     return ""
   }
-  if p.Substring(i1, 64).Find(",", true, 0) >= 0 {
+  if t1.Substring(r1, 64).Contains(",", true) {
     return LIB_tonumber_base
   }
-  let i2 = p.Find("tonumber(", true, i1 + 9)
-  if i2 < 0 {
+  let t2 = t1.Substring(r1 + 9, 8192)
+  if t2.Find("tonumber(", true, 0) < 0 {
     return ""
   }
-  return if p.Substring(i2, 64).Find(",", true, 0) >= 0 then LIB_tonumber_base else ""
+  return if t2.Substring(0, 64).Contains(",", true) then LIB_tonumber_base else ""
 }
 
 mod libTonumber(p: string) -> string {
@@ -4030,7 +4052,7 @@ mod emitTok(kind: int, sub: int, num: float, text: string) {
   tt.push(text)
   tl.push(lline)
   if tk.length() > MAX_TOKENS {
-    lexFail("too many tokens (max " .. (MAX_TOKENS | 0) .. ")")
+    lexFail("too many tokens (max " .. MAX_TOKENS .. ")")
   }
 }
 
@@ -4626,12 +4648,12 @@ mod vSetIntSat(a: int, v: float) {
 mod powSignedZero(x: float, y: float) -> float {
   var p = x ** y
   if x == 0.0 {
-    let iy = y | 0
+    let iy = (y as int) | 0
     // `y == iy + 0.0` keeps an exponent too large to truncate out, and 1/x is the
     // only sign oracle this language has for a zero: -0.0 is not < 0.0, and
     // sign() is modelled as `0.0 if x == 0` so it cannot tell them apart either.
     // The divide gate answers inf rather than faulting, so it is safe here.
-    if y == iy + 0.0 && 1/x < 0.0 {
+    if y == iy && 1/x < 0.0 {
       // floored modulo, so an odd exponent is 1 on either side of zero
       if (p < 0.0) != (iy % 2 != 0) {
         // -p and NOT `0.0 - p`: IEEE says (-0.0) - (+0.0) is -0.0 but
@@ -4688,8 +4710,8 @@ chip tblFill(dst: int, tid: int, idx: int) {
 // stops the loop, which is where the 64-bit two's complement comes from.  It
 // leaves the digit in fmtQ_ and fmtDigitPut turns it into a character.
 mod fmtRadixDigit() {
-  let q = toInt(fmtNum_ / fmtBase_)
-  let r = toInt(fmtNum_ - q * fmtBase_)
+  let q = toInt(fmtNum_ / fmtBase_) | 0
+  let r = toInt(fmtNum_ - q * fmtBase_) | 0
   if r < 0 {
     fmtQ_ = r + fmtBaseI
     fmtNum_ = q - 1.0
@@ -5232,17 +5254,31 @@ chip resolveKw() {
 mod lexLong(pos: int, level: int, isComment: bool) {
   let closer = closerFor(level)
   let cstart = pos + level + 2
-  let e = lsrc.Find(closer, true, cstart)
+  // The official sim's Find law ignores the Start port (the game does not), so
+  // the search runs over the tail from cstart and the hit is placed back
+  // absolutely (ea).  The literal slice is clamped to 0 -- the game answers the
+  // empty string for a negative length -- because the sim certifies Substring
+  // only for non-negative lengths.
+  let tail = lsrc.Substring(cstart, 8192)
+  let e = tail.Find(closer, true, 0)
   if e < 0 {
     lexFail("unfinished long string/comment")
   } else {
-    let skip = if lsrc.Substring(cstart, 2) == "\r\n" then 2 else if lsrc.Substring(cstart, 1) == "\n" then 1 else 0
-    let span = lsrc.Substring(pos, e + closer.Length() - pos)
+    let skip = if tail.Substring(0, 2) == "\r\n" then 2 else if tail.Substring(0, 1) == "\n" then 1 else 0
+    let ea = cstart + e
+    let span = lsrc.Substring(pos, ea + closer.Length() - pos)
     if !isComment {
-      emitTok(2, 0, 0.0, lsrc.Substring(cstart + skip, e - cstart - skip))
+      emitTok(2, 0, 0.0, tail.Substring(skip, if skip < e then e - skip else 0))
     }
-    lline = lline + span.Length() - span.Replace("\n", "").Length()
-    lpos = e + closer.Length()
+    // Replace cannot count newlines: the official sim certifies Replace only
+    // when the needle matches at most once, and a multi-line span has many.
+    // Hand the span to stage 20 instead -- the boot loop already ticks per
+    // lexStep, so the walk costs one certified Find per newline and the
+    // machine body exists once (lexLong itself is inlined twice, so nothing
+    // loop-shaped may live inside it).
+    nlWalkStr = span
+    lstage = 20
+    lpos = ea + closer.Length()
   }
 }
 
@@ -5939,9 +5975,12 @@ chip lexStep() {
       // counts the line.  That is also what keeps a CRLF file counting once per
       // line: the CR is inside the jumped-over region and the LF is the single
       // character stage 0 gets to see.
-      let nl = lsrc.Find("\n", true, lpos)
+      // The official sim's Find law ignores the Start port (the game does not),
+      // so the search runs over the tail from lpos and the hit is placed back
+      // absolutely; identical results on either reading.
+      let nl = lsrc.Substring(lpos, 8192).Find("\n", true, 0)
       if 0 <= nl {
-        lpos = nl
+        lpos = lpos + nl
         lstage = 0
       } else {
         // a comment that runs to the end of the source with no newline is the
@@ -6041,13 +6080,21 @@ chip lexStep() {
         // (an escape, or the unterminated-string error).  PUC's lexer is C and
         // scans the same way, and a library piece is mostly string literals --
         // this is the cheap half of the boot cost, with no ladder in it.
-        let e = lsrc.Find(ch, true, lpos + 1)
+        // The official sim's Find law ignores the Start port (the game does not),
+        // so all three searches run over the one tail past the opening quote and
+        // the hit is placed back absolutely; identical results on either reading.
+        // The same tail answers the literal itself, and its length is abs-wrapped
+        // because value gates run eagerly: outside the taken branch `e` is -1,
+        // where the length would be negative; inside, e is past 0 and abs is the
+        // identity.
+        let tail = lsrc.Substring(lpos + 1, 8192)
+        let e = tail.Find(ch, true, 0)
         if 0 <= e {
-          let bs = lsrc.Find("\\", true, lpos + 1)
-          let nl = lsrc.Find("\n", true, lpos + 1)
+          let bs = tail.Find("\\", true, 0)
+          let nl = tail.Find("\n", true, 0)
           if (bs < 0 || e < bs) && (nl < 0 || e < nl) {
-            emitTok(2, 0, 0.0, lsrc.Substring(lpos + 1, e - lpos - 1))
-            lpos = e + 1
+            emitTok(2, 0, 0.0, tail.Substring(0, abs(e)))
+            lpos = lpos + e + 2
           } else {
             lstrDelim = ch
             lidBuf = ""
@@ -6371,6 +6418,20 @@ chip lexStep() {
         lpos = lpos + 1
       } else {
         lstage = 4
+      }
+    } else if lstage == 20 {
+      // One newline per call out of the span a long string/comment left in
+      // nlWalkStr (see lexLong).  Each hit advances lline directly -- a
+      // separate counter would cost Get/Set/Increment at three places for the
+      // same sum.  The Find is over the whole remaining tail, Start 0:
+      // certified on both readers.  Lexing stays parked here until the tails
+      // run out, so lline is complete before any later error can read it.
+      let w = nlWalkStr.Find("\n", true, 0)
+      if w < 0 {
+        lstage = 0
+      } else {
+        lline = lline + 1
+        nlWalkStr = nlWalkStr.Substring(w + 1, 8192)
       }
     }
   }
@@ -7829,8 +7890,8 @@ mod fmtConvChar() {
     } else if vnum[ab] != floor(vnum[ab]) {
       vmFail("number has no integer representation")
     } else {
-      fmtQ_ = toInt(vnum[ab] / 256.0)
-      let r = toInt(vnum[ab] - fmtQ_ * 256.0)
+      fmtQ_ = ((vnum[ab] / 256.0) as int) | 0
+      let r = ((vnum[ab] - fmtQ_ * 256.0) as int) | 0
       if r < 0 {
         fmtD_ = r + 256
       } else {
@@ -8610,13 +8671,15 @@ mod patPlainAnswer() {
 // gateHigh): measured against a chip if the audit complains.
 mod patHasMagic(s: string) -> bool {
   // most frequent magic first: || short-circuits, so a '.' or '%' needle
-  // pays one search and only a '?' pays all twelve.
-  return 0 <= s.Find(".", true, 0) || 0 <= s.Find("%", true, 0)
-      || 0 <= s.Find("*", true, 0) || 0 <= s.Find("+", true, 0)
-      || 0 <= s.Find("?", true, 0) || 0 <= s.Find("[", true, 0)
-      || 0 <= s.Find("]", true, 0) || 0 <= s.Find("(", true, 0)
-      || 0 <= s.Find(")", true, 0) || 0 <= s.Find("^", true, 0)
-      || 0 <= s.Find("$", true, 0) || 0 <= s.Find("-", true, 0)
+  // pays one search and only a '?' pays all twelve.  Contains, not Find
+  // plus a compare: the certified law answers the bool, one gate per magic
+  // char instead of two, and this mod is inlined at two call sites.
+  return s.Contains(".", true) || s.Contains("%", true)
+      || s.Contains("*", true) || s.Contains("+", true)
+      || s.Contains("?", true) || s.Contains("[", true)
+      || s.Contains("]", true) || s.Contains("(", true)
+      || s.Contains(")", true) || s.Contains("^", true)
+      || s.Contains("$", true) || s.Contains("-", true)
 }
 
 // One warn per program into progDebug: a magic needle that matched nothing
@@ -9639,8 +9702,11 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
     } else if so == 5 {
       vSet(a, 2, 0.0, FromCharCode(p).Character)
     } else {
-      // 6: find(needle) from pos q, 1-based like Lua's string.find
-      vSetInt(a, s.Find(vStr(a + 3), true, q) + 1)
+      // 6: find(needle) from pos q, 1-based like Lua's string.find.  The
+      // official sim's Find law ignores the Start port (the game does not), so
+      // the search runs over the tail from q-1 and the hit goes back 1-based.
+      let fnd = s.Substring(q - 1, 8192).Find(vStr(a + 3), true, 0)
+      vSetInt(a, if fnd < 0 then 0 else fnd + q)
     }
     retCountV = 1
   } else if fid == 11 {
@@ -9717,9 +9783,9 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
       if mo == 1 || mo == 2 || mo == 13 {
         // the floor gate truncates toward zero, so step to the right for
         // negatives (floor) or positives (ceil)
-        let t = x | 0
-        let fl = if x < 0.0 && x != t + 0.0 then t - 1 else t
-        let ce = if 0 < x && x != t + 0.0 then t + 1 else t
+        let t = (x as int) | 0
+        let fl = if x < 0.0 && x != t then t - 1 else t
+        let ce = if 0 < x && x != t then t + 1 else t
         if mo == 1 {
           // Lua's floor/ceil return integers; the chip tags whole numbers
           // apart from fractions so they print and compare the same way
@@ -9969,7 +10035,11 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
         if ini <= patLen + 1 {
           f = ini - 1
           if 0 < patPat.Length() {
-            f = patSrc.Find(patPat, true, ini - 1)
+            // The official sim's Find law ignores the Start port (the game does
+            // not), so the search runs over the tail from ini-1 and the hit is
+            // placed back absolutely; the miss keeps the old -1 marker.
+            let ft = patSrc.Substring(ini - 1, 8192).Find(patPat, true, 0)
+            f = if ft < 0 then -1 else ini + ft - 1
           }
         }
         // A miss with magic in the needle is the shape ported pattern code
@@ -10055,22 +10125,22 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
   } else if fid == 14 {
     // _rd(fmt): one read from the text in inStr1, the way io.read does it
     if nargs < 1 {
-      rdLine()
+      rdLine(rdText, rdPos)
       if rdGot {
         vSet(a, 2, 0.0, rdBuf)
       } else {
         vSetNil(a)
       }
     } else if vTag(a + 1) == 1 || vTag(a + 1) == 6 {
-      rdTake(toInt(vNum(a + 1)))
+      rdTake(rdText, rdPos, toInt(vNum(a + 1)))
       vSet(a, 2, 0.0, rdBuf)
     } else {
       let f = vStr(a + 1)
       if f == "*a" || f == "a" {
-        rdTake(rdText.Length())
+        rdTake(rdText, rdPos, rdText.Length())
         vSet(a, 2, 0.0, rdBuf)
       } else if f == "*l" || f == "l" {
-        rdLine()
+        rdLine(rdText, rdPos)
         if rdGot {
           vSet(a, 2, 0.0, rdBuf)
         } else {
@@ -10436,7 +10506,11 @@ mod gmStep() {
     } else {
       var f = pos - 1
       if 0 < patPat.Length() {
-        f = patSrc.Find(patPat, true, pos - 1)
+        // The official sim's Find law ignores the Start port (the game does
+        // not), so the search runs over the tail from pos-1 and the hit is
+        // placed back absolutely; the miss keeps the old -1 marker.
+        let ft = patSrc.Substring(pos - 1, 8192).Find(patPat, true, 0)
+        f = if ft < 0 then -1 else pos + ft - 1
       }
       if f < 0 {
         vtag[nxDst] = 0
@@ -10744,13 +10818,13 @@ mod vmIDiv(a: int, b: int, c: int) {
       }
     } else if li && ri {
       let q = x / y
-      let t = q | 0
-      let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+      let t = (q as int) | 0
+      let fl = if q < 0.0 && q != t then t - 1 else t
       vSetInt(a, fl)
     } else {
       let q = x / y
-      let t = q | 0
-      let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
+      let t = (q as int) | 0
+      let fl = if q < 0.0 && q != t then t - 1 else t
       vSetNum(a, fl)
     }
   }
@@ -10829,7 +10903,7 @@ mod vmStep() {
       vSet(a, vTag(b), vNum(b), vStr(b))
     } else if op >= 8 && op <= 13 {
       let immK = c < 0
-      let immPack = if immK then (-1 - c) | 0 else 0
+      let immPack = if immK then -1 - c else 0
       let bt = vTag(b)
       let ct = if immK then (if (immPack & 1) == 1 then 6 else 1) else vTag(c)
       // String operands go through PUC's coercion (arithValL/arithValR), and
@@ -10894,13 +10968,12 @@ mod vmStep() {
             // floored quotient: the floor gate truncates toward zero,
             // so adjust negative non-integral quotients down by one
             let q = x / y
-            let t = q | 0
-            let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
-            let flf = fl + 0.0
+            let t = (q as int) | 0
+            let fl = if q < 0.0 && q != t then t - 1 else t
             if ii && ij {
-              vSetInt(a, x - flf * y)
+              vSetInt(a, x - fl * y)
             } else {
-              vSetNum(a, x - flf * y)
+              vSetNum(a, x - fl * y)
             }
           }
         } else {
@@ -10938,8 +11011,8 @@ mod vmStep() {
       let lct = vTag(b)
       let rct = vTag(c)
       if (lct == 1 || lct == 6 || lct == 2) && (rct == 1 || rct == 6 || rct == 2) {
-        let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. (vNum(b) | 0) else fmtNum(vNum(b))
-        let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. (vNum(c) | 0) else fmtNum(vNum(c))
+        let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. ((vNum(b) as int) | 0) else fmtNum(vNum(b))
+        let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. ((vNum(c) as int) | 0) else fmtNum(vNum(c))
         vSet(a, 2, 0.0, ls .. rs)
       } else {
         vmFail("attempt to concatenate a "
@@ -11175,7 +11248,7 @@ mod vmStep() {
         // wrote cloF[352..427] and cloU past the end of both.  The five internal
         // numbers it used to print were the debugging that found it, and a user
         // cannot act on any of them.
-        vmFail("too many closures (" .. (cloF.length() | 0) .. " records)")
+        vmFail("too many closures (" .. cloF.length() .. " records)")
       } else {
         // A function with upvalues is a fresh closure every time it is
         // evaluated.  Only scalars are written here: this arm is inlined once
@@ -11299,20 +11372,20 @@ mod vmStep() {
       bitFail(lt, vNum(b), rt, vNum(c))
       let na = 0.0 - vNum(b) - 1.0
       let nb = 0.0 - vNum(c) - 1.0
-      let nob = na | nb
+      let nob = (na as int) | (nb as int)
       vSetInt(a, -(nob) - 1.0)
     } else if op == 36 {
       let lt = vTag(b)
       let rt = vTag(c)
       bitFail(lt, vNum(b), rt, vNum(c))
-      vSetInt(a, vNum(b) | vNum(c))
+      vSetInt(a, (vNum(b) as int) | (vNum(c) as int))
     } else if op == 37 {
       let lt = vTag(b)
       let rt = vTag(c)
       bitFail(lt, vNum(b), rt, vNum(c))
       let na = 0.0 - vNum(b) - 1.0
       let nb = 0.0 - vNum(c) - 1.0
-      let nob = na | nb
+      let nob = (na as int) | (nb as int)
       let band = -(nob) - 1.0
       vSetInt(a, vNum(b) + vNum(c) - 2.0 * band)
     } else if op == 38 {
@@ -11357,8 +11430,8 @@ mod vmStep() {
         // Reusing the idiom rather than a new helper because a MOD INLINES, and
         // this is the second copy of these four lines either way.
         let q = vNum(b) / (2.0 ** n)
-        let t = q | 0
-        vSetInt(a, if q < 0.0 && q != t + 0.0 then t - 1 else t)
+        let t = (q as int) | 0
+        vSetInt(a, if q < 0.0 && q != t then t - 1 else t)
       }
     } else if op == 0 {
       vmHalted = true
@@ -11430,7 +11503,7 @@ chip vmStepFast() {
     vSet(a, vTag(b), vNum(b), vStr(b))
   } else if op >= 8 && op <= 13 {
     let immK = c < 0
-    let immPack = if immK then (-1 - c) | 0 else 0
+    let immPack = if immK then -1 - c else 0
     let bt = vTag(b)
     let ct = if immK then (if (immPack & 1) == 1 then 6 else 1) else vTag(c)
     // String operands go through PUC's coercion (arithValL/arithValR), and
@@ -11495,13 +11568,12 @@ chip vmStepFast() {
           // floored quotient: the floor gate truncates toward zero,
           // so adjust negative non-integral quotients down by one
           let q = x / y
-          let t = q | 0
-          let fl = if q < 0.0 && q != t + 0.0 then t - 1 else t
-          let flf = fl + 0.0
+          let t = (q as int) | 0
+          let fl = if q < 0.0 && q != t then t - 1 else t
           if ii && ij {
-            vSetInt(a, x - flf * y)
+            vSetInt(a, x - fl * y)
           } else {
-            vSetNum(a, x - flf * y)
+            vSetNum(a, x - fl * y)
           }
         }
       } else {
@@ -11543,8 +11615,8 @@ chip vmStepFast() {
     let lct = vTag(b)
     let rct = vTag(c)
     if (lct == 1 || lct == 6 || lct == 2) && (rct == 1 || rct == 6 || rct == 2) {
-      let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. (vNum(b) | 0) else fmtNum(vNum(b))
-      let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. (vNum(c) | 0) else fmtNum(vNum(c))
+      let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. ((vNum(b) as int) | 0) else fmtNum(vNum(b))
+      let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. ((vNum(c) as int) | 0) else fmtNum(vNum(c))
       vSet(a, 2, 0.0, ls .. rs)
     } else {
       vmFail("attempt to concatenate a "
@@ -11920,8 +11992,16 @@ on goParse {
     .. libH .. libI .. libI3 .. libI2 .. libI4 .. libJ .. libJ2 .. libK .. libK2 .. libK3 .. libL .. libM .. libN
     .. libO .. libO2 .. libO3 .. libO4 .. libO5 .. libP
     .. libQ .. libR .. libS2 .. libS3 .. libS .. libT .. libU
-  libLines = if 0 < lib.Length() then lib.Length() - lib.Replace("\n", "").Length() else 0
-  lsrc = if 0 < lib.Length() then lib .. program else program
+  // The library pieces are single-line now, so the prepended text carries
+  // exactly one newline -- the separator below -- and the line count is that
+  // one, not a Replace over the whole lib (the official sim certifies Replace
+  // only when the needle matches at most once).  No `if 0 < lib.Length()` here:
+  // an empty lib now prepends one blank line and libLines still counts it, so
+  // userLine undoes the shift either way -- and the eager Select around a
+  // Length/Concat of `lib` was what the official simulator refused ("unwired"
+  // input) when the Var-Get had not fired on the tick the arm evaluated.
+  libLines = 1
+  lsrc = lib .. "\n" .. program
   llen = lsrc.Length()
   lpos = 0
   lstage = 0
