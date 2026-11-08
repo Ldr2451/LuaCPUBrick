@@ -1438,6 +1438,10 @@ var rdText: string = ""
 var rdPos: int = 0
 var rdBuf: string = ""
 var rdGot: bool = false
+// scratch the rdTake/rdLine chips copy their pins into before using them;
+// only those two bodies write it (see the cert note on the chips)
+var rdScrS: string = ""
+var rdScrI: int = 0
 
 // ---------------------------------------------------------------- jobs + events
 
@@ -2534,8 +2538,16 @@ mod vmReset() {  tmap.clear()
   patTid = 0
   patLastTid = 0
   // the text in inStr1 is the program's standard input, and a run starts at its
-  // beginning; the cursors are state, so they go with everything else
-  rdText = inStr1
+  // beginning; the cursors are state, so they go with everything else.  The
+  // `== ""` arm keeps rdText a STRING even when the port is unwired -- the
+  // compare law certifies unwired as the other operand's domain default, so
+  // unwired equals ""; a None-valued rdText would poison the rd chips' Substring
+  // chains in the official simulator (the Substring law refuses unwired).
+  if inStr1 == "" {
+    rdText = ""
+  } else {
+    rdText = inStr1
+  }
   rdPos = 0
   rdBuf = ""
   rdGot = false
@@ -3336,40 +3348,46 @@ mod patSetHit() {
 }
 
 // n bytes from the cursor, or whatever is left of them.
-// A CHIP that takes the text and the cursor as PINS: the official simulator
-// dirties a chip's remote var-reads from the var's write and refreshes them
-// before the call fires ("unwired" refusal on the Substring); a value that
-// enters through a call pin exists only when the call fires, so it is live.
-// The writes (rdBuf/rdGot/rdPos) stay inside: those run with the body.
+// A CHIP whose body copies its pins into the rdScrS/rdScrI scratch before
+// touching them.  The official simulator refreshes a chip's pure chain --
+// dirty from load, and dirtied by var writes mid-tick -- even on ticks where
+// no call fires, and such a chain whose source is a remote-pin Var-Get reads
+// `unwired` until that Var-Get fires once: an "unwired" cert refusal (the
+// Substring law refuses it).  A chain reading a scratch var reads the var's
+// live state, which is always typed, and the copy is the body's own first
+// exec steps, so whenever the chain is read the scratch holds the pin's
+// value.  Same shared-scratch rule the rest of the chip relies on: one Lua
+// instruction runs one arm per tick and each call's writes precede its reads.
 chip rdTake(rdt: string, rpi: int, n: int) {
-  let avail = rdt.Length() - rpi
+  rdScrS = rdt
+  rdScrI = rpi
+  let avail = rdScrS.Length() - rdScrI
   let k = if n < avail then n else avail
-  rdBuf = if k <= 0 then "" else rdt.Substring(rpi, k)
-  rdPos = rpi + k
+  rdBuf = if k <= 0 then "" else rdScrS.Substring(rdScrI, k)
+  rdPos = rdScrI + k
   rdGot = rdBuf != ""
 }
 
 // One line, as PUC's "*l" gives it: no newline, and a trailing CR is not part
 // of the line.  rdGot is false at the end of the text, so io.lines terminates --
 // and a blank line in the middle is a line, not the end.
-// Pin-passed like rdTake for the same cert reason.
+// Scratch-copied pins like rdTake, for the same cert reason.
 chip rdLine(rdt: string, rpi: int) {
   // The official sim's Find law ignores the Start port (the game does not):
   // search the tail from the cursor instead.  The end-of-text test reads `tail`
-  // rather than a second eager rdt.Length(): the sim refreshes the pure
-  // Length before the exec chain has fired its Var-Get ("unwired" refusal),
-  // while tail -- already computed on this tick -- is always live.
-  // tail == "" is exactly rpi >= rdt.Length(): the slice starts at the cursor.
-  // abs keeps the eager Substring below certified when the search missed;
-  // that slice is dead in the missed case.
-  let tail = rdt.Substring(rpi, 8192)
+  // rather than a second eager rdScrS.Length(): keep the chain to one pass over
+  // the slice.  abs keeps the eager Substring below certified when the search
+  // missed; that slice is dead in the missed case.
+  rdScrS = rdt
+  rdScrI = rpi
+  let tail = rdScrS.Substring(rdScrI, 8192)
   let nl = tail.Find("\n", true, 0)
   if tail == "" {
     rdGot = false
     rdBuf = ""
   } else if nl < 0 {
     rdBuf = tail
-    rdPos = rdt.Length()
+    rdPos = rdScrS.Length()
     rdGot = true
   } else {
     rdBuf = tail.Substring(0, abs(nl))
@@ -3378,7 +3396,7 @@ chip rdLine(rdt: string, rpi: int) {
         rdBuf = rdBuf.Substring(0, rdBuf.Length() - 1)
       }
     }
-    rdPos = rpi + nl + 1
+    rdPos = rdScrI + nl + 1
     rdGot = true
   }
 }
