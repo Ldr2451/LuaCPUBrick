@@ -285,3 +285,16 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
 - The old four-step `vmBurst` needed a one-per-burst latch (`fmtGo`) for
   cross-instruction state in `vmStep`; the current one-step burst still uses the
   latch so restoring an unroll cannot make a state machine run several times.
+- **The official simulator does not refresh a root reader of a global the
+  body of a `chip` writes; the game does.** All fifteen `lexFail` sites set
+  `lerr = true` inside the lexStep chip; under `simdrv` the boot guard's
+  `lerr` read never flips (per-tick `watch` on the `LogicalNOT` feeding the
+  guard: stays `true` the whole run), so `print("a\q")`, `print(1 ~~ 2)`,
+  `print(5..3)`, `print([[abc`, `print("\x")` never stop -- boot exits lex on
+  EOF only, the parser spins on the token stream, busy stays true -- while the
+  game model and the suite answer `err: line 1: ...`. Measured shapes: `lstage
+  = 99` inside every `lexFail` site costs +120 nodes (40,482 over the 40,362
+  ceiling); a `lexChunk` else-arm costs +1 but never fires because its guard
+  reads the same stale root copy. Open direction: the failure flag has to
+  cross the boundary on data the pins carry -- e.g. a sentinel token emitted
+  at the failure sites and checked by boot/parser -- not a `var` bool.
