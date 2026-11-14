@@ -320,6 +320,24 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   classifies a gate's wired inputs by the TYPE of their source port -- it finds
   0 float-typed wires among the 152 Bitwise gates, so the offenders live in the
   Math/Compare classes.
+- **The certified table is per SIGNATURE, and reading it beats guessing.** It
+  lives in `wirescript/crates/wirescript-ir/data/gate_semantics.json`
+  (`gates`, keyed `BrickComponentType_Expr_*`, each with the probed `cases` and
+  their value VARIANTS); `tools/chip/_certprobe.py Floor Ceil Modulo CompareEqual`
+  prints the variant pairs a class covers.  Measured readings that cost a session:
+  `Floor`/`Ceil`/`Round` cover a FLOAT input ONLY (an INT-fed one refuses, and
+  the refusal aborts the run); `CompareEqual` is DIRECTIONAL -- `int/float` is
+  certified, `float/int` is not -- so an order that used to work keeps working
+  only while the INT stays on the left; `MathModulo` covers `float/float` but its
+  LAW (not the table) refuses mixed signs with a nonzero remainder
+  (`semantics.rs`: "truncation direction is unprobed"), so `q % 1.0` is not a
+  floor for negative q; `MathModuloFloored` covers `float/float` and has no
+  operator spelling.  The shape that pays: a floored quotient is ONE `floor(q)`
+  gate over a float, and the `(q as int) | 0` + sign-step idiom it replaces was
+  FOUR gates that put an INT variant on every wire below it.  Converting the four
+  copies (op 12 in both vmStep and vmStepFast, op 34's `//` and the `>>` floor,
+  the `math.floor`/`ceil`/`tointeger` block) closed `int-wrap`, `math-tointeger`
+  and `math-ult-large` and took the chip from 40,361 to 40,303 nodes.
 - **An uncertified `Expr_*` gate fed something its laws do not cover ABORTS the
   run, mid-tick -- it does not answer wrong.** `simdrv` prints one line and
   nothing after that tick ever runs, so a program that had already printed its

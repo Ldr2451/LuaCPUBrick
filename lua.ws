@@ -9802,11 +9802,13 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
       let x = numArg(if mt == 2 then 1 else mt, mx)
       let y = numArg(if yt == 2 then 1 else yt, yx)
       if mo == 1 || mo == 2 || mo == 13 {
-        // the floor gate truncates toward zero, so step to the right for
-        // negatives (floor) or positives (ceil)
-        let t = (x as int) | 0
-        let fl = if x < 0.0 && x != t then t - 1 else t
-        let ce = if 0 < x && x != t then t + 1 else t
+        // Floor and Ceil are certified over a FLOAT input; the old `(x as int)
+        // | 0` idiom put an INT variant in `t`, so the sign steps compared a
+        // float against it (the (float,int) CompareEqual the table does not
+        // cover) and the value they produced went to vSetInt's floor() as an
+        // INT (the (int) Floor refusal).  One gate each, floats throughout.
+        let fl = floor(x)
+        let ce = ceil(x)
         if mo == 1 {
           // Lua's floor/ceil return integers; the chip tags whole numbers
           // apart from fractions so they print and compare the same way
@@ -10838,15 +10840,16 @@ mod vmIDiv(a: int, b: int, c: int) {
         vSetNum(a, x / y)
       }
     } else if li && ri {
-      let q = x / y
-      let t = (q as int) | 0
-      let fl = if q < 0.0 && q != t then t - 1 else t
-      vSetInt(a, fl)
+      // Integer division: the quotient floored by the machine's own Floor
+      // gate, then wrapped by vSetInt (math.mininteger // -1 answers
+      // mininteger, so the wrap has to stay).  The old `(q as int) | 0` idiom
+      // left an INT value variant, and the sign step that came with it
+      // compared a float against it -- the (float,int) CompareEqual signature
+      // the certified table does not cover -- while vSetInt's floor() saw the
+      // INT and hit the (int) Floor refusal.
+      vSetInt(a, floor(x / y))
     } else {
-      let q = x / y
-      let t = (q as int) | 0
-      let fl = if q < 0.0 && q != t then t - 1 else t
-      vSetNum(a, fl)
+      vSetNum(a, floor(x / y))
     }
   }
 }
@@ -10986,11 +10989,18 @@ mod vmStep() {
               vSetNum(a, x % y)
             }
           } else {
-            // floored quotient: the floor gate truncates toward zero,
-            // so adjust negative non-integral quotients down by one
+            // floored quotient, in ONE domain: the machine refuses a mixed
+            // (int,float) signature (MathMultiply, CompareEqual), and the old
+            // `(q as int) | 0` truncation made every value under it an INT
+            // variant, so `x - fl * y` and vSetInt's floor() both hit that
+            // refusal mid-run.  Floor is the certified rounding gate for a
+            // FLOAT input (semantics.rs:1552 does a true floor, and the old
+            // truncating floor was the HAND-WRITTEN evaluator, not this
+            // machine), so one gate does it and nothing crosses a domain.
+            // The `%` spelling is not an alternative: MathModulo on floats
+            // REFUSES mixed signs with a nonzero remainder (semantics.rs).
             let q = x / y
-            let t = (q as int) | 0
-            let fl = if q < 0.0 && q != t then t - 1 else t
+            let fl = floor(q)
             if ii && ij {
               vSetInt(a, x - fl * y)
             } else {
@@ -11446,13 +11456,17 @@ mod vmStep() {
         // floor(-0.5) is 0 and not -1, and `-8 >> 4` came out 0.  Every earlier
         // shift test passed because their quotients happened to be integral.
         //
-        // This is op 34's `//` floor, verbatim -- truncate toward zero with the
-        // bitwise `| 0`, then step down when a negative quotient was not exact.
-        // Reusing the idiom rather than a new helper because a MOD INLINES, and
-        // this is the second copy of these four lines either way.
+        // This is op 34's `//` floor, now in the machine's own rounding gate:
+        // the `(q as int) | 0` idiom left an INT value variant, and every gate
+        // under it then carried a mixed (int,float) signature the certified
+        // table refuses.  Floor over a FLOAT input is certified and is a TRUE
+        // floor on this machine (semantics.rs:1552), so the old "truncate, then
+        // step a negative non-integral quotient down" pair collapses to one
+        // gate.  `%` cannot stand in: the MathModulo law REFUSES float operands
+        // of mixed signs with a nonzero remainder (semantics.rs, truncation
+        // direction unprobed there).
         let q = vNum(b) / (2.0 ** n)
-        let t = (q as int) | 0
-        vSetInt(a, if q < 0.0 && q != t then t - 1 else t)
+        vSetInt(a, floor(q))
       }
     } else if op == 0 {
       vmHalted = true
@@ -11586,11 +11600,12 @@ chip vmStepFast() {
             vSetNum(a, x % y)
           }
         } else {
-          // floored quotient: the floor gate truncates toward zero,
-          // so adjust negative non-integral quotients down by one
+          // floored quotient in ONE domain, matching the vmStep copy: the
+          // machine's Floor gate over a float is the certified rounding law,
+          // and the `| 0` cast used to leave an INT variant that made every
+          // gate under it a mixed (int,float) signature it refuses
           let q = x / y
-          let t = (q as int) | 0
-          let fl = if q < 0.0 && q != t then t - 1 else t
+          let fl = floor(q)
           if ii && ij {
             vSetInt(a, x - fl * y)
           } else {
