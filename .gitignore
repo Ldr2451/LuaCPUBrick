@@ -4,3 +4,12 @@
 # Cargo build output for the in-repo tools (extras/screen/mkwall).
 target/
 Cargo.lock.orig
+
+# Scratch: probe builds, redirected probe/suite logs, one-off scripts.  Rooted
+# patterns only -- lib/ holds real pieces named _m.lua and _s.lua.
+/_*.ws
+/_*.brz
+/_*.txt
+/_*.log
+tools/chip/_*.py
+tools/simdrv/_*
