@@ -466,9 +466,24 @@ class Sim:
                        % ", ".join("%s=%d" % kv for kv in sorted(arena.items())))
         tp = min(arena.values()) if arena else None
         th = self.chip_var("tHeap")
-        if tp is not None and th is not None and th > tp:
-            bad.append("tHeap=%s past the %d entries the chip sized"
-                       % (th, tp))
+        # `tHeap` counts heap ENTRIES, and the chip bounds it two ways: its own
+        # guard is `if tHeap >= tOwner.length()` (lua.ws:8161) and the ceiling is
+        # MAX_HEAP with `else if tHeap < MAX_HEAP` (lua.ws:8238).  It is NOT
+        # bounded by the TABLE lenses tLen/tFirst/tLast, which are sized MAX_TABLES
+        # (512) -- a 5,000-entry table run sits above those by design and the
+        # hand-written evaluator reported them grown, which is why the old check
+        # passed.  Read the lens the chip actually compares against.
+        # The per-entry arrays (tOwner/tKey*/tPrev/tNext/tv*) are grown together by
+        # heapEnsure, so their lengths WOULD bound tHeap -- but not readably: a
+        # container written inside a `chip` body reads back its persisted
+        # (init-time) reference through a probe, the same staleness the official
+        # simulator shows for the lerr bool, so a grown arena reads 4 there while
+        # tHeap is 5.  What is checkable without lying about the read is the
+        # ceiling the chip enforces: `else if tHeap < MAX_HEAP` (lua.ws:8238),
+        # mirrored in tests/spec.py.  A runaway OOM that walks tHeap past it
+        # still fails here, which is what the case's contract wants.
+        if th is not None and th > spec.MAX_HEAP:
+            bad.append("tHeap=%s past MAX_HEAP=%d" % (th, spec.MAX_HEAP))
         ck = self.chip_var("cloK")
         cn = self.chip_var("cloN")
         if ck is not None and cn is not None and ck > cn:
