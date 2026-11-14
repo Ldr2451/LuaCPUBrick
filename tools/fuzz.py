@@ -35,7 +35,11 @@ number that finds them:
     the arity and the table lands on the wrong one -- "arithmetic on a nil
     value (local 'p1')". The last 4 skips of the 800-seed sweep (917..1716):
     seeds 1279, 1441, 1684, 1708, all of them "oracle rejected rc=1". Fixed
-    by firing the swap arm at depth 0 only, where it executes exactly once.
+    by putting the tables on the EXECUTION, not by dropping the shape: exact
+    tracking at top level (one execution), SAME-arity partners inside a
+    block (a binding made there must be a fixpoint), and self.funcs restored
+    across if/while arms next to self.env, so a g bound in an arm stays
+    unbound where the arm may not have run.
 
 Measured, all four bugs included: seeds 1-150 went from 50 agreeing and 100
 skipped, to 119 agreeing and 30 skipped, to 150 agreeing and 0 skipped; seeds
@@ -215,35 +219,45 @@ class Gen:
             e = self.expr("num", 1)
             self.env[n] = "num"
             return f"{n} = {e}"
-        if c < 0.50 and self.env and depth == 0:
-            # Top level ONLY, which closes the last four skips (seeds 1279,
-            # 1441, 1684, 1708 of 917..1716): the swap arm tracked arities
-            # exactly, but it tracked them along the GENERATION, and inside a
-            # branch or a loop body generation is not execution.  In an `if`
-            # arm the target can stay unassigned (g0 = false and the arm
-            # untaken: "attempt to call a boolean"), and in a while body the
-            # swap runs N times, so a two-name cycle of different arities left
-            # g0 holding f0's two-parameter function while the table said one
-            # ("attempt to perform arithmetic on a nil value (local 'p1')").
-            # env was restored across those arms; self.funcs never could be --
-            # a name rebound conditionally has no static type at all.  At top
-            # level a swap executes exactly once, so the tables stay exact
-            # and the shape this arm exists for still fuzzes.
+        if c < 0.50 and self.env and (depth == 0 or g not in self.env):
+            # Closes the last four skips (seeds 1279, 1441, 1684, 1708 of
+            # 917..1716, all "oracle rejected rc=1"): the tables tracked the
+            # GENERATION, and inside a branch or loop body generation is not
+            # execution -- the swap arm's four skips were a target left
+            # unassigned by an untaken arm ("attempt to call") and a swap
+            # cycle of different arities run N times by a loop body
+            # ("arithmetic on a nil value (local 'p1')").  Two rules put the
+            # tables back on the execution instead of dropping the shape:
+            # at top level (depth 0) the swap runs exactly once, so exact
+            # tracking is true; inside a block (0..N executions) the binding
+            # must be a FIXPOINT -- only SAME-arity partners move, and the
+            # fresh target g stays unbound outside the arm (the if/while arms
+            # now restore self.funcs as they always restored self.env).  g
+            # also has to be FRESH inside a block: an existing binding
+            # rebound conditionally would not be a fixpoint.
             a = r.choice(sorted(self.env))
             ta = self.env[a]
             if ta == "table":
                 return self.tstmt(a)
-            b = self.var(ta)
-            if b is None:
-                b = self.expr(ta, 1)
-            # The second value is its OWN expression and is often a DIFFERENT
-            # function from b -- `f1, g0 = f1, f0` is the shape that matters -- so
-            # each target takes the arity of the value IT receives.  Reading both
-            # from b is wrong in exactly the case that matters: g0 then claimed
-            # f1's one parameter while holding f0, and `g0(x)` left f0's p1 nil,
-            # so PUC raised "attempt to perform arithmetic on a nil value (local
-            # 'p1')".
-            second = self.expr(ta, 1)
+            if ta == "func" and depth > 0:
+                keep = self.funcs[a]
+                same = [k for k in sorted(self.funcs)
+                        if self.env.get(k) == "func"
+                        and self.funcs[k] == keep]
+                b = r.choice(same)
+                second = r.choice(same)
+            else:
+                b = self.var(ta)
+                if b is None:
+                    b = self.expr(ta, 1)
+                # The second value is its OWN expression and is often a
+                # DIFFERENT function from b -- `f1, g0 = f1, f0` is the shape
+                # that matters -- so each target takes the arity of the value
+                # IT receives.  Reading both from b is wrong in exactly the
+                # case that matters: g0 then claimed f1's one parameter while
+                # holding f0, and `g0(x)` left f0's p1 nil, so PUC raised
+                # "attempt to perform arithmetic on a nil value (local 'p1')".
+                second = self.expr(ta, 1)
             stmt = f"{a}, {g} = {b}, {second}"
             # Both names now hold a value of type ta, so the type and ARITY tables
             # have to move with them: a call is generated from self.funcs, and a
@@ -255,20 +269,24 @@ class Gen:
             self.env[a] = ta
             self.env[g] = ta
             if ta == "func":
-                # b and second are function NAMES here, not computed values: expr()
-                # has no case for "func" and falls through to leaf(typ), which
-                # offers a name of that type, and reaching ta == "func" means one
-                # exists.
-                #
-                # Both arities are read BEFORE either is written, because a target
-                # can also be one of the two sources: `f1, g2 = f0, f1` reads
-                # f1's own arity for g2, and writing funcs["f1"] first had already
-                # replaced it.  That aliasing is what left one seed in 400 still
-                # rejected, with g2 claiming one parameter while holding f1.
-                ar_a = self.funcs[b]
-                ar_g = self.funcs[second]
-                self.funcs[a] = ar_a
-                self.funcs[g] = ar_g
+                if depth > 0:
+                    # fixpoint: same-arity partners were chosen above, so a's
+                    # binding is unchanged and the fresh g simply takes it
+                    self.funcs[g] = self.funcs[a]
+                else:
+                    # b and second are function NAMES here, not computed values.
+                    #
+                    # Both arities are read BEFORE either is written, because a
+                    # target can also be one of the two sources: `f1, g2 = f0, f1`
+                    # reads f1's own arity for g2, and writing funcs["f1"] first
+                    # had already replaced it.  That aliasing is what left one
+                    # seed in 400 still rejected, with g2 claiming one parameter
+                    # while holding f1 -- at top level the swap runs exactly once,
+                    # so exact tracking here is the truth.
+                    ar_a = self.funcs[b]
+                    ar_g = self.funcs[second]
+                    self.funcs[a] = ar_a
+                    self.funcs[g] = ar_g
             else:
                 # a function name that has just been given a number must lose its
                 # arity, or the call generator would keep calling it
@@ -283,15 +301,23 @@ class Gen:
             # the env has to go back to what it was: reading one afterwards is a
             # read of an undeclared GLOBAL, which is nil and then arithmetic on it
             saved = dict(self.env)
+            # funcs travels with env: a swap inside an arm may bind a fresh
+            # g there, and offering it AFTER the arm reads a global the arm
+            # may never have assigned -- "attempt to call a nil value".  The
+            # arity moves inside an arm are fixpoints (same-arity partners),
+            # so restoring the snapshot loses nothing the outer truth needed.
+            saved_f = dict(self.funcs)
             s1 = self.stmt(depth + 1)
-            # the branches are exclusive scopes: a local from the then arm is not
-            # in scope in the else arm, and offering it there builds a read of an
-            # undeclared global
+            # the branches are exclusive scopes: a local from the then arm is
+            # not in scope in the else arm, and offering it there builds a
+            # read of an undeclared global
             self.env.clear()
             self.env.update(saved)
+            self.funcs = dict(saved_f)
             s2 = self.stmt(depth + 1) if r.random() < 0.5 else None
             self.env.clear()
             self.env.update(saved)
+            self.funcs = dict(saved_f)
             s = f"if {t} then {s1}"
             if s2:
                 s += f" else {s2}"
@@ -300,10 +326,14 @@ class Gen:
             n = r.randint(1, 4)
             k = self.n
             saved = dict(self.env)
+            saved_f = dict(self.funcs)
             body = " ".join(self.stmt(depth + 1)
                             for _ in range(r.randint(1, 3)))
+            # the body runs 0..N times, so every binding it makes must be a
+            # fixpoint by the time generation resumes here; see the swap arm
             self.env.clear()
             self.env.update(saved)
+            self.funcs = dict(saved_f)
             brk = " if g0 then break end" if r.random() < 0.4 else ""
             return (f"local _k{k} = 1 while _k{k} <= {n} do "
                     f"{body}{brk} _k{k} = _k{k} + 1 end")
