@@ -28,6 +28,14 @@ number that finds them:
   * the multiple-assignment arm moved a function between names without moving
     its arity, so `f0, g2 = f1, nil` left a later `f0(w)` passing one argument to
     a two-parameter function: 4 seeds in 250.
+  * and that arm firing INSIDE a branch or a loop body made the rebound name's
+    runtime value unknowable: the branch may never run (the global stays the
+    nil/boolean it started as -- "attempt to call"), and a loop body runs the
+    swap N times, so a swap between two functions of different arity cycles
+    the arity and the table lands on the wrong one -- "arithmetic on a nil
+    value (local 'p1')". The last 4 skips of the 800-seed sweep (917..1716):
+    seeds 1279, 1441, 1684, 1708, all of them "oracle rejected rc=1". Fixed
+    by firing the swap arm at depth 0 only, where it executes exactly once.
 
 Measured, all four bugs included: seeds 1-150 went from 50 agreeing and 100
 skipped, to 119 agreeing and 30 skipped, to 150 agreeing and 0 skipped; seeds
@@ -207,7 +215,20 @@ class Gen:
             e = self.expr("num", 1)
             self.env[n] = "num"
             return f"{n} = {e}"
-        if c < 0.50 and self.env:
+        if c < 0.50 and self.env and depth == 0:
+            # Top level ONLY, which closes the last four skips (seeds 1279,
+            # 1441, 1684, 1708 of 917..1716): the swap arm tracked arities
+            # exactly, but it tracked them along the GENERATION, and inside a
+            # branch or a loop body generation is not execution.  In an `if`
+            # arm the target can stay unassigned (g0 = false and the arm
+            # untaken: "attempt to call a boolean"), and in a while body the
+            # swap runs N times, so a two-name cycle of different arities left
+            # g0 holding f0's two-parameter function while the table said one
+            # ("attempt to perform arithmetic on a nil value (local 'p1')").
+            # env was restored across those arms; self.funcs never could be --
+            # a name rebound conditionally has no static type at all.  At top
+            # level a swap executes exactly once, so the tables stay exact
+            # and the shape this arm exists for still fuzzes.
             a = r.choice(sorted(self.env))
             ta = self.env[a]
             if ta == "table":
