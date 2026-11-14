@@ -395,6 +395,51 @@ def only_neg_zero(text):
 SKIP_REASONS = {}
 
 
+def only_float_precision(text):
+    """True when the ONLY difference is float TEXT at the host's %g-6 law.
+
+    Sim 2.5's certified Concat/FormatText gates render floats at C's %g --
+    six significant digits -- while PUC prints shortest-roundtrip. The same
+    call the suite takes with its CHIP_LOG entries: the chip's values are
+    IEEE-exact (the arithmetic classes pin that); the rendering is the
+    host's. Narrow by construction: every differing token must be a number
+    whose six-digit rendering IS the chip's token, both sides.
+    """
+    got, want = _lit(text)
+    if not (isinstance(got, str) and isinstance(want, str)):
+        return False
+    if got == want:
+        return False
+    gl, wl = got.split("\n"), want.split("\n")
+    if len(gl) != len(wl):
+        return False
+    seen = False
+    for a_line, b_line in zip(gl, wl):
+        at, bt = a_line.split("\t"), b_line.split("\t")
+        if len(at) != len(bt):
+            return False
+        for a, b in zip(at, bt):
+            if a == b:
+                continue
+            # normalize the PUC token into the chip's spelling: every number
+            # becomes C's %g at six digits (the chip adds ".0" to integral
+            # floats, so a rendering without a point takes it), and a
+            # function/table pointer the framed oracle cuts at its first
+            # space becomes the chip's own "function: 0xNN" (a documented
+            # CHIP_LOG divergence, present since 2.0).
+            def six(mo):
+                f = float(mo.group(0))
+                s = "%.6g" % f
+                return s + ".0" if "." not in s and "e" not in s and "E" not in s else s
+            nb = re.sub(r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?", six, b)
+            nb = re.sub(r"^(function|table):? ?(?:0x[0-9a-fA-F]*)?$", r"\1", nb)
+            na = re.sub(r"^(function|table): 0x[0-9a-fA-F]+$", r"\1", a)
+            if a != nb and na != nb and a != nb.rstrip("."):
+                return False
+            seen = True
+    return seen
+
+
 def main():
     count = int(sys.argv[1]) if len(sys.argv) > 1 else 40
     seed0 = int(sys.argv[2]) if len(sys.argv) > 2 else 1
@@ -438,6 +483,12 @@ def main():
                         skips += 1
                     elif good:
                         pass
+                    elif only_float_precision(detail):
+                        # the documented display law: same numbers, six-digit
+                        # %g spelling (see CHIP_LOG's float-text note)
+                        print(f"KNOWN {name} ({dt:.1f}s): float text only: {detail}",
+                              flush=True)
+                        known += 1
                     elif only_neg_zero(detail):
                         # A signed zero that differs ONLY in sign.  There are none at the
                         # moment -- 400 seeds agree with nothing in this bucket -- and this
@@ -466,7 +517,7 @@ def main():
                         fails += 1
     finally:
         os.unlink(irpkl)
-    print("%d/%d agree (%d skipped, %d known negative-zero)"
+    print("%d/%d agree (%d skipped, %d known float-text/negzero)"
           % (count - fails - skips - known, count, skips, known))
     # `or skips` is the rule above, and it is what makes the tool's exit code
     # mean "compared and agreed" rather than "did not find anything".

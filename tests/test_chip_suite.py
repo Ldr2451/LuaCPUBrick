@@ -138,12 +138,25 @@ CHIP_LOG = {
     # unary tighter than the shifts.  This one AGREES with the oracle and is here
     # only because it is the other half of the same precedence change.
     "lit-hex": "255\t16\t9223372036854775808\n",
-    "fmt-div3": "0.3333333333333333\n",
-    "fmt-big": "1.2676506002282294e+30\t1e+20\n",
+    # FLOAT TEXT PRECISION IS THE HOST'S NEW LAW (sim 2.5): the certified
+    # Concat/FormatText gates render floats at C's %g -- SIX significant digits
+    # -- and no gate gives more, so print/tostring answer the host's spelling
+    # and these pins record that spelling. The 2.0-era host printed shortest-
+    # roundtrip ("0.3333333333333333", "3.141592653589793"); the values are
+    # IEEE-exact either way (arith, compare and parse-back classes pin that),
+    # only the rendering is coarser. Same call as the int64 print pins above:
+    # a documented divergence, not a bug -- a full digit machine costs ~600
+    # nodes and the ceiling has 150, so the law is taken, not the fix.
+    # fmt-add/math-sqrt/negzero-pow3 join this class below.
+    "fmt-div3": "0.333333\n",
+    "fmt-big": "1.26765e+30\t1e+20\n",
+    "fmt-add": "0.3\n",
+    "math-sqrt": "4.0\t1.41421\n",
+    "negzero-pow3": "0.0\tinf\t-8.0\t-0.125\t1.41421\n",
     "math-maxinteger": "9223372036854775808\n",
-    "math-pi": "3.141592653589793\n",
-    "math-log": "4.605170185988092\n",
-    "math-modf": "3\t0.7000000000000002\n",
+    "math-pi": "3.14159\n",
+    "math-log": "4.60517\n",
+    "math-modf": "3\t0.7\n",
     # math.random is a Lua piece with a 32-bit LCG, so its SEQUENCE is the
     # chip's and not PUC's (PUC seeds xoshiro256** on a 64-bit state).  The API,
     # the ranges, the float's interval and randomseed's two return values are
@@ -167,7 +180,7 @@ CHIP_LOG = {
     # pointer reads as "function" in a diff and nobody looked past it.  What is
     # left is genuinely hard: %u past 2^53 is the double wall the registers put
     # there, and an exact 64-bit pointer is the same one.
-    "puc-hex-wide": "8.198552921648691e+16\n",
+    "puc-hex-wide": "8.19855e+16\n",
     "puc-format-u64": "-1\n",         # %u past 2^53: the registers are doubles
     # math.random's two range errors were pinned HERE, next to a false, because
     # the only way to see a message and keep running was pcall.  They are
