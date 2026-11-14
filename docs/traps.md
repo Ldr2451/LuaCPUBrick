@@ -361,6 +361,23 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   (language reference, "an arm cannot be used to guard another").  Measured:
   closing sqrt/ln/div/idiv/pow domains plus fmtNum arms took 940 to 947 OK and
   the refusal histogram from 8 cases to 1.
+- **A gate fed by a constant-folded write runs UNWIRED and refuses: reading a
+  var whose value is static per branch (`p == 0.0`, `-p` after the branches
+  that set p) folds to a pruned stub, and a Select or phi arm feeding Floor/
+  Abs/Ceil refuses the same way (`not certified for inputs (unwired)`).** The
+  shape that works is answering the signed constant AT the branch that uses
+  the gate -- guard the consumer (`if x == NEGZERO { vSetInt(a, 0) } else if
+  abs(fl) ...`), never normalize into a value that flows back into a law gate.
+  Measured on the NEGZERO sentinel: powSignedZero's p-flip, a Select-fed floor
+  and a var-normalized floor each refused at a different brick; the use-site
+  guard compiles and runs.
+- **The `info: parse start/end` pair cost ~30 nodes nothing reads, and their
+  ServerUptime writes sit between the parse and progDebug; deleting the pair
+  (both call sites and the mods) bought those nodes back AND unblocked the
+  lex-reject battery -- `progDebugV = dbgStartV` used to mask the first
+  `err:`/reject carry-over, six reject cases moved from hang-accepted to
+  correct.** progDebug assertions in the suite are substring checks, so
+  dropping the two info lines does not touch any pinned answer.
 - **An uncertified `Expr_*` gate fed something its laws do not cover ABORTS the
   run, mid-tick -- it does not answer wrong.** `simdrv` prints one line and
   nothing after that tick ever runs, so a program that had already printed its

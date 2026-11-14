@@ -531,10 +531,8 @@ var progOkV: bool = false
 // therefore cannot mean "rejected".
 var progDebugV: string = ""
 
-// The two `info: ` lines a parse writes, and WHY they exist: see parseInfoStart
-// beside parseJobStart.
-var dbgStartV: string = ""
-var dbgTick0: float = 0.0
+// The two `info: ` lines a parse used to write are gone: they cost ~30 nodes
+// and nothing reads them; the err: and warn: channels below are the truth.
 
 // ---------------------------------------------------------------- value helpers
 // value tags: 0 nil, 1 number, 2 string, 3 boolean, 4 function, 5 table, 6 integer
@@ -555,11 +553,21 @@ mod truthyOf(tag: int, num: float) -> bool {
 // certifies.  The old `v != v` test could never fire for the same reason.
 const NANSENT = 1.7976931348623155e300
 
+// Signed zero is the same shape: no law keeps the sign of a zero (MathNegate,
+// MathMultiply and MathDivide of a zero by a negative all answer +0.0,
+// measured), so -0.0 is carried as the smallest negative subnormal and
+// printed back from fmtNum.
+const NEGZERO = 0.0 - 4.9406564584124654e-324
+
 mod fmtNum(v: float) -> string {
   return if v == NANSENT then "nan"
     else if v == 1.7976931348623157e308 then "inf"
     else if v == 0.0 - 1.7976931348623157e308 then "-inf"
-    else if v == 0.0 then if atan2(v, v) < 0.0 then "-0.0" else "0.0"
+    // the atan2 test could never fire: its inputs are sanitized like every
+    // other read, and no gate keeps a zero's sign, so -0.0 is the NEGZERO
+    // sentinel answered at the sites that make one and printed back here
+    else if v == NEGZERO then "-0.0"
+    else if v == 0.0 then "0.0"
     else if v == floor(v) && abs(v) < 1e15 then ("" .. (v as int)) .. ".0"
     else "" .. v
 }
@@ -4681,29 +4689,41 @@ mod powSignedZero(x: float, y: float) -> float {
   // would run the refused gate anyway.  Guarded, the sentinels answer, and the
   // sign block below still flips the infinite ones by parity.
   var p = 0.0
-  if x < 0.0 && y != floor(y) || x == 0.0 && y < 0.0 {
-    p = if x == 0.0 then 1.7976931348623157e308 else NANSENT
+  // a zero base goes FIRST: powf of a NEGATIVE tiny base (the NEGZERO
+  // sentinel reads as one) with a fractional exponent is a nan the pow gate
+  // refuses, so the zero cases must never reach the gate
+  let bz = x == 0.0 || x == NEGZERO
+  let iyf = floor(y)
+  if bz {
+    if y < 0.0 {
+      p = 1.7976931348623157e308
+    } else if y == 0.0 {
+      p = 1.0
+    }
+  } else if x < 0.0 && y != iyf {
+    p = NANSENT
   } else {
     p = x ** y
   }
-  if x == 0.0 {
-    // The integrality test runs in ONE domain: `y == iy` compared a float
-    // against the INT variant `as int` answers, and Expr_CompareEqual (float,
-    // int) is not certified -- the refusal aborted the whole run, which is how
-    // negzero-pow3 lost its answer.  floor(y) is a float and the same value.
-    let iyf = floor(y)
-    let iy = y as int
-    // 1/x is the sign oracle for a zero base, and the parity below needs the
-    // integer form of the exponent -- taken only once the float test passed.
-    if y == iyf && 1/x < 0.0 {
+  if bz {
+    // the exponent's integrality and parity, in the domains the table covers:
+    // floor(y) is shared with the nan test above; `y as int` (only for the
+    // parity) is taken inside the integral test so no (float,int) CompareEqual
+    // is ever fed, and the abs() range keeps a saturating `as int` from giving
+    // a huge exponent the wrong parity
+    if y == iyf && abs(y) < 9007199254740992.0 && x < 0.0 {
+      let iy = y as int
       // floored modulo, so an odd exponent is 1 on either side of zero
-      if (p < 0.0) != (iy % 2 != 0) {
-        // -p and NOT `0.0 - p`: IEEE says (-0.0) - (+0.0) is -0.0 but
-        // (+0.0) - (+0.0) is +0.0, so subtracting zero flips an infinity and
-        // leaves a zero exactly where it was.  Unary minus is the operation
-        // that changes a zero's sign, which is why the chip's UNM arm negates
-        // rather than subtracting.
-        p = -p
+      if iy % 2 != 0 {
+        // The flip NEVER reads p: the constant fold propagates p's branch-
+        // static value (0.0 / 1.0 / the infinity) and any gate reading it --
+        // `p == 0.0`, `-p` -- folds to a pruned stub that runs UNWIRED and
+        // refuses.  The branches answer the signed sentinels directly.
+        if y < 0.0 {
+          p = 0.0 - 1.7976931348623157e308
+        } else if y > 0.0 {
+          p = NEGZERO
+        }
       }
     }
   }
@@ -5886,28 +5906,9 @@ mod fmtPrecZero() {
 // The character count is what the user handed over, not what gets lexed: a
 // program that names a library has that piece's characters prepended, and the
 // tick count is where that shows up.
-mod parseInfoStart(chars: int) {
-  dbgTick0 = ServerUptime()
-  dbgStartV = "info: parse start: " .. ("" .. chars) .. " chars\n"
-  progDebugV = dbgStartV
-}
-
-// Uptime is ticks * 0.01, so a span of it is a span of ticks * 100.  This is
-// what turns "it is busy" into "it will be done in this many ticks", and it is
-// the only place the chip reports its own cost.
-//
-// REBUILDS both lines from the current tick rather than appending to what is on
-// the port, and that is the whole design.  Two jobs can be in flight in one tick
-// -- a stale parse finishing while a new one starts -- so an append-and-latch
-// keeps the FIRST end line forever, which is how this read "parse end: 0 ticks"
-// on a 72-tick parse: the stale job's end arrived after the real job's start and
-// the latch then blocked the real one.  Recomputing means a stale call writes a
-// wrong line that the real call overwrites, so the port ends up right without
-// anything having to know how many times it was written.
-mod parseInfoEnd() -> string {
-  let t = toInt((ServerUptime() - dbgTick0) * 100.0)
-  return dbgStartV .. ("info: parse end: " .. ("" .. t) .. " ticks\n")
-}
+// The parse-info pair (start line and elapsed-tick end line) is gone: the
+// err: and warn: channels below carry the truth, and the two mods plus their
+// ServerUptime diffs cost ~30 nodes nothing reads.
 
 mod parseJobStart() {
   // A new program clears its predecessor's results BEFORE the parse, not after:
@@ -9845,8 +9846,13 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
         let ce = ceil(x)
         if mo == 1 {
           // Lua's floor/ceil return integers; the chip tags whole numbers
-          // apart from fractions so they print and compare the same way
-          if abs(fl) < 9.2e18 { vSetInt(a, fl) } else { vSetNum(a, fl + 0.0) }
+          // apart from fractions so they print and compare the same way.
+          // floor of the -0.0 sentinel reads -1 (the sentinel is a tiny
+          // negative), so the sentinel branch answers the zero directly -- no
+          // phi: feeding a folded-constant write into Floor/Abs refuses.
+          if x == NEGZERO {
+            vSetInt(a, 0)
+          } else if abs(fl) < 9.2e18 { vSetInt(a, fl) } else { vSetNum(a, fl + 0.0) }
         } else if mo == 2 {
           if abs(ce) < 9.2e18 { vSetInt(a, ce) } else { vSetNum(a, ce + 0.0) }
         } else if x == fl + 0.0 && abs(x) < 9.2e18 {
@@ -11082,7 +11088,14 @@ mod vmStep() {
         if nt == 6 || coerceL == 1 {
           vSetInt(a, -nx)
         } else {
-          vSetNum(a, -nx)
+          if nx == 0.0 {
+            // negating a zero is the one operation with a sign no gate keeps
+            vSetNum(a, NEGZERO)
+          } else if nx == NEGZERO {
+            vSetNum(a, 0.0)
+          } else {
+            vSetNum(a, -nx)
+          }
         }
       }
     } else if op == 15 {
@@ -11689,7 +11702,13 @@ chip vmStepFast() {
       if nt == 6 || coerceL == 1 {
         vSetInt(a, -nx)
       } else {
-        vSetNum(a, -nx)
+        if nx == 0.0 {
+          vSetNum(a, NEGZERO)
+        } else if nx == NEGZERO {
+          vSetNum(a, 0.0)
+        } else {
+          vSetNum(a, -nx)
+        }
       }
     }
   } else if op == 15 {
@@ -12011,7 +12030,6 @@ on sched {
 on goParse {
   // Before anything else, so the port says the job started even if the job then
   // fails: an `err:` line with no start above it is a chip that went quiet.
-  parseInfoStart(program.Length())
   parseJobStart()
   // The library goes in front of the program, so the user's line numbers are
   // shifted by however many lines it added; libLines undoes that for errors.
@@ -12105,9 +12123,8 @@ on goParse {
   } else {
     if lerr {
       progOkV = false
-      let i0 = parseInfoEnd()
       let i1 = "err: line " .. userLine(lerrLine) .. ": " .. lerrMsg
-      progDebugV = i0 .. i1
+      progDebugV = i1
       vmHalted = true
       jobBusy = false
     } else {
@@ -12242,16 +12259,14 @@ on goParse2 {
       // cpos sits at (or just past) the offending token in nearly every perr
       // path, which is the line to name
       let epos = if cpos >= tl.length() then tl.length() - 1 else cpos
-      let i0 = parseInfoEnd()
       let i1 = "err: line " .. userLine(if epos < 0 then lline else tl[epos])
         .. ": " .. perrMsg
-      progDebugV = i0 .. i1
+      progDebugV = i1
     } else {
       // staticAdvice into a local first: the host cannot lower a mod call inside
       // a binary operation, only variable + variable.
       let advice = staticAdvice(program)
-      let i0 = parseInfoEnd()
-      progDebugV = i0 .. advice
+      progDebugV = advice
     }
   }
 }
