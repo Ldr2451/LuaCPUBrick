@@ -412,15 +412,15 @@ def main():
     # same `one()`), only the execution is shared.
     import tempfile
     from test_chip_suite import run_batch, resolve_src
-    from irsims import share_dump
+    from simdrv_sim import share_dump
     t0 = time.time()
-    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".brz", delete=False) as f:
         irpkl = f.name
     try:
         share_dump(WS_PATH, irpkl)
-        print("dump %.1fs -> %s" % (time.time() - t0, irpkl), flush=True)
+        print("artifact %.1fs -> %s" % (time.time() - t0, irpkl), flush=True)
         prepared = [("fuzz-%d" % (seed0 + k), resolve_src(src, dict(kw)),
-                      dict(kw, _irpkl=irpkl), "run", None)
+                      dict(kw), "run", None)
                     for k, (name, src) in enumerate(jobs)]
         # run_batch falls back to case-by-case on a hang, which keeps the hard
         # per-case timeout that isolates a single runaway program.

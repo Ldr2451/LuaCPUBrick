@@ -298,3 +298,19 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   reads the same stale root copy. Open direction: the failure flag has to
   cross the boundary on data the pins carry -- e.g. a sentinel token emitted
   at the failure sites and checked by boot/parser -- not a `var` bool.
+- **An uncertified `Expr_*` gate fed something its laws do not cover ABORTS the
+  run, mid-tick -- it does not answer wrong.** `simdrv` prints one line and
+  nothing after that tick ever runs, so a program that had already printed its
+  answer loses it and the harness reports an empty log. Measured shape:
+  `tick 17: Expr_Floor (grid 2 brick 15922): not certified for inputs (unwired)`
+  for `inNumArr()` called with no argument -- `fid == 6`'s guard evaluates
+  `iv != floor(iv)` and the register behind `iv` is unwired at that moment. The
+  usual cause is a non-finite number: `sanitize` (`wirescript-ir/semantics.rs:228`)
+  maps anything non-finite to `0.0` wherever a law is scalar, so the divide
+  gate's own `inf` survives only until a certified gate reads it, and `1/0`
+  arrives downstream as `0.0`. The hand-written simulator checked no
+  certification, so these same programs ran on and printed something. Do not
+  chase such a FAIL as a log bug: `tests/test_chip_suite.py` now puts the
+  engine's line in the verdict and prints an `ENGINE LAW REFUSALS` histogram of
+  gate + inputs per run (12 of 985 cases, 6 classes, in the first suite run
+  under the official sim) -- the class, not the brick, is the thing to look at.

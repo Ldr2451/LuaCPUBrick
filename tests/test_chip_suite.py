@@ -27,12 +27,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TINYLUA = os.path.dirname(HERE)
 sys.path.insert(0, TINYLUA)
 sys.path.insert(0, os.path.join(HERE))
-sys.path.insert(0, os.path.join(TINYLUA, "irrun"))
 
 import cases
 import lua_oracle as OR
 from timing import Elapsed
-from irdump import resolve_prog
+from simdrv_sim import sim_from_brz, ensure_brz
+
+
+def resolve_prog(src, root):
+    """A program, or `PRE:<path>\n<rest>` with a repro file prepended.
+
+    The suite's cases and the ad-hoc tools take the same spelling, and the
+    chip has no dofile, so a case that needs a helper library spells the
+    prepend rather than loading it.
+    """
+    if not src.startswith("PRE:"):
+        return src
+    path, _, rest = src[4:].partition("\n")
+    with open(os.path.join(root, path), encoding="utf-8") as f:
+        return f.read() + rest
 
 WS_PATH = os.path.join(TINYLUA, "lua.ws")
 
@@ -279,14 +292,14 @@ def resolve_src(src, kw):
     return src
 
 
-def run_one_payload(name, payload, ws_path, irpkl, timeout):
+def run_one_payload(name, payload, ws_path, brz, timeout):
     """Run a single case payload in its own process; retry once on timeout."""
     for attempt in (1, 2):
         t0 = time.time()
         try:
             p = subprocess.run(
                 [sys.executable, "-u", __file__, "--worker",
-                 ws_path, json.dumps(payload), irpkl or ""],
+                 ws_path, json.dumps(payload), brz or ""],
                 capture_output=True, text=True, timeout=timeout,
                 cwd=TINYLUA)
             dt = time.time() - t0
@@ -309,7 +322,7 @@ def run_case(name, src, inputs, mode, kw):
     return run_one_payload(
         name,
         {"src": src, "kw": kw, "ticks": kw.get("ticks", TICKS), "mode": mode},
-        kw.get("_ws", WS_PATH), kw.get("_irpkl"),
+        kw.get("_ws", WS_PATH), kw.get("_brz"),
         TIMEOUT_OVERRIDES.get(name, TIMEOUT))
 
 
@@ -323,13 +336,13 @@ def run_batch(cases_in):
     payload = [{"src": c[1], "kw": c[2], "ticks": c[2].get("ticks", TICKS),
                 "mode": c[3]} for c in cases_in]
     ws_path = cases_in[0][2].get("_ws", WS_PATH)
-    irpkl = cases_in[0][2].get("_irpkl")
+    brz = cases_in[0][2].get("_brz")
     t0 = time.time()
     timeout = TIMEOUT * len(cases_in) + 60
     try:
         p = subprocess.run(
             [sys.executable, "-u", __file__, "--worker", ws_path,
-             json.dumps(payload), irpkl or ""],
+             json.dumps(payload), brz or ""],
             capture_output=True, text=True, timeout=timeout, cwd=TINYLUA)
         if p.returncode == 0:
             lines = [ln for ln in p.stdout.splitlines() if ln.strip()]
@@ -346,7 +359,7 @@ def run_batch(cases_in):
     return [run_one_payload(n, {"src": c[1], "kw": c[2],
                                 "ticks": c[2].get("ticks", TICKS),
                                 "mode": c[3]},
-                            c[2].get("_ws", WS_PATH), c[2].get("_irpkl"),
+                            c[2].get("_ws", WS_PATH), c[2].get("_brz"),
                             TIMEOUT_OVERRIDES.get(n, TIMEOUT))
             for n, c in zip(names, cases_in)]
 
@@ -724,6 +737,34 @@ def compare(name, mode, kw, r, dt):
     return (name, False, "bad mode %r" % mode, dt)
 
 
+_ENGINE_STOP = re.compile(r"(\S+) \(([^)]*)\): (.*)")
+
+
+def law_class(err):
+    """The refusal's class: the gate and what it was fed, brick address dropped
+    (a hundred bricks nobody reads; the class is the thing to decide about)."""
+    m = _ENGINE_STOP.search(err)
+    if not m:
+        return err.strip()[:80]
+    return "%s fed %s" % (m.group(1), m.group(3).strip())
+
+
+_compare_base = compare
+
+
+def compare(name, mode, kw, r, dt):
+    # The engine's refusal rides along in the verdict, so a FAIL names the LAW
+    # that stopped the run rather than just missing output, and main() can
+    # group every case that hit the same law.
+    v = _compare_base(name, mode, kw, r, dt)
+    err = r.get("engineError") or ""
+    if err and v[1] is not True:
+        note = "; engine stopped the run: %s" % err
+        if note not in v[2]:
+            v = (v[0], v[1], (v[2] + note).strip("; "), v[3])
+    return v
+
+
 def sim_inputs(src, kw):
     si = {"program": src, "run": True}
     for k, v in enumerate(kw.get("inputs") or []):
@@ -884,7 +925,7 @@ def lifecycle_window(sim_, si, ticks, checkpoints, phases=None, steps=None):
         if tick in wanted:
             samples.append(lifecycle_sample(sim_now, tick))
 
-    sim_.run(ticks, on_tick=on_tick)
+    sim_.run(ticks, on_tick=on_tick, ports=bool(wanted), live_inputs=True)
     # SELF-CHECK.  The harness must end holding the LAST program it was told to
     # deliver.  It did not, for a long time: a phase edge restored the initial
     # program, so any schedule that edited the program and then changed the run
@@ -973,13 +1014,7 @@ def _assert_graph_is_this_chip(sim):
     try:
         src = open(WS_PATH, encoding="utf-8").read()
         want = set(re.findall(r"@right\s+out\s+(\w+)\s*:", src))
-        got = set()
-        for nid, nd in sim.nodes.items():
-            if "Internal_MicrochipOutput" in nd.cls:
-                lab = nd.props.get("PortLabel", ("raw", ""))
-                lab = lab[0] if isinstance(lab, tuple) else lab
-                if isinstance(lab, str) and lab:
-                    got.add(lab)
+        got = {k for k, v in sim.out_labels.items() if v is not None}
         if got != want:
             print("WARNING: this worker is running a DIFFERENT chip: graph has %s,"
                   " source has %s" % (sorted(got - want), sorted(want - got)),
@@ -1030,6 +1065,10 @@ def run_in_sim(sim, p, sim2=None):
         r = {"log": a["log"][-1] if a["log"] else "",
              "outGlobals": a["outGlobals"]}
     else:
+        # Element probes cost 768 gates and 768 fires a tick: pay them only for
+        # a case that actually compares an array port's CONTENTS.
+        exp = p["kw"].get("expect", {})
+        sim._arr_on = "outNumArr" in exp or "outStrArr" in exp
         sim.reset()
         sim.inputs = sim_inputs(src, kw)
         r = sim.run(ticks)
@@ -1043,6 +1082,7 @@ def run_in_sim(sim, p, sim2=None):
         "src": src,
         "secs": time.time() - t_case,
         "finished": bool(sim.finished),
+        "engineError": r.get("engineError", ""),
         "invariants": sim.state_invariants(
             bool(sim.finished) and not og.get("runErrors")),
         "lifecycle": lifecycle,
@@ -1072,11 +1112,9 @@ def run_in_sim(sim, p, sim2=None):
 _POOL_SIM = None
 
 
-def _pool_init(irpkl):
+def _pool_init(brz):
     global _POOL_SIM
-    sys.path.insert(0, os.path.join(TINYLUA, "irrun"))
-    from irsims import sim_from_dump
-    _POOL_SIM = sim_from_dump(irpkl)
+    _POOL_SIM = sim_from_brz(brz)
 
 
 def _pool_case(item):
@@ -1089,44 +1127,19 @@ def _pool_case(item):
     return compare(name, mode, kw, r, r["secs"])
 
 
-def worker(ws_path, payload, irpkl=None):
+def worker(ws_path, payload, brz=None):
     sys.path.insert(0, TINYLUA)
-    sys.path.insert(0, os.path.join(TINYLUA, "irrun"))
     p = json.loads(payload)
     batch = p if isinstance(p, list) else [p]
-    if irpkl:
-        from irsims import sim_from_dump
-        sim = sim_from_dump(irpkl)
-    else:
-        from irdump import dump_source_modules, chip_call_groups
-        from irgraph import Wire
-        from irsims import Sim
-        mods = dump_source_modules(ws_path)
-        nodes, wires = {}, []
-        for m in mods:
-            nodes.update(m["nodes"])
-            wires.extend(m["wires"])
-        sim = Sim(nodes, [Wire(*w) for w in wires], chip_call_groups(mods))
-    # One graph build for the whole batch: compiling the chip and indexing its
-    # wires costs more than most cases run for.
-    # A lockstep case needs a SECOND, independent chip built from the same graph,
-    # so one is made here rather than per case.
+    sim = sim_from_brz(brz or ensure_brz(ws_path))
+    # One graph build for the whole batch: loading the artifact costs more
+    # than most cases run for.
+    # A lockstep case needs a SECOND, independent chip built from the same
+    # graph, so one is made here rather than per case: a second simdrv child,
+    # so the two machines share nothing.
     sim2 = None
     if any(p.get("mode") == "lockstep" for p in batch):
-        if irpkl:
-            from irsims import sim_from_dump
-            sim2 = sim_from_dump(irpkl)
-        else:
-            from irdump import dump_source_modules, chip_call_groups
-            from irgraph import Wire
-            from irsims import Sim
-            mods = dump_source_modules(ws_path)
-            nodes, wires = {}, []
-            for m in mods:
-                nodes.update(m["nodes"])
-                wires.extend(m["wires"])
-            sim2 = Sim(nodes, [Wire(*w) for w in wires],
-                       chip_call_groups(mods))
+        sim2 = sim_from_brz(brz or ensure_brz(ws_path))
     for p in batch:
         sys.stdout.write(json.dumps(run_in_sim(sim, p, sim2)) + "\n")
         sys.stdout.flush()
@@ -1193,16 +1206,15 @@ def main(args):
         if name in TICKS_OVERRIDES:
             kw["ticks"] = TICKS_OVERRIDES[name]
         selected.append((name, src, inputs, mode, kw))
-    # One shared IR dump for all workers (avoids a recompile per case).
-    import tempfile
-    from irsims import share_dump
+    # One shared artifact for all workers: the compiler runs once, and every
+    # worker loads the same .brz (the suite and check.py used to spell this
+    # inline; one place because a worker that recompiles pays the compile
+    # before it runs a program that takes a second).
+    brz = ensure_brz(ws_path)
     t0 = time.time()
-    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-        irpkl = f.name
-    share_dump(ws_path, irpkl)
-    print("dump %.1fs -> %s" % (time.time() - t0, irpkl), flush=True)
+    print("artifact %s (%.1fs)" % (brz, time.time() - t0), flush=True)
     for _, _, _, _, kw in selected:
-        kw["_irpkl"] = irpkl
+        kw["_brz"] = brz
     ok = fail = 0
     skip = skip_pre
     # A skip that is not in SKIP is a case that was NOT compared, and an
@@ -1218,6 +1230,10 @@ def main(args):
     # "SKIP unrecorded deviation" is unreachable, because oracle_log returns a
     # string for any call list and a None one is caught as framing above.
     uncompared = 0
+    # Refusal classes seen this run: gate class + what it was fed -> cases. The
+    # engine STOPS a run at such a gate, so a whole class of FAILs shares one
+    # line; a histogram turns those 70 into the handful of laws to decide about.
+    law = {}
     # Group the cases into batches: a worker builds the chip once and reuses it
     # for every case in its batch, which is where most of the wall clock went.
     prepared = []
@@ -1237,6 +1253,11 @@ def main(args):
             fail += 1
             tag = "FAIL"
         COST[name] = dt
+        if "; engine stopped the run: " in detail:
+            cls = law_class(detail.split("; engine stopped the run: ", 1)[1])
+            hits = law.setdefault(cls, [])
+            if len(hits) < 40:
+                hits.append(name)
         print("%-18s %s (%.1fs) %s" % (name, tag, dt, detail), flush=True)
 
     try:
@@ -1274,7 +1295,7 @@ def main(args):
             known = load_costs()
             items.sort(key=lambda it: -known.get(it[0], 1e9))
             with mp.Pool(WORKERS, initializer=_pool_init,
-                         initargs=(irpkl,)) as pool:
+                         initargs=(brz,)) as pool:
                 for out in pool.imap_unordered(_pool_case, items,
                                                chunksize=1):
                     report(*out)
@@ -1288,7 +1309,8 @@ def main(args):
                     for name, good, detail, dt in f.result():
                         report(name, good, detail, dt)
     finally:
-        os.unlink(irpkl)
+        if os.path.abspath(brz) != os.path.join(TINYLUA, "lua.brz"):
+            os.unlink(brz)
     print("OK=%d FAIL=%d SKIP=%d  (%d cases%s)" % (
         ok, fail, skip, len(prepared),
         "" if POOL else ", %d batches" % len(batches)))
@@ -1297,6 +1319,14 @@ def main(args):
         # cases whose answer nobody has
         print("UNCOMPARED %d: not in SKIP, so their answer is unknown, not agreed"
               % uncompared, flush=True)
+    if law:
+        # The refusals, grouped: the count per class, then the cases that hit it.
+        # A class that covers most of the FAILs is ONE decision, not many.
+        print("ENGINE LAW REFUSALS (%d cases, %d classes)"
+              % (sum(len(v) for v in law.values()), len(law)), flush=True)
+        for cls in sorted(law, key=lambda k: -len(law[k])):
+            print("  %-52s x%d  %s" % (cls, len(law[cls]),
+                                       " ".join(law[cls][:8])), flush=True)
     # `or uncompared` is what makes this exit code mean "compared and agreed".
     # Delete it and this run reports success having compared nothing.
     return 1 if fail or uncompared else 0

@@ -548,7 +548,7 @@ mod truthyOf(tag: int, num: float) -> bool {
 mod fmtNum(v: float) -> string {
   return if v != v then "nan"
     else if v != 0.0 && 2.0 * v == v then if v > 0.0 then "inf" else "-inf"
-    else if v == 0.0 then if 1.0 / v < 0.0 then "-0.0" else "0.0"
+    else if v == 0.0 then if atan2(v, v) < 0.0 then "-0.0" else "0.0"
     else if v == floor(v) && abs(v) < 1e15 then ("" .. ((v as int) | 0)) .. ".0"
     else "" .. v
 }
@@ -2514,7 +2514,11 @@ mod vmReset() {  tmap.clear()
   logV = ""
   logLen = 0
   logLines.clear()
-  fmtDd.clear()
+  // RESIZED, not merely cleared: a length-zero array drops its writes, and
+  // fmtDdMul's two halves then read back 0.0 -- every fraction digit of %f, %e
+  // and %g came out 0 while the value itself was intact.  (fmtDd was the one
+  // reset array that had a clear and no resize; see the note below.)
+  fmtDd.resize(2, 0.0)
   patSl.clear()
   patCapS.clear()
   patCapE.clear()
@@ -2566,39 +2570,25 @@ mod vmReset() {  tmap.clear()
 }
 
 mod arithValL(t: int, v: float, s: string) -> float {
-  coerceL = 0
-  if t == 2 {
-    let i = s.ParseInt()
-    if i.Success {
-      coerceL = 1
-      return i
-    }
-    let p = s.ParseNumber()
-    if p.Success {
-      coerceL = 2
-      return p
-    }
-    coerceL = 3
-  }
-  return v
+  let st = s.Trim()
+  let s1 = st .. "1"
+  let n = st.ParseNumber()
+  let isInt = abs(s1.ParseInt() - 10 * n) == 1
+  let isNum = s1.ParseNumber() != 0.0
+  let k = if isInt then 1 else if isNum then 2 else 3
+  coerceL = if t != 2 then 0 else if st != "" then k else 3
+  return if t != 2 then v else if isNum then n else v
 }
 
 mod arithValR(t: int, v: float, s: string) -> float {
-  coerceR = 0
-  if t == 2 {
-    let i = s.ParseInt()
-    if i.Success {
-      coerceR = 1
-      return i
-    }
-    let p = s.ParseNumber()
-    if p.Success {
-      coerceR = 2
-      return p
-    }
-    coerceR = 3
-  }
-  return v
+  let st = s.Trim()
+  let s1 = st .. "1"
+  let n = st.ParseNumber()
+  let isInt = abs(s1.ParseInt() - 10 * n) == 1
+  let isNum = s1.ParseNumber() != 0.0
+  let k = if isInt then 1 else if isNum then 2 else 3
+  coerceR = if t != 2 then 0 else if st != "" then k else 3
+  return if t != 2 then v else if isNum then n else v
 }
 
 mod logDrop(n: int) {
@@ -9755,16 +9745,19 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
       // and '2.0' a float; a string that answers nil here is not a numeral at
       // all ('inf' included, which is not one in Lua and is one to the host).
       let sv = if vTag(a + 2) == 2 then vStr(a + 2) else ""
-      let i = sv.ParseInt()
-      if i.Success {
+      let st = sv.Trim()
+      let s1 = st .. "1"
+      let i = st.ParseInt()
+      let isInt = abs(s1.ParseInt() - 10 * i) == 1
+      let n = (if st.Find("e", false, 0) > -1 then st else st .. "0").ParseNumber()
+      let isNum = s1.ParseNumber() != 0.0
+      let k = if isInt then 1 else if isNum then 2 else 3
+      if st != "" && k == 1 {
         vSetInt(a, i)
+      } else if st != "" && k == 2 {
+        vSetNum(a, n)
       } else {
-        let p = sv.ParseNumber()
-        if p.Success {
-          vSetNum(a, p)
-        } else {
-          vSetNil(a)
-        }
+        vSetNil(a)
       }
     } else {
       // PUC's math functions take luaL_checknumber, which COERCES a string:

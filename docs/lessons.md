@@ -42,9 +42,10 @@
 - **One test command at a time, in its own call, never beside another chip job.**
   The suite takes the whole machine: twelve worker processes, each with its own
   Sim. Independent *searches* and *reads* do go out in parallel.
-- Compiling `lua.ws` costs ~10s. Never pay it per program: `irsims.ChipRunner`
-  compiles once and runs many via `Sim.reset()`; the suite's workers share the
-  dump (`share_dump`/`sim_from_dump`). Hand out work one case at a time —
+- Compiling `lua.ws` costs ~10s. Never pay it per program: `tests/simdrv_sim.py`'s
+  `ChipRunner` loads one artifact and runs many via `Sim.reset()`; the suite's
+  workers share the `.brz` (`share_dump`/`sim_from_dump` keep the old names).
+  Hand out work one case at a time —
   a batch is as long as its slowest member. `CHIP_POOL=1` (default),
   `CHIP_WORKERS=12`, `CHIP_POOL=0` is the old batch path.
 - While iterating run the single narrowest command that proves the change
@@ -73,12 +74,15 @@
   gate. A helper that answers one of these is split by design, never by
   trimming a capability.
 - Time each phase, not just the script. A run whose program errored should stop
-  when the error appears — `irsims.py` breaks on `errV` for exactly that reason.
+  when the error appears — the retired model broke on `errV` for exactly that
+  reason; under the official sim read `outGlobals.runErrors` per case instead.
 - Read every file a change will touch in one batched read before editing.
 
 ## Layout
-- `lua.ws` is the chip; `irrun/` simulates it; `tests/` holds the suite and the
-  oracle diffs; `tools/` holds the tools. Keep the root to the chip and the docs.
+- `lua.ws` is the chip; the suite and checks run it through the official
+  simulator via `tools/simdrv` (reached through `tests/simdrv_sim.py`); `irrun/`
+  holds IR tooling only. `tests/` holds the suite and the oracle diffs; `tools/`
+  holds the tools. Keep the root to the chip and the docs.
 - **`lua.brz` is the deliverable, and the compiler writes no artifact when it has
   diagnostics.** It prints the IR, exits non-zero and leaves the previous `lua.brz`
   sitting there looking current — so a build that does not check the exit code can
@@ -943,6 +947,16 @@ and what they look like in the source. `tools/chip/wswarn.py` flags the visible 
   discover, so never debug chip scheduling through it.
 - Keep a todo list for multi-step work, exactly one `in_progress` at a time, and
   update it as steps finish.
+- **A question from the user is not a stop.** Answering "why did that happen"
+  mid-task and ending the turn leaves the work abandoned until they type again;
+  answer in one line, then keep going. Stop only when the next step needs a
+  decision the user has to make, or when the work is done.
+- **A suite or probe command that stops printing is stuck, not slow.** Verdict
+  lines stream as cases finish, so a quiet tail means a hung worker; read the
+  process tree (`Get-Process`, match on the command line) and kill the run and
+  its children by PID — never by image. A per-command scan of the whole graph,
+  like the driver's `pin_gates` recomputed per `runlog` call, is what turns a
+  per-tick harness window into 8,000 windows × 40,656 gates.
 - **Commit a change as soon as it is clear and tested, without waiting to be
   asked.** A commit is the cheapest way to revert, to compare two chips with
   `git diff`, and to see what an edit actually changed. Commit when the
