@@ -298,6 +298,14 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   reads the same stale root copy. Open direction: the failure flag has to
   cross the boundary on data the pins carry -- e.g. a sentinel token emitted
   at the failure sites and checked by boot/parser -- not a `var` bool.
+- **A `chip` boundary is node-POSITIVE for a small mod body, so `chipscreen.py`'s
+  site-count heuristic does not price it.** Measured: converting `vSetNum` (36
+  call sites, 5 lines) took the chip from 40,351 to **41,359 ir nodes (+1,008)**,
+  997 past the 40,362 ceiling, with gates 40,656 to 41,790. A shared body saves
+  (sites-1) copies of the body but pays per-call plumbing at every site, and for
+  a 5-line body the plumbing is several times the body. Only a mod whose BODY
+  node count is a multiple of the plumbing pays; measure with `audit.py` after
+  `buildbrz.py`, never from the line count.
 - **An uncertified `Expr_*` gate fed something its laws do not cover ABORTS the
   run, mid-tick -- it does not answer wrong.** `simdrv` prints one line and
   nothing after that tick ever runs, so a program that had already printed its

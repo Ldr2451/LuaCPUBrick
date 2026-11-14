@@ -9369,8 +9369,17 @@ mod gateLow(fid: int, a: int, nargs: int) {
     // run of adjacent slots costs one call instead of k.  k is capped at 8: the
     // results go into consecutive registers and MAXVALS is 16, and a wider read
     // wants a table, which is a different question (see AGENTS.md on inNumArr).
-    let it = if 0 < nargs then vTag(a + 1) else 0
-    let iv = if 0 < nargs then vNum(a + 1) else 0.0
+    // A call with no argument must not READ the argument registers at all:
+    // branch values are eager here, so the `else 0.0` half still evaluates
+    // vNum(a + 1), and on an unwired register that value reaches floor(),
+    // which the official machine refuses and stops the run (the hand-written
+    // evaluator answered 0 for the same shape).
+    if nargs == 0 {
+      vSetNil(a)
+      retCountV = 1
+    } else {
+    let it = vTag(a + 1)
+    let iv = vNum(a + 1)
     let kv = if 1 < nargs then vNum(a + 2) else 1.0
     if (it != 1 && it != 6) || iv != floor(iv) || iv < 1.0 || iv > inNumArr.length() {
       vSetNil(a)
@@ -9408,6 +9417,7 @@ mod gateLow(fid: int, a: int, nargs: int) {
         if w + 7 < inNumArr.length() { vSetNum(a + 7, inNumArr[w + 7]) } else { vSetNil(a + 7) }
       }
       retCountV = cnt
+    }
     }
   } else if fid == 7 {
     // outNumArr(i, v, ...) writes i and the next slots, one per extra
