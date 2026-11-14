@@ -1059,6 +1059,9 @@ var fmtBody: string = ""
 var fmtPre: string = ""       // the sign or 0x prefix, kept ahead of zero padding
 var fmtPadAcc: string = ""
 var fmtArg: string = ""
+// the print dispatch's accumulating display line (one shared fmtVal body
+// behind a runtime-bounded loop instead of sixteen inlined segments)
+var printRawV: string = ""
 var fmtNum_: float = 0.0
 var fmtWidth: int = 0
 var fmtPrec: int = 0
@@ -3469,11 +3472,11 @@ mod fmtVal(tag: int, num: float, s: string) -> string {
     else if tag == 2 then s
     // PUC spells both with an address, `function: %p` and `table: %p`.  The
     // address itself cannot be -- the registers are doubles and PUC's pointer
-    // is 64-bit -- so this is the closure or table number, which is what the
-    // old "function" and "table: 0x" spellings each half-agreed with.
-    else if tag == 4 then "function: 0x" .. (num as int)
-    else if tag == 5 then "table: 0x" .. (num as int)
-    else if tag == 6 then "" .. (num as int)
+    // is 64-bit -- so this is the closure or table number.  tag 4/5/6 share
+    // ONE int-to-decimal conversion behind a prefix Select: three separate
+    // `prefix .. (num as int)` arms paid the conversion three times per call
+    // site, and there are ~19 call sites.
+    else if tag == 4 || tag == 5 || tag == 6 then (if tag == 5 then "table: 0x" else if tag == 4 then "function: 0x" else "") .. (num as int)
     else fmtNum(num)
 }
 
@@ -9365,8 +9368,21 @@ mod gateLow(fid: int, a: int, nargs: int) {
     if nargs > 16 {
       vmFail("too many print args (max 16)")
     } else {
-      // one pure expression (no variable traffic): guarded segments
-      let raw = (if 0 < nargs then fmtVal(vTag(a + 1), vNum(a + 1), vStr(a + 1)) else "") .. (if 1 < nargs then "\t" .. fmtVal(vTag(a + 2), vNum(a + 2), vStr(a + 2)) else "") .. (if 2 < nargs then "\t" .. fmtVal(vTag(a + 3), vNum(a + 3), vStr(a + 3)) else "") .. (if 3 < nargs then "\t" .. fmtVal(vTag(a + 4), vNum(a + 4), vStr(a + 4)) else "") .. (if 4 < nargs then "\t" .. fmtVal(vTag(a + 5), vNum(a + 5), vStr(a + 5)) else "") .. (if 5 < nargs then "\t" .. fmtVal(vTag(a + 6), vNum(a + 6), vStr(a + 6)) else "") .. (if 6 < nargs then "\t" .. fmtVal(vTag(a + 7), vNum(a + 7), vStr(a + 7)) else "") .. (if 7 < nargs then "\t" .. fmtVal(vTag(a + 8), vNum(a + 8), vStr(a + 8)) else "") .. (if 8 < nargs then "\t" .. fmtVal(vTag(a + 9), vNum(a + 9), vStr(a + 9)) else "") .. (if 9 < nargs then "\t" .. fmtVal(vTag(a + 10), vNum(a + 10), vStr(a + 10)) else "") .. (if 10 < nargs then "\t" .. fmtVal(vTag(a + 11), vNum(a + 11), vStr(a + 11)) else "") .. (if 11 < nargs then "\t" .. fmtVal(vTag(a + 12), vNum(a + 12), vStr(a + 12)) else "") .. (if 12 < nargs then "\t" .. fmtVal(vTag(a + 13), vNum(a + 13), vStr(a + 13)) else "") .. (if 13 < nargs then "\t" .. fmtVal(vTag(a + 14), vNum(a + 14), vStr(a + 14)) else "") .. (if 14 < nargs then "\t" .. fmtVal(vTag(a + 15), vNum(a + 15), vStr(a + 15)) else "") .. (if 15 < nargs then "\t" .. fmtVal(vTag(a + 16), vNum(a + 16), vStr(a + 16)) else "") .. "\n"
+      // one shared display body over a runtime-bounded loop: the 16-segment
+      // pure expression materialized the whole fmtVal+fmtNum chain SIXTEEN
+      // times in this dispatch (and evaluated all 16 per print, Select arms
+      // being eager); the loop pays it once and runs it nargs times -- fewer
+      // nodes AND fewer evals per print, which is what the budget needed
+      printRawV = ""
+      for j in 1..nargs + 1 {
+        let seg = fmtVal(vTag(a + j), vNum(a + j), vStr(a + j))
+        if j == 1 {
+          printRawV = seg
+        } else {
+          printRawV = printRawV .. "\t" .. seg
+        }
+      }
+      let raw = printRawV .. "\n"
       // the 64-character cap is print's, and it stays here so the log
       // itself takes whatever it is given
       let line = if raw.Length() > 128 then raw.Substring(0, 127) .. "\n" else raw
@@ -9864,7 +9880,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
         // sqrt of a negative and ln of zero/negative would produce a nan or an
         // inf the extended laws REFUSE, aborting the run mid-tick; guarded, the
         // sentinels answer instead and every later law sees them as numbers.
-        vSetNum(a, if mo == 3 then (if x < 0.0 then NANSENT else sqrt(x))
+        vSetNum(a, if mo == 3 then (if x == NEGZERO then NEGZERO else if x < 0.0 then NANSENT else sqrt(x))
           else if mo == 4 then sin(x)
           else if mo == 5 then cos(x) else if mo == 6 then tan(x)
           else if mo == 7 then asin(x) else if mo == 8 then acos(x)
@@ -10903,6 +10919,175 @@ mod vmIDiv(a: int, b: int, c: int) {
   }
 }
 
+// The arithmetic dispatch used to be written TWICE, once in vmStep and once in
+// vmStepFast, and a fix landing in only one copy was invisible from programs
+// that run the other.  One mod body, inlined at both call sites, makes the two
+// copies structurally identical -- and pays pins twice instead of the whole
+// block twice, which is where the budget for the signed-zero rules came from.
+// Declared after vmFail's chip (chips must precede their callers).
+mod arithOps(op: int, a: int, b: int, c: int) {
+  let immK = c < 0
+  let immPack = if immK then -1 - c else 0
+  let bt = vTag(b)
+  let ct = if immK then (if (immPack & 1) == 1 then 6 else 1) else vTag(c)
+  // String operands go through PUC's coercion (arithValL/arithValR), and
+  // the failure message is PUC's: a string that will not convert names the
+  // operator and both operand types ("attempt to add a 'string' with a
+  // 'number'"), while any other non-number names the offending operand
+  // ("attempt to perform arithmetic on a table value").  Both are built in
+  // the failing branch, so neither concat runs on arithmetic that succeeds.
+  let x = arithValL(bt, vNum(b), vStr(b))
+  let y = arithValR(ct, if immK then constNum[immPack >> 1] else vNum(c), if immK then "" else vStr(c))
+  let badL = coerceL == 3
+  let badR = coerceR == 3
+  if badL || badR || !((bt == 1 || bt == 6 || bt == 2) && (ct == 1 || ct == 6 || ct == 2)) {
+    let opn = if op == 8 then "add" else if op == 9 then "sub"
+      else if op == 10 then "mul" else if op == 11 then "div"
+      else if op == 12 then "mod" else "pow"
+    if badL || badR {
+      vmFail("attempt to " .. opn .. " a '" .. typeName(bt) .. "' with a '" .. typeName(ct) .. "'")
+    } else {
+      // hoisted out of the call for the same reason as the LT arm: a folded
+      // && as a call argument costs the operand its tag
+      let badT = if bt != 1 && bt != 6 then bt else ct
+      vmFail("attempt to perform arithmetic on a " .. typeName(badT) .. " value")
+    }
+  } else {
+    // A string that converted is an integer only when ParseInt took it, so
+    // '2' + 1 is 3 where '2.0' + 1 is 3.0 and 2.0 + 1 is 3.0.
+    let ii = if bt == 6 then true else if bt == 2 then coerceL == 1 else false
+    let ij = if ct == 6 then true else if ct == 2 then coerceR == 1 else false
+    if op == 8 {
+      if ii && ij {
+        vSetInt(a, x + y)
+      } else {
+        // IEEE: a zero sum is negative only when both summands are; the gate
+        // answers +0.0 for the NEGZERO pair, so the branch answers the
+        // sentinel.
+        let s8 = x + y
+        vSetNum(a, if s8 == 0.0 && x == NEGZERO && y == NEGZERO then NEGZERO else s8)
+      }
+    } else if op == 9 {
+      if ii && ij {
+        vSetInt(a, x - y)
+      } else {
+        // IEEE: a zero difference is negative only for -0.0 - 0.0 (every
+        // other same-sign pair rounds to +0.0, including the -0.0 pair)
+        let s9 = x - y
+        vSetNum(a, if s9 == 0.0 && x == NEGZERO && y == 0.0 then NEGZERO else s9)
+      }
+    } else if op == 10 {
+      if ii && ij {
+        vSetInt(a, x * y)
+      } else {
+        // IEEE: a product is zero when an operand is (either zero flavor), and
+        // its sign is the xor of the operand signs; MathMultiply drops a zero's
+        // sign and the NEGZERO sentinel would propagate as a tiny number, so
+        // the rule tests the product's MAGNITUDE and answers the signed zero.
+        // Products below 1e-300 are a modeled loss -- no case can tell a
+        // flushed subnormal from a real one.
+        let s10 = x * y
+        vSetNum(a, if abs(s10) < 1e-300 && (x < 0.0) != (y < 0.0) then NEGZERO else if abs(s10) < 1e-300 then 0.0 else s10)
+      }
+    } else if op == 11 {
+      // Division by zero would put an inf or a nan on the wire, but every
+      // law that READS one sanitizes it to 0.0, so today the chip answers
+      // 0.0 where PUC prints inf or nan -- and loses every comparison with
+      // it besides.  The FINITE sentinels print as inf/-inf/nan through
+      // fmtNum and compare as plain numbers, which is what PUC's printed
+      // answers and these pinned logs ask for.  A NEGZERO divisor takes the
+      // same route with the sign rule of division, and a zero dividend over
+      // any nonzero divisor answers the signed zero.
+      if y == 0.0 || y == NEGZERO {
+        if x == 0.0 || x == NEGZERO {
+          vSetNum(a, NANSENT)
+        } else {
+          vSetNum(a, if (x < 0.0) != (y < 0.0) then 0.0 - 1.7976931348623157e308 else 1.7976931348623157e308)
+        }
+      } else if x == 0.0 || x == NEGZERO {
+        vSetNum(a, if (x < 0.0) != (y < 0.0) then NEGZERO else 0.0)
+      } else {
+        vSetNum(a, x / y)
+      }
+    } else if op == 12 {
+      if y == 0.0 {
+        if ii && ij {
+          vmFail("attempt to perform 'n%0'")
+        } else {
+          vSetNum(a, x % y)
+        }
+      } else {
+        // floored quotient, in ONE domain: the machine refuses a mixed
+        // (int,float) signature (MathMultiply, CompareEqual), and the old
+        // `(q as int) | 0` truncation made every value under it an INT
+        // variant, so `x - fl * y` and vSetInt's floor() both hit that
+        // refusal mid-run.  Floor is the certified rounding gate for a
+        // FLOAT input (semantics.rs:1552 does a true floor, and the old
+        // truncating floor was the HAND-WRITTEN evaluator, not this
+        // machine), so one gate does it and nothing crosses a domain.
+        // The `%` spelling is not an alternative: MathModulo on floats
+        // REFUSES mixed signs with a nonzero remainder (semantics.rs).
+        // A NEGZERO dividend first: Floor reads the sentinel as a tiny
+        // negative and floors it to -1, but the remainder of a zero is
+        // the zero itself, with its sign (fmod(-0.0, d) is -0.0).
+        if x == NEGZERO {
+          vSetNum(a, NEGZERO)
+        } else {
+          let q = x / y
+          let fl = floor(q)
+          if ii && ij {
+            vSetInt(a, x - fl * y)
+          } else {
+            vSetNum(a, x - fl * y)
+          }
+        }
+      }
+    } else {
+      // The pow arm of the arithmetic dispatch; both dispatch copies go
+      // through powSignedZero so the rule about a negative zero base has
+      // one body, because a fix that reached only one copy is invisible
+      // from a program that runs the other.
+      vSetNum(a, powSignedZero(x, y))
+    }
+  }
+}
+
+// The numeric comparison arms of both VM copies, one rule each.  IEEE says a
+// negative zero compares equal to zero and orders with nothing, and the NEGZERO
+// sentinel is a tiny NEGATIVE value -- so the raw gate answer is wrong only in
+// the shapes spelled out below, each fixed by comparisons against the literal
+// 0.0 (never a Select-fed gate value: the fold prunes those).
+mod cmpEqNum(x: float, y: float) -> bool {
+  // nan answers the NANSENT sentinel, equal to nothing; -0.0 equals 0.0 either
+  // way round
+  return x == y && x != NANSENT && y != NANSENT
+    || x == NEGZERO && y == 0.0 || x == 0.0 && y == NEGZERO
+}
+
+mod cmpLtNum(x: float, y: float) -> bool {
+  // -0.0 < y is true exactly for y > 0.0; x < -0.0 is true exactly for
+  // x < 0.0; otherwise the gate answer stands (the sentinel is a tiny
+  // negative, so both raw shapes are wrong when either side is -0.0)
+  if x == NEGZERO {
+    return y > 0.0
+  } else if y == NEGZERO {
+    return x < 0.0
+  } else {
+    return x < y
+  }
+}
+
+mod cmpLeNum(x: float, y: float) -> bool {
+  // -0.0 <= y is y >= 0.0; x <= -0.0 is x <= 0.0; raw gate otherwise
+  if x == NEGZERO {
+    return !(y < 0.0)
+  } else if y == NEGZERO {
+    return !(x > 0.0)
+  } else {
+    return x <= y
+  }
+}
+
 mod vmStep() {
   if cloActive {
     // A closure being filled owns the WHOLE tick: its cells go in one per tick
@@ -10975,103 +11160,7 @@ mod vmStep() {
     } else if op == 7 {
       vSet(a, vTag(b), vNum(b), vStr(b))
     } else if op >= 8 && op <= 13 {
-      let immK = c < 0
-      let immPack = if immK then -1 - c else 0
-      let bt = vTag(b)
-      let ct = if immK then (if (immPack & 1) == 1 then 6 else 1) else vTag(c)
-      // String operands go through PUC's coercion (arithValL/arithValR), and
-      // the failure message is PUC's: a string that will not convert names the
-      // operator and both operand types ("attempt to add a 'string' with a
-      // 'number'"), while any other non-number names the offending operand
-      // ("attempt to perform arithmetic on a table value").  Both are built in
-      // the failing branch, so neither concat runs on arithmetic that succeeds.
-      let x = arithValL(bt, vNum(b), vStr(b))
-      let y = arithValR(ct, if immK then constNum[immPack >> 1] else vNum(c), if immK then "" else vStr(c))
-      let badL = coerceL == 3
-      let badR = coerceR == 3
-      if badL || badR || !((bt == 1 || bt == 6 || bt == 2) && (ct == 1 || ct == 6 || ct == 2)) {
-        let opn = if op == 8 then "add" else if op == 9 then "sub"
-          else if op == 10 then "mul" else if op == 11 then "div"
-          else if op == 12 then "mod" else "pow"
-        if badL || badR {
-          vmFail("attempt to " .. opn .. " a '" .. typeName(bt) .. "' with a '" .. typeName(ct) .. "'")
-        } else {
-          // hoisted out of the call for the same reason as the LT arm: a folded
-          // && as a call argument costs the operand its tag
-          let badT = if bt != 1 && bt != 6 then bt else ct
-          vmFail("attempt to perform arithmetic on a " .. typeName(badT) .. " value")
-        }
-      } else {
-        // A string that converted is an integer only when ParseInt took it, so
-        // '2' + 1 is 3 where '2.0' + 1 is 3.0 and 2.0 + 1 is 3.0.
-        let ii = if bt == 6 then true else if bt == 2 then coerceL == 1 else false
-        let ij = if ct == 6 then true else if ct == 2 then coerceR == 1 else false
-        if op == 8 {
-          if ii && ij {
-            vSetInt(a, x + y)
-          } else {
-            vSetNum(a, x + y)
-          }
-        } else if op == 9 {
-          if ii && ij {
-            vSetInt(a, x - y)
-          } else {
-            vSetNum(a, x - y)
-          }
-        } else if op == 10 {
-          if ii && ij {
-            vSetInt(a, x * y)
-          } else {
-            vSetNum(a, x * y)
-          }
-        } else if op == 11 {
-          // Division by zero would put an inf or a nan on the wire, but every
-          // law that READS one sanitizes it to 0.0, so today the chip answers
-          // 0.0 where PUC prints inf or nan -- and loses every comparison with
-          // it besides.  The FINITE sentinels print as inf/-inf/nan through
-          // fmtNum and compare as plain numbers, which is what PUC's printed
-          // answers and these pinned logs ask for.
-          if y == 0.0 {
-            vSetNum(a, if x > 0.0 then 1.7976931348623157e308 else if x < 0.0 then 0.0 - 1.7976931348623157e308 else NANSENT)
-          } else {
-            vSetNum(a, x / y)
-          }
-        } else if op == 12 {
-          if y == 0.0 {
-            if ii && ij {
-              vmFail("attempt to perform 'n%0'")
-            } else {
-              vSetNum(a, x % y)
-            }
-          } else {
-            // floored quotient, in ONE domain: the machine refuses a mixed
-            // (int,float) signature (MathMultiply, CompareEqual), and the old
-            // `(q as int) | 0` truncation made every value under it an INT
-            // variant, so `x - fl * y` and vSetInt's floor() both hit that
-            // refusal mid-run.  Floor is the certified rounding gate for a
-            // FLOAT input (semantics.rs:1552 does a true floor, and the old
-            // truncating floor was the HAND-WRITTEN evaluator, not this
-            // machine), so one gate does it and nothing crosses a domain.
-            // The `%` spelling is not an alternative: MathModulo on floats
-            // REFUSES mixed signs with a nonzero remainder (semantics.rs).
-            let q = x / y
-            let fl = floor(q)
-            if ii && ij {
-              vSetInt(a, x - fl * y)
-            } else {
-              vSetNum(a, x - fl * y)
-            }
-          }
-        } else {
-          // The arithmetic dispatch is written TWICE -- once in vmStep and once in
-          // vmStepFast, which is the subset that runs when nothing is busy -- and
-          // both copies carry a pow arm.  Fixing only this one changed nothing
-          // observable: `local z = -0.0 print(z ^ 3)` still answered 0.0 until the
-          // other copy went through the same helper.  One body, two call sites,
-          // so the rule about a negative zero base cannot be stated twice.
-          vSetNum(a, powSignedZero(x, y))
-        }
-      }
+      arithOps(op, a, b, c)
     } else if op == 14 {
       // -v, not 0.0 - v: IEEE negation of 0.0 is -0.0, and 0.0 - 0.0 is +0.0,
       // which is how `print(-0.0)` came out "0.0".
@@ -11123,7 +11212,7 @@ mod vmStep() {
       let rn = rt == 1 || rt == 6
       if op == 17 {
         if ln && rn {
-          vSetN(a, 3, if vNum(b) == rv && vNum(b) != NANSENT && rv != NANSENT then 1.0 else 0.0)
+          vSetN(a, 3, if cmpEqNum(vNum(b), rv) then 1.0 else 0.0)
         } else if lt != rt {
           vSetN(a, 3, 0.0)
         } else if lt == 2 {
@@ -11135,10 +11224,10 @@ mod vmStep() {
           // through the numeric arm above (ln covers it), so its own arm --
           // which could never fire -- is gone and the three number-compared
           // tags share one instead of spelling it twice.
-          vSetN(a, 3, if vNum(b) == rv && vNum(b) != NANSENT && rv != NANSENT then 1.0 else 0.0)
+          vSetN(a, 3, if cmpEqNum(vNum(b), rv) then 1.0 else 0.0)
         }
       } else if ln && rn {
-        let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
+        let hit = if op == 18 then cmpLtNum(vNum(b), rv) else cmpLeNum(vNum(b), rv)
         if a < 0 && op == 19 {
           if hit {
             vmPc = vmPc + 2
@@ -11601,91 +11690,7 @@ chip vmStepFast() {
   } else if op == 7 {
     vSet(a, vTag(b), vNum(b), vStr(b))
   } else if op >= 8 && op <= 13 {
-    let immK = c < 0
-    let immPack = if immK then -1 - c else 0
-    let bt = vTag(b)
-    let ct = if immK then (if (immPack & 1) == 1 then 6 else 1) else vTag(c)
-    // String operands go through PUC's coercion (arithValL/arithValR), and
-    // the failure message is PUC's: a string that will not convert names the
-    // operator and both operand types ("attempt to add a 'string' with a
-    // 'number'"), while any other non-number names the offending operand
-    // ("attempt to perform arithmetic on a table value").  Both are built in
-    // the failing branch, so neither concat runs on arithmetic that succeeds.
-    let x = arithValL(bt, vNum(b), vStr(b))
-    let y = arithValR(ct, if immK then constNum[immPack >> 1] else vNum(c), if immK then "" else vStr(c))
-    let badL = coerceL == 3
-    let badR = coerceR == 3
-    if badL || badR || !((bt == 1 || bt == 6 || bt == 2) && (ct == 1 || ct == 6 || ct == 2)) {
-      let opn = if op == 8 then "add" else if op == 9 then "sub"
-        else if op == 10 then "mul" else if op == 11 then "div"
-        else if op == 12 then "mod" else "pow"
-      if badL || badR {
-        vmFail("attempt to " .. opn .. " a '" .. typeName(bt) .. "' with a '" .. typeName(ct) .. "'")
-      } else {
-        // hoisted out of the call for the same reason as the LT arm: a folded
-        // && as a call argument costs the operand its tag
-        let badT = if bt != 1 && bt != 6 then bt else ct
-        vmFail("attempt to perform arithmetic on a " .. typeName(badT) .. " value")
-      }
-    } else {
-      // A string that converted is an integer only when ParseInt took it, so
-      // '2' + 1 is 3 where '2.0' + 1 is 3.0 and 2.0 + 1 is 3.0.
-      let ii = if bt == 6 then true else if bt == 2 then coerceL == 1 else false
-      let ij = if ct == 6 then true else if ct == 2 then coerceR == 1 else false
-      if op == 8 {
-        if ii && ij {
-          vSetInt(a, x + y)
-        } else {
-          vSetNum(a, x + y)
-        }
-      } else if op == 9 {
-        if ii && ij {
-          vSetInt(a, x - y)
-        } else {
-          vSetNum(a, x - y)
-        }
-      } else if op == 10 {
-        if ii && ij {
-          vSetInt(a, x * y)
-        } else {
-          vSetNum(a, x * y)
-        }
-      } else if op == 11 {
-        // The same guard as the vmStep copy: a zero divisor answers the finite
-        // sentinel (inf/nan on a wire is sanitized to 0.0 by every law that
-        // reads it, so it cannot print or compare as PUC's does).
-        if y == 0.0 {
-          vSetNum(a, if x > 0.0 then 1.7976931348623157e308 else if x < 0.0 then 0.0 - 1.7976931348623157e308 else NANSENT)
-        } else {
-          vSetNum(a, x / y)
-        }
-      } else if op == 12 {
-        if y == 0.0 {
-          if ii && ij {
-            vmFail("attempt to perform 'n%0'")
-          } else {
-            vSetNum(a, x % y)
-          }
-        } else {
-          // floored quotient in ONE domain, matching the vmStep copy: the
-          // machine's Floor gate over a float is the certified rounding law,
-          // and the `| 0` cast used to leave an INT variant that made every
-          // gate under it a mixed (int,float) signature it refuses
-          let q = x / y
-          let fl = floor(q)
-          if ii && ij {
-            vSetInt(a, x - fl * y)
-          } else {
-            vSetNum(a, x - fl * y)
-          }
-        }
-      } else {
-        // the other copy of the pow arm; both go through powSignedZero so the rule
-        // about a negative zero base has one body, because a fix that reached only
-        // one of the two is invisible from a program that runs the other
-        vSetNum(a, powSignedZero(x, y))
-      }
-    }
+    arithOps(op, a, b, c)
   } else if op == 14 {
     // -v, not 0.0 - v: IEEE negation of 0.0 is -0.0, and 0.0 - 0.0 is +0.0,
     // which is how `print(-0.0)` came out "0.0".
@@ -11741,7 +11746,7 @@ chip vmStepFast() {
     let rn = rt == 1 || rt == 6
     if op == 17 {
       if ln && rn {
-        vSetN(a, 3, if vNum(b) == rv && vNum(b) != NANSENT && rv != NANSENT then 1.0 else 0.0)
+        vSetN(a, 3, if cmpEqNum(vNum(b), rv) then 1.0 else 0.0)
       } else if lt != rt {
         vSetN(a, 3, 0.0)
       } else if lt == 2 {
@@ -11751,10 +11756,10 @@ chip vmStepFast() {
       } else {
         // as vmStep's == arm above: lt == 1 cannot reach here (ln covers it),
         // and tags 3, 4 and 5 all compare by number
-        vSetN(a, 3, if vNum(b) == rv && vNum(b) != NANSENT && rv != NANSENT then 1.0 else 0.0)
+        vSetN(a, 3, if cmpEqNum(vNum(b), rv) then 1.0 else 0.0)
       }
     } else if ln && rn {
-      let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
+      let hit = if op == 18 then cmpLtNum(vNum(b), rv) else cmpLeNum(vNum(b), rv)
       if a < 0 && op == 19 {
         if hit {
           vmPc = vmPc + 2

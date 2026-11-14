@@ -394,3 +394,29 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   engine's line in the verdict and prints an `ENGINE LAW REFUSALS` histogram of
   gate + inputs per run (12 of 985 cases, 6 classes, in the first suite run
   under the official sim) -- the class, not the brick, is the thing to look at.
+- **A print dispatch that is a chain of Select arms pays its display body SIXTEEN
+  TIMES, and a runtime-bounded `for` over the count is the shape that fixes both
+  currencies.** The 16-segment pure expression (`(if 0 < nargs then fmtVal(...)
+  else "") .. ...`) materialized the whole `fmtVal`+`fmtNum` chain once per arm
+  in the dispatch -- and because Select arms are eager, ALL 16 ran per print at
+  runtime, whether or not their slot existed. Rewritten as a `for j in 1..nargs + 1`
+  over one shared body with a `printRawV` accumulator: audit 40,782 -> 40,076 ir
+  nodes (-706), and `perfbench` evals/tick DOWN on every program in the corpus
+  (332.2 -> 325.9, 453.4 -> 444.9, 314.6 -> 306.3 ...), rc=0. This is the one
+  dispatch-position loop that landed: the print body is a plain mod body, unlike
+  the `retAdjust` ladder inside the inlined arms, whose looped form stored one
+  iteration early and came back 835 OK / 149 FAIL. Measure per position, not per
+  spelling -- the two shapes sit six hundred lines apart and behave differently.
+- **Signed-zero comparisons do not normalize by masking one side; that
+  mask loses a real answer.** The first `cmpLtNum` shape was `x < y && x !=
+  NEGZERO` (read: "-0.0 < y is false") -- which is wrong: IEEE says `-0.0 < y`
+  is true for every `y > 0.0`. fuzz-1342 caught it at `print((-v1) < f0(...))`
+  with v1 = -0.0 and a positive right side: chip said false, PUC said true, and
+  the suite never touches it because no pinned case compares a negative zero
+  against a positive. The rules, spelled at the shared compare sites: `-0.0 < y
+  ⟺ y > 0.0`, `x < -0.0 ⟺ x < 0.0`, `-0.0 <= y ⟺ !(y < 0.0)`, `x <= -0.0 ⟺
+  !(x > 0.0)`, equality raw plus the zero pair. The rejected alternative was
+  one `cmpNum(op, ...)` gate with a literal op argument: the op-branches the
+  folder cannot prune were materialized dead, +493 nodes over the ceiling;
+  three slim mods (`cmpEqNum`, `cmpLtNum`, `cmpLeNum`) with the rules inside
+  landed at +332 and closed `negzero-cmp` without a library change.
