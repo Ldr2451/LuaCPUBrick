@@ -4064,6 +4064,15 @@ mod emitTok(kind: int, sub: int, num: float, text: string) {
   }
 }
 
+// The machine's FromCharCode cannot spell codepoint 0: its law (wirescript-sim
+// assumed.rs:150) filters 0 and answers the empty string, so `\0`, string.char(0)
+// and `%c` of a wrapped byte all LOST the byte -- a string that should be one
+// NUL long came back empty and string.byte of it read nil.  A NUL is a
+// character the language can write, so it comes from a literal instead.
+mod chrByte(v: int) -> string {
+  return if v == 0 then "\0" else FromCharCode(v).Character
+}
+
 mod emitEscByte(v: int) {
   // Full 0-255, not just printable ASCII: PUC's \ddd and \xXX spell any byte,
   // and utf8 (or any binary string) needs high bytes in literals.  This used
@@ -4076,7 +4085,7 @@ mod emitEscByte(v: int) {
   if v > 255 {
     lexFail("bad escape")
   } else {
-    lidBuf = lidBuf .. FromCharCode(v).Character
+    lidBuf = lidBuf .. chrByte(v)
   }
 }
 
@@ -7905,7 +7914,7 @@ mod fmtConvChar() {
       } else {
         fmtD_ = r
       }
-      fmtBody = FromCharCode(fmtD_).Character
+      fmtBody = chrByte(fmtD_)
       fmtPre = ""
       fmtState = 6
     }
@@ -9718,7 +9727,7 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
         vSetNil(a)
       }
     } else if so == 5 {
-      vSet(a, 2, 0.0, FromCharCode(p).Character)
+      vSet(a, 2, 0.0, chrByte(p))
     } else {
       // 6: find(needle) from pos q, 1-based like Lua's string.find.  The
       // official sim's Find law ignores the Start port (the game does not), so

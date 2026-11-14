@@ -338,6 +338,15 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   copies (op 12 in both vmStep and vmStepFast, op 34's `//` and the `>>` floor,
   the `math.floor`/`ceil`/`tointeger` block) closed `int-wrap`, `math-tointeger`
   and `math-ult-large` and took the chip from 40,361 to 40,303 nodes.
+- **`FromCharCode(0)` cannot spell a NUL byte: the gate's law filters codepoint
+  0 and answers the empty string** (`wirescript-sim/src/assumed.rs:150`), so
+  PUC's `\0`, `string.char(0)` and `string.format('%c', 256)` all silently LOST
+  a byte -- `string.byte('\0')` read nil instead of 0, and `%q` printed the
+  string short.  The language can write the byte (`"\0"` is a real character in
+  a string literal, `lexer.rs:757`), so the chip routes byte-valued
+  codepoint→character conversions through `chrByte`, which answers the literal
+  for 0 and the gate for everything else (measured: 3 sites, +16 nodes, and the
+  three cases `str-esc-high`, `fmt-char` and `fmt-q-ctl` came back green).
 - **An uncertified `Expr_*` gate fed something its laws do not cover ABORTS the
   run, mid-tick -- it does not answer wrong.** `simdrv` prints one line and
   nothing after that tick ever runs, so a program that had already printed its
