@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, 'irrun'))
 sys.path.insert(0, os.path.join(ROOT, 'tests'))
-from irsims import ChipRunner, share_dump, sim_from_dump
+from simdrv_sim import ChipRunner, share_dump, sim_from_dump
 from irdump import resolve_prog
 from timing import Elapsed
 import lua_oracle as OR

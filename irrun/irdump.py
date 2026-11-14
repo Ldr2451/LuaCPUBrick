@@ -1,5 +1,14 @@
 """Parse `wirescript compile --dump-ir-full` output into a graph.
 
+IR TOOLING, not a simulator: this reads what the compiler emits (nodes, wires,
+props, and the source line each node carries); running a chip is the official
+simulator's job through `tools/simdrv`.  The tick model that used to sit on
+this reader is gone; what survived from it is the property decoder below,
+because a probe that ATTRIBUTES nodes (which source line costs how many) only
+reads the dump.
+
+Record formats (single line each):
+
 Record formats (single line each):
   N[<id> kind=<Kind> class=<gate class> props={<k>=<v Debug>,...}
      in=[<port>:<Type Debug>,...] out=[...]]
@@ -373,6 +382,73 @@ def dump_source_modules(path, brz_out=None):
     """Compile path and return every module: root first, then chip bodies.
 
     Chip bodies carry their own nodes and wires and are addressed by the chip
-    node that owns them, so a simulator can run one per instance.
+    node that owns them, so a probe can account one per instance.
     """
     return parse_modules(_compile_dump(path, brz_out))
+
+
+# --- property decoding: a dump's props are Rust {:?}, the tools want values --
+# `from irsims import _extract` in the attribution tools now names this: the
+# decoder survived the model because reading props is IR work, not sim work.
+
+_WS_ESCAPES = {
+    "a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r",
+    "t": "\t", "v": "\v", "\\": "\\", '"': '"', "'": "'",
+}
+
+
+def _unescape_ws(s):
+    out = []
+    i, n = 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\" and i + 1 < n:
+            d = s[i + 1]
+            if d in _WS_ESCAPES:
+                out.append(_WS_ESCAPES[d])
+                i += 2
+                continue
+            if d == "x" and i + 3 < n:
+                try:
+                    out.append(chr(int(s[i + 2:i + 4], 16)))
+                    i += 4
+                    continue
+                except ValueError:
+                    pass
+            if d.isdigit() and i + 3 < n and s[i + 1:i + 4].isdigit():
+                try:
+                    out.append(chr(int(s[i + 1:i + 4]) % 256))
+                    i += 4
+                    continue
+                except ValueError:
+                    pass
+            if d == "\n":
+                i += 2
+                continue
+            out.append(c)
+            i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def _extract(val):
+    """A dump property value (`("raw", v)`/`("rt", v)`/`String("...")` tags)
+    as a Python value."""
+    if val is None:
+        return None
+    if isinstance(val, tuple) and len(val) == 2 and isinstance(val[0], str):
+        tag, v = val
+        if tag in ("rt", "val"):
+            return v
+        if tag == "none":
+            return None
+        if isinstance(v, str) and v.startswith('String("') and v.endswith('")') \
+                and len(v) >= 9:
+            return _unescape_ws(v[8:-2])
+        return v
+    if isinstance(val, str) and val.startswith('String("') and val.endswith('")') \
+            and len(val) >= 9:
+        return _unescape_ws(val[8:-2])
+    return val

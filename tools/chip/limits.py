@@ -30,7 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "irrun"))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
-from irsims import ChipRunner  # noqa: E402
+from simdrv_sim import ChipRunner  # noqa: E402
 import spec  # noqa: E402
 
 CAP = 40000

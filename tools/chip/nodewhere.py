@@ -17,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, 'irrun'))
 from irdump import dump_source
-from irsims import _extract
+from irdump import _extract
 
 path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'lua.ws')
 nodes, wires, _ = dump_source(os.path.abspath(path))

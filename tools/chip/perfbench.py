@@ -7,11 +7,9 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-sys.path.insert(0, os.path.join(ROOT, "irrun"))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
 
-from irsims import ChipRunner, _extract
-from spec import OP_NAMES
+from simdrv_sim import sim_from_brz, ensure_brz
 from timing import Elapsed
 
 PROGRAMS = {
@@ -68,69 +66,37 @@ PROGRAMS = {
 }
 
 
-def labels_by_id(sim):
-    result = {}
-    for nid, node in sim.nodes.items():
-        label = _extract(node.props.get("_label", ("raw", "")))
-        if isinstance(label, str):
-            result[label] = nid
-    return result
+def measure(sim, src, ticks):
+    """One benchmark run, read from the engine's own per-tick counters.
 
-
-def measure(runner, src, ticks):
-    sim = runner.sim
+    The old harness counted gate fires and decoded the bytecode opcode at the
+    pc every tick, both of which were reads of a model that owned the graph.
+    The engine keeps its counters (an eval is one certified gate evaluation,
+    a step one fired gate) and reads them once per tick here, so `steps` is a
+    deterministic gate-cost currency.  The opcode histogram and the bytecode
+    length are not readable mid-run through the engine's API -- an array's
+    contents are private -- so this tool no longer prints them.
+    """
     sim.reset()
-    labels = labels_by_id(sim)
-    prog_ok = labels.get("progOkV")
-    vm_pc = labels.get("vmPc")
-    bop_id = labels.get("bop")
-    compiled = [None]
-    gate_fires = [0]
-    op_counts = [0] * len(OP_NAMES)
-    pending_op = [None]
-    original_exec = sim._exec_node
-
-    def counted_exec(nid, node, next_queue):
-        gate_fires[0] += 1
-        return original_exec(nid, node, next_queue)
-
-    def on_tick(sim_now, tick):
-        if not sim_now.vars.get(prog_ok):
-            return
-        if compiled[0] is None:
-            compiled[0] = tick + 1
-        if pending_op[0] is not None:
-            op_counts[pending_op[0]] += 1
-        bop = sim_now.arrays.get(bop_id, [])
-        pc = int(sim_now.vars.get(vm_pc, 0))
-        pending_op[0] = None
-        if 0 <= pc < len(bop):
-            op = int(bop[pc])
-            if 0 <= op < len(op_counts):
-                pending_op[0] = op
-
     sim.inputs = {"program": src, "run": True}
-    sim._exec_node = counted_exec
     start = time.perf_counter()
-    result = sim.run(ticks, on_tick=on_tick)
+    r = sim.watch_run(ticks)
     wall = time.perf_counter() - start
-    sim._exec_node = original_exec
-    og = result.get("outGlobals", {})
-    if not sim.finished:
-        raise RuntimeError("CAP at %d: %s" % (sim.tick, og.get("runErrors", "")))
-    if any(l.startswith("err:") for l in (og.get("progDebug") or "").splitlines()) or og.get("runErrors"):
+    og = r["outGlobals"]
+    if not r["finished"]:
+        raise RuntimeError("CAP at %d: %s (engine said %s)"
+                           % (r["ticks"], og.get("runErrors", ""),
+                              r.get("err", "busy never latched")))
+    if any(l.startswith("err:") for l in (og.get("progDebug") or "").splitlines()) \
+            or og.get("runErrors"):
         raise RuntimeError("chip failed: %s" % og.get("runErrors", ""))
-    used_ticks = sim.tick + 1
-    bop = sim.arrays.get(labels.get("bop"), [])
     return {
         "wall": wall,
-        "ticks": used_ticks,
-        "compile_ticks": compiled[0] or used_ticks,
-        "gates": gate_fires[0],
+        "ticks": r["ticks"],
+        "evals": r["evals"],
+        "steps": r["steps"],
         "source_chars": len(src),
-        "bytecode": sum(1 for op in bop if op),
-        "op_counts": op_counts,
-        "log": result.get("log", ""),
+        "log": r["log"],
     }
 
 
@@ -144,9 +110,13 @@ def baseline_source(rev):
     return path
 
 
-def top_opcodes(counts, limit=5):
-    ranked = sorted(enumerate(counts), key=lambda item: (-item[1], item[0]))
-    return [(OP_NAMES[op], count) for op, count in ranked[:limit] if count]
+def census(sim):
+    """The artifact's gate and wire counts: the game loads the .brz, so this
+    is the size the save carries."""
+    c = sim._send({"cmd": "census"})
+    if "err" in c:
+        return -1, -1
+    return c.get("gates", -1), c.get("wires", -1)
 
 
 def main():
@@ -164,29 +134,29 @@ def main():
         parser.error("no benchmark matched %r" % args.filter)
     baseline_path = baseline_source(args.baseline)
     try:
-        runners = {
-            "baseline": ChipRunner(baseline_path),
-            "current": ChipRunner(os.path.join(ROOT, "lua.ws")),
+        artifacts = {
+            "baseline": ensure_brz(baseline_path),
+            "current": ensure_brz(os.path.join(ROOT, "lua.ws")),
         }
-        for runner in runners.values():
+        sims = {k: sim_from_brz(v) for k, v in artifacts.items()}
+        for sim in sims.values():
             for _, src in selected:
-                measure(runner, src, args.ticks)
+                measure(sim, src, args.ticks)
         print("baseline=%s  repeat=%d  ticks=%d" % (
             args.baseline, args.repeat, args.ticks))
-        print("nodes: baseline=%d current=%d  wires: baseline=%d current=%d" % (
-            len(runners["baseline"].sim.nodes),
-            len(runners["current"].sim.nodes),
-            len(runners["baseline"].sim.wires),
-            len(runners["current"].sim.wires)))
-        print("%-10s %11s %13s %13s %7s" % (
-            "program", "ticks b/c", "compile b/c", "bytecode b/c", "source"))
+        bg, bw = census(sim_from_brz(artifacts["baseline"]))
+        cg, cw = census(sim_from_brz(artifacts["current"]))
+        print("gates: baseline=%d current=%d  wires: baseline=%d current=%d"
+              % (bg, cg, bw, cw))
+        print("%-10s %11s %13s %7s" % (
+            "program", "ticks b/c", "steps b/c", "source"))
         for name, src in selected:
             results = {}
             for repeat in range(args.repeat):
                 order = ("baseline", "current") if repeat % 2 == 0 else (
                     "current", "baseline")
                 for which in order:
-                    result = measure(runners[which], src, args.ticks)
+                    result = measure(sims[which], src, args.ticks)
                     previous = results.get(which)
                     if previous is None or result["wall"] < previous["wall"]:
                         results[which] = result
@@ -195,26 +165,17 @@ def main():
             if before["log"] != current["log"]:
                 raise RuntimeError("%s output differs" % name)
             ratio = current["wall"] / before["wall"]
-            print("%-10s %11s %13s %13s %7d" % (
+            print("%-10s %11s %13s %7d" % (
                 name,
                 "%d/%d" % (before["ticks"], current["ticks"]),
-                "%d/%d" % (before["compile_ticks"], current["compile_ticks"]),
-                "%d/%d" % (before["bytecode"], current["bytecode"]),
+                "%d/%d" % (before["steps"], current["steps"]),
                 before["source_chars"]))
-            print("           gates %d/%d (%.1f/%.1f per tick) "
+            print("           evals %d/%d (%.1f/%.1f per tick) "
                   "wall %.1f/%.1f ms x%.3f" % (
-                      before["gates"], current["gates"],
-                      before["gates"] / before["ticks"],
-                      current["gates"] / current["ticks"],
+                      before["evals"], current["evals"],
+                      before["evals"] / before["ticks"],
+                      current["evals"] / current["ticks"],
                       before["wall"] * 1000, current["wall"] * 1000, ratio))
-            before_ops = dict(top_opcodes(before["op_counts"]))
-            current_ops = dict(top_opcodes(current["op_counts"]))
-            names = [name for name, _ in top_opcodes(before["op_counts"])]
-            names += [name for name, _ in top_opcodes(current["op_counts"])
-                      if name not in names]
-            print("           vm ops " + " ".join(
-                "%s=%d/%d" % (name, before_ops.get(name, 0),
-                              current_ops.get(name, 0)) for name in names))
     finally:
         os.unlink(baseline_path)
     return 0

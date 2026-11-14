@@ -1,74 +1,97 @@
 """Static audit of the compiled chip, from one build.
 
-Three questions that all need the compiled graph, and each used to cost its own
-six-second compile:
+Three questions that all need the compiled graph, and the official
+simulator's loader answers all three in one pass over the artifact:
 
   placeholders   the WireScript compiler silently gives up on an expression it
-                 cannot lower.  The node it leaves behind reads 0, so the chip
-                 builds and the program misbehaves far from the cause.
-  unhandled      the simulator dispatches on class-name fragments, so a gate the
-                 graph uses that matches none of them only fails in whichever
-                 program happens to touch it.
-  size           node and wire counts, the gate-size proxy to watch when adding
-                 compiler or library code.
+                 cannot lower.  The node it leaves behind is an `Unsupported`
+                 gate, and the simulator refuses to run a graph that has one
+                 rather than guessing at it -- which is why this check belongs
+                 to the artifact, not to a model that papered over it.
+  unhandled      gates whose evaluator the certified semantics has no rule
+                 for.  The engine errors naming them at the program that
+                 touches one, so the list here is the compiler's and the
+                 evaluator's coverage, and an entry means "a program
+                 touching this gate fails loudly".  Gates of a class the
+                 engine runs as WORLD behaviour (a display, a chat line)
+                 are listed apart: they are not certified expressions and
+                 never were, and the run executes them.
+  size           gates and wires, the gate-size proxy to watch when adding
+                 compiler or library code.  The game loads the .brz, so the
+                 gate count is the honest currency; the IR-node count is
+                 printed alongside because the size ceiling is kept in that
+                 older currency.
 
-  python -u tools/chip/audit.py [chip.ws]      (exit 1 if a placeholder or gap is found)
+  python -u tools/chip/audit.py [chip.ws]      (exit 1 if a placeholder or
+                                               uncertified gate is found)
+
+One `load_brz` + `census` through tools/simdrv; the IR-node count is one
+more compiler call for its dump.
 """
 import os
 import re
+import subprocess
 import sys
+import tempfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(ROOT, 'irrun'))
-from irdump import dump_source
-from irsims import _extract
-import gates
+sys.path.insert(0, os.path.join(os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tests"))
+from simdrv_sim import ensure_brz, Sim, WS_EXE, WS_DIR
 
-path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'lua.ws')
-nodes, wires, _ = dump_source(os.path.abspath(path))
-
-
-def label(nid):
-    nd = nodes.get(nid)
-    if not nd:
-        return '?'
-    v = _extract(nd.props.get('_label', ('raw', '')))
-    return v if isinstance(v, str) else ''
+path = sys.argv[1] if len(sys.argv) > 1 else None
+if path is None:
+    ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    path = os.path.join(ROOT, "lua.ws")
 
 
-# --- placeholders ---------------------------------------------------------
-bad = [nid for nid, nd in nodes.items() if 'Unsupported' in nd.cls]
-print('%d placeholder(s)' % len(bad))
-for nid in bad:
-    print('nid=%d label=%r bind=%r' % (
-        nid, label(nid), _extract(nodes[nid].props.get('_bindname', ('raw', '')))))
-    for w in wires:
-        s, sp, d, dp = (w[0], w[1], w[2], w[3]) if not hasattr(w, 'dst_id') \
-            else (w.src_id, w.src_port, w.dst_id, w.dst_port)
-        if s == nid:
-            print('   -> %d %s (%s %r)' % (d, dp, nodes[d].cls.split('_')[-1],
-                                           label(d)))
+def count_ir_nodes(ws_path):
+    """IR-node statements in the compiler's `--dump-ir`: every node is one
+    `%name = ...` line, in the root module and in every chip body, and an
+    output pin's line starts `out %name` -- the pins count as nodes too,
+    which is what the IR tools' node totals (the ceiling's currency)
+    included."""
+    fd, scratch = tempfile.mkstemp(suffix=".brz")
+    os.close(fd)
+    try:
+        p = subprocess.run([WS_EXE, "compile", os.path.abspath(ws_path),
+                            "-o", scratch, "--dump-ir"],
+                           cwd=WS_DIR, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        if p.returncode != 0:
+            return -1
+        return len(re.findall(r"^\s*(out\s+)?%\w+", p.stdout, re.M))
+    finally:
+        os.unlink(scratch)
 
-# --- gate classes the simulator has no handler for ------------------------
-sim_src = open(os.path.join(ROOT, 'irrun', 'irsims.py'), encoding='utf-8').read()
-frags = set(re.findall(r'"([A-Za-z_][A-Za-z0-9_]*)"\s+in\s+cls', sim_src))
-frags |= set(re.findall(r'cls\s*==\s*"([A-Za-z_][A-Za-z0-9_]*)"', sim_src))
-frags |= set(re.findall(r'cls\.startswith\("([A-Za-z_][A-Za-z0-9_]*)"', sim_src))
-frags |= {c.replace('BrickComponentType_', '') for c in gates.all_gate_classes()}
 
-used = {}
-for nid, nd in nodes.items():
-    if nd.cls.startswith('BrickComponentType_'):
-        used[nd.cls] = used.get(nd.cls, 0) + 1
-missing = sorted((c, n) for c, n in used.items()
-                 if not any(f in c for f in frags))
-print('%d gate classes used, %d fragments known, %d unhandled'
-      % (len(used), len(frags), len(missing)))
-for c, n in missing:
-    print('   %-72s x%d' % (c.replace('BrickComponentType_', ''), n))
+sim = Sim(ensure_brz(path))
+c = sim._send({"cmd": "census"})
+if "err" in c:
+    print("census: %s" % c["err"])
+    sys.exit(1)
 
-# --- size ----------------------------------------------------------------
-print('nodes: %d  wires: %d' % (len(nodes), len(wires)))
+placeholders = c.get("placeholders", {})
+world_only = c.get("worldOrUnclassified", {})
+uncert = sorted(c.get("uncertifiedExpr", []))
 
-sys.exit(1 if (bad or missing) else 0)
+print("%d placeholder(s)" % sum(placeholders.values()))
+for cls, n in sorted(placeholders.items()):
+    print("   %-72s x%d" % (cls.replace("BrickComponentType_", ""), n))
+
+print("%d gates the evaluator does not certify by class, the engine runs as"
+      " world behaviour (a run that READS one beyond these names it loudly):"
+      % sum(world_only.values()))
+for cls, n in sorted(world_only.items()):
+    print("   %-72s x%d" % (cls.replace("BrickComponentType_", ""), n))
+
+print("%d gates of %d classes, %d uncertified Expr gates"
+      % (c["gates"], len(c.get("classes", {})), len(uncert)))
+for cls in uncert:
+    print("   %-72s" % cls)
+
+print("gates: %d  wires: %d  ir nodes: %d"
+      % (c["gates"], c["wires"], count_ir_nodes(path)))
+
+sim.close()
+sys.exit(1 if (placeholders or uncert) else 0)

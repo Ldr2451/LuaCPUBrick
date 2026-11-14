@@ -9,7 +9,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "irrun"))
 
 import lua_oracle as OR
-from irsims import ChipRunner
+from simdrv_sim import ChipRunner
 from timing import Elapsed
 
 CASES = [

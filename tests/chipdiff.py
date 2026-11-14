@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'irrun'))
 
-from irsims import ChipRunner
+from simdrv_sim import ChipRunner
 import lua_oracle as OR
 
 RUNNER = None

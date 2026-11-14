@@ -445,21 +445,23 @@ except Exception as _e:
 # half of that mirror now lives in chip_ports, which refuses to answer a default
 # for a port the graph does not have.
 try:
-    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "irrun"))
     sys.path.insert(0, HERE)
-    from irsims import Sim, Wire, _extract  # noqa: E402
-    from irdump import dump_source  # noqa: E402
+    from simdrv_sim import ensure_brz, Sim  # noqa: E402
     _ws_path = os.path.join(os.path.dirname(HERE), "lua.ws")
     _src = open(_ws_path, encoding="utf-8").read()
     _want_in = set(re.findall(r"@left\s+in\s+(\w+)\s*:", _src))
     _want_out = set(re.findall(r"@right\s+out\s+(\w+)\s*:", _src))
-    _nodes, _wires, _ = dump_source(_ws_path)
-    _sim = Sim(_nodes, [Wire(*w) for w in _wires])
-    _got_in = set(_sim.port_label.values())
-    _got_out = {_extract(nd.props.get("PortLabel", ("raw", "")))
-                for _nid, nd in _sim.nodes.items()
-                if "Internal_MicrochipOutput" in nd.cls}
-    _got_out = {g for g in _got_out if isinstance(g, str) and g}
+    # The official sim answers the port question at the boundary it loads:
+    # root pin PortLabels, which is where a declared @left/@right port has to
+    # end up.  (The model scanned every pin, chip parameters included; the
+    # guard here is the missing direction, and extras are not the failure.)
+    _sim = Sim(ensure_brz(_ws_path))
+    _got_in = set(_sim.in_labels)
+    _got_out = set(_sim.out_labels)
+    try:
+        _sim.close()
+    except Exception:
+        pass
     _missing_in = sorted(_want_in - _got_in)
     _missing_out = sorted(_want_out - _got_out)
     # Missing is the failure; EXTRA is expected and not one.  The graph holds

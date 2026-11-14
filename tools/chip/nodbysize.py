@@ -29,7 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, 'irrun'))
 from irdump import dump_source
-from irsims import _extract
+from irdump import _extract
 
 DECL = re.compile(r'\b(?:let|var|mod)\s+(\w+)')
 

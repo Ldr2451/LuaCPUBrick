@@ -35,7 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "irrun"))
 sys.path.insert(0, os.path.join(ROOT, "tests"))
-from irsims import ChipRunner  # noqa: E402
+from simdrv_sim import ChipRunner  # noqa: E402
 from lua_oracle import norm_val, oracle_log, oracle_run  # noqa: E402
 
 # Bare names an expression may use.  Anything else means it closes over a local
