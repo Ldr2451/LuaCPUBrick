@@ -11110,7 +11110,7 @@ mod vmStep() {
       let rn = rt == 1 || rt == 6
       if op == 17 {
         if ln && rn {
-          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
+          vSetN(a, 3, if vNum(b) == rv && vNum(b) != NANSENT && rv != NANSENT then 1.0 else 0.0)
         } else if lt != rt {
           vSetN(a, 3, 0.0)
         } else if lt == 2 {
@@ -11122,7 +11122,7 @@ mod vmStep() {
           // through the numeric arm above (ln covers it), so its own arm --
           // which could never fire -- is gone and the three number-compared
           // tags share one instead of spelling it twice.
-          vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
+          vSetN(a, 3, if vNum(b) == rv && vNum(b) != NANSENT && rv != NANSENT then 1.0 else 0.0)
         }
       } else if ln && rn {
         let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
@@ -11722,7 +11722,7 @@ chip vmStepFast() {
     let rn = rt == 1 || rt == 6
     if op == 17 {
       if ln && rn {
-        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
+        vSetN(a, 3, if vNum(b) == rv && vNum(b) != NANSENT && rv != NANSENT then 1.0 else 0.0)
       } else if lt != rt {
         vSetN(a, 3, 0.0)
       } else if lt == 2 {
@@ -11732,7 +11732,7 @@ chip vmStepFast() {
       } else {
         // as vmStep's == arm above: lt == 1 cannot reach here (ln covers it),
         // and tags 3, 4 and 5 all compare by number
-        vSetN(a, 3, if vNum(b) == rv then 1.0 else 0.0)
+        vSetN(a, 3, if vNum(b) == rv && vNum(b) != NANSENT && rv != NANSENT then 1.0 else 0.0)
       }
     } else if ln && rn {
       let hit = if op == 18 then vNum(b) < rv else vNum(b) <= rv
