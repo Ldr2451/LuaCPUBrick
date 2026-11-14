@@ -3476,7 +3476,8 @@ mod fmtVal(tag: int, num: float, s: string) -> string {
     // ONE int-to-decimal conversion behind a prefix Select: three separate
     // `prefix .. (num as int)` arms paid the conversion three times per call
     // site, and there are ~19 call sites.
-    else if tag == 4 || tag == 5 || tag == 6 then (if tag == 5 then "table: 0x" else if tag == 4 then "function: 0x" else "") .. (num as int)
+    else if tag == 4 || tag == 5 || tag == 6 then (if tag == 5 then "table: 0x" else if tag == 4 then "function: 0x" else "")
+      .. (if num >= 9223372036854775808.0 then "9223372036854775808" else "" .. (num as int))
     else fmtNum(num)
 }
 
