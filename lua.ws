@@ -545,9 +545,20 @@ mod truthyOf(tag: int, num: float) -> bool {
     else true
 }
 
+// The machine cannot HOLD a non-finite number where a law can see it: a gate
+// that would produce inf or nan either refuses (MathPow, MathSqrt, MathLn) or
+// its result is sanitized to 0.0 on the next read (semantics.rs sanitize). So
+// the chip carries the two infinities as the FINITE value the inf arm below
+// already prints -- exactly math.huge, so the display is the same path the
+// `math.huge` constant takes today -- and nan as a sentinel no legitimate
+// computation reaches, compared by the float/float CompareEqual the table
+// certifies.  The old `v != v` test could never fire for the same reason.
+const NANSENT = 1.7976931348623155e300
+
 mod fmtNum(v: float) -> string {
-  return if v != v then "nan"
-    else if v != 0.0 && 2.0 * v == v then if v > 0.0 then "inf" else "-inf"
+  return if v == NANSENT then "nan"
+    else if v == 1.7976931348623157e308 then "inf"
+    else if v == 0.0 - 1.7976931348623157e308 then "-inf"
     else if v == 0.0 then if atan2(v, v) < 0.0 then "-0.0" else "0.0"
     else if v == floor(v) && abs(v) < 1e15 then ("" .. (v as int)) .. ".0"
     else "" .. v
@@ -4663,7 +4674,18 @@ mod vSetIntSat(a: int, v: float) {
 // written twice, in vmStepFast and in vmStep, and a mod is inlined at both call
 // sites from one body -- two copies of this rule is two rules to keep in step.
 mod powSignedZero(x: float, y: float) -> float {
-  var p = x ** y
+  // The pow gate REFUSES when its result would be non-finite (0.0^-1 is inf,
+  // (-8)^0.5 is nan), and a refusal aborts the whole run mid-tick -- five
+  // suite cases lost their printed answer that way.  A statement guard, not an
+  // if-expression: a Select evaluates BOTH arms, so an expression-shaped guard
+  // would run the refused gate anyway.  Guarded, the sentinels answer, and the
+  // sign block below still flips the infinite ones by parity.
+  var p = 0.0
+  if x < 0.0 && y != floor(y) || x == 0.0 && y < 0.0 {
+    p = if x == 0.0 then 1.7976931348623157e308 else NANSENT
+  } else {
+    p = x ** y
+  }
   if x == 0.0 {
     let iy = y as int
     // `y == iy + 0.0` keeps an exponent too large to truncate out, and 1/x is the
@@ -9830,11 +9852,17 @@ mod gateHigh(fid: int, a: int, nargs: int, mtSelf: bool, cid: int, isTail: bool)
           vSetNil(a)
         }
       } else {
-        vSetNum(a, if mo == 3 then sqrt(x) else if mo == 4 then sin(x)
+        // sqrt of a negative and ln of zero/negative would produce a nan or an
+        // inf the extended laws REFUSE, aborting the run mid-tick; guarded, the
+        // sentinels answer instead and every later law sees them as numbers.
+        vSetNum(a, if mo == 3 then (if x < 0.0 then NANSENT else sqrt(x))
+          else if mo == 4 then sin(x)
           else if mo == 5 then cos(x) else if mo == 6 then tan(x)
           else if mo == 7 then asin(x) else if mo == 8 then acos(x)
           else if mo == 9 then atan2(x, y)
-          else if mo == 10 then exp(x) else if mo == 11 then ln(x)
+          else if mo == 10 then exp(x)
+          else if mo == 11 then (if x == 0.0 then 0.0 - 1.7976931348623157e308
+            else if x < 0.0 then NANSENT else ln(x))
           else log(x, 10.0))
       }
       }
@@ -10846,7 +10874,10 @@ mod vmIDiv(a: int, b: int, c: int) {
       if li && ri {
         vmFail("attempt to divide by zero")
       } else {
-        vSetNum(a, x / y)
+        // the same sentinels as the `/` arm: a float `//` of a zero divisor
+        // answers inf/-inf/nan in PUC, and a real one on the wire is read back
+        // as 0.0 by every law
+        vSetNum(a, if x > 0.0 then 1.7976931348623157e308 else if x < 0.0 then 0.0 - 1.7976931348623157e308 else NANSENT)
       }
     } else if li && ri {
       // Integer division: the quotient floored by the machine's own Floor
@@ -10985,11 +11016,17 @@ mod vmStep() {
             vSetNum(a, x * y)
           }
         } else if op == 11 {
-          // A zero divisor is not special-cased: the host's divide gate is
-          // `x / y` on a 64-bit float, so 1/0 is inf and 0/0 is nan, which is
-          // what PUC prints too.  A guard here answered 0.0 for both, and
-          // 1/(0.0*-1) with it.
-          vSetNum(a, x / y)
+          // Division by zero would put an inf or a nan on the wire, but every
+          // law that READS one sanitizes it to 0.0, so today the chip answers
+          // 0.0 where PUC prints inf or nan -- and loses every comparison with
+          // it besides.  The FINITE sentinels print as inf/-inf/nan through
+          // fmtNum and compare as plain numbers, which is what PUC's printed
+          // answers and these pinned logs ask for.
+          if y == 0.0 {
+            vSetNum(a, if x > 0.0 then 1.7976931348623157e308 else if x < 0.0 then 0.0 - 1.7976931348623157e308 else NANSENT)
+          } else {
+            vSetNum(a, x / y)
+          }
         } else if op == 12 {
           if y == 0.0 {
             if ii && ij {
@@ -11598,11 +11635,14 @@ chip vmStepFast() {
           vSetNum(a, x * y)
         }
       } else if op == 11 {
-        // A zero divisor is not special-cased: the host's divide gate is
-        // `x / y` on a 64-bit float, so 1/0 is inf and 0/0 is nan, which is
-        // what PUC prints too.  A guard here answered 0.0 for both, and
-        // 1/(0.0*-1) with it.
-        vSetNum(a, x / y)
+        // The same guard as the vmStep copy: a zero divisor answers the finite
+        // sentinel (inf/nan on a wire is sanitized to 0.0 by every law that
+        // reads it, so it cannot print or compare as PUC's does).
+        if y == 0.0 {
+          vSetNum(a, if x > 0.0 then 1.7976931348623157e308 else if x < 0.0 then 0.0 - 1.7976931348623157e308 else NANSENT)
+        } else {
+          vSetNum(a, x / y)
+        }
       } else if op == 12 {
         if y == 0.0 {
           if ii && ij {

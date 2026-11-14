@@ -347,6 +347,20 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   codepoint→character conversions through `chrByte`, which answers the literal
   for 0 and the gate for everything else (measured: 3 sites, +16 nodes, and the
   three cases `str-esc-high`, `fmt-char` and `fmt-q-ctl` came back green).
+- **A gate that would produce inf or nan is invisible, not wrong: the law either
+  REFUSES (the extended float laws end `r.is_finite().then_some`, so MathPow of
+  0^-1, MathSqrt of -1, MathLn of 0 abort the whole run) or the value is
+  sanitized to 0.0 on the next gate read (`sanitize`, semantics.rs:228) -- so
+  `1/0` printed 0.0 and every comparison with it lost, even though the divide
+  gate itself answered.** The chip's shape: carry the infinities as the FINITE
+  math.huge value and nan as a sentinel constant, test them with the certified
+  float/float `CompareEqual`, and print them from fmtNum arms -- the dead `v != v`
+  test and the `2.0 * v == v` overflow test could never fire, since the compare
+  sanitizes both sides.  Guards are STATEMENT ifs, never if-expressions: a
+  Select evaluates BOTH arms, so an expression guard runs the refused gate anyway
+  (language reference, "an arm cannot be used to guard another").  Measured:
+  closing sqrt/ln/div/idiv/pow domains plus fmtNum arms took 940 to 947 OK and
+  the refusal histogram from 8 cases to 1.
 - **An uncertified `Expr_*` gate fed something its laws do not cover ABORTS the
   run, mid-tick -- it does not answer wrong.** `simdrv` prints one line and
   nothing after that tick ever runs, so a program that had already printed its
