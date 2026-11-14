@@ -549,7 +549,7 @@ mod fmtNum(v: float) -> string {
   return if v != v then "nan"
     else if v != 0.0 && 2.0 * v == v then if v > 0.0 then "inf" else "-inf"
     else if v == 0.0 then if atan2(v, v) < 0.0 then "-0.0" else "0.0"
-    else if v == floor(v) && abs(v) < 1e15 then ("" .. ((v as int) | 0)) .. ".0"
+    else if v == floor(v) && abs(v) < 1e15 then ("" .. (v as int)) .. ".0"
     else "" .. v
 }
 
@@ -1025,7 +1025,7 @@ const INT64_WRAP = 18446744073709551616.0
 mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
   return if kt == 2 then tid .. "$" .. ks
     else tid .. (if kt == 1 || kt == 6 then "#" else "@" .. kt .. ":")
-      .. ((kn as int) | 0)
+      .. (kn as int)
 }
 
 mod keyTag(t: int, v: float) -> int {
@@ -3452,9 +3452,9 @@ mod fmtVal(tag: int, num: float, s: string) -> string {
     // address itself cannot be -- the registers are doubles and PUC's pointer
     // is 64-bit -- so this is the closure or table number, which is what the
     // old "function" and "table: 0x" spellings each half-agreed with.
-    else if tag == 4 then "function: 0x" .. ((num as int) | 0)
-    else if tag == 5 then "table: 0x" .. ((num as int) | 0)
-    else if tag == 6 then "" .. ((num as int) | 0)
+    else if tag == 4 then "function: 0x" .. (num as int)
+    else if tag == 5 then "table: 0x" .. (num as int)
+    else if tag == 6 then "" .. (num as int)
     else fmtNum(num)
 }
 
@@ -4665,7 +4665,7 @@ mod vSetIntSat(a: int, v: float) {
 mod powSignedZero(x: float, y: float) -> float {
   var p = x ** y
   if x == 0.0 {
-    let iy = (y as int) | 0
+    let iy = y as int
     // `y == iy + 0.0` keeps an exponent too large to truncate out, and 1/x is the
     // only sign oracle this language has for a zero: -0.0 is not < 0.0, and
     // sign() is modelled as `0.0 if x == 0` so it cannot tell them apart either.
@@ -7907,8 +7907,8 @@ mod fmtConvChar() {
     } else if vnum[ab] != floor(vnum[ab]) {
       vmFail("number has no integer representation")
     } else {
-      fmtQ_ = ((vnum[ab] / 256.0) as int) | 0
-      let r = ((vnum[ab] - fmtQ_ * 256.0) as int) | 0
+      fmtQ_ = (vnum[ab] / 256.0) as int
+      let r = (vnum[ab] - fmtQ_ * 256.0) as int
       if r < 0 {
         fmtD_ = r + 256
       } else {
@@ -11051,8 +11051,10 @@ mod vmStep() {
       let lct = vTag(b)
       let rct = vTag(c)
       if (lct == 1 || lct == 6 || lct == 2) && (rct == 1 || rct == 6 || rct == 2) {
-        let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. ((vNum(b) as int) | 0) else fmtNum(vNum(b))
-        let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. ((vNum(c) as int) | 0) else fmtNum(vNum(c))
+        // `as int` answers the INT variant by itself; the `| 0` that used to
+        // follow was a no-op gate on every one of these display sites
+        let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. (vNum(b) as int) else fmtNum(vNum(b))
+        let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. (vNum(c) as int) else fmtNum(vNum(c))
         vSet(a, 2, 0.0, ls .. rs)
       } else {
         vmFail("attempt to concatenate a "
@@ -11660,8 +11662,8 @@ chip vmStepFast() {
     let lct = vTag(b)
     let rct = vTag(c)
     if (lct == 1 || lct == 6 || lct == 2) && (rct == 1 || rct == 6 || rct == 2) {
-      let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. ((vNum(b) as int) | 0) else fmtNum(vNum(b))
-      let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. ((vNum(c) as int) | 0) else fmtNum(vNum(c))
+      let ls = if lct == 2 then vStr(b) else if lct == 6 then "" .. (vNum(b) as int) else fmtNum(vNum(b))
+      let rs = if rct == 2 then vStr(c) else if rct == 6 then "" .. (vNum(c) as int) else fmtNum(vNum(c))
       vSet(a, 2, 0.0, ls .. rs)
     } else {
       vmFail("attempt to concatenate a "
