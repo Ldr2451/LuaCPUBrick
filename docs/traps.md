@@ -306,6 +306,20 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   a 5-line body the plumbing is several times the body. Only a mod whose BODY
   node count is a multiple of the plumbing pays; measure with `audit.py` after
   `buildbrz.py`, never from the line count.
+- **Mixed `int`/`float` VALUE signatures are refused by the official simulator
+  even though the language promotes them.** `docs/src/expressions.md:117` says
+  "Mixed int/float arithmetic promotes the result to float" and the game agrees,
+  but the certified table never probed the mixed signature, so the run ABORTS:
+  `Expr_MathMultiply ... not certified for inputs (int, float)` (measured at
+  `math.mininteger // -1`: the floored-quotient arm's `(q as int) | 0` yields an
+  INT value that then multiplies a float register) and
+  `Expr_CompareEqual ... (float, int)` (measured at `math.tointeger`). `as float`
+  does not help: it costs no gate and leaves the value's variant alone, and
+  `w + 0.0` folds back to an int, so the wire still carries an INT. Keep both
+  operands in ONE domain where a value can be an INT variant. `tools/chip/bitfloat.py`
+  classifies a gate's wired inputs by the TYPE of their source port -- it finds
+  0 float-typed wires among the 152 Bitwise gates, so the offenders live in the
+  Math/Compare classes.
 - **An uncertified `Expr_*` gate fed something its laws do not cover ABORTS the
   run, mid-tick -- it does not answer wrong.** `simdrv` prints one line and
   nothing after that tick ever runs, so a program that had already printed its
