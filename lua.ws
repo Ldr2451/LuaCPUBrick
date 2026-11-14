@@ -11038,7 +11038,19 @@ mod arithOps(op: int, a: int, b: int, c: int) {
           if ii && ij {
             vSetInt(a, x - fl * y)
           } else {
-            vSetNum(a, x - fl * y)
+            // A floored remainder of exactly zero keeps the DIVIDEND's
+            // sign, and only a floored one: PUC's `math.fmod(-2, 2)` is
+            // -0.0 and so is `-2.0 % 2` -- a zero remainder is not
+            // unsigned.  The sign test is STATEMENT-if (an expression
+            // guard over the law's subtraction re-evaluates it), and
+            // r's zero is tested before x's sign so a positive
+            // dividend's +0.0 keeps its answer.
+            let r = x - fl * y
+            if r == 0.0 && x < 0.0 {
+              vSetNum(a, NEGZERO)
+            } else {
+              vSetNum(a, r)
+            }
           }
         }
       }

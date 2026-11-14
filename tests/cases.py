@@ -3076,6 +3076,14 @@ TESTS = [
      "local z = -0.0 print(math.floor(z), math.ceil(z))", None, "run"),
     ("negzero-math-rest2", "local z = -0.0 print(math.fmod(z, 3), math.sqrt(z))",
      None, "run"),
+    # A floored remainder of EXACTLY zero keeps the dividend's sign: PUC
+    # answers -0.0 for `-2.0 % 2` (the old shape answered unsigned 0.0), and
+    # fmod is truncated but agrees here because the dividend is negative.
+    # The integer line says the same rule stays an integer 0.
+    ("negzero-mod",
+     "local z = -0.0 print(z % 2, -2.0 % 2, -1.5 % 0.5, 1.5 % -0.5, "
+     "math.fmod(-2.0, 2), -2 % 2, 2 % -2)",
+     None, "run"),
     # The pow arm is now sign-correct for a negative zero base: the gate answered the
     # right MAGNITUDE with the wrong sign, +0.0 for every positive exponent and
     # -inf for every negative one, where PUC alternates on the parity of the

@@ -420,3 +420,19 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   folder cannot prune were materialized dead, +493 nodes over the ceiling;
   three slim mods (`cmpEqNum`, `cmpLtNum`, `cmpLeNum`) with the rules inside
   landed at +332 and closed `negzero-cmp` without a library change.
+- **A floored `%` whose remainder is exactly zero keeps the DIVIDEND's sign,
+  and only the floored spelling shows it.** The machine computes `x - floor(x/y)*y`
+  in IEEE doubles, so `-2.0 % 2` arrives as `+0.0` (`-2 - (-2)` is `+0` under
+  round-to-nearest), where PUC's `luaU_math_modf` takes the C `fmod` -- which
+  answers `-0.0` -- and skips the sign adjustment because the remainder is
+  zero. Four fuzz seeds (1110/1113/1283/1449) sat in the KNOWN bucket on
+  exactly this shape, so the suite needed its own pin: `negzero-mod`
+  (`-0.0 % 2`, `-2.0 % 2`, `-1.5 % 0.5`, `1.5 % -0.5`, `math.fmod(-2.0, 2)`,
+  and the integer line `2 % -2`, which stays an integer `0`). The rule is
+  copysign(0, x) for the zero remainder only -- a nonzero remainder keeps
+  the divisor's sign, so the test is `r == 0.0 && x < 0.0` as a STATEMENT
+  if inside the float arm (the INT arm is an exact integer zero, no sign),
+  never folded into `r`'s value on its way back to a law gate. The arm cost
+  +54 nodes (two materializations) and one mod-heavy benchmark program
+  moved 318.9 -> 319.8 evals/tick against the interim tree -- against the
+  pre-batch baseline every program is still down (325.3 -> 319.8).
