@@ -4687,12 +4687,15 @@ mod powSignedZero(x: float, y: float) -> float {
     p = x ** y
   }
   if x == 0.0 {
+    // The integrality test runs in ONE domain: `y == iy` compared a float
+    // against the INT variant `as int` answers, and Expr_CompareEqual (float,
+    // int) is not certified -- the refusal aborted the whole run, which is how
+    // negzero-pow3 lost its answer.  floor(y) is a float and the same value.
+    let iyf = floor(y)
     let iy = y as int
-    // `y == iy + 0.0` keeps an exponent too large to truncate out, and 1/x is the
-    // only sign oracle this language has for a zero: -0.0 is not < 0.0, and
-    // sign() is modelled as `0.0 if x == 0` so it cannot tell them apart either.
-    // The divide gate answers inf rather than faulting, so it is safe here.
-    if y == iy && 1/x < 0.0 {
+    // 1/x is the sign oracle for a zero base, and the parity below needs the
+    // integer form of the exponent -- taken only once the float test passed.
+    if y == iyf && 1/x < 0.0 {
       // floored modulo, so an odd exponent is 1 on either side of zero
       if (p < 0.0) != (iy % 2 != 0) {
         // -p and NOT `0.0 - p`: IEEE says (-0.0) - (+0.0) is -0.0 but
