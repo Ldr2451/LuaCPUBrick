@@ -1,5 +1,11 @@
 # The unroll, measured on this chip (2026-09-26)
 
+Note (2026-11): the tick model `irrun/irsims.py` named below is RETIRED — runs
+now go through the official simulator via `tools/simdrv` (`tests/simdrv_sim.py`
+is the harness shim); the model-currency rows here are history, kept for the
+shapes they priced. `perfbench.py` now reports engine `evals`/`steps` counters
+and ticks, not per-tick op censuses.
+
 **The CPU chip's budget: 40,362 nodes (the baseline) is the ceiling, and the
 working rule is "at or under it".** Every fast-step or unroll row below is a
 measurement to be paid INSIDE that budget; a row above it is a shape that got

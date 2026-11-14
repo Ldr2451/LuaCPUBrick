@@ -16,4 +16,7 @@ section for the area before touching it.
 - `lib/` — Lua library masters, the readable source of truth.
 
 One test command at a time, `python -u` always. Verify by execution; add a
-suite case per bug or feature. Do not commit unless asked.
+suite case per bug or feature. Do not commit unless asked. NEVER run
+`taskkill /F /IM python.exe` (or any image-wide kill): the harness itself runs
+on python, and it kills the session. To stop an orphan test, let the timeout
+expire or kill that process by its PID.

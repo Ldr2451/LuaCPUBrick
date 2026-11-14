@@ -2,17 +2,18 @@
 
 `lua.ws` is a Lua 5.5 interpreter built as a
 [Brickadia WireScript](https://github.com/Meshiest/wirescript) chip: a lexer, a
-compiler, a register VM and the standard library, all in one net. `irrun/`
-simulates it a tick at a time, and `tests/` compares the chip against the real
+compiler, a register VM and the standard library, all in one net. `tests/` runs
+it through the official WireScript simulator (`tools/simdrv`, reached from the
+harness shim `tests/simdrv_sim.py`) and compares the chip against the real
 `lua5.5` binary, which is the only authority on what the chip should do.
 
 ```
 lua.ws          the chip: lexer, compiler, VM and library
 demo.lua        a small program to try in-game
-irrun/          the simulator: IR loader, tick sim, gate catalogue
 tests/          the suite and the oracle-diff checks
 tools/          development tools (see below)
 docs/           reference: the VM's registers, opcodes and state machines
+irrun/          IR tooling only: dump-IR reader, property decoder
 ```
 
 The chip's own header is the description of the *language* it implements: the
