@@ -306,6 +306,18 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   a 5-line body the plumbing is several times the body. Only a mod whose BODY
   node count is a multiple of the plumbing pays; measure with `audit.py` after
   `buildbrz.py`, never from the line count.
+- **The official simulator's float→text law is C `%g` at SIX significant digits,
+  and no gate gives more.** Under sim 2.5.0 a number that reaches a host text
+  gate renders through `concat_display`/`c_g6` (`crates/wirescript-ir/src/
+  semantics.rs`) at `%.6g`; `FormatText` is worse (3 decimals, ties to even).
+  The 2.0-era model used Rust's `{f}` -- shortest-roundtrip -- so a print pin
+  written against the old host (`print(1/3)` wanting `0.3333333333333333`)
+  asks for digits the new host's CERTIFIED gates cannot emit; the certified
+  table has no number→text gate beyond the six. Fighting that law -- a
+  shortest-roundtrip digit machine on the chip side -- measured ~600 nodes
+  against 150 headroom, which is what spiralled into a fight. The accepted
+  answer takes the law: CHIP_LOG re-pins the float-text class to the host's
+  spelling, and fuzz carries the matching `only_float_precision` bucket.
 - **Mixed `int`/`float` VALUE signatures are refused by the official simulator
   even though the language promotes them.** `docs/src/expressions.md:117` says
   "Mixed int/float arithmetic promotes the result to float" and the game agrees,
