@@ -50,9 +50,15 @@ def truthy(j):
 
 
 class Sim:
-    def __init__(self, brz, seed=3, dt=1.0 / 60.0, busy_label="busy"):
+    def __init__(self, brz, seed=3, dt=1.0 / 60.0, busy_label="busy", ir=None):
         self.exe = EXE
         self.brz = brz
+        # The same compile's IR TEXT (`compile --emit-ir`): the names the save
+        # dropped. A cube-layout emit labels only the access pins of globals
+        # another grid reads by remote wire, so the artifact has no handle for
+        # the chip's own state; `new` hands the driver this path and every
+        # container gets a probe under its source name.
+        self.ir = ir
         self.seed = seed
         self.dt = dt
         self._q = []
@@ -219,10 +225,12 @@ class Sim:
 
     def _start(self):
         full = self._ports(self.inputs)
-        r = self._send({"cmd": "new", "probe": True, "busy": self.busy_idx,
-                        "ports": full, "dt": self.dt,
-                        "seed": self.seed,
-                        "arrays": self._arr_ranges if self._arr_on else {}})
+        cmd = {"cmd": "new", "probe": True, "busy": self.busy_idx,
+               "ports": full, "dt": self.dt, "seed": self.seed,
+               "arrays": self._arr_ranges if self._arr_on else {}}
+        if self.ir:
+            cmd["ir"] = self.ir
+        r = self._send(cmd)
         if "err" in r:
             raise RuntimeError("new: %s" % r["err"])
         self._sent = dict(full)
@@ -626,12 +634,17 @@ WS_EXE = _find_compiler()
 WS_DIR = os.path.dirname(os.path.dirname(WS_EXE))
 
 
-def compile_ws(ws_path, out_brz):
+def compile_ws(ws_path, out_brz, emit_ir=None):
     """Compile one chip to one artifact. The compiler writes NO artifact when
     it has diagnostics, so rc != 0 is a hard error, not a warning: a build
-    that ignores it ships yesterday's .brz (buildbrz.py's lesson)."""
-    p = subprocess.run([WS_EXE, "compile", os.path.abspath(ws_path),
-                        "-o", os.path.abspath(out_brz)],
+    that ignores it ships yesterday's .brz (buildbrz.py's lesson). `emit_ir`
+    additionally asks the SAME compile for its IR text, which keeps the
+    container names the cube-layout save drops."""
+    cmd = [WS_EXE, "compile", os.path.abspath(ws_path),
+           "-o", os.path.abspath(out_brz)]
+    if emit_ir:
+        cmd += ["--emit-ir", os.path.abspath(emit_ir)]
+    p = subprocess.run(cmd,
                        cwd=WS_DIR, capture_output=True, text=True,
                        encoding="utf-8", errors="replace")
     if p.returncode != 0:

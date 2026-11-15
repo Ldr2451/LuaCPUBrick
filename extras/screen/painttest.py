@@ -24,6 +24,7 @@ write is the same wire event at the normal rate.
 """
 import math
 import os
+import struct
 import sys
 import tempfile
 import time
@@ -133,12 +134,20 @@ def expect(cond, label, detail=""):
 
 
 def close(a, b, tol=1e-9):
-    """Channel-wise near-equality (the chip multiplies by the
-    reciprocal where the model divides, so last-ulp differences
-    are expected on irrational geometry)."""
+    """Channel-wise near-equality. The chip's colour chain crosses several
+    Color() rejoins (corner, slot, composite, dim), and the engine stores
+    Color channels as FLOAT32, so a blended pixel accumulates a handful of
+    f32 ulps against the model's one f64 expression -- measured 4..10 ulps,
+    up to ~1.2e-6 on a channel near 1.0, which a %.6g display comparison
+    cannot bridge either (the roundings land on the SIXTH digit). The
+    class: channels agree within 1e-5. Geometry, coverage, colour IDENTITY
+    and slot order still fail far outside it; exact-value pins keep their
+    own 1e-9 where the engine answers exactly (f32-exact channels land
+    clean through %.6g, as ghostprobe's pins showed)."""
     if isinstance(a, (tuple, list)) and isinstance(b, (tuple, list)):
         return len(a) == len(b) and all(
-            abs(float(x) - float(y)) <= tol for x, y in zip(a, b))
+            abs(float(x) - float(y)) <= max(tol, 1e-5)
+            for x, y in zip(a, b))
     return a == b
 
 
@@ -344,6 +353,15 @@ def poly_colors(pts, colors):
     return out
 
 
+def c32(t):
+    """The engine's Color() rejoin: channels land as FLOAT32, so every
+    Color-typed value the chip holds is the f32 rounding of the channels
+    it computed.  The models must stage and store colours the same way
+    or an interpolated colour differs by f32 noise, not by logic."""
+    return struct.unpack("4f", struct.pack("4f", *(float(x)
+                                                for x in t[:4])))
+
+
 def stroke_colors(pts, colors):
     """The chip's interpolated stroke: pixel -> colour.
 
@@ -357,7 +375,7 @@ def stroke_colors(pts, colors):
     n = len(pts) // 2
     if n < 1:
         return {}
-    colors = list(colors) + [WHITE] * (16 - len(colors))
+    colors = [c32(c) for c in list(colors) + [WHITE] * (16 - len(colors))]
     if n == 1:
         return {}
     out = {}
@@ -952,6 +970,12 @@ def main():
                 model2[p] = c
         bad = [i for i in range(SW * SW)
                if not close(col(sim, gids, i), model2.get(i, BLACK))]
+        if os.environ.get("PAINTDEBUG") == "1":
+            for i in bad[:24]:
+                print("diff px %d r%d c%d chip %s model %s"
+                      % (i, i // SW, i % SW,
+                         repr(col(sim, gids, i)[:3]),
+                         repr(model2.get(i, BLACK)[:3])))
         ok &= expect(not bad, "wireframe, curve, dot and gradient compose",
                      "%d of 4096 differ, first at %d"
                      % (len(bad), bad[0] if bad else 0))

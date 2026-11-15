@@ -2479,7 +2479,8 @@ L.append("            let bu0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) els
 L.append("            let bu0cy = if prow + 1.0 < bu0lo then bu0lo else prow + 1.0")
 L.append("            let bu0v = bu0cy < bu0hi && bu0lo - (prow + 1.0) < 1.0")
 L.append("            let bu0x = qAx + bu0s * (bu0cy - qAy)")
-L.append("            uc0B = cA + (bu0cy - qAy) * iAB * (cB - cA)")
+wcol_lerp("B0", "uc0B", "cA", "cB", "(bu0cy - qAy) * iAB",
+                      "            ")
 L.append("            let uz0B = rZ0 + (bu0cy - qAy) * iAB * (rZ1 - rZ0)")
 L.append("            let bun0 = if bu0v then bu0x else 200.0")
 L.append("            let bux0 = if bu0v then bu0x else -200.0")
@@ -2499,7 +2500,8 @@ L.append("            let bu2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) els
 L.append("            let bu2cy = if prow + 1.0 < bu2lo then bu2lo else prow + 1.0")
 L.append("            let bu2x = qCx + bu2s * (bu2cy - qCy)")
 L.append("            let bu2v = bu2cy < bu2hi && bu2lo - (prow + 1.0) < 1.0")
-L.append("            uc2B = cB + (bu2cy - qCy) * iCD * (cA - cB)")
+wcol_lerp("B2", "uc2B", "cB", "cA", "(bu2cy - qCy) * iCD",
+                      "            ")
 L.append("            let uz2B = rZ1 + (bu2cy - qCy) * iCD * (rZ0 - rZ1)")
 L.append("            let bun2 = if bu2v then bu2x else 200.0")
 L.append("            let bux2 = if bu2v then bu2x else -200.0")
@@ -2582,7 +2584,8 @@ for _R, _off, _sfx in (("C", 2.0, "3"), ("D", 3.0, "4"), ("E", 4.0, "5"),
     L.append("            let bu0x%s = qAx + bu0s%s * (bu0cy%s - qAy)" % (_R, _R, _R))
     L.append("            let bu0v%s = bu0cy%s < bu0hi%s && bu0lo%s - (%s) < 1.0"
              % (_R, _R, _R, _R, _r))
-    L.append("            let buc0%s = cA + (bu0cy%s - qAy) * iAB * (cB - cA)" % (_R, _R))
+    wcol_lerp(_R + "0", "let buc0%s" % _R, "cA", "cB",
+              "(bu0cy%s - qAy) * iAB" % _R, "            ")
     L.append("            let buz0%s = rZ0 + (bu0cy%s - qAy) * iAB * (rZ1 - rZ0)" % (_R, _R))
     L.append("            let bun0%s = if bu0v%s then bu0x%s else 200.0" % (_R, _R, _R))
     L.append("            let bux0%s = if bu0v%s then bu0x%s else -200.0" % (_R, _R, _R))
@@ -2608,7 +2611,8 @@ for _R, _off, _sfx in (("C", 2.0, "3"), ("D", 3.0, "4"), ("E", 4.0, "5"),
     L.append("            let bu2x%s = qCx + bu2s%s * (bu2cy%s - qCy)" % (_R, _R, _R))
     L.append("            let bu2v%s = bu2cy%s < bu2hi%s && bu2lo%s - (%s) < 1.0"
              % (_R, _R, _R, _R, _r))
-    L.append("            let buc2%s = cB + (bu2cy%s - qCy) * iCD * (cA - cB)" % (_R, _R))
+    wcol_lerp(_R + "2", "let buc2%s" % _R, "cB", "cA",
+              "(bu2cy%s - qCy) * iCD" % _R, "            ")
     L.append("            let buz2%s = rZ1 + (bu2cy%s - qCy) * iCD * (rZ0 - rZ1)" % (_R, _R))
     L.append("            let bun2%s = if bu2v%s then bu2x%s else 200.0" % (_R, _R, _R))
     L.append("            let bux2%s = if bu2v%s then bu2x%s else -200.0" % (_R, _R, _R))
@@ -2713,7 +2717,7 @@ L.append("          let u0s = if qBy > qAy then (qBx - qAx) / (qBy - qAy) else i
 L.append("          let u0cy = if prow < u0lo then u0lo else prow")
 L.append("          let u0x = qAx + u0s * (u0cy - qAy)")
 L.append("          let u0v = u0cy < u0hi && u0lo - prow < 1.0")
-L.append("          uc0 = cA + (u0cy - qAy) * iAB * (cB - cA)")
+wcol_lerp("F0", "uc0", "cA", "cB", "(u0cy - qAy) * iAB", "          ")
 L.append("          let uz0 = rZ0 + (u0cy - qAy) * iAB * (rZ1 - rZ0)")
 L.append("          let un0 = if u0v then u0x else 200.0")
 L.append("          let ux0 = if u0v then u0x else -200.0")
@@ -2733,7 +2737,7 @@ L.append("          let u2s = if qDy > qCy then (qDx - qCx) / (qDy - qCy) else i
 L.append("          let u2cy = if prow < u2lo then u2lo else prow")
 L.append("          let u2x = qCx + u2s * (u2cy - qCy)")
 L.append("          let u2v = u2cy < u2hi && u2lo - prow < 1.0")
-L.append("          uc2 = cB + (u2cy - qCy) * iCD * (cA - cB)")
+wcol_lerp("F2", "uc2", "cB", "cA", "(u2cy - qCy) * iCD", "          ")
 L.append("          let uz2 = rZ1 + (u2cy - qCy) * iCD * (rZ0 - rZ1)")
 L.append("          let un2 = if u2v then u2x else 200.0")
 L.append("          let ux2 = if u2v then u2x else -200.0")

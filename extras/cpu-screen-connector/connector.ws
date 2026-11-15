@@ -100,23 +100,26 @@ mod passArrays() {
     // many colours follow (-1 = none, -(1+c) = c).  A slot terminates the
     // scan only when it holds an exact integer in [-17, -1]: any other
     // negative -- a centered coordinate like -16.5, or an exact integer
-    // past -17 -- is a point like any other.
-    let t0 = (outNumArr[0] | 0) == outNumArr[0] && outNumArr[0] >= -17.0 && outNumArr[0] <= -1.0
-    let t1 = (outNumArr[3] | 0) == outNumArr[3] && outNumArr[2] >= -17.0 && outNumArr[2] <= -1.0
-    let t2 = (outNumArr[9] | 0) == outNumArr[9] && outNumArr[4] >= -17.0 && outNumArr[4] <= -1.0
-    let t3 = (outNumArr[12] | 0) == outNumArr[12] && outNumArr[6] >= -17.0 && outNumArr[6] <= -1.0
-    let t4 = (outNumArr[18] | 0) == outNumArr[18] && outNumArr[8] >= -17.0 && outNumArr[8] <= -1.0
-    let t5 = (outNumArr[21] | 0) == outNumArr[21] && outNumArr[10] >= -17.0 && outNumArr[10] <= -1.0
-    let t6 = (outNumArr[27] | 0) == outNumArr[27] && outNumArr[12] >= -17.0 && outNumArr[12] <= -1.0
-    let t7 = (outNumArr[30] | 0) == outNumArr[30] && outNumArr[14] >= -17.0 && outNumArr[14] <= -1.0
-    let t8 = (outNumArr[36] | 0) == outNumArr[36] && outNumArr[16] >= -17.0 && outNumArr[16] <= -1.0
-    let t9 = (outNumArr[39] | 0) == outNumArr[39] && outNumArr[18] >= -17.0 && outNumArr[18] <= -1.0
-    let t10 = (outNumArr[45] | 0) == outNumArr[45] && outNumArr[20] >= -17.0 && outNumArr[20] <= -1.0
-    let t11 = (outNumArr[48] | 0) == outNumArr[48] && outNumArr[22] >= -17.0 && outNumArr[22] <= -1.0
-    let t12 = (outNumArr[54] | 0) == outNumArr[54] && outNumArr[24] >= -17.0 && outNumArr[24] <= -1.0
-    let t13 = (outNumArr[57] | 0) == outNumArr[57] && outNumArr[26] >= -17.0 && outNumArr[26] <= -1.0
-    let t14 = (outNumArr[63] | 0) == outNumArr[63] && outNumArr[28] >= -17.0 && outNumArr[28] <= -1.0
-    let t15 = (outNumArr[66] | 0) == outNumArr[66] && outNumArr[30] >= -17.0 && outNumArr[30] <= -1.0
+    // past -17 -- is a point like any other.  The integral test casts with
+    // `as int`: the certified table refuses a float on a bitwise port, so
+    // `(x | 0)` is not this table's to run (same adaptation the screen
+    // chip's fill path carries).
+    let t0 = (outNumArr[0] as int) == outNumArr[0] && outNumArr[0] >= -17.0 && outNumArr[0] <= -1.0
+    let t1 = (outNumArr[3] as int) == outNumArr[3] && outNumArr[2] >= -17.0 && outNumArr[2] <= -1.0
+    let t2 = (outNumArr[9] as int) == outNumArr[9] && outNumArr[4] >= -17.0 && outNumArr[4] <= -1.0
+    let t3 = (outNumArr[12] as int) == outNumArr[12] && outNumArr[6] >= -17.0 && outNumArr[6] <= -1.0
+    let t4 = (outNumArr[18] as int) == outNumArr[18] && outNumArr[8] >= -17.0 && outNumArr[8] <= -1.0
+    let t5 = (outNumArr[21] as int) == outNumArr[21] && outNumArr[10] >= -17.0 && outNumArr[10] <= -1.0
+    let t6 = (outNumArr[27] as int) == outNumArr[27] && outNumArr[12] >= -17.0 && outNumArr[12] <= -1.0
+    let t7 = (outNumArr[30] as int) == outNumArr[30] && outNumArr[14] >= -17.0 && outNumArr[14] <= -1.0
+    let t8 = (outNumArr[36] as int) == outNumArr[36] && outNumArr[16] >= -17.0 && outNumArr[16] <= -1.0
+    let t9 = (outNumArr[39] as int) == outNumArr[39] && outNumArr[18] >= -17.0 && outNumArr[18] <= -1.0
+    let t10 = (outNumArr[45] as int) == outNumArr[45] && outNumArr[20] >= -17.0 && outNumArr[20] <= -1.0
+    let t11 = (outNumArr[48] as int) == outNumArr[48] && outNumArr[22] >= -17.0 && outNumArr[22] <= -1.0
+    let t12 = (outNumArr[54] as int) == outNumArr[54] && outNumArr[24] >= -17.0 && outNumArr[24] <= -1.0
+    let t13 = (outNumArr[57] as int) == outNumArr[57] && outNumArr[26] >= -17.0 && outNumArr[26] <= -1.0
+    let t14 = (outNumArr[63] as int) == outNumArr[63] && outNumArr[28] >= -17.0 && outNumArr[28] <= -1.0
+    let t15 = (outNumArr[66] as int) == outNumArr[66] && outNumArr[30] >= -17.0 && outNumArr[30] <= -1.0
     // Point float count, 1-based slot 196 (0-based 195): when a driver
     // states how many floats follow, the terminator is read directly
     // instead of scanned for, so coordinates are completely unrestricted.
@@ -127,9 +130,9 @@ mod passArrays() {
     // reads the delivered array as triples.
     let hasCount = if outNumArr.length() > 195.0 then (if outNumArr[195] > 0.5 then 1.0 else 0.0) else 0.0
     let cnRaw = if hasCount > 0.5 then outNumArr[195] else 0.0
-    let cn = if cnRaw > 48.0 then 48.0 else (cnRaw | 0)
+    let cn = if cnRaw > 48.0 then 48.0 else (cnRaw as int)
     let rawTerm = if hasCount > 0.5 then outNumArr[cn] else -1.0
-    let rawOk = ((rawTerm | 0) == rawTerm && rawTerm >= -17.0 && rawTerm <= -1.0)
+    let rawOk = ((rawTerm as int) == rawTerm && rawTerm >= -17.0 && rawTerm <= -1.0)
     let n = if hasCount > 0.5 then cn else if t0 then 0.0 else if t1 then 1.0 else if t2 then 2.0 else if t3 then 3.0 else if t4 then 4.0 else if t5 then 5.0 else if t6 then 6.0 else if t7 then 7.0 else if t8 then 8.0 else if t9 then 9.0 else if t10 then 10.0 else if t11 then 11.0 else if t12 then 12.0 else if t13 then 13.0 else if t14 then 14.0 else if t15 then 15.0 else 16.0
     // The stated count is FLOATS, so the array is sliced at the count and
     // its length reaches the screen verbatim -- which is exactly how the
@@ -142,8 +145,8 @@ mod passArrays() {
     let term = if hasCount > 0.5 then (if rawOk then rawTerm else -1.0) else if t0 then outNumArr[0] else if t1 then outNumArr[2] else if t2 then outNumArr[4] else if t3 then outNumArr[6] else if t4 then outNumArr[8] else if t5 then outNumArr[10] else if t6 then outNumArr[12] else if t7 then outNumArr[14] else if t8 then outNumArr[16] else if t9 then outNumArr[18] else if t10 then outNumArr[20] else if t11 then outNumArr[22] else if t12 then outNumArr[24] else if t13 then outNumArr[26] else if t14 then outNumArr[28] else if t15 then outNumArr[30] else -1.0
     let kc0 = if term <= -1.0 then (0.0 - term) - 1.0 else 16.0
     let kc = if kc0 > 16.0 then 16.0 else if kc0 < 0.0 then 0.0 else kc0
-    pts.slice(outNumArr, 0, (nf) | 0)
-    cfl.slice(outNumArr, nf + 1.0, (kc * 4.0) | 0)
+    pts.slice(outNumArr, 0, (nf) as int)
+    cfl.slice(outNumArr, nf + 1.0, (kc * 4.0) as int)
     let nc = cfl.length()
     cols.resize(16, Color(1.0, 1.0, 1.0, 1.0))
     cols[0] = if nc > 3 then Color(cfl[0], cfl[1], cfl[2], cfl[3]) else Color(1.0, 1.0, 1.0, 1.0)

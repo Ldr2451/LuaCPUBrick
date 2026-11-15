@@ -48,6 +48,10 @@ pub struct St {
     /// array change after that cannot be written into the running machine; it
     /// is applied by rebuilding and replaying this timeline instead.
     timeline: Vec<(u64, Value)>,
+    /// Per array pin the chip's `ContainerChange` watches: the appended copy
+    /// gate and the two input ports that name the container to write (see
+    /// `wire_container_feeds`).
+    feedWrites: HashMap<GateId, (GateId, u16, u16)>,
 }
 
 /// Root microchip pin gates, by gate id: pins live on grids that are not any
@@ -427,6 +431,7 @@ fn handle(st: &mut St, cmd: &Value) -> (Value, bool) {
                 None => (serde_json::json!({"err": "nothing loaded"}), false),
                 Some(loaded) => {
                     let mut hits: Vec<Value> = [].to_vec();
+                    let mut ci = 0usize;
                     for (i, g) in loaded.graph.gates.iter().enumerate() {
                         if g.class.ends_with("Var") || g.class.ends_with("ArrayVar")
                             || g.class.ends_with("MapVar") {
@@ -446,7 +451,9 @@ fn handle(st: &mut St, cmd: &Value) -> (Value, bool) {
                             }
                             hits.push(serde_json::json!({"id": i, "class": g.class,
                                 "label": label, "grid": g.addr.grid,
-                                "brick": g.addr.brick}));
+                                "brick": g.addr.brick,
+                                "probe": format!("#{}", ci)}));
+                            ci = ci + 1;
                         }
                     }
                     (serde_json::json!({"ok": true, "hits": hits}), false)
@@ -829,6 +836,56 @@ fn cmd_str(cmd: &Value, key: &str) -> String {
     }
 }
 
+fn cmd_bool(cmd: &Value, key: &str) -> bool {
+    match cmd.get(key) {
+        Some(v) => match v.as_bool() {
+            Some(b) => b,
+            None => false,
+        },
+        None => false,
+    }
+}
+
+/// The names the save dropped, from the same compile's IR text (`compile
+/// --emit-ir PATH`). A cube-layout emit writes a var's name label only on
+/// the access pins of globals ANOTHER grid reads by remote wire, so the
+/// artifact carries no handle for the chip's inner state (`polyOn`, the
+/// per-lane spans, the pixel globals behind the `px` outputs) -- and a probe
+/// driver that watches a paint needs those names. The IR is the only place
+/// the compile keeps them. It lists containers in program order while the
+/// emit places every array before every scalar, so the names pair with the
+/// chip's containers in two kind groups; a count mismatch is refused rather
+/// than answering `covLo` from `covHi`'s gate.
+fn ir_names(cmd: &Value) -> Result<Vec<(String, bool)>, String> {
+    let path = cmd_str(cmd, "ir");
+    if path == "" {
+        return Ok([].to_vec());
+    }
+    let text = match std::fs::read_to_string(&path) {
+        Err(e) => return Err(format!("cannot read the IR text {path}: {e}")),
+        Ok(t) => t,
+    };
+    let mut names: Vec<(String, bool)> = Vec::new();
+    for line in text.lines() {
+        let is_arr = line.contains(" = ArrayVar {");
+        let is_var = line.contains(" = Var {");
+        if !(is_arr || is_var) {
+            continue;
+        }
+        let mut raw = "".to_string();
+        for t in line.split(' ') {
+            if raw == "" && t.starts_with("%") {
+                raw = t.to_string();
+            }
+        }
+        if raw == "" {
+            continue;
+        }
+        names.push((raw[1..].to_string(), is_arr));
+    }
+    return Ok(names);
+}
+
 fn load_brz(st: &mut St, cmd: &Value) -> Value {
     let path = cmd_str(cmd, "path");
     match read(&path) {
@@ -1169,6 +1226,200 @@ fn reroute_at(graph: &Graph, pin: GateId) -> usize {
     at
 }
 
+/// The host write a `ContainerChange` edge needs.
+///
+/// A chip that reacts to a host's ARRAY port only through
+/// `on ContainerChange(port)` (the connector is such a chip: its one edge
+/// is that event) stays inert under the driver's array feed, which swaps
+/// the container the pin names. That is not what the engine does with a
+/// container watch: `machine.rs` fires one only from `container_changed`,
+/// which the array and map ops call when they WRITE a container -- a new
+/// reference on a pin is not a write. So the driver appends the write the
+/// law expects, for a pin the chip actually watches (a chip that reads its
+/// ports on a `Clock`, the screen, gets no gate at all and runs untouched):
+/// a `ChangeDetectorExec` on the pin's container reference, which the
+/// engine re-fires exactly when that reference changes (its `Input` port is
+/// a watched input), chained to one `Copy Array` gate that copies the
+/// container onto itself -- contents unchanged, but the write is recorded,
+/// and `container_changed` then fires the chip's detector next tick, which
+/// is what a host rewriting its array port means.
+/// Answers the copy gates by pin, so a replay can point each at the
+/// container its own entry feeds; `new` points it at the entry it built.
+fn wire_container_feeds(graph: &mut Graph, pins: &Vec<GateId>,
+                        base: usize) -> HashMap<GateId, (GateId, u16, u16)> {
+    let mut watched: Vec<GateId> = Vec::new();
+    for (i, g) in graph.gates.iter().enumerate() {
+        if i >= base {
+            continue;
+        }
+        if !g.class.contains("ContainerChangeDetector") {
+            continue;
+        }
+        for inp in g.inputs.iter() {
+            match inp.source {
+                Some(s) => {
+                    if pins.contains(&s.gate) && !watched.contains(&s.gate) {
+                        watched.push(s.gate);
+                    }
+                },
+                None => {},
+            }
+        }
+    }
+    let mut out: HashMap<GateId, (GateId, u16, u16)> = HashMap::new();
+    for pin0 in watched.iter() {
+        let pin = *pin0;
+        let mut pout: u16 = 0;
+        for (o, op) in graph.gates[pin as usize].outputs.iter().enumerate() {
+            if op.name == "RER_Output".to_string() {
+                pout = o as u16;
+            }
+        }
+        let ga = graph.gates[pin as usize].addr;
+        let did = graph.gates.len() as GateId;
+        let mut det = Gate::new("BrickComponentType_Expr_ChangeDetectorExec",
+            BrickAddr {
+                grid: ga.grid,
+                chunk: ga.chunk,
+                brick: 960000u32 + (pin as u32 % 100000u32),
+            });
+        // `Gate::new` fills a known class's ports from the catalog, so the
+        // ports are found BY NAME among whatever it brought.
+        let mut detIn: usize = 0;
+        let mut detOut: usize = 0;
+        for (p, inp) in det.inputs.iter().enumerate() {
+            if inp.name == "Input".to_string() {
+                detIn = p;
+            }
+        }
+        for (p, outp) in det.outputs.iter().enumerate() {
+            if outp.name == "OnChanged".to_string() {
+                detOut = p;
+            }
+        }
+        if det.inputs.len() == 0 {
+            det.inputs.push(Input {
+                name: "Input".to_string(),
+                exec_pin: false,
+                stored: None,
+                source: None,
+            });
+            detIn = det.inputs.len() - 1;
+        }
+        if det.outputs.len() == 0 {
+            det.outputs.push(Output {
+                name: "OnChanged".to_string(),
+                exec: true,
+                readers: Vec::new(),
+                calls: Vec::new(),
+                default: None,
+            });
+            detOut = det.outputs.len() - 1;
+        }
+        det.inputs[detIn].source = Some(Src { gate: pin, out: pout, remote: false });
+        graph.gates.push(det);
+        graph.gates[pin as usize].outputs[pout as usize].readers.push((did, detIn as u16));
+        let wid = graph.gates.len() as GateId;
+        let mut cop = Gate::new("BrickComponentType_Exec_ArrayVar_CopyFrom",
+            BrickAddr {
+                grid: ga.grid,
+                chunk: ga.chunk,
+                brick: 970000u32 + (pin as u32 % 100000u32),
+            });
+        if cop.inputs.len() == 0 {
+            cop.inputs.push(Input {
+                name: "ArrayVarRef".to_string(),
+                exec_pin: false,
+                stored: None,
+                source: None,
+            });
+            cop.inputs.push(Input {
+                name: "Exec".to_string(),
+                exec_pin: true,
+                stored: None,
+                source: None,
+            });
+            cop.inputs.push(Input {
+                name: "SourceRef".to_string(),
+                exec_pin: false,
+                stored: None,
+                source: None,
+            });
+        }
+        if cop.outputs.len() == 0 {
+            cop.outputs.push(Output {
+                name: "ExecOut".to_string(),
+                exec: true,
+                readers: Vec::new(),
+                calls: Vec::new(),
+                default: None,
+            });
+        }
+        let mut ain: u16 = 0;
+        let mut ein: u16 = 0;
+        let mut sin: u16 = 0;
+        for (p, inp) in cop.inputs.iter().enumerate() {
+            if inp.name == "ArrayVarRef".to_string() {
+                ain = p as u16;
+            }
+            if inp.name == "SourceRef".to_string() {
+                sin = p as u16;
+            }
+            if inp.exec_pin {
+                ein = p as u16;
+            }
+        }
+        graph.gates[did as usize].outputs[detOut].calls
+            .push(Call { gate: wid, input: ein, remote: false });
+        graph.gates.push(cop);
+        out.insert(pin, (wid, ain, sin));
+    }
+    out
+}
+
+/// Point a pin's feed copy gate at container `gid` (the entry's own): both
+/// its ports name that container, so the write re-writes what the pin now
+/// holds and fires the chip's container watch.
+fn set_feed_ref(graph: &mut Graph, feeds: &HashMap<GateId, (GateId, u16, u16)>,
+                pin: GateId, gid: GateId) {
+    match feeds.get(&pin) {
+        None => {},
+        Some(f) => {
+            let (wid, ain, sin) = *f;
+            let wi = wid as usize;
+            if wi < graph.gates.len() {
+                if (ain as usize) < graph.gates[wi].inputs.len() {
+                    graph.gates[wi].inputs[ain as usize].stored = Some(WireVal::Ref(gid));
+                }
+                if (sin as usize) < graph.gates[wi].inputs.len() {
+                    graph.gates[wi].inputs[sin as usize].stored = Some(WireVal::Ref(gid));
+                }
+            }
+        },
+    }
+}
+
+/// The copy gates' initial containers: whatever the pin's reroute already
+/// names, which is the container `new` fed (entry 0).
+fn seed_feed_refs(graph: &mut Graph, feeds: &HashMap<GateId, (GateId, u16, u16)>,
+                  pins: &Vec<GateId>) {
+    for pin0 in pins.iter() {
+        let pin = *pin0;
+        if feeds.get(&pin).is_none() {
+            continue;
+        }
+        let at = reroute_at(graph, pin);
+        let cur = graph.gates[pin as usize].inputs[at].stored.clone();
+        match cur {
+            None => {},
+            Some(v) => match v {
+                WireVal::Ref(gid) => { set_feed_ref(graph, feeds, pin, gid); },
+                _ => {},
+            },
+        }
+    }
+}
+
 /// True when a ports object carries an array spec.
 fn ports_has_array(ports: &Value) -> bool {
     match ports.as_object() {
@@ -1227,6 +1478,7 @@ fn replay(st: &mut St) -> Result<(), String> {
     let old = st.run.take();
     let mut graph = loaded.graph.clone();
     let (ins, _) = pin_gates(&loaded.graph);
+    let base = loaded.graph.gates.len();
     // Entry 0 is what `new` built the machine with.
     if let Some((_, p0)) = st.timeline.first() {
         let bad = feed_ports(&mut graph, &serde_json::json!({"ports": p0}), &ins);
@@ -1235,6 +1487,22 @@ fn replay(st: &mut St) -> Result<(), String> {
             return Err(bad.join("; "));
         }
     }
+    // The probe scan runs BEFORE the array clones are appended: a name pairs
+    // with the compile's own containers, and a clone is not one of them.
+    st.probeMap = HashMap::new();
+    match ir_names(&newcmd) {
+        Err(e) => { st.run = old; return Err(e); },
+        Ok(nm) => match add_probes(&mut graph, &mut st.probeMap, arr_want(&newcmd),
+                                   cmd_bool(&newcmd, "allvars"), nm, base) {
+            Err(e) => { st.run = old; return Err(e); },
+            Ok(_r) => {},
+        },
+    }
+    // A chip whose only reaction to an array port is `ContainerChange` needs
+    // the engine-visible write too, appended before the entry clones (pin ids
+    // never move under appends).
+    st.feedWrites = wire_container_feeds(&mut graph, &ins, base);
+    seed_feed_refs(&mut graph, &st.feedWrites, &ins);
     // Every clone a later entry will point at, all before Machine::new.
     let mut planned: Vec<Vec<(GateId, usize, GateId)>> = vec![Vec::new(); st.timeline.len()];
     for i in 1..st.timeline.len() {
@@ -1243,8 +1511,6 @@ fn replay(st: &mut St) -> Result<(), String> {
             Err(e) => { st.run = old; return Err(e); },
         }
     }
-    st.probeMap = HashMap::new();
-    let _ = add_probes(&mut graph, &mut st.probeMap, arr_want(&newcmd));
     let (rin, rout) = pin_gates(&graph);
     let mut busy_gate: Option<GateId> = None;
     match newcmd.get("busy").and_then(|v| v.as_u64()) {
@@ -1296,6 +1562,10 @@ fn replay(st: &mut St) -> Result<(), String> {
         }
         for (pin, at, gid) in &planned[i] {
             apply_array_ref(&mut sim.machine.graph, *pin, *at, *gid);
+            // The host's write of the new container: the copy gate names the
+            // entry's own holder, so the engine records a container change and
+            // the chip's `ContainerChange` fires in the next tick.
+            set_feed_ref(&mut sim.machine.graph, &st.feedWrites, *pin, *gid);
         }
         // Written pins land now, so a capture before the next tick sees them.
         for idx in 0..ins.len() {
@@ -1428,8 +1698,8 @@ fn arr_want(cmd: &Value) -> Vec<(String, usize, usize)> {
 }
 
 fn add_probes(graph: &mut Graph, map: &mut HashMap<String, GateId>,
-              want: Vec<(String, usize, usize)>) -> String {
-    let mut found: Vec<(String, GateId)> = Vec::new();
+              want: Vec<(String, usize, usize)>, allvars: bool,
+              names: Vec<(String, bool)>, base: usize) -> Result<String, String> {    let mut found: Vec<(String, GateId)> = Vec::new();
     let mut arrInfo: Vec<(String, GateId, GateId)> = Vec::new();
     for (_i, g) in graph.gates.iter().enumerate() {
         // Both pin directions: an OUT pin whose source is a container (this
@@ -1472,7 +1742,7 @@ fn add_probes(graph: &mut Graph, map: &mut HashMap<String, GateId>,
     // Any gate the artifact labels, not just the boundary pins: the compiler
     // carries `label = "progOkV"` on the gate itself, and a benchmark reads
     // an internal global the same way a case reads a boundary one.
-    for i in 0..graph.gates.len() {
+    for i in 0..base {
         let kind = graph.gates[i as usize].op;
         match kind {
             Op::Var | Op::ArrayVar | Op::MapVar => {},
@@ -1492,6 +1762,76 @@ fn add_probes(graph: &mut Graph, map: &mut HashMap<String, GateId>,
                     }
                 }
             },
+        }
+    }
+    // The IR's names, paired with the chip's containers by kind group: the
+    // emit lays every array before every scalar, so the IR's program order
+    // splits the same way. A mismatch in either group means the pairing is
+    // not this compile's, and reading a name would answer another global --
+    // so `new` refuses instead.
+    if names.len() > 0 {
+        let mut garr: Vec<GateId> = Vec::new();
+        let mut gvar: Vec<GateId> = Vec::new();
+        for i in 0..base {
+            let cls = graph.gates[i as usize].class.clone();
+            if cls.ends_with("ArrayVar") {
+                garr.push(i as GateId);
+            } else if cls.ends_with("Var") || cls.ends_with("MapVar") {
+                gvar.push(i as GateId);
+            }
+        }
+        let mut ai = 0usize;
+        let mut vi = 0usize;
+        for ni in 0..names.len() {
+            if names[ni].1 {
+                if ai < garr.len() {
+                    found.push((names[ni].0.clone(), garr[ai]));
+                    ai = ai + 1;
+                }
+            } else {
+                if vi < gvar.len() {
+                    found.push((names[ni].0.clone(), gvar[vi]));
+                    vi = vi + 1;
+                }
+            }
+        }
+        if ai != garr.len() || vi != gvar.len() {
+            return Err(format!("IR names do not pair with the chip's containers: \
+                                {} of {} arrays and {} of {} scalars matched",
+                               ai, garr.len(), vi, gvar.len()));
+        }
+    }
+    // Every container, whether the artifact named it or not, keyed by its
+    // position among the chip's containers (`#7` is the eighth): the compiler
+    // carries a label property only on the access pins of globals ANOTHER
+    // grid reads by remote wire, so a global the chip touches inside its own
+    // grid (`polyOn`, `covLo`, the per-lane spans) has no name to look up.
+    // The chip's own source order is the missing half of that map, so a
+    // harness that reads a chip's internals asks `varnames` for these keys,
+    // and the predicate here matches the one in `varnames` exactly.
+    // Opt-in: thousands of extra probes and their per-tick fires are not
+    // free, and only a probe driver pays for them.
+    if allvars {
+        let mut ci = 0usize;
+        for (i, g) in graph.gates.iter().enumerate() {
+            if (i as usize) >= base {
+                continue;
+            }
+            if !(g.class.ends_with("Var") || g.class.ends_with("ArrayVar")
+                 || g.class.ends_with("MapVar")) {
+                continue;
+            }
+            let mut named = false;
+            for fi in 0..found.len() {
+                if found[fi].1 == (i as GateId) {
+                    named = true;
+                    break;
+                }
+            }
+            if !named {
+                found.push((format!("#{}", ci), i as GateId));
+            }
+            ci = ci + 1;
         }
     }
     let mut seen: Vec<String> = Vec::new();
@@ -1553,13 +1893,20 @@ fn add_probes(graph: &mut Graph, map: &mut HashMap<String, GateId>,
         // The chip's own per-tick edges. `BufferTicks` lands once for a
         // buffered signal; the `Clock` (the chip's VM driver) fires its `Pulse`
         // every interval, so an element gate chained from it is re-fired
-        // every tick and reads the container at the window's end.
-        if !(g.class.contains("BufferTicks") || g.class.contains("Clock")) {
+        // every tick and reads the container at the window's end. A chip
+        // without a clock — the connector reacts to its input array — fires
+        // its `ContainerChangeDetector` once per content change, and a gate
+        // chained from that output re-reads exactly when contents move.
+        // The mod body is called from the detector FIRST, so the chained
+        // gate runs after the writes it triggers: probes see the new state.
+        if !(g.class.contains("BufferTicks") || g.class.contains("Clock")
+             || g.class.contains("ContainerChangeDetector")) {
             continue;
         }
         for (o, outp) in g.outputs.iter().enumerate() {
             if outp.exec && (outp.name == "Output".to_string()
-                             || outp.name == "Pulse".to_string())
+                             || outp.name == "Pulse".to_string()
+                             || outp.name == "OnChanged".to_string())
                 && outp.calls.len() > 0 {
                 hooks.push((i as GateId, o as u16));
             }
@@ -1813,7 +2160,7 @@ fn add_probes(graph: &mut Graph, map: &mut HashMap<String, GateId>,
         arrS = format!("{} {}->{}|{}", arrS, arrInfo[ai].0, arrInfo[ai].1,
                        arrInfo[ai].2);
     }
-    return format!("probes={} hook={} {} arr={}", map.len(), hook, idsS, arrS);
+    return Ok(format!("probes={} hook={} {} arr={}", map.len(), hook, idsS, arrS));
 }
 
 fn do_new(st: &mut St, cmd: &Value) -> Value {
@@ -1821,6 +2168,7 @@ fn do_new(st: &mut St, cmd: &Value) -> Value {
         None => serde_json::json!({"err": "no program loaded"}),
         Some(loaded) => {
             let (ins, _) = pin_gates(&loaded.graph);
+            let base = loaded.graph.gates.len();
             let mut graph = loaded.graph.clone();
             let bad = feed_ports(&mut graph, cmd, &ins);
             if bad.len() > 0 {
@@ -1832,8 +2180,16 @@ fn do_new(st: &mut St, cmd: &Value) -> Value {
             match cmd.get("probe") {
                 Some(v) => match v.as_bool() {
                     Some(true) => {
-                        probeInfo = add_probes(&mut graph, &mut st.probeMap,
-                            arr_want(cmd));
+                        match ir_names(cmd) {
+                            Err(e) => { return serde_json::json!({"err": e}) },
+                            Ok(nm) => match add_probes(&mut graph, &mut st.probeMap,
+                                                      arr_want(cmd),
+                                                      cmd_bool(cmd, "allvars"), nm,
+                                                      base) {
+                                Err(e) => { return serde_json::json!({"err": e}) },
+                                Ok(pi) => { probeInfo = pi; },
+                            },
+                        };
                     },
                     _ => {},
                 },
@@ -1856,6 +2212,12 @@ fn do_new(st: &mut St, cmd: &Value) -> Value {
                 },
                 None => {},
             };
+            // A chip whose only reaction to an array port is `ContainerChange`
+            // needs the engine-visible write too (see `wire_container_feeds`);
+            // the pin's reroute already names the container `new` fed, so the
+            // copy gate starts there.
+            st.feedWrites = wire_container_feeds(&mut graph, &rin, base);
+            seed_feed_refs(&mut graph, &st.feedWrites, &rin);
             st.run = Some(Sim { machine: Machine::new(graph, Box::new(ScriptWorld::default()), run_opts(cmd)) });
             st.pinsIn = rin;
             st.pinsOut = rout;
@@ -2065,6 +2427,7 @@ fn main() {
         pinsOut: Vec::new(),
         newcmd: None,
         timeline: Vec::new(),
+        feedWrites: HashMap::new(),
     };
     let stdin = std::io::stdin().lock();
     for line in stdin.lines() {

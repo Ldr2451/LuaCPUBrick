@@ -60,7 +60,7 @@ import colormath  # noqa: E402
 colormath.install()
 from painttest import slide3  # noqa: E402
 import luastream  # noqa: E402
-from animtest import port_slice  # noqa: E402
+
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 CONN_WS = os.path.join(HERE, "connector.ws")
@@ -147,6 +147,17 @@ def port_val(sim, res):
     if isinstance(v, (tuple, list)):
         return tuple(float(x) for x in v[:4])
     return float(v) if isinstance(v, (int, float)) else 0.0
+
+
+def port_slice(sim, res, n=216):
+    """port_val, but array ports are truncated to n slots: the protocol
+    ends at the control block's slot 214, and the full copy every
+    tick dominates phase-1 wall time."""
+    kind, sid = res
+    if kind == "arr":
+        v = sim.arrays.get(sid)
+        return list(v[:n]) if v is not None else []
+    return port_val(sim, res)
 
 
 def destr(v):
@@ -358,7 +369,8 @@ def main():
     print("connector: maxPts=%d pushes=%d redraws=%d clears=%d"
           % (maxpts, len(pushE), len(reds), len(clrE)))
     if CUBE_FLAGS:
-        print("  connector push ticks:", pushE[:10], "draw ticks:", reds[:10])
+        print("  host push ticks:", pe[:14], "connector push ticks:",
+              pushE[:14], "draw ticks:", reds[:14])
     if os.environ.get("CUBE_CSTREAM") == "1":
         # What the connector passes at each push edge: if every push carries
         # the same numbers, the connector's slice never refreshed.

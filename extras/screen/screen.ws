@@ -14846,7 +14846,8 @@ mod paintTick() {
             let bu0cy = if prow + 1.0 < bu0lo then bu0lo else prow + 1.0
             let bu0v = bu0cy < bu0hi && bu0lo - (prow + 1.0) < 1.0
             let bu0x = qAx + bu0s * (bu0cy - qAy)
-            uc0B = cA + (bu0cy - qAy) * iAB * (cB - cA)
+            let eCB0 = cB
+            uc0B = Color(cA.r + (bu0cy - qAy) * iAB * (eCB0.r - cA.r), cA.g + (bu0cy - qAy) * iAB * (eCB0.g - cA.g), cA.b + (bu0cy - qAy) * iAB * (eCB0.b - cA.b), cA.a + (bu0cy - qAy) * iAB * (eCB0.a - cA.a))
             let uz0B = rZ0 + (bu0cy - qAy) * iAB * (rZ1 - rZ0)
             let bun0 = if bu0v then bu0x else 200.0
             let bux0 = if bu0v then bu0x else -200.0
@@ -14866,7 +14867,8 @@ mod paintTick() {
             let bu2cy = if prow + 1.0 < bu2lo then bu2lo else prow + 1.0
             let bu2x = qCx + bu2s * (bu2cy - qCy)
             let bu2v = bu2cy < bu2hi && bu2lo - (prow + 1.0) < 1.0
-            uc2B = cB + (bu2cy - qCy) * iCD * (cA - cB)
+            let eCB2 = cA
+            uc2B = Color(cB.r + (bu2cy - qCy) * iCD * (eCB2.r - cB.r), cB.g + (bu2cy - qCy) * iCD * (eCB2.g - cB.g), cB.b + (bu2cy - qCy) * iCD * (eCB2.b - cB.b), cB.a + (bu2cy - qCy) * iCD * (eCB2.a - cB.a))
             let uz2B = rZ1 + (bu2cy - qCy) * iCD * (rZ0 - rZ1)
             let bun2 = if bu2v then bu2x else 200.0
             let bux2 = if bu2v then bu2x else -200.0
@@ -14939,7 +14941,8 @@ mod paintTick() {
             let bu0cyC = if prow + 2.0 < bu0loC then bu0loC else prow + 2.0
             let bu0xC = qAx + bu0sC * (bu0cyC - qAy)
             let bu0vC = bu0cyC < bu0hiC && bu0loC - (prow + 2.0) < 1.0
-            let buc0C = cA + (bu0cyC - qAy) * iAB * (cB - cA)
+            let eCC0 = cB
+            let buc0C = Color(cA.r + (bu0cyC - qAy) * iAB * (eCC0.r - cA.r), cA.g + (bu0cyC - qAy) * iAB * (eCC0.g - cA.g), cA.b + (bu0cyC - qAy) * iAB * (eCC0.b - cA.b), cA.a + (bu0cyC - qAy) * iAB * (eCC0.a - cA.a))
             let buz0C = rZ0 + (bu0cyC - qAy) * iAB * (rZ1 - rZ0)
             let bun0C = if bu0vC then bu0xC else 200.0
             let bux0C = if bu0vC then bu0xC else -200.0
@@ -14959,7 +14962,8 @@ mod paintTick() {
             let bu2cyC = if prow + 2.0 < bu2loC then bu2loC else prow + 2.0
             let bu2xC = qCx + bu2sC * (bu2cyC - qCy)
             let bu2vC = bu2cyC < bu2hiC && bu2loC - (prow + 2.0) < 1.0
-            let buc2C = cB + (bu2cyC - qCy) * iCD * (cA - cB)
+            let eCC2 = cA
+            let buc2C = Color(cB.r + (bu2cyC - qCy) * iCD * (eCC2.r - cB.r), cB.g + (bu2cyC - qCy) * iCD * (eCC2.g - cB.g), cB.b + (bu2cyC - qCy) * iCD * (eCC2.b - cB.b), cB.a + (bu2cyC - qCy) * iCD * (eCC2.a - cB.a))
             let buz2C = rZ1 + (bu2cyC - qCy) * iCD * (rZ0 - rZ1)
             let bun2C = if bu2vC then bu2xC else 200.0
             let bux2C = if bu2vC then bu2xC else -200.0
@@ -15032,7 +15036,8 @@ mod paintTick() {
             let bu0cyD = if prow + 3.0 < bu0loD then bu0loD else prow + 3.0
             let bu0xD = qAx + bu0sD * (bu0cyD - qAy)
             let bu0vD = bu0cyD < bu0hiD && bu0loD - (prow + 3.0) < 1.0
-            let buc0D = cA + (bu0cyD - qAy) * iAB * (cB - cA)
+            let eCD0 = cB
+            let buc0D = Color(cA.r + (bu0cyD - qAy) * iAB * (eCD0.r - cA.r), cA.g + (bu0cyD - qAy) * iAB * (eCD0.g - cA.g), cA.b + (bu0cyD - qAy) * iAB * (eCD0.b - cA.b), cA.a + (bu0cyD - qAy) * iAB * (eCD0.a - cA.a))
             let buz0D = rZ0 + (bu0cyD - qAy) * iAB * (rZ1 - rZ0)
             let bun0D = if bu0vD then bu0xD else 200.0
             let bux0D = if bu0vD then bu0xD else -200.0
@@ -15052,7 +15057,8 @@ mod paintTick() {
             let bu2cyD = if prow + 3.0 < bu2loD then bu2loD else prow + 3.0
             let bu2xD = qCx + bu2sD * (bu2cyD - qCy)
             let bu2vD = bu2cyD < bu2hiD && bu2loD - (prow + 3.0) < 1.0
-            let buc2D = cB + (bu2cyD - qCy) * iCD * (cA - cB)
+            let eCD2 = cA
+            let buc2D = Color(cB.r + (bu2cyD - qCy) * iCD * (eCD2.r - cB.r), cB.g + (bu2cyD - qCy) * iCD * (eCD2.g - cB.g), cB.b + (bu2cyD - qCy) * iCD * (eCD2.b - cB.b), cB.a + (bu2cyD - qCy) * iCD * (eCD2.a - cB.a))
             let buz2D = rZ1 + (bu2cyD - qCy) * iCD * (rZ0 - rZ1)
             let bun2D = if bu2vD then bu2xD else 200.0
             let bux2D = if bu2vD then bu2xD else -200.0
@@ -15125,7 +15131,8 @@ mod paintTick() {
             let bu0cyE = if prow + 4.0 < bu0loE then bu0loE else prow + 4.0
             let bu0xE = qAx + bu0sE * (bu0cyE - qAy)
             let bu0vE = bu0cyE < bu0hiE && bu0loE - (prow + 4.0) < 1.0
-            let buc0E = cA + (bu0cyE - qAy) * iAB * (cB - cA)
+            let eCE0 = cB
+            let buc0E = Color(cA.r + (bu0cyE - qAy) * iAB * (eCE0.r - cA.r), cA.g + (bu0cyE - qAy) * iAB * (eCE0.g - cA.g), cA.b + (bu0cyE - qAy) * iAB * (eCE0.b - cA.b), cA.a + (bu0cyE - qAy) * iAB * (eCE0.a - cA.a))
             let buz0E = rZ0 + (bu0cyE - qAy) * iAB * (rZ1 - rZ0)
             let bun0E = if bu0vE then bu0xE else 200.0
             let bux0E = if bu0vE then bu0xE else -200.0
@@ -15145,7 +15152,8 @@ mod paintTick() {
             let bu2cyE = if prow + 4.0 < bu2loE then bu2loE else prow + 4.0
             let bu2xE = qCx + bu2sE * (bu2cyE - qCy)
             let bu2vE = bu2cyE < bu2hiE && bu2loE - (prow + 4.0) < 1.0
-            let buc2E = cB + (bu2cyE - qCy) * iCD * (cA - cB)
+            let eCE2 = cA
+            let buc2E = Color(cB.r + (bu2cyE - qCy) * iCD * (eCE2.r - cB.r), cB.g + (bu2cyE - qCy) * iCD * (eCE2.g - cB.g), cB.b + (bu2cyE - qCy) * iCD * (eCE2.b - cB.b), cB.a + (bu2cyE - qCy) * iCD * (eCE2.a - cB.a))
             let buz2E = rZ1 + (bu2cyE - qCy) * iCD * (rZ0 - rZ1)
             let bun2E = if bu2vE then bu2xE else 200.0
             let bux2E = if bu2vE then bu2xE else -200.0
@@ -15218,7 +15226,8 @@ mod paintTick() {
             let bu0cyF = if prow + 5.0 < bu0loF then bu0loF else prow + 5.0
             let bu0xF = qAx + bu0sF * (bu0cyF - qAy)
             let bu0vF = bu0cyF < bu0hiF && bu0loF - (prow + 5.0) < 1.0
-            let buc0F = cA + (bu0cyF - qAy) * iAB * (cB - cA)
+            let eCF0 = cB
+            let buc0F = Color(cA.r + (bu0cyF - qAy) * iAB * (eCF0.r - cA.r), cA.g + (bu0cyF - qAy) * iAB * (eCF0.g - cA.g), cA.b + (bu0cyF - qAy) * iAB * (eCF0.b - cA.b), cA.a + (bu0cyF - qAy) * iAB * (eCF0.a - cA.a))
             let buz0F = rZ0 + (bu0cyF - qAy) * iAB * (rZ1 - rZ0)
             let bun0F = if bu0vF then bu0xF else 200.0
             let bux0F = if bu0vF then bu0xF else -200.0
@@ -15238,7 +15247,8 @@ mod paintTick() {
             let bu2cyF = if prow + 5.0 < bu2loF then bu2loF else prow + 5.0
             let bu2xF = qCx + bu2sF * (bu2cyF - qCy)
             let bu2vF = bu2cyF < bu2hiF && bu2loF - (prow + 5.0) < 1.0
-            let buc2F = cB + (bu2cyF - qCy) * iCD * (cA - cB)
+            let eCF2 = cA
+            let buc2F = Color(cB.r + (bu2cyF - qCy) * iCD * (eCF2.r - cB.r), cB.g + (bu2cyF - qCy) * iCD * (eCF2.g - cB.g), cB.b + (bu2cyF - qCy) * iCD * (eCF2.b - cB.b), cB.a + (bu2cyF - qCy) * iCD * (eCF2.a - cB.a))
             let buz2F = rZ1 + (bu2cyF - qCy) * iCD * (rZ0 - rZ1)
             let bun2F = if bu2vF then bu2xF else 200.0
             let bux2F = if bu2vF then bu2xF else -200.0
@@ -15311,7 +15321,8 @@ mod paintTick() {
             let bu0cyG = if prow + 6.0 < bu0loG then bu0loG else prow + 6.0
             let bu0xG = qAx + bu0sG * (bu0cyG - qAy)
             let bu0vG = bu0cyG < bu0hiG && bu0loG - (prow + 6.0) < 1.0
-            let buc0G = cA + (bu0cyG - qAy) * iAB * (cB - cA)
+            let eCG0 = cB
+            let buc0G = Color(cA.r + (bu0cyG - qAy) * iAB * (eCG0.r - cA.r), cA.g + (bu0cyG - qAy) * iAB * (eCG0.g - cA.g), cA.b + (bu0cyG - qAy) * iAB * (eCG0.b - cA.b), cA.a + (bu0cyG - qAy) * iAB * (eCG0.a - cA.a))
             let buz0G = rZ0 + (bu0cyG - qAy) * iAB * (rZ1 - rZ0)
             let bun0G = if bu0vG then bu0xG else 200.0
             let bux0G = if bu0vG then bu0xG else -200.0
@@ -15331,7 +15342,8 @@ mod paintTick() {
             let bu2cyG = if prow + 6.0 < bu2loG then bu2loG else prow + 6.0
             let bu2xG = qCx + bu2sG * (bu2cyG - qCy)
             let bu2vG = bu2cyG < bu2hiG && bu2loG - (prow + 6.0) < 1.0
-            let buc2G = cB + (bu2cyG - qCy) * iCD * (cA - cB)
+            let eCG2 = cA
+            let buc2G = Color(cB.r + (bu2cyG - qCy) * iCD * (eCG2.r - cB.r), cB.g + (bu2cyG - qCy) * iCD * (eCG2.g - cB.g), cB.b + (bu2cyG - qCy) * iCD * (eCG2.b - cB.b), cB.a + (bu2cyG - qCy) * iCD * (eCG2.a - cB.a))
             let buz2G = rZ1 + (bu2cyG - qCy) * iCD * (rZ0 - rZ1)
             let bun2G = if bu2vG then bu2xG else 200.0
             let bux2G = if bu2vG then bu2xG else -200.0
@@ -15404,7 +15416,8 @@ mod paintTick() {
             let bu0cyH = if prow + 7.0 < bu0loH then bu0loH else prow + 7.0
             let bu0xH = qAx + bu0sH * (bu0cyH - qAy)
             let bu0vH = bu0cyH < bu0hiH && bu0loH - (prow + 7.0) < 1.0
-            let buc0H = cA + (bu0cyH - qAy) * iAB * (cB - cA)
+            let eCH0 = cB
+            let buc0H = Color(cA.r + (bu0cyH - qAy) * iAB * (eCH0.r - cA.r), cA.g + (bu0cyH - qAy) * iAB * (eCH0.g - cA.g), cA.b + (bu0cyH - qAy) * iAB * (eCH0.b - cA.b), cA.a + (bu0cyH - qAy) * iAB * (eCH0.a - cA.a))
             let buz0H = rZ0 + (bu0cyH - qAy) * iAB * (rZ1 - rZ0)
             let bun0H = if bu0vH then bu0xH else 200.0
             let bux0H = if bu0vH then bu0xH else -200.0
@@ -15424,7 +15437,8 @@ mod paintTick() {
             let bu2cyH = if prow + 7.0 < bu2loH then bu2loH else prow + 7.0
             let bu2xH = qCx + bu2sH * (bu2cyH - qCy)
             let bu2vH = bu2cyH < bu2hiH && bu2loH - (prow + 7.0) < 1.0
-            let buc2H = cB + (bu2cyH - qCy) * iCD * (cA - cB)
+            let eCH2 = cA
+            let buc2H = Color(cB.r + (bu2cyH - qCy) * iCD * (eCH2.r - cB.r), cB.g + (bu2cyH - qCy) * iCD * (eCH2.g - cB.g), cB.b + (bu2cyH - qCy) * iCD * (eCH2.b - cB.b), cB.a + (bu2cyH - qCy) * iCD * (eCH2.a - cB.a))
             let buz2H = rZ1 + (bu2cyH - qCy) * iCD * (rZ0 - rZ1)
             let bun2H = if bu2vH then bu2xH else 200.0
             let bux2H = if bu2vH then bu2xH else -200.0
@@ -15496,7 +15510,8 @@ mod paintTick() {
           let u0cy = if prow < u0lo then u0lo else prow
           let u0x = qAx + u0s * (u0cy - qAy)
           let u0v = u0cy < u0hi && u0lo - prow < 1.0
-          uc0 = cA + (u0cy - qAy) * iAB * (cB - cA)
+          let eCF0 = cB
+          uc0 = Color(cA.r + (u0cy - qAy) * iAB * (eCF0.r - cA.r), cA.g + (u0cy - qAy) * iAB * (eCF0.g - cA.g), cA.b + (u0cy - qAy) * iAB * (eCF0.b - cA.b), cA.a + (u0cy - qAy) * iAB * (eCF0.a - cA.a))
           let uz0 = rZ0 + (u0cy - qAy) * iAB * (rZ1 - rZ0)
           let un0 = if u0v then u0x else 200.0
           let ux0 = if u0v then u0x else -200.0
@@ -15516,7 +15531,8 @@ mod paintTick() {
           let u2cy = if prow < u2lo then u2lo else prow
           let u2x = qCx + u2s * (u2cy - qCy)
           let u2v = u2cy < u2hi && u2lo - prow < 1.0
-          uc2 = cB + (u2cy - qCy) * iCD * (cA - cB)
+          let eCF2 = cA
+          uc2 = Color(cB.r + (u2cy - qCy) * iCD * (eCF2.r - cB.r), cB.g + (u2cy - qCy) * iCD * (eCF2.g - cB.g), cB.b + (u2cy - qCy) * iCD * (eCF2.b - cB.b), cB.a + (u2cy - qCy) * iCD * (eCF2.a - cB.a))
           let uz2 = rZ1 + (u2cy - qCy) * iCD * (rZ0 - rZ1)
           let un2 = if u2v then u2x else 200.0
           let ux2 = if u2v then u2x else -200.0

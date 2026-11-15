@@ -28,19 +28,33 @@ TESTS = [
     ("cpu comms", "tests/cpu_comms_check.py", []),
     ("consistency", "tests/test_consistency.py", []),
     ("screen paint", "extras/screen/painttest.py", []),
-    ("screen anim", "extras/screen/animtest.py", []),
+    # animtest.py was retired with the model era: its turn/refresh checks
+    # landed on the official sim inside cubetest (the turn angle lines) and
+    # screenchecks.py, so the entry names the runner that owns them now.
+    ("screen checks", "extras/screen/screenchecks.py", []),
     ("connector", "extras/cpu-screen-connector/connectortest.py", []),
-    ("cube", "extras/cpu-screen-connector/cubetest.py", []),
+    # the gate's own window: the cube's full re-push contract (2 + CUBE_SPIN
+    # pushes) ends at oracle tick ~2676, so a 1800-tick default truncates
+    # the SPIN IN THE ORACLE, and 8 pushes reads as a broken chain when the
+    # connector matched the rows edge-for-edge.
+    ("cube", "extras/cpu-screen-connector/cubetest.py", ["4200", "600"]),
 ]
+
+# The compressed handshake wait: the bodies nap at game pace (224), and the
+# oracle charges nap(c) at 100 ticks a unit, so only the game pays the real
+# wait. cubetest rewrites the naps under this; screenchecks passes its own.
+EXTRA_ENV = {"CUBE_NAP": "2"}
 
 SLOW = ("puc", "official")
 
 
 def run(label, path, args):
     t0 = time.time()
+    env = dict(os.environ)
+    env.update(EXTRA_ENV)
     p = subprocess.run([sys.executable, "-u", path] + args, cwd=ROOT,
-                       capture_output=True, text=True, encoding="utf-8",
-                       errors="replace")
+                       env=env, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     out = (p.stdout or "") + (p.stderr or "")
     tail = [l for l in out.splitlines() if l.strip()][-3:]
     return p.returncode, time.time() - t0, tail, out

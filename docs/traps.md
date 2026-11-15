@@ -448,3 +448,61 @@ Measured, not style. `tools/chip/wswarn.py` flags the visible shapes;
   +54 nodes (two materializations) and one mod-heavy benchmark program
   moved 318.9 -> 319.8 evals/tick against the interim tree -- against the
   pre-batch baseline every program is still down (325.3 -> 319.8).
+
+Measured, not style -- driver-side traps on the OFFICIAL simulator (the
+cpu -> connector -> screen chain). Each cost a session.
+- **A `ContainerChange` watch fires only on a CONTAINER WRITE, and swapping
+  which container a pin names is not a write.** The engine sets `container_changed`
+  from array/map ops (`machine.rs`), so a driver that hands the connector a new
+  array by repointing the IN pin (`set` of a pin ref) never fires the connector's
+  `on ContainerChange(outNumArr)` -- the chain sits silent through the whole run.
+  `val` on the detector brick refuses too ("not a pure gate"), so the fire cannot
+  be forced by evaluating it alone either. The driver shape: for each array pin the
+  chip ACTUALLY watches, append a `BrickComponentType_Expr_ChangeDetectorExec` on
+  the pin's `RER_Output` chained to one `BrickComponentType_Exec_ArrayVar_CopyFrom`
+  that self-copies the container the pin now names (`wire_container_feeds`,
+  `seed_feed_refs`, per-tick `set_feed_refs` gated by `St.feedWrites`). Chips that
+  watch nothing -- the screen reads on `on Clock(interval = 0.01)` -- get nothing
+  appended, and must not: the append costs gates.
+- **A push-count FAIL in a chain replay is usually the BUDGET, not the feed.**
+  cubetest's cube pin wants `2 + CUBE_SPIN` = 10 pushes; at oracle budget 2200
+  with the compressed `CUBE_NAP=2` handshake wait, the ORACLE aborts before the
+  spin's last two re-pushes (push pulses at 232..2030, the next land at ~2353
+  and ~2676), so the rows genuinely carry 8 -- and the connector matches the
+  rows edge-for-edge at BOTH counts. Suspect the budget before the feed: print
+  the oracle's last tick, the push-edge list, and compare with budget + tail.
+  At the gate's own parameters (4200/600) the replay reaches 10 pushes and the
+  body is GREEN.
+- **The official engine stores Color channels as FLOAT32; the IR probe reads
+  `0.95000004768...`, and the adapter must quantize at the boundary.** Read
+  colors back with `%.6g` (`irsims._wire_to_value`) -- the same display class
+  as the sim 2.5 `%g`-6 print law, documented and accepted there -- and this
+  is what turned ghostprobe GREEN. Left un-quantized, every exact-color pin
+  in the screen chain fails by noise, not by logic. The second half of the
+  class: the chip's colour chain crosses several Color() rejoins (corner,
+  slot, composite, dim), each one f32 rounding, so a BLENDED pixel carries
+  4..10 f32 ulps against the test model's single f64 expression -- ~1.2e-6
+  on a channel near 1.0, past what a %.6g read comparison can bridge (the
+  roundings land ON the sixth digit). Stroke-colour pins compare channel-
+  wise within 1e-5 (painttest's `close`); exact decimal colours still pass
+  at 1e-9 because f32-exact channels land clean through %.6g. Mirroring
+  every rejoin in the model is the spiral to avoid.
+- **`_Arrays.__setitem__` filling an un-staged `LinearColor` slot with a bare
+  number aborts the sim with `array value is not an array`; white `[1,1,1,1]`
+  is the fill.** A staged array carries colors only where the program wrote
+  them; the untouched tail needs a COLOR-shaped value, not `0.0`.
+- **The certified-table refusals ride into the chain the same way they rode
+  into the chip: `(x | 0)` over an int is the refused `float|int` BitwiseOR
+  signature, and color arithmetic is no certified `Math*` signature at all.**
+  `connector.ws` needed the same rewrite the screen fill path carries: the
+  terminator scan `(x | 0)` -> `(x as int)` at 20 sites; color math goes
+  channel-wise and rejoins at `Color()`. `ColorBlend` is certified but
+  DEFERRED in the table -- component-wise scalar math is the only certified
+  form to use.
+- **The probe-label route for globals read remotely is the compile's IR TEXT
+  (`compile --emit-ir`) paired by kind group, not the `.brz` labels, and a
+  `new` whose counts do not pair REFUSES.** That refusal is the stale-`.brz`
+  signal: rebuild through `tools/lib/libconst.py` before pairing, never
+  hand-patch the built file. Name->gate pairing uses `base = loaded.graph.gates
+  .len()` so `feed_ports` clones never pair, and the probe scan must run BEFORE
+  the clone loop in `replay`.

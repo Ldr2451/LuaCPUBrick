@@ -35,7 +35,7 @@ colormath.install()
 from painttest import poly_pixels, stroke_pixels, slide, xf_points  # noqa: E402
 from painttest import close, slide3, over  # noqa: E402
 import luastream  # noqa: E402
-from animtest import port_slice  # noqa: E402
+
 
 LUA_WS = os.path.join(ROOT, "lua.ws")
 CONN_WS = os.path.join(HERE, "connector.ws")
