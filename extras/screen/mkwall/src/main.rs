@@ -218,12 +218,7 @@ fn run() -> Result<(), String> {
     let src = std::fs::read_to_string(source).map_err(|e| format!("cannot read {source}: {e}"))?;
     let file = source.clone();
     let result = compile_to_world(
-        CompileInput {
-            source: &src,
-            file: &file,
-            module_name: None,
-            fold_mode: FoldMode::Auto,
-        },
+        CompileInput::new(&src, &file),
         assemble_options(&file, FoldMode::Auto),
     )
     .map_err(|e| format!("compile failed: {e}"))?;

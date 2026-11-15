@@ -21,7 +21,7 @@ use wirescript_sim::graph::{Call, Gate, Input, Output, Src};
 use wirescript_sim::graph::Op;
 use wirescript_sim::load::BrickAddr;
 use wirescript_ir::semantics::sim_certifies;
-use brdb::schema::{BrdbValue};
+use brdb::schema::{BrdbValue, EA3WireVariant};
 
 /// Everything the driver holds between commands.
 pub struct St {
@@ -40,6 +40,14 @@ pub struct St {
     busyFirstFalse: Option<u64>,
     busySeenTrue: bool,
     busyLast: Option<bool>,
+    /// The `new` command the machine was built with: a replay rebuilds from
+    /// the same ports, probes, seed and dt.
+    newcmd: Option<Value>,
+    /// Every input change since `new`, as (tick, ports delta). The official
+    /// engine sizes an array pin's storage when it builds the machine, so an
+    /// array change after that cannot be written into the running machine; it
+    /// is applied by rebuilding and replaying this timeline instead.
+    timeline: Vec<(u64, Value)>,
 }
 
 /// Root microchip pin gates, by gate id: pins live on grids that are not any
@@ -855,10 +863,49 @@ fn json_to_wire(v: &Value) -> Option<WireVal> {
         Some(s) => return Some(WireVal::Str(s.to_string())),
         None => {},
     }
+    // Composites: the screen chip's shapePosition/Rotation/Scale ports carry
+    // vectors and shapeColors colors, and the old path rendered all of them
+    // as {"other": true} -- undrivable. JSON shape: {"color": [r,g,b,a]} and
+    // {"vector": [x,y,z]}, the field order of the sim's own Value enum.
+    match v.as_object() {
+        Some(obj) => {
+            match obj.get("color") {
+                Some(a4) => match a4.as_array() {
+                    Some(a) => match a.len() {
+                        4 => return Some(WireVal::Color {
+                            r: a[0].as_f64().unwrap_or(0.0),
+                            g: a[1].as_f64().unwrap_or(0.0),
+                            b: a[2].as_f64().unwrap_or(0.0),
+                            a: a[3].as_f64().unwrap_or(0.0),
+                        }),
+                        _ => {},
+                    },
+                    None => {},
+                },
+                None => {},
+            }
+            match obj.get("vector") {
+                Some(a3) => match a3.as_array() {
+                    Some(a) => match a.len() {
+                        3 => return Some(WireVal::Vector {
+                            x: a[0].as_f64().unwrap_or(0.0),
+                            y: a[1].as_f64().unwrap_or(0.0),
+                            z: a[2].as_f64().unwrap_or(0.0),
+                        }),
+                        _ => {},
+                    },
+                    None => {},
+                },
+                None => {},
+            }
+        },
+        None => {},
+    }
     None
 }
 
-/// A wire value into JSON: scalars as they are, references by shape.
+/// A wire value into JSON: scalars as they are, composites by shape
+/// (json_to_wire's round-trip pair), references by shape.
 fn wire_to_json(v: Option<WireVal>) -> Value {
     match v {
         None => serde_json::json!({"none": true}),
@@ -868,6 +915,14 @@ fn wire_to_json(v: Option<WireVal>) -> Value {
             WireVal::Float(f) => serde_json::json!(f),
             WireVal::Str(s) => serde_json::json!(s),
             WireVal::Ref(g) => serde_json::json!({"ref": g}),
+            WireVal::Color { r, g, b, a } =>
+                serde_json::json!({"color": [r, g, b, a]}),
+            WireVal::Vector { x, y, z } =>
+                serde_json::json!({"vector": [x, y, z]}),
+            WireVal::Rotator { pitch, yaw, roll } =>
+                serde_json::json!({"rotator": [pitch, yaw, roll]}),
+            WireVal::Quat { x, y, z, w } =>
+                serde_json::json!({"quat": [x, y, z, w]}),
             _ => serde_json::json!({"other": true}),
         },
     }
@@ -937,53 +992,71 @@ fn feed_ports(graph: &mut Graph, cmd: &Value, pins: &Vec<GateId>) -> Vec<String>
     errs
 }
 
-/// A JSON array spec `{"arr": "f64"|"Str", "values": [...]}` fed into a pin:
-/// clone an ArrayVar gate already in the graph, overwrite its dynamic-array
-/// field with the wanted values, append it, and store a reference to it in
-/// the pin's reroute input port -- the same shape the outputs report back.
-fn array_feed(graph: &mut Graph, pin: GateId, at: usize, spec: &Value) -> Option<String> {
+/// Parse a JSON array spec `{"arr": "f64"|"Str"|"i64"|"bool"|"LinearColor",
+/// "values": [...]}` and append a clone of an ArrayVar gate already in the
+/// graph that holds its values. The clone's gate id is the reference a pin
+/// carries -- the same shape the chip's own array ports report.
+fn clone_array(graph: &mut Graph, spec: &Value) -> Result<GateId, String> {
     let obj = match spec.as_object() {
         Some(o) => o,
-        None => return Some(format!("port is not an array spec")),
+        None => return Err(format!("port is not an array spec")),
     };
     let kind = match obj.get("arr") {
         Some(v) => match v.as_str() {
             Some(s) => s.to_string(),
-            None => return Some(format!("array spec: arr must be a string")),
+            None => return Err(format!("array spec: arr must be a string")),
         },
-        None => return Some(format!("array spec: no arr")),
+        None => return Err(format!("array spec: no arr")),
     };
-    if kind != "f64" && kind != "Str" && kind != "i64" && kind != "bool" {
-        return Some(format!("array spec: arr must be f64, i64, Str or bool"));
+    if kind != "f64" && kind != "Str" && kind != "i64" && kind != "bool"
+        && kind != "LinearColor" {
+        return Err(format!("array spec: arr must be f64, i64, Str, bool or LinearColor"));
     }
     let arr = match obj.get("values") {
         Some(v) => match v.as_array() {
             Some(a) => a,
-            None => return Some(format!("array spec: values must be an array")),
+            None => return Err(format!("array spec: values must be an array")),
         },
-        None => return Some(format!("array spec: no values")),
+        None => return Err(format!("array spec: no values")),
     };
     let mut elems = Vec::new();
     for v in arr.iter() {
         if kind == "Str" {
             match v.as_str() {
                 Some(s) => elems.push(BrdbValue::String(s.to_string())),
-                None => return Some(format!("array value is not a string")),
+                None => return Err(format!("array value is not a string")),
             }
         } else if kind == "bool" {
             match v.as_bool() {
                 Some(b) => elems.push(BrdbValue::Bool(b)),
-                None => return Some(format!("array value is not a bool")),
+                None => return Err(format!("array value is not a bool")),
             }
         } else if kind == "i64" {
             match v.as_i64() {
                 Some(i) => elems.push(BrdbValue::I64(i)),
-                None => return Some(format!("array value is not an integer")),
+                None => return Err(format!("array value is not an integer")),
+            }
+        } else if kind == "LinearColor" {
+            // shapeColors on the screen chip: color[] elements. The brdb
+            // shape is the wire variant the sim's Value::from_brdb reads
+            // LinearColor from; f32 fields, linear 0..1.
+            match v.as_array() {
+                Some(a) => match a.len() {
+                    4 => elems.push(BrdbValue::EA3WireVar(
+                        EA3WireVariant::LinearColor {
+                            r: a[0].as_f64().unwrap_or(0.0) as f32,
+                            g: a[1].as_f64().unwrap_or(0.0) as f32,
+                            b: a[2].as_f64().unwrap_or(0.0) as f32,
+                            a: a[3].as_f64().unwrap_or(0.0) as f32,
+                        })),
+                    _ => return Err(format!("array value is not a 4-field color")),
+                },
+                None => return Err(format!("array value is not an array")),
             }
         } else {
             match v.as_f64() {
                 Some(f) => elems.push(BrdbValue::F64(f)),
-                None => return Some(format!("array value is not a number")),
+                None => return Err(format!("array value is not a number")),
             }
         }
     }
@@ -1014,7 +1087,7 @@ fn array_feed(graph: &mut Graph, pin: GateId, at: usize, spec: &Value) -> Option
         }
     }
     if !found {
-        return Some(format!("no ArrayVar gate in the graph to clone"));
+        return Err(format!("no ArrayVar gate in the graph to clone"));
     }
     let mut g2 = graph.gates[tmpl].clone();
     g2.node = None;
@@ -1046,10 +1119,14 @@ fn array_feed(graph: &mut Graph, pin: GateId, at: usize, spec: &Value) -> Option
         },
     }
     if !done {
-        return Some(format!("template gate has no dynamic_array field"));
+        return Err(format!("template gate has no dynamic_array field"));
     }
     graph.gates.push(g2);
-    let gid = (graph.gates.len() - 1) as GateId;
+    Ok((graph.gates.len() - 1) as GateId)
+}
+
+/// Point a pin's reroute input at array gate `gid` -- the live-array write.
+fn apply_array_ref(graph: &mut Graph, pin: GateId, at: usize, gid: GateId) {
     let mut rsrc_gate: Option<GateId> = None;
     match graph.gates[pin as usize].inputs[at].source {
         Some(s) => { rsrc_gate = Some(s.gate); },
@@ -1072,7 +1149,171 @@ fn array_feed(graph: &mut Graph, pin: GateId, at: usize, spec: &Value) -> Option
         },
         None => {},
     }
-    None
+}
+
+/// A JSON array spec fed into a pin: clone an ArrayVar with the wanted values
+/// and store a reference to it in the pin's reroute input port.
+fn array_feed(graph: &mut Graph, pin: GateId, at: usize, spec: &Value) -> Option<String> {
+    match clone_array(graph, spec) {
+        Ok(gid) => { apply_array_ref(graph, pin, at, gid); None },
+        Err(e) => Some(e),
+    }
+}
+
+/// The input port a pin's reroute takes its value on (0 if it has none).
+fn reroute_at(graph: &Graph, pin: GateId) -> usize {
+    let mut at = 0;
+    for (j, p) in graph.gates[pin as usize].inputs.iter().enumerate() {
+        if p.name == "RER_Input" { at = j; }
+    }
+    at
+}
+
+/// True when a ports object carries an array spec.
+fn ports_has_array(ports: &Value) -> bool {
+    match ports.as_object() {
+        Some(obj) => obj.values().any(|v| v.get("arr").is_some() && json_to_wire(v).is_none()),
+        None => false,
+    }
+}
+
+/// `ports` without its array specs: the half a live set can apply in place.
+fn strip_arrays(ports: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+    if let Some(obj) = ports.as_object() {
+        for (k, v) in obj {
+            if v.get("arr").is_some() && json_to_wire(v).is_none() { continue; }
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    Value::Object(out)
+}
+
+/// Append the clones a later timeline entry will point its array pins at.
+/// They must exist before `Machine::new`: the engine sizes an ArrayVar's
+/// storage when it builds the machine, so a gate appended afterwards has no
+/// slot, and an access to it panics (arrays.rs index out of bounds).
+fn preclone_arrays(graph: &mut Graph, ports: &Value, pins: &Vec<GateId>)
+    -> Result<Vec<(GateId, usize, GateId)>, String>
+{
+    let mut out: Vec<(GateId, usize, GateId)> = Vec::new();
+    let obj = match ports.as_object() { Some(o) => o, None => return Ok(out) };
+    for idx in 0..pins.len() {
+        let key = format!("{}", idx);
+        let val = match obj.get(&key) { Some(v) => v, None => continue };
+        if json_to_wire(val).is_some() || val.get("arr").is_none() { continue; }
+        let pin = pins[idx];
+        let at = reroute_at(graph, pin);
+        let gid = clone_array(graph, val)?;
+        out.push((pin, at, gid));
+    }
+    Ok(out)
+}
+
+/// Rebuild the machine with the timeline's array values baked in, then replay
+/// the recorded input changes. The official engine sizes an array pin's
+/// storage when it builds the machine and exposes no host write into it, so
+/// this is how a host changes an array mid-run; it is deterministic because
+/// the run's seed and dt are fixed. Scalar changes never take this path.
+fn replay(st: &mut St) -> Result<(), String> {
+    let loaded = match &st.loaded {
+        Some(l) => l,
+        None => return Err("no program loaded".into()),
+    };
+    let newcmd = match &st.newcmd {
+        Some(c) => c.clone(),
+        None => return Err("no program loaded".into()),
+    };
+    let old = st.run.take();
+    let mut graph = loaded.graph.clone();
+    let (ins, _) = pin_gates(&loaded.graph);
+    // Entry 0 is what `new` built the machine with.
+    if let Some((_, p0)) = st.timeline.first() {
+        let bad = feed_ports(&mut graph, &serde_json::json!({"ports": p0}), &ins);
+        if !bad.is_empty() {
+            st.run = old;
+            return Err(bad.join("; "));
+        }
+    }
+    // Every clone a later entry will point at, all before Machine::new.
+    let mut planned: Vec<Vec<(GateId, usize, GateId)>> = vec![Vec::new(); st.timeline.len()];
+    for i in 1..st.timeline.len() {
+        match preclone_arrays(&mut graph, &st.timeline[i].1, &ins) {
+            Ok(v) => { planned[i] = v; },
+            Err(e) => { st.run = old; return Err(e); },
+        }
+    }
+    st.probeMap = HashMap::new();
+    let _ = add_probes(&mut graph, &mut st.probeMap, arr_want(&newcmd));
+    let (rin, rout) = pin_gates(&graph);
+    let mut busy_gate: Option<GateId> = None;
+    match newcmd.get("busy").and_then(|v| v.as_u64()) {
+        Some(b) => { if (b as usize) < rout.len() { busy_gate = Some(rout[b as usize]); } },
+        None => {},
+    }
+    let mut sim = Sim {
+        machine: Machine::new(graph, Box::new(ScriptWorld::default()), run_opts(&newcmd)),
+    };
+    // Replay, recomputing the same latches `run` keeps.
+    let chat_seen = st.chatSeen;
+    let mut log_first: Option<u64> = st.logFirst;
+    let mut busy_first_false: Option<u64> = None;
+    let mut busy_seen_true = false;
+    let mut busy_last: Option<bool> = None;
+    for i in 1..st.timeline.len() {
+        let (tick, ports) = st.timeline[i].clone();
+        while sim.machine.tick() < tick {
+            let next = sim.machine.tick() + 1;
+            if let Err(e) = sim.machine.run_until(next) {
+                st.run = old;
+                return Err(format!("{e}"));
+            }
+            let t = sim.machine.tick();
+            if sim.chat().len() > chat_seen && log_first.is_none() {
+                log_first = Some(t);
+            }
+            if let Some(g) = busy_gate {
+                match sim.machine.evaluate_alone(g) {
+                    Err(_) => { busy_last = None; },
+                    Ok(v) => {
+                        let b = truthy(v);
+                        busy_last = Some(b);
+                        if b {
+                            busy_seen_true = true;
+                        } else if busy_seen_true && busy_first_false.is_none() {
+                            busy_first_false = Some(t);
+                        }
+                    },
+                }
+            }
+        }
+        let scalars = strip_arrays(&ports);
+        let bad = feed_ports(&mut sim.machine.graph,
+                             &serde_json::json!({"ports": scalars}), &ins);
+        if !bad.is_empty() {
+            st.run = old;
+            return Err(bad.join("; "));
+        }
+        for (pin, at, gid) in &planned[i] {
+            apply_array_ref(&mut sim.machine.graph, *pin, *at, *gid);
+        }
+        // Written pins land now, so a capture before the next tick sees them.
+        for idx in 0..ins.len() {
+            let key = format!("{}", idx);
+            if scalars.get(&key).is_some() || planned[i].iter().any(|(p, _, _)| *p == ins[idx]) {
+                let _ = sim.machine.evaluate_alone(ins[idx]);
+            }
+        }
+    }
+    st.run = Some(sim);
+    st.pinsIn = rin;
+    st.pinsOut = rout;
+    st.busyGate = busy_gate;
+    st.logFirst = log_first;
+    st.busyFirstFalse = busy_first_false;
+    st.busySeenTrue = busy_seen_true;
+    st.busyLast = busy_last;
+    Ok(())
 }
 
 /// The loaded graph, counted by gate class, with the classes the official
@@ -1623,12 +1864,35 @@ fn do_new(st: &mut St, cmd: &Value) -> Value {
             st.busyFirstFalse = None;
             st.busySeenTrue = false;
             st.busyLast = None;
+            st.newcmd = Some(cmd.clone());
+            st.timeline = vec![(0, match cmd.get("ports") {
+                Some(p) => p.clone(),
+                None => serde_json::json!({}),
+            })];
             serde_json::json!({"ok": true, "probe": probeInfo})
         },
     }
 }
 
 fn do_set(st: &mut St, cmd: &Value) -> Value {
+    if st.run.is_none() {
+        return serde_json::json!({"err": "no run started"});
+    }
+    let ports = match cmd.get("ports") {
+        Some(p) => p.clone(),
+        None => serde_json::json!({}),
+    };
+    let tick = st.run.as_ref().map(|s| s.machine.tick()).unwrap_or(0);
+    st.timeline.push((tick, ports.clone()));
+    if ports_has_array(&ports) {
+        // An array pin cannot be written into a built machine (the engine sized
+        // its storage at construction and exposes no host write), so rebuild
+        // and replay the input timeline instead. Scalars stay live below.
+        return match replay(st) {
+            Err(e) => serde_json::json!({"err": format!("{e}")}),
+            Ok(_) => serde_json::json!({"ok": true}),
+        };
+    }
     match &mut st.run {
         None => serde_json::json!({"err": "no run started"}),
         Some(s) => {
@@ -1799,6 +2063,8 @@ fn main() {
         busyLast: None,
         pinsIn: Vec::new(),
         pinsOut: Vec::new(),
+        newcmd: None,
+        timeline: Vec::new(),
     };
     let stdin = std::io::stdin().lock();
     for line in stdin.lines() {

@@ -31,6 +31,7 @@ import spec
 ARRAY_PORTS = {"outNumArr": "outNumArr", "outStrArr": "outStrArr"}
 ARRAY_HEAD = 256
 ARRAY_TAIL = 128
+_MISS = object()
 
 EXE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                    "tools", "simdrv", "target", "release", "simdrv.exe")
@@ -57,6 +58,7 @@ class Sim:
         self._q = []
         self._qneed = 0
         self._mid = False
+        self._sent = {}
         self._last_og = {}
         self.child = subprocess.Popen([self.exe], stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE,
@@ -179,6 +181,13 @@ class Sim:
             idx = self.in_labels.get(k)
             if idx is None:
                 continue
+            if isinstance(v, dict) and "arr" in v:
+                # An explicit array spec: the element kind of color[] is
+                # "LinearColor", which no JSON value shape tells us, so the
+                # screen driver sends {"arr": "LinearColor", "values":
+                # [[r,g,b,a],...]} through this pass.
+                po[str(idx)] = v
+                continue
             if isinstance(v, (list, tuple)):
                 # The driver feeds an array through an ArrayVar clone, so it
                 # wants a spec, not a bare JSON list: the element kind names
@@ -209,13 +218,25 @@ class Sim:
         return po
 
     def _start(self):
+        full = self._ports(self.inputs)
         r = self._send({"cmd": "new", "probe": True, "busy": self.busy_idx,
-                        "ports": self._ports(self.inputs), "dt": self.dt,
+                        "ports": full, "dt": self.dt,
                         "seed": self.seed,
                         "arrays": self._arr_ranges if self._arr_on else {}})
         if "err" in r:
             raise RuntimeError("new: %s" % r["err"])
+        self._sent = dict(full)
         self._started = True
+
+    def _delta(self, full):
+        """Only what changed since the last write.
+
+        The engine is value-driven, so re-sending an unchanged port is a no-op;
+        skipping it matters for arrays, whose every write rebuilds and replays
+        the run on the official simulator (its array storage is sized when the
+        machine is built). `_ports` also auto-fills the chip's array inputs, so
+        a full re-send would turn every scalar edit into an array replay."""
+        return {k: v for k, v in full.items() if self._sent.get(k, _MISS) != v}
 
     def _tick_line(self, r):
         """Fold one per-tick runlog line into the shim's state."""
@@ -380,15 +401,19 @@ class Sim:
     def set_inputs(self, si):
         self.inputs = dict(si)
         if self._started:
-            r = self._send({"cmd": "set", "ports": self._ports(self.inputs)})
-            if "err" in r:
-                raise RuntimeError("set: %s" % r["err"])
+            delta = self._delta(self._ports(self.inputs))
+            if delta:
+                r = self._send({"cmd": "set", "ports": delta})
+                if "err" in r:
+                    raise RuntimeError("set: %s" % r["err"])
+                self._sent.update(delta)
 
     def __setattr__(self, name, value):
         # The harness assigns `sim.inputs = {...}` mid-run, which is a host
         # changing its ports: it has to reach the engine, not just the shim.
         if name == "inputs" and getattr(self, "_started", False):
             si = dict(value)
+            delta = self._delta(self._ports(si))
             if getattr(self, "_mid", False):
                 # Inside a runlog round trip: the reply comes after the
                 # summary; `run` collects it. (The engine sees the new port
@@ -396,13 +421,16 @@ class Sim:
                 # crossed — the shapes that care about an edge INSIDE a
                 # window are the ones the suite schedules with `phases`,
                 # whose edges the shim replays below.)
-                self._send_deferred({"cmd": "set",
-                                     "ports": self._ports(si)})
+                if delta:
+                    self._send_deferred({"cmd": "set", "ports": delta})
+                    self._sent.update(delta)
                 object.__setattr__(self, name, si)
                 return
-            r = self._send({"cmd": "set", "ports": self._ports(si)})
-            if "err" in r:
-                raise RuntimeError("set: %s" % r["err"])
+            if delta:
+                r = self._send({"cmd": "set", "ports": delta})
+                if "err" in r:
+                    raise RuntimeError("set: %s" % r["err"])
+                self._sent.update(delta)
             object.__setattr__(self, name, si)
         else:
             object.__setattr__(self, name, value)

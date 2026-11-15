@@ -8976,11 +8976,11 @@ out px4095: color = g4095
 // port stages zeroes: an empty immediate shape, which paints nothing.)
 mod pushEdge() {
     pWire = shapeWireMode
-    pId = if shapeId < -0.5 then -1.0 else if shapeId > 32.0 then 32.0 else (shapeId | 0)
+    pId = if shapeId < -0.5 then -1.0 else if shapeId > 32.0 then 32.0 else (shapeId as int)
     pPos = shapePosition
     pRot = shapeRotation
     pScl = shapeScale
-    pParent = if parentShapeId < -0.5 then -1.0 else if parentShapeId > 32.0 then 32.0 else (parentShapeId | 0)
+    pParent = if parentShapeId < -0.5 then -1.0 else if parentShapeId > 32.0 then 32.0 else (parentShapeId as int)
     pIs3 = 0.0
     pending = true
     qPush = true
@@ -9312,7 +9312,7 @@ mod paintTick() {
     qCol[cb + 13.0] = if shapeColors.length() > 13 then shapeColors[13] else Color(1.0, 1.0, 1.0, 1.0)
     qCol[cb + 14.0] = if shapeColors.length() > 14 then shapeColors[14] else Color(1.0, 1.0, 1.0, 1.0)
     qCol[cb + 15.0] = if shapeColors.length() > 15 then shapeColors[15] else Color(1.0, 1.0, 1.0, 1.0)
-    qN[e] = if shapePoints.length() / 3.0 > 16.0 then 16.0 else (shapePoints.length() / 3.0) | 0
+    qN[e] = if shapePoints.length() / 3.0 > 16.0 then 16.0 else (shapePoints.length() / 3.0) as int
     qIs3[e] = pIs3
     qMode[e] = if pWire then 1.0 else 0.0
     qId[e] = pId
@@ -9336,7 +9336,7 @@ mod paintTick() {
     for qe in 0..8 {
       if qe < qCount {
         let ne = qN[qe]
-        let nslot = if qId[qe] < 0.0 then 33.0 else if qId[qe] < 1.0 then 32.0 else (qId[qe] | 0)
+        let nslot = if qId[qe] < 0.0 then 33.0 else if qId[qe] < 1.0 then 32.0 else (qId[qe] as int)
         let nsb = nslot * 48.0
         let ncb = nslot * 16.0
         let nxb = nslot * 6.0
@@ -9964,9 +9964,9 @@ mod paintTick() {
     commitR = false
     slLive[32] = 0.0
     camDirty = true
-    n = (shapePoints.length() / 3.0) | 0
+    n = (shapePoints.length() / 3.0) as int
       if n > 16.0 { n = 16.0 }
-    let slot = if pId < 0.0 then 33.0 else if pId < 1.0 then 32.0 else (pId | 0)
+    let slot = if pId < 0.0 then 33.0 else if pId < 1.0 then 32.0 else (pId as int)
     let sbase = slot * 48.0
     let cbase = slot * 16.0
     let xbase = slot * 6.0
@@ -11087,7 +11087,7 @@ mod paintTick() {
       // dead slots cost one scan, never a tick (sequential writes,
       // descending, so the lowest live slot wins).  The camera
       // channel is not scanned: it paints nothing, it is the view.
-      let li = (rcSlot - 1.0) | 0
+      let li = (rcSlot - 1.0) as int
       ff = 33.0
       if slLive[32] > 0.5 && li <= 32.0 {
         ff = 32.0
@@ -11390,7 +11390,7 @@ mod paintTick() {
         cur = pParent
         for _walk in 0..32 {
           if cur < 1.0 { break }
-          let qli = cur | 0
+          let qli = cur as int
           if slLive[qli] > 0.5 {
             s00 = m00
             s01 = m01
@@ -11987,7 +11987,7 @@ mod paintTick() {
         rcOn = false
         eraseOK = false
         lastImm = true
-        n = (shapePoints.length() / 3.0) | 0
+        n = (shapePoints.length() / 3.0) as int
           if n > 16.0 { n = 16.0 }
       }
     }
@@ -12400,8 +12400,8 @@ mod paintTick() {
         polyOn = false
         polyLive = false
       } else {
-        pfirst = if gyMin < 0.0 then 0.0 else (gyMin | 0)
-        plast = if gyMax >= SWF then SWF - 1.0 else (gyMax | 0)
+        pfirst = if gyMin < 0.0 then 0.0 else (gyMin as int)
+        plast = if gyMax >= SWF then SWF - 1.0 else (gyMax as int)
         prow = pfirst - 8.0
         pcol = 200.0
         polyOn = true
@@ -12484,7 +12484,7 @@ mod paintTick() {
       lastImm = false
     } else {
       rcOn = false
-      sSegs = (shapePoints.length() / 3.0) | 0
+      sSegs = (shapePoints.length() / 3.0) as int
       if sSegs > 16.0 { sSegs = 16.0 }
       lastImm = true
     }
@@ -12648,112 +12648,128 @@ mod paintTick() {
         let cy0 = if prow < eLo0 then eLo0 else prow
         let cv0 = cy0 < eHi0 && eLo0 - prow < 1.0
         let cx0 = eX0 + eS0 * (cy0 - eY0)
-        cc0 = pC0 + (cy0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let eCcc0 = (if 1.0 < n then pC1 else pC0)
+        cc0 = Color(pC0.r + (cy0 - eY0) * eInv0 * (eCcc0.r - pC0.r), pC0.g + (cy0 - eY0) * eInv0 * (eCcc0.g - pC0.g), pC0.b + (cy0 - eY0) * eInv0 * (eCcc0.b - pC0.b), pC0.a + (cy0 - eY0) * eInv0 * (eCcc0.a - pC0.a))
         let cz0 = pzV0 + (cy0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmn0 = if cv0 then cx0 else 200.0
         let cmx0 = if cv0 then cx0 else -200.0
         let cy1 = if prow < eLo1 then eLo1 else prow
         let cv1 = cy1 < eHi1 && eLo1 - prow < 1.0
         let cx1 = eX1 + eS1 * (cy1 - eY1)
-        cc1 = pC1 + (cy1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let eCcc1 = (if 2.0 < n then pC2 else pC0)
+        cc1 = Color(pC1.r + (cy1 - eY1) * eInv1 * (eCcc1.r - pC1.r), pC1.g + (cy1 - eY1) * eInv1 * (eCcc1.g - pC1.g), pC1.b + (cy1 - eY1) * eInv1 * (eCcc1.b - pC1.b), pC1.a + (cy1 - eY1) * eInv1 * (eCcc1.a - pC1.a))
         let cz1 = pzV1 + (cy1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmn1 = if cv1 then cx1 else 200.0
         let cmx1 = if cv1 then cx1 else -200.0
         let cy2 = if prow < eLo2 then eLo2 else prow
         let cv2 = cy2 < eHi2 && eLo2 - prow < 1.0
         let cx2 = eX2 + eS2 * (cy2 - eY2)
-        cc2 = pC2 + (cy2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let eCcc2 = (if 3.0 < n then pC3 else pC0)
+        cc2 = Color(pC2.r + (cy2 - eY2) * eInv2 * (eCcc2.r - pC2.r), pC2.g + (cy2 - eY2) * eInv2 * (eCcc2.g - pC2.g), pC2.b + (cy2 - eY2) * eInv2 * (eCcc2.b - pC2.b), pC2.a + (cy2 - eY2) * eInv2 * (eCcc2.a - pC2.a))
         let cz2 = pzV2 + (cy2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmn2 = if cv2 then cx2 else 200.0
         let cmx2 = if cv2 then cx2 else -200.0
         let cy3 = if prow < eLo3 then eLo3 else prow
         let cv3 = cy3 < eHi3 && eLo3 - prow < 1.0
         let cx3 = eX3 + eS3 * (cy3 - eY3)
-        cc3 = pC3 + (cy3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let eCcc3 = (if 4.0 < n then pC4 else pC0)
+        cc3 = Color(pC3.r + (cy3 - eY3) * eInv3 * (eCcc3.r - pC3.r), pC3.g + (cy3 - eY3) * eInv3 * (eCcc3.g - pC3.g), pC3.b + (cy3 - eY3) * eInv3 * (eCcc3.b - pC3.b), pC3.a + (cy3 - eY3) * eInv3 * (eCcc3.a - pC3.a))
         let cz3 = pzV3 + (cy3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmn3 = if cv3 then cx3 else 200.0
         let cmx3 = if cv3 then cx3 else -200.0
         let cy4 = if prow < eLo4 then eLo4 else prow
         let cv4 = cy4 < eHi4 && eLo4 - prow < 1.0
         let cx4 = eX4 + eS4 * (cy4 - eY4)
-        cc4 = pC4 + (cy4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let eCcc4 = (if 5.0 < n then pC5 else pC0)
+        cc4 = Color(pC4.r + (cy4 - eY4) * eInv4 * (eCcc4.r - pC4.r), pC4.g + (cy4 - eY4) * eInv4 * (eCcc4.g - pC4.g), pC4.b + (cy4 - eY4) * eInv4 * (eCcc4.b - pC4.b), pC4.a + (cy4 - eY4) * eInv4 * (eCcc4.a - pC4.a))
         let cz4 = pzV4 + (cy4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmn4 = if cv4 then cx4 else 200.0
         let cmx4 = if cv4 then cx4 else -200.0
         let cy5 = if prow < eLo5 then eLo5 else prow
         let cv5 = cy5 < eHi5 && eLo5 - prow < 1.0
         let cx5 = eX5 + eS5 * (cy5 - eY5)
-        cc5 = pC5 + (cy5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let eCcc5 = (if 6.0 < n then pC6 else pC0)
+        cc5 = Color(pC5.r + (cy5 - eY5) * eInv5 * (eCcc5.r - pC5.r), pC5.g + (cy5 - eY5) * eInv5 * (eCcc5.g - pC5.g), pC5.b + (cy5 - eY5) * eInv5 * (eCcc5.b - pC5.b), pC5.a + (cy5 - eY5) * eInv5 * (eCcc5.a - pC5.a))
         let cz5 = pzV5 + (cy5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmn5 = if cv5 then cx5 else 200.0
         let cmx5 = if cv5 then cx5 else -200.0
         let cy6 = if prow < eLo6 then eLo6 else prow
         let cv6 = cy6 < eHi6 && eLo6 - prow < 1.0
         let cx6 = eX6 + eS6 * (cy6 - eY6)
-        cc6 = pC6 + (cy6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let eCcc6 = (if 7.0 < n then pC7 else pC0)
+        cc6 = Color(pC6.r + (cy6 - eY6) * eInv6 * (eCcc6.r - pC6.r), pC6.g + (cy6 - eY6) * eInv6 * (eCcc6.g - pC6.g), pC6.b + (cy6 - eY6) * eInv6 * (eCcc6.b - pC6.b), pC6.a + (cy6 - eY6) * eInv6 * (eCcc6.a - pC6.a))
         let cz6 = pzV6 + (cy6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmn6 = if cv6 then cx6 else 200.0
         let cmx6 = if cv6 then cx6 else -200.0
         let cy7 = if prow < eLo7 then eLo7 else prow
         let cv7 = cy7 < eHi7 && eLo7 - prow < 1.0
         let cx7 = eX7 + eS7 * (cy7 - eY7)
-        cc7 = pC7 + (cy7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let eCcc7 = (if 8.0 < n then pC8 else pC0)
+        cc7 = Color(pC7.r + (cy7 - eY7) * eInv7 * (eCcc7.r - pC7.r), pC7.g + (cy7 - eY7) * eInv7 * (eCcc7.g - pC7.g), pC7.b + (cy7 - eY7) * eInv7 * (eCcc7.b - pC7.b), pC7.a + (cy7 - eY7) * eInv7 * (eCcc7.a - pC7.a))
         let cz7 = pzV7 + (cy7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmn7 = if cv7 then cx7 else 200.0
         let cmx7 = if cv7 then cx7 else -200.0
         let cy8 = if prow < eLo8 then eLo8 else prow
         let cv8 = cy8 < eHi8 && eLo8 - prow < 1.0
         let cx8 = eX8 + eS8 * (cy8 - eY8)
-        cc8 = pC8 + (cy8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let eCcc8 = (if 9.0 < n then pC9 else pC0)
+        cc8 = Color(pC8.r + (cy8 - eY8) * eInv8 * (eCcc8.r - pC8.r), pC8.g + (cy8 - eY8) * eInv8 * (eCcc8.g - pC8.g), pC8.b + (cy8 - eY8) * eInv8 * (eCcc8.b - pC8.b), pC8.a + (cy8 - eY8) * eInv8 * (eCcc8.a - pC8.a))
         let cz8 = pzV8 + (cy8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmn8 = if cv8 then cx8 else 200.0
         let cmx8 = if cv8 then cx8 else -200.0
         let cy9 = if prow < eLo9 then eLo9 else prow
         let cv9 = cy9 < eHi9 && eLo9 - prow < 1.0
         let cx9 = eX9 + eS9 * (cy9 - eY9)
-        cc9 = pC9 + (cy9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let eCcc9 = (if 10.0 < n then pC10 else pC0)
+        cc9 = Color(pC9.r + (cy9 - eY9) * eInv9 * (eCcc9.r - pC9.r), pC9.g + (cy9 - eY9) * eInv9 * (eCcc9.g - pC9.g), pC9.b + (cy9 - eY9) * eInv9 * (eCcc9.b - pC9.b), pC9.a + (cy9 - eY9) * eInv9 * (eCcc9.a - pC9.a))
         let cz9 = pzV9 + (cy9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmn9 = if cv9 then cx9 else 200.0
         let cmx9 = if cv9 then cx9 else -200.0
         let cy10 = if prow < eLo10 then eLo10 else prow
         let cv10 = cy10 < eHi10 && eLo10 - prow < 1.0
         let cx10 = eX10 + eS10 * (cy10 - eY10)
-        cc10 = pC10 + (cy10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let eCcc10 = (if 11.0 < n then pC11 else pC0)
+        cc10 = Color(pC10.r + (cy10 - eY10) * eInv10 * (eCcc10.r - pC10.r), pC10.g + (cy10 - eY10) * eInv10 * (eCcc10.g - pC10.g), pC10.b + (cy10 - eY10) * eInv10 * (eCcc10.b - pC10.b), pC10.a + (cy10 - eY10) * eInv10 * (eCcc10.a - pC10.a))
         let cz10 = pzV10 + (cy10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmn10 = if cv10 then cx10 else 200.0
         let cmx10 = if cv10 then cx10 else -200.0
         let cy11 = if prow < eLo11 then eLo11 else prow
         let cv11 = cy11 < eHi11 && eLo11 - prow < 1.0
         let cx11 = eX11 + eS11 * (cy11 - eY11)
-        cc11 = pC11 + (cy11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let eCcc11 = (if 12.0 < n then pC12 else pC0)
+        cc11 = Color(pC11.r + (cy11 - eY11) * eInv11 * (eCcc11.r - pC11.r), pC11.g + (cy11 - eY11) * eInv11 * (eCcc11.g - pC11.g), pC11.b + (cy11 - eY11) * eInv11 * (eCcc11.b - pC11.b), pC11.a + (cy11 - eY11) * eInv11 * (eCcc11.a - pC11.a))
         let cz11 = pzV11 + (cy11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmn11 = if cv11 then cx11 else 200.0
         let cmx11 = if cv11 then cx11 else -200.0
         let cy12 = if prow < eLo12 then eLo12 else prow
         let cv12 = cy12 < eHi12 && eLo12 - prow < 1.0
         let cx12 = eX12 + eS12 * (cy12 - eY12)
-        cc12 = pC12 + (cy12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let eCcc12 = (if 13.0 < n then pC13 else pC0)
+        cc12 = Color(pC12.r + (cy12 - eY12) * eInv12 * (eCcc12.r - pC12.r), pC12.g + (cy12 - eY12) * eInv12 * (eCcc12.g - pC12.g), pC12.b + (cy12 - eY12) * eInv12 * (eCcc12.b - pC12.b), pC12.a + (cy12 - eY12) * eInv12 * (eCcc12.a - pC12.a))
         let cz12 = pzV12 + (cy12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmn12 = if cv12 then cx12 else 200.0
         let cmx12 = if cv12 then cx12 else -200.0
         let cy13 = if prow < eLo13 then eLo13 else prow
         let cv13 = cy13 < eHi13 && eLo13 - prow < 1.0
         let cx13 = eX13 + eS13 * (cy13 - eY13)
-        cc13 = pC13 + (cy13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let eCcc13 = (if 14.0 < n then pC14 else pC0)
+        cc13 = Color(pC13.r + (cy13 - eY13) * eInv13 * (eCcc13.r - pC13.r), pC13.g + (cy13 - eY13) * eInv13 * (eCcc13.g - pC13.g), pC13.b + (cy13 - eY13) * eInv13 * (eCcc13.b - pC13.b), pC13.a + (cy13 - eY13) * eInv13 * (eCcc13.a - pC13.a))
         let cz13 = pzV13 + (cy13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmn13 = if cv13 then cx13 else 200.0
         let cmx13 = if cv13 then cx13 else -200.0
         let cy14 = if prow < eLo14 then eLo14 else prow
         let cv14 = cy14 < eHi14 && eLo14 - prow < 1.0
         let cx14 = eX14 + eS14 * (cy14 - eY14)
-        cc14 = pC14 + (cy14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let eCcc14 = (if 15.0 < n then pC15 else pC0)
+        cc14 = Color(pC14.r + (cy14 - eY14) * eInv14 * (eCcc14.r - pC14.r), pC14.g + (cy14 - eY14) * eInv14 * (eCcc14.g - pC14.g), pC14.b + (cy14 - eY14) * eInv14 * (eCcc14.b - pC14.b), pC14.a + (cy14 - eY14) * eInv14 * (eCcc14.a - pC14.a))
         let cz14 = pzV14 + (cy14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmn14 = if cv14 then cx14 else 200.0
         let cmx14 = if cv14 then cx14 else -200.0
         let cy15 = if prow < eLo15 then eLo15 else prow
         let cv15 = cy15 < eHi15 && eLo15 - prow < 1.0
         let cx15 = eX15 + eS15 * (cy15 - eY15)
-        cc15 = pC15 + (cy15 - eY15) * eInv15 * (pC0 - pC15)
+        let eCcc15 = pC0
+        cc15 = Color(pC15.r + (cy15 - eY15) * eInv15 * (eCcc15.r - pC15.r), pC15.g + (cy15 - eY15) * eInv15 * (eCcc15.g - pC15.g), pC15.b + (cy15 - eY15) * eInv15 * (eCcc15.b - pC15.b), pC15.a + (cy15 - eY15) * eInv15 * (eCcc15.a - pC15.a))
         let cz15 = pzV15 + (cy15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmn15 = if cv15 then cx15 else 200.0
         let cmx15 = if cv15 then cx15 else -200.0
@@ -12851,11 +12867,11 @@ mod paintTick() {
           pcol = 200.0
           pcurR = 100.0
         } else {
-          pcol = if n3_0 < 0.0 then 0.0 else (n3_0 | 0)
-          pcurR = if x3_0 >= SWF then SWF - 1.0 else (x3_0 | 0)
+          pcol = if n3_0 < 0.0 then 0.0 else (n3_0 as int)
+          pcurR = if x3_0 >= SWF then SWF - 1.0 else (x3_0 as int)
           xL = n3_0
           if !erasing {
-            let cra = (aRow | 0)
+            let cra = (aRow as int)
             if pcurR >= pcol && pcol <= 63.0 {
               if covMin[cra] > 199.0 {
                 covMin[cra] = pcol
@@ -12871,7 +12887,7 @@ mod paintTick() {
           cLo = nc3_0
           let span = x3_0 - n3_0
           let inv = if span > 0.0 then 1.0 / span else 0.0
-          rowSlope = (xc3_0 - cLo) * inv
+          rowSlope = Color((xc3_0.r - cLo.r) * inv, (xc3_0.g - cLo.g) * inv, (xc3_0.b - cLo.b) * inv, (xc3_0.a - cLo.a) * inv)
           zLo = nz3_0
           zSlope = (xz3_0 - zLo) * inv
           cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf, cLo.a)
@@ -12885,112 +12901,128 @@ mod paintTick() {
         let cyB0 = if brow < eLo0 then eLo0 else brow
         let cvB0 = cyB0 < eHi0 && eLo0 - brow < 1.0
         let cxB0 = eX0 + eS0 * (cyB0 - eY0)
-        cc2_0 = pC0 + (cyB0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let eCcc2_0 = (if 1.0 < n then pC1 else pC0)
+        cc2_0 = Color(pC0.r + (cyB0 - eY0) * eInv0 * (eCcc2_0.r - pC0.r), pC0.g + (cyB0 - eY0) * eInv0 * (eCcc2_0.g - pC0.g), pC0.b + (cyB0 - eY0) * eInv0 * (eCcc2_0.b - pC0.b), pC0.a + (cyB0 - eY0) * eInv0 * (eCcc2_0.a - pC0.a))
         let cz2_0 = pzV0 + (cyB0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnB0 = if cvB0 then cxB0 else 200.0
         let cmxB0 = if cvB0 then cxB0 else -200.0
         let cyB1 = if brow < eLo1 then eLo1 else brow
         let cvB1 = cyB1 < eHi1 && eLo1 - brow < 1.0
         let cxB1 = eX1 + eS1 * (cyB1 - eY1)
-        cc2_1 = pC1 + (cyB1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let eCcc2_1 = (if 2.0 < n then pC2 else pC0)
+        cc2_1 = Color(pC1.r + (cyB1 - eY1) * eInv1 * (eCcc2_1.r - pC1.r), pC1.g + (cyB1 - eY1) * eInv1 * (eCcc2_1.g - pC1.g), pC1.b + (cyB1 - eY1) * eInv1 * (eCcc2_1.b - pC1.b), pC1.a + (cyB1 - eY1) * eInv1 * (eCcc2_1.a - pC1.a))
         let cz2_1 = pzV1 + (cyB1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnB1 = if cvB1 then cxB1 else 200.0
         let cmxB1 = if cvB1 then cxB1 else -200.0
         let cyB2 = if brow < eLo2 then eLo2 else brow
         let cvB2 = cyB2 < eHi2 && eLo2 - brow < 1.0
         let cxB2 = eX2 + eS2 * (cyB2 - eY2)
-        cc2_2 = pC2 + (cyB2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let eCcc2_2 = (if 3.0 < n then pC3 else pC0)
+        cc2_2 = Color(pC2.r + (cyB2 - eY2) * eInv2 * (eCcc2_2.r - pC2.r), pC2.g + (cyB2 - eY2) * eInv2 * (eCcc2_2.g - pC2.g), pC2.b + (cyB2 - eY2) * eInv2 * (eCcc2_2.b - pC2.b), pC2.a + (cyB2 - eY2) * eInv2 * (eCcc2_2.a - pC2.a))
         let cz2_2 = pzV2 + (cyB2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnB2 = if cvB2 then cxB2 else 200.0
         let cmxB2 = if cvB2 then cxB2 else -200.0
         let cyB3 = if brow < eLo3 then eLo3 else brow
         let cvB3 = cyB3 < eHi3 && eLo3 - brow < 1.0
         let cxB3 = eX3 + eS3 * (cyB3 - eY3)
-        cc2_3 = pC3 + (cyB3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let eCcc2_3 = (if 4.0 < n then pC4 else pC0)
+        cc2_3 = Color(pC3.r + (cyB3 - eY3) * eInv3 * (eCcc2_3.r - pC3.r), pC3.g + (cyB3 - eY3) * eInv3 * (eCcc2_3.g - pC3.g), pC3.b + (cyB3 - eY3) * eInv3 * (eCcc2_3.b - pC3.b), pC3.a + (cyB3 - eY3) * eInv3 * (eCcc2_3.a - pC3.a))
         let cz2_3 = pzV3 + (cyB3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnB3 = if cvB3 then cxB3 else 200.0
         let cmxB3 = if cvB3 then cxB3 else -200.0
         let cyB4 = if brow < eLo4 then eLo4 else brow
         let cvB4 = cyB4 < eHi4 && eLo4 - brow < 1.0
         let cxB4 = eX4 + eS4 * (cyB4 - eY4)
-        cc2_4 = pC4 + (cyB4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let eCcc2_4 = (if 5.0 < n then pC5 else pC0)
+        cc2_4 = Color(pC4.r + (cyB4 - eY4) * eInv4 * (eCcc2_4.r - pC4.r), pC4.g + (cyB4 - eY4) * eInv4 * (eCcc2_4.g - pC4.g), pC4.b + (cyB4 - eY4) * eInv4 * (eCcc2_4.b - pC4.b), pC4.a + (cyB4 - eY4) * eInv4 * (eCcc2_4.a - pC4.a))
         let cz2_4 = pzV4 + (cyB4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnB4 = if cvB4 then cxB4 else 200.0
         let cmxB4 = if cvB4 then cxB4 else -200.0
         let cyB5 = if brow < eLo5 then eLo5 else brow
         let cvB5 = cyB5 < eHi5 && eLo5 - brow < 1.0
         let cxB5 = eX5 + eS5 * (cyB5 - eY5)
-        cc2_5 = pC5 + (cyB5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let eCcc2_5 = (if 6.0 < n then pC6 else pC0)
+        cc2_5 = Color(pC5.r + (cyB5 - eY5) * eInv5 * (eCcc2_5.r - pC5.r), pC5.g + (cyB5 - eY5) * eInv5 * (eCcc2_5.g - pC5.g), pC5.b + (cyB5 - eY5) * eInv5 * (eCcc2_5.b - pC5.b), pC5.a + (cyB5 - eY5) * eInv5 * (eCcc2_5.a - pC5.a))
         let cz2_5 = pzV5 + (cyB5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnB5 = if cvB5 then cxB5 else 200.0
         let cmxB5 = if cvB5 then cxB5 else -200.0
         let cyB6 = if brow < eLo6 then eLo6 else brow
         let cvB6 = cyB6 < eHi6 && eLo6 - brow < 1.0
         let cxB6 = eX6 + eS6 * (cyB6 - eY6)
-        cc2_6 = pC6 + (cyB6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let eCcc2_6 = (if 7.0 < n then pC7 else pC0)
+        cc2_6 = Color(pC6.r + (cyB6 - eY6) * eInv6 * (eCcc2_6.r - pC6.r), pC6.g + (cyB6 - eY6) * eInv6 * (eCcc2_6.g - pC6.g), pC6.b + (cyB6 - eY6) * eInv6 * (eCcc2_6.b - pC6.b), pC6.a + (cyB6 - eY6) * eInv6 * (eCcc2_6.a - pC6.a))
         let cz2_6 = pzV6 + (cyB6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnB6 = if cvB6 then cxB6 else 200.0
         let cmxB6 = if cvB6 then cxB6 else -200.0
         let cyB7 = if brow < eLo7 then eLo7 else brow
         let cvB7 = cyB7 < eHi7 && eLo7 - brow < 1.0
         let cxB7 = eX7 + eS7 * (cyB7 - eY7)
-        cc2_7 = pC7 + (cyB7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let eCcc2_7 = (if 8.0 < n then pC8 else pC0)
+        cc2_7 = Color(pC7.r + (cyB7 - eY7) * eInv7 * (eCcc2_7.r - pC7.r), pC7.g + (cyB7 - eY7) * eInv7 * (eCcc2_7.g - pC7.g), pC7.b + (cyB7 - eY7) * eInv7 * (eCcc2_7.b - pC7.b), pC7.a + (cyB7 - eY7) * eInv7 * (eCcc2_7.a - pC7.a))
         let cz2_7 = pzV7 + (cyB7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnB7 = if cvB7 then cxB7 else 200.0
         let cmxB7 = if cvB7 then cxB7 else -200.0
         let cyB8 = if brow < eLo8 then eLo8 else brow
         let cvB8 = cyB8 < eHi8 && eLo8 - brow < 1.0
         let cxB8 = eX8 + eS8 * (cyB8 - eY8)
-        cc2_8 = pC8 + (cyB8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let eCcc2_8 = (if 9.0 < n then pC9 else pC0)
+        cc2_8 = Color(pC8.r + (cyB8 - eY8) * eInv8 * (eCcc2_8.r - pC8.r), pC8.g + (cyB8 - eY8) * eInv8 * (eCcc2_8.g - pC8.g), pC8.b + (cyB8 - eY8) * eInv8 * (eCcc2_8.b - pC8.b), pC8.a + (cyB8 - eY8) * eInv8 * (eCcc2_8.a - pC8.a))
         let cz2_8 = pzV8 + (cyB8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnB8 = if cvB8 then cxB8 else 200.0
         let cmxB8 = if cvB8 then cxB8 else -200.0
         let cyB9 = if brow < eLo9 then eLo9 else brow
         let cvB9 = cyB9 < eHi9 && eLo9 - brow < 1.0
         let cxB9 = eX9 + eS9 * (cyB9 - eY9)
-        cc2_9 = pC9 + (cyB9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let eCcc2_9 = (if 10.0 < n then pC10 else pC0)
+        cc2_9 = Color(pC9.r + (cyB9 - eY9) * eInv9 * (eCcc2_9.r - pC9.r), pC9.g + (cyB9 - eY9) * eInv9 * (eCcc2_9.g - pC9.g), pC9.b + (cyB9 - eY9) * eInv9 * (eCcc2_9.b - pC9.b), pC9.a + (cyB9 - eY9) * eInv9 * (eCcc2_9.a - pC9.a))
         let cz2_9 = pzV9 + (cyB9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnB9 = if cvB9 then cxB9 else 200.0
         let cmxB9 = if cvB9 then cxB9 else -200.0
         let cyB10 = if brow < eLo10 then eLo10 else brow
         let cvB10 = cyB10 < eHi10 && eLo10 - brow < 1.0
         let cxB10 = eX10 + eS10 * (cyB10 - eY10)
-        cc2_10 = pC10 + (cyB10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let eCcc2_10 = (if 11.0 < n then pC11 else pC0)
+        cc2_10 = Color(pC10.r + (cyB10 - eY10) * eInv10 * (eCcc2_10.r - pC10.r), pC10.g + (cyB10 - eY10) * eInv10 * (eCcc2_10.g - pC10.g), pC10.b + (cyB10 - eY10) * eInv10 * (eCcc2_10.b - pC10.b), pC10.a + (cyB10 - eY10) * eInv10 * (eCcc2_10.a - pC10.a))
         let cz2_10 = pzV10 + (cyB10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnB10 = if cvB10 then cxB10 else 200.0
         let cmxB10 = if cvB10 then cxB10 else -200.0
         let cyB11 = if brow < eLo11 then eLo11 else brow
         let cvB11 = cyB11 < eHi11 && eLo11 - brow < 1.0
         let cxB11 = eX11 + eS11 * (cyB11 - eY11)
-        cc2_11 = pC11 + (cyB11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let eCcc2_11 = (if 12.0 < n then pC12 else pC0)
+        cc2_11 = Color(pC11.r + (cyB11 - eY11) * eInv11 * (eCcc2_11.r - pC11.r), pC11.g + (cyB11 - eY11) * eInv11 * (eCcc2_11.g - pC11.g), pC11.b + (cyB11 - eY11) * eInv11 * (eCcc2_11.b - pC11.b), pC11.a + (cyB11 - eY11) * eInv11 * (eCcc2_11.a - pC11.a))
         let cz2_11 = pzV11 + (cyB11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnB11 = if cvB11 then cxB11 else 200.0
         let cmxB11 = if cvB11 then cxB11 else -200.0
         let cyB12 = if brow < eLo12 then eLo12 else brow
         let cvB12 = cyB12 < eHi12 && eLo12 - brow < 1.0
         let cxB12 = eX12 + eS12 * (cyB12 - eY12)
-        cc2_12 = pC12 + (cyB12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let eCcc2_12 = (if 13.0 < n then pC13 else pC0)
+        cc2_12 = Color(pC12.r + (cyB12 - eY12) * eInv12 * (eCcc2_12.r - pC12.r), pC12.g + (cyB12 - eY12) * eInv12 * (eCcc2_12.g - pC12.g), pC12.b + (cyB12 - eY12) * eInv12 * (eCcc2_12.b - pC12.b), pC12.a + (cyB12 - eY12) * eInv12 * (eCcc2_12.a - pC12.a))
         let cz2_12 = pzV12 + (cyB12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnB12 = if cvB12 then cxB12 else 200.0
         let cmxB12 = if cvB12 then cxB12 else -200.0
         let cyB13 = if brow < eLo13 then eLo13 else brow
         let cvB13 = cyB13 < eHi13 && eLo13 - brow < 1.0
         let cxB13 = eX13 + eS13 * (cyB13 - eY13)
-        cc2_13 = pC13 + (cyB13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let eCcc2_13 = (if 14.0 < n then pC14 else pC0)
+        cc2_13 = Color(pC13.r + (cyB13 - eY13) * eInv13 * (eCcc2_13.r - pC13.r), pC13.g + (cyB13 - eY13) * eInv13 * (eCcc2_13.g - pC13.g), pC13.b + (cyB13 - eY13) * eInv13 * (eCcc2_13.b - pC13.b), pC13.a + (cyB13 - eY13) * eInv13 * (eCcc2_13.a - pC13.a))
         let cz2_13 = pzV13 + (cyB13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnB13 = if cvB13 then cxB13 else 200.0
         let cmxB13 = if cvB13 then cxB13 else -200.0
         let cyB14 = if brow < eLo14 then eLo14 else brow
         let cvB14 = cyB14 < eHi14 && eLo14 - brow < 1.0
         let cxB14 = eX14 + eS14 * (cyB14 - eY14)
-        cc2_14 = pC14 + (cyB14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let eCcc2_14 = (if 15.0 < n then pC15 else pC0)
+        cc2_14 = Color(pC14.r + (cyB14 - eY14) * eInv14 * (eCcc2_14.r - pC14.r), pC14.g + (cyB14 - eY14) * eInv14 * (eCcc2_14.g - pC14.g), pC14.b + (cyB14 - eY14) * eInv14 * (eCcc2_14.b - pC14.b), pC14.a + (cyB14 - eY14) * eInv14 * (eCcc2_14.a - pC14.a))
         let cz2_14 = pzV14 + (cyB14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnB14 = if cvB14 then cxB14 else 200.0
         let cmxB14 = if cvB14 then cxB14 else -200.0
         let cyB15 = if brow < eLo15 then eLo15 else brow
         let cvB15 = cyB15 < eHi15 && eLo15 - brow < 1.0
         let cxB15 = eX15 + eS15 * (cyB15 - eY15)
-        cc2_15 = pC15 + (cyB15 - eY15) * eInv15 * (pC0 - pC15)
+        let eCcc2_15 = pC0
+        cc2_15 = Color(pC15.r + (cyB15 - eY15) * eInv15 * (eCcc2_15.r - pC15.r), pC15.g + (cyB15 - eY15) * eInv15 * (eCcc2_15.g - pC15.g), pC15.b + (cyB15 - eY15) * eInv15 * (eCcc2_15.b - pC15.b), pC15.a + (cyB15 - eY15) * eInv15 * (eCcc2_15.a - pC15.a))
         let cz2_15 = pzV15 + (cyB15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnB15 = if cvB15 then cxB15 else 200.0
         let cmxB15 = if cvB15 then cxB15 else -200.0
@@ -13088,11 +13120,11 @@ mod paintTick() {
           pcol2 = 200.0
           pcurR2 = 100.0
         } else {
-          pcol2 = if bn3_0 < 0.0 then 0.0 else (bn3_0 | 0)
-          pcurR2 = if bx3_0 >= SWF then SWF - 1.0 else (bx3_0 | 0)
+          pcol2 = if bn3_0 < 0.0 then 0.0 else (bn3_0 as int)
+          pcurR2 = if bx3_0 >= SWF then SWF - 1.0 else (bx3_0 as int)
           xL2 = bn3_0
           if !erasing {
-            let cra = (prow + 1.0 | 0)
+            let cra = ((prow + 1.0) as int)
             if pcurR2 >= pcol2 && pcol2 <= 63.0 {
               if covMin[cra] > 199.0 {
                 covMin[cra] = pcol2
@@ -13108,7 +13140,7 @@ mod paintTick() {
           cLo2 = bnc3_0
           let bspan = bx3_0 - bn3_0
           let binv = if bspan > 0.0 then 1.0 / bspan else 0.0
-          rowSlope2 = (bxc3_0 - cLo2) * binv
+          rowSlope2 = Color((bxc3_0.r - cLo2.r) * binv, (bxc3_0.g - cLo2.g) * binv, (bxc3_0.b - cLo2.b) * binv, (bxc3_0.a - cLo2.a) * binv)
           zLo2 = bnz3_0
           zSlope2 = (bxz3_0 - zLo2) * binv
           cLo2 = Color(cLo2.r * bf, cLo2.g * bf, cLo2.b * bf, cLo2.a)
@@ -13125,112 +13157,128 @@ mod paintTick() {
         let cyC0 = if rrowC < eLo0 then eLo0 else rrowC
         let cvC0 = cyC0 < eHi0 && eLo0 - rrowC < 1.0
         let cxC0 = eX0 + eS0 * (cyC0 - eY0)
-        let ccC0 = pC0 + (cyC0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let eCC0 = (if 1.0 < n then pC1 else pC0)
+        let ccC0 = Color(pC0.r + (cyC0 - eY0) * eInv0 * (eCC0.r - pC0.r), pC0.g + (cyC0 - eY0) * eInv0 * (eCC0.g - pC0.g), pC0.b + (cyC0 - eY0) * eInv0 * (eCC0.b - pC0.b), pC0.a + (cyC0 - eY0) * eInv0 * (eCC0.a - pC0.a))
         let czC0 = pzV0 + (cyC0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnC0 = if cvC0 then cxC0 else 200.0
         let cmxC0 = if cvC0 then cxC0 else -200.0
         let cyC1 = if rrowC < eLo1 then eLo1 else rrowC
         let cvC1 = cyC1 < eHi1 && eLo1 - rrowC < 1.0
         let cxC1 = eX1 + eS1 * (cyC1 - eY1)
-        let ccC1 = pC1 + (cyC1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let eCC1 = (if 2.0 < n then pC2 else pC0)
+        let ccC1 = Color(pC1.r + (cyC1 - eY1) * eInv1 * (eCC1.r - pC1.r), pC1.g + (cyC1 - eY1) * eInv1 * (eCC1.g - pC1.g), pC1.b + (cyC1 - eY1) * eInv1 * (eCC1.b - pC1.b), pC1.a + (cyC1 - eY1) * eInv1 * (eCC1.a - pC1.a))
         let czC1 = pzV1 + (cyC1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnC1 = if cvC1 then cxC1 else 200.0
         let cmxC1 = if cvC1 then cxC1 else -200.0
         let cyC2 = if rrowC < eLo2 then eLo2 else rrowC
         let cvC2 = cyC2 < eHi2 && eLo2 - rrowC < 1.0
         let cxC2 = eX2 + eS2 * (cyC2 - eY2)
-        let ccC2 = pC2 + (cyC2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let eCC2 = (if 3.0 < n then pC3 else pC0)
+        let ccC2 = Color(pC2.r + (cyC2 - eY2) * eInv2 * (eCC2.r - pC2.r), pC2.g + (cyC2 - eY2) * eInv2 * (eCC2.g - pC2.g), pC2.b + (cyC2 - eY2) * eInv2 * (eCC2.b - pC2.b), pC2.a + (cyC2 - eY2) * eInv2 * (eCC2.a - pC2.a))
         let czC2 = pzV2 + (cyC2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnC2 = if cvC2 then cxC2 else 200.0
         let cmxC2 = if cvC2 then cxC2 else -200.0
         let cyC3 = if rrowC < eLo3 then eLo3 else rrowC
         let cvC3 = cyC3 < eHi3 && eLo3 - rrowC < 1.0
         let cxC3 = eX3 + eS3 * (cyC3 - eY3)
-        let ccC3 = pC3 + (cyC3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let eCC3 = (if 4.0 < n then pC4 else pC0)
+        let ccC3 = Color(pC3.r + (cyC3 - eY3) * eInv3 * (eCC3.r - pC3.r), pC3.g + (cyC3 - eY3) * eInv3 * (eCC3.g - pC3.g), pC3.b + (cyC3 - eY3) * eInv3 * (eCC3.b - pC3.b), pC3.a + (cyC3 - eY3) * eInv3 * (eCC3.a - pC3.a))
         let czC3 = pzV3 + (cyC3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnC3 = if cvC3 then cxC3 else 200.0
         let cmxC3 = if cvC3 then cxC3 else -200.0
         let cyC4 = if rrowC < eLo4 then eLo4 else rrowC
         let cvC4 = cyC4 < eHi4 && eLo4 - rrowC < 1.0
         let cxC4 = eX4 + eS4 * (cyC4 - eY4)
-        let ccC4 = pC4 + (cyC4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let eCC4 = (if 5.0 < n then pC5 else pC0)
+        let ccC4 = Color(pC4.r + (cyC4 - eY4) * eInv4 * (eCC4.r - pC4.r), pC4.g + (cyC4 - eY4) * eInv4 * (eCC4.g - pC4.g), pC4.b + (cyC4 - eY4) * eInv4 * (eCC4.b - pC4.b), pC4.a + (cyC4 - eY4) * eInv4 * (eCC4.a - pC4.a))
         let czC4 = pzV4 + (cyC4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnC4 = if cvC4 then cxC4 else 200.0
         let cmxC4 = if cvC4 then cxC4 else -200.0
         let cyC5 = if rrowC < eLo5 then eLo5 else rrowC
         let cvC5 = cyC5 < eHi5 && eLo5 - rrowC < 1.0
         let cxC5 = eX5 + eS5 * (cyC5 - eY5)
-        let ccC5 = pC5 + (cyC5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let eCC5 = (if 6.0 < n then pC6 else pC0)
+        let ccC5 = Color(pC5.r + (cyC5 - eY5) * eInv5 * (eCC5.r - pC5.r), pC5.g + (cyC5 - eY5) * eInv5 * (eCC5.g - pC5.g), pC5.b + (cyC5 - eY5) * eInv5 * (eCC5.b - pC5.b), pC5.a + (cyC5 - eY5) * eInv5 * (eCC5.a - pC5.a))
         let czC5 = pzV5 + (cyC5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnC5 = if cvC5 then cxC5 else 200.0
         let cmxC5 = if cvC5 then cxC5 else -200.0
         let cyC6 = if rrowC < eLo6 then eLo6 else rrowC
         let cvC6 = cyC6 < eHi6 && eLo6 - rrowC < 1.0
         let cxC6 = eX6 + eS6 * (cyC6 - eY6)
-        let ccC6 = pC6 + (cyC6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let eCC6 = (if 7.0 < n then pC7 else pC0)
+        let ccC6 = Color(pC6.r + (cyC6 - eY6) * eInv6 * (eCC6.r - pC6.r), pC6.g + (cyC6 - eY6) * eInv6 * (eCC6.g - pC6.g), pC6.b + (cyC6 - eY6) * eInv6 * (eCC6.b - pC6.b), pC6.a + (cyC6 - eY6) * eInv6 * (eCC6.a - pC6.a))
         let czC6 = pzV6 + (cyC6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnC6 = if cvC6 then cxC6 else 200.0
         let cmxC6 = if cvC6 then cxC6 else -200.0
         let cyC7 = if rrowC < eLo7 then eLo7 else rrowC
         let cvC7 = cyC7 < eHi7 && eLo7 - rrowC < 1.0
         let cxC7 = eX7 + eS7 * (cyC7 - eY7)
-        let ccC7 = pC7 + (cyC7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let eCC7 = (if 8.0 < n then pC8 else pC0)
+        let ccC7 = Color(pC7.r + (cyC7 - eY7) * eInv7 * (eCC7.r - pC7.r), pC7.g + (cyC7 - eY7) * eInv7 * (eCC7.g - pC7.g), pC7.b + (cyC7 - eY7) * eInv7 * (eCC7.b - pC7.b), pC7.a + (cyC7 - eY7) * eInv7 * (eCC7.a - pC7.a))
         let czC7 = pzV7 + (cyC7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnC7 = if cvC7 then cxC7 else 200.0
         let cmxC7 = if cvC7 then cxC7 else -200.0
         let cyC8 = if rrowC < eLo8 then eLo8 else rrowC
         let cvC8 = cyC8 < eHi8 && eLo8 - rrowC < 1.0
         let cxC8 = eX8 + eS8 * (cyC8 - eY8)
-        let ccC8 = pC8 + (cyC8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let eCC8 = (if 9.0 < n then pC9 else pC0)
+        let ccC8 = Color(pC8.r + (cyC8 - eY8) * eInv8 * (eCC8.r - pC8.r), pC8.g + (cyC8 - eY8) * eInv8 * (eCC8.g - pC8.g), pC8.b + (cyC8 - eY8) * eInv8 * (eCC8.b - pC8.b), pC8.a + (cyC8 - eY8) * eInv8 * (eCC8.a - pC8.a))
         let czC8 = pzV8 + (cyC8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnC8 = if cvC8 then cxC8 else 200.0
         let cmxC8 = if cvC8 then cxC8 else -200.0
         let cyC9 = if rrowC < eLo9 then eLo9 else rrowC
         let cvC9 = cyC9 < eHi9 && eLo9 - rrowC < 1.0
         let cxC9 = eX9 + eS9 * (cyC9 - eY9)
-        let ccC9 = pC9 + (cyC9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let eCC9 = (if 10.0 < n then pC10 else pC0)
+        let ccC9 = Color(pC9.r + (cyC9 - eY9) * eInv9 * (eCC9.r - pC9.r), pC9.g + (cyC9 - eY9) * eInv9 * (eCC9.g - pC9.g), pC9.b + (cyC9 - eY9) * eInv9 * (eCC9.b - pC9.b), pC9.a + (cyC9 - eY9) * eInv9 * (eCC9.a - pC9.a))
         let czC9 = pzV9 + (cyC9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnC9 = if cvC9 then cxC9 else 200.0
         let cmxC9 = if cvC9 then cxC9 else -200.0
         let cyC10 = if rrowC < eLo10 then eLo10 else rrowC
         let cvC10 = cyC10 < eHi10 && eLo10 - rrowC < 1.0
         let cxC10 = eX10 + eS10 * (cyC10 - eY10)
-        let ccC10 = pC10 + (cyC10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let eCC10 = (if 11.0 < n then pC11 else pC0)
+        let ccC10 = Color(pC10.r + (cyC10 - eY10) * eInv10 * (eCC10.r - pC10.r), pC10.g + (cyC10 - eY10) * eInv10 * (eCC10.g - pC10.g), pC10.b + (cyC10 - eY10) * eInv10 * (eCC10.b - pC10.b), pC10.a + (cyC10 - eY10) * eInv10 * (eCC10.a - pC10.a))
         let czC10 = pzV10 + (cyC10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnC10 = if cvC10 then cxC10 else 200.0
         let cmxC10 = if cvC10 then cxC10 else -200.0
         let cyC11 = if rrowC < eLo11 then eLo11 else rrowC
         let cvC11 = cyC11 < eHi11 && eLo11 - rrowC < 1.0
         let cxC11 = eX11 + eS11 * (cyC11 - eY11)
-        let ccC11 = pC11 + (cyC11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let eCC11 = (if 12.0 < n then pC12 else pC0)
+        let ccC11 = Color(pC11.r + (cyC11 - eY11) * eInv11 * (eCC11.r - pC11.r), pC11.g + (cyC11 - eY11) * eInv11 * (eCC11.g - pC11.g), pC11.b + (cyC11 - eY11) * eInv11 * (eCC11.b - pC11.b), pC11.a + (cyC11 - eY11) * eInv11 * (eCC11.a - pC11.a))
         let czC11 = pzV11 + (cyC11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnC11 = if cvC11 then cxC11 else 200.0
         let cmxC11 = if cvC11 then cxC11 else -200.0
         let cyC12 = if rrowC < eLo12 then eLo12 else rrowC
         let cvC12 = cyC12 < eHi12 && eLo12 - rrowC < 1.0
         let cxC12 = eX12 + eS12 * (cyC12 - eY12)
-        let ccC12 = pC12 + (cyC12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let eCC12 = (if 13.0 < n then pC13 else pC0)
+        let ccC12 = Color(pC12.r + (cyC12 - eY12) * eInv12 * (eCC12.r - pC12.r), pC12.g + (cyC12 - eY12) * eInv12 * (eCC12.g - pC12.g), pC12.b + (cyC12 - eY12) * eInv12 * (eCC12.b - pC12.b), pC12.a + (cyC12 - eY12) * eInv12 * (eCC12.a - pC12.a))
         let czC12 = pzV12 + (cyC12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnC12 = if cvC12 then cxC12 else 200.0
         let cmxC12 = if cvC12 then cxC12 else -200.0
         let cyC13 = if rrowC < eLo13 then eLo13 else rrowC
         let cvC13 = cyC13 < eHi13 && eLo13 - rrowC < 1.0
         let cxC13 = eX13 + eS13 * (cyC13 - eY13)
-        let ccC13 = pC13 + (cyC13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let eCC13 = (if 14.0 < n then pC14 else pC0)
+        let ccC13 = Color(pC13.r + (cyC13 - eY13) * eInv13 * (eCC13.r - pC13.r), pC13.g + (cyC13 - eY13) * eInv13 * (eCC13.g - pC13.g), pC13.b + (cyC13 - eY13) * eInv13 * (eCC13.b - pC13.b), pC13.a + (cyC13 - eY13) * eInv13 * (eCC13.a - pC13.a))
         let czC13 = pzV13 + (cyC13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnC13 = if cvC13 then cxC13 else 200.0
         let cmxC13 = if cvC13 then cxC13 else -200.0
         let cyC14 = if rrowC < eLo14 then eLo14 else rrowC
         let cvC14 = cyC14 < eHi14 && eLo14 - rrowC < 1.0
         let cxC14 = eX14 + eS14 * (cyC14 - eY14)
-        let ccC14 = pC14 + (cyC14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let eCC14 = (if 15.0 < n then pC15 else pC0)
+        let ccC14 = Color(pC14.r + (cyC14 - eY14) * eInv14 * (eCC14.r - pC14.r), pC14.g + (cyC14 - eY14) * eInv14 * (eCC14.g - pC14.g), pC14.b + (cyC14 - eY14) * eInv14 * (eCC14.b - pC14.b), pC14.a + (cyC14 - eY14) * eInv14 * (eCC14.a - pC14.a))
         let czC14 = pzV14 + (cyC14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnC14 = if cvC14 then cxC14 else 200.0
         let cmxC14 = if cvC14 then cxC14 else -200.0
         let cyC15 = if rrowC < eLo15 then eLo15 else rrowC
         let cvC15 = cyC15 < eHi15 && eLo15 - rrowC < 1.0
         let cxC15 = eX15 + eS15 * (cyC15 - eY15)
-        let ccC15 = pC15 + (cyC15 - eY15) * eInv15 * (pC0 - pC15)
+        let eCC15 = pC0
+        let ccC15 = Color(pC15.r + (cyC15 - eY15) * eInv15 * (eCC15.r - pC15.r), pC15.g + (cyC15 - eY15) * eInv15 * (eCC15.g - pC15.g), pC15.b + (cyC15 - eY15) * eInv15 * (eCC15.b - pC15.b), pC15.a + (cyC15 - eY15) * eInv15 * (eCC15.a - pC15.a))
         let czC15 = pzV15 + (cyC15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnC15 = if cvC15 then cxC15 else 200.0
         let cmxC15 = if cvC15 then cxC15 else -200.0
@@ -13328,11 +13376,11 @@ mod paintTick() {
           pcol3 = 200.0
           pcurR3 = 100.0
         } else {
-          pcol3 = if mC3_0 < 0.0 then 0.0 else (mC3_0 | 0)
-          pcurR3 = if xC3_0 >= SWF then SWF - 1.0 else (xC3_0 | 0)
+          pcol3 = if mC3_0 < 0.0 then 0.0 else (mC3_0 as int)
+          pcurR3 = if xC3_0 >= SWF then SWF - 1.0 else (xC3_0 as int)
           xL3 = mC3_0
           if !erasing {
-            let cra = (rrowC | 0)
+            let cra = (rrowC as int)
             if pcurR3 >= pcol3 && pcol3 <= 63.0 {
               if covMin[cra] > 199.0 {
                 covMin[cra] = pcol3
@@ -13348,7 +13396,7 @@ mod paintTick() {
           cLo3 = mcC3_0
           let span3 = xC3_0 - mC3_0
           let inv3 = if span3 > 0.0 then 1.0 / span3 else 0.0
-          rowSlope3 = (xcC3_0 - cLo3) * inv3
+          rowSlope3 = Color((xcC3_0.r - cLo3.r) * inv3, (xcC3_0.g - cLo3.g) * inv3, (xcC3_0.b - cLo3.b) * inv3, (xcC3_0.a - cLo3.a) * inv3)
           zLo3 = mzC3_0
           zSlope3 = (xzC3_0 - zLo3) * inv3
           cLo3 = Color(cLo3.r * bf, cLo3.g * bf, cLo3.b * bf, cLo3.a)
@@ -13364,112 +13412,128 @@ mod paintTick() {
         let cyD0 = if rrowD < eLo0 then eLo0 else rrowD
         let cvD0 = cyD0 < eHi0 && eLo0 - rrowD < 1.0
         let cxD0 = eX0 + eS0 * (cyD0 - eY0)
-        let ccD0 = pC0 + (cyD0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let eCD0 = (if 1.0 < n then pC1 else pC0)
+        let ccD0 = Color(pC0.r + (cyD0 - eY0) * eInv0 * (eCD0.r - pC0.r), pC0.g + (cyD0 - eY0) * eInv0 * (eCD0.g - pC0.g), pC0.b + (cyD0 - eY0) * eInv0 * (eCD0.b - pC0.b), pC0.a + (cyD0 - eY0) * eInv0 * (eCD0.a - pC0.a))
         let czD0 = pzV0 + (cyD0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnD0 = if cvD0 then cxD0 else 200.0
         let cmxD0 = if cvD0 then cxD0 else -200.0
         let cyD1 = if rrowD < eLo1 then eLo1 else rrowD
         let cvD1 = cyD1 < eHi1 && eLo1 - rrowD < 1.0
         let cxD1 = eX1 + eS1 * (cyD1 - eY1)
-        let ccD1 = pC1 + (cyD1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let eCD1 = (if 2.0 < n then pC2 else pC0)
+        let ccD1 = Color(pC1.r + (cyD1 - eY1) * eInv1 * (eCD1.r - pC1.r), pC1.g + (cyD1 - eY1) * eInv1 * (eCD1.g - pC1.g), pC1.b + (cyD1 - eY1) * eInv1 * (eCD1.b - pC1.b), pC1.a + (cyD1 - eY1) * eInv1 * (eCD1.a - pC1.a))
         let czD1 = pzV1 + (cyD1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnD1 = if cvD1 then cxD1 else 200.0
         let cmxD1 = if cvD1 then cxD1 else -200.0
         let cyD2 = if rrowD < eLo2 then eLo2 else rrowD
         let cvD2 = cyD2 < eHi2 && eLo2 - rrowD < 1.0
         let cxD2 = eX2 + eS2 * (cyD2 - eY2)
-        let ccD2 = pC2 + (cyD2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let eCD2 = (if 3.0 < n then pC3 else pC0)
+        let ccD2 = Color(pC2.r + (cyD2 - eY2) * eInv2 * (eCD2.r - pC2.r), pC2.g + (cyD2 - eY2) * eInv2 * (eCD2.g - pC2.g), pC2.b + (cyD2 - eY2) * eInv2 * (eCD2.b - pC2.b), pC2.a + (cyD2 - eY2) * eInv2 * (eCD2.a - pC2.a))
         let czD2 = pzV2 + (cyD2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnD2 = if cvD2 then cxD2 else 200.0
         let cmxD2 = if cvD2 then cxD2 else -200.0
         let cyD3 = if rrowD < eLo3 then eLo3 else rrowD
         let cvD3 = cyD3 < eHi3 && eLo3 - rrowD < 1.0
         let cxD3 = eX3 + eS3 * (cyD3 - eY3)
-        let ccD3 = pC3 + (cyD3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let eCD3 = (if 4.0 < n then pC4 else pC0)
+        let ccD3 = Color(pC3.r + (cyD3 - eY3) * eInv3 * (eCD3.r - pC3.r), pC3.g + (cyD3 - eY3) * eInv3 * (eCD3.g - pC3.g), pC3.b + (cyD3 - eY3) * eInv3 * (eCD3.b - pC3.b), pC3.a + (cyD3 - eY3) * eInv3 * (eCD3.a - pC3.a))
         let czD3 = pzV3 + (cyD3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnD3 = if cvD3 then cxD3 else 200.0
         let cmxD3 = if cvD3 then cxD3 else -200.0
         let cyD4 = if rrowD < eLo4 then eLo4 else rrowD
         let cvD4 = cyD4 < eHi4 && eLo4 - rrowD < 1.0
         let cxD4 = eX4 + eS4 * (cyD4 - eY4)
-        let ccD4 = pC4 + (cyD4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let eCD4 = (if 5.0 < n then pC5 else pC0)
+        let ccD4 = Color(pC4.r + (cyD4 - eY4) * eInv4 * (eCD4.r - pC4.r), pC4.g + (cyD4 - eY4) * eInv4 * (eCD4.g - pC4.g), pC4.b + (cyD4 - eY4) * eInv4 * (eCD4.b - pC4.b), pC4.a + (cyD4 - eY4) * eInv4 * (eCD4.a - pC4.a))
         let czD4 = pzV4 + (cyD4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnD4 = if cvD4 then cxD4 else 200.0
         let cmxD4 = if cvD4 then cxD4 else -200.0
         let cyD5 = if rrowD < eLo5 then eLo5 else rrowD
         let cvD5 = cyD5 < eHi5 && eLo5 - rrowD < 1.0
         let cxD5 = eX5 + eS5 * (cyD5 - eY5)
-        let ccD5 = pC5 + (cyD5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let eCD5 = (if 6.0 < n then pC6 else pC0)
+        let ccD5 = Color(pC5.r + (cyD5 - eY5) * eInv5 * (eCD5.r - pC5.r), pC5.g + (cyD5 - eY5) * eInv5 * (eCD5.g - pC5.g), pC5.b + (cyD5 - eY5) * eInv5 * (eCD5.b - pC5.b), pC5.a + (cyD5 - eY5) * eInv5 * (eCD5.a - pC5.a))
         let czD5 = pzV5 + (cyD5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnD5 = if cvD5 then cxD5 else 200.0
         let cmxD5 = if cvD5 then cxD5 else -200.0
         let cyD6 = if rrowD < eLo6 then eLo6 else rrowD
         let cvD6 = cyD6 < eHi6 && eLo6 - rrowD < 1.0
         let cxD6 = eX6 + eS6 * (cyD6 - eY6)
-        let ccD6 = pC6 + (cyD6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let eCD6 = (if 7.0 < n then pC7 else pC0)
+        let ccD6 = Color(pC6.r + (cyD6 - eY6) * eInv6 * (eCD6.r - pC6.r), pC6.g + (cyD6 - eY6) * eInv6 * (eCD6.g - pC6.g), pC6.b + (cyD6 - eY6) * eInv6 * (eCD6.b - pC6.b), pC6.a + (cyD6 - eY6) * eInv6 * (eCD6.a - pC6.a))
         let czD6 = pzV6 + (cyD6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnD6 = if cvD6 then cxD6 else 200.0
         let cmxD6 = if cvD6 then cxD6 else -200.0
         let cyD7 = if rrowD < eLo7 then eLo7 else rrowD
         let cvD7 = cyD7 < eHi7 && eLo7 - rrowD < 1.0
         let cxD7 = eX7 + eS7 * (cyD7 - eY7)
-        let ccD7 = pC7 + (cyD7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let eCD7 = (if 8.0 < n then pC8 else pC0)
+        let ccD7 = Color(pC7.r + (cyD7 - eY7) * eInv7 * (eCD7.r - pC7.r), pC7.g + (cyD7 - eY7) * eInv7 * (eCD7.g - pC7.g), pC7.b + (cyD7 - eY7) * eInv7 * (eCD7.b - pC7.b), pC7.a + (cyD7 - eY7) * eInv7 * (eCD7.a - pC7.a))
         let czD7 = pzV7 + (cyD7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnD7 = if cvD7 then cxD7 else 200.0
         let cmxD7 = if cvD7 then cxD7 else -200.0
         let cyD8 = if rrowD < eLo8 then eLo8 else rrowD
         let cvD8 = cyD8 < eHi8 && eLo8 - rrowD < 1.0
         let cxD8 = eX8 + eS8 * (cyD8 - eY8)
-        let ccD8 = pC8 + (cyD8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let eCD8 = (if 9.0 < n then pC9 else pC0)
+        let ccD8 = Color(pC8.r + (cyD8 - eY8) * eInv8 * (eCD8.r - pC8.r), pC8.g + (cyD8 - eY8) * eInv8 * (eCD8.g - pC8.g), pC8.b + (cyD8 - eY8) * eInv8 * (eCD8.b - pC8.b), pC8.a + (cyD8 - eY8) * eInv8 * (eCD8.a - pC8.a))
         let czD8 = pzV8 + (cyD8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnD8 = if cvD8 then cxD8 else 200.0
         let cmxD8 = if cvD8 then cxD8 else -200.0
         let cyD9 = if rrowD < eLo9 then eLo9 else rrowD
         let cvD9 = cyD9 < eHi9 && eLo9 - rrowD < 1.0
         let cxD9 = eX9 + eS9 * (cyD9 - eY9)
-        let ccD9 = pC9 + (cyD9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let eCD9 = (if 10.0 < n then pC10 else pC0)
+        let ccD9 = Color(pC9.r + (cyD9 - eY9) * eInv9 * (eCD9.r - pC9.r), pC9.g + (cyD9 - eY9) * eInv9 * (eCD9.g - pC9.g), pC9.b + (cyD9 - eY9) * eInv9 * (eCD9.b - pC9.b), pC9.a + (cyD9 - eY9) * eInv9 * (eCD9.a - pC9.a))
         let czD9 = pzV9 + (cyD9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnD9 = if cvD9 then cxD9 else 200.0
         let cmxD9 = if cvD9 then cxD9 else -200.0
         let cyD10 = if rrowD < eLo10 then eLo10 else rrowD
         let cvD10 = cyD10 < eHi10 && eLo10 - rrowD < 1.0
         let cxD10 = eX10 + eS10 * (cyD10 - eY10)
-        let ccD10 = pC10 + (cyD10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let eCD10 = (if 11.0 < n then pC11 else pC0)
+        let ccD10 = Color(pC10.r + (cyD10 - eY10) * eInv10 * (eCD10.r - pC10.r), pC10.g + (cyD10 - eY10) * eInv10 * (eCD10.g - pC10.g), pC10.b + (cyD10 - eY10) * eInv10 * (eCD10.b - pC10.b), pC10.a + (cyD10 - eY10) * eInv10 * (eCD10.a - pC10.a))
         let czD10 = pzV10 + (cyD10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnD10 = if cvD10 then cxD10 else 200.0
         let cmxD10 = if cvD10 then cxD10 else -200.0
         let cyD11 = if rrowD < eLo11 then eLo11 else rrowD
         let cvD11 = cyD11 < eHi11 && eLo11 - rrowD < 1.0
         let cxD11 = eX11 + eS11 * (cyD11 - eY11)
-        let ccD11 = pC11 + (cyD11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let eCD11 = (if 12.0 < n then pC12 else pC0)
+        let ccD11 = Color(pC11.r + (cyD11 - eY11) * eInv11 * (eCD11.r - pC11.r), pC11.g + (cyD11 - eY11) * eInv11 * (eCD11.g - pC11.g), pC11.b + (cyD11 - eY11) * eInv11 * (eCD11.b - pC11.b), pC11.a + (cyD11 - eY11) * eInv11 * (eCD11.a - pC11.a))
         let czD11 = pzV11 + (cyD11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnD11 = if cvD11 then cxD11 else 200.0
         let cmxD11 = if cvD11 then cxD11 else -200.0
         let cyD12 = if rrowD < eLo12 then eLo12 else rrowD
         let cvD12 = cyD12 < eHi12 && eLo12 - rrowD < 1.0
         let cxD12 = eX12 + eS12 * (cyD12 - eY12)
-        let ccD12 = pC12 + (cyD12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let eCD12 = (if 13.0 < n then pC13 else pC0)
+        let ccD12 = Color(pC12.r + (cyD12 - eY12) * eInv12 * (eCD12.r - pC12.r), pC12.g + (cyD12 - eY12) * eInv12 * (eCD12.g - pC12.g), pC12.b + (cyD12 - eY12) * eInv12 * (eCD12.b - pC12.b), pC12.a + (cyD12 - eY12) * eInv12 * (eCD12.a - pC12.a))
         let czD12 = pzV12 + (cyD12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnD12 = if cvD12 then cxD12 else 200.0
         let cmxD12 = if cvD12 then cxD12 else -200.0
         let cyD13 = if rrowD < eLo13 then eLo13 else rrowD
         let cvD13 = cyD13 < eHi13 && eLo13 - rrowD < 1.0
         let cxD13 = eX13 + eS13 * (cyD13 - eY13)
-        let ccD13 = pC13 + (cyD13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let eCD13 = (if 14.0 < n then pC14 else pC0)
+        let ccD13 = Color(pC13.r + (cyD13 - eY13) * eInv13 * (eCD13.r - pC13.r), pC13.g + (cyD13 - eY13) * eInv13 * (eCD13.g - pC13.g), pC13.b + (cyD13 - eY13) * eInv13 * (eCD13.b - pC13.b), pC13.a + (cyD13 - eY13) * eInv13 * (eCD13.a - pC13.a))
         let czD13 = pzV13 + (cyD13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnD13 = if cvD13 then cxD13 else 200.0
         let cmxD13 = if cvD13 then cxD13 else -200.0
         let cyD14 = if rrowD < eLo14 then eLo14 else rrowD
         let cvD14 = cyD14 < eHi14 && eLo14 - rrowD < 1.0
         let cxD14 = eX14 + eS14 * (cyD14 - eY14)
-        let ccD14 = pC14 + (cyD14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let eCD14 = (if 15.0 < n then pC15 else pC0)
+        let ccD14 = Color(pC14.r + (cyD14 - eY14) * eInv14 * (eCD14.r - pC14.r), pC14.g + (cyD14 - eY14) * eInv14 * (eCD14.g - pC14.g), pC14.b + (cyD14 - eY14) * eInv14 * (eCD14.b - pC14.b), pC14.a + (cyD14 - eY14) * eInv14 * (eCD14.a - pC14.a))
         let czD14 = pzV14 + (cyD14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnD14 = if cvD14 then cxD14 else 200.0
         let cmxD14 = if cvD14 then cxD14 else -200.0
         let cyD15 = if rrowD < eLo15 then eLo15 else rrowD
         let cvD15 = cyD15 < eHi15 && eLo15 - rrowD < 1.0
         let cxD15 = eX15 + eS15 * (cyD15 - eY15)
-        let ccD15 = pC15 + (cyD15 - eY15) * eInv15 * (pC0 - pC15)
+        let eCD15 = pC0
+        let ccD15 = Color(pC15.r + (cyD15 - eY15) * eInv15 * (eCD15.r - pC15.r), pC15.g + (cyD15 - eY15) * eInv15 * (eCD15.g - pC15.g), pC15.b + (cyD15 - eY15) * eInv15 * (eCD15.b - pC15.b), pC15.a + (cyD15 - eY15) * eInv15 * (eCD15.a - pC15.a))
         let czD15 = pzV15 + (cyD15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnD15 = if cvD15 then cxD15 else 200.0
         let cmxD15 = if cvD15 then cxD15 else -200.0
@@ -13567,11 +13631,11 @@ mod paintTick() {
           pcol4 = 200.0
           pcurR4 = 100.0
         } else {
-          pcol4 = if mD3_0 < 0.0 then 0.0 else (mD3_0 | 0)
-          pcurR4 = if xD3_0 >= SWF then SWF - 1.0 else (xD3_0 | 0)
+          pcol4 = if mD3_0 < 0.0 then 0.0 else (mD3_0 as int)
+          pcurR4 = if xD3_0 >= SWF then SWF - 1.0 else (xD3_0 as int)
           xL4 = mD3_0
           if !erasing {
-            let cra = (rrowD | 0)
+            let cra = (rrowD as int)
             if pcurR4 >= pcol4 && pcol4 <= 63.0 {
               if covMin[cra] > 199.0 {
                 covMin[cra] = pcol4
@@ -13587,7 +13651,7 @@ mod paintTick() {
           cLo4 = mcD3_0
           let span4 = xD3_0 - mD3_0
           let inv4 = if span4 > 0.0 then 1.0 / span4 else 0.0
-          rowSlope4 = (xcD3_0 - cLo4) * inv4
+          rowSlope4 = Color((xcD3_0.r - cLo4.r) * inv4, (xcD3_0.g - cLo4.g) * inv4, (xcD3_0.b - cLo4.b) * inv4, (xcD3_0.a - cLo4.a) * inv4)
           zLo4 = mzD3_0
           zSlope4 = (xzD3_0 - zLo4) * inv4
           cLo4 = Color(cLo4.r * bf, cLo4.g * bf, cLo4.b * bf, cLo4.a)
@@ -13603,112 +13667,128 @@ mod paintTick() {
         let cyE0 = if rrowE < eLo0 then eLo0 else rrowE
         let cvE0 = cyE0 < eHi0 && eLo0 - rrowE < 1.0
         let cxE0 = eX0 + eS0 * (cyE0 - eY0)
-        let ccE0 = pC0 + (cyE0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let eCE0 = (if 1.0 < n then pC1 else pC0)
+        let ccE0 = Color(pC0.r + (cyE0 - eY0) * eInv0 * (eCE0.r - pC0.r), pC0.g + (cyE0 - eY0) * eInv0 * (eCE0.g - pC0.g), pC0.b + (cyE0 - eY0) * eInv0 * (eCE0.b - pC0.b), pC0.a + (cyE0 - eY0) * eInv0 * (eCE0.a - pC0.a))
         let czE0 = pzV0 + (cyE0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnE0 = if cvE0 then cxE0 else 200.0
         let cmxE0 = if cvE0 then cxE0 else -200.0
         let cyE1 = if rrowE < eLo1 then eLo1 else rrowE
         let cvE1 = cyE1 < eHi1 && eLo1 - rrowE < 1.0
         let cxE1 = eX1 + eS1 * (cyE1 - eY1)
-        let ccE1 = pC1 + (cyE1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let eCE1 = (if 2.0 < n then pC2 else pC0)
+        let ccE1 = Color(pC1.r + (cyE1 - eY1) * eInv1 * (eCE1.r - pC1.r), pC1.g + (cyE1 - eY1) * eInv1 * (eCE1.g - pC1.g), pC1.b + (cyE1 - eY1) * eInv1 * (eCE1.b - pC1.b), pC1.a + (cyE1 - eY1) * eInv1 * (eCE1.a - pC1.a))
         let czE1 = pzV1 + (cyE1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnE1 = if cvE1 then cxE1 else 200.0
         let cmxE1 = if cvE1 then cxE1 else -200.0
         let cyE2 = if rrowE < eLo2 then eLo2 else rrowE
         let cvE2 = cyE2 < eHi2 && eLo2 - rrowE < 1.0
         let cxE2 = eX2 + eS2 * (cyE2 - eY2)
-        let ccE2 = pC2 + (cyE2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let eCE2 = (if 3.0 < n then pC3 else pC0)
+        let ccE2 = Color(pC2.r + (cyE2 - eY2) * eInv2 * (eCE2.r - pC2.r), pC2.g + (cyE2 - eY2) * eInv2 * (eCE2.g - pC2.g), pC2.b + (cyE2 - eY2) * eInv2 * (eCE2.b - pC2.b), pC2.a + (cyE2 - eY2) * eInv2 * (eCE2.a - pC2.a))
         let czE2 = pzV2 + (cyE2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnE2 = if cvE2 then cxE2 else 200.0
         let cmxE2 = if cvE2 then cxE2 else -200.0
         let cyE3 = if rrowE < eLo3 then eLo3 else rrowE
         let cvE3 = cyE3 < eHi3 && eLo3 - rrowE < 1.0
         let cxE3 = eX3 + eS3 * (cyE3 - eY3)
-        let ccE3 = pC3 + (cyE3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let eCE3 = (if 4.0 < n then pC4 else pC0)
+        let ccE3 = Color(pC3.r + (cyE3 - eY3) * eInv3 * (eCE3.r - pC3.r), pC3.g + (cyE3 - eY3) * eInv3 * (eCE3.g - pC3.g), pC3.b + (cyE3 - eY3) * eInv3 * (eCE3.b - pC3.b), pC3.a + (cyE3 - eY3) * eInv3 * (eCE3.a - pC3.a))
         let czE3 = pzV3 + (cyE3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnE3 = if cvE3 then cxE3 else 200.0
         let cmxE3 = if cvE3 then cxE3 else -200.0
         let cyE4 = if rrowE < eLo4 then eLo4 else rrowE
         let cvE4 = cyE4 < eHi4 && eLo4 - rrowE < 1.0
         let cxE4 = eX4 + eS4 * (cyE4 - eY4)
-        let ccE4 = pC4 + (cyE4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let eCE4 = (if 5.0 < n then pC5 else pC0)
+        let ccE4 = Color(pC4.r + (cyE4 - eY4) * eInv4 * (eCE4.r - pC4.r), pC4.g + (cyE4 - eY4) * eInv4 * (eCE4.g - pC4.g), pC4.b + (cyE4 - eY4) * eInv4 * (eCE4.b - pC4.b), pC4.a + (cyE4 - eY4) * eInv4 * (eCE4.a - pC4.a))
         let czE4 = pzV4 + (cyE4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnE4 = if cvE4 then cxE4 else 200.0
         let cmxE4 = if cvE4 then cxE4 else -200.0
         let cyE5 = if rrowE < eLo5 then eLo5 else rrowE
         let cvE5 = cyE5 < eHi5 && eLo5 - rrowE < 1.0
         let cxE5 = eX5 + eS5 * (cyE5 - eY5)
-        let ccE5 = pC5 + (cyE5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let eCE5 = (if 6.0 < n then pC6 else pC0)
+        let ccE5 = Color(pC5.r + (cyE5 - eY5) * eInv5 * (eCE5.r - pC5.r), pC5.g + (cyE5 - eY5) * eInv5 * (eCE5.g - pC5.g), pC5.b + (cyE5 - eY5) * eInv5 * (eCE5.b - pC5.b), pC5.a + (cyE5 - eY5) * eInv5 * (eCE5.a - pC5.a))
         let czE5 = pzV5 + (cyE5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnE5 = if cvE5 then cxE5 else 200.0
         let cmxE5 = if cvE5 then cxE5 else -200.0
         let cyE6 = if rrowE < eLo6 then eLo6 else rrowE
         let cvE6 = cyE6 < eHi6 && eLo6 - rrowE < 1.0
         let cxE6 = eX6 + eS6 * (cyE6 - eY6)
-        let ccE6 = pC6 + (cyE6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let eCE6 = (if 7.0 < n then pC7 else pC0)
+        let ccE6 = Color(pC6.r + (cyE6 - eY6) * eInv6 * (eCE6.r - pC6.r), pC6.g + (cyE6 - eY6) * eInv6 * (eCE6.g - pC6.g), pC6.b + (cyE6 - eY6) * eInv6 * (eCE6.b - pC6.b), pC6.a + (cyE6 - eY6) * eInv6 * (eCE6.a - pC6.a))
         let czE6 = pzV6 + (cyE6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnE6 = if cvE6 then cxE6 else 200.0
         let cmxE6 = if cvE6 then cxE6 else -200.0
         let cyE7 = if rrowE < eLo7 then eLo7 else rrowE
         let cvE7 = cyE7 < eHi7 && eLo7 - rrowE < 1.0
         let cxE7 = eX7 + eS7 * (cyE7 - eY7)
-        let ccE7 = pC7 + (cyE7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let eCE7 = (if 8.0 < n then pC8 else pC0)
+        let ccE7 = Color(pC7.r + (cyE7 - eY7) * eInv7 * (eCE7.r - pC7.r), pC7.g + (cyE7 - eY7) * eInv7 * (eCE7.g - pC7.g), pC7.b + (cyE7 - eY7) * eInv7 * (eCE7.b - pC7.b), pC7.a + (cyE7 - eY7) * eInv7 * (eCE7.a - pC7.a))
         let czE7 = pzV7 + (cyE7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnE7 = if cvE7 then cxE7 else 200.0
         let cmxE7 = if cvE7 then cxE7 else -200.0
         let cyE8 = if rrowE < eLo8 then eLo8 else rrowE
         let cvE8 = cyE8 < eHi8 && eLo8 - rrowE < 1.0
         let cxE8 = eX8 + eS8 * (cyE8 - eY8)
-        let ccE8 = pC8 + (cyE8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let eCE8 = (if 9.0 < n then pC9 else pC0)
+        let ccE8 = Color(pC8.r + (cyE8 - eY8) * eInv8 * (eCE8.r - pC8.r), pC8.g + (cyE8 - eY8) * eInv8 * (eCE8.g - pC8.g), pC8.b + (cyE8 - eY8) * eInv8 * (eCE8.b - pC8.b), pC8.a + (cyE8 - eY8) * eInv8 * (eCE8.a - pC8.a))
         let czE8 = pzV8 + (cyE8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnE8 = if cvE8 then cxE8 else 200.0
         let cmxE8 = if cvE8 then cxE8 else -200.0
         let cyE9 = if rrowE < eLo9 then eLo9 else rrowE
         let cvE9 = cyE9 < eHi9 && eLo9 - rrowE < 1.0
         let cxE9 = eX9 + eS9 * (cyE9 - eY9)
-        let ccE9 = pC9 + (cyE9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let eCE9 = (if 10.0 < n then pC10 else pC0)
+        let ccE9 = Color(pC9.r + (cyE9 - eY9) * eInv9 * (eCE9.r - pC9.r), pC9.g + (cyE9 - eY9) * eInv9 * (eCE9.g - pC9.g), pC9.b + (cyE9 - eY9) * eInv9 * (eCE9.b - pC9.b), pC9.a + (cyE9 - eY9) * eInv9 * (eCE9.a - pC9.a))
         let czE9 = pzV9 + (cyE9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnE9 = if cvE9 then cxE9 else 200.0
         let cmxE9 = if cvE9 then cxE9 else -200.0
         let cyE10 = if rrowE < eLo10 then eLo10 else rrowE
         let cvE10 = cyE10 < eHi10 && eLo10 - rrowE < 1.0
         let cxE10 = eX10 + eS10 * (cyE10 - eY10)
-        let ccE10 = pC10 + (cyE10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let eCE10 = (if 11.0 < n then pC11 else pC0)
+        let ccE10 = Color(pC10.r + (cyE10 - eY10) * eInv10 * (eCE10.r - pC10.r), pC10.g + (cyE10 - eY10) * eInv10 * (eCE10.g - pC10.g), pC10.b + (cyE10 - eY10) * eInv10 * (eCE10.b - pC10.b), pC10.a + (cyE10 - eY10) * eInv10 * (eCE10.a - pC10.a))
         let czE10 = pzV10 + (cyE10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnE10 = if cvE10 then cxE10 else 200.0
         let cmxE10 = if cvE10 then cxE10 else -200.0
         let cyE11 = if rrowE < eLo11 then eLo11 else rrowE
         let cvE11 = cyE11 < eHi11 && eLo11 - rrowE < 1.0
         let cxE11 = eX11 + eS11 * (cyE11 - eY11)
-        let ccE11 = pC11 + (cyE11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let eCE11 = (if 12.0 < n then pC12 else pC0)
+        let ccE11 = Color(pC11.r + (cyE11 - eY11) * eInv11 * (eCE11.r - pC11.r), pC11.g + (cyE11 - eY11) * eInv11 * (eCE11.g - pC11.g), pC11.b + (cyE11 - eY11) * eInv11 * (eCE11.b - pC11.b), pC11.a + (cyE11 - eY11) * eInv11 * (eCE11.a - pC11.a))
         let czE11 = pzV11 + (cyE11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnE11 = if cvE11 then cxE11 else 200.0
         let cmxE11 = if cvE11 then cxE11 else -200.0
         let cyE12 = if rrowE < eLo12 then eLo12 else rrowE
         let cvE12 = cyE12 < eHi12 && eLo12 - rrowE < 1.0
         let cxE12 = eX12 + eS12 * (cyE12 - eY12)
-        let ccE12 = pC12 + (cyE12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let eCE12 = (if 13.0 < n then pC13 else pC0)
+        let ccE12 = Color(pC12.r + (cyE12 - eY12) * eInv12 * (eCE12.r - pC12.r), pC12.g + (cyE12 - eY12) * eInv12 * (eCE12.g - pC12.g), pC12.b + (cyE12 - eY12) * eInv12 * (eCE12.b - pC12.b), pC12.a + (cyE12 - eY12) * eInv12 * (eCE12.a - pC12.a))
         let czE12 = pzV12 + (cyE12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnE12 = if cvE12 then cxE12 else 200.0
         let cmxE12 = if cvE12 then cxE12 else -200.0
         let cyE13 = if rrowE < eLo13 then eLo13 else rrowE
         let cvE13 = cyE13 < eHi13 && eLo13 - rrowE < 1.0
         let cxE13 = eX13 + eS13 * (cyE13 - eY13)
-        let ccE13 = pC13 + (cyE13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let eCE13 = (if 14.0 < n then pC14 else pC0)
+        let ccE13 = Color(pC13.r + (cyE13 - eY13) * eInv13 * (eCE13.r - pC13.r), pC13.g + (cyE13 - eY13) * eInv13 * (eCE13.g - pC13.g), pC13.b + (cyE13 - eY13) * eInv13 * (eCE13.b - pC13.b), pC13.a + (cyE13 - eY13) * eInv13 * (eCE13.a - pC13.a))
         let czE13 = pzV13 + (cyE13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnE13 = if cvE13 then cxE13 else 200.0
         let cmxE13 = if cvE13 then cxE13 else -200.0
         let cyE14 = if rrowE < eLo14 then eLo14 else rrowE
         let cvE14 = cyE14 < eHi14 && eLo14 - rrowE < 1.0
         let cxE14 = eX14 + eS14 * (cyE14 - eY14)
-        let ccE14 = pC14 + (cyE14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let eCE14 = (if 15.0 < n then pC15 else pC0)
+        let ccE14 = Color(pC14.r + (cyE14 - eY14) * eInv14 * (eCE14.r - pC14.r), pC14.g + (cyE14 - eY14) * eInv14 * (eCE14.g - pC14.g), pC14.b + (cyE14 - eY14) * eInv14 * (eCE14.b - pC14.b), pC14.a + (cyE14 - eY14) * eInv14 * (eCE14.a - pC14.a))
         let czE14 = pzV14 + (cyE14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnE14 = if cvE14 then cxE14 else 200.0
         let cmxE14 = if cvE14 then cxE14 else -200.0
         let cyE15 = if rrowE < eLo15 then eLo15 else rrowE
         let cvE15 = cyE15 < eHi15 && eLo15 - rrowE < 1.0
         let cxE15 = eX15 + eS15 * (cyE15 - eY15)
-        let ccE15 = pC15 + (cyE15 - eY15) * eInv15 * (pC0 - pC15)
+        let eCE15 = pC0
+        let ccE15 = Color(pC15.r + (cyE15 - eY15) * eInv15 * (eCE15.r - pC15.r), pC15.g + (cyE15 - eY15) * eInv15 * (eCE15.g - pC15.g), pC15.b + (cyE15 - eY15) * eInv15 * (eCE15.b - pC15.b), pC15.a + (cyE15 - eY15) * eInv15 * (eCE15.a - pC15.a))
         let czE15 = pzV15 + (cyE15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnE15 = if cvE15 then cxE15 else 200.0
         let cmxE15 = if cvE15 then cxE15 else -200.0
@@ -13806,11 +13886,11 @@ mod paintTick() {
           pcol5 = 200.0
           pcurR5 = 100.0
         } else {
-          pcol5 = if mE3_0 < 0.0 then 0.0 else (mE3_0 | 0)
-          pcurR5 = if xE3_0 >= SWF then SWF - 1.0 else (xE3_0 | 0)
+          pcol5 = if mE3_0 < 0.0 then 0.0 else (mE3_0 as int)
+          pcurR5 = if xE3_0 >= SWF then SWF - 1.0 else (xE3_0 as int)
           xL5 = mE3_0
           if !erasing {
-            let cra = (rrowE | 0)
+            let cra = (rrowE as int)
             if pcurR5 >= pcol5 && pcol5 <= 63.0 {
               if covMin[cra] > 199.0 {
                 covMin[cra] = pcol5
@@ -13826,7 +13906,7 @@ mod paintTick() {
           cLo5 = mcE3_0
           let span5 = xE3_0 - mE3_0
           let inv5 = if span5 > 0.0 then 1.0 / span5 else 0.0
-          rowSlope5 = (xcE3_0 - cLo5) * inv5
+          rowSlope5 = Color((xcE3_0.r - cLo5.r) * inv5, (xcE3_0.g - cLo5.g) * inv5, (xcE3_0.b - cLo5.b) * inv5, (xcE3_0.a - cLo5.a) * inv5)
           zLo5 = mzE3_0
           zSlope5 = (xzE3_0 - zLo5) * inv5
           cLo5 = Color(cLo5.r * bf, cLo5.g * bf, cLo5.b * bf, cLo5.a)
@@ -13842,112 +13922,128 @@ mod paintTick() {
         let cyF0 = if rrowF < eLo0 then eLo0 else rrowF
         let cvF0 = cyF0 < eHi0 && eLo0 - rrowF < 1.0
         let cxF0 = eX0 + eS0 * (cyF0 - eY0)
-        let ccF0 = pC0 + (cyF0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let eCF0 = (if 1.0 < n then pC1 else pC0)
+        let ccF0 = Color(pC0.r + (cyF0 - eY0) * eInv0 * (eCF0.r - pC0.r), pC0.g + (cyF0 - eY0) * eInv0 * (eCF0.g - pC0.g), pC0.b + (cyF0 - eY0) * eInv0 * (eCF0.b - pC0.b), pC0.a + (cyF0 - eY0) * eInv0 * (eCF0.a - pC0.a))
         let czF0 = pzV0 + (cyF0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnF0 = if cvF0 then cxF0 else 200.0
         let cmxF0 = if cvF0 then cxF0 else -200.0
         let cyF1 = if rrowF < eLo1 then eLo1 else rrowF
         let cvF1 = cyF1 < eHi1 && eLo1 - rrowF < 1.0
         let cxF1 = eX1 + eS1 * (cyF1 - eY1)
-        let ccF1 = pC1 + (cyF1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let eCF1 = (if 2.0 < n then pC2 else pC0)
+        let ccF1 = Color(pC1.r + (cyF1 - eY1) * eInv1 * (eCF1.r - pC1.r), pC1.g + (cyF1 - eY1) * eInv1 * (eCF1.g - pC1.g), pC1.b + (cyF1 - eY1) * eInv1 * (eCF1.b - pC1.b), pC1.a + (cyF1 - eY1) * eInv1 * (eCF1.a - pC1.a))
         let czF1 = pzV1 + (cyF1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnF1 = if cvF1 then cxF1 else 200.0
         let cmxF1 = if cvF1 then cxF1 else -200.0
         let cyF2 = if rrowF < eLo2 then eLo2 else rrowF
         let cvF2 = cyF2 < eHi2 && eLo2 - rrowF < 1.0
         let cxF2 = eX2 + eS2 * (cyF2 - eY2)
-        let ccF2 = pC2 + (cyF2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let eCF2 = (if 3.0 < n then pC3 else pC0)
+        let ccF2 = Color(pC2.r + (cyF2 - eY2) * eInv2 * (eCF2.r - pC2.r), pC2.g + (cyF2 - eY2) * eInv2 * (eCF2.g - pC2.g), pC2.b + (cyF2 - eY2) * eInv2 * (eCF2.b - pC2.b), pC2.a + (cyF2 - eY2) * eInv2 * (eCF2.a - pC2.a))
         let czF2 = pzV2 + (cyF2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnF2 = if cvF2 then cxF2 else 200.0
         let cmxF2 = if cvF2 then cxF2 else -200.0
         let cyF3 = if rrowF < eLo3 then eLo3 else rrowF
         let cvF3 = cyF3 < eHi3 && eLo3 - rrowF < 1.0
         let cxF3 = eX3 + eS3 * (cyF3 - eY3)
-        let ccF3 = pC3 + (cyF3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let eCF3 = (if 4.0 < n then pC4 else pC0)
+        let ccF3 = Color(pC3.r + (cyF3 - eY3) * eInv3 * (eCF3.r - pC3.r), pC3.g + (cyF3 - eY3) * eInv3 * (eCF3.g - pC3.g), pC3.b + (cyF3 - eY3) * eInv3 * (eCF3.b - pC3.b), pC3.a + (cyF3 - eY3) * eInv3 * (eCF3.a - pC3.a))
         let czF3 = pzV3 + (cyF3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnF3 = if cvF3 then cxF3 else 200.0
         let cmxF3 = if cvF3 then cxF3 else -200.0
         let cyF4 = if rrowF < eLo4 then eLo4 else rrowF
         let cvF4 = cyF4 < eHi4 && eLo4 - rrowF < 1.0
         let cxF4 = eX4 + eS4 * (cyF4 - eY4)
-        let ccF4 = pC4 + (cyF4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let eCF4 = (if 5.0 < n then pC5 else pC0)
+        let ccF4 = Color(pC4.r + (cyF4 - eY4) * eInv4 * (eCF4.r - pC4.r), pC4.g + (cyF4 - eY4) * eInv4 * (eCF4.g - pC4.g), pC4.b + (cyF4 - eY4) * eInv4 * (eCF4.b - pC4.b), pC4.a + (cyF4 - eY4) * eInv4 * (eCF4.a - pC4.a))
         let czF4 = pzV4 + (cyF4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnF4 = if cvF4 then cxF4 else 200.0
         let cmxF4 = if cvF4 then cxF4 else -200.0
         let cyF5 = if rrowF < eLo5 then eLo5 else rrowF
         let cvF5 = cyF5 < eHi5 && eLo5 - rrowF < 1.0
         let cxF5 = eX5 + eS5 * (cyF5 - eY5)
-        let ccF5 = pC5 + (cyF5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let eCF5 = (if 6.0 < n then pC6 else pC0)
+        let ccF5 = Color(pC5.r + (cyF5 - eY5) * eInv5 * (eCF5.r - pC5.r), pC5.g + (cyF5 - eY5) * eInv5 * (eCF5.g - pC5.g), pC5.b + (cyF5 - eY5) * eInv5 * (eCF5.b - pC5.b), pC5.a + (cyF5 - eY5) * eInv5 * (eCF5.a - pC5.a))
         let czF5 = pzV5 + (cyF5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnF5 = if cvF5 then cxF5 else 200.0
         let cmxF5 = if cvF5 then cxF5 else -200.0
         let cyF6 = if rrowF < eLo6 then eLo6 else rrowF
         let cvF6 = cyF6 < eHi6 && eLo6 - rrowF < 1.0
         let cxF6 = eX6 + eS6 * (cyF6 - eY6)
-        let ccF6 = pC6 + (cyF6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let eCF6 = (if 7.0 < n then pC7 else pC0)
+        let ccF6 = Color(pC6.r + (cyF6 - eY6) * eInv6 * (eCF6.r - pC6.r), pC6.g + (cyF6 - eY6) * eInv6 * (eCF6.g - pC6.g), pC6.b + (cyF6 - eY6) * eInv6 * (eCF6.b - pC6.b), pC6.a + (cyF6 - eY6) * eInv6 * (eCF6.a - pC6.a))
         let czF6 = pzV6 + (cyF6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnF6 = if cvF6 then cxF6 else 200.0
         let cmxF6 = if cvF6 then cxF6 else -200.0
         let cyF7 = if rrowF < eLo7 then eLo7 else rrowF
         let cvF7 = cyF7 < eHi7 && eLo7 - rrowF < 1.0
         let cxF7 = eX7 + eS7 * (cyF7 - eY7)
-        let ccF7 = pC7 + (cyF7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let eCF7 = (if 8.0 < n then pC8 else pC0)
+        let ccF7 = Color(pC7.r + (cyF7 - eY7) * eInv7 * (eCF7.r - pC7.r), pC7.g + (cyF7 - eY7) * eInv7 * (eCF7.g - pC7.g), pC7.b + (cyF7 - eY7) * eInv7 * (eCF7.b - pC7.b), pC7.a + (cyF7 - eY7) * eInv7 * (eCF7.a - pC7.a))
         let czF7 = pzV7 + (cyF7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnF7 = if cvF7 then cxF7 else 200.0
         let cmxF7 = if cvF7 then cxF7 else -200.0
         let cyF8 = if rrowF < eLo8 then eLo8 else rrowF
         let cvF8 = cyF8 < eHi8 && eLo8 - rrowF < 1.0
         let cxF8 = eX8 + eS8 * (cyF8 - eY8)
-        let ccF8 = pC8 + (cyF8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let eCF8 = (if 9.0 < n then pC9 else pC0)
+        let ccF8 = Color(pC8.r + (cyF8 - eY8) * eInv8 * (eCF8.r - pC8.r), pC8.g + (cyF8 - eY8) * eInv8 * (eCF8.g - pC8.g), pC8.b + (cyF8 - eY8) * eInv8 * (eCF8.b - pC8.b), pC8.a + (cyF8 - eY8) * eInv8 * (eCF8.a - pC8.a))
         let czF8 = pzV8 + (cyF8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnF8 = if cvF8 then cxF8 else 200.0
         let cmxF8 = if cvF8 then cxF8 else -200.0
         let cyF9 = if rrowF < eLo9 then eLo9 else rrowF
         let cvF9 = cyF9 < eHi9 && eLo9 - rrowF < 1.0
         let cxF9 = eX9 + eS9 * (cyF9 - eY9)
-        let ccF9 = pC9 + (cyF9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let eCF9 = (if 10.0 < n then pC10 else pC0)
+        let ccF9 = Color(pC9.r + (cyF9 - eY9) * eInv9 * (eCF9.r - pC9.r), pC9.g + (cyF9 - eY9) * eInv9 * (eCF9.g - pC9.g), pC9.b + (cyF9 - eY9) * eInv9 * (eCF9.b - pC9.b), pC9.a + (cyF9 - eY9) * eInv9 * (eCF9.a - pC9.a))
         let czF9 = pzV9 + (cyF9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnF9 = if cvF9 then cxF9 else 200.0
         let cmxF9 = if cvF9 then cxF9 else -200.0
         let cyF10 = if rrowF < eLo10 then eLo10 else rrowF
         let cvF10 = cyF10 < eHi10 && eLo10 - rrowF < 1.0
         let cxF10 = eX10 + eS10 * (cyF10 - eY10)
-        let ccF10 = pC10 + (cyF10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let eCF10 = (if 11.0 < n then pC11 else pC0)
+        let ccF10 = Color(pC10.r + (cyF10 - eY10) * eInv10 * (eCF10.r - pC10.r), pC10.g + (cyF10 - eY10) * eInv10 * (eCF10.g - pC10.g), pC10.b + (cyF10 - eY10) * eInv10 * (eCF10.b - pC10.b), pC10.a + (cyF10 - eY10) * eInv10 * (eCF10.a - pC10.a))
         let czF10 = pzV10 + (cyF10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnF10 = if cvF10 then cxF10 else 200.0
         let cmxF10 = if cvF10 then cxF10 else -200.0
         let cyF11 = if rrowF < eLo11 then eLo11 else rrowF
         let cvF11 = cyF11 < eHi11 && eLo11 - rrowF < 1.0
         let cxF11 = eX11 + eS11 * (cyF11 - eY11)
-        let ccF11 = pC11 + (cyF11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let eCF11 = (if 12.0 < n then pC12 else pC0)
+        let ccF11 = Color(pC11.r + (cyF11 - eY11) * eInv11 * (eCF11.r - pC11.r), pC11.g + (cyF11 - eY11) * eInv11 * (eCF11.g - pC11.g), pC11.b + (cyF11 - eY11) * eInv11 * (eCF11.b - pC11.b), pC11.a + (cyF11 - eY11) * eInv11 * (eCF11.a - pC11.a))
         let czF11 = pzV11 + (cyF11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnF11 = if cvF11 then cxF11 else 200.0
         let cmxF11 = if cvF11 then cxF11 else -200.0
         let cyF12 = if rrowF < eLo12 then eLo12 else rrowF
         let cvF12 = cyF12 < eHi12 && eLo12 - rrowF < 1.0
         let cxF12 = eX12 + eS12 * (cyF12 - eY12)
-        let ccF12 = pC12 + (cyF12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let eCF12 = (if 13.0 < n then pC13 else pC0)
+        let ccF12 = Color(pC12.r + (cyF12 - eY12) * eInv12 * (eCF12.r - pC12.r), pC12.g + (cyF12 - eY12) * eInv12 * (eCF12.g - pC12.g), pC12.b + (cyF12 - eY12) * eInv12 * (eCF12.b - pC12.b), pC12.a + (cyF12 - eY12) * eInv12 * (eCF12.a - pC12.a))
         let czF12 = pzV12 + (cyF12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnF12 = if cvF12 then cxF12 else 200.0
         let cmxF12 = if cvF12 then cxF12 else -200.0
         let cyF13 = if rrowF < eLo13 then eLo13 else rrowF
         let cvF13 = cyF13 < eHi13 && eLo13 - rrowF < 1.0
         let cxF13 = eX13 + eS13 * (cyF13 - eY13)
-        let ccF13 = pC13 + (cyF13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let eCF13 = (if 14.0 < n then pC14 else pC0)
+        let ccF13 = Color(pC13.r + (cyF13 - eY13) * eInv13 * (eCF13.r - pC13.r), pC13.g + (cyF13 - eY13) * eInv13 * (eCF13.g - pC13.g), pC13.b + (cyF13 - eY13) * eInv13 * (eCF13.b - pC13.b), pC13.a + (cyF13 - eY13) * eInv13 * (eCF13.a - pC13.a))
         let czF13 = pzV13 + (cyF13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnF13 = if cvF13 then cxF13 else 200.0
         let cmxF13 = if cvF13 then cxF13 else -200.0
         let cyF14 = if rrowF < eLo14 then eLo14 else rrowF
         let cvF14 = cyF14 < eHi14 && eLo14 - rrowF < 1.0
         let cxF14 = eX14 + eS14 * (cyF14 - eY14)
-        let ccF14 = pC14 + (cyF14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let eCF14 = (if 15.0 < n then pC15 else pC0)
+        let ccF14 = Color(pC14.r + (cyF14 - eY14) * eInv14 * (eCF14.r - pC14.r), pC14.g + (cyF14 - eY14) * eInv14 * (eCF14.g - pC14.g), pC14.b + (cyF14 - eY14) * eInv14 * (eCF14.b - pC14.b), pC14.a + (cyF14 - eY14) * eInv14 * (eCF14.a - pC14.a))
         let czF14 = pzV14 + (cyF14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnF14 = if cvF14 then cxF14 else 200.0
         let cmxF14 = if cvF14 then cxF14 else -200.0
         let cyF15 = if rrowF < eLo15 then eLo15 else rrowF
         let cvF15 = cyF15 < eHi15 && eLo15 - rrowF < 1.0
         let cxF15 = eX15 + eS15 * (cyF15 - eY15)
-        let ccF15 = pC15 + (cyF15 - eY15) * eInv15 * (pC0 - pC15)
+        let eCF15 = pC0
+        let ccF15 = Color(pC15.r + (cyF15 - eY15) * eInv15 * (eCF15.r - pC15.r), pC15.g + (cyF15 - eY15) * eInv15 * (eCF15.g - pC15.g), pC15.b + (cyF15 - eY15) * eInv15 * (eCF15.b - pC15.b), pC15.a + (cyF15 - eY15) * eInv15 * (eCF15.a - pC15.a))
         let czF15 = pzV15 + (cyF15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnF15 = if cvF15 then cxF15 else 200.0
         let cmxF15 = if cvF15 then cxF15 else -200.0
@@ -14045,11 +14141,11 @@ mod paintTick() {
           pcol6 = 200.0
           pcurR6 = 100.0
         } else {
-          pcol6 = if mF3_0 < 0.0 then 0.0 else (mF3_0 | 0)
-          pcurR6 = if xF3_0 >= SWF then SWF - 1.0 else (xF3_0 | 0)
+          pcol6 = if mF3_0 < 0.0 then 0.0 else (mF3_0 as int)
+          pcurR6 = if xF3_0 >= SWF then SWF - 1.0 else (xF3_0 as int)
           xL6 = mF3_0
           if !erasing {
-            let cra = (rrowF | 0)
+            let cra = (rrowF as int)
             if pcurR6 >= pcol6 && pcol6 <= 63.0 {
               if covMin[cra] > 199.0 {
                 covMin[cra] = pcol6
@@ -14065,7 +14161,7 @@ mod paintTick() {
           cLo6 = mcF3_0
           let span6 = xF3_0 - mF3_0
           let inv6 = if span6 > 0.0 then 1.0 / span6 else 0.0
-          rowSlope6 = (xcF3_0 - cLo6) * inv6
+          rowSlope6 = Color((xcF3_0.r - cLo6.r) * inv6, (xcF3_0.g - cLo6.g) * inv6, (xcF3_0.b - cLo6.b) * inv6, (xcF3_0.a - cLo6.a) * inv6)
           zLo6 = mzF3_0
           zSlope6 = (xzF3_0 - zLo6) * inv6
           cLo6 = Color(cLo6.r * bf, cLo6.g * bf, cLo6.b * bf, cLo6.a)
@@ -14081,112 +14177,128 @@ mod paintTick() {
         let cyG0 = if rrowG < eLo0 then eLo0 else rrowG
         let cvG0 = cyG0 < eHi0 && eLo0 - rrowG < 1.0
         let cxG0 = eX0 + eS0 * (cyG0 - eY0)
-        let ccG0 = pC0 + (cyG0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let eCG0 = (if 1.0 < n then pC1 else pC0)
+        let ccG0 = Color(pC0.r + (cyG0 - eY0) * eInv0 * (eCG0.r - pC0.r), pC0.g + (cyG0 - eY0) * eInv0 * (eCG0.g - pC0.g), pC0.b + (cyG0 - eY0) * eInv0 * (eCG0.b - pC0.b), pC0.a + (cyG0 - eY0) * eInv0 * (eCG0.a - pC0.a))
         let czG0 = pzV0 + (cyG0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnG0 = if cvG0 then cxG0 else 200.0
         let cmxG0 = if cvG0 then cxG0 else -200.0
         let cyG1 = if rrowG < eLo1 then eLo1 else rrowG
         let cvG1 = cyG1 < eHi1 && eLo1 - rrowG < 1.0
         let cxG1 = eX1 + eS1 * (cyG1 - eY1)
-        let ccG1 = pC1 + (cyG1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let eCG1 = (if 2.0 < n then pC2 else pC0)
+        let ccG1 = Color(pC1.r + (cyG1 - eY1) * eInv1 * (eCG1.r - pC1.r), pC1.g + (cyG1 - eY1) * eInv1 * (eCG1.g - pC1.g), pC1.b + (cyG1 - eY1) * eInv1 * (eCG1.b - pC1.b), pC1.a + (cyG1 - eY1) * eInv1 * (eCG1.a - pC1.a))
         let czG1 = pzV1 + (cyG1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnG1 = if cvG1 then cxG1 else 200.0
         let cmxG1 = if cvG1 then cxG1 else -200.0
         let cyG2 = if rrowG < eLo2 then eLo2 else rrowG
         let cvG2 = cyG2 < eHi2 && eLo2 - rrowG < 1.0
         let cxG2 = eX2 + eS2 * (cyG2 - eY2)
-        let ccG2 = pC2 + (cyG2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let eCG2 = (if 3.0 < n then pC3 else pC0)
+        let ccG2 = Color(pC2.r + (cyG2 - eY2) * eInv2 * (eCG2.r - pC2.r), pC2.g + (cyG2 - eY2) * eInv2 * (eCG2.g - pC2.g), pC2.b + (cyG2 - eY2) * eInv2 * (eCG2.b - pC2.b), pC2.a + (cyG2 - eY2) * eInv2 * (eCG2.a - pC2.a))
         let czG2 = pzV2 + (cyG2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnG2 = if cvG2 then cxG2 else 200.0
         let cmxG2 = if cvG2 then cxG2 else -200.0
         let cyG3 = if rrowG < eLo3 then eLo3 else rrowG
         let cvG3 = cyG3 < eHi3 && eLo3 - rrowG < 1.0
         let cxG3 = eX3 + eS3 * (cyG3 - eY3)
-        let ccG3 = pC3 + (cyG3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let eCG3 = (if 4.0 < n then pC4 else pC0)
+        let ccG3 = Color(pC3.r + (cyG3 - eY3) * eInv3 * (eCG3.r - pC3.r), pC3.g + (cyG3 - eY3) * eInv3 * (eCG3.g - pC3.g), pC3.b + (cyG3 - eY3) * eInv3 * (eCG3.b - pC3.b), pC3.a + (cyG3 - eY3) * eInv3 * (eCG3.a - pC3.a))
         let czG3 = pzV3 + (cyG3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnG3 = if cvG3 then cxG3 else 200.0
         let cmxG3 = if cvG3 then cxG3 else -200.0
         let cyG4 = if rrowG < eLo4 then eLo4 else rrowG
         let cvG4 = cyG4 < eHi4 && eLo4 - rrowG < 1.0
         let cxG4 = eX4 + eS4 * (cyG4 - eY4)
-        let ccG4 = pC4 + (cyG4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let eCG4 = (if 5.0 < n then pC5 else pC0)
+        let ccG4 = Color(pC4.r + (cyG4 - eY4) * eInv4 * (eCG4.r - pC4.r), pC4.g + (cyG4 - eY4) * eInv4 * (eCG4.g - pC4.g), pC4.b + (cyG4 - eY4) * eInv4 * (eCG4.b - pC4.b), pC4.a + (cyG4 - eY4) * eInv4 * (eCG4.a - pC4.a))
         let czG4 = pzV4 + (cyG4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnG4 = if cvG4 then cxG4 else 200.0
         let cmxG4 = if cvG4 then cxG4 else -200.0
         let cyG5 = if rrowG < eLo5 then eLo5 else rrowG
         let cvG5 = cyG5 < eHi5 && eLo5 - rrowG < 1.0
         let cxG5 = eX5 + eS5 * (cyG5 - eY5)
-        let ccG5 = pC5 + (cyG5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let eCG5 = (if 6.0 < n then pC6 else pC0)
+        let ccG5 = Color(pC5.r + (cyG5 - eY5) * eInv5 * (eCG5.r - pC5.r), pC5.g + (cyG5 - eY5) * eInv5 * (eCG5.g - pC5.g), pC5.b + (cyG5 - eY5) * eInv5 * (eCG5.b - pC5.b), pC5.a + (cyG5 - eY5) * eInv5 * (eCG5.a - pC5.a))
         let czG5 = pzV5 + (cyG5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnG5 = if cvG5 then cxG5 else 200.0
         let cmxG5 = if cvG5 then cxG5 else -200.0
         let cyG6 = if rrowG < eLo6 then eLo6 else rrowG
         let cvG6 = cyG6 < eHi6 && eLo6 - rrowG < 1.0
         let cxG6 = eX6 + eS6 * (cyG6 - eY6)
-        let ccG6 = pC6 + (cyG6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let eCG6 = (if 7.0 < n then pC7 else pC0)
+        let ccG6 = Color(pC6.r + (cyG6 - eY6) * eInv6 * (eCG6.r - pC6.r), pC6.g + (cyG6 - eY6) * eInv6 * (eCG6.g - pC6.g), pC6.b + (cyG6 - eY6) * eInv6 * (eCG6.b - pC6.b), pC6.a + (cyG6 - eY6) * eInv6 * (eCG6.a - pC6.a))
         let czG6 = pzV6 + (cyG6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnG6 = if cvG6 then cxG6 else 200.0
         let cmxG6 = if cvG6 then cxG6 else -200.0
         let cyG7 = if rrowG < eLo7 then eLo7 else rrowG
         let cvG7 = cyG7 < eHi7 && eLo7 - rrowG < 1.0
         let cxG7 = eX7 + eS7 * (cyG7 - eY7)
-        let ccG7 = pC7 + (cyG7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let eCG7 = (if 8.0 < n then pC8 else pC0)
+        let ccG7 = Color(pC7.r + (cyG7 - eY7) * eInv7 * (eCG7.r - pC7.r), pC7.g + (cyG7 - eY7) * eInv7 * (eCG7.g - pC7.g), pC7.b + (cyG7 - eY7) * eInv7 * (eCG7.b - pC7.b), pC7.a + (cyG7 - eY7) * eInv7 * (eCG7.a - pC7.a))
         let czG7 = pzV7 + (cyG7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnG7 = if cvG7 then cxG7 else 200.0
         let cmxG7 = if cvG7 then cxG7 else -200.0
         let cyG8 = if rrowG < eLo8 then eLo8 else rrowG
         let cvG8 = cyG8 < eHi8 && eLo8 - rrowG < 1.0
         let cxG8 = eX8 + eS8 * (cyG8 - eY8)
-        let ccG8 = pC8 + (cyG8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let eCG8 = (if 9.0 < n then pC9 else pC0)
+        let ccG8 = Color(pC8.r + (cyG8 - eY8) * eInv8 * (eCG8.r - pC8.r), pC8.g + (cyG8 - eY8) * eInv8 * (eCG8.g - pC8.g), pC8.b + (cyG8 - eY8) * eInv8 * (eCG8.b - pC8.b), pC8.a + (cyG8 - eY8) * eInv8 * (eCG8.a - pC8.a))
         let czG8 = pzV8 + (cyG8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnG8 = if cvG8 then cxG8 else 200.0
         let cmxG8 = if cvG8 then cxG8 else -200.0
         let cyG9 = if rrowG < eLo9 then eLo9 else rrowG
         let cvG9 = cyG9 < eHi9 && eLo9 - rrowG < 1.0
         let cxG9 = eX9 + eS9 * (cyG9 - eY9)
-        let ccG9 = pC9 + (cyG9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let eCG9 = (if 10.0 < n then pC10 else pC0)
+        let ccG9 = Color(pC9.r + (cyG9 - eY9) * eInv9 * (eCG9.r - pC9.r), pC9.g + (cyG9 - eY9) * eInv9 * (eCG9.g - pC9.g), pC9.b + (cyG9 - eY9) * eInv9 * (eCG9.b - pC9.b), pC9.a + (cyG9 - eY9) * eInv9 * (eCG9.a - pC9.a))
         let czG9 = pzV9 + (cyG9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnG9 = if cvG9 then cxG9 else 200.0
         let cmxG9 = if cvG9 then cxG9 else -200.0
         let cyG10 = if rrowG < eLo10 then eLo10 else rrowG
         let cvG10 = cyG10 < eHi10 && eLo10 - rrowG < 1.0
         let cxG10 = eX10 + eS10 * (cyG10 - eY10)
-        let ccG10 = pC10 + (cyG10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let eCG10 = (if 11.0 < n then pC11 else pC0)
+        let ccG10 = Color(pC10.r + (cyG10 - eY10) * eInv10 * (eCG10.r - pC10.r), pC10.g + (cyG10 - eY10) * eInv10 * (eCG10.g - pC10.g), pC10.b + (cyG10 - eY10) * eInv10 * (eCG10.b - pC10.b), pC10.a + (cyG10 - eY10) * eInv10 * (eCG10.a - pC10.a))
         let czG10 = pzV10 + (cyG10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnG10 = if cvG10 then cxG10 else 200.0
         let cmxG10 = if cvG10 then cxG10 else -200.0
         let cyG11 = if rrowG < eLo11 then eLo11 else rrowG
         let cvG11 = cyG11 < eHi11 && eLo11 - rrowG < 1.0
         let cxG11 = eX11 + eS11 * (cyG11 - eY11)
-        let ccG11 = pC11 + (cyG11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let eCG11 = (if 12.0 < n then pC12 else pC0)
+        let ccG11 = Color(pC11.r + (cyG11 - eY11) * eInv11 * (eCG11.r - pC11.r), pC11.g + (cyG11 - eY11) * eInv11 * (eCG11.g - pC11.g), pC11.b + (cyG11 - eY11) * eInv11 * (eCG11.b - pC11.b), pC11.a + (cyG11 - eY11) * eInv11 * (eCG11.a - pC11.a))
         let czG11 = pzV11 + (cyG11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnG11 = if cvG11 then cxG11 else 200.0
         let cmxG11 = if cvG11 then cxG11 else -200.0
         let cyG12 = if rrowG < eLo12 then eLo12 else rrowG
         let cvG12 = cyG12 < eHi12 && eLo12 - rrowG < 1.0
         let cxG12 = eX12 + eS12 * (cyG12 - eY12)
-        let ccG12 = pC12 + (cyG12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let eCG12 = (if 13.0 < n then pC13 else pC0)
+        let ccG12 = Color(pC12.r + (cyG12 - eY12) * eInv12 * (eCG12.r - pC12.r), pC12.g + (cyG12 - eY12) * eInv12 * (eCG12.g - pC12.g), pC12.b + (cyG12 - eY12) * eInv12 * (eCG12.b - pC12.b), pC12.a + (cyG12 - eY12) * eInv12 * (eCG12.a - pC12.a))
         let czG12 = pzV12 + (cyG12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnG12 = if cvG12 then cxG12 else 200.0
         let cmxG12 = if cvG12 then cxG12 else -200.0
         let cyG13 = if rrowG < eLo13 then eLo13 else rrowG
         let cvG13 = cyG13 < eHi13 && eLo13 - rrowG < 1.0
         let cxG13 = eX13 + eS13 * (cyG13 - eY13)
-        let ccG13 = pC13 + (cyG13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let eCG13 = (if 14.0 < n then pC14 else pC0)
+        let ccG13 = Color(pC13.r + (cyG13 - eY13) * eInv13 * (eCG13.r - pC13.r), pC13.g + (cyG13 - eY13) * eInv13 * (eCG13.g - pC13.g), pC13.b + (cyG13 - eY13) * eInv13 * (eCG13.b - pC13.b), pC13.a + (cyG13 - eY13) * eInv13 * (eCG13.a - pC13.a))
         let czG13 = pzV13 + (cyG13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnG13 = if cvG13 then cxG13 else 200.0
         let cmxG13 = if cvG13 then cxG13 else -200.0
         let cyG14 = if rrowG < eLo14 then eLo14 else rrowG
         let cvG14 = cyG14 < eHi14 && eLo14 - rrowG < 1.0
         let cxG14 = eX14 + eS14 * (cyG14 - eY14)
-        let ccG14 = pC14 + (cyG14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let eCG14 = (if 15.0 < n then pC15 else pC0)
+        let ccG14 = Color(pC14.r + (cyG14 - eY14) * eInv14 * (eCG14.r - pC14.r), pC14.g + (cyG14 - eY14) * eInv14 * (eCG14.g - pC14.g), pC14.b + (cyG14 - eY14) * eInv14 * (eCG14.b - pC14.b), pC14.a + (cyG14 - eY14) * eInv14 * (eCG14.a - pC14.a))
         let czG14 = pzV14 + (cyG14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnG14 = if cvG14 then cxG14 else 200.0
         let cmxG14 = if cvG14 then cxG14 else -200.0
         let cyG15 = if rrowG < eLo15 then eLo15 else rrowG
         let cvG15 = cyG15 < eHi15 && eLo15 - rrowG < 1.0
         let cxG15 = eX15 + eS15 * (cyG15 - eY15)
-        let ccG15 = pC15 + (cyG15 - eY15) * eInv15 * (pC0 - pC15)
+        let eCG15 = pC0
+        let ccG15 = Color(pC15.r + (cyG15 - eY15) * eInv15 * (eCG15.r - pC15.r), pC15.g + (cyG15 - eY15) * eInv15 * (eCG15.g - pC15.g), pC15.b + (cyG15 - eY15) * eInv15 * (eCG15.b - pC15.b), pC15.a + (cyG15 - eY15) * eInv15 * (eCG15.a - pC15.a))
         let czG15 = pzV15 + (cyG15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnG15 = if cvG15 then cxG15 else 200.0
         let cmxG15 = if cvG15 then cxG15 else -200.0
@@ -14284,11 +14396,11 @@ mod paintTick() {
           pcol7 = 200.0
           pcurR7 = 100.0
         } else {
-          pcol7 = if mG3_0 < 0.0 then 0.0 else (mG3_0 | 0)
-          pcurR7 = if xG3_0 >= SWF then SWF - 1.0 else (xG3_0 | 0)
+          pcol7 = if mG3_0 < 0.0 then 0.0 else (mG3_0 as int)
+          pcurR7 = if xG3_0 >= SWF then SWF - 1.0 else (xG3_0 as int)
           xL7 = mG3_0
           if !erasing {
-            let cra = (rrowG | 0)
+            let cra = (rrowG as int)
             if pcurR7 >= pcol7 && pcol7 <= 63.0 {
               if covMin[cra] > 199.0 {
                 covMin[cra] = pcol7
@@ -14304,7 +14416,7 @@ mod paintTick() {
           cLo7 = mcG3_0
           let span7 = xG3_0 - mG3_0
           let inv7 = if span7 > 0.0 then 1.0 / span7 else 0.0
-          rowSlope7 = (xcG3_0 - cLo7) * inv7
+          rowSlope7 = Color((xcG3_0.r - cLo7.r) * inv7, (xcG3_0.g - cLo7.g) * inv7, (xcG3_0.b - cLo7.b) * inv7, (xcG3_0.a - cLo7.a) * inv7)
           zLo7 = mzG3_0
           zSlope7 = (xzG3_0 - zLo7) * inv7
           cLo7 = Color(cLo7.r * bf, cLo7.g * bf, cLo7.b * bf, cLo7.a)
@@ -14320,112 +14432,128 @@ mod paintTick() {
         let cyH0 = if rrowH < eLo0 then eLo0 else rrowH
         let cvH0 = cyH0 < eHi0 && eLo0 - rrowH < 1.0
         let cxH0 = eX0 + eS0 * (cyH0 - eY0)
-        let ccH0 = pC0 + (cyH0 - eY0) * eInv0 * ((if 1.0 < n then pC1 else pC0) - pC0)
+        let eCH0 = (if 1.0 < n then pC1 else pC0)
+        let ccH0 = Color(pC0.r + (cyH0 - eY0) * eInv0 * (eCH0.r - pC0.r), pC0.g + (cyH0 - eY0) * eInv0 * (eCH0.g - pC0.g), pC0.b + (cyH0 - eY0) * eInv0 * (eCH0.b - pC0.b), pC0.a + (cyH0 - eY0) * eInv0 * (eCH0.a - pC0.a))
         let czH0 = pzV0 + (cyH0 - eY0) * eInv0 * ((if 1.0 < n then pzV1 else pzV0) - pzV0)
         let cmnH0 = if cvH0 then cxH0 else 200.0
         let cmxH0 = if cvH0 then cxH0 else -200.0
         let cyH1 = if rrowH < eLo1 then eLo1 else rrowH
         let cvH1 = cyH1 < eHi1 && eLo1 - rrowH < 1.0
         let cxH1 = eX1 + eS1 * (cyH1 - eY1)
-        let ccH1 = pC1 + (cyH1 - eY1) * eInv1 * ((if 2.0 < n then pC2 else pC0) - pC1)
+        let eCH1 = (if 2.0 < n then pC2 else pC0)
+        let ccH1 = Color(pC1.r + (cyH1 - eY1) * eInv1 * (eCH1.r - pC1.r), pC1.g + (cyH1 - eY1) * eInv1 * (eCH1.g - pC1.g), pC1.b + (cyH1 - eY1) * eInv1 * (eCH1.b - pC1.b), pC1.a + (cyH1 - eY1) * eInv1 * (eCH1.a - pC1.a))
         let czH1 = pzV1 + (cyH1 - eY1) * eInv1 * ((if 2.0 < n then pzV2 else pzV0) - pzV1)
         let cmnH1 = if cvH1 then cxH1 else 200.0
         let cmxH1 = if cvH1 then cxH1 else -200.0
         let cyH2 = if rrowH < eLo2 then eLo2 else rrowH
         let cvH2 = cyH2 < eHi2 && eLo2 - rrowH < 1.0
         let cxH2 = eX2 + eS2 * (cyH2 - eY2)
-        let ccH2 = pC2 + (cyH2 - eY2) * eInv2 * ((if 3.0 < n then pC3 else pC0) - pC2)
+        let eCH2 = (if 3.0 < n then pC3 else pC0)
+        let ccH2 = Color(pC2.r + (cyH2 - eY2) * eInv2 * (eCH2.r - pC2.r), pC2.g + (cyH2 - eY2) * eInv2 * (eCH2.g - pC2.g), pC2.b + (cyH2 - eY2) * eInv2 * (eCH2.b - pC2.b), pC2.a + (cyH2 - eY2) * eInv2 * (eCH2.a - pC2.a))
         let czH2 = pzV2 + (cyH2 - eY2) * eInv2 * ((if 3.0 < n then pzV3 else pzV0) - pzV2)
         let cmnH2 = if cvH2 then cxH2 else 200.0
         let cmxH2 = if cvH2 then cxH2 else -200.0
         let cyH3 = if rrowH < eLo3 then eLo3 else rrowH
         let cvH3 = cyH3 < eHi3 && eLo3 - rrowH < 1.0
         let cxH3 = eX3 + eS3 * (cyH3 - eY3)
-        let ccH3 = pC3 + (cyH3 - eY3) * eInv3 * ((if 4.0 < n then pC4 else pC0) - pC3)
+        let eCH3 = (if 4.0 < n then pC4 else pC0)
+        let ccH3 = Color(pC3.r + (cyH3 - eY3) * eInv3 * (eCH3.r - pC3.r), pC3.g + (cyH3 - eY3) * eInv3 * (eCH3.g - pC3.g), pC3.b + (cyH3 - eY3) * eInv3 * (eCH3.b - pC3.b), pC3.a + (cyH3 - eY3) * eInv3 * (eCH3.a - pC3.a))
         let czH3 = pzV3 + (cyH3 - eY3) * eInv3 * ((if 4.0 < n then pzV4 else pzV0) - pzV3)
         let cmnH3 = if cvH3 then cxH3 else 200.0
         let cmxH3 = if cvH3 then cxH3 else -200.0
         let cyH4 = if rrowH < eLo4 then eLo4 else rrowH
         let cvH4 = cyH4 < eHi4 && eLo4 - rrowH < 1.0
         let cxH4 = eX4 + eS4 * (cyH4 - eY4)
-        let ccH4 = pC4 + (cyH4 - eY4) * eInv4 * ((if 5.0 < n then pC5 else pC0) - pC4)
+        let eCH4 = (if 5.0 < n then pC5 else pC0)
+        let ccH4 = Color(pC4.r + (cyH4 - eY4) * eInv4 * (eCH4.r - pC4.r), pC4.g + (cyH4 - eY4) * eInv4 * (eCH4.g - pC4.g), pC4.b + (cyH4 - eY4) * eInv4 * (eCH4.b - pC4.b), pC4.a + (cyH4 - eY4) * eInv4 * (eCH4.a - pC4.a))
         let czH4 = pzV4 + (cyH4 - eY4) * eInv4 * ((if 5.0 < n then pzV5 else pzV0) - pzV4)
         let cmnH4 = if cvH4 then cxH4 else 200.0
         let cmxH4 = if cvH4 then cxH4 else -200.0
         let cyH5 = if rrowH < eLo5 then eLo5 else rrowH
         let cvH5 = cyH5 < eHi5 && eLo5 - rrowH < 1.0
         let cxH5 = eX5 + eS5 * (cyH5 - eY5)
-        let ccH5 = pC5 + (cyH5 - eY5) * eInv5 * ((if 6.0 < n then pC6 else pC0) - pC5)
+        let eCH5 = (if 6.0 < n then pC6 else pC0)
+        let ccH5 = Color(pC5.r + (cyH5 - eY5) * eInv5 * (eCH5.r - pC5.r), pC5.g + (cyH5 - eY5) * eInv5 * (eCH5.g - pC5.g), pC5.b + (cyH5 - eY5) * eInv5 * (eCH5.b - pC5.b), pC5.a + (cyH5 - eY5) * eInv5 * (eCH5.a - pC5.a))
         let czH5 = pzV5 + (cyH5 - eY5) * eInv5 * ((if 6.0 < n then pzV6 else pzV0) - pzV5)
         let cmnH5 = if cvH5 then cxH5 else 200.0
         let cmxH5 = if cvH5 then cxH5 else -200.0
         let cyH6 = if rrowH < eLo6 then eLo6 else rrowH
         let cvH6 = cyH6 < eHi6 && eLo6 - rrowH < 1.0
         let cxH6 = eX6 + eS6 * (cyH6 - eY6)
-        let ccH6 = pC6 + (cyH6 - eY6) * eInv6 * ((if 7.0 < n then pC7 else pC0) - pC6)
+        let eCH6 = (if 7.0 < n then pC7 else pC0)
+        let ccH6 = Color(pC6.r + (cyH6 - eY6) * eInv6 * (eCH6.r - pC6.r), pC6.g + (cyH6 - eY6) * eInv6 * (eCH6.g - pC6.g), pC6.b + (cyH6 - eY6) * eInv6 * (eCH6.b - pC6.b), pC6.a + (cyH6 - eY6) * eInv6 * (eCH6.a - pC6.a))
         let czH6 = pzV6 + (cyH6 - eY6) * eInv6 * ((if 7.0 < n then pzV7 else pzV0) - pzV6)
         let cmnH6 = if cvH6 then cxH6 else 200.0
         let cmxH6 = if cvH6 then cxH6 else -200.0
         let cyH7 = if rrowH < eLo7 then eLo7 else rrowH
         let cvH7 = cyH7 < eHi7 && eLo7 - rrowH < 1.0
         let cxH7 = eX7 + eS7 * (cyH7 - eY7)
-        let ccH7 = pC7 + (cyH7 - eY7) * eInv7 * ((if 8.0 < n then pC8 else pC0) - pC7)
+        let eCH7 = (if 8.0 < n then pC8 else pC0)
+        let ccH7 = Color(pC7.r + (cyH7 - eY7) * eInv7 * (eCH7.r - pC7.r), pC7.g + (cyH7 - eY7) * eInv7 * (eCH7.g - pC7.g), pC7.b + (cyH7 - eY7) * eInv7 * (eCH7.b - pC7.b), pC7.a + (cyH7 - eY7) * eInv7 * (eCH7.a - pC7.a))
         let czH7 = pzV7 + (cyH7 - eY7) * eInv7 * ((if 8.0 < n then pzV8 else pzV0) - pzV7)
         let cmnH7 = if cvH7 then cxH7 else 200.0
         let cmxH7 = if cvH7 then cxH7 else -200.0
         let cyH8 = if rrowH < eLo8 then eLo8 else rrowH
         let cvH8 = cyH8 < eHi8 && eLo8 - rrowH < 1.0
         let cxH8 = eX8 + eS8 * (cyH8 - eY8)
-        let ccH8 = pC8 + (cyH8 - eY8) * eInv8 * ((if 9.0 < n then pC9 else pC0) - pC8)
+        let eCH8 = (if 9.0 < n then pC9 else pC0)
+        let ccH8 = Color(pC8.r + (cyH8 - eY8) * eInv8 * (eCH8.r - pC8.r), pC8.g + (cyH8 - eY8) * eInv8 * (eCH8.g - pC8.g), pC8.b + (cyH8 - eY8) * eInv8 * (eCH8.b - pC8.b), pC8.a + (cyH8 - eY8) * eInv8 * (eCH8.a - pC8.a))
         let czH8 = pzV8 + (cyH8 - eY8) * eInv8 * ((if 9.0 < n then pzV9 else pzV0) - pzV8)
         let cmnH8 = if cvH8 then cxH8 else 200.0
         let cmxH8 = if cvH8 then cxH8 else -200.0
         let cyH9 = if rrowH < eLo9 then eLo9 else rrowH
         let cvH9 = cyH9 < eHi9 && eLo9 - rrowH < 1.0
         let cxH9 = eX9 + eS9 * (cyH9 - eY9)
-        let ccH9 = pC9 + (cyH9 - eY9) * eInv9 * ((if 10.0 < n then pC10 else pC0) - pC9)
+        let eCH9 = (if 10.0 < n then pC10 else pC0)
+        let ccH9 = Color(pC9.r + (cyH9 - eY9) * eInv9 * (eCH9.r - pC9.r), pC9.g + (cyH9 - eY9) * eInv9 * (eCH9.g - pC9.g), pC9.b + (cyH9 - eY9) * eInv9 * (eCH9.b - pC9.b), pC9.a + (cyH9 - eY9) * eInv9 * (eCH9.a - pC9.a))
         let czH9 = pzV9 + (cyH9 - eY9) * eInv9 * ((if 10.0 < n then pzV10 else pzV0) - pzV9)
         let cmnH9 = if cvH9 then cxH9 else 200.0
         let cmxH9 = if cvH9 then cxH9 else -200.0
         let cyH10 = if rrowH < eLo10 then eLo10 else rrowH
         let cvH10 = cyH10 < eHi10 && eLo10 - rrowH < 1.0
         let cxH10 = eX10 + eS10 * (cyH10 - eY10)
-        let ccH10 = pC10 + (cyH10 - eY10) * eInv10 * ((if 11.0 < n then pC11 else pC0) - pC10)
+        let eCH10 = (if 11.0 < n then pC11 else pC0)
+        let ccH10 = Color(pC10.r + (cyH10 - eY10) * eInv10 * (eCH10.r - pC10.r), pC10.g + (cyH10 - eY10) * eInv10 * (eCH10.g - pC10.g), pC10.b + (cyH10 - eY10) * eInv10 * (eCH10.b - pC10.b), pC10.a + (cyH10 - eY10) * eInv10 * (eCH10.a - pC10.a))
         let czH10 = pzV10 + (cyH10 - eY10) * eInv10 * ((if 11.0 < n then pzV11 else pzV0) - pzV10)
         let cmnH10 = if cvH10 then cxH10 else 200.0
         let cmxH10 = if cvH10 then cxH10 else -200.0
         let cyH11 = if rrowH < eLo11 then eLo11 else rrowH
         let cvH11 = cyH11 < eHi11 && eLo11 - rrowH < 1.0
         let cxH11 = eX11 + eS11 * (cyH11 - eY11)
-        let ccH11 = pC11 + (cyH11 - eY11) * eInv11 * ((if 12.0 < n then pC12 else pC0) - pC11)
+        let eCH11 = (if 12.0 < n then pC12 else pC0)
+        let ccH11 = Color(pC11.r + (cyH11 - eY11) * eInv11 * (eCH11.r - pC11.r), pC11.g + (cyH11 - eY11) * eInv11 * (eCH11.g - pC11.g), pC11.b + (cyH11 - eY11) * eInv11 * (eCH11.b - pC11.b), pC11.a + (cyH11 - eY11) * eInv11 * (eCH11.a - pC11.a))
         let czH11 = pzV11 + (cyH11 - eY11) * eInv11 * ((if 12.0 < n then pzV12 else pzV0) - pzV11)
         let cmnH11 = if cvH11 then cxH11 else 200.0
         let cmxH11 = if cvH11 then cxH11 else -200.0
         let cyH12 = if rrowH < eLo12 then eLo12 else rrowH
         let cvH12 = cyH12 < eHi12 && eLo12 - rrowH < 1.0
         let cxH12 = eX12 + eS12 * (cyH12 - eY12)
-        let ccH12 = pC12 + (cyH12 - eY12) * eInv12 * ((if 13.0 < n then pC13 else pC0) - pC12)
+        let eCH12 = (if 13.0 < n then pC13 else pC0)
+        let ccH12 = Color(pC12.r + (cyH12 - eY12) * eInv12 * (eCH12.r - pC12.r), pC12.g + (cyH12 - eY12) * eInv12 * (eCH12.g - pC12.g), pC12.b + (cyH12 - eY12) * eInv12 * (eCH12.b - pC12.b), pC12.a + (cyH12 - eY12) * eInv12 * (eCH12.a - pC12.a))
         let czH12 = pzV12 + (cyH12 - eY12) * eInv12 * ((if 13.0 < n then pzV13 else pzV0) - pzV12)
         let cmnH12 = if cvH12 then cxH12 else 200.0
         let cmxH12 = if cvH12 then cxH12 else -200.0
         let cyH13 = if rrowH < eLo13 then eLo13 else rrowH
         let cvH13 = cyH13 < eHi13 && eLo13 - rrowH < 1.0
         let cxH13 = eX13 + eS13 * (cyH13 - eY13)
-        let ccH13 = pC13 + (cyH13 - eY13) * eInv13 * ((if 14.0 < n then pC14 else pC0) - pC13)
+        let eCH13 = (if 14.0 < n then pC14 else pC0)
+        let ccH13 = Color(pC13.r + (cyH13 - eY13) * eInv13 * (eCH13.r - pC13.r), pC13.g + (cyH13 - eY13) * eInv13 * (eCH13.g - pC13.g), pC13.b + (cyH13 - eY13) * eInv13 * (eCH13.b - pC13.b), pC13.a + (cyH13 - eY13) * eInv13 * (eCH13.a - pC13.a))
         let czH13 = pzV13 + (cyH13 - eY13) * eInv13 * ((if 14.0 < n then pzV14 else pzV0) - pzV13)
         let cmnH13 = if cvH13 then cxH13 else 200.0
         let cmxH13 = if cvH13 then cxH13 else -200.0
         let cyH14 = if rrowH < eLo14 then eLo14 else rrowH
         let cvH14 = cyH14 < eHi14 && eLo14 - rrowH < 1.0
         let cxH14 = eX14 + eS14 * (cyH14 - eY14)
-        let ccH14 = pC14 + (cyH14 - eY14) * eInv14 * ((if 15.0 < n then pC15 else pC0) - pC14)
+        let eCH14 = (if 15.0 < n then pC15 else pC0)
+        let ccH14 = Color(pC14.r + (cyH14 - eY14) * eInv14 * (eCH14.r - pC14.r), pC14.g + (cyH14 - eY14) * eInv14 * (eCH14.g - pC14.g), pC14.b + (cyH14 - eY14) * eInv14 * (eCH14.b - pC14.b), pC14.a + (cyH14 - eY14) * eInv14 * (eCH14.a - pC14.a))
         let czH14 = pzV14 + (cyH14 - eY14) * eInv14 * ((if 15.0 < n then pzV15 else pzV0) - pzV14)
         let cmnH14 = if cvH14 then cxH14 else 200.0
         let cmxH14 = if cvH14 then cxH14 else -200.0
         let cyH15 = if rrowH < eLo15 then eLo15 else rrowH
         let cvH15 = cyH15 < eHi15 && eLo15 - rrowH < 1.0
         let cxH15 = eX15 + eS15 * (cyH15 - eY15)
-        let ccH15 = pC15 + (cyH15 - eY15) * eInv15 * (pC0 - pC15)
+        let eCH15 = pC0
+        let ccH15 = Color(pC15.r + (cyH15 - eY15) * eInv15 * (eCH15.r - pC15.r), pC15.g + (cyH15 - eY15) * eInv15 * (eCH15.g - pC15.g), pC15.b + (cyH15 - eY15) * eInv15 * (eCH15.b - pC15.b), pC15.a + (cyH15 - eY15) * eInv15 * (eCH15.a - pC15.a))
         let czH15 = pzV15 + (cyH15 - eY15) * eInv15 * (pzV0 - pzV15)
         let cmnH15 = if cvH15 then cxH15 else 200.0
         let cmxH15 = if cvH15 then cxH15 else -200.0
@@ -14523,11 +14651,11 @@ mod paintTick() {
           pcol8 = 200.0
           pcurR8 = 100.0
         } else {
-          pcol8 = if mH3_0 < 0.0 then 0.0 else (mH3_0 | 0)
-          pcurR8 = if xH3_0 >= SWF then SWF - 1.0 else (xH3_0 | 0)
+          pcol8 = if mH3_0 < 0.0 then 0.0 else (mH3_0 as int)
+          pcurR8 = if xH3_0 >= SWF then SWF - 1.0 else (xH3_0 as int)
           xL8 = mH3_0
           if !erasing {
-            let cra = (rrowH | 0)
+            let cra = (rrowH as int)
             if pcurR8 >= pcol8 && pcol8 <= 63.0 {
               if covMin[cra] > 199.0 {
                 covMin[cra] = pcol8
@@ -14543,7 +14671,7 @@ mod paintTick() {
           cLo8 = mcH3_0
           let span8 = xH3_0 - mH3_0
           let inv8 = if span8 > 0.0 then 1.0 / span8 else 0.0
-          rowSlope8 = (xcH3_0 - cLo8) * inv8
+          rowSlope8 = Color((xcH3_0.r - cLo8.r) * inv8, (xcH3_0.g - cLo8.g) * inv8, (xcH3_0.b - cLo8.b) * inv8, (xcH3_0.a - cLo8.a) * inv8)
           zLo8 = mzH3_0
           zSlope8 = (xzH3_0 - zLo8) * inv8
           cLo8 = Color(cLo8.r * bf, cLo8.g * bf, cLo8.b * bf, cLo8.a)
@@ -14703,8 +14831,8 @@ mod paintTick() {
             iCD = if dCD > 0.0 then 1.0 / dCD else if dCD < 0.0 then 1.0 / dCD else 0.0
             let qMinY = if qAy < qBy then (if qAy < qCy then (if qAy < qDy then qAy else qDy) else (if qCy < qDy then qCy else qDy)) else (if qBy < qCy then (if qBy < qDy then qBy else qDy) else (if qCy < qDy then qCy else qDy))
             let qMaxY = if qAy > qBy then (if qAy > qCy then (if qAy > qDy then qAy else qDy) else (if qCy > qDy then qCy else qDy)) else (if qBy > qCy then (if qBy > qDy then qBy else qDy) else (if qCy > qDy then qCy else qDy))
-            prow = if qMinY < 0.0 then 0.0 else (qMinY | 0)
-            sLast = if qMaxY >= SWF then SWF - 1.0 else (qMaxY | 0)
+            prow = if qMinY < 0.0 then 0.0 else (qMinY as int)
+            sLast = if qMaxY >= SWF then SWF - 1.0 else (qMaxY as int)
           }
         }
       }
@@ -14774,11 +14902,11 @@ mod paintTick() {
               pcol2 = 200.0
               pcurR2 = 100.0
             } else {
-              pcol2 = if bumn < 0.0 then 0.0 else (bumn | 0)
-              pcurR2 = if bumx >= SWF then SWF - 1.0 else (bumx | 0)
+              pcol2 = if bumn < 0.0 then 0.0 else (bumn as int)
+              pcurR2 = if bumx >= SWF then SWF - 1.0 else (bumx as int)
               xL2 = bumn
               if !erasing {
-                let cra = (prow + 1.0 | 0)
+                let cra = ((prow + 1.0) as int)
                 if pcurR2 >= pcol2 && pcol2 <= 63.0 {
                   if covMin[cra] > 199.0 {
                     covMin[cra] = pcol2
@@ -14794,7 +14922,7 @@ mod paintTick() {
               cLo2 = bumnc
               let bspan = bumx - bumn
               let binv = if bspan > 0.0 then 1.0 / bspan else 0.0
-              rowSlope2 = (bumxc - cLo2) * binv
+              rowSlope2 = Color((bumxc.r - cLo2.r) * binv, (bumxc.g - cLo2.g) * binv, (bumxc.b - cLo2.b) * binv, (bumxc.a - cLo2.a) * binv)
               zLo2 = bumnz
               zSlope2 = (bumxz - zLo2) * binv
               cLo2 = Color(cLo2.r * bf, cLo2.g * bf, cLo2.b * bf, cLo2.a)
@@ -14867,11 +14995,11 @@ mod paintTick() {
               pcol3 = 200.0
               pcurR3 = 100.0
             } else {
-              pcol3 = if bumnC < 0.0 then 0.0 else (bumnC | 0)
-              pcurR3 = if bumxC >= SWF then SWF - 1.0 else (bumxC | 0)
+              pcol3 = if bumnC < 0.0 then 0.0 else (bumnC as int)
+              pcurR3 = if bumxC >= SWF then SWF - 1.0 else (bumxC as int)
               xL3 = bumnC
               if !erasing {
-                let craC = (prow + 2.0 | 0)
+                let craC = (prow + 2.0 as int)
                 if pcurR3 >= pcol3 && pcol3 <= 63.0 {
                   if covMin[craC] > 199.0 {
                     covMin[craC] = pcol3
@@ -14887,7 +15015,7 @@ mod paintTick() {
               cLo3 = bumncC
               let bspanC = bumxC - bumnC
               let binvC = if bspanC > 0.0 then 1.0 / bspanC else 0.0
-              rowSlope3 = (bumxcC - cLo3) * binvC
+              rowSlope3 = Color((bumxcC.r - cLo3.r) * binvC, (bumxcC.g - cLo3.g) * binvC, (bumxcC.b - cLo3.b) * binvC, (bumxcC.a - cLo3.a) * binvC)
               zLo3 = bumnzC
               zSlope3 = (bumxzC - zLo3) * binvC
               cLo3 = Color(cLo3.r * bf, cLo3.g * bf, cLo3.b * bf, cLo3.a)
@@ -14960,11 +15088,11 @@ mod paintTick() {
               pcol4 = 200.0
               pcurR4 = 100.0
             } else {
-              pcol4 = if bumnD < 0.0 then 0.0 else (bumnD | 0)
-              pcurR4 = if bumxD >= SWF then SWF - 1.0 else (bumxD | 0)
+              pcol4 = if bumnD < 0.0 then 0.0 else (bumnD as int)
+              pcurR4 = if bumxD >= SWF then SWF - 1.0 else (bumxD as int)
               xL4 = bumnD
               if !erasing {
-                let craD = (prow + 3.0 | 0)
+                let craD = (prow + 3.0 as int)
                 if pcurR4 >= pcol4 && pcol4 <= 63.0 {
                   if covMin[craD] > 199.0 {
                     covMin[craD] = pcol4
@@ -14980,7 +15108,7 @@ mod paintTick() {
               cLo4 = bumncD
               let bspanD = bumxD - bumnD
               let binvD = if bspanD > 0.0 then 1.0 / bspanD else 0.0
-              rowSlope4 = (bumxcD - cLo4) * binvD
+              rowSlope4 = Color((bumxcD.r - cLo4.r) * binvD, (bumxcD.g - cLo4.g) * binvD, (bumxcD.b - cLo4.b) * binvD, (bumxcD.a - cLo4.a) * binvD)
               zLo4 = bumnzD
               zSlope4 = (bumxzD - zLo4) * binvD
               cLo4 = Color(cLo4.r * bf, cLo4.g * bf, cLo4.b * bf, cLo4.a)
@@ -15053,11 +15181,11 @@ mod paintTick() {
               pcol5 = 200.0
               pcurR5 = 100.0
             } else {
-              pcol5 = if bumnE < 0.0 then 0.0 else (bumnE | 0)
-              pcurR5 = if bumxE >= SWF then SWF - 1.0 else (bumxE | 0)
+              pcol5 = if bumnE < 0.0 then 0.0 else (bumnE as int)
+              pcurR5 = if bumxE >= SWF then SWF - 1.0 else (bumxE as int)
               xL5 = bumnE
               if !erasing {
-                let craE = (prow + 4.0 | 0)
+                let craE = (prow + 4.0 as int)
                 if pcurR5 >= pcol5 && pcol5 <= 63.0 {
                   if covMin[craE] > 199.0 {
                     covMin[craE] = pcol5
@@ -15073,7 +15201,7 @@ mod paintTick() {
               cLo5 = bumncE
               let bspanE = bumxE - bumnE
               let binvE = if bspanE > 0.0 then 1.0 / bspanE else 0.0
-              rowSlope5 = (bumxcE - cLo5) * binvE
+              rowSlope5 = Color((bumxcE.r - cLo5.r) * binvE, (bumxcE.g - cLo5.g) * binvE, (bumxcE.b - cLo5.b) * binvE, (bumxcE.a - cLo5.a) * binvE)
               zLo5 = bumnzE
               zSlope5 = (bumxzE - zLo5) * binvE
               cLo5 = Color(cLo5.r * bf, cLo5.g * bf, cLo5.b * bf, cLo5.a)
@@ -15146,11 +15274,11 @@ mod paintTick() {
               pcol6 = 200.0
               pcurR6 = 100.0
             } else {
-              pcol6 = if bumnF < 0.0 then 0.0 else (bumnF | 0)
-              pcurR6 = if bumxF >= SWF then SWF - 1.0 else (bumxF | 0)
+              pcol6 = if bumnF < 0.0 then 0.0 else (bumnF as int)
+              pcurR6 = if bumxF >= SWF then SWF - 1.0 else (bumxF as int)
               xL6 = bumnF
               if !erasing {
-                let craF = (prow + 5.0 | 0)
+                let craF = (prow + 5.0 as int)
                 if pcurR6 >= pcol6 && pcol6 <= 63.0 {
                   if covMin[craF] > 199.0 {
                     covMin[craF] = pcol6
@@ -15166,7 +15294,7 @@ mod paintTick() {
               cLo6 = bumncF
               let bspanF = bumxF - bumnF
               let binvF = if bspanF > 0.0 then 1.0 / bspanF else 0.0
-              rowSlope6 = (bumxcF - cLo6) * binvF
+              rowSlope6 = Color((bumxcF.r - cLo6.r) * binvF, (bumxcF.g - cLo6.g) * binvF, (bumxcF.b - cLo6.b) * binvF, (bumxcF.a - cLo6.a) * binvF)
               zLo6 = bumnzF
               zSlope6 = (bumxzF - zLo6) * binvF
               cLo6 = Color(cLo6.r * bf, cLo6.g * bf, cLo6.b * bf, cLo6.a)
@@ -15239,11 +15367,11 @@ mod paintTick() {
               pcol7 = 200.0
               pcurR7 = 100.0
             } else {
-              pcol7 = if bumnG < 0.0 then 0.0 else (bumnG | 0)
-              pcurR7 = if bumxG >= SWF then SWF - 1.0 else (bumxG | 0)
+              pcol7 = if bumnG < 0.0 then 0.0 else (bumnG as int)
+              pcurR7 = if bumxG >= SWF then SWF - 1.0 else (bumxG as int)
               xL7 = bumnG
               if !erasing {
-                let craG = (prow + 6.0 | 0)
+                let craG = (prow + 6.0 as int)
                 if pcurR7 >= pcol7 && pcol7 <= 63.0 {
                   if covMin[craG] > 199.0 {
                     covMin[craG] = pcol7
@@ -15259,7 +15387,7 @@ mod paintTick() {
               cLo7 = bumncG
               let bspanG = bumxG - bumnG
               let binvG = if bspanG > 0.0 then 1.0 / bspanG else 0.0
-              rowSlope7 = (bumxcG - cLo7) * binvG
+              rowSlope7 = Color((bumxcG.r - cLo7.r) * binvG, (bumxcG.g - cLo7.g) * binvG, (bumxcG.b - cLo7.b) * binvG, (bumxcG.a - cLo7.a) * binvG)
               zLo7 = bumnzG
               zSlope7 = (bumxzG - zLo7) * binvG
               cLo7 = Color(cLo7.r * bf, cLo7.g * bf, cLo7.b * bf, cLo7.a)
@@ -15332,11 +15460,11 @@ mod paintTick() {
               pcol8 = 200.0
               pcurR8 = 100.0
             } else {
-              pcol8 = if bumnH < 0.0 then 0.0 else (bumnH | 0)
-              pcurR8 = if bumxH >= SWF then SWF - 1.0 else (bumxH | 0)
+              pcol8 = if bumnH < 0.0 then 0.0 else (bumnH as int)
+              pcurR8 = if bumxH >= SWF then SWF - 1.0 else (bumxH as int)
               xL8 = bumnH
               if !erasing {
-                let craH = (prow + 7.0 | 0)
+                let craH = (prow + 7.0 as int)
                 if pcurR8 >= pcol8 && pcol8 <= 63.0 {
                   if covMin[craH] > 199.0 {
                     covMin[craH] = pcol8
@@ -15352,7 +15480,7 @@ mod paintTick() {
               cLo8 = bumncH
               let bspanH = bumxH - bumnH
               let binvH = if bspanH > 0.0 then 1.0 / bspanH else 0.0
-              rowSlope8 = (bumxcH - cLo8) * binvH
+              rowSlope8 = Color((bumxcH.r - cLo8.r) * binvH, (bumxcH.g - cLo8.g) * binvH, (bumxcH.b - cLo8.b) * binvH, (bumxcH.a - cLo8.a) * binvH)
               zLo8 = bumnzH
               zSlope8 = (bumxzH - zLo8) * binvH
               cLo8 = Color(cLo8.r * bf, cLo8.g * bf, cLo8.b * bf, cLo8.a)
@@ -15424,11 +15552,11 @@ mod paintTick() {
             pcol = 200.0
             pcurR = 100.0
           } else {
-            pcol = if umn < 0.0 then 0.0 else (umn | 0)
-            pcurR = if umx >= SWF then SWF - 1.0 else (umx | 0)
+            pcol = if umn < 0.0 then 0.0 else (umn as int)
+            pcurR = if umx >= SWF then SWF - 1.0 else (umx as int)
             xL = umn
             if !erasing {
-              let cra = (aRow | 0)
+              let cra = (aRow as int)
               if pcurR >= pcol && pcol <= 63.0 {
                 if covMin[cra] > 199.0 {
                   covMin[cra] = pcol
@@ -15444,7 +15572,7 @@ mod paintTick() {
             cLo = umnc
             let span = umx - umn
             let inv = if span > 0.0 then 1.0 / span else 0.0
-            rowSlope = (umxc - cLo) * inv
+            rowSlope = Color((umxc.r - cLo.r) * inv, (umxc.g - cLo.g) * inv, (umxc.b - cLo.b) * inv, (umxc.a - cLo.a) * inv)
             zLo = umnz
             zSlope = (umxz - zLo) * inv
             cLo = Color(cLo.r * bf, cLo.g * bf, cLo.b * bf, cLo.a)
@@ -15469,7 +15597,7 @@ mod paintTick() {
   // shape, which never had that hazard.
   if polyOn || sOn {
     if eraseOK && !noDepth {
-      let brA = (aRow | 0)
+      let brA = (aRow as int)
       if brA >= 0.0 && brA <= 63.0 {
         let okaA = oldMin[brA]
         let okbA = oldMax[brA]
@@ -15478,8 +15606,8 @@ mod paintTick() {
         for _bx in 0..64 {
           let okx = (_bx as float)
           if okx >= okaA && okx <= okbA && (okx < nkaA || okx > nkbA) {
-            fb[((brA * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-            fbZ[((brA * SWF + okx) | 0)] = ZBACK
+            fb[((brA * SWF + okx) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+            fbZ[((brA * SWF + okx) as int)] = ZBACK
           }
         }
         oldMin[brA] = 200.0
@@ -15489,11 +15617,11 @@ mod paintTick() {
       for _lane in 0..64 {
         let tj = pcol + (_lane as float)
         if tj <= pcurR {
-          let ridx = (((aRow) * SWF + tj) | 0)
+          let ridx = (((aRow) * SWF + tj) as int)
           let dt = tj - xL
           let pdz = zLo + zSlope * dt
           if noDepth || pdz >= fbZ[ridx] {
-            let src = cLo + rowSlope * dt
+            let src = Color(cLo.r + rowSlope.r * dt, cLo.g + rowSlope.g * dt, cLo.b + rowSlope.b * dt, cLo.a + rowSlope.a * dt)
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
             } else if repaint < 0.5 {
@@ -15507,7 +15635,7 @@ mod paintTick() {
       }
       pcol = pcol + 64.0
     if eraseOK && !noDepth {
-      let brB = (prow + 1.0 | 0)
+      let brB = (prow + 1.0 as int)
       if brB >= 0.0 && brB <= 63.0 {
         let okaB = oldMin[brB]
         let okbB = oldMax[brB]
@@ -15516,8 +15644,8 @@ mod paintTick() {
         for _bx in 0..64 {
           let okx = (_bx as float)
           if okx >= okaB && okx <= okbB && (okx < nkaB || okx > nkbB) {
-            fb[((brB * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-            fbZ[((brB * SWF + okx) | 0)] = ZBACK
+            fb[((brB * SWF + okx) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+            fbZ[((brB * SWF + okx) as int)] = ZBACK
           }
         }
         oldMin[brB] = 200.0
@@ -15527,11 +15655,11 @@ mod paintTick() {
       for _lane in 0..64 {
         let tj = pcol2 + (_lane as float)
         if tj <= pcurR2 {
-          let ridx = (((prow + 1.0) * SWF + tj) | 0)
+          let ridx = (((prow + 1.0) * SWF + tj) as int)
           let dt = tj - xL2
           let pdz = zLo2 + zSlope2 * dt
           if noDepth || pdz >= fbZ[ridx] {
-            let src = cLo2 + rowSlope2 * dt
+            let src = Color(cLo2.r + rowSlope2.r * dt, cLo2.g + rowSlope2.g * dt, cLo2.b + rowSlope2.b * dt, cLo2.a + rowSlope2.a * dt)
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
             } else if repaint < 0.5 {
@@ -15545,7 +15673,7 @@ mod paintTick() {
       }
       pcol2 = pcol2 + 64.0
     if eraseOK && !noDepth {
-      let brC = (prow + 2.0 | 0)
+      let brC = (prow + 2.0 as int)
       if brC >= 0.0 && brC <= 63.0 {
         let okaC = oldMin[brC]
         let okbC = oldMax[brC]
@@ -15554,8 +15682,8 @@ mod paintTick() {
         for _bx in 0..64 {
           let okx = (_bx as float)
           if okx >= okaC && okx <= okbC && (okx < nkaC || okx > nkbC) {
-            fb[((brC * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-            fbZ[((brC * SWF + okx) | 0)] = ZBACK
+            fb[((brC * SWF + okx) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+            fbZ[((brC * SWF + okx) as int)] = ZBACK
           }
         }
         oldMin[brC] = 200.0
@@ -15565,11 +15693,11 @@ mod paintTick() {
       for _lane in 0..64 {
         let tj = pcol3 + (_lane as float)
         if tj <= pcurR3 {
-          let ridx = (((prow + 2.0) * SWF + tj) | 0)
+          let ridx = (((prow + 2.0) * SWF + tj) as int)
           let dt = tj - xL3
           let pdz = zLo3 + zSlope3 * dt
           if noDepth || pdz >= fbZ[ridx] {
-            let src = cLo3 + rowSlope3 * dt
+            let src = Color(cLo3.r + rowSlope3.r * dt, cLo3.g + rowSlope3.g * dt, cLo3.b + rowSlope3.b * dt, cLo3.a + rowSlope3.a * dt)
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
             } else if repaint < 0.5 {
@@ -15583,7 +15711,7 @@ mod paintTick() {
       }
       pcol3 = pcol3 + 64.0
     if eraseOK && !noDepth {
-      let brD = (prow + 3.0 | 0)
+      let brD = (prow + 3.0 as int)
       if brD >= 0.0 && brD <= 63.0 {
         let okaD = oldMin[brD]
         let okbD = oldMax[brD]
@@ -15592,8 +15720,8 @@ mod paintTick() {
         for _bx in 0..64 {
           let okx = (_bx as float)
           if okx >= okaD && okx <= okbD && (okx < nkaD || okx > nkbD) {
-            fb[((brD * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-            fbZ[((brD * SWF + okx) | 0)] = ZBACK
+            fb[((brD * SWF + okx) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+            fbZ[((brD * SWF + okx) as int)] = ZBACK
           }
         }
         oldMin[brD] = 200.0
@@ -15603,11 +15731,11 @@ mod paintTick() {
       for _lane in 0..64 {
         let tj = pcol4 + (_lane as float)
         if tj <= pcurR4 {
-          let ridx = (((prow + 3.0) * SWF + tj) | 0)
+          let ridx = (((prow + 3.0) * SWF + tj) as int)
           let dt = tj - xL4
           let pdz = zLo4 + zSlope4 * dt
           if noDepth || pdz >= fbZ[ridx] {
-            let src = cLo4 + rowSlope4 * dt
+            let src = Color(cLo4.r + rowSlope4.r * dt, cLo4.g + rowSlope4.g * dt, cLo4.b + rowSlope4.b * dt, cLo4.a + rowSlope4.a * dt)
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
             } else if repaint < 0.5 {
@@ -15621,7 +15749,7 @@ mod paintTick() {
       }
       pcol4 = pcol4 + 64.0
     if eraseOK && !noDepth {
-      let brE = (prow + 4.0 | 0)
+      let brE = (prow + 4.0 as int)
       if brE >= 0.0 && brE <= 63.0 {
         let okaE = oldMin[brE]
         let okbE = oldMax[brE]
@@ -15630,8 +15758,8 @@ mod paintTick() {
         for _bx in 0..64 {
           let okx = (_bx as float)
           if okx >= okaE && okx <= okbE && (okx < nkaE || okx > nkbE) {
-            fb[((brE * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-            fbZ[((brE * SWF + okx) | 0)] = ZBACK
+            fb[((brE * SWF + okx) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+            fbZ[((brE * SWF + okx) as int)] = ZBACK
           }
         }
         oldMin[brE] = 200.0
@@ -15641,11 +15769,11 @@ mod paintTick() {
       for _lane in 0..64 {
         let tj = pcol5 + (_lane as float)
         if tj <= pcurR5 {
-          let ridx = (((prow + 4.0) * SWF + tj) | 0)
+          let ridx = (((prow + 4.0) * SWF + tj) as int)
           let dt = tj - xL5
           let pdz = zLo5 + zSlope5 * dt
           if noDepth || pdz >= fbZ[ridx] {
-            let src = cLo5 + rowSlope5 * dt
+            let src = Color(cLo5.r + rowSlope5.r * dt, cLo5.g + rowSlope5.g * dt, cLo5.b + rowSlope5.b * dt, cLo5.a + rowSlope5.a * dt)
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
             } else if repaint < 0.5 {
@@ -15659,7 +15787,7 @@ mod paintTick() {
       }
       pcol5 = pcol5 + 64.0
     if eraseOK && !noDepth {
-      let brF = (prow + 5.0 | 0)
+      let brF = (prow + 5.0 as int)
       if brF >= 0.0 && brF <= 63.0 {
         let okaF = oldMin[brF]
         let okbF = oldMax[brF]
@@ -15668,8 +15796,8 @@ mod paintTick() {
         for _bx in 0..64 {
           let okx = (_bx as float)
           if okx >= okaF && okx <= okbF && (okx < nkaF || okx > nkbF) {
-            fb[((brF * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-            fbZ[((brF * SWF + okx) | 0)] = ZBACK
+            fb[((brF * SWF + okx) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+            fbZ[((brF * SWF + okx) as int)] = ZBACK
           }
         }
         oldMin[brF] = 200.0
@@ -15679,11 +15807,11 @@ mod paintTick() {
       for _lane in 0..64 {
         let tj = pcol6 + (_lane as float)
         if tj <= pcurR6 {
-          let ridx = (((prow + 5.0) * SWF + tj) | 0)
+          let ridx = (((prow + 5.0) * SWF + tj) as int)
           let dt = tj - xL6
           let pdz = zLo6 + zSlope6 * dt
           if noDepth || pdz >= fbZ[ridx] {
-            let src = cLo6 + rowSlope6 * dt
+            let src = Color(cLo6.r + rowSlope6.r * dt, cLo6.g + rowSlope6.g * dt, cLo6.b + rowSlope6.b * dt, cLo6.a + rowSlope6.a * dt)
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
             } else if repaint < 0.5 {
@@ -15697,7 +15825,7 @@ mod paintTick() {
       }
       pcol6 = pcol6 + 64.0
     if eraseOK && !noDepth {
-      let brG = (prow + 6.0 | 0)
+      let brG = (prow + 6.0 as int)
       if brG >= 0.0 && brG <= 63.0 {
         let okaG = oldMin[brG]
         let okbG = oldMax[brG]
@@ -15706,8 +15834,8 @@ mod paintTick() {
         for _bx in 0..64 {
           let okx = (_bx as float)
           if okx >= okaG && okx <= okbG && (okx < nkaG || okx > nkbG) {
-            fb[((brG * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-            fbZ[((brG * SWF + okx) | 0)] = ZBACK
+            fb[((brG * SWF + okx) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+            fbZ[((brG * SWF + okx) as int)] = ZBACK
           }
         }
         oldMin[brG] = 200.0
@@ -15717,11 +15845,11 @@ mod paintTick() {
       for _lane in 0..64 {
         let tj = pcol7 + (_lane as float)
         if tj <= pcurR7 {
-          let ridx = (((prow + 6.0) * SWF + tj) | 0)
+          let ridx = (((prow + 6.0) * SWF + tj) as int)
           let dt = tj - xL7
           let pdz = zLo7 + zSlope7 * dt
           if noDepth || pdz >= fbZ[ridx] {
-            let src = cLo7 + rowSlope7 * dt
+            let src = Color(cLo7.r + rowSlope7.r * dt, cLo7.g + rowSlope7.g * dt, cLo7.b + rowSlope7.b * dt, cLo7.a + rowSlope7.a * dt)
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
             } else if repaint < 0.5 {
@@ -15735,7 +15863,7 @@ mod paintTick() {
       }
       pcol7 = pcol7 + 64.0
     if eraseOK && !noDepth {
-      let brH = (prow + 7.0 | 0)
+      let brH = (prow + 7.0 as int)
       if brH >= 0.0 && brH <= 63.0 {
         let okaH = oldMin[brH]
         let okbH = oldMax[brH]
@@ -15744,8 +15872,8 @@ mod paintTick() {
         for _bx in 0..64 {
           let okx = (_bx as float)
           if okx >= okaH && okx <= okbH && (okx < nkaH || okx > nkbH) {
-            fb[((brH * SWF + okx) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-            fbZ[((brH * SWF + okx) | 0)] = ZBACK
+            fb[((brH * SWF + okx) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+            fbZ[((brH * SWF + okx) as int)] = ZBACK
           }
         }
         oldMin[brH] = 200.0
@@ -15755,11 +15883,11 @@ mod paintTick() {
       for _lane in 0..64 {
         let tj = pcol8 + (_lane as float)
         if tj <= pcurR8 {
-          let ridx = (((prow + 7.0) * SWF + tj) | 0)
+          let ridx = (((prow + 7.0) * SWF + tj) as int)
           let dt = tj - xL8
           let pdz = zLo8 + zSlope8 * dt
           if noDepth || pdz >= fbZ[ridx] {
-            let src = cLo8 + rowSlope8 * dt
+            let src = Color(cLo8.r + rowSlope8.r * dt, cLo8.g + rowSlope8.g * dt, cLo8.b + rowSlope8.b * dt, cLo8.a + rowSlope8.a * dt)
             if noDepth || src.a >= 1.0 {
               fb[ridx] = src
             } else if repaint < 0.5 {
@@ -15788,7 +15916,7 @@ mod paintTick() {
     let erHi = if oldHi > covHi then oldHi else covHi
     let erLo = if oldLo < covLo then oldLo else covLo
     if erRow <= erHi && erRow <= 63.0 {
-      let eri = (erRow | 0)
+      let eri = (erRow as int)
       let erfl = erRow
       let om = oldMin[eri]
       let oM = oldMax[eri]
@@ -15802,266 +15930,266 @@ mod paintTick() {
         let eR2 = oM
         let eOn2 = if oM > nM then 1.0 else 0.0
         if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
-          fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 0.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 0.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 0.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
-          fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 1.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 1.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 1.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
-          fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 2.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 2.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 2.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
-          fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 3.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 3.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 3.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
-          fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 4.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 4.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 4.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
-          fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 5.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 5.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 5.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
-          fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 6.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 6.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 6.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
-          fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 7.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 7.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 7.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
-          fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 8.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 8.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 8.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
-          fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 9.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 9.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 9.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
-          fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 10.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 10.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 10.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
-          fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 11.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 11.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 11.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
-          fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 12.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 12.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 12.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
-          fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 13.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 13.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 13.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
-          fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 14.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 14.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 14.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
-          fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 15.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 15.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 15.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
-          fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 16.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 16.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 16.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
-          fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 17.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 17.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 17.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
-          fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 18.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 18.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 18.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
-          fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 19.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 19.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 19.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
-          fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 20.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 20.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 20.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
-          fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 21.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 21.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 21.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
-          fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 22.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 22.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 22.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
-          fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 23.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 23.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 23.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
-          fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 24.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 24.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 24.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
-          fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 25.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 25.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 25.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
-          fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 26.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 26.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 26.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
-          fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 27.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 27.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 27.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
-          fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 28.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 28.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 28.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
-          fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 29.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 29.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 29.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
-          fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 30.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 30.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 30.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
-          fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 31.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 31.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 31.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
-          fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 32.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 32.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 32.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
-          fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 33.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 33.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 33.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
-          fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 34.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 34.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 34.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
-          fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 35.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 35.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 35.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
-          fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 36.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 36.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 36.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
-          fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 37.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 37.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 37.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
-          fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 38.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 38.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 38.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
-          fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 39.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 39.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 39.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
-          fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 40.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 40.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 40.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
-          fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 41.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 41.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 41.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
-          fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 42.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 42.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 42.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
-          fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 43.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 43.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 43.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
-          fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 44.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 44.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 44.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
-          fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 45.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 45.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 45.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
-          fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 46.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 46.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 46.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
-          fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 47.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 47.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 47.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
-          fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 48.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 48.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 48.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
-          fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 49.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 49.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 49.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
-          fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 50.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 50.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 50.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
-          fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 51.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 51.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 51.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
-          fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 52.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 52.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 52.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
-          fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 53.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 53.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 53.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
-          fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 54.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 54.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 54.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
-          fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 55.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 55.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 55.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
-          fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 56.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 56.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 56.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
-          fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 57.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 57.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 57.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
-          fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 58.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 58.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 58.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
-          fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 59.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 59.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 59.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
-          fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 60.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 60.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 60.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
-          fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 61.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 61.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 61.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
-          fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 62.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 62.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 62.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
-          fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 63.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 63.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 63.0) as int)] = ZBACK
         }
       }
       erRow = erRow + 1.0
     }
     if erRow <= erHi && erRow <= 63.0 {
-      let eri = (erRow | 0)
+      let eri = (erRow as int)
       let erfl = erRow
       let om = oldMin[eri]
       let oM = oldMax[eri]
@@ -16075,266 +16203,266 @@ mod paintTick() {
         let eR2 = oM
         let eOn2 = if oM > nM then 1.0 else 0.0
         if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
-          fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 0.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 0.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 0.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
-          fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 1.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 1.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 1.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
-          fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 2.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 2.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 2.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
-          fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 3.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 3.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 3.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
-          fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 4.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 4.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 4.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
-          fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 5.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 5.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 5.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
-          fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 6.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 6.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 6.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
-          fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 7.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 7.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 7.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
-          fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 8.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 8.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 8.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
-          fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 9.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 9.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 9.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
-          fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 10.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 10.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 10.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
-          fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 11.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 11.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 11.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
-          fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 12.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 12.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 12.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
-          fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 13.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 13.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 13.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
-          fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 14.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 14.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 14.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
-          fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 15.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 15.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 15.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
-          fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 16.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 16.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 16.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
-          fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 17.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 17.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 17.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
-          fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 18.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 18.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 18.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
-          fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 19.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 19.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 19.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
-          fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 20.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 20.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 20.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
-          fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 21.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 21.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 21.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
-          fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 22.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 22.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 22.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
-          fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 23.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 23.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 23.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
-          fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 24.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 24.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 24.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
-          fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 25.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 25.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 25.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
-          fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 26.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 26.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 26.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
-          fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 27.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 27.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 27.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
-          fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 28.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 28.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 28.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
-          fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 29.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 29.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 29.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
-          fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 30.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 30.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 30.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
-          fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 31.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 31.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 31.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
-          fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 32.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 32.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 32.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
-          fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 33.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 33.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 33.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
-          fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 34.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 34.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 34.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
-          fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 35.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 35.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 35.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
-          fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 36.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 36.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 36.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
-          fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 37.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 37.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 37.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
-          fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 38.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 38.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 38.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
-          fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 39.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 39.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 39.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
-          fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 40.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 40.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 40.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
-          fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 41.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 41.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 41.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
-          fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 42.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 42.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 42.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
-          fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 43.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 43.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 43.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
-          fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 44.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 44.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 44.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
-          fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 45.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 45.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 45.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
-          fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 46.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 46.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 46.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
-          fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 47.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 47.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 47.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
-          fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 48.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 48.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 48.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
-          fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 49.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 49.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 49.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
-          fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 50.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 50.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 50.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
-          fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 51.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 51.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 51.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
-          fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 52.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 52.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 52.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
-          fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 53.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 53.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 53.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
-          fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 54.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 54.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 54.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
-          fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 55.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 55.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 55.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
-          fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 56.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 56.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 56.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
-          fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 57.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 57.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 57.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
-          fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 58.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 58.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 58.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
-          fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 59.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 59.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 59.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
-          fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 60.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 60.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 60.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
-          fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 61.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 61.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 61.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
-          fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 62.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 62.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 62.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
-          fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 63.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 63.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 63.0) as int)] = ZBACK
         }
       }
       erRow = erRow + 1.0
     }
     if erRow <= erHi && erRow <= 63.0 {
-      let eri = (erRow | 0)
+      let eri = (erRow as int)
       let erfl = erRow
       let om = oldMin[eri]
       let oM = oldMax[eri]
@@ -16348,266 +16476,266 @@ mod paintTick() {
         let eR2 = oM
         let eOn2 = if oM > nM then 1.0 else 0.0
         if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
-          fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 0.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 0.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 0.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
-          fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 1.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 1.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 1.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
-          fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 2.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 2.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 2.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
-          fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 3.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 3.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 3.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
-          fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 4.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 4.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 4.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
-          fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 5.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 5.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 5.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
-          fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 6.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 6.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 6.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
-          fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 7.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 7.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 7.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
-          fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 8.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 8.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 8.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
-          fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 9.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 9.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 9.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
-          fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 10.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 10.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 10.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
-          fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 11.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 11.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 11.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
-          fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 12.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 12.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 12.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
-          fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 13.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 13.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 13.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
-          fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 14.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 14.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 14.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
-          fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 15.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 15.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 15.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
-          fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 16.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 16.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 16.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
-          fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 17.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 17.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 17.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
-          fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 18.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 18.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 18.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
-          fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 19.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 19.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 19.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
-          fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 20.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 20.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 20.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
-          fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 21.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 21.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 21.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
-          fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 22.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 22.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 22.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
-          fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 23.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 23.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 23.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
-          fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 24.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 24.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 24.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
-          fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 25.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 25.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 25.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
-          fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 26.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 26.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 26.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
-          fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 27.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 27.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 27.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
-          fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 28.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 28.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 28.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
-          fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 29.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 29.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 29.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
-          fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 30.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 30.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 30.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
-          fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 31.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 31.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 31.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
-          fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 32.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 32.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 32.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
-          fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 33.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 33.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 33.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
-          fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 34.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 34.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 34.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
-          fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 35.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 35.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 35.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
-          fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 36.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 36.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 36.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
-          fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 37.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 37.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 37.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
-          fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 38.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 38.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 38.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
-          fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 39.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 39.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 39.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
-          fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 40.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 40.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 40.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
-          fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 41.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 41.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 41.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
-          fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 42.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 42.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 42.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
-          fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 43.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 43.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 43.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
-          fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 44.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 44.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 44.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
-          fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 45.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 45.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 45.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
-          fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 46.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 46.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 46.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
-          fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 47.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 47.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 47.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
-          fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 48.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 48.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 48.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
-          fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 49.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 49.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 49.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
-          fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 50.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 50.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 50.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
-          fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 51.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 51.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 51.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
-          fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 52.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 52.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 52.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
-          fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 53.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 53.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 53.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
-          fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 54.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 54.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 54.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
-          fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 55.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 55.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 55.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
-          fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 56.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 56.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 56.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
-          fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 57.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 57.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 57.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
-          fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 58.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 58.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 58.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
-          fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 59.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 59.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 59.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
-          fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 60.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 60.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 60.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
-          fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 61.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 61.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 61.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
-          fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 62.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 62.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 62.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
-          fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 63.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 63.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 63.0) as int)] = ZBACK
         }
       }
       erRow = erRow + 1.0
     }
     if erRow <= erHi && erRow <= 63.0 {
-      let eri = (erRow | 0)
+      let eri = (erRow as int)
       let erfl = erRow
       let om = oldMin[eri]
       let oM = oldMax[eri]
@@ -16621,260 +16749,260 @@ mod paintTick() {
         let eR2 = oM
         let eOn2 = if oM > nM then 1.0 else 0.0
         if (eOn1 > 0.5 && 0.0 >= eL1 && 0.0 <= eR1) || (eOn2 > 0.5 && 0.0 >= eL2 && 0.0 <= eR2) {
-          fb[((erfl * 64.0 + 0.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 0.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 0.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 0.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 1.0 >= eL1 && 1.0 <= eR1) || (eOn2 > 0.5 && 1.0 >= eL2 && 1.0 <= eR2) {
-          fb[((erfl * 64.0 + 1.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 1.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 1.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 1.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 2.0 >= eL1 && 2.0 <= eR1) || (eOn2 > 0.5 && 2.0 >= eL2 && 2.0 <= eR2) {
-          fb[((erfl * 64.0 + 2.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 2.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 2.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 2.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 3.0 >= eL1 && 3.0 <= eR1) || (eOn2 > 0.5 && 3.0 >= eL2 && 3.0 <= eR2) {
-          fb[((erfl * 64.0 + 3.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 3.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 3.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 3.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 4.0 >= eL1 && 4.0 <= eR1) || (eOn2 > 0.5 && 4.0 >= eL2 && 4.0 <= eR2) {
-          fb[((erfl * 64.0 + 4.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 4.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 4.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 4.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 5.0 >= eL1 && 5.0 <= eR1) || (eOn2 > 0.5 && 5.0 >= eL2 && 5.0 <= eR2) {
-          fb[((erfl * 64.0 + 5.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 5.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 5.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 5.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 6.0 >= eL1 && 6.0 <= eR1) || (eOn2 > 0.5 && 6.0 >= eL2 && 6.0 <= eR2) {
-          fb[((erfl * 64.0 + 6.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 6.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 6.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 6.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 7.0 >= eL1 && 7.0 <= eR1) || (eOn2 > 0.5 && 7.0 >= eL2 && 7.0 <= eR2) {
-          fb[((erfl * 64.0 + 7.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 7.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 7.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 7.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 8.0 >= eL1 && 8.0 <= eR1) || (eOn2 > 0.5 && 8.0 >= eL2 && 8.0 <= eR2) {
-          fb[((erfl * 64.0 + 8.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 8.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 8.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 8.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 9.0 >= eL1 && 9.0 <= eR1) || (eOn2 > 0.5 && 9.0 >= eL2 && 9.0 <= eR2) {
-          fb[((erfl * 64.0 + 9.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 9.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 9.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 9.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 10.0 >= eL1 && 10.0 <= eR1) || (eOn2 > 0.5 && 10.0 >= eL2 && 10.0 <= eR2) {
-          fb[((erfl * 64.0 + 10.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 10.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 10.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 10.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 11.0 >= eL1 && 11.0 <= eR1) || (eOn2 > 0.5 && 11.0 >= eL2 && 11.0 <= eR2) {
-          fb[((erfl * 64.0 + 11.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 11.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 11.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 11.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 12.0 >= eL1 && 12.0 <= eR1) || (eOn2 > 0.5 && 12.0 >= eL2 && 12.0 <= eR2) {
-          fb[((erfl * 64.0 + 12.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 12.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 12.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 12.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 13.0 >= eL1 && 13.0 <= eR1) || (eOn2 > 0.5 && 13.0 >= eL2 && 13.0 <= eR2) {
-          fb[((erfl * 64.0 + 13.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 13.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 13.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 13.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 14.0 >= eL1 && 14.0 <= eR1) || (eOn2 > 0.5 && 14.0 >= eL2 && 14.0 <= eR2) {
-          fb[((erfl * 64.0 + 14.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 14.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 14.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 14.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 15.0 >= eL1 && 15.0 <= eR1) || (eOn2 > 0.5 && 15.0 >= eL2 && 15.0 <= eR2) {
-          fb[((erfl * 64.0 + 15.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 15.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 15.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 15.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 16.0 >= eL1 && 16.0 <= eR1) || (eOn2 > 0.5 && 16.0 >= eL2 && 16.0 <= eR2) {
-          fb[((erfl * 64.0 + 16.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 16.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 16.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 16.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 17.0 >= eL1 && 17.0 <= eR1) || (eOn2 > 0.5 && 17.0 >= eL2 && 17.0 <= eR2) {
-          fb[((erfl * 64.0 + 17.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 17.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 17.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 17.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 18.0 >= eL1 && 18.0 <= eR1) || (eOn2 > 0.5 && 18.0 >= eL2 && 18.0 <= eR2) {
-          fb[((erfl * 64.0 + 18.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 18.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 18.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 18.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 19.0 >= eL1 && 19.0 <= eR1) || (eOn2 > 0.5 && 19.0 >= eL2 && 19.0 <= eR2) {
-          fb[((erfl * 64.0 + 19.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 19.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 19.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 19.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 20.0 >= eL1 && 20.0 <= eR1) || (eOn2 > 0.5 && 20.0 >= eL2 && 20.0 <= eR2) {
-          fb[((erfl * 64.0 + 20.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 20.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 20.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 20.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 21.0 >= eL1 && 21.0 <= eR1) || (eOn2 > 0.5 && 21.0 >= eL2 && 21.0 <= eR2) {
-          fb[((erfl * 64.0 + 21.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 21.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 21.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 21.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 22.0 >= eL1 && 22.0 <= eR1) || (eOn2 > 0.5 && 22.0 >= eL2 && 22.0 <= eR2) {
-          fb[((erfl * 64.0 + 22.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 22.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 22.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 22.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 23.0 >= eL1 && 23.0 <= eR1) || (eOn2 > 0.5 && 23.0 >= eL2 && 23.0 <= eR2) {
-          fb[((erfl * 64.0 + 23.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 23.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 23.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 23.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 24.0 >= eL1 && 24.0 <= eR1) || (eOn2 > 0.5 && 24.0 >= eL2 && 24.0 <= eR2) {
-          fb[((erfl * 64.0 + 24.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 24.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 24.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 24.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 25.0 >= eL1 && 25.0 <= eR1) || (eOn2 > 0.5 && 25.0 >= eL2 && 25.0 <= eR2) {
-          fb[((erfl * 64.0 + 25.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 25.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 25.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 25.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 26.0 >= eL1 && 26.0 <= eR1) || (eOn2 > 0.5 && 26.0 >= eL2 && 26.0 <= eR2) {
-          fb[((erfl * 64.0 + 26.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 26.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 26.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 26.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 27.0 >= eL1 && 27.0 <= eR1) || (eOn2 > 0.5 && 27.0 >= eL2 && 27.0 <= eR2) {
-          fb[((erfl * 64.0 + 27.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 27.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 27.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 27.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 28.0 >= eL1 && 28.0 <= eR1) || (eOn2 > 0.5 && 28.0 >= eL2 && 28.0 <= eR2) {
-          fb[((erfl * 64.0 + 28.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 28.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 28.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 28.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 29.0 >= eL1 && 29.0 <= eR1) || (eOn2 > 0.5 && 29.0 >= eL2 && 29.0 <= eR2) {
-          fb[((erfl * 64.0 + 29.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 29.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 29.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 29.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 30.0 >= eL1 && 30.0 <= eR1) || (eOn2 > 0.5 && 30.0 >= eL2 && 30.0 <= eR2) {
-          fb[((erfl * 64.0 + 30.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 30.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 30.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 30.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 31.0 >= eL1 && 31.0 <= eR1) || (eOn2 > 0.5 && 31.0 >= eL2 && 31.0 <= eR2) {
-          fb[((erfl * 64.0 + 31.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 31.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 31.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 31.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 32.0 >= eL1 && 32.0 <= eR1) || (eOn2 > 0.5 && 32.0 >= eL2 && 32.0 <= eR2) {
-          fb[((erfl * 64.0 + 32.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 32.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 32.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 32.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 33.0 >= eL1 && 33.0 <= eR1) || (eOn2 > 0.5 && 33.0 >= eL2 && 33.0 <= eR2) {
-          fb[((erfl * 64.0 + 33.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 33.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 33.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 33.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 34.0 >= eL1 && 34.0 <= eR1) || (eOn2 > 0.5 && 34.0 >= eL2 && 34.0 <= eR2) {
-          fb[((erfl * 64.0 + 34.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 34.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 34.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 34.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 35.0 >= eL1 && 35.0 <= eR1) || (eOn2 > 0.5 && 35.0 >= eL2 && 35.0 <= eR2) {
-          fb[((erfl * 64.0 + 35.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 35.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 35.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 35.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 36.0 >= eL1 && 36.0 <= eR1) || (eOn2 > 0.5 && 36.0 >= eL2 && 36.0 <= eR2) {
-          fb[((erfl * 64.0 + 36.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 36.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 36.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 36.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 37.0 >= eL1 && 37.0 <= eR1) || (eOn2 > 0.5 && 37.0 >= eL2 && 37.0 <= eR2) {
-          fb[((erfl * 64.0 + 37.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 37.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 37.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 37.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 38.0 >= eL1 && 38.0 <= eR1) || (eOn2 > 0.5 && 38.0 >= eL2 && 38.0 <= eR2) {
-          fb[((erfl * 64.0 + 38.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 38.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 38.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 38.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 39.0 >= eL1 && 39.0 <= eR1) || (eOn2 > 0.5 && 39.0 >= eL2 && 39.0 <= eR2) {
-          fb[((erfl * 64.0 + 39.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 39.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 39.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 39.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 40.0 >= eL1 && 40.0 <= eR1) || (eOn2 > 0.5 && 40.0 >= eL2 && 40.0 <= eR2) {
-          fb[((erfl * 64.0 + 40.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 40.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 40.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 40.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 41.0 >= eL1 && 41.0 <= eR1) || (eOn2 > 0.5 && 41.0 >= eL2 && 41.0 <= eR2) {
-          fb[((erfl * 64.0 + 41.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 41.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 41.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 41.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 42.0 >= eL1 && 42.0 <= eR1) || (eOn2 > 0.5 && 42.0 >= eL2 && 42.0 <= eR2) {
-          fb[((erfl * 64.0 + 42.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 42.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 42.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 42.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 43.0 >= eL1 && 43.0 <= eR1) || (eOn2 > 0.5 && 43.0 >= eL2 && 43.0 <= eR2) {
-          fb[((erfl * 64.0 + 43.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 43.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 43.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 43.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 44.0 >= eL1 && 44.0 <= eR1) || (eOn2 > 0.5 && 44.0 >= eL2 && 44.0 <= eR2) {
-          fb[((erfl * 64.0 + 44.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 44.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 44.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 44.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 45.0 >= eL1 && 45.0 <= eR1) || (eOn2 > 0.5 && 45.0 >= eL2 && 45.0 <= eR2) {
-          fb[((erfl * 64.0 + 45.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 45.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 45.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 45.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 46.0 >= eL1 && 46.0 <= eR1) || (eOn2 > 0.5 && 46.0 >= eL2 && 46.0 <= eR2) {
-          fb[((erfl * 64.0 + 46.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 46.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 46.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 46.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 47.0 >= eL1 && 47.0 <= eR1) || (eOn2 > 0.5 && 47.0 >= eL2 && 47.0 <= eR2) {
-          fb[((erfl * 64.0 + 47.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 47.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 47.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 47.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 48.0 >= eL1 && 48.0 <= eR1) || (eOn2 > 0.5 && 48.0 >= eL2 && 48.0 <= eR2) {
-          fb[((erfl * 64.0 + 48.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 48.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 48.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 48.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 49.0 >= eL1 && 49.0 <= eR1) || (eOn2 > 0.5 && 49.0 >= eL2 && 49.0 <= eR2) {
-          fb[((erfl * 64.0 + 49.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 49.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 49.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 49.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 50.0 >= eL1 && 50.0 <= eR1) || (eOn2 > 0.5 && 50.0 >= eL2 && 50.0 <= eR2) {
-          fb[((erfl * 64.0 + 50.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 50.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 50.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 50.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 51.0 >= eL1 && 51.0 <= eR1) || (eOn2 > 0.5 && 51.0 >= eL2 && 51.0 <= eR2) {
-          fb[((erfl * 64.0 + 51.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 51.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 51.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 51.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 52.0 >= eL1 && 52.0 <= eR1) || (eOn2 > 0.5 && 52.0 >= eL2 && 52.0 <= eR2) {
-          fb[((erfl * 64.0 + 52.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 52.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 52.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 52.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 53.0 >= eL1 && 53.0 <= eR1) || (eOn2 > 0.5 && 53.0 >= eL2 && 53.0 <= eR2) {
-          fb[((erfl * 64.0 + 53.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 53.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 53.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 53.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 54.0 >= eL1 && 54.0 <= eR1) || (eOn2 > 0.5 && 54.0 >= eL2 && 54.0 <= eR2) {
-          fb[((erfl * 64.0 + 54.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 54.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 54.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 54.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 55.0 >= eL1 && 55.0 <= eR1) || (eOn2 > 0.5 && 55.0 >= eL2 && 55.0 <= eR2) {
-          fb[((erfl * 64.0 + 55.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 55.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 55.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 55.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 56.0 >= eL1 && 56.0 <= eR1) || (eOn2 > 0.5 && 56.0 >= eL2 && 56.0 <= eR2) {
-          fb[((erfl * 64.0 + 56.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 56.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 56.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 56.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 57.0 >= eL1 && 57.0 <= eR1) || (eOn2 > 0.5 && 57.0 >= eL2 && 57.0 <= eR2) {
-          fb[((erfl * 64.0 + 57.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 57.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 57.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 57.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 58.0 >= eL1 && 58.0 <= eR1) || (eOn2 > 0.5 && 58.0 >= eL2 && 58.0 <= eR2) {
-          fb[((erfl * 64.0 + 58.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 58.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 58.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 58.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 59.0 >= eL1 && 59.0 <= eR1) || (eOn2 > 0.5 && 59.0 >= eL2 && 59.0 <= eR2) {
-          fb[((erfl * 64.0 + 59.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 59.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 59.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 59.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 60.0 >= eL1 && 60.0 <= eR1) || (eOn2 > 0.5 && 60.0 >= eL2 && 60.0 <= eR2) {
-          fb[((erfl * 64.0 + 60.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 60.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 60.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 60.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 61.0 >= eL1 && 61.0 <= eR1) || (eOn2 > 0.5 && 61.0 >= eL2 && 61.0 <= eR2) {
-          fb[((erfl * 64.0 + 61.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 61.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 61.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 61.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 62.0 >= eL1 && 62.0 <= eR1) || (eOn2 > 0.5 && 62.0 >= eL2 && 62.0 <= eR2) {
-          fb[((erfl * 64.0 + 62.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 62.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 62.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 62.0) as int)] = ZBACK
         }
         if (eOn1 > 0.5 && 63.0 >= eL1 && 63.0 <= eR1) || (eOn2 > 0.5 && 63.0 >= eL2 && 63.0 <= eR2) {
-          fb[((erfl * 64.0 + 63.0) | 0)] = Color(0.0, 0.0, 0.0, 1.0)
-          fbZ[((erfl * 64.0 + 63.0) | 0)] = ZBACK
+          fb[((erfl * 64.0 + 63.0) as int)] = Color(0.0, 0.0, 0.0, 1.0)
+          fbZ[((erfl * 64.0 + 63.0) as int)] = ZBACK
         }
       }
       erRow = erRow + 1.0
