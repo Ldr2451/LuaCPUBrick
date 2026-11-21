@@ -401,6 +401,18 @@
   to fold -- and `:l` as a FIELD would false-positive on `s:len()`.
   `tools/chip/pucsuite.py` derives every member from lua.ws already
   (CHIP_MEMBERS), so the collision check is one command, not a reading.
+- **Do NOT collapse the loader's literal trigger tests into an array loop:
+  measured +262 nodes.** The selectors carry 85 literal `srcUses`, 32
+  `srcUsesField` and 9 `srcNames2` checks — 150 distinct strings once the
+  field/table spellings are expanded. Blanking all of them gives a 499-node
+  CEILING (37,584 -> 37,085), but the real shape (one `Contains` over a
+  `libNames: string[]` in a `for`, a `libHit: float[]`, plus an index read at
+  every arm) compiled to 37,846 — the name literals, pushes, `resize`, loop
+  pins and per-arm reads cost MORE than the inlined `Contains` gates. The
+  `..` concatenations inside `srcUsesField`/`srcNames2` are already folded by
+  the compiler into "materialized constant" nodes, so spelling them out at
+  the call sites saves nothing either. Keep the per-arm test shape; only the
+  prefix folds above are worth having.
 - **A minified library piece fails SILENTLY, so the net has to be structural.**
   A piece that stops parsing is not an error any program can see: every function
   in it stops answering, with no message and no line — and the same is true of a
@@ -674,14 +686,20 @@ is left and why; `tochip.py` converts with the refusals built in;
   (`chipscreen.py --dechip` shape), then measure nodes, gates, TICKS and
   labels before touching the deliverable — a static gate count alone is not
   a verdict.
-- **De-chipping `vmStepFast` alone keeps every program's log but breaks all
-  985 cases' state invariant** with the identical message "no array
-  labelled fFunc": the chip's microchip boundary pin is what carries the
-  label the state probes read, and as a mod that pin goes away. `simdrv` can
-  pair names from the compile's IR text (the `ir` key on `new`, used by the
-  screen drivers), but the chip suite does not pass it — so keep
-  `vmStepFast` a chip, or fix the harness to pass the IR rather than relax
-  the invariant. The chip-suite probe checks are part of the gate, not noise.
+- **All 17 chips are now mods: the state-probe pairing is a harness problem
+  with a general fix, not a reason to keep a chip.** De-chipping `vmStepFast`
+  used to lose the artifact's microchip boundary-pin label for `fFunc`, so
+  all cases failed the same invariant with correct logs. The fix was to pass
+  the SAME compile's IR text (`ensure_ir` in `simdrv_sim.py`, handed to `new`
+  by the chip suite) and make `simdrv` pair names by EMIT ORDER: array names
+  must pair exactly with array gates (a stale IR is refused there), and ROOT
+  scalar names — IR lines indented two spaces — pair with the leading scalar
+  gates; the extra locals from inlined mods and repeated chip bodies stay
+  unnamed. Loaded artifacts carry neither node ids nor source spans, so those
+  routes do not work. With that: 37,584 -> **37,152 nodes** (−432), all twelve
+  benchmarks tick-identical with fewer evals/steps, the full gate 13/13 and
+  fuzz 40/40. Do NOT relax the state invariant to dodge a pairing failure:
+  the refusal is what keeps a stale IR from renaming globals.
 
 ## Closures
 A function value (tag 4) holds a **closure number, not a prototype**. Below

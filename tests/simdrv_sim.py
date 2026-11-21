@@ -14,9 +14,11 @@ global's Value port answers `vread`, and array labels answer with the container'
 length (the only array read the engine's public API can reach; contents
 trips that used to run on the model's own storage are not this sim's to check).
 """
+import hashlib
 import json
 import os
 import subprocess
+import tempfile
 import spec
 
 # The two array OUTPUT ports. The engine keeps a container's elements in its
@@ -666,10 +668,24 @@ def ensure_brz(ws_path):
                 and os.path.getmtime(brz) >= os.path.getmtime(ws_path)):
             return brz
         return compile_ws(ws_path, brz)
-    import tempfile
     fd, brz = tempfile.mkstemp(suffix=".brz")
     os.close(fd)
     return compile_ws(ws_path, brz)
+
+
+def ensure_ir(ws_path, brz):
+    """The SAME compile's IR text for a built artifact, cached in the temp dir
+    by artifact path. simdrv needs it to name internal containers: the save
+    drops those names except on a few remote-read pins, and a chip that stops
+    being read remotely (a mod->chip reversion in the other direction) loses
+    even those. The pairing in simdrv refuses a stale IR, so compile here
+    whenever the source is newer than the cached text."""
+    key = hashlib.sha1(os.path.abspath(brz).encode("utf-8")).hexdigest()[:12]
+    ir = os.path.join(tempfile.gettempdir(), "tinylua-ir-%s.txt" % key)
+    if (not os.path.exists(ir)
+            or os.path.getmtime(ir) < os.path.getmtime(ws_path)):
+        compile_ws(ws_path, brz, emit_ir=ir)
+    return ir
 
 
 # --- the old harness names, for scripts written against the model ------------

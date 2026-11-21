@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(HERE))
 import cases
 import lua_oracle as OR
 from timing import Elapsed
-from simdrv_sim import sim_from_brz, ensure_brz
+from simdrv_sim import sim_from_brz, ensure_brz, ensure_ir
 
 
 def resolve_prog(src, root):
@@ -1125,9 +1125,12 @@ def run_in_sim(sim, p, sim2=None):
 _POOL_SIM = None
 
 
-def _pool_init(brz):
+def _pool_init(ws_path, brz):
     global _POOL_SIM
-    _POOL_SIM = sim_from_brz(brz)
+    # The suite's state checks read chip globals by NAME. With the IR from
+    # this compile, simdrv pairs every root container regardless of how many
+    # chip bodies or inlined mods the artifact carries (see ensure_ir).
+    _POOL_SIM = sim_from_brz(brz, ir=ensure_ir(ws_path, brz))
 
 
 def _pool_case(item):
@@ -1144,7 +1147,8 @@ def worker(ws_path, payload, brz=None):
     sys.path.insert(0, TINYLUA)
     p = json.loads(payload)
     batch = p if isinstance(p, list) else [p]
-    sim = sim_from_brz(brz or ensure_brz(ws_path))
+    brz = brz or ensure_brz(ws_path)
+    sim = sim_from_brz(brz, ir=ensure_ir(ws_path, brz))
     # One graph build for the whole batch: loading the artifact costs more
     # than most cases run for.
     # A lockstep case needs a SECOND, independent chip built from the same
@@ -1152,7 +1156,7 @@ def worker(ws_path, payload, brz=None):
     # so the two machines share nothing.
     sim2 = None
     if any(p.get("mode") == "lockstep" for p in batch):
-        sim2 = sim_from_brz(brz or ensure_brz(ws_path))
+        sim2 = sim_from_brz(brz, ir=ensure_ir(ws_path, brz))
     for p in batch:
         sys.stdout.write(json.dumps(run_in_sim(sim, p, sim2)) + "\n")
         sys.stdout.flush()
@@ -1308,7 +1312,7 @@ def main(args):
             known = load_costs()
             items.sort(key=lambda it: -known.get(it[0], 1e9))
             with mp.Pool(WORKERS, initializer=_pool_init,
-                         initargs=(brz,)) as pool:
+                         initargs=(ws_path, brz)) as pool:
                 for out in pool.imap_unordered(_pool_case, items,
                                                chunksize=1):
                     report(*out)

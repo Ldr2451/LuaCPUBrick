@@ -506,3 +506,15 @@ cpu -> connector -> screen chain). Each cost a session.
   hand-patch the built file. Name->gate pairing uses `base = loaded.graph.gates
   .len()` so `feed_ports` clones never pair, and the probe scan must run BEFORE
   the clone loop in `replay`.
+- **IR-name pairing must tell ROOT containers from chip-body locals; loaded
+  artifacts offer no other handle.** `Loaded::from_brz` drops each gate's
+  `node` and `span`, and the stored properties are only array/map specs, so
+  source spans and property signatures cannot be paired after load. The old
+  count-by-kind pairing refused `lua.ws` with "124 of 124 arrays and 333 of
+  412 scalars matched": the extra scalar gates are locals from inlined mods
+  and repeated chip bodies, which the IR lists nested (indented deeper than
+  two spaces), not root globals. The general pairing now anchors on an exact
+  array-name/gate count and maps ROOT scalar names in program order to the
+  leading scalar gates, leaving extras unnamed; a stale IR still refuses.
+  The chip suite passes `ensure_ir(ws, brz)` to `new`, so a mod/chip change
+  no longer silently renames globals or kills the state checks.

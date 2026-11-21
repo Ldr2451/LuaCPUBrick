@@ -23,6 +23,20 @@ use wirescript_sim::load::BrickAddr;
 use wirescript_ir::semantics::sim_certifies;
 use brdb::schema::{BrdbValue, EA3WireVariant};
 
+/// A stored container property as JSON: the IR text records the same values
+/// on a Var/ArrayVar node, so a driver can pair NAMES to artifact containers
+/// by their signature instead of by position (inlined mods and repeated chip
+/// bodies make positional pairing unsound).
+fn prop_json(v: &BrdbValue) -> Value {
+    match v {
+        BrdbValue::String(s) => Value::String(s.clone()),
+        BrdbValue::Bool(b) => Value::Bool(*b),
+        BrdbValue::I64(i) => Value::Number((*i).into()),
+        BrdbValue::F64(f) => serde_json::json!(f),
+        _ => Value::String(format!("{v:?}")),
+    }
+}
+
 /// Everything the driver holds between commands.
 pub struct St {
     loaded: Option<Loaded>,
@@ -449,9 +463,16 @@ fn handle(st: &mut St, cmd: &Value) -> (Value, bool) {
                                     }
                                 },
                             }
+                            let mut props = serde_json::Map::new();
+                            if let Some(d) = &g.data {
+                                for (k, v) in &d.properties {
+                                    props.insert(format!("{k:?}"), prop_json(v));
+                                }
+                            }
                             hits.push(serde_json::json!({"id": i, "class": g.class,
                                 "label": label, "grid": g.addr.grid,
                                 "brick": g.addr.brick,
+                                "props": props,
                                 "probe": format!("#{}", ci)}));
                             ci = ci + 1;
                         }
@@ -852,11 +873,12 @@ fn cmd_bool(cmd: &Value, key: &str) -> bool {
 /// artifact carries no handle for the chip's inner state (`polyOn`, the
 /// per-lane spans, the pixel globals behind the `px` outputs) -- and a probe
 /// driver that watches a paint needs those names. The IR is the only place
-/// the compile keeps them. It lists containers in program order while the
-/// emit places every array before every scalar, so the names pair with the
-/// chip's containers in two kind groups; a count mismatch is refused rather
-/// than answering `covLo` from `covHi`'s gate.
-fn ir_names(cmd: &Value) -> Result<Vec<(String, bool)>, String> {
+/// the compile keeps them. Each name carries its `loc(...)` when the dump
+/// printed one, so it can be paired with the graph gate emitted from that
+/// exact source node instead of relying on container ORDER: an inlined mod
+/// or a repeated chip body adds containers the IR has no single name for,
+/// which made the old group-count pairing refuse otherwise sound compiles.
+fn ir_names(cmd: &Value) -> Result<Vec<(String, bool, bool)>, String> {
     let path = cmd_str(cmd, "ir");
     if path == "" {
         return Ok([].to_vec());
@@ -865,11 +887,16 @@ fn ir_names(cmd: &Value) -> Result<Vec<(String, bool)>, String> {
         Err(e) => return Err(format!("cannot read the IR text {path}: {e}")),
         Ok(t) => t,
     };
-    let mut names: Vec<(String, bool)> = Vec::new();
+    // (name, is_array, is_root). The emit writes root-module nodes at two
+    // spaces and microchip-body nodes deeper; a chip body's locals become
+    // containers too, but the harness can only name the root ones, and there
+    // are more of those per body than the IR has independent declarations.
+    let mut names: Vec<(String, bool, bool)> = Vec::new();
     for line in text.lines() {
         let is_arr = line.contains(" = ArrayVar {");
+        let is_map = line.contains(" = MapVar {");
         let is_var = line.contains(" = Var {");
-        if !(is_arr || is_var) {
+        if !(is_arr || is_map || is_var) {
             continue;
         }
         let mut raw = "".to_string();
@@ -881,7 +908,8 @@ fn ir_names(cmd: &Value) -> Result<Vec<(String, bool)>, String> {
         if raw == "" {
             continue;
         }
-        names.push((raw[1..].to_string(), is_arr));
+        let indent = line.len() - line.trim_start_matches(' ').len();
+        names.push((raw[1..].to_string(), is_arr, indent == 2));
     }
     return Ok(names);
 }
@@ -1699,7 +1727,7 @@ fn arr_want(cmd: &Value) -> Vec<(String, usize, usize)> {
 
 fn add_probes(graph: &mut Graph, map: &mut HashMap<String, GateId>,
               want: Vec<(String, usize, usize)>, allvars: bool,
-              names: Vec<(String, bool)>, base: usize) -> Result<String, String> {    let mut found: Vec<(String, GateId)> = Vec::new();
+              names: Vec<(String, bool, bool)>, base: usize) -> Result<String, String> {    let mut found: Vec<(String, GateId)> = Vec::new();
     let mut arrInfo: Vec<(String, GateId, GateId)> = Vec::new();
     for (_i, g) in graph.gates.iter().enumerate() {
         // Both pin directions: an OUT pin whose source is a container (this
@@ -1764,11 +1792,14 @@ fn add_probes(graph: &mut Graph, map: &mut HashMap<String, GateId>,
             },
         }
     }
-    // The IR's names, paired with the chip's containers by kind group: the
-    // emit lays every array before every scalar, so the IR's program order
-    // splits the same way. A mismatch in either group means the pairing is
-    // not this compile's, and reading a name would answer another global --
-    // so `new` refuses instead.
+    // The IR's names paired with the artifact's containers in emit order.
+    // The emit lays every array before every scalar, and ARRAY names pair
+    // exactly -- that is the anchor that refuses a stale IR. Scalars can be
+    // MORE numerous in the artifact than in the IR: an inlined mod or a
+    // repeated chip body adds local containers whose `Var` nodes in the IR
+    // are nested (indented deeper than two spaces), not root globals. Pair
+    // the ROOT scalar names with the leading scalar gates; the extra locals
+    // are not names the harness can ask for, so leave them unnamed.
     if names.len() > 0 {
         let mut garr: Vec<GateId> = Vec::new();
         let mut gvar: Vec<GateId> = Vec::new();
@@ -1780,25 +1811,27 @@ fn add_probes(graph: &mut Graph, map: &mut HashMap<String, GateId>,
                 gvar.push(i as GateId);
             }
         }
-        let mut ai = 0usize;
-        let mut vi = 0usize;
-        for ni in 0..names.len() {
-            if names[ni].1 {
-                if ai < garr.len() {
-                    found.push((names[ni].0.clone(), garr[ai]));
-                    ai = ai + 1;
-                }
-            } else {
-                if vi < gvar.len() {
-                    found.push((names[ni].0.clone(), gvar[vi]));
-                    vi = vi + 1;
-                }
-            }
-        }
-        if ai != garr.len() || vi != gvar.len() {
+        let arr_names: Vec<&(String, bool, bool)> =
+            names.iter().filter(|n| n.1).collect();
+        let scalars: Vec<&(String, bool, bool)> =
+            names.iter().filter(|n| !n.1).collect();
+        if arr_names.len() != garr.len() {
             return Err(format!("IR names do not pair with the chip's containers: \
-                                {} of {} arrays and {} of {} scalars matched",
-                               ai, garr.len(), vi, gvar.len()));
+                                {} array names for {} array gates",
+                               arr_names.len(), garr.len()));
+        }
+        let roots: Vec<&(String, bool, bool)> =
+            scalars.iter().copied().filter(|n| n.2).collect();
+        if roots.len() > gvar.len() {
+            return Err(format!("IR names do not pair with the chip's containers: \
+                                {} root scalar names for {} scalar gates",
+                               roots.len(), gvar.len()));
+        }
+        for (k, name) in arr_names.iter().enumerate() {
+            found.push((name.0.clone(), garr[k]));
+        }
+        for (k, name) in roots.iter().enumerate() {
+            found.push((name.0.clone(), gvar[k]));
         }
     }
     // Every container, whether the artifact named it or not, keyed by its

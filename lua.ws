@@ -11667,7 +11667,7 @@ mod vmStep() {
 // A CHIP: vmBurst calls this seven times, so as a mod the body existed seven
 // times over purely to be seven call sites.  As a chip it is one body with
 // seven call sites, and a chip costs no ticks per run.
-chip vmStepFast() {
+mod vmStepFast() {
   if vmHalted || vmBusy() {
     return
   }
