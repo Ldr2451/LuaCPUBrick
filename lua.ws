@@ -2377,7 +2377,7 @@ mod vSet(r: int, tag: int, num: float, s: string) {
 // A nil store writes only the tag, and a store whose tag is not 2 writes no
 // string, and a string store writes no number: docs/vm-isa says those payloads
 // are ignored, and vSet is a mod, so each of those writes was a separate copy.
-chip vSetNil(r: int) {
+mod vSetNil(r: int) {
   vtag[vmBase + r] = 0
 }
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
@@ -3186,7 +3186,7 @@ mod fmtPadStep() {
 // free list reads -2 to tell "dead and nobody owns it any more" from "dead but
 // still chained, unhook it and drop its stale map entry".
 // A CHIP: nested in tblSetKey; 34 instances, 1 grid.
-chip tblUnlink(tid: int, sl: int) {
+mod tblUnlink(tid: int, sl: int) {
   let pv = tPrev[sl]
   let nx = tNext[sl]
   if pv != -1 {
@@ -3370,7 +3370,7 @@ mod patSetHit() {
 // exec steps, so whenever the chain is read the scratch holds the pin's
 // value.  Same shared-scratch rule the rest of the chip relies on: one Lua
 // instruction runs one arm per tick and each call's writes precede its reads.
-chip rdTake(rdt: string, rpi: int, n: int) {
+mod rdTake(rdt: string, rpi: int, n: int) {
   rdScrS = rdt
   rdScrI = rpi
   let avail = rdScrS.Length() - rdScrI
@@ -3384,7 +3384,7 @@ chip rdTake(rdt: string, rpi: int, n: int) {
 // of the line.  rdGot is false at the end of the text, so io.lines terminates --
 // and a blank line in the middle is a line, not the end.
 // Scratch-copied pins like rdTake, for the same cert reason.
-chip rdLine(rdt: string, rpi: int) {
+mod rdLine(rdt: string, rpi: int) {
   // The official sim's Find law ignores the Start port (the game does not):
   // search the tail from the cursor instead.  The end-of-text test reads `tail`
   // rather than a second eager rdScrS.Length(): keep the chain to one pass over
@@ -3417,7 +3417,7 @@ chip rdLine(rdt: string, rpi: int) {
 // chain is; pv == -1 means the head and nx == -1 the tail.  tblLink is the
 // append-at-the-tail case, and a revived key is the replace-in-place case.
 // A CHIP: nested in tblSetKey; 34 instances, 2 grids.
-chip tblSplice(tid: int, sl: int, pv: int, nx: int) {
+mod tblSplice(tid: int, sl: int, pv: int, nx: int) {
   tPrev[sl] = pv
   tNext[sl] = nx
   if pv != -1 {
@@ -3435,13 +3435,13 @@ chip tblSplice(tid: int, sl: int, pv: int, nx: int) {
 // Link a slot at the tail of its table's chain, so pairs/next walk entries in
 // insertion order (the order PUC-Lua uses, which the tests compare against).
 // A CHIP: 17 instances, 1 grid.
-chip tblLink(tid: int, sl: int) {
+mod tblLink(tid: int, sl: int) {
   tblSplice(tid, sl, tLast[tid], -1)
 }
 
 // Copy up to MAXVALS values from the register file into the vararg stack.
 // A CHIP: 4 sites, 1 grid.
-chip vaSpill(src: int, dst: int, n: int) {
+mod vaSpill(src: int, dst: int, n: int) {
   cpSrc = src
   cpDst = dst
   cpN = n
@@ -3453,7 +3453,7 @@ chip vaSpill(src: int, dst: int, n: int) {
 
 // Copy up to MAXVALS values from the vararg stack into registers (VARARG).
 // A CHIP: 3 sites, 1 grid.
-chip vaFill(base: int, dst: int, n: int) {
+mod vaFill(base: int, dst: int, n: int) {
   cpSrc = base
   cpDst = dst
   cpN = n
@@ -4759,7 +4759,7 @@ mod cmpStep() {
 }
 
 // A CHIP: 16 ladder sites share one small body.
-chip tblFill(dst: int, tid: int, idx: int) {
+mod tblFill(dst: int, tid: int, idx: int) {
   let r = tmap.get(tkey(tid, 1, idx, ""))
   if r.Found {
     vSet(dst, tvTag[r.Value], tvNum[r.Value], tvStr[r.Value])
@@ -4791,7 +4791,7 @@ mod fmtRadixDigit() {
 // The sign for %d %i %u, and the 0x / 0X / 0 prefix for %x %X %o.  The radix
 // conversions have no sign -- they print the two's complement -- and # adds
 // nothing for a zero, in either base.
-chip fmtSign() {
+mod fmtSign() {
   if fmtBase_ == 10.0 {
     if fmtNeg {
       fmtBody = "-" .. fmtBody
@@ -5283,7 +5283,7 @@ mod emitNum() {
   emitTok(1, if isInt then 1 else 0, v, "")
 }
 
-chip resolveKw() {
+mod resolveKw() {
   let n = lidBuf
   let id = if n == "and" then 1
     else if n == "break" then 2
@@ -5369,7 +5369,7 @@ mod patchAt(pos: int) {
 // local or capture, because a mod call inside the arms would be inlined 32
 // times.  32 is the window, as before: a name with more live locals than that
 // in front of it reads as a global, which is the same hole the old ladder had.
-chip locFind(name: string) {
+mod locFind(name: string) {
   lkKind = 0
   lkReg = -1
   lkDone = false
@@ -5985,7 +5985,7 @@ mod fmtEFracDig() {
   fmtState = 31
 }
 
-chip lexStep() {
+mod lexStep() {
   if lstage != 99 && !lerr {
     // ONE Substring for the character, not two.  `cp` is its codepoint and `ch`
     // is the character itself, and both were asking the host for the same
@@ -7815,7 +7815,7 @@ mod exprMicro() {
 // A CHIP: 122 lexical sites share 53 small grids -- one per distinct
 // message, the largest shared by 89. Error path, so per-call ticks are
 // irrelevant; the saving is instantiated gates.
-chip vmFail(msg: string) {
+mod vmFail(msg: string) {
   vmFailed = true
   errV = msg
   vmHalted = true
@@ -8224,7 +8224,7 @@ mod heapEnsure() {
 //
 // It is void because nothing ever read the result: all seventeen call sites use it
 // as a statement, and a bool nobody reads is a hidden variable for nothing.
-chip tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: string) {
+mod tblSetKey(tid: int, kt: int, kn: float, ks: string, vt: int, vn: float, vs: string) {
   let key = tkey(tid, kt, kn, ks)
   let r = tmap.get(key)
   let kint = toInt(kn)
@@ -8528,7 +8528,7 @@ mod fmtFScale() {
 // them, and the instruction steps past itself.  A machine that raises ends
 // the program with the message, there being no unwind anymore.
 // A CHIP: 6 instances, 1 grid.
-chip nxDone() {
+mod nxDone() {
   vmPc = nxPc + 1
 }
 

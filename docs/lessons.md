@@ -661,7 +661,27 @@ is left and why; `tochip.py` converts with the refusals built in;
   cost +1 boot tick, and that +1 came from one specific mod, not from the parse
   path as a category: `lexStep`, `locFind`, `closeAction`, `pushOp` and four more
   are all parse-path and all boot-neutral. Re-measure boot with
-  `tools/chip/bootprobe.py`, not from memory.
+  `python -u tools/chip/perfbench.py --filter hello`, not from memory (the
+  old `bootprobe.py` went away with the model retirement).
+- **The reverse lever is live: 16 of the 17 chips left in `lua.ws` are BETTER
+  as mods.** Flipped back (every chip but `vmStepFast`) the audit went
+  40,212 nodes / 40,504 gates to **37,584 / 37,585** (−2,628 nodes, −2,919
+  gates), with all twelve `perfbench` programs byte-identical in ticks and
+  log and FEWER fired gates and evals in every one; the whole gate is
+  13/13 green. The "kept as chips" list in the source was priced before the
+  swap and never re-measured after it, and a chip's pins can cost more than
+  the copies of a small body. Screen a batch on a COPY of `lua.ws`
+  (`chipscreen.py --dechip` shape), then measure nodes, gates, TICKS and
+  labels before touching the deliverable — a static gate count alone is not
+  a verdict.
+- **De-chipping `vmStepFast` alone keeps every program's log but breaks all
+  985 cases' state invariant** with the identical message "no array
+  labelled fFunc": the chip's microchip boundary pin is what carries the
+  label the state probes read, and as a mod that pin goes away. `simdrv` can
+  pair names from the compile's IR text (the `ir` key on `new`, used by the
+  screen drivers), but the chip suite does not pass it — so keep
+  `vmStepFast` a chip, or fix the harness to pass the IR rather than relax
+  the invariant. The chip-suite probe checks are part of the gate, not noise.
 
 ## Closures
 A function value (tag 4) holds a **closure number, not a prototype**. Below
