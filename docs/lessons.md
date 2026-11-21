@@ -733,6 +733,16 @@ is left and why; `tochip.py` converts with the refusals built in;
   gate 13/13, fuzz 40/40. `toInt` (+35) and `fmtArgName` (+6) were net losses
   and were skipped — measure, do not convert every helper.
 
+- **A third, smaller sweep of helpers took 28,712 -> 27,181 nodes (−1,531).**
+  `fmtNum` −220, `arithValL` −219, `curFid` −145, `arithValR` −117,
+  `cmpEqNum` −100, `curClo` −93, and twenty more (`cStr`, `cNum`, `tblHas`,
+  `slotBase`, `longLevel`, `keyTag`, `newFunc`, ...) were converted to `fn`.
+  Ticks and logs identical on all twelve benchmarks, fired gates down 20-37%,
+  measured wall 25% faster on `fields`, full gate 13/13, fuzz 40/40. The
+  float-text pins survived `fmtNum` becoming a `fn` — the suite checked them.
+  Net-loss or zero helpers (`toInt`, `fmtArgName`, `chrByte`, `gTag`, `gStr`,
+  `userLine`, `patTestItem`, `patClassHit`) stay `mod`.
+
 ## Closures
 A function value (tag 4) holds a **closure number, not a prototype**. Below
 `cloBase` a closure *is* its own prototype, so every builtin and every

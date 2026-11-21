@@ -559,7 +559,7 @@ const NANSENT = 1.7976931348623155e300
 // printed back from fmtNum.
 const NEGZERO = 0.0 - 4.9406564584124654e-324
 
-mod fmtNum(v: float) -> string {
+fn fmtNum(v: float) -> string {
   return if v == NANSENT then "nan"
     else if v == 1.7976931348623157e308 then "inf"
     else if v == 0.0 - 1.7976931348623157e308 then "-inf"
@@ -632,7 +632,7 @@ var tn: float[]
 var tt: string[]
 var tl: int[]
 
-mod hexVal(cp: int) -> int {
+fn hexVal(cp: int) -> int {
   return if cp >= 48 && cp <= 57 then cp - 48
     else if cp >= 97 && cp <= 102 then cp - 87
     else if cp >= 65 && cp <= 70 then cp - 55
@@ -1047,7 +1047,7 @@ fn tkey(tid: int, kt: int, kn: float, ks: string) -> string {
       .. (kn as int)
 }
 
-mod keyTag(t: int, v: float) -> int {
+fn keyTag(t: int, v: float) -> int {
   return if t == 1 && v == floor(v) then 6 else t
 }
 var fmtBase: int = 0          // the call's register base (absolute)
@@ -1633,7 +1633,7 @@ fn lexFail(msg: string) {
 }
 
 // level of a long bracket ([[, [=[, ...) starting at pos, or -1
-mod longLevel(pos: int) -> int {
+fn longLevel(pos: int) -> int {
   let seg = lsrc.Substring(pos, 8)
   return if seg.StartsWith("[[", true) then 0
     else if seg.StartsWith("[=[", true) then 1
@@ -1679,11 +1679,11 @@ fn popVal() -> int {
   return valStk.pop()
 }
 
-mod topFlag() -> bool {
+fn topFlag() -> bool {
   return if valCall.length() == 0 then false else valCall[valCall.length() - 1]
 }
 
-mod topPrefix() -> bool {
+fn topPrefix() -> bool {
   return if valPrefix.length() == 0 then false else valPrefix[valPrefix.length() - 1]
 }
 
@@ -1783,7 +1783,7 @@ fn bPatch(pos: int, target: int) {
 // tblLink, tblFill), the big bodies (vmStepFast, lexStep, locFind,
 // tblSetKey, vmFail), and the hot tiny ones where pins would dominate
 // either way (vSet and kin, already mods since the register-write revert).
-mod cNum(v: float) -> int {
+fn cNum(v: float) -> int {
   let r = constNum.find(v)
   if !r.Found {
     if constNum.length() >= 256 {
@@ -1796,7 +1796,7 @@ mod cNum(v: float) -> int {
   return if r.Found then r.Index else constNum.length() - 1
 }
 
-mod cStr(s: string) -> int {
+fn cStr(s: string) -> int {
   let r = constStr.find(s)
   if !r.Found {
     if constStr.length() >= 256 {
@@ -1977,7 +1977,7 @@ mod gLookup(name: string) -> int {
   return if r.Found then r.Value else -1
 }
 
-mod gRef(name: string) -> int {
+fn gRef(name: string) -> int {
   if gLookup(name) < 0 {
     noteUnknown(name)
   }
@@ -2062,7 +2062,7 @@ fn regSync() {
 // A local that something captured is read and written through the cell from
 // then on: the cell is the value closures see, so a write from a nested
 // function has to be visible here without going through the register.
-mod upSelf(ix: int) -> int {
+fn upSelf(ix: int) -> int {
   let r = upIdx.get(fidAt[fnDepth] .. "#" .. ix)
   return if r.Found then r.Value else -1
 }
@@ -2127,17 +2127,17 @@ mod popIsLeft(k: int) -> bool {
     else true
 }
 
-mod nextKind() -> int {
+fn nextKind() -> int {
   return if cpos + 1 >= tk.length() then 6 else tk[cpos + 1]
 }
 
-mod nextSub() -> int {
+fn nextSub() -> int {
   return if cpos + 1 >= tk.length() then 0 else ts[cpos + 1]
 }
 
 // Apply one pending operator pop. Only binop/unary/and/or frames pop;
 // call and group markers stop all pops.
-mod curStrAhead() -> string {
+fn curStrAhead() -> string {
   return if cpos + 1 >= tk.length() then "" else tt[cpos + 1]
 }
 
@@ -2156,7 +2156,7 @@ mod andOrArrive(isOr: bool) {
 // GETUP's c operand: 0 reads this frame's own cell for the local, 1 reads the
 // enclosing closure's cell.  Which one is a property of the descriptor, so it
 // is settled here rather than in the VM.
-mod upKind() -> int {
+fn upKind() -> int {
   let src = fUpSrc[fidAt[fnDepth] * MAX_UP + lkReg]
   return if 0 <= src then 0 else 1
 }
@@ -2197,7 +2197,7 @@ mod restoreTmp() {
   svI.resize(svI.length() - nR, 0)
 }
 
-mod newFunc() -> int {
+fn newFunc() -> int {
   fStart.push(-1)
   fParams.push(0)
   fRegs.push(-1)
@@ -2285,7 +2285,7 @@ fn startUnit(cont: int) {
 // The prototype the running frame is executing, and the closure number it is
 // running as.  The main chunk is the one frame not on the stack (an empty
 // fFunc is how it halts), so it answers for itself.
-mod curFid() -> int {
+fn curFid() -> int {
   if fFunc.length() == 0 {
     return mainFid
   }
@@ -2296,7 +2296,7 @@ mod curFid() -> int {
   return cloF[cid]
 }
 
-mod curClo() -> int {
+fn curClo() -> int {
   if fFunc.length() == 0 {
     return mainFid
   }
@@ -2591,7 +2591,7 @@ mod vmReset() {  tmap.clear()
   errV = ""
 }
 
-mod arithValL(t: int, v: float, s: string) -> float {
+fn arithValL(t: int, v: float, s: string) -> float {
   let st = s.Trim()
   let s1 = st .. "1"
   let n = st.ParseNumber()
@@ -2602,7 +2602,7 @@ mod arithValL(t: int, v: float, s: string) -> float {
   return if t != 2 then v else if isNum then n else v
 }
 
-mod arithValR(t: int, v: float, s: string) -> float {
+fn arithValR(t: int, v: float, s: string) -> float {
   let st = s.Trim()
   let s1 = st .. "1"
   let n = st.ParseNumber()
@@ -2646,7 +2646,7 @@ fn cmpFinish(v: bool) {
 // question made the border chase walk straight over the tombstones, so a program
 // that emptied a table and refilled it got the old length back -- delete 60 keys,
 // refill 40, and #t said 60 where PUC says 40.
-mod tblHas(tid: int, idx: int) -> bool {
+fn tblHas(tid: int, idx: int) -> bool {
   let r = tmap.get(tkey(tid, 6, idx + 0.0, ""))
   if r.Found {
     return tvTag[r.Value] != 0
@@ -2712,7 +2712,7 @@ mod nxStep() {
 // The character at a 1-based position is read inline at each use rather than
 // from a mod: a string returned from a mod compares equal to the right text but
 // its ToCharCode() reads 0, so a digit test on it never fires.
-mod fmtArgAt() -> int {
+fn fmtArgAt() -> int {
   return fmtBase + 1 + fmtArgI
 }
 
@@ -4601,7 +4601,7 @@ mod pdDrain() {
 // the table starts one word above it.  (Entries used to hold the vararg base;
 // every return then restored to it and orphaned the table below -- one word a
 // non-tail call.  Readers below speak base; the entry speaks top.)
-mod slotBase() -> int {
+fn slotBase() -> int {
   return fVaB[fVaB.length() - 1] + 1
 }
 
@@ -4609,7 +4609,7 @@ mod slotBase() -> int {
 // agree: a number (1), a float (6), nil (0) and a boolean (3) may be
 // stored, and nil stores 0.0.  Anything else is a table, a string or a
 // function.
-mod arrNumOk(tag: int) -> bool {
+fn arrNumOk(tag: int) -> bool {
   return tag == 1 || tag == 6 || tag == 0 || tag == 3
 }
 
@@ -4617,7 +4617,7 @@ mod arrNumOk(tag: int) -> bool {
 // have to agree: a string (2) or nil (0) may be stored, and nil
 // stores "".  Anything else is a number, a boolean, a table or a
 // function.
-mod arrStrOk(tag: int) -> bool {
+fn arrStrOk(tag: int) -> bool {
   return tag == 2 || tag == 0
 }
 
@@ -7840,7 +7840,7 @@ fn bitFail(lt: int, lv: float, rt: int, rv: float) {
   }
 }
 
-mod numArg(t: int, v: float) -> float {
+fn numArg(t: int, v: float) -> float {
   if t != 1 && t != 6 && t != 0 {
     vmFail("bad argument (number expected)")
   }
@@ -8716,7 +8716,7 @@ mod patPlainAnswer() {
 // characters in it.  Twelve host searches, so callers only ask on a miss --
 // a needle that matched needs no comment.  A mod (two call sites, both in
 // gateHigh): measured against a chip if the audit complains.
-mod patHasMagic(s: string) -> bool {
+fn patHasMagic(s: string) -> bool {
   // most frequent magic first: || short-circuits, so a '.' or '%' needle
   // pays one search and only a '?' pays all twelve.  Contains, not Find
   // plus a compare: the certified law answers the bool, one gate per magic
@@ -11070,7 +11070,7 @@ mod arithOps(op: int, a: int, b: int, c: int) {
 // sentinel is a tiny NEGATIVE value -- so the raw gate answer is wrong only in
 // the shapes spelled out below, each fixed by comparisons against the literal
 // 0.0 (never a Select-fed gate value: the fold prunes those).
-mod cmpEqNum(x: float, y: float) -> bool {
+fn cmpEqNum(x: float, y: float) -> bool {
   // nan answers the NANSENT sentinel, equal to nothing; -0.0 equals 0.0 either
   // way round
   return x == y && x != NANSENT && y != NANSENT
