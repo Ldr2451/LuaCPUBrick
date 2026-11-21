@@ -1626,7 +1626,7 @@ var presCallPos: int = -1
 // shape: no vmBase to add.
 var fmtSrc: string = ""
 
-mod lexFail(msg: string) {
+fn lexFail(msg: string) {
   lerr = true
   lerrMsg = msg
   lerrLine = lline
@@ -1663,7 +1663,7 @@ mod curStr() -> string {
 // A CHIP: 22 instances, 3 grids.
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod pushVal(r: int, isCall: bool, isPrefix: bool) {
+fn pushVal(r: int, isCall: bool, isPrefix: bool) {
   valStk.push(r)
   valCall.push(isCall)
   valPrefix.push(isPrefix)
@@ -1703,7 +1703,7 @@ mod setTopPrefix(v: bool) {
 // One micro-op per call: pops, closes, or a single token action. Operands
 // push (reg, isCall); calls close with multi-tail from the last arg flag.
 
-mod bEmit(op: int, a: int, b: int, c: int) -> int {
+fn bEmit(op: int, a: int, b: int, c: int) -> int {
   bop.push(op)
   bpa.push(a)
   bpb.push(b)
@@ -1719,7 +1719,7 @@ mod bEmit(op: int, a: int, b: int, c: int) -> int {
 }
 
 
-mod bPatch(pos: int, target: int) {
+fn bPatch(pos: int, target: int) {
   bpa[pos] = target
   if bop[pos] == 21 && 0 < pos && bop[pos - 1] == 19
      && bpc[pos - 1] < 0 && bpa[pos - 1] == bpb[pos] {
@@ -1999,7 +1999,7 @@ mod regAlloc() -> int {
   return r
 }
 
-mod regFree(r: int) {
+fn regFree(r: int) {
   // noteLibField's provenance dies with the register: a recycled number must
   // never match a library push that no longer owns it.  Unconditional, because
   // every live use checks before its own arm frees anything.
@@ -2048,7 +2048,7 @@ mod blkEnter(isLoopBody: bool) {
 
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod regSync() {
+fn regSync() {
   let top = cfBase[fnDepth]
   let m = cfMaxLoc[fnDepth] + 1
   if m > top {
@@ -2251,7 +2251,7 @@ mod pushCtl(kind: int, a: int, b: int, c: int, d: int, e: int, f: int) {
 
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod popCtl() {
+fn popCtl() {
   ctlKind.pop()
   ctlA.pop()
   ctlB.pop()
@@ -2275,7 +2275,7 @@ mod lstAppendB(pos: int) {
 }
 
 // Start an expression unit ending in the given continuation.
-mod startUnit(cont: int) {
+fn startUnit(cont: int) {
   inExpr = true
   contKind = cont
   expectOperand = true
@@ -2369,7 +2369,7 @@ mod retCopy(src: int, dst: int, n: int) {
 // ticks" -- on the assumption that a chip boundary costs a tick.  vmStepFast
 // measured that assumption false (four call sites, ticks identical), so the
 // class is worth measuring on its biggest member rather than assuming.
-mod vSet(r: int, tag: int, num: float, s: string) {
+fn vSet(r: int, tag: int, num: float, s: string) {
   vtag[vmBase + r] = tag
   vnum[vmBase + r] = num
   vstr[vmBase + r] = s
@@ -2377,16 +2377,16 @@ mod vSet(r: int, tag: int, num: float, s: string) {
 // A nil store writes only the tag, and a store whose tag is not 2 writes no
 // string, and a string store writes no number: docs/vm-isa says those payloads
 // are ignored, and vSet is a mod, so each of those writes was a separate copy.
-mod vSetNil(r: int) {
+fn vSetNil(r: int) {
   vtag[vmBase + r] = 0
 }
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod vSetN(r: int, tag: int, num: float) {
+fn vSetN(r: int, tag: int, num: float) {
   vtag[vmBase + r] = tag
   vnum[vmBase + r] = num
 }
-mod vSetNum(r: int, v: float) {
+fn vSetNum(r: int, v: float) {
   vtag[vmBase + r] = 1
   vnum[vmBase + r] = v
 }
@@ -2626,7 +2626,7 @@ mod intWrap(v: float) -> float {
 
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod cmpFinish(v: bool) {
+fn cmpFinish(v: bool) {
   vtag[cmpDst] = 3
   if v {
     vnum[cmpDst] = 1.0
@@ -4096,7 +4096,7 @@ mod chrByte(v: int) -> string {
   return if v == 0 then "\0" else FromCharCode(v).Character
 }
 
-mod emitEscByte(v: int) {
+fn emitEscByte(v: int) {
   // Full 0-255, not just printable ASCII: PUC's \ddd and \xXX spell any byte,
   // and utf8 (or any binary string) needs high bytes in literals.  This used
   // to allow only 32-126 via the PRINTABLES table, so "\195" was a compile
@@ -4285,7 +4285,7 @@ mod parseInit() {
 // code that writes a block of registers outside regAlloc (call argument and
 // result windows, an expanded call's copies) must claim them here, or a later
 // regAlloc hands out a slot that is still live.
-mod bumpMax(n: int) {
+fn bumpMax(n: int) {
   if n > cfMax[fnDepth] {
     cfMax[fnDepth] = n
   }
@@ -4641,7 +4641,7 @@ mod arrStrOk(tag: int) -> bool {
 // they have to agree about this exactly as they agree about the tag.
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod vSetIntTag(a: int, w: float) {
+fn vSetIntTag(a: int, w: float) {
   vSetN(a, 6, w + 0.0)
 }
 
@@ -4656,7 +4656,7 @@ mod vSetInt(a: int, v: float) {
 
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod vSetIntSat(a: int, v: float) {
+fn vSetIntSat(a: int, v: float) {
   var w = v
   if w + INT64_LIMIT < 0.0 {
     w = 0.0 - INT64_LIMIT
@@ -5193,7 +5193,7 @@ mod libMathModf(p: string, d: bool) -> string {
 // A CHIP: 8 instances, 1 grid.
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod rewindTo(r: int) {
+fn rewindTo(r: int) {
   // regAlloc for its side effect alone (cfMax claims the slot): the old
   // `regAlloc() >= cfNext[fnDepth]` test compared the returned top against
   // itself plus one, so it never fired -- the overflow error is regAlloc's own.
@@ -5229,7 +5229,7 @@ mod binArrive(opc: int, prec: int, fl: int) {
 // one append here and 500 bytes of text, not eight dropped ones.
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod logPush(line: string) {
+fn logPush(line: string) {
   logLines.push(line)
   logAdd(line)
   if logLines.length() > 32 {
@@ -5351,7 +5351,7 @@ mod lexLong(pos: int, level: int, isComment: bool) {
 // Mark the instruction at `pos` as returning all of its values (a CALL's C
 // operand bit 1, or VARARG's B = 0), and reserve the result registers it may
 // write so a later regAlloc cannot land on a live result.
-mod patchAt(pos: int) {
+fn patchAt(pos: int) {
   if pos >= 0 && pos < bpc.length() {
     if bop[pos] == 45 {
       bpb[pos] = 0
@@ -7830,7 +7830,7 @@ mod vmFail(msg: string) {
 // that note is the one part of these messages that stays.
 // A mod, not a chip: measured cheaper here (instances cost pins -- see the
 // chip screening note on cNum).
-mod bitFail(lt: int, lv: float, rt: int, rv: float) {
+fn bitFail(lt: int, lv: float, rt: int, rv: float) {
   if lt != 6 && !(lt == 1 && lv == floor(lv)) {
     vmFail("attempt to perform bitwise operation on a " .. typeName(lt)
       .. " value")
@@ -8447,7 +8447,7 @@ mod cellAt(fid: int, k: int) -> int {
 // handed the digit state the seeded value instead of the multiplied one, and
 // every fraction digit came out 0.  Arrays are how the rest of the chip passes a
 // value a mod wrote to a state that runs later.
-mod fmtDdMul(hi: float, lo: float, c: float) {
+fn fmtDdMul(hi: float, lo: float, c: float) {
   let ph = hi * c
   // 2^27 + 1 splits each operand into halves a multiply cannot mix, so the
   // low half of the product comes out of four small products
@@ -8734,7 +8734,7 @@ mod patHasMagic(s: string) -> bool {
 // silence would read as the call being broken.  The latch (reset per program
 // in parseJobStart, kept across restarts) is what keeps a loop over a missing
 // needle to one line.
-mod patWarn() {
+fn patWarn() {
   if !patWarned {
     patWarned = true
     progDebugV = progDebugV .. "warn: '" .. patPat

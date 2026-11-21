@@ -700,6 +700,27 @@ is left and why; `tochip.py` converts with the refusals built in;
   benchmarks tick-identical with fewer evals/steps, the full gate 13/13 and
   fuzz 40/40. Do NOT relax the state invariant to dodge a pairing failure:
   the refusal is what keeps a stale IR from renaming globals.
+- **The host's `fn` is the second shared-body lever, and for small write mods
+  it beats both inlining and `chip`.** A `fn` compiles once to a function
+  definition plane with one Function Call gate per call site (host docs
+  `statements.md:1739-1745`): no per-instance pin wiring like a `chip`, and no
+  per-site body copy like a `mod`. 23 void mods (register writers, `bEmit`,
+  `lexFail`, `bumpMax`, `patchAt`, `bPatch`, `bitFail`, `regFree`, ...) went
+  37,152 -> **33,689 nodes** (−3,463), with all twelve benchmarks
+  tick-identical and logs equal, fired gates down 6-13%, measured wall 9-11%
+  faster; the full gate is 13/13 and fuzz 40/40. A `fn` target is bound at
+  compile time to a named definition, so this shares bodies; it does not give
+  the VM a runtime-computed jump target.
+- **Two measured `fn` refusals/losses, do not retry blind.** `vSetInt` as an
+  `fn` leaves its `floor(w)` input unwired: `negzero-math-rest` stops with
+  `Expr_Floor ... not certified for inputs (unwired)`; keep it a `mod` (the
+  other eight numeric writers are fine as `fn`). Twelve other write mods
+  (`pushOp`, `pushCtl`, `emitTok`, `blkExit`, `retAdjust`, `vmForLoop`,
+  `closeAction`, `arithOps`, ...) are refused by WS115: an `fn` has eight
+  input slots and every outer storage its body reaches takes one, so an
+  already-wide signature has no room. Screen a conversion on a COPY
+  (`fnscreen.py` shape), then run the whole gate — the compiler accepts
+  shapes whose semantics still break one case.
 
 ## Closures
 A function value (tag 4) holds a **closure number, not a prototype**. Below
