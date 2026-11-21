@@ -1041,7 +1041,7 @@ const INT64_WRAP = 18446744073709551616.0
 // One VM instruction (ISA in spec.py).
 // Composite map key for table `tid`: kt is the key's value tag.
 // Normalize integral floats to the int tag so 1 and 1.0 share one key.
-mod tkey(tid: int, kt: int, kn: float, ks: string) -> string {
+fn tkey(tid: int, kt: int, kn: float, ks: string) -> string {
   return if kt == 2 then tid .. "$" .. ks
     else tid .. (if kt == 1 || kt == 6 then "#" else "@" .. kt .. ":")
       .. (kn as int)
@@ -1102,7 +1102,7 @@ const ZEROS16 = "0000000000000000"
 // The name of a value tag, for error messages: PUC says "got string" for a
 // wrong argument and "got no value" for a missing one, so the caller passes the
 // tag it would have read and says "no value" itself when there is none.
-mod typeName(t: int) -> string {
+fn typeName(t: int) -> string {
   return if t == 0 then "nil" else if t == 1 || t == 6 then "number" else if t == 2 then "string" else if t == 3 then "boolean" else if t == 4 then "function" else if t == 5 then "table" else "userdata"
 }
 
@@ -1484,7 +1484,7 @@ var jobBusy: bool = false
 // Does p name this library entry?  A plain substring test, like the reference
 // chip: it never misses a word the program actually uses, and the worst a
 // needless match can do is parse a little more library.
-mod srcUses(p: string, name: string) -> bool {
+fn srcUses(p: string, name: string) -> bool {
   // Contains, not Find+Compare: this mod is inlined at every library-selector
   // call (dozens), and the certified Contains law answers the yes/no directly,
   // one gate per site instead of a search plus a compare.
@@ -1644,11 +1644,11 @@ mod longLevel(pos: int) -> int {
     else -1
 }
 
-mod curKind() -> int {
+fn curKind() -> int {
   return if cpos >= tk.length() then 6 else tk[cpos]
 }
 
-mod curSub() -> int {
+fn curSub() -> int {
   return if cpos >= tk.length() then 0 else ts[cpos]
 }
 
@@ -1656,7 +1656,7 @@ mod curNum() -> float {
   return if cpos >= tk.length() then 0.0 else tn[cpos]
 }
 
-mod curStr() -> string {
+fn curStr() -> string {
   return if cpos >= tk.length() then "" else tt[cpos]
 }
 
@@ -1669,7 +1669,7 @@ fn pushVal(r: int, isCall: bool, isPrefix: bool) {
   valPrefix.push(isPrefix)
 }
 
-mod popVal() -> int {
+fn popVal() -> int {
   if valStk.length() == 0 {
     perr = true
     perrMsg = "operand stack underflow"
@@ -1809,7 +1809,7 @@ mod cStr(s: string) -> int {
   return if r.Found then r.Index else constStr.length() - 1
 }
 
-mod gDeclare(name: string) -> int {
+fn gDeclare(name: string) -> int {
   let r = gmap.get(name)
   if !r.Found {
     if gslotNext >= MAX_GLOBALS {
@@ -1986,7 +1986,7 @@ mod gRef(name: string) -> int {
 
 // ---------------------------------------------------------------- registers + scope
 
-mod regAlloc() -> int {
+fn regAlloc() -> int {
   let r = cfNext[fnDepth]
   if r >= MAX_REGS {
     perr = true
@@ -2117,7 +2117,7 @@ mod pushOp(kind: int, prec: int, a: int, b: int, c: int) {
   opC.push(c)
 }
 
-mod opTopKind() -> int {
+fn opTopKind() -> int {
   return if opKind.length() == 0 then -1 else opKind[opKind.length() - 1]
 }
 
@@ -2303,11 +2303,11 @@ mod curClo() -> int {
   return fFunc[fFunc.length() - 1]
 }
 
-mod vNum(r: int) -> float {
+fn vNum(r: int) -> float {
   return vnum[vmBase + r]
 }
 
-mod vStr(r: int) -> string {
+fn vStr(r: int) -> string {
   return vstr[vmBase + r]
 }
 
@@ -3463,7 +3463,7 @@ mod vaFill(base: int, dst: int, n: int) {
   }
 }
 
-mod fmtVal(tag: int, num: float, s: string) -> string {
+fn fmtVal(tag: int, num: float, s: string) -> string {
   // An EXPRESSION chain, not an `if` chain: rewritten as statements the same
   // ladder measured +476 nodes, because every arm of a statement chain is a
   // branch the ones above it pay for on every call.
@@ -3686,7 +3686,7 @@ mod patSetStep() {
 // most Lua, spells a string -- and five of them failed.  So the cheap version was
 // covering half the realistic shapes, and the way that showed was by writing the
 // obvious test.  Cost of putting it back: +42 over this helper's 14 sites.
-mod srcUsesField(p: string, name: string) -> bool {
+fn srcUsesField(p: string, name: string) -> bool {
   let dotted = "string." .. name
   let colon = ":" .. name
   return srcUses(p, dotted) || srcUses(p, colon)
@@ -3812,7 +3812,7 @@ mod libUtf8Dyn(p: string) -> bool {
 // TWO spellings, for the tables whose gate is now complete on its own because
 // libTabDyn and libMathDyn answer the run-time case.  srcNames keeps the four, for
 // the string pieces, which is the only place they are still load-bearing.
-mod srcNames2(p: string, tbl: string, name: string) -> bool {
+fn srcNames2(p: string, tbl: string, name: string) -> bool {
   return srcUses(p, tbl .. "." .. name) || srcUses(p, ":" .. name)
 }
 
@@ -4040,7 +4040,7 @@ mod libMathRandom(p: string, d: bool) -> string {
 // mistake is invisible at top level, where vmBase is 0, and wrong by exactly
 // vmBase inside a function -- which is how the formatter answered "number
 // expected, got nil" for `return string.format('%d', 5)`.
-mod vTag(r: int) -> int {
+fn vTag(r: int) -> int {
   return vtag[vmBase + r]
 }
 

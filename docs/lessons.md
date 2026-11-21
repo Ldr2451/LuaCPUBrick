@@ -722,6 +722,17 @@ is left and why; `tochip.py` converts with the refusals built in;
   (`fnscreen.py` shape), then run the whole gate — the compiler accepts
   shapes whose semantics still break one case.
 
+- **Value-returning mods are the same lever, and bigger: 16 more conversions
+  took 33,689 -> 28,712 nodes (−4,977).** `fn` can return a value through its
+  Function Call gate, so read helpers are shareable too: `regAlloc` −829,
+  `fmtVal` −667, `typeName` −646, `vNum` −543, `gDeclare` −503, `vTag` −428,
+  plus `vStr`, `tkey`, `curKind`, `popVal`, `curSub`, `srcUsesField`,
+  `opTopKind`, `srcUses`, `curStr`, `srcNames2`. All twelve benchmarks keep
+  identical ticks and logs; fired gates fall 12-30% and measured wall time
+  23-29% (evals rise 2-7%, but the simulator's cost is fired gates). Full
+  gate 13/13, fuzz 40/40. `toInt` (+35) and `fmtArgName` (+6) were net losses
+  and were skipped — measure, do not convert every helper.
+
 ## Closures
 A function value (tag 4) holds a **closure number, not a prototype**. Below
 `cloBase` a closure *is* its own prototype, so every builtin and every
