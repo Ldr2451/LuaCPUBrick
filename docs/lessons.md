@@ -785,6 +785,26 @@ falls out for free.
   tail before the frame switch and pass its kept count into `pcallEnd`, because a
   vararg-stack read after a mod changes `vmBase` loses its later arms.
 
+- **`tools/preflight.py` is a separate gate from `tools/run_all_tests.py`: run
+  both.** It caught two stale failures that the 13-entry gate cannot see.
+  `twopaths` compared shared `vmStep`/`vmStepFast` arms textually; arms 29 and
+  30 are deliberate PARTIAL fast paths that decline cold shapes to the full
+  arm (they leave `advanced` false), not two copies of one rule, and are now
+  documented in its `ALLOWED` map. `constcheck` failed all 46 pieces because
+  `libconst.minify` had started preserving newlines between ordinary lines;
+  joining those with spaces (and keeping real newlines inside `[[...]]`)
+  reproduces every shipped const byte for byte WITHOUT growing LIB text or
+  touching `lua.ws`. Preflight is 8/8 again.
+- **PUC's official Lua 5.5 tests live outside the repo**: download
+  `https://www.lua.org/tests/lua-5.5.0-tests.tar.gz` (SHA-256
+  `5e47bbfad7db2965d69580e918ee64edeb8d8d32de404b8dae9ce5c6d76a1472`),
+  extract, then `python -u tools/chip/pucsuite.py --dir <extracted dir>`.
+  The harvest runs 1,078 self-contained asserts: 584 agree, 75 DIFFER, 419
+  skipped. The 75 are the documented int64/pattern/os.getenv/tonumber limits.
+  Running the same harvest on the pre-size-campaign chip (1135bc3 in a
+  detached worktree) gave byte-identical DIFF entries, so none came from the
+  size work.
+
 ## WireScript traps
 
 The measured traps are in docs/traps.md - the shapes that cost a session each,

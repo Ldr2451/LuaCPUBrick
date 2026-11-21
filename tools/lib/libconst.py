@@ -72,12 +72,17 @@ def split_comment(line):
 
 
 def minify(text):
+    # keep holds (line, is_long_string_data). Newlines are only DATA inside
+    # [[...]]; everywhere else Lua reads a newline as a space, and the shipped
+    # consts use single spaces. Emitting '\n' between ordinary lines made every
+    # const rebuild differ from the installed text and would grow all 46 by
+    # ~5% if reinstalled, which is a boot cost the chip must not pay.
     keep = []
     in_long = False
     for raw in text.splitlines():
         if in_long:
             # inside [[...]]: whitespace is part of the string
-            keep.append(raw)
+            keep.append((raw, True))
             if ']]' in raw:
                 in_long = False
             continue
@@ -85,12 +90,17 @@ def minify(text):
         if rest is not None:          # a whole-line long comment: drop it
             if '[[' in code and ']]' not in code:
                 in_long = True
-                keep.append(code)
+                keep.append((code, True))
             continue
         line = code.strip()
         if line:
-            keep.append(line)
-    return '\n'.join(keep) + ('\n' if keep else '')
+            keep.append((line, '[[' in line or ']]' in line))
+    out = ''
+    for i, (line, is_long) in enumerate(keep):
+        if i:
+            out += '\n' if (is_long or keep[i - 1][1]) else ' '
+        out += line
+    return out + (' ' if keep else '')
 
 
 def master_to_const(src):

@@ -11,9 +11,11 @@ that program runs the vmStepFast copy.  The suite was green, because the case
 that covered pow ran the other arm.
 
 So this compares the two arms textually: for every opcode present in BOTH, the
-bodies must be the same once comments and whitespace are removed.  An opcode in
+bodies must be the same once comments and whitespace are removed. An opcode in
 only one of them is not a disagreement -- vmStepFast is deliberately a subset --
-so those are listed as information, not failures.
+so those are listed as information, not failures. A shared arm may also be a
+deliberate PARTIAL fast path that declines cold shapes to vmStep; those few are
+listed in ALLOWED with the reason, not hidden by a textual exception.
 
   python -u tools/chip/twopaths.py [lua.ws]
 
@@ -23,10 +25,17 @@ import os
 import re
 import sys
 
-# Arms whose bodies legitimately differ, with the reason.  Keep this short: an
-# entry here is a place where two copies of one rule are being kept in step by
-# hand, which is the thing this tool exists to measure.
-ALLOWED = {}
+# Arms whose bodies legitimately differ, with the reason. Keep this short: an
+# entry is a place where two copies of one rule are being kept in step by hand,
+# which is the thing this tool exists to measure.
+# 29/30 are not two copies at all: vmStepFast's arms are deliberate PARTIAL
+# fast paths. They handle only the hot acting shapes and DECLINE every cold
+# shape by leaving `advanced` false, so vmStep's full arm owns the error and
+# edge cases. Copying the full bodies into every fast copy costs ~1,400 nodes.
+ALLOWED = {
+    29: "GETFIELD fast arm handles a table hit or s:library only; all other shapes decline to vmStep",
+    30: "SETFIELD fast arm handles a table hit only; nil/bad keys decline to vmStep",
+}
 
 
 def strip_noise(text):
